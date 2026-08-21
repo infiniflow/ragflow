@@ -66,9 +66,16 @@ type Ingestor struct {
 	heartbeatInterval time.Duration
 
 	// Runtime state
-	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
+	// currentTasks tracks locally-active task claims. Redis is absent in
+	// isolated unit/development paths; production claims also own a renewable
+	// distributed lease.
+	currentTasks  map[string]*activeTaskClaim
 	tasksMu       sync.RWMutex
 	activeWorkers atomic.Int32 // number of worker goroutines currently in workerLoop
+	taskClaims    taskClaimStore
+	taskClaimTTL  time.Duration
+	// taskClaimRefreshInterval must remain comfortably below taskClaimTTL.
+	taskClaimRefreshInterval time.Duration
 
 	// Shutdown channel - receive on this to trigger graceful shutdown
 	ShutdownCh chan struct{}
@@ -134,19 +141,22 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	ctx, cancel := context.WithCancel(context.Background())
 	id := utility.GenerateUUID()
 	ingestor := &Ingestor{
-		id:                id,
-		name:              name,
-		ctx:               ctx,
-		cancel:            cancel,
-		maxConcurrency:    maxConcurrency,
-		supportedDocTypes: supportedTypes,
-		version:           "1.0.0",
-		currentTasks:      make(map[string]struct{}),
-		taskChan:          make(chan *taskpkg.TaskContext, maxConcurrency*2),
-		ShutdownCh:        make(chan struct{}, 1),
-		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
-		docState:          newDocStateUpdater(),
-		heartbeatInterval: defaultHeartbeatInterval,
+		id:                       id,
+		name:                     name,
+		ctx:                      ctx,
+		cancel:                   cancel,
+		maxConcurrency:           maxConcurrency,
+		supportedDocTypes:        supportedTypes,
+		version:                  "1.0.0",
+		currentTasks:             make(map[string]*activeTaskClaim),
+		taskChan:                 make(chan *taskpkg.TaskContext, maxConcurrency*2),
+		ShutdownCh:               make(chan struct{}, 1),
+		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
+		docState:                 newDocStateUpdater(),
+		heartbeatInterval:        defaultHeartbeatInterval,
+		taskClaims:               redisTaskClaimStore{},
+		taskClaimTTL:             3 * defaultHeartbeatInterval,
+		taskClaimRefreshInterval: defaultHeartbeatInterval,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
@@ -512,6 +522,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
+	var taskCtx *taskpkg.TaskContext
 	switch task.Status {
 	case common.COMPLETED, common.STOPPED, common.FAILED:
 		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
@@ -520,17 +531,27 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		}
 		return
 	case common.RUNNING:
-		// Guard against MQ redelivery: if another worker in this
-		// process is already processing this task, ack the redelivered
-		// message and skip instead of scheduling it again.
-		if !e.claimTask(task.ID) {
-			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
-				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
-			if ackErr := handle.Ack(); ackErr != nil {
-				common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), ackErr)
+		// Guard against MQ redelivery across every ingestor instance. Do not
+		// Ack a conflicting delivery: Ack would remove the broker's recovery
+		// path if the current owner crashes before completing. InProgress keeps
+		// the message pending while the lease owner continues.
+		claimCtx, claimed, claimErr := e.claimTask(e.ctx, task.ID)
+		if claimErr != nil {
+			common.Error(fmt.Sprintf("acquire distributed claim for task %s", taskMessage.TaskID), claimErr)
+			if progressErr := handle.InProgress(); progressErr != nil {
+				common.Error(fmt.Sprintf("defer task %s after claim error", taskMessage.TaskID), progressErr)
 			}
 			return
 		}
+		if !claimed {
+			common.Warn(fmt.Sprintf("task %s redelivered while another ingestor owns it; keep pending (task_id=%s doc_id=%s kb_id=%s)",
+				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
+			if progressErr := handle.InProgress(); progressErr != nil {
+				common.Error(fmt.Sprintf("defer redelivered task %s", taskMessage.TaskID), progressErr)
+			}
+			return
+		}
+		taskCtx = taskpkg.NewTaskContextForScheduling(claimCtx, task)
 		claimedTaskID = task.ID
 	default:
 		// Unreachable given StartRunning normalizes every status to
@@ -543,10 +564,11 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
-	// Construct TaskContext and carry the MQ handle so the worker can
-	// Ack/Nack when the task reaches a terminal status.
-	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
+	// Carry the MQ handle so the worker can Ack/Nack when the task reaches a
+	// terminal status. The claim context starts at scheduling time, so lease
+	// loss also cancels a task that is still waiting in the bounded queue.
 	taskCtx.Handle = handle
+	e.ensureTaskMessageHeartbeat(taskCtx)
 
 	// Push to the task channel. Use a blocking send so backpressure is
 	// applied at the consumer: the consume loop waits for a free worker slot
@@ -559,12 +581,15 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	// first few parse" defect.
 	//
 	// The in-flight claim (set just above) guards against a redelivery racing
-	// the blocked send: a duplicate delivery sees claimTask fail and is
-	// ack-skipped, so a blocking send cannot double-execute a task.
+	// the blocked send: a duplicate delivery sees claimTask fail and remains
+	// pending, so a blocking send cannot double-execute a task.
 	select {
 	case e.taskChan <- taskCtx:
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
+	case <-taskCtx.Ctx.Done():
+		common.Warn(fmt.Sprintf("Task %s lost its distributed claim before enqueue", task.ID))
+		return
 	case <-e.ctx.Done():
 		// Shutdown won the race after StartRunning already flipped the task
 		// to RUNNING: finalize it as STOPPED so the row cannot linger in
@@ -706,25 +731,25 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 	// Derive a per-task cancelable context so that an external cancel
 	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
 	// can stop only this task without affecting the whole Ingestor.
-	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
+	perTaskCtx, perTaskCancel := context.WithCancelCause(taskCtx.Ctx)
 	taskCtx.Ctx = perTaskCtx
 	cancelDone := make(chan struct{})
 	pollExited := make(chan struct{})
 	go func() {
 		defer close(pollExited)
-		e.pollCancel(task.ID, perTaskCancel, cancelDone)
+		e.pollCancel(task.ID, func() { perTaskCancel(context.Canceled) }, cancelDone)
 	}()
 	defer func() {
 		close(cancelDone)
 		<-pollExited
-		perTaskCancel()
+		perTaskCancel(context.Canceled)
 	}()
 
 	// Synchronous check: if already cancelled (e.g. flag set between MQ
 	// delivery and worker claim), stop before the pipeline even starts.
 	if e.cancelCheck(ctx, task.ID) {
 		common.Info(fmt.Sprintf("Task %s cancel flag detected before pipeline start, cancelling", task.ID))
-		perTaskCancel()
+		perTaskCancel(context.Canceled)
 	}
 
 	e.settleMessage(ctx, taskCtx, func(ctx context.Context) bool {
@@ -781,6 +806,10 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
 func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
 	select {
 	case <-ctx.Done():
+		if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+			common.Warn(fmt.Sprintf("Task %s stopped after losing its distributed claim; leaving RUNNING for redelivery", task.ID))
+			return false
+		}
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
 		stopped := e.markStopped(context.Background(), task.ID)
@@ -798,6 +827,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	dbCtx, dbCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer dbCancel()
 	if err := e.ingestionTaskSvc.IncrementRunCount(dbCtx, task.ID); err != nil {
+		if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+			common.Warn(fmt.Sprintf("Task %s lost its distributed claim while advancing run count", task.ID))
+			return false
+		}
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
 		ok := e.markFailed(ctx, task.ID)
 		if ok {
@@ -805,12 +838,21 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		}
 		return ok
 	}
+	if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+		common.Warn(fmt.Sprintf("Task %s lost its distributed claim while advancing run count", task.ID))
+		return false
+	}
+
 	checkpointExists := e.checkpointExists
 	if checkpointExists == nil {
 		checkpointExists = canvas.RedisCheckpointExists
 	}
 	resumeCheckpoint, checkpointErr := checkpointExists(dbCtx, task.ID)
 	if checkpointErr != nil {
+		if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+			common.Warn(fmt.Sprintf("Task %s lost its distributed claim while checking checkpoint state", task.ID))
+			return false
+		}
 		common.Error(fmt.Sprintf("Failed to check checkpoint for task %s", task.ID), checkpointErr)
 		ok := e.markFailed(ctx, task.ID)
 		if ok {
@@ -818,8 +860,16 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		}
 		return ok
 	}
+	if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+		common.Warn(fmt.Sprintf("Task %s lost its distributed claim while checking checkpoint state", task.ID))
+		return false
+	}
 	if !resumeCheckpoint {
 		if err := e.ingestionTaskSvc.ClearComponentProgress(dbCtx, task.ID); err != nil {
+			if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+				common.Warn(fmt.Sprintf("Task %s lost its distributed claim while clearing component progress", task.ID))
+				return false
+			}
 			common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
 			ok := e.markFailed(ctx, task.ID)
 			if ok {
@@ -846,6 +896,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	}
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
+		if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+			common.Warn(fmt.Sprintf("Task %s aborted after losing its distributed claim; leaving RUNNING for redelivery", task.ID))
+			return false
+		}
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
@@ -870,6 +924,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
 		}
 		return ok
+	}
+	if errors.Is(context.Cause(ctx), errTaskClaimLost) {
+		common.Warn(fmt.Sprintf("Task %s completed work after losing its distributed claim; leaving RUNNING for owner settlement", task.ID))
+		return false
 	}
 
 	if err := e.completeTask(ctx, task.ID); err != nil {
@@ -950,7 +1008,7 @@ func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
 // (COMPLETED/STOPPED/FAILED) means Ack; anything else means Nack. The body's
 // return value is advisory only — DB truth is authoritative (BP1).
 func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, body func(context.Context) bool) (terminal bool) {
-	stop := e.startHeartbeat(taskCtx)
+	stop := e.ensureTaskMessageHeartbeat(taskCtx)
 	defer func() {
 		stop() // stop heartbeat (and wait) before ack/nack
 		if r := recover(); r != nil {
@@ -1112,8 +1170,6 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
 }
 
-// claimTask registers a worker claim on a task ID. Returns false if another
-// worker has already claimed it (e.g. MQ redelivery), true on first claim.
 // startHeartbeat launches a goroutine that calls Handle.InProgress every
 // heartbeatInterval to keep the broker AckWait timer fresh during long tasks.
 // It returns a stop function that signals the goroutine to exit and BLOCKS
@@ -1150,22 +1206,39 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 	}
 }
 
-func (e *Ingestor) claimTask(taskID string) bool {
-	e.tasksMu.Lock()
-	defer e.tasksMu.Unlock()
-	if _, ok := e.currentTasks[taskID]; ok {
-		return false
+// ensureTaskMessageHeartbeat starts the broker heartbeat as soon as a claimed
+// message is scheduled, including while it waits in taskChan. For direct test
+// and standalone paths without a claim, the returned stop function owns a
+// regular execution-scoped heartbeat.
+func (e *Ingestor) ensureTaskMessageHeartbeat(taskCtx *taskpkg.TaskContext) func() {
+	if taskCtx == nil || taskCtx.IngestionTask == nil {
+		return func() {}
 	}
-	e.currentTasks[taskID] = struct{}{}
-	return true
+	taskID := taskCtx.IngestionTask.ID
+	e.tasksMu.Lock()
+	claim := e.currentTasks[taskID]
+	if claim == nil {
+		e.tasksMu.Unlock()
+		return e.startHeartbeat(taskCtx)
+	}
+	if claim.messageHeartbeatStop == nil {
+		claim.messageHeartbeatStop = e.startHeartbeat(taskCtx)
+	}
+	e.tasksMu.Unlock()
+	return func() { e.stopTaskMessageHeartbeat(taskID) }
 }
 
-// releaseTask removes the claim so a future redelivery (after process restart)
-// can re-claim the task.
-func (e *Ingestor) releaseTask(taskID string) {
+func (e *Ingestor) stopTaskMessageHeartbeat(taskID string) {
 	e.tasksMu.Lock()
-	delete(e.currentTasks, taskID)
+	claim := e.currentTasks[taskID]
+	if claim == nil || claim.messageHeartbeatStop == nil {
+		e.tasksMu.Unlock()
+		return
+	}
+	stop := claim.messageHeartbeatStop
+	claim.messageHeartbeatStop = nil
 	e.tasksMu.Unlock()
+	stop()
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {

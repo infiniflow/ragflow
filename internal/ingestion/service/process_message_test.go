@@ -258,10 +258,10 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_ClaimFailsAcks: a RUNNING task whose claim fails
-// (redelivery guard) is acked without enqueuing — another worker is already
-// processing it.
-func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
+// TestProcessMessage_ClaimConflictStaysPending: a RUNNING task whose claim is
+// held by another worker is not enqueued or Acked. InProgress defers
+// redelivery while preserving broker recovery if the owner crashes.
+func TestProcessMessage_ClaimConflictStaysPending(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -269,13 +269,14 @@ func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Pre-claim the task so processMessage sees a claim conflict.
-	ingestor.claimTask(taskID)
+	claimTaskForTest(t, ingestor, taskID)
 
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
-	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
-		t.Fatalf("claim-fail: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 || handle.inProgress.Load() != 1 {
+		t.Fatalf("claim conflict: expected 0 Ack/0 Nack/1 InProgress, got acks=%d nacks=%d inProgress=%d",
+			handle.acks.Load(), handle.nacks.Load(), handle.inProgress.Load())
 	}
 	if len(ingestor.taskChan) != 0 {
 		t.Fatal("expected no task enqueued when claim fails")
