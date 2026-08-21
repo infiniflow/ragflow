@@ -510,11 +510,14 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 }
 
 // renameLinkedDocuments renames every knowledgebase document linked to the
-// given file so the new name is reflected in all linked datasets.
+// given file so the new name is reflected in all linked datasets. Only the
+// document name is synced: the Python reference (_rename_linked_documents in
+// api/apps/services/file_api_service.py) updates no other denormalized field
+// on rename.
 func (s *FileService) renameLinkedDocuments(ctx context.Context, fileID, newName string) error {
 	informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 	if err != nil {
-		return nil
+		return err
 	}
 	documentDAO := dao.NewDocumentDAO()
 	for _, inform := range informs {

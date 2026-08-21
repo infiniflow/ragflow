@@ -162,6 +162,32 @@ func TestMoveFilesRenameUpdatesAllLinkedDocuments(t *testing.T) {
 	}
 }
 
+// A failing file2document lookup must surface as an error instead of being
+// silently treated as "no links", so a rename never reports success while
+// linked documents keep stale names.
+func TestRenameLinkedDocumentsLookupErrorPropagates(t *testing.T) {
+	db := setupFolderTestDB(t)
+	insertFolderTestFile(t, "file-1", "folder-1", "old.pdf")
+
+	// Force the link lookup to fail by dropping its table.
+	if err := db.Migrator().DropTable(&entity.File2Document{}); err != nil {
+		t.Fatalf("drop file2document table: %v", err)
+	}
+
+	svc := testFileService()
+	if err := svc.renameLinkedDocuments(t.Context(), "file-1", "new.pdf"); err == nil {
+		t.Fatal("renameLinkedDocuments returned nil error on lookup failure")
+	}
+
+	ok, msg := svc.MoveFiles(t.Context(), "user-1", []string{"file-1"}, "", "new.pdf")
+	if ok {
+		t.Fatal("MoveFiles succeeded despite file2document lookup failure")
+	}
+	if !strings.Contains(msg, "Document rename") {
+		t.Fatalf("MoveFiles message = %q, want it to mention %q", msg, "Document rename")
+	}
+}
+
 // Renaming while moving into the same parent folder (no storage move) must
 // also propagate the new name to every linked document.
 func TestMoveEntryRecursiveRenameUpdatesAllLinkedDocuments(t *testing.T) {
