@@ -507,7 +507,14 @@ func (c *SharePointConnector) requestAccessToken(ctx context.Context) (sharePoin
 		return sharePointCachedToken{}, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	const maxTokenResponseSize = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseSize+1))
+	if err != nil {
+		return sharePointCachedToken{}, err
+	}
+	if len(body) > maxTokenResponseSize {
+		return sharePointCachedToken{}, fmt.Errorf("SharePoint token response exceeds maximum size of %d bytes", maxTokenResponseSize)
+	}
 	if resp.StatusCode >= 400 {
 		message := strings.TrimSpace(string(body))
 		var parsed sharePointGraphErrorBody
