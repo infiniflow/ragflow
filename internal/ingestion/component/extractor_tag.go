@@ -252,7 +252,12 @@ func matchAndTagChunk(
 	}
 
 	// 3. Aggregate Top-K samples weighted by Coverage to eliminate label pollution.
-	sort.Slice(passed, func(i, j int) bool { return passed[i].coverage > passed[j].coverage })
+	sort.Slice(passed, func(i, j int) bool {
+		if passed[i].coverage != passed[j].coverage {
+			return passed[i].coverage > passed[j].coverage
+		}
+		return passed[i].docID < passed[j].docID
+	})
 	topK := min(defaultTopK, len(passed))
 
 	tagWeightedCounts := make(map[string]float64)
@@ -298,7 +303,12 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	sort.Slice(scored, func(i, j int) bool { return scored[i].score > scored[j].score })
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].name < scored[j].name
+	})
 	if len(scored) > topN {
 		scored = scored[:topN]
 	}
@@ -890,7 +900,12 @@ func parseTaggerResponse(raw string, topN int) map[string]int {
 		for k, v := range result {
 			sorted = append(sorted, kv{k, v})
 		}
-		sort.Slice(sorted, func(i, j int) bool { return sorted[i].v > sorted[j].v })
+		sort.Slice(sorted, func(i, j int) bool {
+			if sorted[i].v != sorted[j].v {
+				return sorted[i].v > sorted[j].v
+			}
+			return sorted[i].k < sorted[j].k
+		})
 		result = make(map[string]int, topN)
 		for i := 0; i < topN && i < len(sorted); i++ {
 			result[sorted[i].k] = sorted[i].v
@@ -978,4 +993,3 @@ func randomChoices(slice []schema.TaggedChunk, k int) []schema.TaggedChunk {
 	}
 	return out
 }
-

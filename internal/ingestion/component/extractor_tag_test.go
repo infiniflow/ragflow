@@ -656,6 +656,32 @@ func TestParseTaggerResponse_LastThinkTag(t *testing.T) {
 	}
 }
 
+func TestMatchAndTagChunk_DeterministicTieBreak(t *testing.T) {
+	requireTokenizerPool(t)
+	tok := tokenizer.New("english")
+	rawEx := []schema.TagLabel{
+		{Content: "shared keyword match document", Tags: []string{"tag_b", "tag_a", "tag_c"}},
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx == nil {
+		t.Fatal("expected non-nil index")
+	}
+
+	chunk := map[string]any{"content_with_weight": "shared keyword match document"}
+	// Ask for top 2 out of 3 equal-scoring tags
+	matched := matchAndTagChunk(chunk, idx, tok, 2)
+	if matched == nil {
+		t.Fatal("expected non-nil matched chunk")
+	}
+	if len(matched.Tags) != 2 {
+		t.Fatalf("expected exactly 2 tags, got %d", len(matched.Tags))
+	}
+	// Alphabetical tie-break: tag_a, tag_b
+	if matched.Tags[0] != "tag_a" || matched.Tags[1] != "tag_b" {
+		t.Fatalf("expected deterministic alphabetical tie-break ['tag_a', 'tag_b'], got %v", matched.Tags)
+	}
+}
+
 func BenchmarkMatchAndTagChunk_5000Examples(b *testing.B) {
 	requireTokenizerPool(b)
 	tok := tokenizer.New("english")
@@ -681,4 +707,3 @@ func BenchmarkMatchAndTagChunk_5000Examples(b *testing.B) {
 		matchAndTagChunk(chunk, idx, tok, 3)
 	}
 }
-
