@@ -34,6 +34,7 @@ import (
 
 const (
 	defaultDropboxBatchSize      = 32
+	maxDropboxBatchSize          = 1_000
 	defaultDropboxSizeThreshold  = 20 * 1024 * 1024
 	dropboxRequestTimeout        = 60 * time.Second
 	maxDropboxDownloadSize       = 64 * 1024 * 1024
@@ -373,10 +374,13 @@ func (s *dropboxPruneSession) Close() error {
 }
 
 func positiveDropboxBatchSize(batchSize int) int {
-	if batchSize > 0 {
-		return batchSize
+	if batchSize <= 0 {
+		return defaultDropboxBatchSize
 	}
-	return defaultDropboxBatchSize
+	if batchSize > maxDropboxBatchSize {
+		return maxDropboxBatchSize
+	}
+	return batchSize
 }
 
 func dropboxAPIArgHeader(path string) string {

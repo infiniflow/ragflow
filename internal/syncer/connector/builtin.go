@@ -29,6 +29,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
+	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
 	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
@@ -48,7 +49,6 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "slack", NewSlackConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
-	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
