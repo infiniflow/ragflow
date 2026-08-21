@@ -712,6 +712,9 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	}
 }
 
+// RecordPipelineLog persists a pipeline operation log. When status is empty,
+// the log uses the latest document.run value loaded from the database; callers
+// that already know a terminal state should pass it explicitly.
 func (s *PipelineExecutor) RecordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	s.recordPipelineLog(ctx, db, docID, dsl, status)
 }

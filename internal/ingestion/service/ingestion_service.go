@@ -599,8 +599,11 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
-		e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
-		return e.markStopped(context.Background(), task.ID)
+		stopped := e.markStopped(context.Background(), task.ID)
+		if stopped {
+			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
+		}
+		return stopped
 	default:
 	}
 
@@ -639,8 +642,11 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
-			return e.markStopped(ctx, task.ID)
+			stopped := e.markStopped(ctx, task.ID)
+			if stopped {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
+			}
+			return stopped
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
