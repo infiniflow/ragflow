@@ -49,6 +49,19 @@ def _factory_model_types(llm: dict) -> list[str]:
     return [model_type] if model_type else []
 
 
+def _lookup_factory_llm_info(provider_name: str, pure_model_name: str, extra_fields: dict) -> dict | None:
+    region = extra_fields.get("region", "default")
+    if region == "intl" and provider_name.lower() == "siliconflow":
+        target_factory_name = "siliconflow_intl"
+    else:
+        target_factory_name = provider_name
+    fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
+    if not fac_list:
+        return None
+    llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
+    return llm_list[0] if llm_list else None
+
+
 def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
     if not raw_api_key:
         return raw_api_key, None, None
@@ -221,7 +234,7 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
     if instance_obj:
         return instance_obj
     if instance_name != "default":
-        raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
     active_instances = [inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id) if inst.status == ActiveStatusEnum.ACTIVE.value]
     if len(active_instances) == 1:
@@ -236,7 +249,14 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
         )
         return active_instances[0]
 
-    raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
+    raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+
+def resolve_model_config(tenant_id, model_type: str | enum.Enum, model_ref: str):
+    try:
+        return get_model_config_by_id(tenant_id, model_type, model_ref)
+    except LookupError:
+        return get_model_config_from_provider_instance(tenant_id, model_type, model_ref)
 
 
 def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.Enum, model_name: str):
@@ -286,7 +306,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_type_val,
             "is_tools": model_extra.get("is_tools", is_tool),
-            "max_tokens": model_extra.get("max_tokens") or 8192,
+            "max_tokens": max_tokens,
         }
         if provider_name.lower() == "somark":
             # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
@@ -298,32 +318,120 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
 
         return model_config
     else:
-        region = extra_fields.get("region", "default")
-        if region == "intl" and provider_name.lower() == "siliconflow":
-            target_factory_name = "siliconflow_intl"
-        else:
-            target_factory_name = provider_name
-        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
-        if not fac_list:
-            raise LookupError(f"Model provider config not found: {provider_name}")
-        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
-        if not llm_list:
-            raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
-        llm_info = llm_list[0]
-        if model_type_val not in _factory_model_types(llm_info):
-            raise LookupError(f"Model {model_name} is not a {model_type_val} model.")
-        model_config = {
-            "llm_factory": provider_obj.provider_name,
-            "api_key": api_key,
-            "llm_name": llm_info["llm_name"],
-            "api_base": extra_fields.get("base_url", ""),
-            "model_type": model_type_val,
-            "is_tools": llm_info.get("is_tools", is_tool),
-            "max_tokens": llm_info.get("max_tokens") or 8192,
-        }
-        if api_key_payload is not None:
-            model_config["api_key_payload"] = api_key_payload
-        return model_config
+        raise LookupError(f"Model {model_name} not found for model {model_type_val}")
+
+
+def get_model_config_by_id(tenant_id: str, model_type: str | enum.Enum, model_id: str):
+    """Get model config from tenant_model by its id (CharField PK)."""
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    model_type_bin = calculate_model_type(model_type_val)
+    exist, model_obj = TenantModelService.get_by_id(model_id)
+    if not exist:
+        raise LookupError(f"TenantModel id={model_id} not found.")
+    if model_obj.status == ActiveStatusEnum.INACTIVE.value:
+        raise LookupError(f"TenantModel id={model_id} is disabled.")
+    if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value:
+        raise LookupError(f"TenantModel id={model_id} cannot be used as {model_type_val} model.")
+    if not (model_obj.model_type & model_type_bin):
+        raise LookupError(f"TenantModel id={model_id} cannot be used as {model_type_val} model.")
+
+    ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not ok:
+        raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
+
+    # Validate that tenant_id owns the provider or is a joined tenant of the provider's owner.
+    if tenant_id != provider_obj.tenant_id:
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        joined_tenant_ids = [t["tenant_id"] for t in joined_tenants]
+        if provider_obj.tenant_id not in joined_tenant_ids:
+            raise LookupError(f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}.")
+
+    ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not ok:
+        raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
+
+    api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
+    extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
+    model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
+
+    model_config = {
+        "llm_factory": provider_obj.provider_name,
+        "api_key": api_key,
+        "llm_name": model_obj.model_name,
+        "api_base": extra_fields.get("base_url", ""),
+        "model_type": model_type_val,
+        "is_tools": model_extra.get("is_tools", is_tool),
+        "max_tokens": model_extra.get("max_tokens") or 8192,
+    }
+    if provider_obj.provider_name.lower() == "somark":
+        model_config["extra"] = model_extra
+
+    if api_key_payload is not None:
+        model_config["api_key_payload"] = api_key_payload
+
+    return model_config
+
+
+def resolve_model_id(tenant_id: str, model_type: str | enum.Enum, model_name: str) -> str | None:
+    """Given a tenant_id, model_type and model_name (e.g. 'model@instance@provider'),
+    look up the corresponding tenant_model.id. Returns None if not found."""
+    pure_model_name, instance_name, provider_name = split_model_name(model_name)
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+
+    # Builtin TEI embedding — no tenant_model row exists
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    is_tei_builtin_embedding = (
+        model_type_val == LLMType.EMBEDDING.value and "tei-" in compose_profiles and pure_model_name == os.getenv("TEI_MODEL", "") and (provider_name == "Builtin" or not provider_name)
+    )
+    if is_tei_builtin_embedding:
+        return None
+
+    if not provider_name:
+        raise LookupError(f"Provider name is required to resolve model id for {model_name}.")
+
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
+
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
+    if not model_obj:
+        raise LookupError(f"Model {model_name} not found for type {model_type_val}.")
+    return model_obj.id
+
+
+# Mapping from model-name field → (LLMType, tenant_model id field)
+_MODEL_NAME_TO_ID_FIELD_MAP: dict[str, tuple[str, str]] = {
+    "llm_id": (LLMType.CHAT, "tenant_llm_id"),
+    "embd_id": (LLMType.EMBEDDING, "tenant_embd_id"),
+    "rerank_id": (LLMType.RERANK, "tenant_rerank_id"),
+    "asr_id": (LLMType.ASR, "tenant_asr_id"),
+    "img2txt_id": (LLMType.VISION, "tenant_img2txt_id"),
+    "tts_id": (LLMType.TTS, "tenant_tts_id"),
+}
+
+
+def ensure_tenant_model_ids_for_params(tenant_id: str, params: dict) -> dict:
+    """For each model-name field present in *params*, resolve the corresponding
+    tenant_model id if the id field is not already present.
+
+    Modifies *params* in-place (adds ``tenant_*_id`` keys) and returns it.
+    Silently skips resolution when the model is not found in tenant_model
+    (e.g. builtin TEI embedding).
+
+    Typical usage at API entry points:
+
+        req = await get_request_json()
+        ensure_tenant_model_ids_for_params(current_user.id, req)
+        # req now has tenant_llm_id / tenant_embd_id etc. filled in
+    """
+    for name_field, (model_type, id_field) in _MODEL_NAME_TO_ID_FIELD_MAP.items():
+        if name_field in params and id_field not in params:
+            try:
+                params[id_field] = resolve_model_id(tenant_id, model_type, params[name_field])
+            except LookupError:
+                logger.debug("Could not resolve %s → %s for tenant %s, skipping", name_field, id_field, tenant_id)
+    return params
 
 
 def get_api_key(tenant_id: str, model_name: str):
@@ -390,32 +498,11 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
     if not instance_obj:
-        raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
     if not model_obj:
         raise LookupError(f"Model {model_name} not found.")
     return get_model_type_human(model_obj.model_type)
-    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
-    model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
-    types_in_json = []
-    if not model_objs:
-        extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
-        region = extra_fields.get("region", "default")
-        if region == "intl" and provider_name.lower() == "siliconflow":
-            target_factory_name = "siliconflow_intl"
-        else:
-            target_factory_name = provider_name
-        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
-        if not fac_list:
-            raise LookupError(f"Model provider config not found: {provider_name}")
-        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
-        if not llm_list:
-            raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
-        types_in_json = _factory_model_types(llm_list[0])
-    return list(
-        set(types_in_json + [model_obj.model_type for model_obj in model_objs if model_obj.status != ActiveStatusEnum.UNSUPPORTED.value])
-        - {model_obj.model_type for model_obj in model_objs if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value}
-    )
 
 
 def delete_models_by_instance_ids(instance_ids: list[str]):
@@ -455,7 +542,7 @@ def get_composite_model_name_by_id(model_id: str) -> str:
 
     ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
     if not ok:
-        raise LookupError(f"Model id={model_id} not found for model instance id={model_obj.instance_id}.")
+        raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
 
     ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     if not ok:

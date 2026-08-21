@@ -290,10 +290,14 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
 async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import resolve_model_config, get_tenant_default_model_by_type, resolve_model_type
+    from api.db.joint_services.tenant_model_service import (
+        get_tenant_default_model_by_type,
+        resolve_model_config,
+        resolve_model_type,
+    )
 
-    if llm_id and "image2text" in get_model_type_by_name(tenant_id, llm_id):
-        chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+    if llm_id and "vision" in resolve_model_type(tenant_id, llm_id):
+        chat_model_config = resolve_model_config(tenant_id, LLMType.VISION, llm_id)
     else:
         if not llm_id:
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
