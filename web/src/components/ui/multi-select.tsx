@@ -200,7 +200,7 @@ interface MultiSelectProps
    * returns a label, the badge shows that label instead of falling back to
    * the raw value with a warning marker.
    */
-  getOptionLabel?: (value: string) => React.ReactNode | undefined;
+  getOptionLabel?: (value: string) => string | undefined;
 }
 
 export const MultiSelect = React.forwardRef<
