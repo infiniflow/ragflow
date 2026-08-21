@@ -184,8 +184,10 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 	if unknown.MaxOutput != nil {
 		t.Fatalf("unknown.MaxOutput=%v, want nil", *unknown.MaxOutput)
 	}
-	if len(unknown.ModelTypes) != 0 {
-		t.Fatalf("unknown.ModelTypes=%v, want empty", unknown.ModelTypes)
+	// Catalog misses fall back to name-based inference, which defaults to
+	// chat — remote entries must never surface type-less.
+	if len(unknown.ModelTypes) != 1 || unknown.ModelTypes[0] != "chat" {
+		t.Fatalf("unknown.ModelTypes=%v, want [chat]", unknown.ModelTypes)
 	}
 }
 
