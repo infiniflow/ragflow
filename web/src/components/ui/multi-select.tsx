@@ -259,6 +259,16 @@ export const MultiSelect = React.forwardRef<
       );
     }, [options]);
 
+    // Remember the label of every option the component has seen, so a badge
+    // keeps its label when the option later disappears from `options` (e.g.
+    // the list is narrowed by a server-side search).
+    const rememberedLabels = React.useRef(new Map<string, React.ReactNode>());
+    React.useEffect(() => {
+      flatOptions.forEach((option) => {
+        rememberedLabels.current.set(option.value, option.label);
+      });
+    }, [flatOptions]);
+
     const disabledValueSet = React.useMemo(() => {
       return new Set(
         flatOptions
@@ -371,9 +381,14 @@ export const MultiSelect = React.forwardRef<
                   {selectedValues?.slice(0, maxCount)?.map((value) => {
                     const option = flatOptions.find((o) => o.value === value);
                     // A selected value may be absent from `options` while the
-                    // list is narrowed (e.g. by a search keyword); resolve its
-                    // label via `getOptionLabel` so the badge stays readable.
-                    const label = option?.label ?? getOptionLabel?.(value);
+                    // list is narrowed (e.g. by a search keyword); fall back
+                    // to the explicit `getOptionLabel` resolver and then to
+                    // the remembered label of a previously seen option so the
+                    // badge stays readable.
+                    const label =
+                      option?.label ??
+                      getOptionLabel?.(value) ??
+                      rememberedLabels.current.get(value);
                     const IconComponent = option?.icon;
                     return (
                       <Badge
