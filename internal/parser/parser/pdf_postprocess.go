@@ -124,7 +124,9 @@ func normalizePDFRunningText(text string) string {
 
 // removePDFRunningHeaderFooter drops sections whose normalized text repeats
 // in the same page zone (top 10% or bottom 10%) on at least half of the
-// document's pages — running headers, footers, and page numbers. The
+// document's pages — running headers, footers, and page numbers. Every
+// rendered page counts toward the total, including blank or image-only
+// pages that produced no sections. The
 // layout-type filter above only works when a DeepDoc inference service
 // (DEEPDOC_URL) types header/footer regions; in default deployments there
 // is none, every section stays "text", and 页眉页脚 removal silently does
@@ -137,14 +139,7 @@ func removePDFRunningHeaderFooter(result *deepdoctype.ParseResult) {
 	if len(sections) == 0 || len(result.PageHeight) == 0 {
 		return
 	}
-	pageSet := make(map[int]struct{}, len(result.PageHeight))
-	for i := range sections {
-		if len(sections[i].Positions) == 0 || len(sections[i].Positions[0].PageNumbers) == 0 {
-			continue
-		}
-		pageSet[sections[i].Positions[0].PageNumbers[0]] = struct{}{}
-	}
-	numPages := len(pageSet)
+	numPages := len(result.PageHeight)
 	if numPages < pdfMinPagesForHeaderFooter {
 		return
 	}
@@ -173,9 +168,9 @@ func removePDFRunningHeaderFooter(result *deepdoctype.ParseResult) {
 		}
 		var isHeader, isFooter bool
 		switch {
-		case top <= pageHeight*pdfHeaderZoneRatio && bottom <= pageHeight*0.5:
+		case bottom <= pageHeight*pdfHeaderZoneRatio:
 			isHeader = true
-		case bottom >= pageHeight*pdfFooterZoneRatio && top >= pageHeight*0.5:
+		case top >= pageHeight*pdfFooterZoneRatio:
 			isFooter = true
 		}
 		if !isHeader && !isFooter {
