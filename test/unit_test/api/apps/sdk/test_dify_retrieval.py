@@ -155,7 +155,12 @@ def _load_dify_retrieval(
         KnowledgebaseService=SimpleNamespace(get_by_id=lambda _id: kb, accessible=acc_fn),
     )
 
-    _stub(monkeypatch, "api.db.services.llm_service", LLMBundle=lambda *_a, **_k: SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=lambda *_a, **_k: SimpleNamespace(),
+        resolve_llm_setting=lambda *_a, **_k: {},
+    )
 
     _stub(
         monkeypatch,

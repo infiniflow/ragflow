@@ -14,7 +14,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { z, ZodIssueCode } from 'zod';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
-export function useChatSettingSchema(staleDatasetIds: Set<string>) {
+export function useChatSettingSchema() {
   const { t } = useTranslate('chat');
 
   const promptConfigSchema = z.object({
@@ -83,15 +83,5 @@ export function useChatSettingSchema(staleDatasetIds: Set<string>) {
       }
     });
 
-  // A persisted dataset_ids value may reference datasets that have since been
-  // deleted or emptied of chunks — those stale ids are flagged here.
-  return formSchema.superRefine((data, ctx) => {
-    if (data.dataset_ids.some((id) => staleDatasetIds.has(id))) {
-      ctx.addIssue({
-        path: ['dataset_ids'],
-        message: t('datasetUnavailable'),
-        code: z.ZodIssueCode.custom,
-      });
-    }
-  });
+  return formSchema;
 }

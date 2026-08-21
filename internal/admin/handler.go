@@ -951,6 +951,10 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		return
 	}
 	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
 	var result []map[string]string
 	if req.AckPolicy == "ACK" {
 		for _, message := range messages {

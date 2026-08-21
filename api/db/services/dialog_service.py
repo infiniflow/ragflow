@@ -35,7 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.llm_service import LLMBundle
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -263,7 +263,7 @@ class DialogService(CommonService):
     def get_all_dialogs_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         dialogs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        dialogs.order_by(cls.model.create_time.asc())
+        dialogs = dialogs.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
@@ -1859,7 +1859,10 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         refs["chunks"] = chunks_format(refs)
         return {"answer": answer, "reference": refs}
 
-    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, {"temperature": 0.1})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
+    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, gen_conf)
     last_state = None
     async for kind, value, state in _stream_with_think_delta(stream_iter):
         last_state = state

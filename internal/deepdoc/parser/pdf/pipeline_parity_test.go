@@ -368,13 +368,20 @@ func loadPythonTables(t *testing.T, jsonPath string) ([][]string, bool) {
 }
 
 // goTableRows flattens every Go result table's grid (cell text) into rows.
+// Cells covered by a spanning cell (marked "table covered" by ConstructTable)
+// are dropped, matching Python's golden rows, which come from the rendered
+// HTML and omit covered <td> entirely — so per-row column counts match
+// Python's variable-width grids (e.g. 11x[3,2,3,...]).
 func goTableRows(result *pdf.ParseResult) [][]string {
 	var rows [][]string
 	for _, t := range result.Tables {
 		for _, r := range t.Grid {
-			row := make([]string, len(r))
-			for j, c := range r {
-				row[j] = strings.TrimSpace(c.Text)
+			var row []string
+			for _, c := range r {
+				if strings.Contains(c.Label, "covered") {
+					continue
+				}
+				row = append(row, strings.TrimSpace(c.Text))
 			}
 			rows = append(rows, row)
 		}

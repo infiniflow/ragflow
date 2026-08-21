@@ -20,10 +20,8 @@ import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
-import { ModelTreeSelect } from '@/components/model-tree-select';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
-import { SingleFormSlider } from '@/components/ui/dual-range-slider';
 import {
   Form,
   FormControl,
@@ -32,11 +30,14 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -74,10 +75,23 @@ function SearchSetting({
   const { search_config } = data || {};
   const { llm_setting } = search_config || {};
   const { t } = useTranslation();
-  const { formSchema, modelsFetched } = useSearchSettingFormSchema();
+  const { formSchema: searchSettingSchema, modelsFetched } =
+    useSearchSettingFormSchema();
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    searchSettingSchema,
+    search_config?.kb_ids,
+    'search_config.kb_ids',
+  );
   const formMethods = useForm<SearchSettingFormData>({
     resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
+
+  useRevalidateStaleDatasetIds(
+    formMethods,
+    datasetsFetched,
+    'search_config.kb_ids',
+  );
   const descriptionDefaultValue = t('search.descriptionValue');
   const resetForm = useCallback(() => {
     formMethods.reset({

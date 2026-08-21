@@ -95,7 +95,7 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -408,6 +408,76 @@ func TestRecordPipelineLog_CustomCanvasMissingFallsBackToParserID(t *testing.T) 
 	}
 	if captured.PipelineID == nil || *captured.PipelineID != "canvas-gone" {
 		t.Fatalf("PipelineID = %v, want \"canvas-gone\"", captured.PipelineID)
+	}
+}
+
+func TestRecordPipelineLog_SourceFrom(t *testing.T) {
+	cases := []struct {
+		name       string
+		sourceType string
+		want       string
+	}{
+		{name: "connector source strips connector id", sourceType: "rss/connector-811", want: "rss"},
+		{name: "plain source unchanged", sourceType: "local", want: "local"},
+		{name: "empty source unchanged", sourceType: "", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			taskCtx := makeTaskCtx()
+			taskCtx.Doc.SourceType = tc.sourceType
+			var captured *entity.PipelineOperationLog
+			svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
+				func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+					captured = log
+					return nil
+				},
+			)
+			svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
+			if captured == nil {
+				t.Fatal("logCreateFunc was not called")
+			}
+			if captured.SourceFrom != tc.want {
+				t.Errorf("SourceFrom = %q, want %q", captured.SourceFrom, tc.want)
+			}
+		})
+	}
+}
+
+// recordPipelineLog reloads the persisted document and derives source_from
+// from that row, so a stale task-context snapshot must not leak into the log.
+func TestRecordPipelineLog_SourceFromReloadedDoc(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	persisted := &entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "rss/connector-811",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+	}
+	if err := dao.NewDocumentDAO().Create(t.Context(), dao.DB, persisted); err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.SourceType = "local"
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		},
+	)
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.SourceFrom != "rss" {
+		t.Errorf("SourceFrom = %q, want %q", captured.SourceFrom, "rss")
 	}
 }
 
