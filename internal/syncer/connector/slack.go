@@ -889,7 +889,9 @@ func (s *slackSyncSession) channelDocuments(ctx context.Context, channel slackCh
 		if s.request.WindowStart != nil {
 			oldest = strconv.FormatInt(s.request.WindowStart.Unix(), 10)
 		}
-		latest = strconv.FormatInt(s.request.WindowEnd.Unix(), 10)
+		if !s.request.WindowEnd.IsZero() {
+			latest = strconv.FormatInt(s.request.WindowEnd.Unix(), 10)
+		}
 	}
 	messages, err := s.connector.channelMessages(ctx, channel, oldest, latest)
 	if err != nil {
