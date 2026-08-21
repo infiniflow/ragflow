@@ -164,20 +164,7 @@ func (c *SlackConnector) OpenPrune(ctx context.Context, request PruneRequest) (P
 	if err != nil {
 		return nil, err
 	}
-	var documents []SlimDocument
-	for _, channel := range channels {
-		messages, err := c.channelMessages(ctx, channel, "", "")
-		if err != nil {
-			return nil, err
-		}
-		for _, message := range messages {
-			if !acceptSlackMessage(message) {
-				continue
-			}
-			documents = append(documents, SlimDocument{SourceID: slackDocID(channel.ID, message.TS)})
-		}
-	}
-	return &slackPruneSession{documents: documents, batchSize: c.batchSize}, nil
+	return &slackPruneSession{connector: c, channels: channels, batchSize: c.batchSize}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -721,8 +708,9 @@ func slackDocID(channelID, ts string) string {
 	return channelID + "__" + ts
 }
 
-// threadToDocument flattens a filtered thread into one text document.
-func (c *SlackConnector) threadToDocument(ctx context.Context, channel slackChannel, thread []slackMessage) (*SourceDocument, error) {
+// threadToDocument flattens a filtered thread into one text document. docTS is
+// the thread root timestamp used as the document identity.
+func (c *SlackConnector) threadToDocument(ctx context.Context, channel slackChannel, thread []slackMessage, docTS string) (*SourceDocument, error) {
 	senderName := "Unknown"
 	if len(thread) > 0 {
 		if name, err := c.displayName(ctx, thread[0].User); err != nil {
@@ -764,7 +752,7 @@ func (c *SlackConnector) threadToDocument(ctx context.Context, channel slackChan
 	}
 
 	doc := &SourceDocument{
-		SourceID:           slackDocID(channel.ID, thread[0].TS),
+		SourceID:           slackDocID(channel.ID, docTS),
 		SemanticIdentifier: semantic,
 		Extension:          ".txt",
 		Blob:               blob,
@@ -932,12 +920,12 @@ func (s *slackSyncSession) processMessage(ctx context.Context, channel slackChan
 		if len(filtered) == 0 {
 			return nil, nil
 		}
-		return s.connector.threadToDocument(ctx, channel, filtered)
+		return s.connector.threadToDocument(ctx, channel, filtered, threadOrMessageTS)
 	}
 	if !acceptSlackMessage(message) {
 		return nil, nil
 	}
-	return s.connector.threadToDocument(ctx, channel, []slackMessage{message})
+	return s.connector.threadToDocument(ctx, channel, []slackMessage{message}, threadOrMessageTS)
 }
 
 func filterSlackMessages(messages []slackMessage) []slackMessage {
@@ -951,26 +939,93 @@ func filterSlackMessages(messages []slackMessage) []slackMessage {
 }
 
 type slackPruneSession struct {
-	documents  []SlimDocument
-	batchSize  int
-	batchIndex int
+	connector *SlackConnector
+	channels  []slackChannel
+	batchSize int
+
+	channelIndex int
+	pending      []SlimDocument
+	done         bool
 }
 
-// NextBatch returns the next Slack prune snapshot batch.
+// NextBatch returns the next Slack prune snapshot batch, paging channels
+// lazily so the whole workspace is never collected in memory at once.
 func (s *slackPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
-	if s.batchIndex >= len(s.documents) {
-		return PruneBatch{}, io.EOF
+	for {
+		if s.done {
+			return PruneBatch{}, io.EOF
+		}
+		if len(s.pending) == 0 {
+			if s.channelIndex >= len(s.channels) {
+				s.done = true
+				return PruneBatch{}, io.EOF
+			}
+			channel := s.channels[s.channelIndex]
+			s.channelIndex++
+			documents, err := s.connector.pruneChannelDocuments(ctx, channel)
+			if err != nil {
+				return PruneBatch{}, err
+			}
+			if len(documents) == 0 {
+				continue
+			}
+			s.pending = documents
+		}
+		n := s.batchSize
+		if n > len(s.pending) {
+			n = len(s.pending)
+		}
+		chunk := s.pending[:n]
+		s.pending = s.pending[n:]
+		return PruneBatch{Documents: chunk}, nil
 	}
-	end := s.batchIndex + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
-	}
-	documents := s.documents[s.batchIndex:end]
-	s.batchIndex = end
-	return PruneBatch{Documents: documents}, nil
 }
 
 // Close closes the Slack prune session.
 func (s *slackPruneSession) Close() error {
 	return nil
+}
+
+// pruneChannelDocuments returns the slim snapshot documents for one channel.
+func (c *SlackConnector) pruneChannelDocuments(ctx context.Context, channel slackChannel) ([]SlimDocument, error) {
+	messages, err := c.channelMessages(ctx, channel, "", "")
+	if err != nil {
+		return nil, err
+	}
+	return slackPruneDocuments(channel, messages), nil
+}
+
+// slackPruneDocuments maps channel history to slim snapshot documents. Every
+// thread is emitted once under its root timestamp when at least one of its
+// messages is accepted, matching the identity sync uses for thread documents.
+func slackPruneDocuments(channel slackChannel, messages []slackMessage) []SlimDocument {
+	acceptedThreads := map[string]struct{}{}
+	for _, message := range messages {
+		if acceptSlackMessage(message) {
+			acceptedThreads[slackThreadRootTS(message)] = struct{}{}
+		}
+	}
+	var documents []SlimDocument
+	seen := map[string]struct{}{}
+	for _, message := range messages {
+		rootTS := slackThreadRootTS(message)
+		if _, ok := acceptedThreads[rootTS]; !ok {
+			continue
+		}
+		if _, ok := seen[rootTS]; ok {
+			continue
+		}
+		seen[rootTS] = struct{}{}
+		documents = append(documents, SlimDocument{SourceID: slackDocID(channel.ID, rootTS)})
+	}
+	return documents
+}
+
+// slackThreadRootTS returns the root timestamp of a message's thread, falling
+// back to the message's own timestamp for top-level messages.
+func slackThreadRootTS(message slackMessage) string {
+	if message.ThreadTS != "" {
+		return message.ThreadTS
+	}
+	return message.TS
 }

@@ -593,6 +593,119 @@ func TestSlackConnectorOpenPruneSlimSnapshot(t *testing.T) {
 	}
 }
 
+func TestSlackConnectorOpenPruneThreadRootIdentity(t *testing.T) {
+	withSlackTestHooks(t)
+	history := slackHistoryBody(
+		slackMsgThreadParent, // root: ts == thread_ts == 1700000001.000001
+		`{"type":"message","ts":"1700000002.000002","user":"U456","text":"A reply","thread_ts":"1700000001.000001"}`,
+		slackMsgPlain,
+	)
+	fixtures := &slackTestFixtures{
+		channelsJSON:     slackChannelsTwo,
+		historyByChannel: map[string]string{"C1": history},
+	}
+	server := newTestSlackServer(t, fixtures)
+	connector := mustSlackConnector(t, server.URL, nil)
+
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{TaskID: "t1"})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer session.Close()
+
+	var slim []SlimDocument
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		slim = append(slim, batch.Documents...)
+	}
+	// The thread is emitted once under its root timestamp; the reply and plain
+	// message must not leak their own timestamps.
+	want := []string{"C1__1700000001.000001", "C1__1700000000.000001"}
+	if len(slim) != len(want) {
+		t.Fatalf("slim documents = %+v, want %v", slim, want)
+	}
+	for i, doc := range slim {
+		if doc.SourceID != want[i] {
+			t.Fatalf("slim[%d].SourceID = %q, want %q", i, doc.SourceID, want[i])
+		}
+	}
+}
+
+func TestSlackConnectorOpenPruneBotRootThread(t *testing.T) {
+	withSlackTestHooks(t)
+	history := slackHistoryBody(
+		`{"type":"message","ts":"1700000001.000001","user":"U123","text":"bot root","thread_ts":"1700000001.000001","bot_id":"B1","bot_profile":{"name":"Some Bot"}}`,
+		`{"type":"message","ts":"1700000002.000002","user":"U456","text":"A reply","thread_ts":"1700000001.000001"}`,
+	)
+	fixtures := &slackTestFixtures{
+		channelsJSON:     slackChannelsTwo,
+		historyByChannel: map[string]string{"C1": history},
+	}
+	server := newTestSlackServer(t, fixtures)
+	connector := mustSlackConnector(t, server.URL, nil)
+
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{TaskID: "t1"})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer session.Close()
+
+	var slim []SlimDocument
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		slim = append(slim, batch.Documents...)
+	}
+	// A thread with an accepted reply is pruned under the root timestamp even
+	// when the root message itself is filtered out.
+	if len(slim) != 1 || slim[0].SourceID != "C1__1700000001.000001" {
+		t.Fatalf("slim documents = %+v, want [C1__1700000001.000001]", slim)
+	}
+}
+
+func TestSlackConnectorOpenPrunePagesChannelsLazily(t *testing.T) {
+	withSlackTestHooks(t)
+	historyCalls := &atomic.Int64{}
+	fixtures := &slackTestFixtures{
+		channelsJSON:     slackChannelsTwo,
+		historyByChannel: map[string]string{"C1": slackHistoryBody(slackMsgPlain)},
+		historyCalls:     historyCalls,
+	}
+	server := newTestSlackServer(t, fixtures)
+	connector := mustSlackConnector(t, server.URL, nil)
+
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{TaskID: "t1"})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer session.Close()
+	if historyCalls.Load() != 0 {
+		t.Fatalf("history calls after OpenPrune = %d, want 0 (lazy paging)", historyCalls.Load())
+	}
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if historyCalls.Load() == 0 {
+		t.Fatalf("history calls after NextBatch = 0, want lazy channel fetch")
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "C1__1700000000.000001" {
+		t.Fatalf("batch documents = %+v", batch.Documents)
+	}
+}
+
 func TestSlackConnectorTextCleaning(t *testing.T) {
 	withSlackTestHooks(t)
 	usersCalls := &atomic.Int64{}
