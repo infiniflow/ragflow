@@ -196,6 +196,31 @@ export enum KeenableMode {
   Realtime = 'realtime',
 }
 
+export enum YouComFreshness {
+  Any = 'any',
+  Day = 'day',
+  Week = 'week',
+  Month = 'month',
+  Year = 'year',
+}
+
+export const initialYouComValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  freshness: YouComFreshness.Any,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialKeenableValues = {
   api_key: '',
   query: AgentGlobals.SysQuery,
@@ -748,6 +773,7 @@ export const RestrictedUpstreamMap = {
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -804,6 +830,7 @@ export const NodeMap = {
   [Operator.GitHub]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
   [Operator.KeenableSearch]: 'ragNode',
+  [Operator.YouComSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
