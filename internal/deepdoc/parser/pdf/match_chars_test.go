@@ -250,3 +250,74 @@ func TestMatchCharsToBoxes_FullyContainedSmallOvershoot(t *testing.T) {
 		t.Errorf("small glyph with 0.92 overlap (0.6pt top overshoot) must be kept as inline content, got %+v", got[0])
 	}
 }
+
+// TestBoxIsCoveredLeftFragment locks the fix for 刑法's 妨妨 duplicate. The
+// OCR detector over-segments a single TOC line into a narrow LEFT box plus the
+// real text box; the char layer assigns the glyphs to the real box, leaving
+// the left box char-less. OCR-filling that left box re-reads the overlapping
+// glyph and duplicates it (妨妨). Such a char-less left box must be detected
+// as covered by its same-line right neighbor and left empty (dropped by the
+// trailing filter) instead of OCR-filled.
+//
+// Geometry (刑法 p4): fragment A x0=220.7 x1=239.3 (h~10), container B
+// x0=234.7 x1=456.3 (h~12). A is a left overhang: B starts inside A's x-span
+// (234.7 in (220.7,239.3]) and A ends before B (239.3 <= 456.3); same line
+// (Y-overlap ~1.0); A is much narrower (18.6 << 221.6). B carries the 妨 glyph.
+func TestBoxIsCoveredLeftFragment(t *testing.T) {
+	frag := ocrDetectBox{
+		box: pdftype.TextBox{X0: 220.7, X1: 239.3, Top: 2814.7, Bottom: 2825.0},
+		x0:  220.7, y0: 2814.7, x1: 239.3, y1: 2825.0,
+	}
+	cont := ocrDetectBox{
+		box: pdftype.TextBox{X0: 234.7, X1: 456.3, Top: 2813.7, Bottom: 2826.0},
+		x0:  234.7, y0: 2813.7, x1: 456.3, y1: 2826.0,
+	}
+
+	t.Run("covered left fragment is detected", func(t *testing.T) {
+		boxes := []ocrDetectBox{frag, cont}
+		// frag's stray char was deferred-then-dropped by the height gate, so
+		// its assembled text is empty (selfText == ""); cont carries the 妨
+		// glyph (char layer resolved it here).
+		boxChars := [][]pdftype.TextChar{
+			{{Text: "妨", X0: 237.5, X1: 253.5, Top: 285.1, Bottom: 301.1}},
+			{{Text: "妨", X0: 237.5, X1: 253.5, Top: 285.1, Bottom: 301.1}},
+		}
+		if !boxIsCoveredLeftFragment(boxes, boxChars, 0, "") {
+			t.Errorf("left-overhang fragment with empty assembled text must be reported as covered")
+		}
+		// The container itself carries usable text -> must NOT be reported.
+		if boxIsCoveredLeftFragment(boxes, boxChars, 1, "妨害对公司、企业的管理秩序罪") {
+			t.Errorf("a box that carries its own text must not be a fragment")
+		}
+	})
+
+	t.Run("char-less box with no right neighbor is not a fragment", func(t *testing.T) {
+		// A lone char-less box (legit OCR target, e.g. a font-encoded caption)
+		// with no same-line right neighbor must still be OCR-filled.
+		alone := ocrDetectBox{
+			box: pdftype.TextBox{X0: 100, X1: 300, Top: 500, Bottom: 520},
+			x0:  100, y0: 500, x1: 300, y1: 520,
+		}
+		boxes := []ocrDetectBox{alone}
+		boxChars := [][]pdftype.TextChar{{}}
+		if boxIsCoveredLeftFragment(boxes, boxChars, 0, "") {
+			t.Errorf("char-less box without a same-line right neighbor must NOT be treated as a fragment")
+		}
+	})
+
+	t.Run("different-line right neighbor is not a fragment", func(t *testing.T) {
+		// Neighbor is on a different line (low Y overlap) -> not covered.
+		otherLine := ocrDetectBox{
+			box: pdftype.TextBox{X0: 234.7, X1: 456.3, Top: 2900, Bottom: 2920},
+			x0:  234.7, y0: 2900, x1: 456.3, y1: 2920,
+		}
+		boxes := []ocrDetectBox{frag, otherLine}
+		boxChars := [][]pdftype.TextChar{
+			{},
+			{{Text: "妨", X0: 237.5, X1: 253.5, Top: 2905, Bottom: 2918}},
+		}
+		if boxIsCoveredLeftFragment(boxes, boxChars, 0, "") {
+			t.Errorf("a right neighbor on a different line must not cover the fragment")
+		}
+	})
+}

@@ -306,6 +306,79 @@ func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextC
 	return boxChars
 }
 
+// boxIsCoveredLeftFragment reports whether detect box i is a spurious
+// over-segmentation fragment whose content was already resolved into a
+// same-line RIGHT neighbor by the char layer, so OCR-filling i would only
+// re-read and duplicate that neighbor's text. The detector sometimes splits a
+// single TOC line into a narrow left box plus the real text box; the char
+// layer assigns the glyphs to the real box, leaving the left box with no
+// usable text (its stray char was deferred then dropped by the height gate,
+// so its assembled text is empty). If we then OCR-fill the left box we
+// duplicate its glyph (刑法's 妨妨).
+//
+// selfText is box i's assembled char-layer text. i is a covered left fragment
+// when: selfText is empty (no usable content of its own); some same-line
+// neighbor j (Y-overlap >= 0.9) carries real char text; j starts INSIDE i's
+// x-span (j.x0 in (i.x0, i.x1]) and i ends at/before j (i.x1 <= j.x1) — i is
+// a left overhang of j; and i is much narrower than j (width < j.width/2), so
+// it is a fragment, not a genuine second column. The narrow gate plus the
+// right-neighbor requirement keep legitimate char-less boxes (font-encoded
+// captions with no same-line right neighbor) OCR-filled.
+func boxIsCoveredLeftFragment(boxes []ocrDetectBox, boxChars [][]pdf.TextChar, i int, selfText string) bool {
+	if i < 0 || i >= len(boxes) || len(boxChars) != len(boxes) {
+		return false
+	}
+	if strings.TrimSpace(selfText) != "" {
+		return false // i has usable text of its own; not a fragment
+	}
+	ai := boxes[i]
+	aw := ai.x1 - ai.x0
+	if aw <= 0 {
+		return false
+	}
+	for j := range boxes {
+		if j == i {
+			continue
+		}
+		bj := boxes[j]
+		// Same line: Y-overlap ratio against the shorter box >= 0.9.
+		interY := math.Min(ai.y1, bj.y1) - math.Max(ai.y0, bj.y0)
+		if interY <= 0 {
+			continue
+		}
+		minH := math.Min(ai.y1-ai.y0, bj.y1-bj.y0)
+		if minH <= 0 {
+			continue
+		}
+		if interY/minH < 0.9 {
+			continue
+		}
+		// Neighbor must carry real (non-space) char content.
+		hasText := false
+		for _, c := range boxChars[j] {
+			if strings.TrimSpace(c.Text) != "" {
+				hasText = true
+				break
+			}
+		}
+		if !hasText {
+			continue
+		}
+		// i overhangs to the LEFT of j: j starts inside i's x-span and i does
+		// not extend right past j.
+		if !(bj.x0 > ai.x0 && bj.x0 < ai.x1 && ai.x1 <= bj.x1) {
+			continue
+		}
+		// i is a small fragment, not a genuine column.
+		bw := bj.x1 - bj.x0
+		if aw >= bw*0.5 {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // sortCharsYFirstly sorts chars by Y (fuzzy group by threshold), then by X.
 // Matching Python Recognizer.sort_Y_firstly in recognizer.py:26-33:
 //
@@ -378,7 +451,13 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 		}
 		if strings.TrimSpace(tb.Text) == "" {
 			tb.Text = ""
-			needOCR = append(needOCR, i)
+			// A char-less detect box that is a left-overhang fragment of a
+			// same-line neighbor (which already carries the glyphs via the
+			// char layer) would only re-read and duplicate the neighbor's text
+			// if OCR-filled. Leave it empty; the trailing filter drops it.
+			if !boxIsCoveredLeftFragment(boxes, boxChars, i, tb.Text) {
+				needOCR = append(needOCR, i)
+			}
 		}
 		result = append(result, tb)
 	}
