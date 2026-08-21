@@ -1160,3 +1160,74 @@ func TestReadMailBody_AttachmentPreservesRaw(t *testing.T) {
 		t.Errorf("payload = %q, want 中文 (charset-decoded)", payload)
 	}
 }
+
+// TestDecodeHeaderWord_Charsets verifies the charset routing behind RFC 2047
+// encoded-word decoding. The "gb2312" label must decode plain 8-bit
+// GB2312/GBK bytes — not HZ escape sequences — because real-world mail
+// labeled gb2312 carries plain bytes (GBK is a compatible superset; Python's
+// gb2312 codec behaves the same). HZ decoding stays available under its own
+// "hz-gb-2312" label. An unsupported charset leaves the value untouched.
+func TestDecodeHeaderWord_Charsets(t *testing.T) {
+	encodedWord := func(charset string, raw []byte) string {
+		return "=?" + charset + "?B?" + base64.StdEncoding.EncodeToString(raw) + "?="
+	}
+
+	tests := []struct {
+		name   string
+		header string
+		want   string
+	}{
+		{"gb2312 label decodes plain GB2312 bytes", encodedWord("gb2312", []byte{0xD6, 0xD0, 0xCE, 0xC4}), "中文"},
+		{"gbk", encodedWord("gbk", []byte{0xD6, 0xD0, 0xCE, 0xC4}), "中文"},
+		{"gb18030", encodedWord("gb18030", []byte{0xD6, 0xD0, 0xCE, 0xC4}), "中文"},
+		{"big5", encodedWord("big5", []byte{0xA4, 0xA4, 0xA4, 0xE5}), "中文"},
+		{"shift_jis", encodedWord("shift_jis", []byte{0x93, 0xFA, 0x96, 0x7B}), "日本"},
+		{"euc-kr", encodedWord("euc-kr", []byte{0xC7, 0xD1, 0xB1, 0xB9}), "한국"},
+		{"iso-8859-1", encodedWord("iso-8859-1", []byte{'c', 'a', 'f', 0xE9}), "café"},
+		{"hz-gb-2312 keeps HZ escape decoding", encodedWord("hz-gb-2312", []byte("~{VPND~}")), "中文"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := decodeHeaderWord(tt.header); got != tt.want {
+				t.Errorf("decodeHeaderWord(%q) = %q, want %q", tt.header, got, tt.want)
+			}
+		})
+	}
+
+	unsupported := encodedWord("x-unsupported-charset", []byte{0x01, 0x02})
+	if got := decodeHeaderWord(unsupported); got != unsupported {
+		t.Errorf("unsupported charset: decodeHeaderWord(%q) = %q, want value untouched", unsupported, got)
+	}
+}
+
+// TestParseEML_GB2312EncodedSubject is the end-to-end regression for the
+// charset fix: a subject labeled gb2312 carrying plain 8-bit bytes must
+// arrive decoded, not as the raw "=?gb2312?B?...?=" blob.
+func TestParseEML_GB2312EncodedSubject(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"Subject: =?gb2312?B?" + base64.StdEncoding.EncodeToString([]byte{0xD6, 0xD0, 0xCE, 0xC4}) + "?=",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"body",
+	}, "\r\n")
+
+	content := parseEML(strings.NewReader(raw), []string{"subject"})
+	if content["subject"] != "中文" {
+		t.Errorf("subject = %q, want 中文", content["subject"])
+	}
+}
+
+// TestDecodeMailPayload_DeclaredCharsets verifies the body-side charset
+// resolution: a gb2312-labeled body carries plain 8-bit bytes (routed to
+// GBK like the header path, not HZGB2312), and a declared charset beyond the
+// fallback chain (big5) decodes via charsetEncoding instead of degrading to
+// latin-1 mojibake.
+func TestDecodeMailPayload_DeclaredCharsets(t *testing.T) {
+	if got := decodeMailPayload([]byte{0xD6, 0xD0, 0xCE, 0xC4}, "gb2312"); got != "中文" {
+		t.Errorf("gb2312 body = %q, want 中文", got)
+	}
+	if got := decodeMailPayload([]byte{0xA4, 0xA4, 0xA4, 0xE5}, "big5"); got != "中文" {
+		t.Errorf("big5 body = %q, want 中文", got)
+	}
+}

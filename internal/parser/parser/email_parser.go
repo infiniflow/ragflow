@@ -34,7 +34,11 @@ import (
 	"github.com/AkmalOt/gomsg"
 	"golang.org/x/net/html"
 	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/encoding/korean"
 	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/utility"
@@ -214,18 +218,43 @@ func targetFieldsSet(fields []string) map[string]bool {
 
 // -- header decoding (RFC 2047) --
 
+// charsetEncoding maps a MIME charset label to its decoder, covering the
+// charsets common in real-world mail beyond utf-8: the Chinese families
+// (gb2312/gbk/gb18030, big5), shift_jis, euc-kr, and latin-1. It is shared by
+// the RFC 2047 header decoder and decodeMailPayload so headers and bodies
+// resolve a charset label identically.
+//
+// The "gb2312" label maps to GBK, not HZGB2312: mail labeled gb2312 carries
+// plain 8-bit GB2312 bytes (GBK is a compatible superset), while HZGB2312
+// only decodes the 7-bit HZ escape form used under the distinct "hz-gb-2312"
+// label. This mirrors Python, where the gb2312 codec decodes plain bytes.
+func charsetEncoding(charset string) (encoding.Encoding, bool) {
+	switch strings.ToLower(strings.TrimSpace(charset)) {
+	case "gb2312", "gbk":
+		return simplifiedchinese.GBK, true
+	case "gb18030":
+		return simplifiedchinese.GB18030, true
+	case "hz-gb-2312":
+		return simplifiedchinese.HZGB2312, true
+	case "big5":
+		return traditionalchinese.Big5, true
+	case "shift_jis", "shift-jis", "sjis":
+		return japanese.ShiftJIS, true
+	case "euc-kr":
+		return korean.EUCKR, true
+	case "iso-8859-1", "iso8859-1", "latin1":
+		return charmap.ISO8859_1, true
+	}
+	return nil, false
+}
+
 // rfc2047Decoder decodes RFC 2047 encoded-words (e.g. "=?utf-8?B?...?=") in
-// header values. utf-8 is handled natively by mime; the CharsetReader adds
-// the same CJK family that decodeMailPayload covers for bodies.
+// header values. utf-8 is handled natively by mime; the CharsetReader covers
+// the non-UTF-8 charsets via charsetEncoding.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
-		switch strings.ToLower(strings.TrimSpace(charset)) {
-		case "gb2312":
-			return transform.NewReader(input, simplifiedchinese.HZGB2312.NewDecoder()), nil
-		case "gbk":
-			return transform.NewReader(input, simplifiedchinese.GBK.NewDecoder()), nil
-		case "gb18030":
-			return transform.NewReader(input, simplifiedchinese.GB18030.NewDecoder()), nil
+		if enc, ok := charsetEncoding(charset); ok {
+			return transform.NewReader(input, enc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
 	},
@@ -478,8 +507,11 @@ func walkHTMLBodyText(n *html.Node, w *leafWriter) {
 	case html.TextNode:
 		w.writeText(n.Data)
 	case html.DocumentNode:
-		// html.Parse wraps the fragment in a Document node; without
-		// descending here the whole body would be dropped.
+		// html.Parse always wraps the fragment in a Document node holding an
+		// <html><body> skeleton; the walker relies on descending through those
+		// transparent containers (head/script/style subtrees are skipped by the
+		// ElementNode case), so without descending here the whole body would
+		// be dropped.
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
 			walkHTMLBodyText(child, w)
 		}
@@ -541,18 +573,9 @@ func decodeWithCharset(payload []byte, charset string) (string, error) {
 			return s, nil
 		}
 		return "", fmt.Errorf("invalid utf-8")
-	case "latin1", "iso-8859-1", "iso8859-1":
-		runes := make([]rune, len(payload))
-		for i, b := range payload {
-			runes[i] = rune(b)
-		}
-		return string(runes), nil
-	case "gb2312":
-		return decodeTransform(payload, simplifiedchinese.HZGB2312.NewDecoder())
-	case "gbk":
-		return decodeTransform(payload, simplifiedchinese.GBK.NewDecoder())
-	case "gb18030":
-		return decodeTransform(payload, simplifiedchinese.GB18030.NewDecoder())
+	}
+	if enc, ok := charsetEncoding(charset); ok {
+		return decodeTransform(payload, enc.NewDecoder())
 	}
 	// Unknown charset: treat as latin-1.
 	runes := make([]rune, len(payload))
