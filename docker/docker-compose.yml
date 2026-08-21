@@ -32,8 +32,8 @@ services:
     image: ${RAGFLOW_IMAGE}
     ulimits:
       nofile:
-        soft: 65535
-        hard: 65535
+        soft: 65536
+        hard: 65536
       nproc:
         soft: 65535
         hard: 65535
@@ -80,10 +80,6 @@ services:
     # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
 
   ragflow-gpu:
     depends_on:
@@ -95,8 +91,8 @@ services:
     image: ${RAGFLOW_IMAGE}
     ulimits:
       nofile:
-        soft: 65535
-        hard: 65535
+        soft: 65536
+        hard: 65536
       nproc:
         soft: 65535
         hard: 65535
@@ -140,10 +136,6 @@ services:
     # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
     deploy:
       resources:
         reservations:
