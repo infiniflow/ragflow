@@ -175,6 +175,19 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 				continue
 			}
 			ni, nj := norm[i], norm[j]
+			// Never collapse a substring across columns. OCR double-detection
+			// fragments always share the SAME column as their container; a
+			// substring in a DIFFERENT column (e.g. the opposite column of a
+			// two-column page whose wide OCR box spans the gutter, or a left
+			// column short line whose text happens to be a substring of a right
+			// column paragraph) is independent document text and must be kept.
+			// ColID is assigned by AssignColumn, which now runs before dedup;
+			// boxes without column info (ColID==0, the single-column default, or
+			// unset) keep the original geometry-only behaviour so legacy tests
+			// and single-column docs are unaffected.
+			if boxes[i].ColID != boxes[j].ColID {
+				continue
+			}
 			// Collapse only when the SUBSTRING-text box is geometrically CONTAINED
 			// in the text-containing box. Binding the geometry to the actual
 			// substring (not merely the shorter-height box) avoids silently
