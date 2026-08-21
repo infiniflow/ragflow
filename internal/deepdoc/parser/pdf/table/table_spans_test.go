@@ -23,20 +23,26 @@ func TestCalSpans_NonSpanningCellsNotPolluted(t *testing.T) {
 	spans, covered := CalSpans(rows)
 
 	// Q1 at [0,0] has X0=0, X1=100 which should only cover its own column.
-	// It should NOT get a colspan.
+	// It must NOT become a span origin — only SP/`spanning` cells may span.
 	if s, ok := spans[[2]int{0, 0}]; ok {
 		t.Errorf("Q1 at [0,0] should NOT have colspan, got %v. "+
 			"Spanning cell at [0,1] polluted column boundaries", s)
 	}
 
-	// 部门开支汇总 at [0,1] has X0=0, X1=200 which DOES span columns 0 and 1.
+	// 部门开支汇总 at [0,1] has X0=0, X1=200, so by Python's __cal_spans
+	// (which checks every column centre against the SP box's X range, both
+	// directions) it spans columns 0, 1 and 2: colCentre[0]=50 and
+	// colCentre[2]=150.5 both fall inside [0,200]. colspan == 3.
 	if s, ok := spans[[2]int{0, 1}]; !ok {
-		t.Error("部门开支汇总 at [0,1] should have colspan=2 (covers X=0-200)")
-	} else if s[0] != 2 {
-		t.Errorf("部门开支汇总 colspan = %d, want 2", s[0])
+		t.Error("部门开支汇总 at [0,1] should have a colspan (covers X=0-200)")
+	} else if s[0] != 3 {
+		t.Errorf("部门开支汇总 colspan = %d, want 3", s[0])
 	}
 
-	// Q2 at [0,2] should be covered by the spanning cell (col 2 is within X=0-200).
+	// Both neighbours are covered by the spanning cell.
+	if !covered[[2]int{0, 0}] {
+		t.Error("Q1 at [0,0] should be covered by spanning cell at [0,1]")
+	}
 	if !covered[[2]int{0, 2}] {
 		t.Error("Q2 at [0,2] should be covered by spanning cell at [0,1]")
 	}
