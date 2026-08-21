@@ -120,6 +120,49 @@ func TestCanvasDatasetIDs_DedupEmpty(t *testing.T) {
 	}
 }
 
+// TestCanvasDatasetIDs_ScopeEscalationGuard asserts a trusted WithScope
+// injection is authoritative: tool-supplied dataset ids are intersected with it,
+// so a prompt-injected model cannot read KBs outside the conversation.
+func TestCanvasDatasetIDs_ScopeEscalationGuard(t *testing.T) {
+	// Conversation bound to kb1 + kb2; the model tries to escalate to kb3/kb4.
+	ctx := WithScope(context.Background(), "tenant-1", []string{"kb1", "kb2"})
+
+	// Explicit ids that partially overlap must be reduced to the intersection.
+	ids := canvasDatasetIDs(ctx, []string{"kb2", "kb3", "kb4"})
+	if len(ids) != 1 || ids[0] != "kb2" {
+		t.Errorf("canvasDatasetIDs = %v, want intersection [kb2]", ids)
+	}
+
+	// Explicit ids fully outside the scope must yield empty (no escalation).
+	if ids := canvasDatasetIDs(ctx, []string{"kb3", "kb4"}); len(ids) != 0 {
+		t.Errorf("canvasDatasetIDs = %v, want empty intersection", ids)
+	}
+
+	// No explicit ids: the injected scope is used verbatim.
+	ids = canvasDatasetIDs(ctx, nil)
+	if len(ids) != 2 || ids[0] != "kb1" || ids[1] != "kb2" {
+		t.Errorf("canvasDatasetIDs = %v, want injected scope [kb1 kb2]", ids)
+	}
+}
+
+// TestCanvasTenantID_UsesInjectedTenant asserts the injected scope's tenant is
+// authoritative (shared-tenant conversations must search the chat owner's
+// tenant index, not the requesting user's id).
+func TestCanvasTenantID_UsesInjectedTenant(t *testing.T) {
+	ctx := WithScope(context.Background(), "tenant-owner", []string{"kb1"})
+	if got := canvasTenantID(ctx); got != "tenant-owner" {
+		t.Errorf("canvasTenantID = %q, want injected tenant tenant-owner", got)
+	}
+
+	// Without injection it falls back to canvas state.
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "canvas-tenant"
+	ctx2 := runtime.WithState(context.Background(), state)
+	if got := canvasTenantID(ctx2); got != "canvas-tenant" {
+		t.Errorf("canvasTenantID = %q, want canvas tenant canvas-tenant", got)
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) > 0 && len(sub) > 0 && (s == sub || containsSub(s, sub))
 }

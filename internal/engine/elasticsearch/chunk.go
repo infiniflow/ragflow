@@ -1298,6 +1298,167 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}, nil
 }
 
+// SearchByRegexp executes a regex-match-only search over chunk content. It
+// reuses the same scope-filter builder and response converter as Search but
+// emits a Lucene `regexp` query on the chunk content field instead of text /
+// dense match expressions. This backs the agent's grep_chunks tool.
+//
+// The caller is responsible for translating a user regex into Lucene syntax;
+// patterns using unsupported constructs should be detected and handled by the
+// caller (fallback to broad recall + in-memory filtering).
+func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
+	if len(req.IndexNames) == 0 {
+		return nil, fmt.Errorf("index names cannot be empty")
+	}
+	if strings.TrimSpace(req.Pattern) == "" {
+		return nil, fmt.Errorf("regexp pattern cannot be empty")
+	}
+
+	offset := max(req.Offset, 0)
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 30
+	}
+
+	// Build the scope filter (kb_id terms + available_int + explicit filters).
+	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, false, false)
+
+	// Attach the regexp query as a must clause on the chunk content field.
+	// Two critical ES keyword-regexp behaviours:
+	//  1. ES regexp matches the WHOLE field value, not a substring. To emulate
+	//     "contains" (what grep_chunks and the old in-memory RE2 did), wrap the
+	//     pattern as ".*(pattern).*" — a bare "何进" would only match a chunk
+	//     whose content is exactly "何进" (yielding 0 hits).
+	//  2. case_insensitive is intentionally NOT set: on a keyword field ES's
+	//     case-insensitive regexp cannot match CJK text (empirically 0 for
+	//     patterns like "马元义"). CJK keywords have no case; English
+	//     case-sensitivity is acceptable.
+	regexpPattern := ".*(" + req.Pattern + ").*"
+	regexpClause := map[string]interface{}{
+		"regexp": map[string]interface{}{
+			"content_with_weight": map[string]interface{}{
+				"value": regexpPattern,
+			},
+		},
+	}
+
+	if boolQuery == nil {
+		boolQuery = map[string]interface{}{}
+	}
+	if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
+		if must, ok := boolMap["must"].([]interface{}); ok {
+			boolMap["must"] = append(must, regexpClause)
+		} else {
+			boolMap["must"] = []interface{}{regexpClause}
+		}
+	} else {
+		boolQuery = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []interface{}{regexpClause},
+			},
+		}
+	}
+
+	queryBody := map[string]interface{}{
+		"query": boolQuery,
+		"size":  limit,
+		"from":  offset,
+	}
+
+	// When an explicit sort is requested (e.g. a document's reading order), push
+	// it down so ES applies offset/limit over the deterministically-ordered
+	// result set. This is what lets list_chunks page through a document in
+	// reading order without over-fetching.
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
+			queryBody["sort"] = sortClause
+		}
+	}
+
+	// Narrow the returned _source to the requested fields when given. The regexp
+	// matches content_with_weight, so callers must keep it in SelectFields or the
+	// hits will carry no content.
+	if len(req.SelectFields) > 0 {
+		queryBody["_source"] = req.SelectFields
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
+		return nil, fmt.Errorf("error encoding regexp query: %w", err)
+	}
+
+	payload := append([]byte(nil), buf.Bytes()...)
+	var (
+		totalHits  int64
+		allResults []map[string]interface{}
+		firstErr   error
+	)
+	for _, indexName := range req.IndexNames {
+		res, err := e.client.Search(
+			e.client.Search.WithContext(ctx),
+			e.client.Search.WithIndex(indexName),
+			e.client.Search.WithBody(bytes.NewReader(payload)),
+			e.client.Search.WithTrackTotalHits(true),
+		)
+		if err != nil {
+			common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		if res.IsError() {
+			bodyBytes, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+			// A 4xx here is typically a Lucene-incompatible pattern (e.g. \b,
+			// lookahead) being rejected. Surface it so the caller's RE2 in-memory
+			// fallback can take over instead of silently returning empty.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
+			}
+			continue
+		}
+
+		var esResp SearchResponse
+		decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
+		res.Body.Close()
+		if decodeErr != nil {
+			common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
+			if firstErr == nil {
+				firstErr = fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
+			}
+			continue
+		}
+
+		searchChunks := convertESResponse(&esResp, "")
+		totalHits += esResp.Hits.Total.Value
+		allResults = append(allResults, searchChunks...)
+	}
+
+	// If every requested index failed (no results at all), propagate the error
+	// so the caller can fall back (e.g. GrepAdapter's in-memory RE2 filter).
+	// Partial success (some indexes returned results) is returned as-is.
+	if len(allResults) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+
+	// With an explicit sort the caller wants a deterministic (e.g. reading)
+	// order; ES already returned each index's page in that order, so preserve it
+	// instead of re-sorting by score. Otherwise sort by _score descending
+	// (regexp scoring favours shorter patterns with more matches), capped to
+	// limit.
+	if req.Sort == nil || len(req.Sort.Fields) == 0 {
+		allResults = sortByScore(allResults, limit)
+	}
+
+	return &types.SearchResult{
+		Chunks: allResults,
+		Total:  totalHits,
+	}, nil
+}
+
 // searchAfterFetcher issues one ES search request with the given batch
 // size and search_after cursor, returning the decoded response. Defined
 // as a function type so the pagination logic below can be unit-tested

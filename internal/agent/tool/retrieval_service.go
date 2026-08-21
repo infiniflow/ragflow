@@ -33,14 +33,20 @@ import (
 // full Chunk type (with document_id, docnm_kwd, position, etc.)
 // lives in internal/entity and is wired in by a follow-up phase.
 type RetrievalChunk struct {
-	ID               string
-	Content          string
-	DocumentID       string
-	DocumentName     string
-	DatasetID        string
-	ImageID          string
-	URL              string
-	Positions        any
+	ID           string
+	Content      string
+	DocumentID   string
+	DocumentName string
+	DatasetID    string
+	ImageID      string
+	URL          string
+	Positions    any
+	// ChunkIndex is the chunk's 0-based reading-order index within its document
+	// (ES `chunk_order_int`). Deep-read tools sort chunks by it so the model reads
+	// a document sequentially rather than in arbitrary match order.
+	ChunkIndex int
+	// PageNum is the chunk's page number within its document (ES `page_num_int`).
+	PageNum          int
 	Score            float64
 	TermSimilarity   float64
 	VectorSimilarity float64
@@ -69,6 +75,17 @@ type RetrievalRequest struct {
 	// CanvasState.Sys["user_id"] when empty (set by the Begin component at
 	// internal/agent/component/begin.go:82).
 	TenantID string
+	// OnlyOriginalText, when true, restricts retrieval to ordinary document
+	// text chunks (available_int=1 and no compile_kwd), excluding
+	// knowledge-compiled products (wiki_page / hypergraph / mindmap / list /
+	// timeline). This is the same "only ordinary prose" filter grep_chunks
+	// uses, so the model reads original document text rather than derived
+	// knowledge-graph content.
+	OnlyOriginalText bool
+	// SelectFields limits the ES _source fields returned per hit. Callers that
+	// only need doc_id, page_num_int and chunk_order_int narrow the payload this
+	// way; content_with_weight must stay in the list for content.
+	SelectFields []string
 }
 
 // RetrievalService is the knowledge-base search interface used by the tool.
@@ -190,6 +207,73 @@ func (simpleRetrievalService) Search(_ context.Context, _ *gorm.DB, req Retrieva
 // tests and local demos.
 func SetSimpleRetrievalService() {
 	SetRetrievalService(simpleRetrievalService{})
+}
+
+// GrepService is the regex-search surface used by the grep_chunks tool. It is
+// separate from RetrievalService because regex matching over chunk content is a
+// distinct retrieval mode (ES Lucene regexp pushdown with an in-memory RE2
+// fallback for engines without native regex support).
+type GrepService interface {
+	Grep(ctx context.Context, req GrepRequest) ([]RetrievalChunk, error)
+}
+
+// GrepRequest is the input to GrepService.Grep.
+type GrepRequest struct {
+	Pattern    string   // The regex to match against chunk content (case-insensitive).
+	DatasetIDs []string // Knowledge base IDs to restrict to.
+	DocScope   []string // Document IDs to restrict to (empty = no doc filter).
+	Limit      int      // Max number of chunks to return.
+	Offset     int      // Number of chunks to skip (0-based), for pagination.
+	// Sort is an ordered list of field names to order results by ascending
+	// (e.g. a document's reading order: chunk_order_int, page_num_int, top_int).
+	// When set, offset/limit pagination happens over the sorted result set.
+	Sort []string // Ordered ascending sort fields.
+	// SelectFields limits the ES _source fields returned per hit. Callers that
+	// only need doc_id, page_num_int and chunk_order_int (plus content) narrow the
+	// payload this way; content_with_weight must stay in the list for content.
+	SelectFields []string
+	TenantID     string // Calling tenant (== user_id in RAGFlow's data model).
+}
+
+var (
+	grepServiceMu   sync.RWMutex
+	grepServiceImpl GrepService = stubGrepService{}
+)
+
+// SetGrepService installs the (production or test) GrepService singleton.
+// Passing nil reverts to the stub that returns ErrGrepServiceMissing.
+func SetGrepService(svc GrepService) {
+	grepServiceMu.Lock()
+	defer grepServiceMu.Unlock()
+	if svc == nil {
+		grepServiceImpl = stubGrepService{}
+		return
+	}
+	grepServiceImpl = svc
+}
+
+// GetGrepService returns the registered GrepService. Always non-nil.
+func GetGrepService() GrepService {
+	grepServiceMu.RLock()
+	defer grepServiceMu.RUnlock()
+	return grepServiceImpl
+}
+
+// ErrGrepServiceMissing is returned when no GrepService has been registered.
+var ErrGrepServiceMissing = errors.New(
+	"grep service not registered — call tool.SetGrepService(...) at boot",
+)
+
+// ErrRegexpNotSupported is returned when the underlying doc engine does not
+// implement regex matching on chunk content (e.g. Infinity).
+var ErrRegexpNotSupported = errors.New(
+	"grep_chunks: regex matching is not supported by this document engine",
+)
+
+type stubGrepService struct{}
+
+func (stubGrepService) Grep(_ context.Context, _ GrepRequest) ([]RetrievalChunk, error) {
+	return nil, ErrGrepServiceMissing
 }
 
 // ErrKGRetrievalServiceMissing is returned when the agent's

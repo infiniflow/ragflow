@@ -338,6 +338,17 @@ func nlpRequestFromRetrieval(
 		vectorSimilarityWeight := 1 - *req.KeywordsSimilarityWeight
 		nlpReq.VectorSimilarityWeight = &vectorSimilarityWeight
 	}
+	// Restrict to ordinary document text chunks with the SAME filter grep_chunks
+	// applies: available_int=1 (must_not available_int<1 semantics so chunks
+	// whose available_int is absent still pass) and must_not exists compile_kwd
+	// to exclude knowledge-compiled products. Setting available_int explicitly
+	// here matches grep exactly (both go through buildBoolQueryFromCondition).
+	if req.OnlyOriginalText {
+		nlpReq.Filter = map[string]interface{}{
+			"available_int": 1,
+			"must_not":      map[string]interface{}{"exists": "compile_kwd"},
+		}
+	}
 	return nlpReq
 }
 
@@ -540,10 +551,21 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
 		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
 		Positions:        firstValueFromMap(raw, "positions", "position_int"),
+		ChunkIndex:       intFromMap(raw, "chunk_order_int"),
+		PageNum:          intFromMap(raw, "page_num_int"),
 		Score:            scoreFromMap(raw),
 		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
 		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),
 	}
+}
+
+// intFromMap returns raw[key] as an int, tolerating the numeric types JSON
+// decoding and the doc engine produce (float64, float32, int, int64).
+func intFromMap(raw map[string]any, key string) int {
+	if f, ok := numberFromMap(raw, key); ok {
+		return int(f)
+	}
+	return 0
 }
 
 // stringFromMap returns raw[key].(string) or "" if missing / wrong
