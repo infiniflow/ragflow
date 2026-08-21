@@ -1335,10 +1335,18 @@ class BaiduYiyanChat(Base):
 
         import qianfan
 
-        key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = qianfan.ChatCompletion(ak=ak, sk=sk)
+        logging.info(f"key: {key}")
+        try:
+            key_obj = json.loads(key)
+        except (json.JSONDecodeError, TypeError):
+            key_obj = key
+        if isinstance(key_obj, dict):
+            ak = key_obj.get("yiyan_ak", "")
+            sk = key_obj.get("yiyan_sk", "")
+            self.client = qianfan.ChatCompletion(ak=ak, sk=sk)
+        else:
+            # adapt to one-line api_key
+            self.client = qianfan.ChatCompletion(access_token=key_obj)
         self.model_name = model_name.lower()
 
     def _clean_conf(self, gen_conf):
