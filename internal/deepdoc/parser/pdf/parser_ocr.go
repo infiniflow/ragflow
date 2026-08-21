@@ -229,10 +229,26 @@ func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextC
 	for _, c := range chars {
 		bestIdx := -1
 		bestOverlap := 1e-6
+		bestArea := 0.0
 		for i := range boxes {
 			overlap := charBoxOverlapRatio(c, boxes[i].x0, boxes[i].x1, boxes[i].y0, boxes[i].y1)
-			if overlap >= bestOverlap {
+			if overlap < bestOverlap {
+				continue
+			}
+			area := (boxes[i].x1 - boxes[i].x0) * (boxes[i].y1 - boxes[i].y0)
+			// Tie-break: when a char is fully inside several boxes (a full-line
+			// box and a contained OCR fragment that over-segments it), prefer
+			// the LARGER container so the fragment cannot steal the glyph and
+			// truncate the container. Mirrors Python's Recognizer.find_overlapped
+			// (recognizer.py:223), which keeps the max-overlapped (largest-area)
+			// box on ties via a strict `>`. The previous `>=`-with-last-wins
+			// rule let the smaller fragment win, truncating the container; after
+			// DedupSubstringOverlaps could no longer recognise the fragment as a
+			// substring, NaiveVerticalMerge glued it back on and duplicated text
+			// (ocr_real RAG分词 doubling).
+			if overlap > bestOverlap || area > bestArea {
 				bestOverlap = overlap
+				bestArea = area
 				bestIdx = i
 			}
 		}
