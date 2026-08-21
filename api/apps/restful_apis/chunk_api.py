@@ -57,7 +57,7 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, filter_doc_ids_by_metadata
+from common.metadata_utils import apply_meta_data_filter, convert_conditions
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
@@ -364,12 +364,28 @@ async def retrieval_test(tenant_id):
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
-            doc_ids = filter_doc_ids_by_metadata(
-                kb_ids,
-                convert_conditions(metadata_condition),
-                metadata_condition.get("logic", "and"),
-                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            # Try ES / Infinity / GaussDB push-down first (same as the
+            # UI /datasets/search path) so large datasets don't pay the
+            # in-memory metadata round-trip. The in-memory
+            # filter_doc_ids_by_metadata remains the fallback for
+            # backends without push-down support (or filters the push-down
+            # path can't express). See issue #18397.
+            manual_filter = {
+                "method": "manual",
+                "manual": convert_conditions(metadata_condition),
+                "logic": metadata_condition.get("logic", "and"),
+            }
+            doc_ids = await apply_meta_data_filter(
+                manual_filter,
+                None,
+                "",
+                None,
+                None,
+                kb_ids=kb_ids,
+                metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
             )
+            if doc_ids is None:
+                doc_ids = []
             if not doc_ids and metadata_condition.get("conditions"):
                 return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
             if metadata_condition and not doc_ids:
