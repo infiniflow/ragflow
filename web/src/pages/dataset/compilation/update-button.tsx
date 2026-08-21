@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/tooltip';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
 import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
 
 import { UpdateRunProgress } from './update-run-progress';
 
@@ -42,13 +41,6 @@ export function CompilationUpdateButton({
   const { status } = useGenerateStatus(traceData);
   const isRunning = status === GenerateStatus.Running;
   const isGenerating = isRunning || status === GenerateStatus.Failed;
-
-  // Go/hybrid: compilation is auto-driven by the scheduler with no manual
-  // re-merge, so hide the update control rather than offer a trigger that
-  // cannot work (plan v4.1 §4.2).
-  if (isGoDatasetBackend()) {
-    return null;
-  }
 
   // A failed trace persists (progress stays < 0) until the next run, so it
   // must not keep the button visible on its own — only real changes or a

@@ -561,11 +561,10 @@ export const useSetDocumentParser = () => {
     }) => {
       // Build update payload
       const updateData: Record<string, unknown> = {};
-      if (parserId) {
-        updateData.chunk_method = parserId;
-      }
       if (pipelineId) {
         updateData.pipeline_id = pipelineId;
+      } else if (parserId) {
+        updateData.chunk_method = parserId;
       }
 
       if (parserConfig) {

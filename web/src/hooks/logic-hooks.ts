@@ -421,14 +421,23 @@ export const useScrollToBottom = (
   const ref = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isAtBottomRef = useRef(true);
+  // `null` means "no baseline yet", so the very first measurement has to fall
+  // back to the distance check instead of guessing a scroll direction.
+  const lastScrollTopRef = useRef<number | null>(null);
 
   useEffect(() => {
     isAtBottomRef.current = isAtBottom;
   }, [isAtBottom]);
 
-  const checkIfUserAtBottom = useCallback(() => {
+  const checkIfNearBottom = useCallback(() => {
     if (!containerRef?.current) return true;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    // Content shorter than the viewport has nothing to scroll, so it is
+    // trivially "at the bottom". Returning false here would latch auto-follow
+    // off when a stream starts from a short transcript: growing content does
+    // not fire a `scroll` event, so no later check would ever re-arm the flag
+    // and the view would never track the incoming message.
+    if (scrollHeight <= clientHeight) return true;
     return Math.abs(scrollTop + clientHeight - scrollHeight) < 25;
   }, [containerRef]);
 
@@ -437,11 +446,31 @@ export const useScrollToBottom = (
     const container = containerRef.current;
 
     const handleScroll = () => {
+      const previousScrollTop = lastScrollTopRef.current;
+      const { scrollTop } = container;
+      lastScrollTopRef.current = scrollTop;
+
+      const nearBottom = checkIfNearBottom();
+      let atBottom: boolean;
+      if (nearBottom) {
+        atBottom = true;
+      } else if (previousScrollTop === null || scrollTop < previousScrollTop) {
+        // Only a user gesture (wheel, drag, keys, touch) can shrink `scrollTop`,
+        // so this is the one reliable signal that they want to leave the bottom.
+        atBottom = false;
+      } else {
+        // We are far from the bottom yet `scrollTop` did not move: the gap comes
+        // from content that grew after `scrollToBottom` ran but before this
+        // event was dispatched. Disarming here would strand auto-follow forever,
+        // because growing content never fires another `scroll` event to re-arm
+        // it. Keep whatever the user last asked for.
+        atBottom = isAtBottomRef.current;
+      }
+
       // Write the ref here rather than relying on the effect that mirrors
       // `isAtBottom`: that effect only runs after the next render, and while the
       // main thread is busy rendering a streaming answer an already scheduled
       // auto-scroll would still see the stale `true`.
-      const atBottom = checkIfUserAtBottom();
       isAtBottomRef.current = atBottom;
       setIsAtBottom(atBottom);
     };
@@ -449,7 +478,7 @@ export const useScrollToBottom = (
     container.addEventListener('scroll', handleScroll);
     handleScroll();
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [containerRef, checkIfUserAtBottom]);
+  }, [containerRef, checkIfNearBottom]);
 
   // Imperative scroll function
   const scrollToBottom = useCallback(() => {

@@ -4,8 +4,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
-import { useStaleDatasetIds } from '@/hooks/use-knowledge-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
@@ -15,7 +18,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { z } from 'zod';
@@ -30,14 +33,11 @@ type ChatSettingsProps = { hasSingleChatBox: boolean };
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const { data } = useFetchChat();
 
-  // Only the persisted ids need validation: ids picked from the dataset
-  // select are valid by construction, while a persisted id may reference a
-  // dataset that has since been deleted or emptied of chunks.
-  const { staleDatasetIds, settled: datasetsFetched } = useStaleDatasetIds(
+  const chatSettingSchema = useChatSettingSchema();
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    chatSettingSchema,
     data?.dataset_ids,
   );
-
-  const formSchema = useChatSettingSchema(staleDatasetIds);
   const { updateChat, loading } = useUpdateChat();
   const findLlmByUuid = useFindLlmByUuid();
   const { id } = useParams();
@@ -155,19 +155,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     }
   }, [data, form]);
 
-  const datasetIds = useWatch({ control: form.control, name: 'dataset_ids' });
-  const trigger = form.trigger;
-
-  // A persisted dataset_ids value never fires onChange validation, so once
-  // the lookup of those ids has settled, revalidate explicitly — it may
-  // reference datasets that have since been deleted or emptied of chunks.
-  useEffect(() => {
-    if (!datasetsFetched || !datasetIds?.length) {
-      return;
-    }
-
-    trigger('dataset_ids');
-  }, [trigger, datasetsFetched, datasetIds.length]);
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <>
