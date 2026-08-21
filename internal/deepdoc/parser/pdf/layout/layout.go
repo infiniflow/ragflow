@@ -183,12 +183,12 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 			// the smaller, contained box, so the taller container is kept.
 			if len(ni) >= len(nj) && strings.Contains(ni, nj) {
 				// j's text is a substring of i's -> drop j only if j sits inside i.
-				if boxInside(boxes[j], boxes[i]) {
+				if boxInsideTolerant(boxes[j], boxes[i]) {
 					drop[j] = true
 				}
 			} else if len(nj) > len(ni) && strings.Contains(nj, ni) {
 				// i's text is a substring of j's -> drop i only if i sits inside j.
-				if boxInside(boxes[i], boxes[j]) {
+				if boxInsideTolerant(boxes[i], boxes[j]) {
 					drop[i] = true
 					break
 				}
@@ -232,6 +232,31 @@ func boxInside(inner, outer pdf.TextBox) bool {
 		return false
 	}
 	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
+		return false
+	}
+	return true
+}
+
+// dedupYTolerancePt tolerates a small Y-boundary overshoot of an OCR
+// double-detection fragment. Such fragments sit on the SAME text line as their
+// container but their detected Y bounds jitter by ~0.5-2pt of detection noise
+// (observed on Rag Flow Usage / 三国人物); the strict boxInside then misses
+// them and the duplicate text leaks into the output after TextMerge. We only
+// relax Y (never X) and only inside DedupSubstringOverlaps, where the
+// text-substring precondition already proves the box is an OCR duplicate — so
+// a few points of Y noise must not keep it. The tolerance stays far below a
+// full line height, so genuine adjacent-line or partial-overlap boxes (kept by
+// the #18568 guards) are never collapsed here.
+const dedupYTolerancePt = 3.0
+
+// boxInsideTolerant is boxInside with a small Y-boundary tolerance (see
+// dedupYTolerancePt). X containment stays strict so adjacent-column duplicates
+// remain kept.
+func boxInsideTolerant(inner, outer pdf.TextBox) bool {
+	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
+		return false
+	}
+	if inner.Top < outer.Top-dedupYTolerancePt || inner.Bottom > outer.Bottom+dedupYTolerancePt {
 		return false
 	}
 	return true

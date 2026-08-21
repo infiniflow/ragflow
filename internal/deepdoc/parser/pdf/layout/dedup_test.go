@@ -175,6 +175,30 @@ func TestDedupSubstringOverlaps(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_YOvershootFragmentDropped locks root-cause-A:
+// an OCR double-detection fragment whose text is a whitespace-normalized
+// substring of the container but whose Y bounds overshoot by a few points of
+// detection noise (outside the strict boxInside) must STILL be collapsed. This
+// is the exact geometry Rag Flow Usage / 三国人物 produce and that leaks
+// duplicated text into the Go output without it.
+func TestDedupSubstringOverlaps_YOvershootFragmentDropped(t *testing.T) {
+	full := pdf.TextBox{
+		Text:       "We'resoextoseeyou again",
+		PageNumber: 0, Top: 224.8, Bottom: 233.3, X0: 477, X1: 599, IsOCR: true,
+	}
+	frag := pdf.TextBox{
+		Text:       "toseeyou again", // substring of full; Y overshoots 0.5pt top / 1.0pt bottom
+		PageNumber: 0, Top: 224.3, Bottom: 234.3, X0: 537, X1: 599, IsOCR: true,
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, frag})
+	if len(got) != 1 {
+		t.Fatalf("Y-overshoot substring fragment must be dropped, got %d boxes", len(got))
+	}
+	if got[0].Text != full.Text {
+		t.Fatalf("the full box must be kept, got %q", got[0].Text)
+	}
+}
+
 // TestDedupSubstringOverlaps_DisjointYKept ensures a substring box at a
 // DISJOINT Y position is kept — a real repeated heading or sentence is legal.
 func TestDedupSubstringOverlaps_DisjointYKept(t *testing.T) {
