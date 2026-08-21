@@ -22,26 +22,32 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
-def _file_routing_patterns():
+def _file_routes():
     tree = ast.parse((REPO_ROOT / "rag/app/manual.py").read_text())
     return [
-        node.args[0].value
+        (node.test.args[0].value, node)
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "re"
-        and node.func.attr == "search"
-        and node.args
-        and isinstance(node.args[0], ast.Constant)
-        and isinstance(node.args[0].value, str)
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Call)
+        and isinstance(node.test.func, ast.Attribute)
+        and isinstance(node.test.func.value, ast.Name)
+        and node.test.func.value.id == "re"
+        and node.test.func.attr == "search"
+        and node.test.args
+        and isinstance(node.test.args[0], ast.Constant)
+        and isinstance(node.test.args[0].value, str)
     ]
 
 
 @pytest.mark.p1
 @pytest.mark.parametrize("filename", ["legacy.doc", "legacy.DOC"])
-def test_legacy_doc_has_no_manual_parser_route(filename):
-    patterns = _file_routing_patterns()
+def test_legacy_doc_is_rejected_with_conversion_guidance(filename):
+    routes = _file_routes()
 
-    assert any(re.search(pattern, "document.docx", re.IGNORECASE) for pattern in patterns)
-    assert not any(re.search(pattern, filename, re.IGNORECASE) for pattern in patterns)
+    assert any(re.search(pattern, "document.docx", re.IGNORECASE) for pattern, _ in routes)
+    doc_route = next(node for pattern, node in routes if re.search(pattern, filename, re.IGNORECASE))
+    error = next(node for node in doc_route.body if isinstance(node, ast.Raise))
+    message = error.exc.args[0].value
+
+    assert ".docx" in message
+    assert "convert" in message.lower()
