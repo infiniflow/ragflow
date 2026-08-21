@@ -32,7 +32,7 @@ import { z } from 'zod';
 import {
   ChunkMethodItem,
   EmbeddingModelItem,
-} from '../dataset/dataset-setting/configuration/common-item';
+} from '../dataset/setting/python/configuration/common-item';
 import { isGoBackend } from '@/utils/backend-runtime';
 
 const FormId = 'dataset-creating-form';

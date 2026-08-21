@@ -11,7 +11,7 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
-import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
+import { useKnowledgeBaseContext } from '../../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
   ImageContextWindow,
