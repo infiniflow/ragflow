@@ -507,7 +507,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
   "name": "sandbox.self_managed",
   "source": "variable",
   "data_type": "json",
-  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 10, \"max_memory\": \"256m\", \"timeout\": 30}"
+  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 3, \"max_memory\": \"256m\", \"timeout\": 30}"
 }
 ```
 
