@@ -161,6 +161,72 @@ def test_transfer_to_sections_only_sanitizes_tables(monkeypatch, output, expecte
     assert sections[0][0] == expected
 
 
+def test_transfer_to_tables_sanitizes_html_table_body(monkeypatch):
+    """Regression for #17298.
+
+    The tables path used to emit MinerU's raw ``table_body`` HTML fragment
+    (``<table><tr><td>...</td></tr></table>``) verbatim into the chunk's
+    ``content_with_weight`` field. The user then saw the literal HTML tag
+    markup as "garbled" table content in the knowledge base. The sections
+    path already sanitizes when ``table_enable=False``; the tables path
+    must do the same so the chunked table content is human-readable.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td rowspan=1 colspan=1></td><td rowspan=1 colspan=1>WEY</td><td rowspan=1 colspan=1>B1</td></tr><tr><td rowspan=1 colspan=1>tA</td><td rowspan=1 colspan=1>AAJEERI</td><td rowspan=1 colspan=1>EPZ$</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>name</td><td>value</td></tr><tr><td>alpha</td><td>1</td></tr></table>",
+            "table_caption": ["cell-level table"],
+            "table_footnote": [],
+            "page_idx": 1,
+            "bbox": (2, 3, 4, 5),
+        },
+    ]
+
+    media = parser._transfer_to_tables(outputs)
+
+    # HTML tags are removed; cell text is preserved (rows are newline-separated,
+    # cells within a row are concatenated without a separator — `_sanitize_section_text`
+    # is intentionally minimal and does not invent inter-cell whitespace).
+    assert media[0][0] == (None, "WEYB1\ntAAAJEERIEPZ$")
+    # Caption is appended after the sanitized body; a blank line separates the
+    # closing </table> newline from the appended caption.
+    assert media[1][0] == (None, "namevalue\nalpha1\n\ncell-level table")
+
+
+def test_transfer_to_tables_does_not_strip_plain_text_tables(monkeypatch):
+    """Plain-text table content (no HTML markup) must pass through unchanged.
+
+    Sanitization only strips HTML tags and HTML entities; it does not
+    alter plain text. This keeps the contract for non-HTML tables.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "plain text table content",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    media = parser._transfer_to_tables(outputs)
+
+    assert media[0][0] == (None, "plain text table content")
+
+
 @pytest.mark.p1
 @pytest.mark.parametrize("transfer", ["sections", "tables"])
 def test_empty_table_fallback_is_logged(monkeypatch, caplog, transfer):
@@ -278,7 +344,7 @@ def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
     media = parser._transfer_to_tables(outputs)
 
     assert len(media) == 3
-    assert media[0][0] == (None, "<table><tr><td>first</td></tr></table>")
+    assert media[0][0] == (None, "first")
     assert media[2][0] == (None, "second table")
     image, texts = media[1][0]
     image_path.unlink()
