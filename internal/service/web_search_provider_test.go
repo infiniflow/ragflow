@@ -134,9 +134,9 @@ func TestResolveWebSearchProviderRequiresKeyForSelectedProvider(t *testing.T) {
 		name   string
 		config map[string]interface{}
 	}{
-		{name: "tavily", config: map[string]interface{}{"web_search_provider": "tavily"}},
 		{name: "querit", config: map[string]interface{}{"web_search_provider": "querit"}},
 		{name: "serply", config: map[string]interface{}{"web_search_provider": "serply"}},
+		{name: "tavily", config: map[string]interface{}{"web_search_provider": "tavily"}},
 		{
 			name: "serply does not fall back to tavily",
 			config: map[string]interface{}{
@@ -407,6 +407,31 @@ func TestResolveWebSearchProviderSelectsYouComWithoutAKey(t *testing.T) {
 	}
 }
 
+// Exa has a free tier of 1,000 requests/month, but it is NOT keyless: every
+// REST call must carry a key, so selecting Exa without one leaves web search
+// unconfigured. (Only You.com is keyless — see the carve-out below.)
+func TestResolveWebSearchProviderRequiresExaKeyForFreeTier(t *testing.T) {
+	if got := resolveWebSearchProvider(map[string]interface{}{
+		"web_search_provider": "exa",
+	}); got != nil {
+		t.Fatalf("provider without a key = %+v, want nil", got)
+	}
+
+	provider := resolveWebSearchProvider(map[string]interface{}{
+		"web_search_provider": "exa",
+		"exa_api_key":         "exa-test",
+	})
+	if provider == nil {
+		t.Fatal("provider is nil")
+	}
+	if provider.Provider != webSearchProviderExa {
+		t.Fatalf("provider = %q, want %q", provider.Provider, webSearchProviderExa)
+	}
+	if provider.APIKey != "exa-test" {
+		t.Fatalf("api key = %q, want %q", provider.APIKey, "exa-test")
+	}
+}
+
 func TestResolveWebSearchProviderTrimsOptionalYouComKey(t *testing.T) {
 	provider := resolveWebSearchProvider(map[string]interface{}{
 		"web_search_provider": "youcom",
@@ -424,7 +449,7 @@ func TestResolveWebSearchProviderTrimsOptionalYouComKey(t *testing.T) {
 
 func TestResolveWebSearchProviderStillRequiresKeysForKeyedProviders(t *testing.T) {
 	// The You.com carve-out must not relax any other provider.
-	for _, provider := range []string{"tavily", "querit", "serply"} {
+	for _, provider := range []string{"querit", "serply", "tavily"} {
 		t.Run(provider, func(t *testing.T) {
 			if got := resolveWebSearchProvider(map[string]interface{}{
 				"web_search_provider": provider,
@@ -624,8 +649,8 @@ func TestRetrieveYouComWebSearchCapsMergedSections(t *testing.T) {
 
 	// `count` applies per section, so the merged list is trimmed back to 6.
 	chunks := result["chunks"].([]map[string]interface{})
-	if len(chunks) != youComWebSearchResultCount {
-		t.Fatalf("chunks = %d, want %d", len(chunks), youComWebSearchResultCount)
+	if len(chunks) != webSearchResultCount {
+		t.Fatalf("chunks = %d, want %d", len(chunks), webSearchResultCount)
 	}
 }
 
@@ -638,4 +663,269 @@ func TestRetrieveYouComWebSearchRejectsErrorStatuses(t *testing.T) {
 	if _, err := retrieveYouComWebSearch(t.Context(), server.Client(), server.URL, "", "q"); err == nil {
 		t.Fatal("expected an error for a non-2xx status")
 	}
+}
+
+// Brave, Exa, Firecrawl, Linkup and Parallel all authenticate with a key and
+// ship no keyless path, so selecting one without a key must leave web search
+// unconfigured rather than silently degrade. (Exa has a free tier, but the key
+// is still mandatory — see its own test.)
+func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
+	cases := []struct {
+		provider   string
+		apiKeyName string
+		apiKey     string
+	}{
+		{provider: "brave", apiKeyName: "brave_api_key", apiKey: "brave-test"},
+		{provider: "exa", apiKeyName: "exa_api_key", apiKey: "exa-test"},
+		{provider: "firecrawl", apiKeyName: "firecrawl_api_key", apiKey: "firecrawl-test"},
+		{provider: "linkup", apiKeyName: "linkup_api_key", apiKey: "linkup-test"},
+		{provider: "parallel", apiKeyName: "parallel_api_key", apiKey: "parallel-test"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.provider, func(t *testing.T) {
+			provider := resolveWebSearchProvider(map[string]interface{}{
+				"web_search_provider": tc.provider,
+				tc.apiKeyName:         "  " + tc.apiKey + "  ",
+				// A configured Tavily key must not be picked up instead.
+				"tavily_api_key": "tvly-test",
+			})
+			if provider == nil {
+				t.Fatal("provider is nil")
+			}
+			if provider.Provider != tc.provider {
+				t.Fatalf("provider = %q, want %q", provider.Provider, tc.provider)
+			}
+			if provider.APIKey != tc.apiKey {
+				t.Fatalf("api key = %q, want %q", provider.APIKey, tc.apiKey)
+			}
+
+			if got := resolveWebSearchProvider(map[string]interface{}{
+				"web_search_provider": tc.provider,
+			}); got != nil {
+				t.Fatalf("provider without a key = %+v, want nil", got)
+			}
+		})
+	}
+}
+
+// assertWebSearchChunk checks the one chunk every provider must produce: it
+// carries the hit's URL twice (as the chunk/document id suffix and as `url`) so
+// the citation machinery can resolve it.
+func assertWebSearchChunk(t *testing.T, result map[string]interface{}, wantID, wantTitle, wantContent string) {
+	t.Helper()
+	chunks, ok := result["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", result["chunks"])
+	}
+	if chunks[0]["chunk_id"] != wantID {
+		t.Fatalf("chunk_id = %#v, want %q", chunks[0]["chunk_id"], wantID)
+	}
+	if chunks[0]["docnm_kwd"] != wantTitle {
+		t.Fatalf("title = %#v, want %q", chunks[0]["docnm_kwd"], wantTitle)
+	}
+	if chunks[0]["content_with_weight"] != wantContent {
+		t.Fatalf("content = %#v, want %q", chunks[0]["content_with_weight"], wantContent)
+	}
+	if chunks[0]["url"] != "https://example.com/ragflow" {
+		t.Fatalf("url = %#v", chunks[0]["url"])
+	}
+	if chunks[0]["similarity"] != float64(1) {
+		t.Fatalf("similarity = %#v, want 1", chunks[0]["similarity"])
+	}
+	aggs, ok := result["doc_aggs"].([]interface{})
+	if !ok || len(aggs) != 1 {
+		t.Fatalf("doc_aggs = %#v, want one aggregate", result["doc_aggs"])
+	}
+}
+
+func TestRetrieveParallelWebSearchSendsKeyAndJoinsExcerpts(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("x-api-key"); got != "parallel-test" {
+			t.Errorf("x-api-key = %q, want %q", got, "parallel-test")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"results": [{
+				"url": "https://example.com/ragflow",
+				"title": "RAGFlow",
+				"excerpts": ["An open-source", "RAG engine."]
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveParallelWebSearch(t.Context(), server.Client(), server.URL, "parallel-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve Parallel web search: %v", err)
+	}
+	queries, ok := requestBody["search_queries"].([]interface{})
+	if !ok || len(queries) != 1 || queries[0] != "What is RAGFlow?" {
+		t.Fatalf("search_queries = %#v, want the question", requestBody["search_queries"])
+	}
+	if requestBody["objective"] != "What is RAGFlow?" {
+		t.Fatalf("objective = %#v", requestBody["objective"])
+	}
+	assertWebSearchChunk(t, result, "parallel-https://example.com/ragflow", "RAGFlow", "An open-source\nRAG engine.")
+}
+
+func TestRetrieveBraveWebSearchSendsSubscriptionToken(t *testing.T) {
+	var requestQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Subscription-Token"); got != "brave-test" {
+			t.Errorf("X-Subscription-Token = %q, want %q", got, "brave-test")
+		}
+		requestQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"web": {"results": [{
+				"url": "https://example.com/ragflow",
+				"title": "RAGFlow",
+				"description": "An open-source RAG engine."
+			}]}
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveBraveWebSearch(t.Context(), server.Client(), server.URL, "brave-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve Brave web search: %v", err)
+	}
+	if got := requestQuery.Get("q"); got != "What is RAGFlow?" {
+		t.Fatalf("q = %q, want %q", got, "What is RAGFlow?")
+	}
+	if got := requestQuery.Get("count"); got != "6" {
+		t.Fatalf("count = %q, want 6", got)
+	}
+	assertWebSearchChunk(t, result, "brave-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveExaWebSearchCapsExtractedText(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("x-api-key"); got != "exa-test" {
+			t.Errorf("x-api-key = %q, want %q", got, "exa-test")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"results": [{
+				"url": "https://example.com/ragflow",
+				"title": "RAGFlow",
+				"text": "An open-source RAG engine."
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveExaWebSearch(t.Context(), server.Client(), server.URL, "exa-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve Exa web search: %v", err)
+	}
+	if requestBody["query"] != "What is RAGFlow?" {
+		t.Fatalf("query = %#v", requestBody["query"])
+	}
+	if requestBody["numResults"] != float64(6) {
+		t.Fatalf("numResults = %#v, want 6", requestBody["numResults"])
+	}
+	// Uncapped page text would swamp the prompt and is billed per character.
+	contents, ok := requestBody["contents"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("contents = %#v, want an object", requestBody["contents"])
+	}
+	text, ok := contents["text"].(map[string]interface{})
+	if !ok || text["maxCharacters"] != float64(exaWebSearchMaxCharacters) {
+		t.Fatalf("contents.text = %#v, want a maxCharacters cap", contents["text"])
+	}
+	assertWebSearchChunk(t, result, "exa-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveLinkupWebSearchAsksForSearchResults(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer linkup-test" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer linkup-test")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"results": [{
+				"type": "text",
+				"name": "RAGFlow",
+				"url": "https://example.com/ragflow",
+				"content": "An open-source RAG engine."
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveLinkupWebSearch(t.Context(), server.Client(), server.URL, "linkup-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve Linkup web search: %v", err)
+	}
+	if requestBody["q"] != "What is RAGFlow?" {
+		t.Fatalf("q = %#v", requestBody["q"])
+	}
+	// searchResults, not sourcedAnswer: the caller wants hits to cite, not a
+	// synthesized answer the model would have to take on trust.
+	if requestBody["outputType"] != "searchResults" {
+		t.Fatalf("outputType = %#v, want searchResults", requestBody["outputType"])
+	}
+	assertWebSearchChunk(t, result, "linkup-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveFirecrawlWebSearchUsesSearchSnippets(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer firecrawl-test" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer firecrawl-test")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"data": {"web": [{
+				"url": "https://example.com/ragflow",
+				"title": "RAGFlow",
+				"description": "An open-source RAG engine."
+			}]}
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveFirecrawlWebSearch(t.Context(), server.Client(), server.URL, "firecrawl-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve Firecrawl web search: %v", err)
+	}
+	if requestBody["query"] != "What is RAGFlow?" {
+		t.Fatalf("query = %#v", requestBody["query"])
+	}
+	if requestBody["limit"] != float64(6) {
+		t.Fatalf("limit = %#v, want 6", requestBody["limit"])
+	}
+	assertWebSearchChunk(t, result, "firecrawl-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+// A hit with no text is dropped rather than shipped as an empty citation.
+func TestWebSearchPayloadSkipsHitsWithoutContent(t *testing.T) {
+	payload := webSearchPayload("exa", []webSearchHit{
+		{Title: "No text", URL: "https://example.com/empty", Content: "   "},
+		{Title: "No url", URL: "", Content: "orphan text"},
+		{Title: "RAGFlow", URL: "https://example.com/ragflow", Content: "  An open-source RAG engine.  "},
+	})
+	assertWebSearchChunk(t, payload, "exa-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
 }

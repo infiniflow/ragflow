@@ -1205,25 +1205,46 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       selectLanguage: 'Dil seçin',
       reasoning: 'Akıl yürütme',
       reasoningTip: `Deepseek-R1 gibi modellerde görüldüğü şekilde soru yanıtlama sırasında bir akıl yürütme iş akışı etkinleştirilsin mi. Etkinleştirildiğinde, model harici bilgiye erişebilir ve karmaşık soruları düşünce zinciri akıl yürütmesi gibi tekniklerden yararlanarak adım adım ele alabilir. Bu yaklaşım, problemleri yönetilebilir adımlara bölerek modelin doğru yanıtlar sağlama yeteneğini artırır.`,
-      tavilyApiKeyTip:
-        'Burada bir API anahtarı doğru şekilde ayarlanırsa, Tavily tabanlı web aramaları dataset alımını desteklemek için kullanılacaktır.',
-      tavilyApiKeyMessage: 'Lütfen Tavily API anahtarınızı girin',
       webSearch: 'Web araması',
       webSearchProvider: 'Web arama sağlayıcısı',
       webSearchProviderTip:
         'İnternet araması etkinleştirildiğinde kullanılacak hizmeti seçin.',
       webSearchProviderPlaceholder: 'Bir web arama sağlayıcısı seçin',
+      webSearchApiKeyRequired:
+        'Seçilen sağlayıcı için bir API anahtarı gerekir — olmadan internet araması yapılmaz ve anahtar hiç görünmez.',
+      // Anahtar alanının etiketi. {{provider}} sağlayıcının MARKA adıdır ve
+      // bilinçli olarak çevrilmez; bu tek şablon dokuz sağlayıcıyı da kapsar.
+      webSearchApiKeyLabel: '{{provider}} API Anahtarı',
+      // Her sağlayıcı için bir Tip/Mesaj çifti, sağlayıcı id'sine göre alfabetik.
+      braveApiKeyTip:
+        'Brave Search seçildiğinde, web arama sonuçları dataset alımını tamamlar. Tüm Brave uç noktaları anahtar gerektirir.',
+      braveApiKeyMessage: 'Lütfen Brave Search API anahtarınızı girin',
+      exaApiKeyTip:
+        'Zorunlu. Exa seçildiğinde, web arama sonuçları dataset alımını tamamlar. Aylık 1.000 isteğe kadar olan ücretsiz katmanda bile anahtar gereklidir.',
+      exaApiKeyMessage: 'Lütfen Exa API anahtarınızı girin',
+      firecrawlApiKeyTip:
+        'Firecrawl seçildiğinde, arama sonuçları dataset alımını tamamlar. Yalnızca arama özetleri alınır, tam sayfa kazınmaz.',
+      firecrawlApiKeyMessage: 'Lütfen Firecrawl API anahtarınızı girin',
+      linkupApiKeyTip:
+        'Linkup seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
+      linkupApiKeyMessage: 'Lütfen Linkup API anahtarınızı girin',
+      parallelApiKeyTip:
+        'Parallel seçildiğinde, arama alıntıları dataset alımını tamamlar.',
+      parallelApiKeyMessage: 'Lütfen Parallel API anahtarınızı girin',
       queritApiKeyTip:
         'Querit seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       queritApiKeyMessage: 'Lütfen Querit API Anahtarınızı girin',
       serplyApiKeyTip:
         'Serply seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       serplyApiKeyMessage: 'Lütfen Serply API Anahtarınızı girin',
+      tavilyApiKeyTip:
+        'Burada bir API anahtarı doğru şekilde ayarlanırsa, Tavily tabanlı web aramaları dataset alımını desteklemek için kullanılacaktır.',
+      tavilyApiKeyMessage: 'Lütfen Tavily API anahtarınızı girin',
       youcomApiKeyTip:
         'İsteğe bağlı. You.com, hız sınırlı uç noktasında anahtarsız çalışır; bu sınırları kaldırmak için bir anahtar ekleyin.',
       youcomApiKeyMessage:
         'İsteğe bağlı — ücretsiz katmanı kullanmak için boş bırakın',
-      tavilyApiKeyHelp: 'Nasıl alınır?',
+      webSearchApiKeyHelp: 'Nasıl alınır?',
       crossLanguage: 'Çapraz dil araması',
       crossLanguagePlaceholder: 'Değer seçin',
       crossLanguageTip: `Çapraz dil araması için bir veya daha fazla dil seçin. Hiçbir dil seçilmezse sistem orijinal sorguyla arama yapar.`,

@@ -39,6 +39,19 @@ const (
 	maxLoggedVectorFloats = 3
 )
 
+// APIStatusError is a provider HTTP failure with its status code preserved, so
+// callers can act on the status (failover cooldown, retry) instead of matching
+// the error text. The shared request helpers return it; the message is byte-for-
+// byte what plain fmt.Errorf produced before, so existing assertions still hold.
+type APIStatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *APIStatusError) Error() string {
+	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
+}
+
 type BaseModel struct {
 	BaseURL          map[string]string
 	URLSuffix        URLSuffix
@@ -225,7 +238,7 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -260,7 +273,7 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -293,7 +306,7 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 		if err != nil {
 			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
 	return handler(resp.Body)

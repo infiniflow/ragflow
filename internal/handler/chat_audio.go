@@ -279,7 +279,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")

@@ -18,7 +18,7 @@ func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
-	}, 0, true, false)
+	}, true, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
@@ -32,13 +32,28 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10"},
-	}, 0, false, false)
+	}, false, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("query_string missing from %#v", query)
 	}
 	assertEqual(t, queryString["fields"], []string{"name^10"})
+}
+
+func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
+	// The *_tks/*_ltks fields are whitespace-analyzed and store lowercase
+	// tokens; a capitalized query term must not silently match nothing.
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "Isabel Wood co-lead Ross Feldner Bob Musil Bird Watch Wonder Program",
+	}, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["query"],
+		"isabel wood co-lead ross feldner bob musil bird watch wonder program")
 }
 
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
