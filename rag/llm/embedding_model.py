@@ -267,7 +267,7 @@ class OpenAIEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float")
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
