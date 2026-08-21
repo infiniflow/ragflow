@@ -14,50 +14,20 @@
 //  limitations under the License.
 //
 
-// Package component — Extractor component (Phase 2.5 of
-// port-rag-flow-pipeline-to-go.md §4 row 2.5).
+// Package component — Extractor component.
 //
-// SCOPE (honest):
+// SCOPE:
 //
-//   - PROVIDER-AGNOSTIC (§8 Q1): the Extractor does NOT depend on any
+//   - PROVIDER-AGNOSTIC: the Extractor does NOT depend on any
 //     specific LLM provider. It dispatches every chat call through
-//     internal/entity/models — the same factory routes 48 of the 56
-//     Python ChatModel providers registered there (factory.go switch,
-//     lines 36-156). The 8 providers NOT yet in the Go switch (LeptonAI,
-//     Gemini LiteLLM path, PerfXCloud, 01.AI / Lingyi, DeerAPI,
-//     Astraflow-CN, RAGcon, New API) ARE unreachable from this
-//     component — an llm_id resolving to one of those falls through to
-//     NewDummyModel and the chat call returns a deterministic "dummy"
-//     response. We DO NOT panic: errors are surfaced as a clean
-//     "no driver for %q" wrap that callers can log and route.
+//     internal/entity/models.
 //
-//   - LLM CALL SHAPE: one chat call per chunk (no batching). LLM
-//     calls are inherently serial; sequential per-chunk processing
-//     keeps test ordering deterministic under -race.
+//   - CONCURRENCY: auto extraction tasks (keywords, questions, summary, metadata)
+//     run concurrently across chunks via a bounded worker pool (extractorPool).
 //
 //   - TIMEOUT / ELAPSED: the call is wrapped in
-//     runtime.WithTimeout(60s) and runtime.TrackElapsed so the
-//     upstream pipeline gets _created_time / _elapsed_time stamps
-//     matching the python ProcessBase contract (base.py:42, 58).
-//
-//   - JSON PARSING: the prompt asks the LLM to return a JSON object;
-//     we best-effort parse the response into map[string]any. A
-//     non-JSON response is NOT a hard error — it's surfaced as the
-//     raw string under the same field name so downstream callers
-//     can decide what to do.
-//
-//   - WHAT IS NOT YET PORTED: the python _build_TOC branch
-//     (rag/flow/extractor/extractor.py:40-72) requires the TOC
-//     generator (rag.prompts.generator.run_toc_from_text). That
-//     service has no Go counterpart yet; the current Extractor
-//     short-circuits with a clear error when field_name == "toc"
-//     so a future Phase 2.5+ task can fill the gap without a
-//     silent regression.
-//
-//   - SINGLE-CHUNK FAST PATH: when no chunk list is wired in,
-//     the LLM is called once with the resolved args directly (no
-//     chunk substitution). Matches python _invoke path
-//     (line 108: msg, sys_prompt = self._sys_prompt_and_msg([], args)).
+//     runtime.WithTimeout(600s) and runtime.TrackElapsed so the
+//     upstream pipeline gets _created_time / _elapsed_time stamps.
 package component
 
 import (
@@ -65,22 +35,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	eschema "github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/component/messagefit"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const componentNameExtractor = "Extractor"
@@ -104,6 +81,51 @@ var (
 // and question extraction calls (generator.py:230,245).
 const extractorTemperature = 0.2
 
+// defaultExtractorConcurrency bounds concurrent LLM extraction calls
+// process-wide. It mirrors Python's chat_limiter bound
+// (agent/component/base.py:353 asyncio.Semaphore(MAX_CONCURRENT_CHATS,
+// default 10)) so the Go port rate-limits auto-keywords / auto-questions /
+// auto-metadata extraction the same way Python does.
+const defaultExtractorConcurrency = 10
+
+// extractorJob is one chunk's auto-extraction unit of work.
+type extractorJob func() error
+
+// extractorPool is the process-wide bounded worker pool that drives
+// cross-chunk concurrency for auto-keywords / auto-questions /
+// auto-metadata extraction. It mirrors the parser/structure/mindmap
+// WorkerPool usage, but is held globally so every Extractor
+// invocation shares one rate limiter instead of spinning up one pool
+// per batch. The pool only bounds concurrency (it is never StopWait'd),
+// so per-invocation completion is tracked by runAutoExtractions with its
+// own sync.WaitGroup + first-error collection — concurrent Invoke calls
+// therefore do not disturb each other.
+var extractorPool = utility.NewWorkerPool[extractorJob, struct{}](
+	extractorConcurrency(),
+	extractorConcurrency()*4,
+	func(_ context.Context, j extractorJob) (struct{}, error) { return struct{}{}, j() },
+)
+
+// extractorConcurrency resolves the pool size from MAX_CONCURRENT_CHATS
+// (Python parity) with a safe default of defaultExtractorConcurrency.
+func extractorConcurrency() int {
+	if v := os.Getenv("MAX_CONCURRENT_CHATS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultExtractorConcurrency
+}
+
+// SetExtractorConcurrency overrides the global extractor pool size at
+// runtime (e.g. from service init or tests). Mirrors tuning Python's
+// chat_limiter bound.
+func SetExtractorConcurrency(n int) {
+	if n > 0 {
+		extractorPool.Resize(n)
+	}
+}
+
 const (
 	autoKeywordPrompt = `## Role
 You are a text analyzer.
@@ -115,12 +137,7 @@ Extract the most important keywords/phrases of a given piece of text content.
 - Summarize the text content, and give the top %d important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
-- Output keywords ONLY.
-
----
-
-## Text Content
-%s`
+- Output keywords ONLY.`
 
 	autoQuestionPrompt = `## Role
 You are a text analyzer.
@@ -134,12 +151,31 @@ Propose questions about a given piece of text content.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.
 - One question per line.
-- Output questions ONLY.
+- Output questions ONLY.`
 
----
+	autoMetadataPrompt = `## Role: Metadata extraction expert.
+## Rules:
+ - Strict Evidence Only: Extract a value ONLY if it is explicitly mentioned in the Content.
+ - Enum Filter: For any field with an 'enum' list, the list acts as a strict filter. If no element from the list (or its direct synonym) is found in the Content, you MUST NOT extract that field.
+ - No Meta-Inference: Do not infer values based on the document's nature, format, or category. If the text does not literally state the information, treat it as missing.
+ - Zero-Hallucination: Never invent information or pick a "likely" value from the enum to fill a field.
+ - Empty Result: If no matches are found for any field, or if the content is irrelevant, output ONLY {}.
+ - Output: ONLY a valid JSON string. No Markdown, no notes.
 
-## Text Content
+## Schema for extraction:
 %s`
+
+	autoSummaryPrompt = `## Role
+You are a precise and faithful text summarizer.
+
+## Task
+Create a concise and faithful summary of the provided text content.
+
+## Requirements
+- The summary MUST strictly rely on the provided text without hallucinating.
+- The summary MUST be in the same language as the original text content.
+- Be concise and focus on the main ideas, omitting redundant details.
+- Output summary ONLY.`
 )
 
 // ExtractorComponent performs LLM-based extraction over a chunk
@@ -160,10 +196,12 @@ type ExtractorComponent struct {
 // Param map shape (all keys optional; missing → Defaults()):
 //
 //	{
-//	  "field_name":     string,           — optional; key the extraction lands under
 //	  "llm_id":         string,           — optional; resolves via models.NewModelFactory
-//	  "system_prompt":  string,           — optional override
-//	  "prompt":         string,           — optional user prompt
+//	  "keywords":       map[string]any,   — optional auto keywords extraction config
+//	  "questions":      map[string]any,   — optional auto questions extraction config
+//	  "tags":           map[string]any,   — optional auto tags extraction config
+//	  "summary":        map[string]any,   — optional auto summary extraction config
+//	  "metadata":       map[string]any,   — optional auto metadata extraction config
 //	}
 //
 // errors here surface as canvas compile failures so a malformed
@@ -171,44 +209,66 @@ type ExtractorComponent struct {
 func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 	p := schema.ExtractorParam{}.Defaults()
 	if params != nil {
-		if v, ok := params["field_name"].(string); ok {
-			p.FieldName = v
-		}
 		if v, ok := params["llm_id"].(string); ok {
 			p.LLMID = v
 		}
-		if v, ok := params["system_prompt"].(string); ok {
-			p.SystemPrompt = v
-		} else if v, ok := params["sys_prompt"].(string); ok {
-			p.SystemPrompt = v
-		}
-		if v, ok := params["prompt"].(string); ok {
-			p.Prompt = v
-		} else if v, ok := params["prompts"].(string); ok && v != "" {
-			// Python agent/component/llm.py:119-120 normalizes a bare-string
-			// prompts into [{"role":"user","content":prompts}]. Mirror that
-			// here so a front-end/template that emits prompts as a string
-			// (the graph.nodes form / dsl testdata) is not silently dropped
-			// by the .([]any) assertion on the list branch below.
-			p.Prompt = v
-		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
-			if first, ok := promptsRaw[0].(map[string]any); ok {
-				if content, ok := first["content"].(string); ok {
-					p.Prompt = content
-				}
+
+		// 1. Keywords
+		if kwRaw, ok := params["keywords"].(map[string]any); ok {
+			if v, ok := kwRaw["top_n"]; ok {
+				p.Keywords.TopN = mapInt(v)
+			}
+			if v, ok := kwRaw["system_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
 			}
 		}
-		if v, ok := params["auto_keywords"]; ok {
-			p.AutoKeywords = mapInt(v)
+
+		// 2. Questions
+		if qRaw, ok := params["questions"].(map[string]any); ok {
+			if v, ok := qRaw["top_n"]; ok {
+				p.Questions.TopN = mapInt(v)
+			}
+			if v, ok := qRaw["system_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
+			}
 		}
-		if v, ok := params["auto_questions"]; ok {
-			p.AutoQuestions = mapInt(v)
+
+		// 3. Tags
+		if tagRaw, ok := params["tags"].(map[string]any); ok {
+			if v, ok := tagRaw["top_n"]; ok {
+				p.Tags.TopN = mapInt(v)
+			}
+			if v, ok := tagRaw["tag_file_id"].(string); ok {
+				p.Tags.TagFileID = v
+			}
 		}
-		if v, ok := params["auto_tags"]; ok {
-			p.AutoTags = mapInt(v)
+
+		// 4. Summary
+		if sumRaw, ok := params["summary"].(map[string]any); ok {
+			if v, ok := sumRaw["enabled"].(bool); ok {
+				p.Summary.Enabled = v
+			} else if v, ok := sumRaw["enabled"]; ok {
+				p.Summary.Enabled = mapInt(v) == 1
+			}
+			if v, ok := sumRaw["system_prompt"].(string); ok {
+				p.Summary.SystemPrompt = v
+			}
 		}
-		if v, ok := params["tag_file_id"].(string); ok {
-			p.TagFileID = v
+
+		// 5. Metadata
+		if metaRaw, ok := params["metadata"].(map[string]any); ok {
+			if v, ok := metaRaw["enabled"].(bool); ok {
+				p.Metadata.Enabled = v
+			} else if v, ok := metaRaw["enabled"]; ok {
+				p.Metadata.Enabled = mapInt(v) == 1
+			}
+			if v, ok := metaRaw["metadata"]; ok {
+				p.Metadata.Metadata = parseMetadataFieldDefs(v)
+			}
+			// BuiltInMetadata is carried for persistence/replay; LLM extraction uses Metadata only.
+			if v, ok := metaRaw["built_in_metadata"]; ok {
+				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
+			}
 		}
 	}
 	if err := p.Validate(); err != nil {
@@ -223,21 +283,17 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 // self.chat_mdl; the Go port exposes it explicitly).
 func (c *ExtractorComponent) Inputs() map[string]string {
 	return map[string]string{
-		"chunks":        "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' (or 'content_with_weight') field. Optional — when absent the LLM is called once with the resolved args.",
-		"prompt":        "Optional user prompt template. Falls back to Param.Prompt when absent.",
-		"llm_id":        "Optional per-call LLM id override. Falls back to Param.LLMID when absent.",
-		"system_prompt": "Optional per-call system prompt override. Falls back to Param.SystemPrompt.",
+		"chunks": "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' (or 'content_with_weight') field. Optional — when absent the LLM is called once with the resolved args.",
+		"llm_id": "Optional per-call LLM id override. Falls back to Param.LLMID when absent.",
 	}
 }
 
 // Outputs returns the public surface downstream ingestion
 // consumers can wire into. Mirrors schema.ExtractorOutputs.
 //
-//	chunks         []map[string]any — input chunks, each augmented
-//	                                 with field_name=<LLM result>.
-//	                                 When the input chunks list is
-//	                                 absent, the slice contains a
-//	                                 single map with the same shape.
+//	chunks         []map[string]any — input chunks, each augmented with
+//	                                 extracted modular fields (important_kwd,
+//	                                 question_kwd, tag_kwd, summary, metadata).
 //	output_format  string          — always "chunks". Parity with
 //	                                 python set_output contract.
 //	_ERROR         string          — populated on a short-circuit
@@ -245,7 +301,7 @@ func (c *ExtractorComponent) Inputs() map[string]string {
 //	                                 set_output("_ERROR", ...)).
 func (c *ExtractorComponent) Outputs() map[string]string {
 	return map[string]string{
-		"chunks":        "Extraction results — input chunks (or a single-element slice when no chunks were supplied), each enriched with field_name=<LLM response>.",
+		"chunks":        "Extraction results — input chunks, each enriched with modular extraction fields (important_kwd, question_kwd, tag_kwd, summary, metadata).",
 		"output_format": "Always \"chunks\". Parity marker for downstream consumers.",
 		"_ERROR":        "Optional short-circuit error message (reserved for the future TOC branch and other error paths).",
 	}
@@ -369,10 +425,10 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelName, cfg)
-	var chatCfg *models.ChatConfig
+	chatCfg := &models.ChatConfig{}
 	if req.Temperature != nil {
 		temp := *req.Temperature
-		chatCfg = &models.ChatConfig{Temperature: &temp}
+		chatCfg.Temperature = &temp
 	}
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	// Honour ctx cancel up front so the caller's WithTimeout(...)
@@ -386,6 +442,7 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
 		return nil, err
 	}
+	common.Debug(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))
 	return &extractorChatResponse{Content: out.Content}, nil
 }
 
@@ -433,16 +490,12 @@ func toExtractorEinoMessages(msgs []eschema.Message) []*eschema.Message {
 // input map. Computed once at the top of Invoke so the rest of
 // the function reads as straight-line code.
 type extractorInputs struct {
-	fieldName    string
-	llmID        string
-	systemPrompt string
-	prompt       string
-	lang         string
-	chunks       []map[string]any
+	llmID  string
+	lang   string
+	chunks []map[string]any
 	// temperature overrides the LLM temperature for this call. A
 	// nil value leaves the request's Temperature unset so the model
-	// (or the chat-model default) decides, matching Python's generic
-	// Extractor path. The keyword/question helpers set it to
+	// (or the chat-model default) decides. The keyword/question helpers set it to
 	// extractorTemperature (0.2) to mirror generator.py.
 	temperature *float64
 }
@@ -450,30 +503,16 @@ type extractorInputs struct {
 // resolveInputs overlays per-call inputs on top of the
 // component's static Param. Missing keys fall back to the
 // Param-level values; per-call values win on conflict (so a
-// canvas can override LLM_ID at runtime). The python
-// Extractor reads inputs directly from get_input_elements(); the
-// Go port normalizes to extractorInputs once at the top so the
-// rest of Invoke reads straight-line.
+// canvas can override LLM_ID at runtime).
 func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInputs {
 	out := extractorInputs{
-		fieldName:    c.Param.FieldName,
-		llmID:        c.Param.LLMID,
-		systemPrompt: c.Param.SystemPrompt,
-		prompt:       c.Param.Prompt,
+		llmID: c.Param.LLMID,
 	}
 	if inputs == nil {
 		return out
 	}
 	if v, ok := inputs["llm_id"].(string); ok && v != "" {
 		out.llmID = v
-	}
-	if v, ok := inputs["prompt"].(string); ok && v != "" {
-		out.prompt = v
-	}
-	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
-		out.systemPrompt = v
-	} else if v, ok := inputs["sys_prompt"].(string); ok && v != "" {
-		out.systemPrompt = v
 	}
 	if v, ok := inputs["lang"].(string); ok && v != "" {
 		out.lang = v
@@ -529,16 +568,11 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 //
 //	chunks         (optional, []map[string]any) — upstream chunks; each must
 //	                                            carry a string "text".
-//	prompt         (optional, string)            — overrides Param.Prompt.
-//	system_prompt  (optional, string)            — overrides Param.SystemPrompt.
 //	llm_id         (optional, string)            — overrides Param.LLMID.
 //
 // Outputs:
 //
-//	chunks        ([]map[string]any) — input chunks augmented with
-//	                                  field_name=<LLM result>. When
-//	                                  the input list is empty, the
-//	                                  slice contains a single map.
+//	chunks        ([]map[string]any) — input chunks augmented with extraction results.
 //	output_format (string)          — always "chunks".
 //	_ERROR        (string, reserved) — populated when the component
 //	                                  short-circuits with an error.
@@ -553,13 +587,16 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.String("component", "Extractor"),
 		zap.Int("input_chunks", len(in.chunks)),
 	)
-	if in.fieldName == "toc" {
-		return nil, fmt.Errorf("extractor: field_name %q requires the TOC prompt generator which is not yet ported to Go", "toc")
+	if len(in.chunks) == 0 {
+		return map[string]any{
+			"chunks":        []map[string]any{},
+			"output_format": "chunks",
+		}, nil
 	}
 
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
-		// Tag phase: run when auto_tags > 0 and we have chunks.
-		if c.Param.AutoTags > 0 && len(in.chunks) > 0 {
+		// Tag phase: run when tags.top_n > 0 and we have chunks.
+		if c.Param.Tags.TopN > 0 {
 			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in)
 			if tagErr != nil {
 				return tagErr
@@ -567,88 +604,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			in.chunks = tagged
 		}
 
-		if len(in.chunks) == 0 {
-			ans, callErr := c.call(timeoutCtx, db, in, "")
-			if callErr != nil {
-				return callErr
-			}
-			in.chunks = []map[string]any{{in.fieldName: ans}}
-			return nil
-		}
-		for i, ck := range in.chunks {
-			text, _ := ck["content_with_weight"].(string)
-			if strings.TrimSpace(text) == "" {
-				text, _ = ck["text"].(string)
-			}
-
-			if c.Param.AutoKeywords > 0 && c.Param.AutoQuestions > 0 {
-				// Run keyword and question extraction concurrently
-				// per chunk (mirrors Python's ThreadPoolExecutor:
-				// task_executor.py:444-448). The shared chunk map is
-				// guarded by mu inside runAutoKeywords/runAutoQuestions,
-				// which also short-circuit when the key already exists.
-				var kwErr, qErr error
-				var mu sync.Mutex
-				var wg sync.WaitGroup
-				wg.Add(2)
-				go func() {
-					defer wg.Done()
-					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, &mu); err != nil {
-						kwErr = err
-					}
-				}()
-				go func() {
-					defer wg.Done()
-					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, &mu); err != nil {
-						qErr = err
-					}
-				}()
-				wg.Wait()
-				if kwErr != nil {
-					return fmt.Errorf("chunk %d keywords: %w", i, kwErr)
-				}
-				if qErr != nil {
-					return fmt.Errorf("chunk %d questions: %w", i, qErr)
-				}
-			} else {
-				if c.Param.AutoKeywords > 0 {
-					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, nil); err != nil {
-						return fmt.Errorf("chunk %d keywords: %w", i, err)
-					}
-				}
-				if c.Param.AutoQuestions > 0 {
-					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, nil); err != nil {
-						return fmt.Errorf("chunk %d questions: %w", i, err)
-					}
-				}
-			}
-
-			if in.fieldName != "" {
-				// Substitute {field_name} placeholders with current
-				// chunk field values, mirroring Python's
-				// string_format at extractor.py:103.
-				callIn := in
-				callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
-				callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
-				// buildExtractorMessages appends chunkText to the user
-				// message unconditionally. When the chunk text was already
-				// embedded via a {text}/{chunks} placeholder above, passing
-				// it again would duplicate the content in the final prompt.
-				// Suppress the automatic append in that case (the keyword/
-				// question helper paths do the same by passing "").
-				callChunkText := text
-				if strings.Contains(in.prompt, "{text}") || strings.Contains(in.prompt, "{chunks}") ||
-					strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
-					callChunkText = ""
-				}
-				ans, callErr := c.call(timeoutCtx, db, callIn, callChunkText)
-				if callErr != nil {
-					return fmt.Errorf("chunk %d: %w", i, callErr)
-				}
-				ck[in.fieldName] = ans
-			}
-		}
-		return nil
+		return c.runAutoExtractions(timeoutCtx, db, in)
 	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
@@ -663,34 +619,29 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 }
 
 // runAutoKeywords extracts keywords for the current chunk and stores
-// them on ck["important_kwd"]. mu may be nil (sequential path); when
-// non-nil it serializes the shared chunk-map accesses so concurrent
-// keyword/question goroutines stay race-free. The existence check and
-// the map writes are both guarded by mu. Keyword extraction pins
+// them on ck["important_kwd"]. Keyword extraction pins
 // temperature to extractorTemperature (0.2) to mirror generator.py.
-func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
-	if mu != nil {
-		mu.Lock()
-	}
-	_, exists := ck["important_kwd"]
-	if mu != nil {
-		mu.Unlock()
-	}
-	if exists {
+func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if _, exists := ck["important_kwd"]; exists {
 		return nil
+	}
+	topN := c.Param.Keywords.TopN
+	if topN <= 0 {
+		return nil
+	}
+	systemPrompt := c.Param.Keywords.SystemPrompt
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = fmt.Sprintf(autoKeywordPrompt, topN)
 	}
 	kwTemp := extractorTemperature
 	kwIn := extractorInputs{
-		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
-		prompt:       "Output: ",
-		temperature:  &kwTemp,
+		llmID:       in.llmID,
+		temperature: &kwTemp,
 	}
-	result, err := c.call(ctx, db, kwIn, "")
+	resultStr, err := c.callText(ctx, db, kwIn, systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
@@ -701,45 +652,36 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	}
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
-	if mu != nil {
-		mu.Lock()
-	}
 	ck["important_kwd"] = kwds
 	if tkErr == nil {
 		ck["important_tks"] = tks
-	}
-	if mu != nil {
-		mu.Unlock()
 	}
 	return nil
 }
 
 // runAutoQuestions extracts questions for the current chunk and stores
-// them on ck["question_kwd"]. See runAutoKeywords for the mu contract
-// and the temperature pin.
-func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
-	if mu != nil {
-		mu.Lock()
-	}
-	_, exists := ck["question_kwd"]
-	if mu != nil {
-		mu.Unlock()
-	}
-	if exists {
+// them on ck["question_kwd"]. See runAutoKeywords for the temperature pin.
+func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if _, exists := ck["question_kwd"]; exists {
 		return nil
+	}
+	topN := c.Param.Questions.TopN
+	if topN <= 0 {
+		return nil
+	}
+	systemPrompt := c.Param.Questions.SystemPrompt
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = fmt.Sprintf(autoQuestionPrompt, topN)
 	}
 	qTemp := extractorTemperature
 	qIn := extractorInputs{
-		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
-		prompt:       "Output: ",
-		temperature:  &qTemp,
+		llmID:       in.llmID,
+		temperature: &qTemp,
 	}
-	result, err := c.call(ctx, db, qIn, "")
+	resultStr, err := c.callText(ctx, db, qIn, systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
@@ -758,25 +700,329 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	}
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
-	if mu != nil {
-		mu.Lock()
-	}
 	ck["question_kwd"] = filtered
 	if tkErr == nil {
 		ck["question_tks"] = tks
 	}
-	if mu != nil {
-		mu.Unlock()
-	}
 	return nil
+}
+
+// runAutoSummary extracts a concise summary for the current chunk using autoSummaryPrompt
+// and stores it on ck["summary"].
+func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if _, exists := ck["summary"]; exists {
+		return nil
+	}
+	if !c.Param.Summary.Enabled {
+		return nil
+	}
+	systemPrompt := c.Param.Summary.SystemPrompt
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = autoSummaryPrompt
+	}
+	sumTemp := extractorTemperature
+	sumIn := extractorInputs{
+		llmID:       in.llmID,
+		temperature: &sumTemp,
+	}
+	resultStr, err := c.callText(ctx, db, sumIn, systemPrompt, chunkText)
+	if err != nil {
+		return err
+	}
+	resultStr = cleanExtractionResult(resultStr)
+	if resultStr == "" {
+		return nil
+	}
+	ck["summary"] = resultStr
+	return nil
+}
+
+// runAutoExtractions dispatches the auto keyword / question / summary / metadata
+// extraction for every chunk to the process-wide extractorPool so the
+// work runs with bounded cross-chunk concurrency (mirrors Python's
+// chat_limiter). The pool only bounds concurrency; per-invocation
+// completion and first-error collection happen here with a local
+// sync.WaitGroup, so concurrent Invoke calls do not disturb each other.
+// Each chunk job owns its own chunk map, so no per-chunk mutex is needed.
+func (c *ExtractorComponent) runAutoExtractions(ctx context.Context, db *gorm.DB, in extractorInputs) error {
+	if c.Param.Keywords.TopN <= 0 && c.Param.Questions.TopN <= 0 && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
+		return nil
+	}
+	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
+	for i, ck := range in.chunks {
+		i, ck := i, ck
+		text, _ := ck["content_with_weight"].(string)
+		if strings.TrimSpace(text) == "" {
+			text, _ = ck["text"].(string)
+		}
+		fn := c.autoExtractionJob(ctx, db, in, i, ck, text)
+		f, err := extractorPool.Submit(ctx, fn)
+		if err != nil {
+			return err
+		}
+		futs = append(futs, f)
+	}
+	var firstErr error
+	var emu sync.Mutex
+	var wg sync.WaitGroup
+	for _, f := range futs {
+		wg.Add(1)
+		go func(f utility.WorkerPoolFuture[extractorJob, struct{}]) {
+			defer wg.Done()
+			res, werr := f.Wait(ctx)
+			if werr != nil {
+				emu.Lock()
+				if firstErr == nil {
+					firstErr = werr
+				}
+				emu.Unlock()
+				return
+			}
+			if res.Err != nil {
+				emu.Lock()
+				if firstErr == nil {
+					firstErr = res.Err
+				}
+				emu.Unlock()
+			}
+		}(f)
+	}
+	wg.Wait()
+	return firstErr
+}
+
+// autoExtractionJob returns the unit of work for one chunk: it runs the
+// enabled auto-extractions (keywords, questions, summary, metadata) sequentially
+// on the chunk's own map. Running them sequentially inside the job keeps
+// the code free of per-chunk mutexes — cross-chunk parallelism is provided
+// by the pool, not by intra-chunk goroutines.
+func (c *ExtractorComponent) autoExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string) extractorJob {
+	return func() error {
+		if c.Param.Keywords.TopN > 0 {
+			if err := c.runAutoKeywords(ctx, db, in, ck, chunkText); err != nil {
+				return fmt.Errorf("chunk %d keywords: %w", idx, err)
+			}
+		}
+		if c.Param.Questions.TopN > 0 {
+			if err := c.runAutoQuestions(ctx, db, in, ck, chunkText); err != nil {
+				return fmt.Errorf("chunk %d questions: %w", idx, err)
+			}
+		}
+		if c.Param.Summary.Enabled {
+			if err := c.runAutoSummary(ctx, db, in, ck, chunkText); err != nil {
+				return fmt.Errorf("chunk %d summary: %w", idx, err)
+			}
+		}
+		if c.Param.Metadata.Enabled {
+			if err := c.runEnableMetadata(ctx, db, in, ck, chunkText); err != nil {
+				return fmt.Errorf("chunk %d metadata: %w", idx, err)
+			}
+		}
+		return nil
+	}
+}
+
+// runEnableMetadata extracts structured metadata for the current chunk and
+// merges the parsed JSON object into ck["metadata"]. It mirrors the
+// runAutoKeywords/runAutoQuestions shape but parses a JSON object and
+// merges into the chunk's metadata map.
+func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Metadata) == 0 {
+		return nil
+	}
+	// Render the field schema into the prompt, mirroring Python's
+	// turn2jsonschema(metadata_conf) rendered into the META_DATA template.
+	schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Metadata)
+	if len(schemaMap) == 0 {
+		return nil
+	}
+	schemaJSON, err := json.Marshal(schemaMap)
+	if err != nil {
+		return err
+	}
+	schemaStr := string(schemaJSON)
+
+	// LLM cache (mirrors Python get_llm_cache/set_llm_cache in
+	// task_executor.py:543/550 gen_metadata_task): identical (model + chunk
+	// text + schema) extractions are served from Redis within a 24h window so
+	// repeated runs / identical chunks don't re-pay the LLM call.
+	// Best-effort: a missing Redis client or any cache error falls through to
+	// a live call instead of failing the extraction.
+	var parsed map[string]any
+	if cached, hit := getMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText); hit {
+		parsed = cached
+	} else {
+		metaTemp := extractorTemperature
+		metaIn := extractorInputs{
+			llmID:       in.llmID,
+			temperature: &metaTemp,
+		}
+		systemPrompt := fmt.Sprintf(autoMetadataPrompt, schemaStr)
+		parsed, err = c.callStructured(ctx, db, metaIn, systemPrompt, chunkText)
+		if err != nil {
+			return err
+		}
+		if parsed == nil {
+			// Non-JSON or empty response — nothing to extract, not an error.
+			return nil
+		}
+		setMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText, parsed)
+	}
+	// Merge into the chunk metadata map, preserving existing keys.
+	var meta map[string]any
+	if existing, ok := ck["metadata"].(map[string]any); ok && existing != nil {
+		meta = existing
+	} else {
+		meta = make(map[string]any, len(parsed))
+	}
+	for k, v := range parsed {
+		if v == nil {
+			continue
+		}
+		if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
+			continue
+		}
+		meta[k] = v
+	}
+	ck["metadata"] = meta
+	return nil
+}
+
+// metadataLLMCacheTTL mirrors Python get_llm_cache/set_llm_cache 24h TTL.
+const metadataLLMCacheTTL = 24 * time.Hour
+
+// metadataLLMCacheKey builds a Redis key from (llm id, chunk text, "metadata",
+// schema), mirroring Python get_llm_cache's xxh64(llmnm + txt + history + genconf).
+func metadataLLMCacheKey(llmID, schemaJSON, chunkText string) string {
+	h := xxhash.New()
+	h.WriteString(llmID)
+	h.WriteString("\x00")
+	h.WriteString(chunkText)
+	h.WriteString("\x00")
+	h.WriteString("metadata")
+	h.WriteString("\x00")
+	h.WriteString(schemaJSON)
+	return fmt.Sprintf("kc:meta:%x", h.Sum64())
+}
+
+// getMetadataLLMCache returns a cached extraction for the given chunk, or
+// (nil, false) on miss / Redis unavailable / decode error. Best-effort.
+func getMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string) (map[string]any, bool) {
+	client := redis.Get()
+	if client == nil {
+		return nil, false
+	}
+	data, err := client.Get(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText))
+	if err != nil || data == "" {
+		return nil, false
+	}
+	var parsed map[string]any
+	if err = json.Unmarshal([]byte(data), &parsed); err != nil {
+		return nil, false
+	}
+	return parsed, true
+}
+
+// setMetadataLLMCache stores an extraction result for 24h. Best-effort: a
+// missing Redis client or marshal error is silently ignored.
+func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string, parsed map[string]any) {
+	client := redis.Get()
+	if client == nil {
+		return
+	}
+	data, err := json.Marshal(parsed)
+	if err != nil {
+		return
+	}
+	client.Set(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText), string(data), metadataLLMCacheTTL)
+}
+
+// callRaw runs one chat call against the LLM (per chunk in the normal path)
+// and returns the raw response. It holds the shared plumbing — driver/target
+// resolution, message assembly, temperature override, retry — but deliberately
+// does NOT clean or parse the response. Callers pick the view they need:
+//
+//   - callText wraps callRaw with the LLM-layer two-step cleanup (think +
+//     tool_call) and returns a plain string.
+//   - callStructured wraps callRaw with cleanup + explicit JSON parsing and
+//     returns a map — the metadata path, matching Python gen_metadata.
+func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (*extractorChatResponse, error) {
+	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+	if err != nil {
+		return nil, err
+	}
+	msgs := buildExtractorMessages(systemPrompt, chunkText)
+	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
+	if fitErr != nil {
+		return nil, fitErr
+	}
+	msgs = fitted
+	inv := getExtractorChatInvoker()
+	req := extractorChatRequest{
+		Driver:    driver,
+		ModelName: modelName,
+		APIKey:    apiKey,
+		BaseURL:   baseURL,
+		Messages:  msgs,
+	}
+	// Only override the temperature when the caller set one. A nil
+	// Temperature lets the model / chat-model default decide, matching
+	// Python's generic Extractor path; keyword/question helpers set
+	// extractorTemperature (0.2) to mirror generator.py.
+	if in.temperature != nil {
+		temp := *in.temperature
+		req.Temperature = &temp
+	}
+	var resp *extractorChatResponse
+	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
+		r, e := inv.Chat(ctx, req)
+		resp = r
+		return e
+	}, isRetryableLLMError); err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		// Defensive: a provider adapter returning (nil, nil) would otherwise
+		// panic on resp.Content below. Surface a diagnosable error instead.
+		return nil, fmt.Errorf("extractor: chat: nil response from invoker")
+	}
+	return resp, nil
+}
+
+// toolCallRE matches a <tool_call>...</tool_call> block, mirroring Python's
+// `re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)` at
+// llm_service.py:461. Non-greedy so consecutive tool_call blocks are each
+// stripped.
+var toolCallRE = regexp.MustCompile(`(?s)<tool_call>.*?</tool_call>`)
+
+// cleanLLMText applies the two-step LLM-layer cleanup that Python performs
+// in LLMBundle.async_chat (llm_service.py:459-461) for every response,
+// before any parsing:
+//
+//  1. Reasoning content: when the response BEGINS with `<think>`, take
+//     everything after the LAST `</think>`. A `<think>` that appears after
+//     a non-empty prefix is treated as ordinary content and preserved, so a
+//     legitimate prefix is never stripped. Python's _remove_reasoning_content
+//     (llm_service.py:332-346) finds the first `<think>` anywhere; restricting
+//     to a leading `<think>` avoids deleting real content that merely contains
+//     a think-looking tag. A leading `<think>` with no closing `</think>` is
+//     kept unchanged.
+//  2. Tool-call blocks: remove `<tool_call>...</tool_call>` spans.
+//
+// The result is a plain string, ready for the caller to consume as text or
+// to parse explicitly.
+func cleanLLMText(s string) string {
+	if strings.HasPrefix(s, "<think>") {
+		s = common.StripThinkTrailing(s)
+	}
+	s = toolCallRE.ReplaceAllString(s, "")
+	return strings.TrimSpace(s)
 }
 
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
 // matching Python's keyword_extraction and question_proposal post-processing.
 func cleanExtractionResult(s string) string {
-	if i := strings.LastIndex(s, "</think>"); i >= 0 {
-		s = s[i+len("</think>"):]
-	}
+	s = common.StripThinkTrailing(s)
 	s = strings.TrimSpace(s)
 	if strings.Contains(s, "**ERROR**") {
 		return ""
@@ -841,54 +1087,41 @@ func isRetryableLLMError(err error) bool {
 	return true
 }
 
-// call dispatches one LLM chat call for the supplied chunk text
-// (empty string in the no-chunk fast path). The result is the
-// raw string from the model — JSON parsing happens here so
-// callers can rely on a structured value downstream.
-func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractorInputs, chunkText string) (any, error) {
-	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+// callText runs one chat call and returns the cleaned text response.
+func (c *ExtractorComponent) callText(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (string, error) {
+	resp, err := c.callRaw(ctx, db, in, systemPrompt, chunkText)
+	if err != nil {
+		return "", err
+	}
+	return cleanLLMText(resp.Content), nil
+}
+
+// callStructured runs one chat call, cleans the response, and explicitly
+// parses it as a JSON object. Used by the metadata path, which needs a
+// structured value to merge into chunk metadata — matching Python
+// gen_metadata's json_repair.loads. A non-JSON or empty response returns
+// (nil, nil) so the caller treats it as "nothing extracted", not an error.
+func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (map[string]any, error) {
+	resp, err := c.callRaw(ctx, db, in, systemPrompt, chunkText)
 	if err != nil {
 		return nil, err
 	}
-	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
-	inv := getExtractorChatInvoker()
-	req := extractorChatRequest{
-		Driver:    driver,
-		ModelName: modelName,
-		APIKey:    apiKey,
-		BaseURL:   baseURL,
-		Messages:  msgs,
+	s := cleanLLMText(resp.Content)
+	if s == "" {
+		return nil, nil
 	}
-	// Only override the temperature when the caller set one. A nil
-	// Temperature lets the model / chat-model default decide, matching
-	// Python's generic Extractor path; keyword/question helpers set
-	// extractorTemperature (0.2) to mirror generator.py.
-	if in.temperature != nil {
-		temp := *in.temperature
-		req.Temperature = &temp
+	// Second cleanup layer, mirroring Python gen_metadata's
+	// re.sub(r"^.*</think>", "", ans, re.DOTALL): cleanLLMText only strips a
+	// leading <think>, so a mid-text reasoning block preceded by a preamble
+	// would otherwise survive into JSON parsing and silently drop the whole
+	// metadata extraction that Python would have kept. No **ERROR** check here
+	// — Python's gen_metadata has none either.
+	s = common.StripThinkTrailing(s)
+	parsed, ok := tryParseJSONObject(s)
+	if !ok {
+		return nil, nil
 	}
-	var resp *extractorChatResponse
-	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
-		r, e := inv.Chat(ctx, req)
-		resp = r
-		return e
-	}, isRetryableLLMError); err != nil {
-		return nil, err
-	}
-	raw := strings.TrimSpace(resp.Content)
-	if raw == "" {
-		// No response — emit empty string so downstream code
-		// can distinguish from "LLM errored" via the error
-		// path above.
-		return "", nil
-	}
-	// Best-effort JSON parse: a JSON object response is the
-	// canonical structured-extraction shape. Other shapes are
-	// returned verbatim so the caller can decide.
-	if parsed, ok := tryParseJSONObject(raw); ok {
-		return parsed, nil
-	}
-	return raw, nil
+	return parsed, nil
 }
 
 // resolveExtractorChatTarget resolves the llm_id into driver / model /
@@ -1046,145 +1279,208 @@ func isBareTenantModelID(s string) bool {
 	return true
 }
 
-// buildExtractorMessages assembles system + user messages for
-// one extraction call. The user prompt is rendered as
-// "<prompt>\n\n<chunkText>" so the python behavior of
-// substituting the chunk text into the args dict is preserved
-// without invoking a template engine.
-//
-// Prompt placeholders of the form `{ComponentName:ParamName@chunks}`
-// are substituted with the joined text of all upstream chunks
-// when chunks is non-empty. The python rag/flow/extractor/extractor.py
-// build_existing_prompt path performs the same substitution at
-// runtime; the Go port surfaces it as a regex on the prompt
-// template so the resume template's `{TitleChunker:FlatMiceFix@chunks}`
-// reference resolves without invoking a template engine.
-//
-// Substitution is opt-in: when chunks is nil/empty the placeholder
-// is left intact so a misconfigured template surfaces as a
-// clear pattern rather than silently disappearing.
-func buildExtractorMessages(system, prompt, chunkText string, chunks []map[string]any) []eschema.Message {
+// extractorContextLengthOverride is a narrow test seam mirroring
+// extractorChatTargetResolverOverride: it lets unit tests supply a context
+// length without a real tenant model row, so the message-fitting wiring in
+// callRaw/llmTagChunk can be exercised without a DB. When set,
+// extractorContextLength consults it first.
+var (
+	extractorContextLengthOverrideMu sync.RWMutex
+	extractorContextLengthOverride   func(ctx context.Context, llmID string) int
+)
+
+// SetExtractorContextLengthOverride swaps the package-level context-length
+// resolver for tests. Pass nil to restore the default. Concurrent-safe.
+func SetExtractorContextLengthOverride(fn func(ctx context.Context, llmID string) int) {
+	extractorContextLengthOverrideMu.Lock()
+	defer extractorContextLengthOverrideMu.Unlock()
+	extractorContextLengthOverride = fn
+}
+
+func getExtractorContextLengthOverride() func(ctx context.Context, llmID string) int {
+	extractorContextLengthOverrideMu.RLock()
+	defer extractorContextLengthOverrideMu.RUnlock()
+	return extractorContextLengthOverride
+}
+
+// extractorContextLength returns the chat model's context window
+// (content_length) for the effective chat model used by a call, or 0 when
+// unavailable. Mirrors Python's chat_mdl.max_length. Used as the token
+// budget for message fitting so oversized prompts are trimmed instead of
+// rejected by the provider. When llm_id is empty the call falls back to the
+// tenant default chat model (see resolveExtractorChatTarget), so the same
+// model is resolved here; otherwise the default-model path would never get
+// message fitting. Returns 0 (skip fitting) when the model is unknown (e.g.
+// unit tests with synthetic llm_id or no canvas state).
+func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int {
+	if fn := getExtractorContextLengthOverride(); fn != nil {
+		return fn(ctx, llmID)
+	}
+	if db == nil {
+		db = dao.DB
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return 0
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return 0
+	}
+	if llmID == "" {
+		llmID = defaultChatModelRef(ctx, db, tid)
+	}
+	if llmID == "" {
+		return 0
+	}
+	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
+}
+
+// defaultChatModelRef returns the tenant's default chat model reference —
+// the tenant_model UUID when one is pinned, otherwise the composite
+// "model@provider" id — or "" when the tenant has no default chat model.
+func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) string {
+	if db == nil {
+		// No database to read the tenant's default chat model from.
+		return ""
+	}
+	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
+	if err != nil || tenant == nil {
+		return ""
+	}
+	if tenant.TenantLLMID != nil && *tenant.TenantLLMID != "" {
+		return *tenant.TenantLLMID
+	}
+	return tenant.LLMID
+}
+
+// extractorContextFitBudget returns 97% of the model's context window as the
+// fitting budget, mirroring the agent component's contextFitBudget. The
+// margin leaves headroom for the difference between the cl100k tokenizer used
+// for counting and the model's own tokenizer, plus per-message formatting
+// overhead, so a fitted prompt stays inside the provider's real context limit
+// instead of landing exactly on it.
+func extractorContextFitBudget(ctxLen int) int {
+	budget := int(float64(ctxLen) * 0.97)
+	if budget < 1 {
+		// Never hand messagefit a <=0 budget: Fit treats <=0 as the 8192
+		// default, which would stop trimming entirely for a tiny context.
+		return 1
+	}
+	return budget
+}
+
+// fitExtractorMessages trims msgs to the chat model's context window using
+// the shared messagefit fitter (mirrors Python's message_fit_in), dropping
+// entries the fitter removed. It returns a clear error instead of letting a
+// conversation whose final user turn was trimmed to empty reach the provider:
+// the proportional trim can do that when the system prompt alone exceeds the
+// context budget, and providers reject empty user turns with an obscure error
+// after retries.
+func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs []eschema.Message) ([]eschema.Message, error) {
+	ctxLen := extractorContextLength(ctx, db, llmID)
+	if ctxLen <= 0 {
+		return msgs, nil
+	}
+	fitMsgs := make([]messagefit.Message, len(msgs))
+	for i := range msgs {
+		fitMsgs[i] = messagefit.Message{Role: string(msgs[i].Role), Content: msgs[i].Content}
+	}
+	kept, keptIdx, _ := messagefit.Fit(fitMsgs, extractorContextFitBudget(ctxLen))
+
+	fitted := make([]eschema.Message, 0, len(kept))
+	for j, i := range keptIdx {
+		msgs[i].Content = kept[j].Content
+		fitted = append(fitted, msgs[i])
+	}
+	if len(fitted) == 0 {
+		return nil, errors.New("extractor: message fitting dropped every message; check the chat model context length setting")
+	}
+	// The system prompt carries the extraction contract (output format,
+	// field definitions); sending without it would silently produce
+	// garbage. The proportional trim can empty every system message when
+	// the final user turn alone fills the budget, so require at least one
+	// retained system message with non-empty content — a system message kept
+	// but trimmed to empty is just as useless as a dropped one. The guard only
+	// applies when the input actually had a system message: systemPrompt is
+	// optional and a user-only prompt is a valid request.
+	hadSystem := false
+	for _, m := range msgs {
+		if m.Role == eschema.System {
+			hadSystem = true
+			break
+		}
+	}
+	if hadSystem {
+		keptSystem := false
+		for _, m := range fitted {
+			if m.Role == eschema.System && strings.TrimSpace(m.Content) != "" {
+				keptSystem = true
+				break
+			}
+		}
+		if !keptSystem {
+			return nil, errors.New("extractor: message fitting emptied the system prompt; check the chat model context length setting or reduce the prompt size")
+		}
+	}
+	last := fitted[len(fitted)-1]
+	if last.Role != eschema.User || strings.TrimSpace(last.Content) == "" {
+		return nil, errors.New("extractor: message fitting emptied the final user turn; check the chat model context length setting or reduce the prompt size")
+	}
+	return fitted, nil
+}
+
+// buildExtractorMessages assembles system + user messages for one extraction
+// call. The user message strictly carries chunkText (or a fallback single space
+// if empty), ensuring a clean and consistent message contract.
+// System prompt is omitted if empty or whitespace-only to avoid sending empty
+// system turns to LLM providers.
+func buildExtractorMessages(systemPrompt, chunkText string) []eschema.Message {
 	out := make([]eschema.Message, 0, 2)
-	if system != "" {
-		out = append(out, eschema.Message{Role: eschema.System, Content: system})
+	if strings.TrimSpace(systemPrompt) != "" {
+		out = append(out, eschema.Message{Role: eschema.System, Content: systemPrompt})
 	}
-	user := prompt
-	if chunkText != "" {
-		if user != "" {
-			user += "\n\n"
-		}
-		user += chunkText
+	userContent := chunkText
+	if strings.TrimSpace(userContent) == "" {
+		userContent = " "
 	}
-	if user == "" {
-		// An empty prompt + empty chunk is a degenerate call.
-		// The LLM driver returns an error; we surface that
-		// unchanged.
-		user = " "
-	}
-	user = substitutePromptPlaceholders(user, chunks)
-	out = append(out, eschema.Message{Role: eschema.User, Content: user})
+	out = append(out, eschema.Message{Role: eschema.User, Content: userContent})
 	return out
-}
-
-// substitutePromptPlaceholders replaces `{ComponentName:ParamName@chunks}`
-// patterns in the user prompt with the joined text of all upstream
-// chunks. The python rag/flow/extractor/extractor.py:build_existing_prompt
-// path performs the same substitution at runtime using a Jinja
-// template; the Go port keeps the regex form because the LLM
-// driver does not require Jinja and the surface is small enough to
-// avoid pulling in a template engine.
-//
-// Pattern grammar:
-//
-//	{CmpName:ParamName@chunks}
-//
-// The CmpName and ParamName are both matched but ignored — the
-// substitute is always "the joined chunk text" today, because the
-// only @chunks reference in production templates is the resume
-// template's `{TitleChunker:FlatMiceFix@chunks}` pattern. The
-// CmpName/ParamName parsing exists so a future per-component
-// substitution can extend the function without breaking the
-// existing call sites.
-func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string {
-	if prompt == "" || len(chunks) == 0 {
-		return prompt
-	}
-	// Build the substitution payload once. Each chunk's text is
-	// joined with a blank line so a downstream LLM sees clear
-	// chunk boundaries.
-	var b strings.Builder
-	for i, ck := range chunks {
-		t, _ := ck["text"].(string)
-		if t == "" {
-			t, _ = ck["content_with_weight"].(string)
-		}
-		if t == "" {
-			continue
-		}
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(t)
-	}
-	repl := b.String()
-	if repl == "" {
-		return prompt
-	}
-	return placeholderRE.ReplaceAllString(prompt, repl)
-}
-
-// placeholderRE matches `{CmpName:ParamName@chunks}` patterns in
-// Extractor user prompts. The CMP / Param groups are ignored for
-// the @chunks variant but kept so the regex rejects arbitrary
-// placeholders (a future per-component substitution extends here).
-var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
-
-// simplePlaceholderRE matches simple {field_name} placeholders
-// (no colons, no @chunks). Used by substituteChunkPlaceholders to
-// replace {text}, {content_with_weight}, etc. with the current
-// chunk's field values, mirroring Python's string_format
-// (agent/component/base.py:602-609).
-var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
-
-// substituteChunkPlaceholders replaces {field_name} placeholders in
-// the prompt with values from the current chunk map. The special
-// alias "chunks" maps to chunkText (the current chunk's primary
-// text), matching Python's `args[chunks_key] = ck["text"]` at
-// extractor.py:102. Unmatched placeholders are left as-is.
-func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) string {
-	if prompt == "" || ck == nil {
-		return prompt
-	}
-	// Build lookup: chunk fields + "chunks" alias
-	lookup := make(map[string]string, len(ck)+1)
-	for k, v := range ck {
-		lookup[k] = fmt.Sprintf("%v", v)
-	}
-	if _, has := lookup["chunks"]; !has {
-		lookup["chunks"] = chunkText
-	}
-	return simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
-		key := match[1 : len(match)-1] // strip { }
-		if val, ok := lookup[key]; ok {
-			return val
-		}
-		return match // leave unknown placeholders as-is
-	})
 }
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when
-// s is not a JSON object. Trims common markdown code fences
+// s is not a JSON object. Trims common Markdown code fences
 // (```json ... ```) before parsing.
 func tryParseJSONObject(s string) (map[string]any, bool) {
 	trimmed := strings.TrimSpace(s)
-	// Strip a single ``` fence pair if present.
+	// Strip a surrounding Markdown code fence. Models commonly wrap JSON in
+	// ```json ... ``` (language tag on the opening line) but some emit the tag
+	// on its own line (```\njson\n{...}); Python's json_repair tolerates both,
+	// encoding/json does not, so we drop the fence and any bare leading
+	// "json"/"JSON" language line before parsing.
 	if strings.HasPrefix(trimmed, "```") {
-		if idx := strings.Index(trimmed, "\n"); idx >= 0 {
+		// Drop the opening fence line (````` plus an optional inline language
+		// tag such as `json`) up to and including the first newline.
+		if idx := strings.IndexByte(trimmed, '\n'); idx >= 0 {
 			trimmed = trimmed[idx+1:]
+		} else {
+			trimmed = trimmed[3:]
 		}
-		if strings.HasSuffix(trimmed, "```") {
-			trimmed = trimmed[:len(trimmed)-3]
+		// Some models place the language tag on the next line
+		// (`````\njson\n{...}). Drop a bare leading `json`/`JSON` line so it is
+		// not mistaken for JSON content.
+		if firstNL := strings.IndexByte(trimmed, '\n'); firstNL >= 0 {
+			if firstLine := strings.TrimSpace(trimmed[:firstNL]); firstLine == "json" || firstLine == "JSON" {
+				trimmed = trimmed[firstNL+1:]
+			}
+		} else if firstLine := strings.TrimSpace(trimmed); firstLine == "json" || firstLine == "JSON" {
+			trimmed = ""
+		}
+		// Drop the closing fence if present.
+		if i := strings.LastIndex(trimmed, "```"); i >= 0 {
+			trimmed = trimmed[:i]
 		}
 		trimmed = strings.TrimSpace(trimmed)
 	}
@@ -1204,10 +1500,56 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 	return out, true
 }
 
-// init registers Extractor under CategoryIngestion (per plan §4
-// Phase 2.5). Metadata is derived from the Inputs()/Outputs()
-// methods on ExtractorComponent so the API layer (Phase 4) can
-// enumerate the catalog without instantiating the component.
+// parseMetadataFieldDefs converts an any value (typically []any of maps)
+// to a typed []common.MetadataFieldDef slice.
+func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
+	if v == nil {
+		return nil
+	}
+	if defs, ok := v.([]common.MetadataFieldDef); ok {
+		return defs
+	}
+	var arr []any
+	switch typed := v.(type) {
+	case []any:
+		arr = typed
+	case []map[string]any:
+		arr = make([]any, 0, len(typed))
+		for _, item := range typed {
+			arr = append(arr, item)
+		}
+	default:
+		return nil
+	}
+	fields := make([]common.MetadataFieldDef, 0, len(arr))
+	for _, f := range arr {
+		m, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := m["key"].(string)
+		if key = strings.TrimSpace(key); key == "" {
+			continue
+		}
+		def := common.MetadataFieldDef{Key: key}
+		if t, ok := m["type"].(string); ok {
+			def.Type = t
+		}
+		if d, ok := m["description"].(string); ok {
+			def.Description = d
+		}
+		if e, ok := m["enum"].([]any); ok {
+			for _, ev := range e {
+				if s, ok := ev.(string); ok {
+					def.Enum = append(def.Enum, s)
+				}
+			}
+		}
+		fields = append(fields, def)
+	}
+	return fields
+}
+
 // mapInt converts a JSON-compatible value to int.
 func mapInt(v interface{}) int {
 	switch n := v.(type) {

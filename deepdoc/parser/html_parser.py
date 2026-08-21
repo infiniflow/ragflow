@@ -105,27 +105,31 @@ class RAGFlowHtmlParser:
         return table_str_list
 
     @classmethod
-    def read_text_recursively(cls, element, parser_result, chunk_token_num=512, parent_name=None, block_id=None):
+    def read_text_recursively(cls, element, parser_result, chunk_token_num=512, parent_name=None, block_id=None, newline_before=0):
         if isinstance(element, NavigableString):
-            content = element.strip()
+            # Keep the text verbatim (do not strip): source whitespace is
+            # folded later by merge_block_text, which preserves <br> breaks.
+            content = str(element)
 
-            def is_valid_html(content):
+            def is_valid_html(text):
                 try:
-                    soup = BeautifulSoup(content, "html.parser")
+                    soup = BeautifulSoup(text, "html.parser")
                     return bool(soup.find())
                 except Exception:
                     return False
 
             return_info = []
-            if content:
+            if content.strip():
                 if is_valid_html(content):
                     soup = BeautifulSoup(content, "html.parser")
-                    child_info = cls.read_text_recursively(soup, parser_result, chunk_token_num, element.name, block_id)
+                    child_info = cls.read_text_recursively(soup, parser_result, chunk_token_num, element.name, block_id, newline_before)
                     parser_result.extend(child_info)
                 else:
-                    info = {"content": element.strip(), "tag_name": "inner_text", "metadata": {"block_id": block_id}}
+                    info = {"content": content, "tag_name": "inner_text", "metadata": {"block_id": block_id}}
                     if parent_name:
                         info["tag_name"] = parent_name
+                    if newline_before:
+                        info["metadata"]["newline_before"] = newline_before
                     return_info.append(info)
             return return_info
         elif isinstance(element, Tag):
@@ -139,22 +143,55 @@ class RAGFlowHtmlParser:
             else:
                 if str.lower(element.name) in BLOCK_TAGS:
                     block_id = str(uuid.uuid1())
+                # A <br> is a hard line break. Thread a pending break count
+                # through so it survives nesting (e.g. "<p>A<br><span>B</span></p>")
+                # and repeated breaks ("<br><br>"). The count resets only after
+                # a descendant emits text, mirroring the Go walker.
+                pending_newlines = int(newline_before)
                 for child in element.children:
-                    child_info = cls.read_text_recursively(child, parser_result, chunk_token_num, element.name, block_id)
+                    if isinstance(child, Tag) and str.lower(child.name) == "br":
+                        pending_newlines += 1
+                        continue
+                    result_count = len(parser_result)
+                    child_info = cls.read_text_recursively(child, parser_result, chunk_token_num, element.name, block_id, pending_newlines)
                     parser_result.extend(child_info)
+                    if child_info or len(parser_result) > result_count:
+                        pending_newlines = 0
         return []
+
+    # Hard line-break sentinel used between fragments so CSS whitespace
+    # folding (which collapses real whitespace runs) does not eat explicit
+    # <br> breaks. Replaced with "\n" after folding.
+    _HARD_BREAK = "\x0b"
+    _WS_RE = re.compile(r"[ \t\r\n\f]+")
+    _PRE_TAGS = ("pre", "textarea")
+
+    @classmethod
+    def _fold_block(cls, raw, preserve):
+        if preserve:
+            return raw.replace(cls._HARD_BREAK, "\n")
+        # Collapse each line between hard breaks: runs of collapsible
+        # whitespace become one space, and line edges are trimmed. This
+        # matches the Go walker's CSS whitespace folding.
+        lines = raw.split(cls._HARD_BREAK)
+        folded = [cls._WS_RE.sub(" ", ln).strip() for ln in lines]
+        return "\n".join(folded)
 
     @classmethod
     def merge_block_text(cls, parser_result):
         block_content = []
         current_content = ""
+        current_is_pre = False
         table_info_list = []
         last_block_id = None
         for item in parser_result:
-            content = item.get("content")
+            content = item.get("content") or ""
             tag_name = item.get("tag_name")
             title_flag = tag_name in TITLE_TAGS
             block_id = item.get("metadata", {}).get("block_id")
+            # newline_before is a break count: 0 -> join verbatim (no
+            # separator), >0 -> insert that many hard breaks (one per <br>).
+            newline_before = item.get("metadata", {}).get("newline_before", 0)
             if block_id:
                 if title_flag:
                     content = f"{TITLE_TAGS[tag_name]} {content}"
@@ -163,18 +200,21 @@ class RAGFlowHtmlParser:
                     # precedes the first block (last_block_id is None there),
                     # which was otherwise overwritten and lost.
                     if current_content:
-                        block_content.append(current_content)
+                        block_content.append(cls._fold_block(current_content, current_is_pre))
                     current_content = content
+                    current_is_pre = tag_name in cls._PRE_TAGS
                     last_block_id = block_id
                 else:
-                    current_content += (" " if current_content else "") + content
+                    sep = cls._HARD_BREAK * newline_before
+                    current_content += sep + content
             else:
                 if tag_name == "table":
                     table_info_list.append(item)
                 else:
-                    current_content += (" " if current_content else "") + content
+                    sep = cls._HARD_BREAK * newline_before
+                    current_content += sep + content
         if current_content:
-            block_content.append(current_content)
+            block_content.append(cls._fold_block(current_content, current_is_pre))
         return block_content, table_info_list
 
     # Characters from scripts written without spaces between words (CJK, kana,
@@ -193,6 +233,13 @@ class RAGFlowHtmlParser:
     def _token_count(cls, text):
         if not text:
             return 0
+        # FIXME: The identity of the tokenizer behind `rag_tokenizer.tokenize`
+        # (used here to size HTML chunks) is NOT confirmed. The earlier assumption
+        # that it resolves to `infinity.rag_tokenizer.RagTokenizer` is incorrect.
+        # Verify what `rag_tokenizer.tokenize` actually resolves to before claiming
+        # Parser and TokenChunker use different tokenizers. For reference,
+        # TokenChunker uses `num_tokens_from_string` (common/token_utils.py) which
+        # is tiktoken cl100k_base. See PARSER_ALIGNMENT_HANDOFF.md §3.2.
         tks_str = rag_tokenizer.tokenize(text)
         return len(tks_str.split(" ")) if tks_str else 0
 

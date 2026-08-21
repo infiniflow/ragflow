@@ -81,6 +81,7 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 
 func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 	tenantEmbdID := "42"
+	staleTenantEmbdID := "stale-id"
 
 	tests := []struct {
 		name     string
@@ -89,12 +90,20 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 		want     string
 	}{
 		{
-			name: "uses tenant embedding id before embd id",
+			name: "resolves tenant embedding id to base model name",
 			kb: &entity.Knowledgebase{
 				EmbdID:       "shared-model",
 				TenantEmbdID: &tenantEmbdID,
 			},
-			want: "tenant:42",
+			want: "embd:BAAI/bge-m3",
+		},
+		{
+			name: "stale tenant embedding id falls back to composite base name",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "BAAI/bge-m3@1@SILICONFLOW",
+				TenantEmbdID: &staleTenantEmbdID,
+			},
+			want: "embd:BAAI/bge-m3",
 		},
 		{
 			name: "uses embd id without tenant embedding id",
@@ -117,11 +126,29 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 			},
 			want: "embd:shared-model",
 		},
+		{
+			name: "legacy composite reduces to base model name",
+			kb: &entity.Knowledgebase{
+				EmbdID: "BAAI/bge-m3@2@SILICONFLOW",
+			},
+			want: "embd:BAAI/bge-m3",
+		},
+	}
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModel{}); err != nil {
+		t.Fatalf("failed to migrate test schema: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{ID: "42", ModelName: "BAAI/bge-m3"}).Error; err != nil {
+		t.Fatalf("failed to seed tenant_model: %v", err)
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := knowledgebaseEmbeddingKey(tt.kb, tt.tenantID); got != tt.want {
+			if got := knowledgebaseEmbeddingKey(t.Context(), db, tt.kb, tt.tenantID, map[string]string{}); got != tt.want {
 				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
 			}
 		})
@@ -377,6 +404,10 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
 		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	mustNot, ok := engine.searchReq.Filter["must_not"].(map[string]interface{})
+	if !ok || mustNot["exists"] != "compile_kwd" {
+		t.Fatalf("must_not filter = %#v, want compile_kwd existence exclusion", engine.searchReq.Filter["must_not"])
 	}
 	if slices.Contains(engine.searchReq.SelectFields, "content") {
 		t.Fatalf("SelectFields = %#v, should not request content with content_with_weight", engine.searchReq.SelectFields)
@@ -690,6 +721,7 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 		exists:    true,
 		oldBinary: oldImage,
 	}
+	ctx := t.Context()
 
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
@@ -699,7 +731,7 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage("kb-1", "chunk-1", newImage); err != nil {
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage); err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
@@ -1184,29 +1216,38 @@ type chunkImageStorage struct {
 	putCalls  int
 }
 
-func (s *chunkImageStorage) Health() bool { return true }
-func (s *chunkImageStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
+func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
+func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++
 	return nil
 }
-func (s *chunkImageStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	return s.oldBinary, nil
 }
-func (s *chunkImageStorage) Remove(bucket, fnm string, tenantID ...string) error  { return nil }
-func (s *chunkImageStorage) ObjExist(bucket, fnm string, tenantID ...string) bool { return s.exists }
+func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	return nil
+}
+func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
+	return s.exists
+}
 
 // ListObjects lists all objects in a bucket
-func (s *chunkImageStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+func (s *chunkImageStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	return []string{}, nil
 }
-func (s *chunkImageStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (s *chunkImageStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (s *chunkImageStorage) BucketExists(bucket string) bool                           { return true }
-func (s *chunkImageStorage) RemoveBucket(bucket string) error                          { return nil }
-func (s *chunkImageStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool { return false }
-func (s *chunkImageStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool { return false }
-func (s *chunkImageStorage) Close() error                                              { return nil }
+func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
+func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	return false
+}
+func (s *chunkImageStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	return false
+}
+func (s *chunkImageStorage) Close() error { return nil }
 
 func mustEncodePNG(t *testing.T, rect image.Rectangle) []byte {
 	t.Helper()
@@ -1238,10 +1279,10 @@ func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models
 func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(context.Context, *string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(context.Context, *string, models.EmbedRequest, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(context.Context, *string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(context.Context, *string, models.RerankRequest, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
 func (d *stubEmbeddingDriver) TranscribeAudio(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {

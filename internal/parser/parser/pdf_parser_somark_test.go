@@ -10,6 +10,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var submitSeen bool
 	var pollSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +79,7 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_SoMarkMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/parse/async":
@@ -123,6 +125,7 @@ func TestSoMarkBlockToItem_DropsHeaderByDefault(t *testing.T) {
 }
 
 func TestSoMarkSubmitMultipartShape(t *testing.T) {
+	withSSRFBypass(t)
 	var form multipart.Form
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseMultipartForm(1 << 20)

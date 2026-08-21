@@ -22,9 +22,17 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+      nproc:
+        soft: 65535
+        hard: 65535
     # Example configuration to set up an MCP server:
     # command:
     #   - --enable-mcpserver
@@ -73,9 +81,17 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - gpu
     image: ${RAGFLOW_IMAGE}
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+      nproc:
+        soft: 65535
+        hard: 65535
     # Example configuration to set up an MCP server:
     # command:
     #   - --enable-mcpserver

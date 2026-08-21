@@ -57,7 +57,7 @@ export function WikiDetailEditorPanel({
             {referenceDocuments.length > 0 && (
               <div className="mt-8">
                 <h3 className="text-sm font-medium text-text-secondary mb-3">
-                  {t('knowledgeDetails.sourceDocuments')}
+                  {t('knowledgeCompilation.sourceDocuments')}
                 </h3>
                 <ReferenceDocumentList list={referenceDocuments} />
               </div>

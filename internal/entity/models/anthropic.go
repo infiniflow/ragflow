@@ -41,7 +41,12 @@ func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *Anthropi
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
+			// Anthropic authenticates with the "x-api-key" header instead
+			// of the default "Authorization: Bearer".
+			authHeader: func(cfg *APIConfig) (string, string) {
+				return "x-api-key", strings.TrimSpace(*cfg.ApiKey)
+			},
 		},
 	}
 }
@@ -65,7 +70,6 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
@@ -77,9 +81,8 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -88,28 +91,23 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
-		"model":      modelName,
-		"messages":   apiMessages,
-		"max_tokens": 1024,
+		"model":    modelName,
+		"messages": apiMessages,
 	}
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
 	}
 	applyAnthropicChatConfig(reqBody, chatModelConfig)
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := a.baseModel.newJSONPostRequest(ctx, url, apiConfig, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-	setAnthropicHeaders(req, apiKey, false)
+	req.Header.Set("anthropic-version", anthropicVersion)
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -122,17 +120,10 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Anthropic messages API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("anthropic messages API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	answer, reasoning, err := parseAnthropicChatResponse(body)
-	if err != nil {
-		return nil, err
-	}
-	return &ChatResponse{
-		Answer:        &answer,
-		ReasonContent: &reasoning,
-	}, nil
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, parseAnthropicChatResponse)
 }
 
 func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) {
@@ -141,6 +132,8 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	}
 	if chatModelConfig.MaxTokens != nil {
 		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+	} else {
+		reqBody["max_tokens"] = 1024 // default when not configured
 	}
 	if chatModelConfig.Temperature != nil {
 		reqBody["temperature"] = *chatModelConfig.Temperature
@@ -341,19 +334,24 @@ func parseDataImageURL(url string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
-func parseAnthropicChatResponse(body []byte) (string, string, error) {
+func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, error) {
 	var result struct {
+		ID      string `json:"id"`
 		Content []struct {
 			Type     string `json:"type"`
 			Text     string `json:"text"`
 			Thinking string `json:"thinking"`
 		} `json:"content"`
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
+		return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
 	}
 	if len(result.Content) == 0 {
-		return "", "", fmt.Errorf("no content in Anthropic response")
+		return chatResponseParts{}, fmt.Errorf("no content in Anthropic response")
 	}
 
 	var answer strings.Builder
@@ -367,9 +365,26 @@ func parseAnthropicChatResponse(body []byte) (string, string, error) {
 		}
 	}
 	if answer.Len() == 0 {
-		return "", "", fmt.Errorf("no text content in Anthropic response")
+		return chatResponseParts{}, fmt.Errorf("no text content in Anthropic response")
 	}
-	return answer.String(), reasoning.String(), nil
+
+	usage := &TokenUsage{
+		PromptTokens:     result.Usage.InputTokens,
+		CompletionTokens: result.Usage.OutputTokens,
+		TotalTokens:      result.Usage.InputTokens + result.Usage.OutputTokens,
+	}
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 {
+		usage = nil
+	}
+
+	ans := answer.String()
+	reason := reasoning.String()
+	return chatResponseParts{
+		RequestID:     result.ID,
+		Content:       &ans,
+		ReasonContent: &reason,
+		Usage:         usage,
+	}, nil
 }
 
 func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -380,9 +395,8 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -410,7 +424,7 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Anthropic models API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("anthropic models API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var result struct {
@@ -453,9 +467,8 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return err
@@ -464,10 +477,9 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
-		"model":      modelName,
-		"messages":   apiMessages,
-		"max_tokens": 1024,
-		"stream":     true,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
@@ -496,7 +508,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Anthropic messages API error: %s, body: %s", resp.Status, string(body))
+		return fmt.Errorf("anthropic messages API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	sawTerminal := false
@@ -551,7 +563,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		case "error":
 			errInfo, _ := event["error"].(map[string]interface{})
 			message, _ := errInfo["message"].(string)
-			return fmt.Errorf("Anthropic stream error: %s", message)
+			return fmt.Errorf("anthropic stream error: %s", message)
 		}
 		return nil
 	})
@@ -571,11 +583,11 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	return sender(&endOfStream, nil)
 }
 
-func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AnthropicModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (a *AnthropicModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 

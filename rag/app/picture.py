@@ -32,7 +32,17 @@ from common.string_utils import clean_markdown_block
 from deepdoc.vision import OCR
 from rag.nlp import attach_media_context, rag_tokenizer, tokenize
 
-ocr = OCR()
+_ocr = None
+
+
+def _get_ocr():
+    """Lazy-init OCR to avoid downloading models at import time (breaks CI
+    collection when the network is unavailable)."""
+    global _ocr
+    if _ocr is None:
+        _ocr = OCR()
+    return _ocr
+
 
 # Gemini supported MIME types
 VIDEO_EXTS = [".mp4", ".mov", ".avi", ".flv", ".mpeg", ".mpg", ".webm", ".wmv", ".3gp", ".3gpp", ".mkv"]
@@ -78,9 +88,10 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
         if not txt:
             # Fallback to local deepdoc OCR
-            bxs = ocr(np.array(img))
+            bxs = _get_ocr()(np.array(img))
             txt = "\n".join([t[0] for _, t in bxs if t[0]])
 
+        txt = txt.strip()
         callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
         if (eng and len(txt.split()) > 32) or len(txt) > 32:
             tokenize(doc, txt, eng, language=lang)
@@ -100,6 +111,11 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             tokenize(doc, txt, eng, language=lang)
             return attach_media_context([doc], 0, image_ctx)
         except Exception as e:
+            if txt:
+                logging.warning(f"CV LLM unavailable, indexing OCR text instead: {e}")
+                callback(msg=f"[WARN] CV LLM unavailable ({e}), indexing OCR text only.")
+                tokenize(doc, txt, eng, language=lang)
+                return attach_media_context([doc], 0, image_ctx)
             callback(prog=-1, msg=str(e))
 
     return []

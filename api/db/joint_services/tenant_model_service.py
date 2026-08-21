@@ -435,6 +435,37 @@ def ensure_tenant_model_ids_for_params(tenant_id: str, params: dict) -> dict:
 
 
 def get_api_key(tenant_id: str, model_name: str):
+    # Try direct model ID (UUID) lookup first
+    exist, model_obj = TenantModelService.get_by_id(model_name)
+    if exist:
+        # Verify tenant ownership through the provider chain
+        ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+        if not ok:
+            raise LookupError(f"Provider id={model_obj.provider_id} not found for model {model_name}.")
+        if tenant_id != provider_obj.tenant_id:
+            joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+            joined_tenant_ids = [t["tenant_id"] for t in joined_tenants]
+            if provider_obj.tenant_id not in joined_tenant_ids:
+                raise LookupError(f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}.")
+
+        exist_inst, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+        if not exist_inst:
+            logger.warning(
+                "Direct-ID resolution: instance not found | tenant_id=%s model_id=%s instance_id=%s",
+                tenant_id,
+                model_name,
+                model_obj.instance_id,
+            )
+            raise LookupError(f"Instance {model_obj.instance_id} not found for model {model_name}.")
+        logger.debug(
+            "Direct-ID resolution: resolved | tenant_id=%s model_id=%s instance_id=%s",
+            tenant_id,
+            model_name,
+            model_obj.instance_id,
+        )
+        return instance_obj.api_key
+
+    # Fall back to name-based resolution: model[@instance]@provider
     _, instance_name, provider_name = split_model_name(model_name)
 
     if not provider_name:
@@ -518,6 +549,38 @@ def get_composite_model_name_by_id(model_id: str) -> str:
         raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
 
     return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+
+
+def get_composite_model_name_by_ids(model_ids: list[str]) -> dict[str, str]:
+    """Convert a list of tenant_model.id values to a dict mapping each id
+    to its composite model name string ``model_name@instance_name@provider_name``.
+    Model ids that cannot be resolved are silently skipped.
+    """
+    if not model_ids:
+        return {}
+
+    models = list(TenantModelService.get_by_ids(model_ids))
+    if not models:
+        return {}
+
+    instance_ids = list({m.instance_id for m in models})
+    provider_ids = list({m.provider_id for m in models})
+
+    instances = list(TenantModelInstanceService.get_by_ids(instance_ids)) if instance_ids else []
+    instance_map = {i.id: i for i in instances}
+
+    providers = list(TenantModelProviderService.get_by_ids(provider_ids)) if provider_ids else []
+    provider_map = {p.id: p for p in providers}
+
+    result: dict[str, str] = {}
+    for m in models:
+        inst = instance_map.get(m.instance_id)
+        prov = provider_map.get(m.provider_id)
+        if not inst or not prov:
+            continue
+        result[m.id] = f"{m.model_name}@{inst.instance_name}@{prov.provider_name}"
+
+    return result
 
 
 def ensure_mistral_ocr_from_env(tenant_id: str) -> str | None:

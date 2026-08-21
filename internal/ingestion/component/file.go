@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// File ingestion component (Phase 2.1) — port of python `rag/flow/file.py`.
+// Package component implements File ingestion component (Phase 2.1) — port of python `rag/flow/file.py`.
 //
 // SCOPE (honest):
 //
@@ -151,6 +151,14 @@ func (c *FileComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 	if in.fileDesc != nil {
 		out["file"] = in.fileDesc
 	}
+	// Pass through in-memory bytes when present (debug / dataflow dry-run
+	// where no doc row exists in storage). The downstream Parser reads
+	// `binary` first and skips the doc_id → storage lookup, so a debug run
+	// can parse the uploaded file without a persisted document. Persist
+	// runs set no `binary` here, so they keep resolving from storage.
+	if len(in.binary) > 0 {
+		out["binary"] = in.binary
+	}
 	// Publish the resolved run-level metadata into the workflow-wide
 	// CanvasState.Globals bag so downstream components (Tokenizer,
 	// Chunker, ...) read it from ctx instead of relying on this output
@@ -169,6 +177,7 @@ type fileInputs struct {
 	bucket   string
 	path     string
 	fileDesc map[string]any
+	binary   []byte
 }
 
 // parseFileInputs parses and validates the upstream input map.
@@ -179,6 +188,19 @@ func parseFileInputs(ctx context.Context, inputs map[string]any) (fileInputs, er
 		return fileInputs{}, fmt.Errorf("file: inputs map is nil")
 	}
 	out := fileInputs{}
+
+	// Debug / dataflow dry-run fast path: in-memory bytes were supplied
+	// via the graph input `binary` (no persisted document exists). Use
+	// them directly and skip the doc_id → storage resolution so a debug
+	// run parses the uploaded file without a DB/storage round-trip. The
+	// executor only sets `binary` for the non-persist (debug) marker doc.
+	if b, ok := inputs["binary"].([]byte); ok && len(b) > 0 {
+		out.binary = b
+		if n, ok := getString(inputs, "name"); ok && n != "" {
+			out.name = n
+		}
+		return out, nil
+	}
 
 	if v, ok := getString(inputs, "doc_id"); ok && v != "" {
 		out.docID = v

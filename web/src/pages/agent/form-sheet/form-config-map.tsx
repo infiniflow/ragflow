@@ -26,6 +26,8 @@ import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
+import QueritContentsForm from '../form/querit-contents-form';
+import QueritForm from '../form/querit-form';
 import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
@@ -145,6 +147,12 @@ export const FormConfigMap = {
   [Operator.TavilySearch]: {
     component: TavilyForm,
   },
+  [Operator.QueritContents]: {
+    component: QueritContentsForm,
+  },
+  [Operator.QueritSearch]: {
+    component: QueritForm,
+  },
   [Operator.UserFillUp]: {
     component: UserFillUpForm,
   },
@@ -176,7 +184,7 @@ export const FormConfigMap = {
   [Operator.Extractor]: {
     component: ExtractorForm,
   },
-  [Operator.Compilation]: {
+  [Operator.Compiler]: {
     component: CompilationForm,
   },
   [Operator.DataOperations]: {

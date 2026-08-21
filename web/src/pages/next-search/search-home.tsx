@@ -1,7 +1,24 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
-import { IUserInfo } from '@/interfaces/database/user-setting';
 import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
+import { IUserInfo } from '@/interfaces/database/user-setting';
+import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { Dispatch, SetStateAction, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,7 +46,7 @@ export default function SearchHome({
   const { t } = useTranslation();
   const searchInputRef = useRef<HTMLTextAreaElement>(null);
 
-  useAutoResizeTextarea(searchInputRef, searchText);
+  const isMultiLine = useAutoResizeTextarea(searchInputRef, searchText);
 
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-[15vh]">
@@ -56,7 +73,10 @@ export default function SearchHome({
                 ref={searchInputRef}
                 rows={1}
                 placeholder={t('search.searchGreeting')}
-                className="w-full rounded-3xl py-4 px-4 pr-14 text-text-primary text-lg bg-bg-base delay-700 border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50"
+                className={cn(
+                  'w-full py-4 px-4 pr-14 text-text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50',
+                  isMultiLine ? 'rounded-3xl' : 'rounded-full',
+                )}
                 value={searchText}
                 onKeyDown={(e) => {
                   if (
@@ -82,7 +102,10 @@ export default function SearchHome({
               />
               <button
                 type="button"
-                className="absolute bottom-3 right-3 flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90"
+                className={cn(
+                  'absolute right-3 flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90',
+                  isMultiLine ? 'bottom-3' : 'top-1/2 -translate-y-1/2',
+                )}
                 onClick={() => {
                   if (canSearch === false) {
                     message.warning(t('search.chooseDataset'));

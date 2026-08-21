@@ -85,6 +85,54 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	if !ok || len(parserConfig) == 0 {
 		t.Fatal("expected non-empty parser_config for general pipeline")
 	}
+	extractor, ok := parserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected extractor component params, got %#v", parserConfig["Extractor:AutoExtractDefault"])
+	}
+	if extractor["llm_id"] != "llm-default" {
+		t.Fatalf("extractor llm_id = %#v, want llm-default", extractor["llm_id"])
+	}
+}
+
+func TestCreateDataset_KnowledgeCompilerParamsPopulated(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	ctx := t.Context()
+
+	parserID := "knowledge_compiler"
+	parseType := 1
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:      "ds-kc-cp",
+		ParserID:  &parserID,
+		ParseType: &parseType,
+	}, "tenant-1")
+	if err != nil {
+		t.Fatalf("CreateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	parserConfig, ok := result["parser_config"].(entity.JSONMap)
+	if !ok || len(parserConfig) == 0 {
+		t.Fatal("expected non-empty parser_config for knowledge_compiler pipeline")
+	}
+	compiler, ok := parserConfig["Compiler:KnownSwiftLions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected compiler component params, got %#v", parserConfig["Compiler:KnownSwiftLions"])
+	}
+	if compiler["llm_id"] != "llm-default" {
+		t.Fatalf("compiler llm_id = %#v, want llm-default", compiler["llm_id"])
+	}
+	if _, ok := compiler["embedding_model"]; ok {
+		t.Fatalf("compiler embedding_model = %#v, want absent", compiler["embedding_model"])
+	}
+	if _, ok := compiler["tenant_id"]; ok {
+		t.Fatalf("compiler tenant_id = %#v, want absent", compiler["tenant_id"])
+	}
+	if _, ok := compiler["dataset_id"]; ok {
+		t.Fatalf("compiler dataset_id = %#v, want absent", compiler["dataset_id"])
+	}
 }
 
 func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
@@ -162,7 +210,7 @@ func TestCreateDataset_ValidatesName(t *testing.T) {
 	}
 }
 
-func TestCreateDataset_RejectsDuplicateName(t *testing.T) {
+func TestCreateDataset_DedupesDuplicateName(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
@@ -179,15 +227,16 @@ func TestCreateDataset_RejectsDuplicateName(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "Existing"}, "tenant-1")
-	if err == nil {
-		t.Fatal("expected duplicate name error")
+	// Mirror Python's duplicate_name: the create appends (1) instead of failing.
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "Existing"}, "tenant-1")
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("unexpected error: %v", err)
+	if result["name"] != "Existing(1)" {
+		t.Fatalf("unexpected name: %v", result["name"])
 	}
 }
 

@@ -20,7 +20,6 @@ package canvas
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -285,7 +284,7 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		state.Sys["_node_start_"+cpnID] = now
 		state.Sys["_node_inputs_"+cpnID] = sanitizeNodeInputs(inputs)
 	}
-	nsData, _ := json.Marshal(NodeStartedData{
+	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
 		Inputs:        sanitizeNodeInputs(inputs),
 		CreatedAt:     now,
 		ComponentID:   cpnID,
@@ -293,6 +292,15 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		ComponentType: componentType,
 		Thoughts:      "",
 	})
+	if err != nil {
+		common.Warn("node_started marshal failed",
+			zap.String("cpnID", cpnID),
+			zap.String("componentName", componentName),
+			zap.Error(err),
+		)
+		nsData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
+			cpnID, componentName, componentType))
+	}
 	meta := GetRunMeta(ctx)
 	msgID, sessionID := "", ""
 	if meta != nil {
@@ -346,7 +354,7 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		nfErr = nodeErr.Error()
 	}
 
-	nfData, _ := json.Marshal(NodeFinishedData{
+	nfData, err := runtime.SafeJSONMarshal(NodeFinishedData{
 		Inputs:        inputs,
 		Outputs:       outputs,
 		ComponentID:   cpnID,
@@ -356,6 +364,15 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		ElapsedTime:   elapsed,
 		CreatedAt:     now,
 	})
+	if err != nil {
+		common.Warn("node_finished marshal failed",
+			zap.String("cpnID", cpnID),
+			zap.String("componentName", componentName),
+			zap.Error(err),
+		)
+		nfData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
+			cpnID, componentName, componentType))
+	}
 	meta := GetRunMeta(ctx)
 	msgID, sessionID := "", ""
 	if meta != nil {

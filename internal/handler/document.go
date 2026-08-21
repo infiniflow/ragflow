@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -74,7 +75,7 @@ type documentServiceIface interface {
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
 	UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
-	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.DocumentMetadataSelector, updates []document.DocumentMetadataUpdate, deletes []document.DocumentMetadataDelete) (*document.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error)
+	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error)
@@ -262,7 +263,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	ctx := c.Request.Context()
 	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "Document not found!")
+		common.ErrorWithCode(c, common.CodeDataError, "document not found")
 		return
 	}
 
@@ -392,13 +393,32 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		return
 	}
 
+	bodyBytes, _, ok := parseJSONRequestObject(c)
+	if !ok {
+		return
+	}
+
 	var req struct {
 		IDs       *[]string `json:"ids"`
 		DeleteAll bool      `json:"delete_all,omitempty"`
 	}
-	if c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
+
+	// Mirror pydantic's DeleteDocumentReq duplicate detection.
+	if req.IDs != nil {
+		seen := make(map[string]int, len(*req.IDs))
+		duplicates := make([]string, 0)
+		for _, id := range *req.IDs {
+			seen[id]++
+			if seen[id] == 2 {
+				duplicates = append(duplicates, id)
+			}
+		}
+		if len(duplicates) > 0 {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Field: <ids> - Message: <Duplicate ids: '%s'> - Value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
 			return
 		}
 	}
@@ -505,6 +525,15 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
+	if orderby := c.Query("orderby"); orderby != "" {
+		switch orderby {
+		case "create_time", "update_time", "name":
+		default:
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			return
+		}
+	}
+
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, userID) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
@@ -548,6 +577,27 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		return
 	}
 
+	if docID := c.Query("id"); docID != "" {
+		idOpts := opts
+		idOpts.DocIDs = []string{docID}
+		idOpts.Name = ""
+		_, idTotal, idErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, idOpts, 1, 1)
+		if idErr == nil && idTotal == 0 {
+			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", docID))
+			return
+		}
+	}
+	if opts.Name != "" {
+		nameOpts := opts
+		nameOpts.DocIDs = nil
+		nameOpts.DocIDFilterApplied = false
+		_, nameTotal, nameErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, nameOpts, 1, 1)
+		if nameErr == nil && nameTotal == 0 {
+			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", opts.Name))
+			return
+		}
+	}
+
 	docs := make([]map[string]interface{}, 0, len(documents))
 	for _, doc := range documents {
 		if opts.CreateTimeFrom > 0 && doc.CreateTime != nil && *doc.CreateTime < opts.CreateTimeFrom {
@@ -579,14 +629,14 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 
 	opts.RunStatuses = normalizeRunStatusFilter(queryValues(c, "run", "run_status"))
 	if len(queryValues(c, "run", "run_status")) > 0 && len(opts.RunStatuses) == 0 {
-		return opts, "Invalid filter run status conditions"
+		return opts, fmt.Sprintf("Invalid filter run status conditions: %s", strings.Join(invalidRunStatuses(queryValues(c, "run", "run_status")), ", "))
 	}
 
 	opts.Name = c.Query("name")
 	docID := c.Query("id")
 	docIDs := queryValues(c, "ids")
 	if docID != "" && len(docIDs) > 0 {
-		return opts, fmt.Sprintf("Should not provide both 'id':%s and 'ids'%v", docID, docIDs)
+		return opts, fmt.Sprintf("should not provide both 'id':%s and 'ids'%v", docID, docIDs)
 	}
 	if docID != "" {
 		opts.DocIDs = []string{docID}
@@ -615,6 +665,17 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 }
 
 func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.DocumentListOptions) (dao.DocumentListOptions, string) {
+	// Mirror Python's metadata_condition query-param validation.
+	if raw := strings.TrimSpace(c.Query("metadata_condition")); raw != "" {
+		var mc interface{}
+		if err := json.Unmarshal([]byte(raw), &mc); err != nil {
+			return opts, fmt.Sprintf("metadata_condition must be valid JSON: %s.", raw)
+		}
+		if _, ok := mc.(map[string]interface{}); !ok {
+			return opts, "metadata_condition must be an object."
+		}
+	}
+
 	metadata, err := parseMetadataQuery(c.Request.URL.Query())
 	if err != nil {
 		return opts, err.Error()
@@ -818,6 +879,19 @@ func normalizeRunStatusFilter(statuses []string) []string {
 		out = append(out, normalized)
 	}
 	return out
+}
+
+// invalidRunStatuses returns the raw filter values that do not map to a valid
+// run status, mirroring Python's "Invalid filter run status conditions: ...".
+func invalidRunStatuses(statuses []string) []string {
+	valid := map[string]bool{"UNSTART": true, "RUNNING": true, "CANCEL": true, "DONE": true, "FAIL": true}
+	invalid := make([]string, 0)
+	for _, status := range statuses {
+		if !valid[strings.ToUpper(status)] {
+			invalid = append(invalid, status)
+		}
+	}
+	return invalid
 }
 
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
@@ -1033,6 +1107,13 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 }
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+	processDuration := doc.ProcessDuration
+	if doc.Run != nil && strings.TrimSpace(*doc.Run) == "1" && doc.ProcessBeginAt != nil {
+		processDuration = time.Since(*doc.ProcessBeginAt).Seconds()
+		if processDuration < 0 {
+			processDuration = 0
+		}
+	}
 	item := map[string]interface{}{
 		"id":               doc.ID,
 		"dataset_id":       doc.KbID,
@@ -1047,7 +1128,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"progress":         doc.Progress,
 		"progress_msg":     stringValue(doc.ProgressMsg),
 		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
-		"process_duration": doc.ProcessDuration,
+		"process_duration": processDuration,
 		"suffix":           doc.Suffix,
 		"run":              mapRunStatus(doc.Run),
 		"status":           stringValue(doc.Status),
@@ -1273,7 +1354,7 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No Authentication")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authentication")
 		return
 	}
 
@@ -1421,8 +1502,22 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
 		return
 	}
+	// Gin's `required` accepts an empty non-nil slice; reject it explicitly.
+	if len(req.DocumentIDs) == 0 {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
+		return
+	}
 
 	userID := c.GetString("user_id")
+	if orderby := c.Query("orderby"); orderby != "" {
+		switch orderby {
+		case "create_time", "update_time", "name":
+		default:
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			return
+		}
+	}
+
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, userID) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
@@ -1529,16 +1624,25 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	var req StopParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
 	if len(req.DocumentIDs) == 0 {
-		common.ErrorWithCode(c, common.CodeBadRequest, "`document_ids` is required")
+		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
 	userID := c.GetString("user_id")
+	if orderby := c.Query("orderby"); orderby != "" {
+		switch orderby {
+		case "create_time", "update_time", "name":
+		default:
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			return
+		}
+	}
+
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, userID) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
@@ -1619,6 +1723,25 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 	}
 	var req document.UpdateDatasetDocumentRequest
 	if err = json.Unmarshal(body, &req); err != nil {
+		// Mirror pydantic's "Field: <f> - Message: <m> - Value: <v>" format.
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) {
+			value := typeErr.Value
+			if rawValue, ok := raw[typeErr.Field]; ok {
+				// Render scalars the way Python's str() does: strings
+				// unquoted, other JSON values verbatim.
+				var scalar interface{}
+				if jsonErr := json.Unmarshal(rawValue, &scalar); jsonErr == nil {
+					if str, isStr := scalar.(string); isStr {
+						value = str
+					} else {
+						value = string(rawValue)
+					}
+				}
+			}
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Field: <%s> - Message: <Input should be a valid %s> - Value: <%s>", typeErr.Field, pythonJSONKindName(typeErr), value))
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
@@ -1687,9 +1810,9 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 }
 
 type documentMetadataBatchRequest struct {
-	Selector *document.DocumentMetadataSelector `json:"selector"`
-	Updates  []document.DocumentMetadataUpdate  `json:"updates"`
-	Deletes  []document.DocumentMetadataDelete  `json:"deletes"`
+	Selector *document.MetadataSelector `json:"selector"`
+	Updates  []document.MetadataUpdate  `json:"updates"`
+	Deletes  []document.MetadataDelete  `json:"deletes"`
 }
 
 func (h *DocumentHandler) MetadataBatchUpdate(c *gin.Context) {
@@ -1771,15 +1894,15 @@ func inferJSONType(err error) string {
 	return "unknown"
 }
 
-func parseMetadataSelector(raw interface{}) (*document.DocumentMetadataSelector, string) {
+func parseMetadataSelector(raw interface{}) (*document.MetadataSelector, string) {
 	if raw == nil {
-		return &document.DocumentMetadataSelector{}, ""
+		return &document.MetadataSelector{}, ""
 	}
 	m, ok := raw.(map[string]interface{})
 	if !ok {
 		return nil, "selector must be an object."
 	}
-	selector := &document.DocumentMetadataSelector{}
+	selector := &document.MetadataSelector{}
 	if v, ok := m["document_ids"]; ok && v != nil {
 		ids, ok := v.([]interface{})
 		if !ok {
@@ -1799,15 +1922,15 @@ func parseMetadataSelector(raw interface{}) (*document.DocumentMetadataSelector,
 	return selector, ""
 }
 
-func parseMetadataUpdates(raw interface{}) ([]document.DocumentMetadataUpdate, string) {
+func parseMetadataUpdates(raw interface{}) ([]document.MetadataUpdate, string) {
 	if raw == nil {
-		return []document.DocumentMetadataUpdate{}, ""
+		return []document.MetadataUpdate{}, ""
 	}
 	arr, ok := raw.([]interface{})
 	if !ok {
 		return nil, "updates and deletes must be lists."
 	}
-	updates := make([]document.DocumentMetadataUpdate, 0, len(arr))
+	updates := make([]document.MetadataUpdate, 0, len(arr))
 	for _, item := range arr {
 		m, ok := item.(map[string]interface{})
 		if !ok {
@@ -1818,20 +1941,20 @@ func parseMetadataUpdates(raw interface{}) ([]document.DocumentMetadataUpdate, s
 			return nil, "Each update requires key and value."
 		}
 		value := m["value"]
-		updates = append(updates, document.DocumentMetadataUpdate{Key: key, Value: value})
+		updates = append(updates, document.MetadataUpdate{Key: key, Value: value})
 	}
 	return updates, ""
 }
 
-func parseMetadataDeletes(raw interface{}) ([]document.DocumentMetadataDelete, string) {
+func parseMetadataDeletes(raw interface{}) ([]document.MetadataDelete, string) {
 	if raw == nil {
-		return []document.DocumentMetadataDelete{}, ""
+		return []document.MetadataDelete{}, ""
 	}
 	arr, ok := raw.([]interface{})
 	if !ok {
 		return nil, "updates and deletes must be lists."
 	}
-	deletes := make([]document.DocumentMetadataDelete, 0, len(arr))
+	deletes := make([]document.MetadataDelete, 0, len(arr))
 	for _, item := range arr {
 		m, ok := item.(map[string]interface{})
 		if !ok {
@@ -1841,7 +1964,30 @@ func parseMetadataDeletes(raw interface{}) ([]document.DocumentMetadataDelete, s
 		if key == "" {
 			return nil, "Each delete requires key."
 		}
-		deletes = append(deletes, document.DocumentMetadataDelete{Key: key})
+		deletes = append(deletes, document.MetadataDelete{Key: key})
 	}
 	return deletes, ""
+}
+
+// pythonJSONKindName maps a JSON unmarshal type error to the pydantic type
+// name used in the "Input should be a valid ..." contract message.
+func pythonJSONKindName(typeErr *json.UnmarshalTypeError) string {
+	if typeErr.Type == nil {
+		return "value"
+	}
+	switch typeErr.Type.Kind() {
+	case reflect.String:
+		return "string"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return "integer"
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Slice, reflect.Array:
+		return "list"
+	case reflect.Map:
+		return "dictionary"
+	}
+	return "value"
 }

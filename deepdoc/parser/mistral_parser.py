@@ -78,6 +78,7 @@ class MistralParser(RAGFlowPdfParser):
         # Optional tenant vision model (LLMBundle) for figure description;
         # set from parse_pdf's vision_model kwarg. None -> no enrichment.
         self.vision_model = None
+        self.language = "English"
 
     # ------------------------------------------------------------------
     # Page image rendering
@@ -326,7 +327,8 @@ class MistralParser(RAGFlowPdfParser):
 
             # vision_llm_chunk expects a PIL Image (it calls img.size / img.save),
             # not raw bytes — pass the crop directly.
-            desc = vision_llm_chunk(binary=img, vision_model=self.vision_model, prompt=vision_llm_figure_describe_prompt())
+            self.logger.debug("[Mistral OCR] describing figure with language=%s", self.language)
+            desc = vision_llm_chunk(binary=img, vision_model=self.vision_model, prompt=vision_llm_figure_describe_prompt(language=self.language))
             return (desc or "").strip()
         except Exception:
             self.logger.info("[Mistral OCR] figure description skipped", exc_info=True)
@@ -387,6 +389,17 @@ class MistralParser(RAGFlowPdfParser):
     def check_installation(self) -> tuple[bool, str]:
         if not self.api_key:
             return False, "Mistral API key is not configured."
+
+        try:
+            r = requests.get(f"{self.base_url}/models", headers=self._headers(), timeout=10)
+            self.logger.info(f"[Mistral] API models endpoint reachable, status={r.status_code}")
+            if r.status_code != 200:
+                return False, f"Mistral API check failed: HTTP {r.status_code} {r.text[:200]}"
+        except Exception as exc:
+            reason = f"Mistral API check failed: {exc}"
+            self.logger.warning(reason)
+            return False, reason
+
         return True, ""
 
     def _raise_for_status(self, resp, action: str) -> None:
@@ -446,6 +459,7 @@ class MistralParser(RAGFlowPdfParser):
     def parse_pdf(self, filepath: str | PathLike[str], binary=None, callback=None, parse_method: str = "raw", from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs) -> tuple[list, list]:
         # Optional tenant vision model for figure description (best-effort).
         self.vision_model = kwargs.pop("vision_model", None)
+        self.language = kwargs.pop("lang", None) or "English"
 
         # Load bytes.
         if binary is not None:

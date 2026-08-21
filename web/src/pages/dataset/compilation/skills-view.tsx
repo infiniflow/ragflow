@@ -5,21 +5,21 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { GenerateType } from '@/constants/knowledge';
+import {
+  useGenerateStatus,
+  useTraceRunData,
+} from '@/hooks/use-dataset-generate';
 import { DatasetSkillKeys } from '@/hooks/use-dataset-skill-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import {
-  GenerateStatus,
-  GenerateType,
-} from '@/pages/dataset/dataset/generate-button/constants';
-import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { useParams } from 'react-router';
 
 import { ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationSkill } from './hooks/use-compilation-skill';
+import { useRunEndEffect } from './hooks/use-run-end-effect';
 import { CompilationLoadingCard } from './loading-card';
 import { SkillsLeftPanel } from './skills-left-panel';
 
@@ -38,13 +38,12 @@ export function SkillsView() {
   const { data: skillRunData } = useTraceRunData(GenerateType.ToSkills);
   const { status: skillStatus } = useGenerateStatus(skillRunData);
 
-  useEffect(() => {
-    if (skillStatus === GenerateStatus.completed) {
-      queryClient.invalidateQueries({
-        queryKey: DatasetSkillKeys.tree(id!),
-      });
-    }
-  }, [skillStatus, queryClient, id]);
+  const handleRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: DatasetSkillKeys.tree(id!),
+    });
+  }, [queryClient, id]);
+  useRunEndEffect(skillStatus, handleRunEnd);
 
   const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
   const isLoading = skillTreeLoading && !skillTree?.skill_with_weight?.length;

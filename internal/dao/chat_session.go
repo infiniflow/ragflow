@@ -39,6 +39,7 @@ type ListAgentSessionsParams struct {
 	Desc       bool
 	SessionID  string
 	UserID     string
+	TenantID   string
 	IncludeDSL bool
 	Keywords   string
 	FromDate   *time.Time
@@ -108,12 +109,31 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 }
 
 // ListByChatID lists chat sessions by chat ID
-func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID string) ([]*entity.ChatSession, error) {
-	var convs []*entity.ChatSession
-	err := db.WithContext(ctx).Where("dialog_id = ?", chatID).
-		Order("create_time DESC").
-		Find(&convs).Error
-	return convs, err
+func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
+	var chatSessions []*entity.ChatSession
+	query := db.WithContext(ctx).Where("dialog_id = ?", chatID)
+	if sessionID != "" {
+		query = query.Where("id = ?", sessionID)
+	}
+	if name != "" {
+		query = query.Where("name = ?", name)
+	}
+	if orderby == "" {
+		orderby = "create_time"
+	}
+	if desc {
+		query = query.Order(orderby + " DESC")
+	} else {
+		query = query.Order(orderby + " ASC")
+	}
+	if pageSize > 0 {
+		if page < 1 {
+			page = 1
+		}
+		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+	err := query.Find(&chatSessions).Error
+	return chatSessions, err
 }
 
 // CheckDialogExists checks if a dialog exists with given tenant_id and dialog_id
@@ -201,10 +221,17 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 	if params.Keywords != "" {
 		keywords := strings.ToLower(params.Keywords)
 		escapedKeywords := strings.Trim(strconv.QuoteToASCII(keywords), `"`)
+		keywordPattern := "%" + keywords + "%"
 		if escapedKeywords == keywords {
-			query = query.Where("LOWER(message) LIKE ?", "%"+keywords+"%")
+			query = query.Where("(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR LOWER(message) LIKE ?)", keywordPattern, keywordPattern, keywordPattern)
 		} else {
-			query = query.Where("(LOWER(message) LIKE ? OR LOWER(message) LIKE ?)", "%"+keywords+"%", "%"+escapedKeywords+"%")
+			query = query.Where(
+				"(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR LOWER(message) LIKE ? OR LOWER(message) LIKE ?)",
+				keywordPattern,
+				keywordPattern,
+				keywordPattern,
+				"%"+escapedKeywords+"%",
+			)
 		}
 	}
 

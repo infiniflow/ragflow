@@ -133,8 +133,11 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		return
 	}
 
-	// 2. Reject DataFlow.
-	if cv.CanvasCategory == "DataFlow" {
+	// 2. Reject DataFlow. DataFlow canvases are ingestion pipelines, not
+	// interactive agents, and must not be triggered by an external webhook.
+	// Mirrors Python agent_api.py:1786, which returns
+	// "Dataflow can not be triggered by webhook." for the same case.
+	if cv.CanvasCategory == "dataflow_canvas" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Dataflow can not be triggered by webhook.")
 		return
 	}
@@ -162,7 +165,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 
 	// 6. Security gate (strict; surfaces all errors as 102).
 	securityCfg := stringMap(webhookCfg["security"])
-	if err := validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
+	if err = validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
@@ -517,7 +520,7 @@ func (h *AgentHandler) runWebhookDetached(
 			zap.String("canvas", cv.ID),
 			zap.Error(err))
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
+			appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
 		}
 		return
 	}
@@ -526,7 +529,7 @@ func (h *AgentHandler) runWebhookDetached(
 			ev.SessionID = sessionID
 		}
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, ev)
+			appendWebhookTrace(ctx, cv.ID, startTs, ev)
 		}
 	}
 }
@@ -550,8 +553,8 @@ func (h *AgentHandler) runWebhookSync(
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": false})})
+			appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
+			appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": false})})
 		}
 		return webhookSyncResult{status: http.StatusBadRequest, body: gin.H{
 			"code":       400,
@@ -568,7 +571,7 @@ func (h *AgentHandler) runWebhookSync(
 			ev.SessionID = sessionID
 		}
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, ev)
+			appendWebhookTrace(ctx, cv.ID, startTs, ev)
 		}
 		switch ev.Type {
 		case "message":
@@ -599,7 +602,7 @@ func (h *AgentHandler) runWebhookSync(
 	}
 	final := strings.Join(contents, "")
 	if isTest {
-		appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": true})})
+		appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": true})})
 	}
 	return webhookSyncResult{status: status, body: gin.H{
 		"message":    final,
@@ -626,14 +629,14 @@ func mustJSON(v any) string {
 // The trace key is `webhook-trace-<agent_id>-logs` with a 600 s TTL.
 // Each event is recorded as {"ts": <float>, "event": <type>, ...}.
 // Tests use miniredis to verify the key shape.
-func appendWebhookTrace(agentID string, startTs time.Time, ev canvas.RunEvent) {
+func appendWebhookTrace(ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent) {
 	rdb := rediscli.Get()
 	if rdb == nil {
 		return
 	}
 
 	key := fmt.Sprintf("webhook-trace-%s-logs", agentID)
-	raw, _ := rdb.Get(key)
+	raw, _ := rdb.Get(ctx, key)
 	obj := map[string]any{}
 	if raw != "" {
 		_ = json.Unmarshal([]byte(raw), &obj)
@@ -674,5 +677,5 @@ func appendWebhookTrace(agentID string, startTs time.Time, ev canvas.RunEvent) {
 		common.Warn("webhook trace marshal failed", zap.Error(err))
 		return
 	}
-	rdb.SetObj(key, string(encoded), 600*time.Second)
+	rdb.SetObj(ctx, key, string(encoded), 600*time.Second)
 }

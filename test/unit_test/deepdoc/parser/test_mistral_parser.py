@@ -297,6 +297,7 @@ def test_call_ocr_inline_posts_pages_selector(monkeypatch):
         return _Resp(200, {"pages": [{"index": 5, "markdown": "x", "blocks": []}], "usage_info": {"pages_processed": 1}})
 
     monkeypatch.setattr(m.requests, "post", fake_post)
+    monkeypatch.setattr(m.requests, "get", lambda *a, **k: _Resp(200, {}))
     out = p._call_ocr(b"%PDF-1.4 fake", "f.pdf", pages=[5])
     assert captured["url"].endswith("/ocr")
     assert captured["json"]["pages"] == [5]
@@ -309,6 +310,7 @@ def test_call_ocr_omits_pages_when_none(monkeypatch):
     p = _make_parser(m, api_key="sk-test")
     captured = {}
     monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, timeout=None, **kw: captured.update(json=json) or _Resp(200, {"pages": []}))
+    monkeypatch.setattr(m.requests, "get", lambda *a, **k: _Resp(200, {}))
     p._call_ocr(b"%PDF fake", "f.pdf", pages=None)
     assert "pages" not in captured["json"]
 
@@ -316,6 +318,7 @@ def test_call_ocr_omits_pages_when_none(monkeypatch):
 def test_call_ocr_raises_on_http_error(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-bad")
+    monkeypatch.setattr(m.requests, "get", lambda *a, **k: _Resp(200, {}))
     monkeypatch.setattr(m.requests, "post", lambda *a, **k: _Resp(401, text="Unauthorized"))
     with pytest.raises(RuntimeError, match="401"):
         p._call_ocr(b"%PDF fake", "f.pdf", pages=None)
@@ -346,6 +349,7 @@ def test_call_ocr_upload_files_error_no_delete(monkeypatch):
     m = _load_mistral_parser(monkeypatch)
     p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
     calls = {"delete": []}
+    monkeypatch.setattr(m.requests, "get", lambda *a, **k: _Resp(200, {}))
     monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(500, text="boom"))
     monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
     with pytest.raises(RuntimeError, match="500"):
@@ -358,7 +362,7 @@ def test_call_ocr_signed_url_error_triggers_cleanup(monkeypatch):
     p = _make_parser(m, api_key="sk-test", inline_max_bytes=4)
     calls = {"delete": []}
     monkeypatch.setattr(m.requests, "post", lambda url, headers=None, json=None, data=None, files=None, timeout=None, **kw: _Resp(200, {"id": "file-1"}))
-    monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(403, text="nope"))
+    monkeypatch.setattr(m.requests, "get", lambda url, headers=None, params=None, timeout=None, **kw: _Resp(200, {}) if "/models" in url else _Resp(403, text="nope"))
     monkeypatch.setattr(m.requests, "delete", lambda url, headers=None, timeout=None, **kw: calls["delete"].append(url) or _Resp(200, {}))
     with pytest.raises(RuntimeError, match="403"):
         p._call_ocr(b"%PDF-too-big", "big.pdf", pages=None)
@@ -535,8 +539,11 @@ def test_parse_pdf_consumes_vision_model_kwarg(monkeypatch, tmp_path):
     _patch_render(m, p, 2)
     pdf = tmp_path / "x.pdf"
     pdf.write_bytes(b"%PDF-1.4 minimal")
-    p.parse_pdf(str(pdf), vision_model="VM")
+    p.parse_pdf(str(pdf), vision_model="VM", lang="Japanese")
     assert p.vision_model == "VM"  # popped from kwargs into self, not forwarded to _call_ocr
+    assert p.language == "Japanese"
+    p.parse_pdf(str(pdf), vision_model="VM", lang="")
+    assert p.language == "English"
 
 
 def test_describe_image_passes_pil_image_not_bytes(monkeypatch):
@@ -558,10 +565,11 @@ def test_describe_image_passes_pil_image_not_bytes(monkeypatch):
     pic = ModuleType("rag.app.picture")
     pic.vision_llm_chunk = lambda binary, vision_model, prompt=None, callback=None: (captured.update(kind=type(binary).__name__), "a white square")[1]
     gen = ModuleType("rag.prompts.generator")
-    gen.vision_llm_figure_describe_prompt = lambda: "describe"
+    gen.vision_llm_figure_describe_prompt = lambda language: (captured.update(language=language), "describe")[1]
     monkeypatch.setitem(_sys.modules, "rag.app.picture", pic)
     monkeypatch.setitem(_sys.modules, "rag.prompts.generator", gen)
 
     out = p._describe_image("@@1\t0\t0\t40\t40##")
     assert out == "a white square"
     assert captured["kind"] == "Image"  # PIL Image, not 'bytes'
+    assert captured["language"] == "English"

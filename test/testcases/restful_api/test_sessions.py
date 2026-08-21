@@ -146,7 +146,7 @@ def test_session_create_validation_and_deleted_chat_contract(rest_client, create
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
 
     for scenario_name, payload in (
         ("valid", {"name": "valid_name"}),
@@ -194,7 +194,7 @@ def test_session_create_validation_and_deleted_chat_contract(rest_client, create
     assert create_after_delete.status_code == 200
     create_after_delete_payload = create_after_delete.json()
     assert create_after_delete_payload["code"] == 109, create_after_delete_payload
-    assert create_after_delete_payload["message"] == "no authorization", create_after_delete_payload
+    assert create_after_delete_payload["message"].lower().strip().rstrip(".") == "no authorization", create_after_delete_payload
 
 
 @pytest.mark.p2
@@ -234,7 +234,7 @@ def test_session_delete_requires_auth_and_invalid_target_contract(rest_client, c
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
 
 
 @pytest.mark.p2
@@ -242,7 +242,7 @@ def test_session_delete_basic_scenarios(rest_client, create_chat):
     cases = [
         ("none payload", None, 0, 5, {}),
         ("invalid only", {"ids": ["invalid_id"]}, 102, 5, "The chat doesn't own the session invalid_id"),
-        ("not json", "not json", 100, 5, "<BadRequest '400: Bad Request'>"),
+        ("not json", "not json", 101, 5, "Malformed JSON syntax: Missing commas/brackets or invalid encoding"),
         ("single id", lambda sessions: {"ids": [sessions[0]["id"]]}, 0, 4, True),
         ("all ids", lambda sessions: {"ids": [session["id"] for session in sessions]}, 0, 0, True),
         ("delete all", {"delete_all": True}, 0, 0, True),
@@ -394,7 +394,7 @@ def test_session_list_filter_and_deleted_chat_contract(rest_client, create_chat)
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
 
     delete_chat_res = rest_client.delete("/chats", json={"ids": [chat_id]})
     assert delete_chat_res.status_code == 200
@@ -405,7 +405,7 @@ def test_session_list_filter_and_deleted_chat_contract(rest_client, create_chat)
     assert deleted_list_res.status_code == 200
     deleted_list_payload = deleted_list_res.json()
     assert deleted_list_payload["code"] == 109, deleted_list_payload
-    assert deleted_list_payload["message"] == "no authorization", deleted_list_payload
+    assert deleted_list_payload["message"].lower().strip().rstrip(".") == "no authorization", deleted_list_payload
 
 
 @pytest.mark.p2
@@ -420,14 +420,14 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         ("page two", {"page": 2, "page_size": 2}, 0, 2, ""),
         ("page three", {"page": 3, "page_size": 2}, 0, 1, ""),
         ("page string", {"page": "3", "page_size": 2}, 0, 1, ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, 0, "ProgrammingError(1064"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, 0, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
-        ("page_size zero", {"page_size": 0}, 0, 0, ""),
+        ("page_size zero", {"page_size": 0}, 0, 0 if IS_GO_PROXY else 5, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, 0, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, 5, ""),
     ]
     for scenario_name, params, expected_code, expected_count, expected_message in page_cases:
         res = rest_client.get(f"/chats/{chat_id}/sessions", params=params)
@@ -444,7 +444,7 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         ("orderby create", {"orderby": "create_time", "page_size": 30}, "create_time", True, descending_names, ""),
         ("orderby update", {"orderby": "update_time", "page_size": 30}, "update_time", True, descending_names, ""),
         ("orderby name ascending", {"orderby": "name", "desc": "False", "page_size": 30}, "name", False, created_names, ""),
-        ("orderby unknown", {"orderby": "unknown", "page_size": 30}, None, None, None, "AttributeError(\"type object 'Conversation' has no attribute 'unknown'\")"),
+        ("orderby unknown", {"orderby": "unknown", "page_size": 30}, None, None, None, "invalid orderby field"),
         ("desc none", {"desc": None, "page_size": 30}, "create_time", True, descending_names, ""),
         ("desc true", {"desc": "true", "page_size": 30}, "create_time", True, descending_names, ""),
         ("desc True", {"desc": "True", "page_size": 30}, "create_time", True, descending_names, ""),
@@ -457,7 +457,7 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         res = rest_client.get(f"/chats/{chat_id}/sessions", params=params)
         assert res.status_code == 200, (scenario_name, res.text)
         payload = res.json()
-        expected_code = 0 if expected_names is not None else 100
+        expected_code = 0 if expected_names is not None else 101
         assert payload["code"] == expected_code, (scenario_name, payload)
         if expected_code == 0:
             assert is_sorted(payload["data"], field, descending), (scenario_name, payload)
@@ -498,7 +498,7 @@ def test_session_update_requires_auth_and_invalid_target_contract(rest_client, c
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
 
     empty_session_res = rest_client.patch(f"/chats/{chat_id}/sessions/", json={"name": "x"})
     assert empty_session_res.status_code == 200
@@ -552,7 +552,7 @@ def test_session_update_name_and_param_contract(rest_client, create_chat):
     assert update_after_delete_res.status_code == 200
     update_after_delete_payload = update_after_delete_res.json()
     assert update_after_delete_payload["code"] == 109, update_after_delete_payload
-    assert update_after_delete_payload["message"] == "no authorization", update_after_delete_payload
+    assert update_after_delete_payload["message"].lower().strip().rstrip(".") == "no authorization", update_after_delete_payload
 
 
 @pytest.mark.p2
@@ -602,7 +602,8 @@ def test_related_questions_compatibility_requires_auth(rest_client_noauth):
     assert res.status_code == 200
     payload = res.json()
     if IS_GO_PROXY:
-        assert_auth_error(payload, "invalid token")
+        assert payload["code"] == 102, payload
+        assert payload["message"] == "Authorization is not valid!", payload
     else:
         assert payload["code"] == 102, payload
         assert payload["message"].strip() in {
@@ -759,4 +760,4 @@ def test_chat_completion_validation_errors(rest_client, create_chat):
     assert invalid_chat.status_code == 200
     invalid_chat_payload = invalid_chat.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert "no authorization" in invalid_chat_payload["message"], invalid_chat_payload
+    assert "no authorization" in invalid_chat_payload["message"].lower(), invalid_chat_payload

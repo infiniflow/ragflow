@@ -1,9 +1,26 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
+import { SectionCardFieldMap } from '../constant';
 import { FieldCard } from './field-card';
 
 type SectionFieldGridProps = {
@@ -26,7 +43,7 @@ export function SectionFieldGrid({
     name: fieldsPath,
   });
 
-  const isTypedSection = sectionName === 'entity' || sectionName === 'relation';
+  const cardFields = SectionCardFieldMap[sectionName];
 
   const currentFields = useWatch({
     control: form.control,
@@ -40,10 +57,13 @@ export function SectionFieldGrid({
         return (
           <FieldCard
             key={field.id}
-            title={isTypedSection ? fieldValue.type : undefined}
-            field={fieldValue}
-            onEdit={() => onEditField(index)}
-            onDelete={() => remove(index)}
+            index={index}
+            title={cardFields ? fieldValue[cardFields.title] : undefined}
+            description={
+              cardFields ? fieldValue[cardFields.description] : undefined
+            }
+            onEdit={onEditField}
+            onDelete={remove}
           />
         );
       })}
@@ -64,7 +84,7 @@ export function SectionFieldGrid({
       >
         <CardContent className="flex flex-col items-center justify-center gap-2 p-4">
           <Plus className="size-6" />
-          <span className="text-sm font-medium">{t('setting.addField')}</span>
+          <span className="text-sm font-medium">{t('knowledgeCompilation.addField')}</span>
         </CardContent>
       </Card>
     </section>

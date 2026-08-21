@@ -33,7 +33,8 @@ from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
-from rag.utils.url_utils import ensure_v1
+from rag.llm.mws_utils import mws_api_url, require_mws_token
+from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
 import base64
 
@@ -611,9 +612,9 @@ class MistralEmbed(Base):
     _FACTORY_NAME = "Mistral"
 
     def __init__(self, key, model_name="mistral-embed", base_url=None):
-        from mistralai.client import MistralClient
+        from mistralai.client import Mistral
 
-        self.client = MistralClient(api_key=key)
+        self.client = Mistral(api_key=key)
         self.model_name = model_name
 
     def encode(self, texts: list):
@@ -628,7 +629,7 @@ class MistralEmbed(Base):
             retry_max = 5
             while retry_max > 0:
                 try:
-                    res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
+                    res = self.client.embeddings.create(inputs=texts[i : i + batch_size], model=self.model_name)
                     ress.extend([d.embedding for d in res.data])
                     token_count += total_token_count_from_response(res)
                     break
@@ -648,7 +649,7 @@ class MistralEmbed(Base):
         retry_max = 5
         while retry_max > 0:
             try:
-                res = self.client.embeddings(input=[truncate(text, DEFAULT_MAX_TOKENS)], model=self.model_name)
+                res = self.client.embeddings.create(inputs=[truncate(text, DEFAULT_MAX_TOKENS)], model=self.model_name)
                 return np.array(res.data[0].embedding), total_token_count_from_response(res)
             except Exception as _e:
                 if retry_max == 1:
@@ -821,11 +822,11 @@ class GeminiEmbed(Base):
 class NvidiaEmbed(Base):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"):
+    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1"):
         if not base_url:
-            base_url = "https://integrate.api.nvidia.com/v1/embeddings"
+            base_url = "https://integrate.api.nvidia.com/v1"
         self.api_key = key
-        self.base_url = ensure_v1(base_url)
+        self.base_url = append_api_path(ensure_v1(base_url), "embeddings")
         self.headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -878,6 +879,41 @@ class OpenAI_APIEmbed(OpenAIEmbed):
         base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class MWSEmbed(OpenAIEmbed):
+    """MWS embedding adapter with the exact documented request body."""
+
+    _FACTORY_NAME = "MWS"
+
+    def __init__(self, key, model_name, base_url):
+        """Initialize embedding access for an MWS project and deployment."""
+        self.api_key = require_mws_token(key)
+        self.base_url = mws_api_url(base_url, "openai/v1/embeddings")
+        self.model_name = model_name.split("___")[0]
+
+    def _call(self, batch):
+        """Embed a batch and restore vectors to their original input order."""
+        response = requests.post(
+            self.base_url,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"},
+            json={"model": self.model_name, "input": batch},
+            timeout=30,
+        )
+        _raise_model_exception_if_failed(response)
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list) or len(data) != len(batch):
+            count = len(data) if isinstance(data, list) else 0
+            raise ValueError(f"MWS returned {count} embeddings for {len(batch)} inputs")
+
+        embeddings = [None] * len(batch)
+        for item in data:
+            index = item.get("index") if isinstance(item, dict) else None
+            if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(batch) or embeddings[index] is not None:
+                raise ValueError(f"unexpected MWS embedding index: {index}")
+            embeddings[index] = item["embedding"]
+        return embeddings, total_token_count_from_response(payload)
 
 
 class GreenPTEmbed(OpenAIEmbed):
@@ -973,7 +1009,41 @@ class SILICONFLOWEmbed(Base):
     def _clean_batch(self, batch):
         if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
             # limit 512, 340 is almost safe
-            return [" " if not text.strip() else truncate(text, 256) for text in batch]
+            limit = 256
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
+        if self.model_name in ["BAAI/bge-m3", "Pro/BAAI/bge-m3"]:
+            limit = 4096
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
         return [" " if not text.strip() else text for text in batch]
 
     def _call(self, batch):

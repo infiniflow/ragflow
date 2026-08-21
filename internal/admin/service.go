@@ -19,12 +19,10 @@ package admin
 import (
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -34,10 +32,11 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	servicepkg "ragflow/internal/service"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"regexp"
-	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -65,6 +64,11 @@ type Service struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDao *dao.IngestionTaskLogDAO
 	ingestionTaskSvc    *servicepkg.IngestionTaskService
+
+	BillingProductDAO      *dao.BillingProductDAO
+	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
+	MemoryDAO              *dao.MemoryDAO
+	SearchDAO              *dao.SearchDAO
 }
 
 // NewService create admin service
@@ -90,6 +94,11 @@ func NewService() *Service {
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
 		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
+
+		BillingProductDAO:      dao.NewBillingProductDAO(),
+		BillingSubscriptionDAO: dao.NewBillingSubscriptionDAO(),
+		MemoryDAO:              dao.NewMemoryDAO(),
+		SearchDAO:              dao.NewSearchDAO(),
 	}
 }
 
@@ -143,7 +152,7 @@ func generateRandomHex(n int) string {
 
 // ListUsers list all users
 func (s *Service) ListUsers(ctx context.Context, pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(ctx, dao.DB, pageIndex*pageSize, pageSize, name, status, sort, orderBy)
+	users, _, err := s.userDAO.List(ctx, dao.DB, (pageIndex-1)*pageSize, pageSize, name, status, sort, orderBy)
 	if err != nil {
 		return nil, err
 	}
@@ -241,14 +250,20 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	asrModel := ""
 	vlmModel := ""
 	rerankModel := ""
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
+	var ttsModel *string = nil
+	var ocrModel *string = nil
+	parserIDs := "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
-		chatModel = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
-		embeddingModel = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
-		asrModel = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
-		vlmModel = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
-		rerankModel = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+		chatModel = cfg.GetDefaultChatModel().Name
+		embeddingModel = cfg.GetDefaultEmbeddingModel().Name
+		asrModel = cfg.GetDefaultASRModel().Name
+		vlmModel = cfg.GetDefaultVisionModel().Name
+		rerankModel = cfg.GetDefaultRerankModel().Name
+		ttsModelStr := cfg.GetDefaultTTSModel().Name
+		ttsModel = &ttsModelStr
+		ocrModelStr := cfg.GetDefaultOCRModel().Name
+		ocrModel = &ocrModelStr
 	}
 
 	tenantStatus := "1"
@@ -260,6 +275,8 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		ASRID:     asrModel,
 		Img2TxtID: vlmModel,
 		RerankID:  rerankModel,
+		TTSID:     ttsModel,
+		OCRID:     ocrModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
@@ -342,17 +359,19 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 	var tenantLLMs []*entity.TenantLLM
 
 	// Get model configs from configuration
-	modelConfigs := []server.ModelConfig{
-		cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		cfg.UserDefaultLLM.DefaultModels.RerankModel,
-		cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+	modelConfigs := []config.ModelConfig{
+		cfg.GetDefaultChatModel(),
+		cfg.GetDefaultEmbeddingModel(),
+		cfg.GetDefaultRerankModel(),
+		cfg.GetDefaultASRModel(),
+		cfg.GetDefaultVisionModel(),
+		cfg.GetDefaultTTSModel(),
+		cfg.GetDefaultOCRModel(),
 	}
 
 	// Track seen factories to avoid duplicates
 	seenFactories := make(map[string]bool)
-	var uniqueFactories []server.ModelConfig
+	var uniqueFactories []config.ModelConfig
 
 	for _, mc := range modelConfigs {
 		if mc.Factory == "" {
@@ -380,8 +399,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
 			case entity.ModelTypeEmbedding.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
+				apiKey = cfg.GetDefaultEmbeddingModel().APIKey
+				apiBase = cfg.GetDefaultEmbeddingModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -389,8 +408,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 					apiBase = factoryConfig.BaseURL
 				}
 			case entity.ModelTypeRerank.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
+				apiKey = cfg.GetDefaultRerankModel().APIKey
+				apiBase = cfg.GetDefaultRerankModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -398,8 +417,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 					apiBase = factoryConfig.BaseURL
 				}
 			case entity.ModelTypeSpeech2Text.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
+				apiKey = cfg.GetDefaultASRModel().APIKey
+				apiBase = cfg.GetDefaultASRModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -407,8 +426,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 					apiBase = factoryConfig.BaseURL
 				}
 			case entity.ModelTypeImage2Text.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
+				apiKey = cfg.GetDefaultVisionModel().APIKey
+				apiBase = cfg.GetDefaultVisionModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -444,11 +463,11 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
 	seen := make(map[string]bool)
 	var uniqueLLMs []*entity.TenantLLM
-	for _, tllm := range tenantLLMs {
-		key := fmt.Sprintf("%s|%s|%s", tllm.TenantID, tllm.LLMFactory, *tllm.LLMName)
+	for _, tenantLLM := range tenantLLMs {
+		key := fmt.Sprintf("%s|%s|%s", tenantLLM.TenantID, tenantLLM.LLMFactory, *tenantLLM.LLMName)
 		if !seen[key] {
 			seen[key] = true
-			uniqueLLMs = append(uniqueLLMs, tllm)
+			uniqueLLMs = append(uniqueLLMs, tenantLLM)
 		}
 	}
 
@@ -952,58 +971,86 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 	return nil
 }
 
-// ListServices get all services
-func (s *Service) ListServices() ([]map[string]interface{}, error) {
-	allConfigs := server.GetAllConfigs()
+type ServiceStatus struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Elapsed string `json:"elapsed"`
+	Message string `json:"message"`
+}
 
-	var results []map[string]interface{}
-	for _, configDict := range allConfigs {
-		serviceType := configDict["service_type"]
-		if serviceType != "ragflow_server" {
-			// Get service details to check status
-			serviceDetail, err := s.GetServiceDetails(configDict)
-			if err == nil {
-				if status, ok := serviceDetail["status"]; ok {
-					configDict["status"] = status
-				} else {
-					configDict["status"] = "timeout"
-				}
-			} else {
-				configDict["status"] = "timeout"
-			}
-			if serviceDetail != nil {
-				// delete element of configDict
-				delete(configDict, "extra")
-				delete(configDict, "database")
-				delete(configDict, "password")
-				delete(configDict, "sample_ratio")
-				delete(configDict, "secure")
-				delete(configDict, "stdout")
-				delete(configDict, "user")
-				results = append(results, configDict)
-			}
-		}
+func newServiceStatus(typeStr, nameStr, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
+	return ServiceStatus{
+		Type:    typeStr,
+		Name:    nameStr,
+		Status:  statusStr,
+		Elapsed: fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+		Message: messageStr,
 	}
+}
+
+// ListServices get all services
+func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
+
+	var results []ServiceStatus
+
+	globalConfig := server.GetConfig()
+	// Database
+	databaseType := globalConfig.DatabaseType()
+	switch databaseType {
+	case "mysql":
+		mysqlStatus := s.getMySQLStatus(ctx)
+		results = append(results, mysqlStatus)
+	default:
+		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+	}
+
+	// Doc engine
+	docEngineImpl := engine.Get()
+	err := docEngineImpl.Ping(ctx)
+	if err == nil {
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "alive", time.Now(), ""))
+	} else {
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "timeout", time.Now(), err.Error()))
+	}
+
+	// storage engine
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	storageHealth := storageImpl.Health(ctx)
+	if storageHealth {
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "alive", time.Now(), ""))
+	} else {
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "timeout", time.Now(), ""))
+	}
+
+	// cache engine
+	cacheType := globalConfig.CacheEngineType()
+	switch cacheType {
+	case "redis":
+		mysqlStatus := s.getRedisInfo(ctx)
+		results = append(results, mysqlStatus)
+	default:
+		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+	}
+
+	// message queue
+	messageQueueImpl := engine.GetMessageQueueEngine()
+	messageQueueStatus := messageQueueImpl.CheckStatus()
+	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), messageQueueStatus, time.Now(), ""))
+
+	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
-	now := time.Now()
 	for _, serverStatus := range serverList {
-		serverItem := make(map[string]interface{})
-		serverItem["name"] = serverStatus.ServerName
-		serverItem["service_type"] = serverStatus.ServerType
-		serverItem["host"] = serverStatus.Host
-		serverItem["port"] = serverStatus.Port
+		now := time.Now()
+		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, "", serverStatus.Timestamp, "")
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
-		if now.Sub(serverStatus.Timestamp) < 30*time.Second {
-			serverItem["status"] = "alive"
+		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
+			serverItem.Status = "alive"
 		} else {
-			serverItem["status"] = "timeout"
+			serverItem.Status = "timeout"
 		}
 		results = append(results, serverItem)
-	}
-
-	for id, result := range results {
-		result["id"] = id
 	}
 
 	return results, nil
@@ -1015,333 +1062,143 @@ func (s *Service) GetServicesByType(serviceType string) ([]map[string]interface{
 }
 
 // GetServiceDetails get service details
-func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[string]interface{}, error) {
-	serviceType, _ := configDict["service_type"].(string)
-	name, _ := configDict["name"].(string)
-
-	// Call detail function based on service type
-	switch serviceType {
-	case "meta_data":
-		return s.getMySQLStatus(name)
-	case "cache":
-		return s.getRedisInfo(name)
-	case "message_queue":
-		host := configDict["host"].(string)
-		port := configDict["port"].(int)
-		return s.checkNatsAlive(name, host, port)
-	case "retrieval":
-		// Check the extra.retrieval_type to determine which retrieval service
-		if extra, ok := configDict["extra"].(map[string]interface{}); ok {
-			if retrievalType, ok := extra["retrieval_type"].(string); ok {
-				if retrievalType == "infinity" {
-					return s.getInfinityStatus(name)
-				}
-			}
-		}
-		return s.getESClusterStats(name)
-	case "ragflow_server":
-		return s.checkRAGFlowServerAlive(name)
-	case "file_store":
-		return s.checkMinioAlive(name)
-	case "olap":
-		return s.checkOlapAlive(name)
-	case "tracing":
-		return s.checkTracingAlive(name)
-	default:
-		return nil, nil
-	}
+func (s *Service) GetServiceDetails(configDict map[string]interface{}) ([]ServiceStatus, error) {
+	//serviceType, _ := configDict["service_type"].(string)
+	//name, _ := configDict["name"].(string)
+	//ctx := context.Background()
+	//
+	//// Call detail function based on service type
+	//switch serviceType {
+	//case "meta_data":
+	//	return s.getMySQLStatus(ctx), nil
+	//case "cache":
+	//	return s.getRedisInfo(ctx), nil
+	//case "message_queue":
+	//	host := configDict["host"].(string)
+	//	port := configDict["port"].(int)
+	//	return s.checkNatsAlive(name, host, port)
+	//case "retrieval":
+	//	// Check the extra.retrieval_type to determine which retrieval service
+	//	if extra, ok := configDict["extra"].(map[string]interface{}); ok {
+	//		if retrievalType, ok := extra["retrieval_type"].(string); ok {
+	//			if retrievalType == "infinity" {
+	//				return s.getInfinityStatus(name)
+	//			}
+	//		}
+	//	}
+	//	return s.getESClusterStats(name)
+	//case "ragflow_server":
+	//	return s.checkRAGFlowServerAlive(name)
+	//case "file_store":
+	//	return s.checkMinioAlive(name)
+	//case "olap":
+	//	return s.checkOlapAlive(name)
+	//case "tracing":
+	//	return s.checkTracingAlive(name)
+	//default:
+	//	return nil, nil
+	//}
+	return nil, nil
 }
 
 // getMySQLStatus gets MySQL service status
-func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
+func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
+
+	serviceType := "database"
+	name := "mysql"
 	startTime := time.Now()
 
-	// Check basic connectivity with SELECT 1
 	sqlDB, err := dao.DB.DB()
 	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"message":      err.Error(),
-		}, nil
+		return newServiceStatus(serviceType, name, "not connected", startTime, err.Error())
 	}
 
 	// Execute SELECT 1 to check connectivity
-	_, err = sqlDB.Exec("SELECT 1")
+	err = sqlDB.PingContext(ctx)
 	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"message":      err.Error(),
-		}, nil
+		return newServiceStatus(serviceType, name, "timeout", startTime, err.Error())
 	}
 
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "alive",
-		"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-		"message":      "MySQL connection successful",
-	}, nil
+	return newServiceStatus(serviceType, name, "alive", startTime, "")
 }
 
 // getRedisInfo gets Redis service info
-func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
+func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
+
+	serviceType := "cache"
+	name := "redis"
+
 	startTime := time.Now()
 
 	redisClient := redis.Get()
-	if redisClient == nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"error":        "Redis client not initialized",
-		}, nil
+	if redisClient.Health(ctx) {
+		return newServiceStatus(serviceType, name, "alive", startTime, "")
 	}
 
-	// Check health
-	if !redisClient.Health() {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"error":        "Redis health check failed",
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "alive",
-		"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-		"message":      "Redis connection successful",
-	}, nil
+	return newServiceStatus(serviceType, name, "timeout", startTime, "Redis health check failed")
 }
 
 // getESClusterStats gets Elasticsearch cluster stats
-func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
-	// Check if Elasticsearch is the doc engine
-	docEngine := common.GetEnv(common.EnvDocEngine)
-	if docEngine == "" {
-		docEngine = "elasticsearch"
-	}
-	if docEngine != "elasticsearch" {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      "error: Elasticsearch is not in use.",
-		}, nil
-	}
+func (s *Service) getESClusterStats(ctx context.Context, serviceType string) map[string]interface{} {
+	name := "elasticsearch"
+	startTime := time.Now()
 
-	// Get ES config from server config
 	cfg := server.GetConfig()
-	if cfg == nil || cfg.DocEngine.ES == nil {
+	if cfg == nil || !cfg.IsElasticConfigured() {
 		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      "error: Elasticsearch configuration not found",
-		}, nil
+			"type":    serviceType,
+			"name":    name,
+			"status":  "timeout",
+			"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+			"message": "error: Elasticsearch configuration not found",
+		}
 	}
 
 	// Create ES engine and get cluster stats
-	esEngine, err := elasticsearch.NewEngine(cfg.DocEngine.ES)
+	esEngine, err := elasticsearch.NewEngine(ctx, cfg.GetElasticsearchConfig())
 	if err != nil {
 		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
+			"type":    serviceType,
+			"name":    name,
+			"status":  "timeout",
+			"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+			"message": fmt.Sprintf("error: %s", err.Error()),
+		}
 	}
 	defer esEngine.Close()
 
-	clusterStats, err := esEngine.GetClusterStats()
+	clusterStats, err := esEngine.GetClusterStats(ctx)
 	if err != nil {
 		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
+			"type":    serviceType,
+			"name":    name,
+			"status":  "timeout",
+			"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+			"message": fmt.Sprintf("error: %s", err.Error()),
+		}
 	}
 
 	return map[string]interface{}{
-		"service_name": name,
-		"status":       "alive",
-		"message":      clusterStats,
-	}, nil
+		"type":    serviceType,
+		"name":    name,
+		"status":  "alive",
+		"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+		"message": clusterStats,
+	}
 }
 
 // getInfinityStatus gets Infinity service status
-func (s *Service) getInfinityStatus(name string) (map[string]interface{}, error) {
+func (s *Service) getInfinityStatus(serviceType string) map[string]interface{} {
+	name := "infinity"
+	startTime := time.Now()
 	// TODO: Implement actual Infinity health check
 	return map[string]interface{}{
-		"service_name": name,
-		"status":       "unknown",
-		"message":      "Infinity health check not implemented",
-	}, nil
-}
-
-// checkRAGFlowServerAlive checks if RAGFlow server is alive
-func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, error) {
-	startTime := time.Now()
-
-	// Get ragflow config from allConfigs
-	var host string
-	var port int
-	allConfigs := server.GetAllConfigs()
-	for _, config := range allConfigs {
-		if serviceType, ok := config["service_type"].(string); ok && serviceType == "ragflow_server" {
-			if h, ok := config["host"].(string); ok {
-				host = h
-			}
-			if p, ok := config["port"].(int); ok {
-				port = p
-			}
-			break
-		}
+		"type":    serviceType,
+		"name":    name,
+		"status":  "unknown",
+		"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+		"message": "Infinity health check not implemented",
 	}
-
-	// Default values
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	if port == 0 {
-		port = 9380
-	}
-
-	// Replace 0.0.0.0 with 127.0.0.1 for local check
-	if host == "0.0.0.0" {
-		host = "127.0.0.1"
-	}
-
-	url := fmt.Sprintf("http://%s:%d/v1/system/ping", host, port)
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Get(url)
-	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
-	}
-	defer resp.Body.Close()
-
-	elapsed := time.Since(startTime).Milliseconds()
-	if resp.StatusCode == 200 {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "alive",
-			"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "timeout",
-		"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-	}, nil
-}
-
-// checkMinioAlive checks if MinIO is alive
-func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
-	startTime := time.Now()
-
-	// Get MinIO file store config from allConfigs
-	var host string
-	var port int
-	var secure bool
-	verify := true
-
-	allConfigs := server.GetAllConfigs()
-	for _, config := range allConfigs {
-		if serviceType, ok := config["service_type"].(string); ok && serviceType == "file_store" {
-			// Get host from config
-			if h, ok := config["host"].(string); ok {
-				host = h
-			}
-
-			if p, ok := config["port"].(int); ok {
-				port = p
-			} else if p, ok := config["port"].(float64); ok {
-				port = int(p)
-			} else if p, ok := config["port"].(string); ok {
-				if parsedPort, err := strconv.Atoi(p); err == nil {
-					port = parsedPort
-				}
-			}
-			// Get secure from extra config
-			if extra, ok := config["extra"].(map[string]interface{}); ok {
-				if s, ok := extra["secure"].(bool); ok {
-					secure = s
-				} else if s, ok := extra["secure"].(string); ok {
-					secure = s == "true" || s == "1" || s == "yes"
-				}
-				if v, ok := extra["verify"].(bool); ok {
-					verify = v
-				} else if v, ok := extra["verify"].(string); ok {
-					verify = !(v == "false" || v == "0" || v == "no")
-				}
-			}
-			break
-		}
-	}
-
-	// Default host
-	if host == "" {
-		host = "localhost"
-	}
-	if port == 0 {
-		port = 9000
-	}
-
-	// Determine scheme
-	scheme := "http"
-	if secure {
-		scheme = "https"
-	}
-
-	url := fmt.Sprintf("%s://%s:%d/minio/health/live", scheme, host, port)
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	// If verify is false, we need to skip SSL verification
-	if !verify && scheme == "https" {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-
-	resp, err := client.Get(url)
-	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
-	}
-	defer resp.Body.Close()
-
-	elapsed := time.Since(startTime).Milliseconds()
-	if resp.StatusCode == 200 {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "alive",
-			"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "timeout",
-		"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-	}, nil
 }
 
 // checkTaskExecutorAlive checks if task executor is alive
@@ -1409,30 +1266,30 @@ func (s *Service) checkOlapAlive(name string) (map[string]interface{}, error) {
 }
 
 // ShutdownService shutdown service
-func (s *Service) ShutdownService(serviceID string) (map[string]interface{}, error) {
+func (s *Service) ShutdownService(serviceName string) (map[string]interface{}, error) {
 	// TODO: Implement with proper service manager
 	return map[string]interface{}{
-		"command":    "shutdown service",
-		"service_id": serviceID,
-		"error":      "shutdown service not implemented",
+		"command":      "shutdown service",
+		"service_name": serviceName,
+		"error":        "shutdown service not implemented",
 	}, nil
 }
 
 // StartService start service
-func (s *Service) StartService(serviceID string) (map[string]interface{}, error) {
+func (s *Service) StartService(serviceName string) (map[string]interface{}, error) {
 	return map[string]interface{}{
-		"command":    "start service",
-		"service_id": serviceID,
-		"error":      "command 'start service' isn't implemented",
+		"command":      "start service",
+		"service_name": serviceName,
+		"error":        "command 'start service' isn't implemented",
 	}, nil
 }
 
 // RestartService restart service
-func (s *Service) RestartService(serviceID string) (map[string]interface{}, error) {
+func (s *Service) RestartService(serviceName string) (map[string]interface{}, error) {
 	return map[string]interface{}{
-		"command":    "restart service",
-		"service_id": serviceID,
-		"error":      "command 'restart service' isn't implemented",
+		"command":      "restart service",
+		"service_name": serviceName,
+		"error":        "command 'restart service' isn't implemented",
 	}, nil
 }
 
@@ -1525,7 +1382,10 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 // ListAllConfigs list all configs
 // Returns all service configurations from the config file
 func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
-	result := server.GetAllConfigs()
+	result, err := server.GetAllConfigs()
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -1535,38 +1395,40 @@ func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
 func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
+	globalConfig := server.GetConfig()
+
 	// DOC_ENGINE
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := globalConfig.GetEnvDocumentEngineType()
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DOC_ENGINE",
+		"env":   "DOCUMENT_ENGINE",
 		"value": docEngine,
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
+	defaultSuperuserEmail := globalConfig.GetEnvDefaultSuperUserEmail()
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   common.EnvDefaultSuperuserEmail,
+		"env":   "DEFAULT_SUPERUSER_EMAIL",
 		"value": defaultSuperuserEmail,
 	})
 
 	// DB_TYPE
-	dbType := common.GetEnv(common.EnvDBType)
+	dbType := globalConfig.GetEnvDatabaseType()
 	if dbType == "" {
 		dbType = "mysql"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DB_TYPE",
+		"env":   "DATABASE",
 		"value": dbType,
 	})
 
 	// DEVICE
-	device := common.GetEnv(common.EnvDevice)
+	device := globalConfig.GetEnvDeviceType()
 	if device == "" {
 		device = "cpu"
 	}
@@ -1576,12 +1438,12 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := common.GetEnv(common.EnvStorageImpl)
+	storageImpl := globalConfig.GetEnvStorageType()
 	if storageImpl == "" {
-		storageImpl = "MINIO"
+		storageImpl = "minio"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   common.EnvStorageImpl,
+		"env":   "STORAGE",
 		"value": storageImpl,
 	})
 

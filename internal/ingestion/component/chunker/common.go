@@ -19,11 +19,11 @@ package chunker
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/chunk"
 	"ragflow/internal/tokenizer"
 )
 
@@ -36,23 +36,29 @@ import (
 func newChunkerByName(name string, params map[string]any) (runtime.Component, error) {
 	switch name {
 	case ComponentNameTokenChunker:
+		// The DSL contract (shared by the web UI and the Python runtime)
+		// expresses single-chunk mode as TokenChunker delimiter_mode "one";
+		// in Go that behaviour lives in the OneChunker component.
+		if mode, _ := params["delimiter_mode"].(string); mode == "one" {
+			return NewOneChunker(params)
+		}
 		return NewTokenChunker(params)
 	case ComponentNameTitleChunker:
 		return NewTitleChunker(params)
 	case ComponentNameGroupTitleChunker:
 		return NewGroupTitleChunker(params)
+	case ComponentNameManualChunker:
+		return NewManualChunker(params)
 	case ComponentNameHierarchyTitleChunker:
 		return NewHierarchyTitleChunker(params)
 	case ComponentNameQAChunker:
 		return NewQAChunker(params)
 	case ComponentNameOneChunker:
 		return NewOneChunker(params)
-	case ComponentNameTagChunker:
-		return NewTagChunker(params)
 	case ComponentNameTableChunker:
 		return NewTableChunker(params)
-	case ComponentNamePresentationChunker:
-		return NewPresentationChunker(params)
+	case ComponentNamePageChunker:
+		return NewPageChunker(params)
 	default:
 		return nil, fmt.Errorf("chunker: unknown component %q", name)
 	}
@@ -76,39 +82,26 @@ func stringListFromAny(in []any) []string {
 // regex / split helpers
 // ---------------------------------------------------------------------------
 
-// compileDelimPattern joins all delimiter entries into a single
-// alternation. Entries wrapped in backticks are treated as regex
-// literals and regex-escaped; plain strings are simply regex-escaped.
-// Longer patterns win (matches python `sorted(set, key=len, reverse=True)`).
-// Mirrors Python _compile_delimiter_pattern: only backtick-wrapped delimiters
-// produce an active pattern. Plain delimiters are not compiled — they are only
-// used by naive_merge / mergeByTokenSize for sentence-level splitting when no
-// active pattern exists.
+// compileDelimPattern compiles a TokenChunker-style []string delimiter list.
+// Every non-empty entry is active, including bare (non-backtick) delimiters,
+// mirroring Python naive_merge / rag/nlp/delim where bare single-character
+// delimiters still split. Backtick-wrapped entries contribute their inner
+// content. invokeTextPayload decides whether an active delimiter yields one
+// chunk per segment (custom/backtick, no merge) or splits into paragraphs that
+// are merged by token size (bare). Canonical single-string parser_config.delimiter
+// parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 func compileDelimPattern(delims []string) *regexp.Regexp {
-	var custom []string
-	for _, d := range delims {
-		if d == "" {
-			continue
-		}
-		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
-			custom = append(custom, regexp.QuoteMeta(d[1:len(d)-1]))
-		}
-	}
-	if len(custom) == 0 {
-		return nil
-	}
-	sort.SliceStable(custom, func(i, j int) bool { return len(custom[i]) > len(custom[j]) })
-	return regexp.MustCompile(strings.Join(custom, "|"))
+	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
-// splitKeepingDelim mirrors Python token_chunker._split_text_by_pattern
-// (token_chunker.py:79-94): re.split with a captured delimiter group yields
-// [text, delim, text, delim, ...]; each delimiter is glued to the END of the
-// preceding text segment, so it never surfaces as a standalone chunk. A
-// delimiter with no preceding text (a leading delimiter or one adjacent to
-// another) is dropped together with the empty segment, matching Python's
-// `if not chunk: continue`.
-func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
+// splitDroppingDelim mirrors Python's _split_text_by_pattern
+// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
+// glued to a segment: re.split with a captured group keeps delimiters at odd
+// indices, and only the even-index (text) parts are kept. This is the
+// behavior every delimiter path (primary and children, text/markdown/html
+// and JSON) must reproduce so a split chunk reads "first sentence here"
+// without the trailing delimiter.
+func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
 	}
@@ -124,7 +117,7 @@ func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 			cursor = end
 			continue
 		}
-		out = append(out, text[cursor:end])
+		out = append(out, text[cursor:start])
 		cursor = end
 	}
 	if cursor < len(text) {
@@ -192,8 +185,6 @@ func emptyOutputs() map[string]any {
 		"chunks":        []map[string]any{},
 	}
 }
-
-func emptyChunkDocs() []schema.ChunkDoc { return []schema.ChunkDoc{} }
 
 // chunkOutputs builds the canonical chunker output (output_format="chunks" +
 // chunks). The Go runtime passes only this explicit output to the next node,

@@ -46,6 +46,7 @@ export function DraftModeCard({
   modelInfoRef,
   draftName,
   setDraftName,
+  verifyTransform,
 }: DraftModeCardProps) {
   // On success, fold the OAuth-issued key into the current form values so it
   // lands in the (editable) api_key field without clobbering other inputs.
@@ -72,19 +73,22 @@ export function DraftModeCard({
         onSubmit={() => undefined}
         defaultValues={formDefaultValues}
         labelClassName="font-normal"
+        resetOptions={{ keepDirtyValues: true }}
       />
 
       {providerName === LLMFactory.AIMLAPI && (
         <AimlapiGetKeyButton onKey={handleAimlapiKey} />
       )}
 
-      <div className="pt-3">
-        <VerifyButton
-          onVerify={handleVerify}
-          isAbsolute={false}
-          formRef={formRef}
-        />
-      </div>
+      {providerName !== LLMFactory.OpenAiAPICompatible && (
+        <div className="pt-3">
+          <VerifyButton
+            onVerify={handleVerify}
+            isAbsolute={false}
+            formRef={formRef}
+          />
+        </div>
+      )}
 
       <div className="pt-3">
         <ModelsSection
@@ -94,6 +98,7 @@ export function DraftModeCard({
           hideActions={false}
           hideIfEmpty={false}
           getFormValues={() => formRef.current?.getValues?.() ?? {}}
+          verifyTransform={verifyTransform}
           onInstanceModelsChange={(info) => {
             modelInfoRef.current = info;
           }}

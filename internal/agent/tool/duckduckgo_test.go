@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,6 +91,7 @@ func TestDuckDuckGo_BuildNewsURLWithVQD(t *testing.T) {
 }
 
 func TestDuckDuckGo_ParseGeneralResults(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(`<!doctype html><html><body>
@@ -114,7 +114,7 @@ func TestDuckDuckGo_ParseGeneralResults(t *testing.T) {
 	t.Cleanup(func() { duckduckgoSearchEndpoint = prevSearch })
 
 	tool := NewDuckDuckGoTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":"ragflow","top_n":5}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"ragflow","top_n":5}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -141,6 +141,7 @@ func TestDuckDuckGo_ParseGeneralResults(t *testing.T) {
 }
 
 func TestDuckDuckGo_ParseNewsResults(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/bootstrap":
@@ -171,7 +172,7 @@ func TestDuckDuckGo_ParseNewsResults(t *testing.T) {
 	t.Cleanup(func() { duckduckgoNewsBootstrapEndpoint = prevBootstrap })
 
 	tool := NewDuckDuckGoTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":"ragflow","channel":"news","top_n":1}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"ragflow","channel":"news","top_n":1}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -195,6 +196,7 @@ func TestDuckDuckGo_ParseNewsResults(t *testing.T) {
 }
 
 func TestDuckDuckGo_DefaultChannelUsesGeneralSearch(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/" {
 			// keep old behavior impossible to hit if search endpoint override works incorrectly
@@ -214,15 +216,16 @@ func TestDuckDuckGo_DefaultChannelUsesGeneralSearch(t *testing.T) {
 	t.Cleanup(func() { duckduckgoSearchEndpoint = prevSearch })
 
 	tool := NewDuckDuckGoTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":"ragflow"}`)
+	_, err := tool.InvokableRun(ctx, `{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 }
 
 func TestDuckDuckGo_Info(t *testing.T) {
+	ctx := t.Context()
 	tool := NewDuckDuckGoTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -253,18 +256,20 @@ func TestDuckDuckGo_Info(t *testing.T) {
 }
 
 func TestDuckDuckGo_EmptyQuery(t *testing.T) {
+	ctx := t.Context()
 	tool := NewDuckDuckGoTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty): %v", err)
 	}
 	var envelope duckduckgoEnvelope
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
 		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
 func TestDuckDuckGo_RealReactAgent_ExecutesTool(t *testing.T) {
+	ctx := t.Context()
 	var hitCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hitCount++
@@ -290,7 +295,7 @@ func TestDuckDuckGo_RealReactAgent_ExecutesTool(t *testing.T) {
 		"RAGFlow is an open-source RAG engine.",
 	)
 
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
+	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: mdl,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: []einotool.BaseTool{realTool},
@@ -301,7 +306,7 @@ func TestDuckDuckGo_RealReactAgent_ExecutesTool(t *testing.T) {
 		t.Fatalf("react.NewAgent: %v", err)
 	}
 
-	out, err := agent.Generate(context.Background(), []*schema.Message{
+	out, err := agent.Generate(ctx, []*schema.Message{
 		schema.UserMessage("What is RAGFlow?"),
 	})
 	if err != nil {
@@ -339,6 +344,7 @@ func TestDuckDuckGo_RealReactAgent_ExecutesTool(t *testing.T) {
 }
 
 func TestDuckDuckGo_ComponentReferencesAndDefaults(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	built, err := BuildByName("duckduckgo", map[string]any{
@@ -365,7 +371,7 @@ func TestDuckDuckGo_ComponentReferencesAndDefaults(t *testing.T) {
 	envelope := map[string]any{"results": []any{map[string]any{
 		"title": "Story", "url": "https://news.example/story", "body": "Breaking update",
 	}}}
-	chunks, docAggs := duck.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := duck.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["content"] != "Breaking update" {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

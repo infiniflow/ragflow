@@ -30,7 +30,6 @@ export const formSchema = z
         html4excel: z.boolean(),
         tag_kb_ids: z.array(z.string()).nullish(),
         topn_tags: z.number().optional(),
-        toc_extraction: z.boolean().optional(),
         image_table_context_window: z.number().optional(),
         overlapped_percent: z.number().optional(),
         // MinerU-specific options

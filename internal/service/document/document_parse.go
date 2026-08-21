@@ -104,14 +104,14 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+	exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
-	if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
 	}
 	return nil
@@ -257,6 +257,15 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 
 	docs, err := s.validateDocsInDataset(ctx, deduped, datasetID)
 	if err != nil {
+		// Mirror the Python parse/stop endpoint's "Documents not found" message.
+		var notInDataset *documentsNotInDatasetError
+		if errors.As(err, &notInDataset) {
+			quoted := make([]string, len(notInDataset.ids))
+			for i, id := range notInDataset.ids {
+				quoted[i] = "'" + id + "'"
+			}
+			return nil, fmt.Errorf("Documents not found: [%s]", strings.Join(quoted, ", "))
+		}
 		return nil, err
 	}
 
@@ -264,7 +273,12 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	successCount := 0
 	for _, doc := range docs {
 		if cancelErr := s.CancelDocParse(ctx, doc); cancelErr != nil {
-			errs = append(errs, cancelErr.Error())
+			if errors.Is(cancelErr, errParseNotRunning) {
+				// Mirror the Python /documents/stop endpoint's message.
+				errs = append(errs, "Can't stop parsing document that has not started or already completed")
+			} else {
+				errs = append(errs, cancelErr.Error())
+			}
 			continue
 		}
 		successCount++
@@ -277,6 +291,18 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	return result, nil
 }
 
+// documentsNotInDatasetError carries the ids that are missing from (or do not
+// belong to) a dataset so each endpoint can format its own contract message.
+type documentsNotInDatasetError struct {
+	datasetID string
+	ids       []string
+}
+
+// Error mirrors the Python delete endpoint's message.
+func (e *documentsNotInDatasetError) Error() string {
+	return fmt.Sprintf("These documents do not belong to dataset %s or Document not found: %s", e.datasetID, strings.Join(e.ids, ", "))
+}
+
 // validateDocsInDataset deduplicates IDs, fetches the documents, and ensures
 // every document exists and belongs to the given dataset. Returns the resolved
 // documents.
@@ -285,34 +311,62 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch documents: %w", err)
 	}
+	invalid := make([]string, 0)
 	if len(docs) != len(docIDs) {
-		return nil, fmt.Errorf("some document IDs not found in dataset %s", datasetID)
-	}
-	var invalid []string
-	for _, d := range docs {
-		if d.KbID != datasetID {
-			invalid = append(invalid, d.ID)
+		found := make(map[string]struct{}, len(docs))
+		for _, d := range docs {
+			found[d.ID] = struct{}{}
+		}
+		for _, id := range docIDs {
+			if _, ok := found[id]; !ok {
+				invalid = append(invalid, id)
+			}
+		}
+	} else {
+		for _, d := range docs {
+			if d.KbID != datasetID {
+				invalid = append(invalid, d.ID)
+			}
 		}
 	}
 	if len(invalid) > 0 {
-		return nil, fmt.Errorf("These documents do not belong to dataset %s: %v", datasetID, invalid)
+		return nil, &documentsNotInDatasetError{datasetID: datasetID, ids: invalid}
 	}
 	return docs, nil
 }
 
+// errParseNotRunning is returned by CancelDocParse when the document is not in
+// a cancelable state: its run status is neither RUNNING nor CANCEL and it has
+// no in-flight ingestion task. Callers map it to their endpoint-specific
+// message (the Python /documents/ingest and /documents/stop messages differ).
+var errParseNotRunning = errors.New("parse task is not in running status")
+
 // CancelDocParse stops the ingestion task for the document by calling
 // RequestStop (STOPPING), then marks the document run status as CANCEL.
+// It mirrors the Python cancel precondition: only a document whose run status
+// is RUNNING or CANCEL, or one with an in-flight ingestion task
+// (CREATED/RUNNING/STOPPING), can be canceled; otherwise errParseNotRunning
+// is returned. A missing ingestion task is not an error by itself — cancel is
+// then a no-op on the task side, matching Python's cancel_all_task_of.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
 	}
-	if task == nil {
-		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
+
+	docRun := ""
+	if doc.Run != nil {
+		docRun = *doc.Run
+	}
+	inFlight := task != nil && (task.Status == common.CREATED || task.Status == common.RUNNING || task.Status == common.STOPPING)
+	if docRun != string(entity.TaskStatusRunning) && docRun != string(entity.TaskStatusCancel) && !inFlight {
+		return errParseNotRunning
 	}
 
-	if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
-		return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
+	if task != nil {
+		if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
+			return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
+		}
 	}
 
 	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
@@ -350,8 +404,8 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 		}
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", tenantID)
-			s.deleteChunkImages(doc, indexName)
-			if _, err = s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+			s.deleteChunkImages(ctx, doc, indexName)
+			if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 				return err
 			}
 		}
@@ -360,7 +414,7 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 	return nil
 }
 
-func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName string) {
+func (s *DocumentService) deleteChunkImages(ctx context.Context, doc *entity.Document, indexName string) {
 	if s.docEngine == nil {
 		return
 	}
@@ -371,7 +425,7 @@ func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName stri
 
 	const pageSize = 1000
 	for offset := 0; ; offset += pageSize {
-		result, err := s.docEngine.Search(context.Background(), &enginetypes.SearchRequest{
+		result, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{doc.KbID},
 			Offset:       offset,
@@ -390,8 +444,8 @@ func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName stri
 			if !ok {
 				continue
 			}
-			if storageImpl.ObjExist(doc.KbID, imageKey) {
-				_ = storageImpl.Remove(doc.KbID, imageKey)
+			if storageImpl.ObjExist(ctx, doc.KbID, imageKey) {
+				_ = storageImpl.Remove(ctx, doc.KbID, imageKey)
 			}
 		}
 	}
@@ -463,16 +517,11 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 		return errors.New("database error (Document update)")
 	}
 
-	if s.docEngine == nil {
-		return nil
+	if s.docEngine != nil {
+		if err := s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+			return err
+		}
 	}
-
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	return s.docEngine.UpdateChunks(
-		context.Background(),
-		map[string]interface{}{"doc_id": doc.ID},
-		map[string]interface{}{"available_int": status},
-		indexName,
-		doc.KbID,
-	)
+	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	return nil
 }

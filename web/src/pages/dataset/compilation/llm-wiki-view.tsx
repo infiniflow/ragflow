@@ -4,25 +4,26 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { GenerateType } from '@/constants/knowledge';
 import {
+  useGenerateStatus,
+  useTraceRunData,
+} from '@/hooks/use-dataset-generate';
+import {
+  ArtifactAlterationKeys,
   ArtifactKeys,
   ArtifactTopicKeys,
   useFetchArtifactTopicList,
   useFetchKnowledgeBaseConfiguration,
 } from '@/hooks/use-knowledge-request';
-import {
-  GenerateStatus,
-  GenerateType,
-} from '@/pages/dataset/dataset/generate-button/constants';
-import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams } from 'react-router';
 
 import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
+import { useRunEndEffect } from './hooks/use-run-end-effect';
 import { CompilationLoadingCard } from './loading-card';
 import { WikiDetailContent } from './wiki-detail-content';
 import { WikiLeftPanel } from './wiki-left-panel';
@@ -45,17 +46,18 @@ export function LlmWikiView() {
   const { status: artifactStatus } = useGenerateStatus(artifactRunData);
   const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
-  useEffect(() => {
-    if (artifactStatus === GenerateStatus.completed) {
-      setUpdateSheetOpen(false);
-      queryClient.invalidateQueries({
-        queryKey: ArtifactKeys.listByDataset(id!),
-      });
-      queryClient.invalidateQueries({
-        queryKey: ArtifactTopicKeys.listByDataset(id!),
-      });
-    }
-  }, [artifactStatus, queryClient, id]);
+  const handleRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ArtifactAlterationKeys.detail(id!, 'wiki'),
+    });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactKeys.listByDataset(id!),
+    });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactTopicKeys.listByDataset(id!),
+    });
+  }, [queryClient, id]);
+  useRunEndEffect(artifactStatus, handleRunEnd);
 
   const handleLeftTabChange = useCallback((value: string) => {
     setLeftTab(value as LeftPanelTab);

@@ -23,7 +23,7 @@ func TestCategorize_ChosenCategory(t *testing.T) {
 		Categories:      []string{"sales", "support", "billing"},
 		DefaultCategory: "support",
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

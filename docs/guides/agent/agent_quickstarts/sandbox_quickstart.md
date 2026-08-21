@@ -1,11 +1,13 @@
 ---
 sidebar_position: 20
+title: Sandbox Quickstart
+sidebar_label: Sandbox Quickstart
 slug: /sandbox_quickstart
 sidebar_custom_props: {
   categoryIcon: LucideCodesandbox
 }
 ---
-# Sandbox quickstart
+# Sandbox Quickstart
 
 RAGFlow's `CodeExec` agent component needs a sandbox provider to run Python and JavaScript code.
 
@@ -17,18 +19,17 @@ The simplest setup flow is:
 4. Choose a provider and save the configuration.
 5. Test the connection in the same page.
 
-## Admin page
+## Admin Page
 
 Configure sandbox providers from the admin page:
 
 - `self_managed`: Uses the executor manager service.
 - `local`: Runs code on the current machine.
 - `ssh`: Runs code on a remote machine over SSH.
-- `aliyun_codeinterpreter`, `e2b`, and `tenki`: Cloud providers.
+- `aliyun_codeinterpreter`, `e2b`, `tenki`, and `ucloud_agent_sandbox`: Cloud providers.
 
-<img width="2547" height="1475" alt="admin-sandbox-settings" src="https://github.com/user-attachments/assets/59ab948e-b98a-45a8-9db4-f1afbf6c3685" />
 
-## Provider options
+## Provider Options
 
 
 RAGFlow supports multiple sandbox providers. Configure the active provider in
@@ -39,21 +40,21 @@ Admin > Sandbox Settings after the services are up.
 - `ssh`: Runs code on a remote machine over SSH.
 - `aliyun_codeinterpreter` and `e2b`: Cloud-hosted providers that remain available in the admin provider list.
 - `tenki`: Cloud-hosted provider that runs each execution in a disposable [Tenki](https://tenki.cloud) microVM. See [Tenki](#tenki) below.
+- `ucloud_agent_sandbox`: Cloud-hosted provider that runs each execution in a disposable [UCloud Agent Sandbox](https://astraflow.ucloud.cn/docs/agent-sandbox). See [UCloud Agent Sandbox](#ucloud-agent-sandbox) below.
 
 ### Tenki
 
 `tenki` runs each code execution in a fresh Tenki microVM and destroys it afterwards. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
 
-The `tenki-sandbox` SDK is an optional dependency (it requires `protobuf>=6.31`, which differs from RAGFlow's default gRPC stack), so it is not installed by default. Install it into the RAGFlow runtime before selecting this provider:
+The `tenki` SDK is an optional dependency (it requires `protobuf>=6.31`, which differs from RAGFlow's default gRPC stack), so it is not installed by default. Install it into the RAGFlow runtime before selecting this provider:
 
 ```bash
-pip install tenki-sandbox
+pip install tenki
 ```
 
 Configure it in **Admin > Sandbox Settings**:
 
 - `api_key` (required): Tenki API key. Create one at [app.tenki.cloud](https://app.tenki.cloud) under **API Keys**.
-- `project_id` (required): the Tenki project that sandboxes are created under.
 - `base_url` (optional): override the Tenki API endpoint.
 - `image` (optional): sandbox base image. Leave empty to use the Tenki default image, which includes `python3` and `node`.
 - `allow_outbound` (optional, security-relevant): whether the sandbox may make outbound network connections. Defaults to `false` so sandboxed code has no network access; set it to `true` when code needs the network (for example, to install packages).
@@ -64,6 +65,28 @@ Notes:
 - Supported languages are Python and JavaScript.
 - Files written to the `artifacts/` directory of the working directory are returned as run artifacts.
 - The provider uses only Tenki's create/exec/destroy operations; it does not use volumes or snapshots.
+
+### UCloud Agent Sandbox
+
+`ucloud_agent_sandbox` uses UCloud's native Sandbox SDK to create one disposable sandbox for each CodeExec run. No local sandbox service or Docker runtime is required.
+
+Configure it in **Admin > Sandbox Settings**:
+
+- `api_key` (required): obtain one from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys).
+- `region`: defaults to `cn-wlcb`; `us-ca` is also supported.
+- `domain` and `api_url`: optional endpoint overrides for private or custom deployments.
+- `template`: defaults to `base`, which includes Python and Node.js runtimes.
+- `allow_internet_access`: defaults to `false`; enable it only when sandboxed code needs outbound network access.
+- `timeout`, `sandbox_timeout`, and the output/artifact limits can be tuned for the workload.
+
+Notes:
+
+- Supported languages are Python and JavaScript.
+- RAGFlow uses HTTPS with TLS certificate verification. The `insecure_http` option is intended only for trusted test deployments.
+- Files written to the execution workspace's `artifacts/` directory are returned as run artifacts.
+- The Python runtime dependency is installed with RAGFlow. The Go runtime uses UCloud's native Go SDK.
+
+See [UCloud Agent Sandbox prerequisites](https://astraflow.ucloud.cn/docs/agent-sandbox/product/prerequisites) and [regions](https://astraflow.ucloud.cn/docs/agent-sandbox/product/region).
 
 ## Prerequisites
 
@@ -78,11 +101,11 @@ Notes:
 The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use.
 :::
 
-## Build Docker base images
+## Build Docker Base Images
 
 The sandbox uses isolated base images for secure containerized execution environments.
 
-### Option 1: Build from source
+### Option 1: Build from Source
 
 Build the runtime base images:
 
@@ -103,7 +126,7 @@ Build the executor manager image:
 docker build -t sandbox-executor-manager:latest ./executor_manager
 ```
 
-### Option 2: Pull base images from Docker Hub
+### Option 2: Pull Base Images from Docker Hub
 
 If you do not need to customize runtime dependencies, pull the published base images and tag them with the names used by standalone Docker Compose:
 
@@ -122,7 +145,7 @@ docker compose -f docker-compose.yml down
 docker compose -f docker-compose.yml up -d
 ```
 
-## Running with RAGFlow 
+## Running with RAGFlow
 
 1. Verify that gVisor is properly installed and operational.
 
@@ -148,11 +171,11 @@ docker compose -f docker-compose.yml up -d
 8. Click **Save**.
 9. Click **Test Connection** if needed.
 
-## Environment variables
+## Environment Variables
 
 The variables in `docker/.env` are grouped by scope.
 
-### System-level variables
+### System-Level Variables
 
 These variables apply to sandbox support in general:
 
@@ -161,7 +184,7 @@ These variables apply to sandbox support in general:
 - `SANDBOX_ARTIFACT_BUCKET`: MinIO bucket used for files generated by sandbox code.
 - `SANDBOX_ARTIFACT_EXPIRE_DAYS`: Number of days before sandbox artifacts expire.
 
-### Self-managed deployment defaults
+### Self-Managed Deployment Defaults
 
 These variables are shown in Admin as deployment defaults for `self_managed`.
 Changing them requires restarting `sandbox-executor-manager`.
@@ -175,7 +198,7 @@ Changing them requires restarting `sandbox-executor-manager`.
 - `SANDBOX_MAX_MEMORY`: Memory limit for each sandbox runtime container.
 - `SANDBOX_TIMEOUT`: Default execution timeout.
 
-### Admin-managed runtime settings
+### Admin-Managed Runtime Settings
 
 Provider selection and runtime settings are configured in **Admin > Sandbox Settings**.
 
@@ -191,9 +214,9 @@ For `self_managed`:
 - Runtime settings are editable in Admin
 - Deployment defaults come from `.env` and are shown as read-only values
 
-## Running standalone
+## Running Standalone
 
-### Manual setup
+### Manual Setup
 
 1. Initialize the environment variables:
 

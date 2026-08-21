@@ -138,6 +138,13 @@ export interface IProviderModelItem {
   max_tokens: number;
   model_types: string[];
   features: string[] | null;
+  /**
+   * Per-model extra config forwarded through `model_info[].extra`
+   * (e.g. SoMark's element-format / feature-config fields).
+   * Catalog models typically omit this; it is populated by the
+   * edit dialog and the `useModelsDerived` echo path.
+   */
+  extra?: Record<string, any>;
 }
 
 /**

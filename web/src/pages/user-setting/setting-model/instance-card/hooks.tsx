@@ -160,14 +160,20 @@ export function useProviderBaseUrlOptions(providerName: string) {
  * - Draft: empty form, with `base_url` pre-filled from the
  *   provider's `default` URL when available.
  * - Saved: prefer `instanceDetails` (which carries api_key / base_url);
- *   normalise api_key into the bare key plus any nested credential
- *   fields (see {@link unwrapApiKey}).
+ *   when `echoTransform` is supplied (provider-specific field mapping,
+ *   e.g. Google Cloud's top-level `google_project_id` or XunFei Spark's
+ *   nested `spark_api_password`), use it to reverse the corresponding
+ *   `submitTransform` so the provider-specific credential fields
+ *   pre-fill. Otherwise fall back to the generic `unwrapApiKey` path
+ *   which lifts the bare `api_key` plus `API_KEY_NESTED_FIELDS`
+ *   (`group_id` / `api_version` / `provider_order`).
  */
 export function useProviderInitialValues(
   instance: IProviderInstance,
   instanceDetails: IProviderInstance | undefined,
   isDraft: boolean,
   baseUrlOptions: SelectOption[] | undefined,
+  echoTransform?: (instance: Record<string, any>) => Record<string, any>,
 ) {
   return useMemo(() => {
     const defaultBaseUrl = pickDefaultUrl(baseUrlOptions);
@@ -187,12 +193,19 @@ export function useProviderInitialValues(
     const values: Record<string, any> = {
       instance_name: merged.instance_name,
     };
-    // api_key may come back as a JSON string, an already-parsed object,
-    // or a plain bare key (see `unwrapApiKey`). Normalise it so the
-    // api_key text field shows the bare key and the nested credential
-    // fields (MiniMax group_id, Azure api_version, OpenRouter
-    // provider_order) pre-fill their own form inputs.
-    if (merged.api_key) {
+    if (echoTransform) {
+      // Provider-specific echo: reverse the `submitTransform` mapping so
+      // credential fields that the backend persists either at the top
+      // level (Google Cloud, Tencent Cloud, Fish Audio) or nested inside
+      // `api_key` (XunFei Spark, Baidu YiYan, OpenDataLoader, PaddleOCR,
+      // MinerU) are restored into their own form inputs.
+      Object.assign(values, echoTransform(merged));
+    } else if (merged.api_key) {
+      // api_key may come back as a JSON string, an already-parsed object,
+      // or a plain bare key (see `unwrapApiKey`). Normalise it so the
+      // api_key text field shows the bare key and the nested credential
+      // fields (MiniMax group_id, Azure api_version, OpenRouter
+      // provider_order) pre-fill their own form inputs.
       const { apiKey, nested } = unwrapApiKey(merged.api_key);
       values.api_key = apiKey;
       Object.assign(values, nested);
@@ -215,7 +228,7 @@ export function useProviderInitialValues(
       }
     }
     return values;
-  }, [instance, instanceDetails, isDraft, baseUrlOptions]);
+  }, [instance, instanceDetails, isDraft, baseUrlOptions, echoTransform]);
 }
 
 // ---------------------------------------------------------------------------
@@ -542,7 +555,6 @@ export function useInstanceSaveState({
   }, [
     isDraft,
     providerName,
-    instanceName,
     instanceId,
     instanceDetails?.id,
     formRef,
@@ -590,14 +602,35 @@ export function useInstanceSaveState({
   // `getSavePayload()` is the imperative entry point the parent calls
   // when the user clicks the top Save button. For drafts it always
   // returns a payload (provided the name is non-empty); for saved
-  // cards it returns `null` when the card hasn't been touched by the
-  // user, so the parent skips both validation and the no-op PUT.
+  // cards it returns `null` when the current payload matches the
+  // last-synced baseline, so the parent skips the no-op PUT.
+  //
+  // Two guards skip cards that should not participate in the batch:
+  //
+  // 1. `!instanceDetails` - collapsed cards never lazy-fetch their
+  //    details (see `useLazyInstanceDetails`), so their form is empty
+  //    (api_key defaults to ''). Including them would (a) fail
+  //    validation on the required api_key field and abort the entire
+  //    batch, and (b) potentially send an empty api_key to the
+  //    backend. A user cannot have edited a card they never opened,
+  //    so skipping is always safe. Cards that were opened and then
+  //    collapsed still retain their cached `instanceDetails`, so
+  //    in-flight edits are not lost.
+  //
+  // 2. Signature comparison - the reliable dirty check. We
+  //    intentionally do NOT short-circuit on `form.formState.isDirty`
+  //    here. RHF only updates `_formState.isDirty` on field changes
+  //    when a component subscribes to `isDirty` in a render (via the
+  //    formState Proxy). This card reads `isDirty` only through the
+  //    imperative ref (in the parent's click handler), so the
+  //    subscription is never established and `_formState.isDirty`
+  //    stays stale at its post-`reset` value (`false`) - causing
+  //    api_key / base_url edits to be silently skipped. The signature
+  //    comparison compares the actual payload (api_key, base_url,
+  //    model_info, instance_name, etc.) against the baseline captured
+  //    at last sync, so it catches every real edit.
   const getSavePayload = useCallback((): InstanceSavePayload | null => {
-    if (!isDraft) {
-      const formDirty = formRef.current?.isDirty() ?? false;
-      const renamed = editedNameRef.current !== instanceName;
-      if (!formDirty && !renamed) return null;
-    }
+    if (!isDraft && !instanceDetails) return null;
     const payload = buildPayload();
     if (!payload) return null;
     if (!isDraft) {
@@ -615,7 +648,7 @@ export function useInstanceSaveState({
       // `IUpdateProviderInstanceRequestBody`).
       apiKind: isDraft ? 'add' : 'update',
     };
-  }, [buildPayload, isDraft, instanceName, formRef]);
+  }, [buildPayload, isDraft, instanceDetails]);
 
   // After a successful save the parent calls `markSaved()` so the
   // baseline catches up to the just-persisted values. Without this,

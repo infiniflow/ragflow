@@ -19,6 +19,7 @@ package models
 import "testing"
 
 func TestHuaweiCloudToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	newDriver := func(baseURL string) ModelDriver {
 		return NewHuaweiCloudModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "v2/chat/completions"})
 	}

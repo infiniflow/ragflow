@@ -54,26 +54,18 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
-)
-
-// ErrEmbedderNotWired is returned by QueueSaveToMemoryTask when
-// the embedding-model call is reached. The Go runtime has no
-// embedding model port yet; until one lands, callers see this
-// error and know to fall back to the Python Canvas.
-var ErrEmbedderNotWired = errors.New(
-	"memory: embedder not wired in Go — " +
-		"QueueSaveToMemoryTask runs the lookup + message construction " +
-		"but cannot embed / save until internal/rag/llm/embedding_model " +
-		"ships (Phase 8b follow-up)",
+	"ragflow/internal/utility"
 )
 
 // MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
@@ -157,10 +149,10 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		}
 		// (2) + (3) build the raw_message envelope. The Go port
 		// keeps the same field set as Python:344-386 so the
-		// downstream extractor (also still on the Python side)
-		// can consume the row without schema changes.
-		rawMessageID := generateRawMessageID()
-		rawMessage := buildRawMessage(rawMessageID, memoryID, mem, msg)
+		// downstream extractor can consume the row without
+		// schema changes.
+		rawMessageID := generateRawMessageID(ctx)
+		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
 
 		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
@@ -178,7 +170,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 			})
 			continue
 		}
-		if err := queueMemoryTask(memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
+		if err = queueMemoryTask(ctx, memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
 				MemoryID: memoryID,
 				FailMsg:  err.Error(),
@@ -190,9 +182,9 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 
 // generateRawMessageID returns the Redis auto-increment id used by the Python
 // side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
-func generateRawMessageID() int64 {
+func generateRawMessageID(ctx context.Context) int64 {
 	if redisClient := redisengine.Get(); redisClient != nil {
-		if id := redisClient.GenerateAutoIncrementID("id_generator", "memory", 1, nil); id > 0 {
+		if id := redisClient.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
 			return id
 		}
 	}
@@ -201,35 +193,33 @@ func generateRawMessageID() int64 {
 
 // buildRawMessage constructs the raw_message envelope that gets
 // passed to embed_and_save (and persisted in the message table
-// for the async extractor to read).
-func buildRawMessage(rawMessageID int64, memoryID string, mem *CreateMemoryResponse, msg MemoryMessage) map[string]any {
+// for the async extractor to read). Only logical message fields
+// are set here, mirroring Python queue_save_to_memory_task; the
+// doc engine maps them to storage fields at insert time
+// (Elasticsearch tokenizes content before write, Infinity
+// tokenizes on save).
+func buildRawMessage(
+	rawMessageID int64,
+	memoryID string,
+	msg MemoryMessage,
+) map[string]any {
 	content := fmt.Sprintf("User Input: %s\nAgent Response: %s",
 		msg.UserInput, msg.AgentResponse)
-	out := map[string]any{
-		"message_id":             rawMessageID,
-		"message_type":           "raw",
-		"message_type_kwd":       "raw",
-		"source_id":              0,
-		"memory_id":              memoryID,
-		"user_id":                msg.UserID,
-		"agent_id":               msg.AgentID,
-		"session_id":             msg.SessionID,
-		"content":                content,
-		"content_ltks":           content,
-		"tokenized_content_ltks": content,
-		"valid_at":               time.Now().UTC().Format("2006-01-02 15:04:05"),
-		"invalid_at":             nil,
-		"forget_at":              nil,
-		"status":                 true,
-		"status_int":             1,
+	return map[string]any{
+		"message_id":   rawMessageID,
+		"message_type": "raw",
+		"source_id":    0,
+		"memory_id":    memoryID,
+		"user_id":      msg.UserID,
+		"agent_id":     msg.AgentID,
+		"session_id":   msg.SessionID,
+		"content":      content,
+		// valid_at is stamped as server-local wall clock, not UTC.
+		"valid_at":   memoryNow().Format(memoryTimeLayout),
+		"invalid_at": nil,
+		"forget_at":  nil,
+		"status":     true,
 	}
-	if mem != nil {
-		// The embedder uses the memory's embd_id; keep the
-		// pointer on the envelope so embed_and_save can
-		// pick the right model when it lands.
-		out["_memory_embd_id"] = mem.EmbdID
-	}
-	return out
 }
 
 // buildTaskRow constructs the Task row the async extractor polls.
@@ -246,31 +236,51 @@ func buildTaskRow(rawMessageID int64, memoryID string) map[string]any {
 }
 
 func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemoryResponse, rawMessage map[string]any) error {
+	return s.embedAndSaveMessages(ctx, mem, []map[string]any{rawMessage})
+}
+
+// embedAndSaveMessages embeds every message's content with the memory's
+// embedding model and inserts the batch into the memory's chunk store,
+// creating the index on first use. Mirrors Python embed_and_save.
+func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *CreateMemoryResponse, messages []map[string]any) error {
 	if mem == nil {
 		return errors.New("memory not found")
 	}
 	if s == nil || s.memories == nil || s.memories.docEngine == nil {
 		return errors.New("message store is not initialized")
 	}
+	if len(messages) == 0 {
+		return nil
+	}
 
-	content, _ := rawMessage["content"].(string)
+	contents := make([]string, len(messages))
+	for i, message := range messages {
+		contents[i], _ = message["content"].(string)
+	}
 	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
 	if err != nil {
 		return err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{content}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: contents}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return err
 	}
-	if len(embeddings) == 0 || len(embeddings[0].Embedding) == 0 {
-		return errors.New("embedding response is empty")
+	if len(embeddings) != len(messages) {
+		return fmt.Errorf("embedding response count %d does not match message count %d", len(embeddings), len(messages))
 	}
 
-	vector := embeddings[0].Embedding
-	rawMessage[fmt.Sprintf("q_%d_vec", len(vector))] = vector
-	rawMessage["id"] = fmt.Sprintf("%s_%d", rawMessage["memory_id"], rawMessage["message_id"])
-	rawMessage["doc_id"] = rawMessage["memory_id"]
+	vectorDim := 0
+	for i, message := range messages {
+		vector := embeddings[i].Embedding
+		if len(vector) == 0 {
+			return errors.New("embedding response is empty")
+		}
+		vectorDim = len(vector)
+		message[fmt.Sprintf("q_%d_vec", len(vector))] = vector
+		message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		message["doc_id"] = message["memory_id"]
+	}
 
 	indexName := memoryIndexName(mem.TenantID)
 	exists, err := s.memories.docEngine.ChunkStoreExists(ctx, indexName, mem.ID)
@@ -278,20 +288,19 @@ func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemo
 		return fmt.Errorf("check message index: %w", err)
 	}
 	if !exists {
-		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, len(vector), ""); err != nil {
+		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, vectorDim, ""); err != nil {
 			return fmt.Errorf("create message index: %w", err)
 		}
 	}
-	if _, err := s.memories.docEngine.InsertChunks(ctx, []map[string]interface{}{mapStringAny(rawMessage)}, indexName, mem.ID); err != nil {
+	docs := make([]map[string]interface{}, len(messages))
+	for i, message := range messages {
+		docs[i] = mapStringAny(message)
+	}
+	if _, err := s.memories.docEngine.InsertChunks(ctx, docs, indexName, mem.ID); err != nil {
 		return fmt.Errorf("insert message into memory: %w", err)
 	}
 
 	return nil
-}
-
-// embedAndSave is kept for older unit tests; production uses the method above.
-func embedAndSave(_ context.Context, _ *CreateMemoryResponse, _ map[string]any) error {
-	return ErrEmbedderNotWired
 }
 
 func (s *MemoryMessageService) insertTask(ctx context.Context, row map[string]any) error {
@@ -330,7 +339,7 @@ func taskFromRow(row map[string]any) *entity.Task {
 	}
 }
 
-func queueMemoryTask(memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
+func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
 	taskID := fmt.Sprint(task["id"])
 	message := map[string]any{
 		"id":        taskID,
@@ -347,14 +356,32 @@ func queueMemoryTask(memoryID, tenantID string, rawMessageID int64, task map[str
 			"agent_response": msg.AgentResponse,
 		},
 	}
-	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(memoryTaskQueueName(0), message) {
-		return errors.New("Can't access Redis.")
+	// Publish the memory-extraction task to NATS (tasks.RAGFLOW) so it is
+	// consumed by the Ingestor's shared consumer + worker pool, dispatched by
+	// TaskType=="memory" in processMessage. This keeps Go out of the Python
+	// te.*.common Redis stream entirely, removing the cross-consumer
+	// contention that previously stole Python dataflow tasks.
+	mq := engine.GetMessageQueueEngine()
+	if mq == nil {
+		return errors.New("can't access message queue engine")
+	}
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("marshal memory task payload: %w", err)
+	}
+	taskMessage := common.TaskMessage{
+		TaskID:   taskID,
+		TaskType: common.TaskTypeMemory,
+		Payload:  payload,
+	}
+	tmPayload, err := json.Marshal(taskMessage)
+	if err != nil {
+		return fmt.Errorf("marshal memory task message: %w", err)
+	}
+	if err = mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
+		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil
-}
-
-func memoryTaskQueueName(priority int) string {
-	return fmt.Sprintf("te.%d.common", priority)
 }
 
 func mapStringAny(in map[string]any) map[string]interface{} {

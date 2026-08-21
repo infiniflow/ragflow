@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,8 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/storage"
+	syncerconnector "ragflow/internal/syncer/connector"
+	"ragflow/internal/utility"
 )
 
 // recordingTaskPublisher implements service.TaskPublisher and records published messages.
@@ -55,43 +58,48 @@ func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.T
 }
 
 type fakeUploadStorage struct {
-	objects map[string][]byte
+	objects  map[string][]byte
+	afterPut func()
 }
 
 func newFakeUploadStorage() *fakeUploadStorage {
 	return &fakeUploadStorage{objects: map[string][]byte{}}
 }
 
-func (f *fakeUploadStorage) Health() bool                  { return true }
+func (f *fakeUploadStorage) Type() string                  { return "fake_upload_storage" }
+func (f *fakeUploadStorage) Health(_ context.Context) bool { return true }
 func (f *fakeUploadStorage) key(bucket, fnm string) string { return bucket + "/" + fnm }
-func (f *fakeUploadStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (f *fakeUploadStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	f.objects[f.key(bucket, fnm)] = append([]byte(nil), binary...)
+	if f.afterPut != nil {
+		f.afterPut()
+	}
 	return nil
 }
-func (f *fakeUploadStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	v, ok := f.objects[f.key(bucket, fnm)]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
 }
-func (f *fakeUploadStorage) Remove(bucket, fnm string, tenantID ...string) error {
+func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
 	return nil
 }
-func (f *fakeUploadStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+func (f *fakeUploadStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
 	_, ok := f.objects[f.key(bucket, fnm)]
 	return ok
 }
-func (f *fakeUploadStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+func (f *fakeUploadStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	return []string{}, nil
 }
-func (f *fakeUploadStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (f *fakeUploadStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (f *fakeUploadStorage) BucketExists(bucket string) bool  { return true }
-func (f *fakeUploadStorage) RemoveBucket(bucket string) error { return nil }
-func (f *fakeUploadStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
+func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	v, ok := f.objects[f.key(srcBucket, srcPath)]
 	if !ok {
 		return false
@@ -99,8 +107,8 @@ func (f *fakeUploadStorage) Copy(srcBucket, srcPath, destBucket, destPath string
 	f.objects[f.key(destBucket, destPath)] = append([]byte(nil), v...)
 	return true
 }
-func (f *fakeUploadStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
-	if !f.Copy(srcBucket, srcPath, destBucket, destPath) {
+func (f *fakeUploadStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	if !f.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
 		return false
 	}
 	delete(f.objects, f.key(srcBucket, srcPath))
@@ -220,12 +228,37 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
+func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return &types.SearchResult{Chunks: []map[string]interface{}{
+		{"id": "source-1"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page"},
+	}, Total: 2}, nil
+}
+
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	e.deleteCalls++
 	e.condition = condition
 	e.indexName = indexName
 	e.datasetID = datasetID
 	return 3, nil
+}
+
+type sourceAvailabilityDocEngine struct {
+	fakeChatDocEngine
+	updateConditions []map[string]interface{}
+}
+
+func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return &types.SearchResult{Chunks: []map[string]interface{}{
+		{"id": "source-1"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page"},
+		{"id": "map-1", "compile_kwd": []interface{}{"wiki_map_active"}},
+	}, Total: 3}, nil
+}
+
+func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, _ map[string]interface{}, _, _ string) error {
+	e.updateConditions = append(e.updateConditions, condition)
+	return nil
 }
 
 type metadataDocEngine struct {
@@ -729,6 +762,121 @@ func TestContentHashHex_MatchesPythonXXH128(t *testing.T) {
 	}
 }
 
+func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
+	ctx := context.Background()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	svc := testDocumentService(t)
+	_, err := svc.Upsert(ctx, service.DocumentUpsertInput{
+		TaskContext: service.SyncTaskContext{
+			Connector: entity.Connector{TenantID: "tenant-1"},
+			Knowledgebase: entity.Knowledgebase{
+				ID:           "missing-kb",
+				TenantID:     "tenant-1",
+				Name:         "Missing KB",
+				ParserID:     "naive",
+				ParserConfig: entity.JSONMap{},
+			},
+		},
+		SourceType: "github",
+		DocumentID: "doc-sync-insert",
+		SourceDocument: syncerconnector.SourceDocument{
+			SourceID:           "source-1",
+			SemanticIdentifier: "source",
+			Extension:          ".txt",
+			Blob:               []byte("new content"),
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected insert failure")
+	}
+	for key := range mockStorage.objects {
+		if strings.Contains(key, "/.staged/") {
+			t.Fatalf("expected staged object cleanup, found %s", key)
+		}
+	}
+}
+
+func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	activeLocation := "sync/github/doc-sync-update.txt"
+	if err := mockStorage.Put(context.Background(), "kb-sync", activeLocation, []byte("old content")); err != nil {
+		t.Fatalf("seed active object: %v", err)
+	}
+	oldName := "old.txt"
+	oldHash := "old-hash"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-sync-update",
+		KbID:         "kb-sync",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "github",
+		Type:         string(utility.FileTypeTXT),
+		CreatedBy:    "tenant-1",
+		Name:         &oldName,
+		Location:     &activeLocation,
+		Size:         int64(len("old content")),
+		Suffix:       "txt",
+		ContentHash:  &oldHash,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	mockStorage.afterPut = cancel
+	_, err := svc.Upsert(ctx, service.DocumentUpsertInput{
+		TaskContext: service.SyncTaskContext{
+			Connector: entity.Connector{TenantID: "tenant-1"},
+			Knowledgebase: entity.Knowledgebase{
+				ID:           "kb-sync",
+				TenantID:     "tenant-1",
+				Name:         "Sync KB",
+				ParserID:     "naive",
+				ParserConfig: entity.JSONMap{},
+			},
+		},
+		SourceType: "github",
+		DocumentID: "doc-sync-update",
+		SourceDocument: syncerconnector.SourceDocument{
+			SourceID:           "source-1",
+			SemanticIdentifier: "source",
+			Extension:          ".txt",
+			Blob:               []byte("new content"),
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected update failure")
+	}
+	got, err := mockStorage.Get(context.Background(), "kb-sync", activeLocation)
+	if err != nil {
+		t.Fatalf("active object was removed: %v", err)
+	}
+	if string(got) != "old content" {
+		t.Fatalf("active object overwritten: %q", got)
+	}
+	for key := range mockStorage.objects {
+		if strings.Contains(key, "/.staged/") {
+			t.Fatalf("expected staged object cleanup, found %s", key)
+		}
+	}
+}
+
 func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -795,7 +943,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("parser_config=%v", cfg)
 	}
 
-	storedBlob, err := mockStorage.Get(kb.ID, "nested/path/deck(1).pptx")
+	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).pptx")
 	if err != nil {
 		t.Fatalf("blob not stored: %v", err)
 	}
@@ -860,7 +1008,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	var existingUser entity.User
 	if err := dao.DB.Where("id = ?", userID).First(&existingUser).Error; err != nil {
 		u := &entity.User{ID: userID, Nickname: "test-user", Email: userID + "@test.com", Password: sptr("x")}
-		if err := dao.DB.Create(u).Error; err != nil {
+		if err = dao.DB.Create(u).Error; err != nil {
 			t.Fatalf("insert test user: %v", err)
 		}
 	}
@@ -873,7 +1021,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			EmbdID: "embd-default",
 			ASRID:  "asr-default",
 		}
-		if err := dao.DB.Create(tn).Error; err != nil {
+		if err = dao.DB.Create(tn).Error; err != nil {
 			t.Fatalf("insert test tenant: %v", err)
 		}
 	}
@@ -886,7 +1034,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			TenantID: tenantID,
 			Role:     "admin",
 		}
-		if err := dao.DB.Create(ut).Error; err != nil {
+		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
 		}
 	}
@@ -1208,6 +1356,9 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	errors, ok := result["errors"].([]string)
 	if !ok || len(errors) == 0 {
 		t.Fatal("expected errors in result")
+	}
+	if errors[0] != "Can't stop parsing document that has not started or already completed" {
+		t.Fatalf("unexpected error message: %q", errors[0])
 	}
 }
 
@@ -1826,8 +1977,25 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 1 {
 		t.Fatalf("deleteCalls = %d, want 1", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || engine.condition["doc_id"] != "doc-1" {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+}
+
+func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
+	docEngine := &sourceAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	if err := svc.updateSourceChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 1); err != nil {
+		t.Fatalf("updateSourceChunkAvailability failed: %v", err)
+	}
+	if len(docEngine.updateConditions) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(docEngine.updateConditions))
+	}
+	ids, ok := docEngine.updateConditions[0]["id"].([]string)
+	if !ok || len(ids) != 1 || ids[0] != "source-1" {
+		t.Fatalf("updated ids = %#v, want only source-1", docEngine.updateConditions[0]["id"])
 	}
 }
 
@@ -2029,7 +2197,11 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 
 	ctx := t.Context()
-	if err := svc.SetDocumentMetadata(ctx, "doc-1", map[string]interface{}{"category": "tech", "year": 2026}); err != nil {
+	if err := svc.SetDocumentMetadata(ctx, "doc-1", map[string]interface{}{
+		"category":  "tech",
+		"year":      2026,
+		"character": []interface{}{"关羽、孙权", "张辽|赵云"},
+	}); err != nil {
 		t.Fatalf("SetDocumentMetadata failed: %v", err)
 	}
 	if got := engine.records["doc-1"]["author"]; got != "alice" {
@@ -2040,6 +2212,19 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	}
 	if got := engine.records["doc-1"]["year"]; got != 2026 {
 		t.Fatalf("year = %#v, want 2026", got)
+	}
+	characters, ok := engine.records["doc-1"]["character"].([]interface{})
+	if !ok {
+		t.Fatalf("character has unexpected type: %T", engine.records["doc-1"]["character"])
+	}
+	wantCharacters := []interface{}{"关羽", "孙权", "张辽", "赵云"}
+	if len(characters) != len(wantCharacters) {
+		t.Fatalf("character length = %d, want %d: %#v", len(characters), len(wantCharacters), characters)
+	}
+	for i := range wantCharacters {
+		if characters[i] != wantCharacters[i] {
+			t.Fatalf("character[%d] = %#v, want %#v", i, characters[i], wantCharacters[i])
+		}
 	}
 	if got := engine.docKBs["doc-1"]; got != "kb-1" {
 		t.Fatalf("kb_id = %q, want kb-1", got)
@@ -2101,12 +2286,12 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "tags", Value: "new", Match: "old"},
 		{Key: "category", Value: "paper"},
-	}, []DocumentMetadataDelete{
+	}, []MetadataDelete{
 		{Key: "author", Value: "alice"},
 	})
 	if err != nil {
@@ -2162,9 +2347,9 @@ func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *t
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "category", Value: "paper"},
 	}, nil)
 	if err != nil || code != common.CodeSuccess {
@@ -2199,9 +2384,9 @@ func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) 
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2"},
-	}, nil, []DocumentMetadataDelete{{Key: "status", Value: "draft"}})
+	}, nil, []MetadataDelete{{Key: "status", Value: "draft"}})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("delete batch failed: code=%v err=%v", code, err)
 	}
@@ -2228,9 +2413,9 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "score", Value: "42", ValueType: "number"},
 	}, nil)
 	if err != nil || code != common.CodeSuccess {
@@ -2258,7 +2443,7 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{}, []DocumentMetadataUpdate{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{}, []MetadataUpdate{
 		{Key: "status"},
 	}, nil)
 	if err == nil {
@@ -2270,7 +2455,7 @@ func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want data error", code)
 	}
-	if !strings.Contains(err.Error(), "Each update requires key and value.") {
+	if !strings.Contains(err.Error(), "each update requires key and value") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -2839,10 +3024,124 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 	}
 }
 
+// TestIngest_CancelUnstartedDocument mirrors the Python /documents/ingest
+// behavior: canceling a document whose parse never started (run=UNSTART, no
+// ingestion task) must be rejected with code 102 and the Python message, not
+// an internal "no ingestion task found" error.
+func TestIngest_CancelUnstartedDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err == nil {
+		t.Fatal("expected error when canceling an un-started document")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected code %v, got %v", common.CodeDataError, code)
+	}
+	if err.Error() != "Cannot cancel a task that is not in RUNNING status" {
+		t.Fatalf("unexpected error message: %q", err.Error())
+	}
+}
+
+// TestIngest_CancelCompletedDocument: canceling an already finished parse
+// (run=DONE, ingestion task COMPLETED) is rejected with the same Python
+// message as the un-started case.
+func TestIngest_CancelCompletedDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err == nil {
+		t.Fatal("expected error when canceling a completed document")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected code %v, got %v", common.CodeDataError, code)
+	}
+	if err.Error() != "Cannot cancel a task that is not in RUNNING status" {
+		t.Fatalf("unexpected error message: %q", err.Error())
+	}
+}
+
+// TestIngest_CancelUnstartedWithInFlightTask: run=UNSTART but an ingestion
+// task was just enqueued (CREATED) — cancel is allowed, matching the Python
+// has_unfinished_task branch.
+func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("Ingest(cancel) with in-flight task: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if doc == nil || doc.Run == nil || *doc.Run != string(entity.TaskStatusCancel) {
+		t.Fatalf("expected doc run=CANCEL, got %v", doc.Run)
+	}
+}
+
+// TestIngest_CancelAgainWithoutTask: re-canceling a document already in
+// CANCEL state is accepted even when its ingestion task is gone — Python
+// treats run=CANCEL as cancelable and cancel_all_task_of is a no-op.
+func TestIngest_CancelAgainWithoutTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("Ingest(re-cancel) without task: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+}
+
 func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	begin := time.Now().Add(-2 * time.Second)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_begin_at", begin).Error; err != nil {
+		t.Fatalf("set process_begin_at: %v", err)
+	}
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -2861,6 +3160,9 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
 		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
+	}
+	if doc.ProcessDuration <= 0 {
+		t.Fatalf("process_duration = %v, want positive live duration", doc.ProcessDuration)
 	}
 }
 

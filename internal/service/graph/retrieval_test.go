@@ -324,8 +324,8 @@ type spyEmbedDriver struct {
 	err           error
 }
 
-func (s *spyEmbedDriver) Embed(ctx context.Context, _ *string, texts []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
-	s.capturedTexts = texts
+func (s *spyEmbedDriver) Embed(ctx context.Context, _ *string, req modelModule.EmbedRequest, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+	s.capturedTexts = req.Texts
 	if s.err != nil {
 		return nil, s.err
 	}

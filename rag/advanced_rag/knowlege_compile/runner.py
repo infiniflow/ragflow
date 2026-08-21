@@ -65,6 +65,9 @@ DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
 # before the LLM call.
 STRUCTURE_CONTEXT_FRACTION = 0.5
 STRUCTURE_DEFAULT_CONTEXT = 100_000
+KNOWLEDGE_GRAPH_CONTEXT_FRACTION = 0.1
+KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = 2048
+KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = 4096
 
 # Bound the number of batch/template extraction calls in flight. Results are
 # committed in submission order so accumulator updates and merge flushes stay
@@ -135,7 +138,7 @@ def load_active_templates(template_ids, tenant_id: str) -> list[tuple[str, dict]
             logging.warning("document_structure_compile: template %s config is invalid", template_id)
             continue
         kind = _compilation_template_kind(parser_cfg.get("kind"))
-        if not kind or kind == "artifacts":
+        if not kind or kind == "wiki":
             continue
         active_templates.append((template_id, parser_cfg))
     return active_templates
@@ -191,6 +194,7 @@ async def _upsert_dataset_nav_from_page_index(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     progress_cb: Callable[..., None],
     cancel_check: Callable[[], bool],
 ) -> None:
@@ -212,6 +216,7 @@ async def _upsert_dataset_nav_from_page_index(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 "page_index",
                 compilation_template_id=template_id,
             )
@@ -221,6 +226,7 @@ async def _upsert_dataset_nav_from_page_index(
                     tenant_id,
                     kb_id,
                     doc_id,
+                    doc_name,
                     "timeline",
                     compilation_template_id=template_id,
                 )
@@ -274,6 +280,7 @@ async def run_structure_compile_over_batches(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     language: str,
     chunk_batches: AsyncIterator[list[dict]],
     progress_cb: Callable[..., None],
@@ -310,7 +317,7 @@ async def run_structure_compile_over_batches(
     # compile_kwd(s) each template actually wrote, harvested from flush results
     # so a dataset-scope template can rebuild its dataset graph once at the end.
     compile_kwds_by_tid: dict[str, set[str]] = {tid: set() for tid, _ in active_templates}
-    agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0} for tid, _ in active_templates}
+    agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0, "rechunked_chunks": []} for tid, _ in active_templates}
     chunks_by_id: dict[str, str] = {}
     flush_sequence = 0
     flush_tasks: set[asyncio.Task[None]] = set()
@@ -372,6 +379,7 @@ async def run_structure_compile_over_batches(
                     doc_storage_waiter=_wait_for_doc_storage,
                     doc_storage_releaser=_release_doc_storage,
                     merge_scope=merge_scope_by_tid[template_id],
+                    doc_name=doc_name,
                 )
             finally:
                 if not doc_storage_released:
@@ -405,6 +413,7 @@ async def run_structure_compile_over_batches(
             compile_chat_mdl,
             embedding_model,
             doc_id,
+            doc_name=doc_name,
             language=language,
             callback=progress_cb,
             max_workers=3,
@@ -414,6 +423,10 @@ async def run_structure_compile_over_batches(
     async def _commit_result(batch_no: int, batch_len: int, template_id: str, docs: list[dict]) -> None:
         if docs:
             accumulators[template_id].extend(docs)
+        rechunked_chunks = getattr(docs, "rechunked_chunks", None)
+        if rechunked_chunks:
+            known_ids = {chunk.get("id") for chunk in agg_infos[template_id]["rechunked_chunks"]}
+            agg_infos[template_id]["rechunked_chunks"].extend(chunk for chunk in rechunked_chunks if chunk.get("id") not in known_ids)
         if len(accumulators[template_id]) >= DOC_STRUCTURE_MERGE_MAX_DOCS:
             progress_cb(msg=f"  merge flush ({len(accumulators[template_id])} docs) for batch {batch_no} ({batch_len} chunks) for template ({template_ids_by_id[template_id]}/{total})")
             await _flush(template_id)
@@ -428,6 +441,11 @@ async def run_structure_compile_over_batches(
 
     def _dynamic_batch_budget(template_id: str) -> int:
         max_length = getattr(chat_mdl_by_tid[template_id], "max_length", None) or STRUCTURE_DEFAULT_CONTEXT
+        if template_kinds.get(template_id) == "knowledge_graph":
+            return min(
+                max(int(max_length * KNOWLEDGE_GRAPH_CONTEXT_FRACTION), KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS),
+                KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS,
+            )
         return max(int(max_length * STRUCTURE_CONTEXT_FRACTION), 1024)
 
     async def _commit_ready() -> None:
@@ -489,9 +507,6 @@ async def run_structure_compile_over_batches(
                 for template_id, parser_cfg in active_templates:
                     if cancel_check():
                         raise TaskCanceledException("Task was cancelled during document knowledge compilation")
-                    if template_kinds[template_id] == "knowledge_graph":
-                        await _submit_one(incoming_batch, template_id, parser_cfg)
-                        continue
                     buffer = dynamic_buffers[template_id]
                     budget = _dynamic_batch_budget(template_id)
                     buffer_tokens = dynamic_buffer_tokens[template_id]
@@ -595,6 +610,7 @@ async def run_structure_compile_over_batches(
         tenant_id=tenant_id,
         kb_id=kb_id,
         doc_id=doc_id,
+        doc_name=doc_name,
         progress_cb=progress_cb,
         cancel_check=cancel_check,
     )
@@ -609,6 +625,7 @@ async def run_structure_compile_over_batches(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 compilation_template_id=template_id,
             )
         except Exception:
@@ -622,8 +639,26 @@ async def run_structure_compile_over_batches(
             raise TaskCanceledException("Task was cancelled during document knowledge compilation")
         agg = agg_infos[template_id]
         if record:
-            record(f"document_structure_compile:{template_id}", agg)
-        progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {agg}")
+            recorded_agg = {key: value for key, value in agg.items() if key != "rechunked_chunks"}
+            recorded_agg["rechunked_chunk_count"] = len(agg.get("rechunked_chunks") or [])
+            record(f"document_structure_compile:{template_id}", recorded_agg)
+        rechunked_chunks = agg.get("rechunked_chunks") or []
+        if rechunked_chunks:
+            progress_cb(
+                msg=(
+                    f"Rechunk: {len(chunks_by_id)} -> {len(rechunked_chunks)} chunks; "
+                    f"inserted={agg.get('inserted', 0)}, updated={agg.get('updated', 0)}, "
+                    f"duplicates_dropped={agg.get('duplicates_dropped', 0)}"
+                )
+            )
+        else:
+            progress_cb(
+                msg=(
+                    f"Document knowledge compilation done ({idx + 1}/{total}): "
+                    f"inserted={agg.get('inserted', 0)}, updated={agg.get('updated', 0)}, "
+                    f"duplicates_dropped={agg.get('duplicates_dropped', 0)}"
+                )
+            )
 
         # ── Synthesis phase ──────────────────────────────────────────────
         # If the template has synthesis.enabled, run wiki PLAN+REFINE
@@ -631,7 +666,7 @@ async def run_structure_compile_over_batches(
         synthesis_cfg = (parser_cfg or {}).get("synthesis") or {}
         if synthesis_cfg.get("enabled"):
             example = synthesis_cfg.get("example")
-            compile_kwd = synthesis_cfg.get("compile_kwd", "artifact_page")
+            compile_kwd = synthesis_cfg.get("compile_kwd", "wiki_page")
             plan_cfg = synthesis_cfg.get("plan") or {}
 
             # Reserved for future wiki_plan_from_reduction extension:

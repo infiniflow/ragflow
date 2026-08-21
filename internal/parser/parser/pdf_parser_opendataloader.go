@@ -19,14 +19,14 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 	}
 	baseURL := strings.TrimSpace(parser.OpenDataLoaderAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiServer))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIServer))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader requires opendataloader_apiserver or OPENDATALOADER_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.OpenDataLoaderAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIKey))
 	}
 
 	bodyReader, contentType, err := openDataLoaderMultipart(filename, data, parser)
@@ -41,7 +41,7 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	resp, err := models.NewDriverHTTPClient().Do(req)
+	resp, err := models.NewDriverHTTPClient(false).Do(req)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader submit: %w", err)}
 	}

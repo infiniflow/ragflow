@@ -25,7 +25,7 @@ func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, d
 		return nil, err
 	}
 
-	searchResult, err := s.metadataSvc.SearchMetadata(kbID, tenantID, docIDs, 1000)
+	searchResult, err := s.metadataSvc.SearchMetadata(ctx, kbID, tenantID, docIDs, 1000)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +48,13 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
+	// Ensure the metadata store exists before writing (service-layer
+	// create-on-first-write logic; the engine layer assumes it exists).
+	if err := s.metadataSvc.EnsureMetadataStore(ctx, tenantID); err != nil {
+		return fmt.Errorf("failed to ensure metadata store: %w", err)
+	}
+
+	meta = splitCombinedDocumentMetadataValues(meta)
 	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
@@ -70,7 +77,7 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 	}
 
 	// Delete metadata using the document engine
-	err = s.docEngine.DeleteMetadataKeys(nil, docID, doc.KbID, keys, tenantID)
+	err = s.docEngine.DeleteMetadataKeys(ctx, docID, doc.KbID, keys, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete metadata: %w", err)
 	}
@@ -99,7 +106,7 @@ func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID s
 	}
 
 	// Delete entire document metadata
-	_, err = s.docEngine.DeleteMetadata(nil, condition, tenantID)
+	_, err = s.docEngine.DeleteMetadata(ctx, condition, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete document metadata: %w", err)
 	}
@@ -120,7 +127,7 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 		return nil, err
 	}
 
-	searchResult, err := s.metadataSvc.SearchMetadata(doc.KbID, tenantID, []string{docID}, 1)
+	searchResult, err := s.metadataSvc.SearchMetadata(ctx, doc.KbID, tenantID, []string{docID}, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -527,16 +534,27 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 		}
 	}
 
-	updateFields := make(map[string]interface{})
+	// Check if anything actually changed.
+	changed := false
 	for key, value := range after {
 		if !reflect.DeepEqual(before[key], value) {
-			updateFields[key] = value
+			changed = true
+			break
 		}
 	}
-	if len(updateFields) == 0 {
+	if !changed && len(deleteKeys) == 0 {
 		return nil
 	}
-	return s.SetDocumentMetadata(ctx, docID, updateFields)
+
+	// If 'after' is empty, all keys were deleted — the record has already
+	// been cleaned up by DeleteDocumentMetadata above; skip the write.
+	if len(after) == 0 {
+		return nil
+	}
+
+	// Send the complete 'after' map — UpdateMetadata does a full replace,
+	// not a merge, so a partial delta would wipe unchanged keys.
+	return s.SetDocumentMetadata(ctx, docID, after)
 }
 
 // BatchUpdateDocumentMetadatas implements the shared logic for
@@ -545,12 +563,12 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	ctx context.Context,
 	datasetID string,
-	selector *DocumentMetadataSelector,
-	updates []DocumentMetadataUpdate,
-	deletes []DocumentMetadataDelete,
-) (*BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
+	selector *MetadataSelector,
+	updates []MetadataUpdate,
+	deletes []MetadataDelete,
+) (*BatchUpdateMetadatasResponse, common.ErrorCode, error) {
 	if selector == nil {
-		selector = &DocumentMetadataSelector{}
+		selector = &MetadataSelector{}
 	}
 	if code, err := validateBatchUpdateDocumentMetadatasRequest(selector, updates, deletes); err != nil {
 		return nil, code, err
@@ -592,7 +610,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 		}
 
 		// ParseAndConvert mirrors Python convert_conditions: conditions arrive as
-		// {name, comparison_operator, value}, the operator is normalised, and the
+		// {name, comparison_operator, value}, the operator is normalized, and the
 		// (possibly non-string) value is preserved. MetaFilter then matches against
 		// the common.MetaData returned by GetFlattedMetaByKBs.
 		filterInput := common.ParseAndConvert(selector.MetadataCondition)
@@ -617,7 +635,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 		// Early-exit when conditions given but nothing matched.
 		rawConds, _ := selector.MetadataCondition["conditions"]
 		if rawConds != nil && len(targetDocIDs) == 0 {
-			return &BatchUpdateDocumentMetadatasResponse{Updated: 0, MatchedDocs: 0}, common.CodeSuccess, nil
+			return &BatchUpdateMetadatasResponse{Updated: 0, MatchedDocs: 0}, common.CodeSuccess, nil
 		}
 	}
 
@@ -657,27 +675,27 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 		updated++
 	}
 
-	return &BatchUpdateDocumentMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
+	return &BatchUpdateMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
 }
 
 func validateBatchUpdateDocumentMetadatasRequest(
-	selector *DocumentMetadataSelector,
-	updates []DocumentMetadataUpdate,
-	deletes []DocumentMetadataDelete,
+	selector *MetadataSelector,
+	updates []MetadataUpdate,
+	deletes []MetadataDelete,
 ) (common.ErrorCode, error) {
 	for _, upd := range updates {
 		if strings.TrimSpace(upd.Key) == "" || upd.Value == nil {
-			return common.CodeDataError, errors.New("Each update requires key and value.")
+			return common.CodeDataError, errors.New("each update requires key and value")
 		}
 	}
 	for _, del := range deletes {
 		if strings.TrimSpace(del.Key) == "" {
-			return common.CodeDataError, errors.New("Each delete requires key.")
+			return common.CodeDataError, errors.New("each delete requires key")
 		}
 	}
 	if selector != nil && selector.MetadataCondition != nil {
 		if _, ok := selector.MetadataCondition["conditions"]; !ok && len(selector.MetadataCondition) > 0 {
-			return common.CodeDataError, errors.New("metadata_condition must be an object.")
+			return common.CodeDataError, errors.New("metadata_condition must be an object")
 		}
 	}
 	return common.CodeSuccess, nil
@@ -692,6 +710,55 @@ func cloneDocumentMetadata(meta map[string]interface{}) map[string]interface{} {
 		cloned[k] = cloneDocumentMetadataValue(v)
 	}
 	return cloned
+}
+
+func splitCombinedDocumentMetadataValues(meta map[string]any) map[string]any {
+	if len(meta) == 0 {
+		return meta
+	}
+	out := make(map[string]any, len(meta))
+	for key, value := range meta {
+		switch typed := value.(type) {
+		case []interface{}:
+			out[key] = splitCombinedDocumentMetadataList(typed)
+		case []string:
+			items := make([]any, 0, len(typed))
+			for _, item := range typed {
+				items = append(items, item)
+			}
+			out[key] = splitCombinedDocumentMetadataList(items)
+		default:
+			out[key] = value
+		}
+	}
+	return out
+}
+
+var combinedDocumentMetadataValueSplitter = regexp.MustCompile(`[、,，;；|]+`)
+
+func splitCombinedDocumentMetadataList(items []any) []any {
+	out := make([]interface{}, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			out = append(out, item)
+			continue
+		}
+		parts := combinedDocumentMetadataValueSplitter.Split(strings.TrimSpace(text), -1)
+		added := false
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			out = append(out, part)
+			added = true
+		}
+		if !added {
+			out = append(out, item)
+		}
+	}
+	return dedupeDocumentMetadataList(out)
 }
 
 func cloneDocumentMetadataValue(v interface{}) interface{} {
@@ -711,7 +778,7 @@ func cloneDocumentMetadataValue(v interface{}) interface{} {
 	}
 }
 
-func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []DocumentMetadataUpdate) bool {
+func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []MetadataUpdate) bool {
 	changed := false
 	for _, upd := range updates {
 		key := strings.TrimSpace(upd.Key)
@@ -787,7 +854,7 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Documen
 	return changed
 }
 
-func applyDocumentMetadataDeletes(meta map[string]interface{}, deletes []DocumentMetadataDelete) bool {
+func applyDocumentMetadataDeletes(meta map[string]interface{}, deletes []MetadataDelete) bool {
 	changed := false
 	for _, del := range deletes {
 		key := strings.TrimSpace(del.Key)

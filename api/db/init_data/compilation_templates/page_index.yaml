@@ -2,47 +2,39 @@ kind: page_index
 display_name: PageIndex — Hierarchical table of contents
 config:
   kind: page_index
+  rechunk_rules: |
+    - Group only adjacent source chunks into coherent semantic units for this page-index task.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Keep each heading with the content it introduces, and split when the topic, section, or semantic focus changes.
+    - Preserve document heading hierarchy: keep a parent heading with its introductory content and nearby child-section context.
+    - Do not combine separate sections merely because their subjects are related; keep each section boundary recoverable.
+    - Keep self-contained tables, lists, figures, and code blocks intact; do not split their internal rows or items.
+    - Do not merge unrelated content. Do not invent, rewrite, or return source text; return only chunk grouping metadata.
   entity:
     description: >-
-      You are a source-grounded document index extractor. First extract every
-      supported heading in source order, then extract the important information
-      belonging to each heading. Headings form the hierarchy; facts, dates,
-      numbers, names, and conclusions are detail information that should be
-      captured in concise `fact` or `conclusion` entities attached below the
-      nearest relevant heading through `include` relations. Do not omit a
-      heading because its section is short, and do not return only headings.
-
-      A title entity's `name` must be the exact clean heading text. A detail
-      entity's `name` must be a concise, source-grounded label or statement,
-      and its `description` must preserve the useful compressed information.
-      Keep detail entities atomic: do not combine unrelated facts, dates,
-      numbers, names, or conclusions into one item. Preserve important values,
-      units, dates, qualifiers, and conclusions. Do not invent content.
-
-      For each title, write a strongly compressed summary of the content
-      belonging to that heading: normally 1–2 sentences, aiming for about
-      50–100 English words or 80–180 Chinese characters when the source is
-      long enough. For detailed lists, give the overall result and only the
-      most important examples. Do not copy long passages verbatim and do not
-      reduce descriptions to generic labels. Do not write meta descriptions
-      such as `heading for ...`, `section heading`, or `subheading for ...`.
-      Do not include image captions, `Main article` links, or unrelated tables
-      and lists unless they are actual content of the heading. If a parent
-      heading has no direct body before the next child heading, generate a
-      short higher-level overview from the available child-section content;
-      do not copy the child description verbatim. Only use an empty
-      description when there is no usable source content at all.
+      First extract all actual headings in source order, then extract the
+      important facts or conclusions under them. Treat explicit chapter markers such as 第N回、
+      第N章、Chapter N, numbered headings, and Markdown headings as titles
+      even when they have no `#` marker. A `title` must appear in the source;
+      copy it exactly and never invent one from a fact or summary. Titles have
+      priority over facts and conclusions: complete title extraction first and
+      never replace a title with a fact or conclusion. Do not downgrade an actual
+      chapter heading to a fact. For other entities, use concise atomic,
+      source-grounded names and descriptions. Do not invent.
     fields:
       - type: title
         description: the heading text (clean, no page numbers or leader dots)
         rule: |
-          - Chinese titles ≤25 characters; English titles ≤80. Use clean heading text.
-          - The title must be non-empty; use `-1` only when no heading is supported.
-          - Extract every supported heading in source order; do not skip major or short sections.
-          - For multiple headings, preserve source order and summarize each section separately.
-          - Write 1–2 compressed sentences, retaining key facts, dates, numbers, names, locations, and conclusions.
-          - Summarize parent content from its children when it has no direct body; do not copy a child verbatim.
-          - Exclude captions, navigation links, and unrelated lists. Preserve numbering, language, and source meaning.
+          - Identify and emit every explicit heading or chapter marker first, in source order, including 第N回 even without Markdown syntax.
+          - Copy the clean heading text; do not invent, paraphrase, or promote facts into titles.
+          - Assign source_chunk_ids yourself: include every source chunk covered by the title's
+            section, not only the chunk containing the heading. A parent title includes the
+            chunks of its nested child sections; a child title includes only its own subtree.
+            Stop at the next title of the same or an ancestor level.
+          - A line beginning with 第N回/第N章/第N节 or Chapter N is a title when it appears in the source.
+          - Do not emit the same chapter heading as a fact or conclusion.
+          - Only after title extraction, emit facts or conclusions under the corresponding titles.
+          - Summarize the content under each title without copying long passages.
       - type: fact
         description: a concise source-grounded factual statement belonging to a title
         rule: |
@@ -73,5 +65,5 @@ config:
           - Never use a source heading as an endpoint unless that heading was also emitted as a `title` entity.
           - Before returning, remove any relation whose endpoint is missing and verify that every detail entity has one parent relation.
           - Keep language of "title" the same as the input.
-          - 第N章 must include 第N条 or 第N节.
+          - 第N回、 第N章 must include their actual child sections or detail entities when present.
   global_rules: ''

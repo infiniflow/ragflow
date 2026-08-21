@@ -153,6 +153,10 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		s.writeDataError(c, "You have to provide messages.")
 		return
 	}
+	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
+		s.writeArgError(c, "`max_tokens` must be greater than 0.")
+		return
+	}
 
 	lastRole, _ := normalizedMessages[len(normalizedMessages)-1]["role"].(string)
 	if lastRole != "user" {
@@ -268,7 +272,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 			_ = lfClient.Shutdown(shutdownCtx)
 		}()
@@ -364,7 +368,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 							finalReference = formatChunks(chunks)
 						}
 					}
-					s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 					completionTok = tokenizer.NumTokensFromString(result.Answer)
 					events <- OpenAIStreamEvent{
 						Kind:             OpenAIEventFinal,
@@ -405,7 +409,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 					}
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 			events <- OpenAIStreamEvent{
 				Kind:             OpenAIEventFinal,
 				FinalAnswer:      strings.TrimSpace(fullContent),
@@ -449,7 +453,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 					resp.Reference = formatChunks(chunks)
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 		}
 
 		contextUsed := 0
@@ -563,8 +567,9 @@ func extractGenerationConfig(req *OpenAIChatRequest) map[string]interface{} {
 	return cfg
 }
 
-// normalizeMessageContent coerces content to string (drops non-text parts).
-func normalizeMessageContent(content interface{}) (string, error) {
+// NormalizeOpenAIMessageContent coerces OpenAI message content to text and
+// drops unsupported non-text parts.
+func NormalizeOpenAIMessageContent(content interface{}) (string, error) {
 	if content == nil {
 		return "", nil
 	}
@@ -597,7 +602,7 @@ func normalizeOpenAIMessages(messages []map[string]interface{}) ([]map[string]in
 		for k, v := range m {
 			normalized[k] = v
 		}
-		c, err := normalizeMessageContent(m["content"])
+		c, err := NormalizeOpenAIMessageContent(m["content"])
 		if err != nil {
 			return nil, err
 		}
@@ -669,7 +674,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 // api/utils/reference_metadata_utils.py.
 // When fields is a non-nil empty slice (explicitly provided as []), enrichment
 // is skipped — matching Python's behavior for {"fields": []}.
-func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedChunk, tenantID string, include bool, fields []string) {
+func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(ctx context.Context, chunks []FormattedChunk, tenantID string, include bool, fields []string) {
 	if !include || len(chunks) == 0 || s == nil || s.pipeline.MetadataSvc == nil {
 		return
 	}
@@ -684,7 +689,7 @@ func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedC
 			"document_metadata": ch.DocumentMetadata,
 		}
 	}
-	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(maps, tenantID, fields)
+	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(ctx, maps, tenantID, fields)
 	for i, m := range maps {
 		if md, ok := m["document_metadata"]; ok {
 			chunks[i].DocumentMetadata = md

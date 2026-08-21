@@ -173,7 +173,7 @@ func TestWithTimeout(t *testing.T) {
 	if err == nil {
 		t.Error("expected timeout error")
 	}
-	if err != context.DeadlineExceeded {
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("expected DeadlineExceeded, got %v", err)
 	}
 }

@@ -24,7 +24,7 @@ type ToolCallSession interface {
 	ToolCall(name string, arguments map[string]interface{}) (string, error)
 }
 
-// EmbeddingModel interface for embedding models
+// ModelDriver interface for model functionality
 type ModelDriver interface {
 	NewInstance(baseURL map[string]string) ModelDriver
 
@@ -35,9 +35,9 @@ type ModelDriver interface {
 	// ChatStreamlyWithSender sends multiple messages asynchronously
 	ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 	// Embed a list of texts into embeddings
-	Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error)
+	Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
-	Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error)
+	Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error)
 	// TranscribeAudio transcribe audio
 	TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error)
 	TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
@@ -98,6 +98,9 @@ type ASRResponse struct {
 
 type TTSResponse struct {
 	Audio []byte `json:"audio"`
+	// MediaType is the MIME type of Audio (e.g. "audio/mpeg", "audio/wav").
+	// Empty means the caller's default (audio/mpeg).
+	MediaType string `json:"media_type,omitempty"`
 }
 
 type OCRFileResponse struct {
@@ -105,12 +108,14 @@ type OCRFileResponse struct {
 }
 
 type ListModelResponse struct {
-	Name         string         `json:"name"`
-	MaxTokens    *int           `json:"max_tokens"`
-	ModelTypes   []string       `json:"model_types"`
-	Thinking     *ModelThinking `json:"thinking"`
-	MaxDimension *int           `json:"max_dimension"` // used by embedding models
-	Dimensions   []int          `json:"dimensions"`
+	Name          string         `json:"name"`
+	ContentLength *int           `json:"content_length"`
+	MaxOutput     *int           `json:"max_output"`
+	ModelTypes    []string       `json:"model_types"`
+	Thinking      *ModelThinking `json:"thinking"`
+	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
+	Dimensions    []int          `json:"dimensions"`
 }
 
 type ParseFileResponse struct {
@@ -190,9 +195,25 @@ type APIConfig struct {
 	BaseURL *string
 }
 
+type EmbedRequest struct {
+	Texts  []string // for text
+	Images [][]byte // for image
+	Urls   []string // for image
+}
+
 type EmbeddingConfig struct {
 	Dimension      int
 	EncodingFormat string
+}
+
+type RerankRequest struct {
+	Query         string  // for text question
+	ImageQuery    []byte  // for image
+	ImageQueryURL *string // for image
+
+	Documents []string // for text candidates
+	Images    [][]byte // for image candidates
+	ImageURLs []string // for image candidates
 }
 
 type RerankConfig struct {
@@ -218,10 +239,11 @@ type ParseFileConfig struct {
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
 type EmbeddingModel struct {
-	ModelDriver ModelDriver
-	ModelName   *string
-	APIConfig   *APIConfig
-	MaxTokens   int // Max input tokens for the embedding model, used for text truncation
+	ModelDriver  ModelDriver
+	ModelName    *string
+	APIConfig    *APIConfig
+	MaxTokens    int  // Max input tokens for the embedding model, used for text truncation
+	MaxBatchSize *int // Max texts per Embed request; nil means "resolve from provider capability at use site"
 }
 
 // NewEmbeddingModel creates a new EmbeddingModel
@@ -232,6 +254,22 @@ func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConf
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
 	}
+}
+
+// ResolveBatchSize returns the max texts per Embed request for this embedding
+// model. It prefers an explicit MaxBatchSize set at construction time and falls
+// back to the provider capability (all_models.json batch_size, added by
+// #17877/#17878) via GetEmbeddingBatchSize, which itself defaults to
+// DefaultEmbeddingBatchSize.
+func (m *EmbeddingModel) ResolveBatchSize() int {
+	if m != nil && m.MaxBatchSize != nil && *m.MaxBatchSize > 0 {
+		return *m.MaxBatchSize
+	}
+	var name string
+	if m != nil && m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetEmbeddingBatchSize(name)
 }
 
 // RerankModel wraps a ModelDriver with rerank-specific configuration
@@ -251,8 +289,8 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig)
 }
 
 // Rerank calculates similarity between query and texts
-func (r *RerankModel) Rerank(ctx context.Context, query string, texts []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return r.ModelDriver.Rerank(ctx, r.ModelName, query, texts, apiConfig, rerankConfig, modelUsage)
+func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
 }
 
 // ToolConfig bundles tool-calling configuration for a ChatModel.

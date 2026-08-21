@@ -365,15 +365,15 @@ def test_chat_list_page_and_page_size_contract(rest_client, clear_chats):
         ("page two", {"page": 2, "page_size": 2}, 0, lambda total: min(max(total - 2, 0), 2), ""),
         ("page three", {"page": 3, "page_size": 2}, 0, lambda total: min(max(total - 4, 0), 2), ""),
         ("page string", {"page": "3", "page_size": 2}, 0, lambda total: min(max(total - 4, 0), 2), ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, None, "ProgrammingError(1064"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, lambda total: total, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, lambda total: total, ""),
         ("page_size none", {"page_size": None}, 0, lambda total: total, ""),
         ("page_size zero", {"page_size": 0}, 0, lambda total: total, ""),
         ("page_size one", {"page_size": 1}, 0, lambda total: total, ""),
         ("page_size six", {"page_size": 6}, 0, lambda total: total, ""),
         ("page_size string", {"page_size": "1"}, 0, lambda total: total, ""),
         ("page_size negative", {"page_size": -1}, 0, lambda total: total, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, lambda total: total, ""),
     ]
 
     for scenario_name, params, expected_code, expected_count_fn, expected_message in cases:
@@ -403,7 +403,7 @@ def test_chat_list_sorting_contract(rest_client, clear_chats):
         ("orderby create", {"orderby": "create_time"}, 0, descending_names, ""),
         ("orderby update", {"orderby": "update_time"}, 0, descending_names, ""),
         ("orderby name ascending", {"orderby": "name", "desc": "False"}, 0, ascending_names, ""),
-        ("orderby unknown", {"orderby": "unknown"}, 100, None, "AttributeError(\"type object 'Dialog' has no attribute 'unknown'\")"),
+        ("orderby unknown", {"orderby": "unknown"}, 101, None, "invalid orderby field"),
         ("desc none", {"desc": None}, 0, descending_names, ""),
         ("desc true", {"desc": "true"}, 0, descending_names, ""),
         ("desc True", {"desc": "True"}, 0, descending_names, ""),
@@ -757,6 +757,7 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.LLMBundle = lambda *_args, **_kwargs: None
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     search_service_mod = ModuleType("api.db.services.search_service")
@@ -765,6 +766,15 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+
+    def _get_model_config_by_id(_tenant_id, _model_type, model_ref):
+        if model_ref == "tenant-llm-id":
+            return {}
+        raise LookupError(f"unknown tenant model id: {model_ref}")
+
+    tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
+    tenant_model_service_mod.resolve_model_id = lambda _tenant_id, _model_type, model_name: model_name
+    tenant_model_service_mod.get_composite_model_name_by_id = lambda model_id: model_id
     tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
@@ -947,7 +957,7 @@ def test_chat_session_list_projection_unit(monkeypatch):
         ),
     )
     res = _run(module.list_sessions.__wrapped__("chat-1"))
-    assert res["data"] == []
+    assert res["data"][0]["id"] == "session-1"
 
 
 @pytest.mark.p2
@@ -1149,11 +1159,11 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
 
-    def _get_model_config_from_provider_instance(**kwargs):
-        query_calls.append(kwargs)
-        return {}
+    def _resolve_model_id(tenant_id, model_type, model_name):
+        query_calls.append({"tenant_id": tenant_id, "model_ref": model_name, "model_type": model_type})
+        return model_name
 
-    monkeypatch.setattr(module, "resolve_model_config", _get_model_config_from_provider_instance)
+    monkeypatch.setattr(module, "resolve_model_id", _resolve_model_id)
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1948,6 +1958,42 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     target_payload = target_res.json()
     assert target_payload["code"] == 0, target_payload
     chat_id = target_payload["data"]["id"]
+    original_parameters = target_payload["data"]["prompt_config"]["parameters"]
+
+    duplicate_create_res = rest_client.post(
+        "/chats",
+        json={
+            "name": "restful_chat_update_mapping_duplicate_parameters",
+            "dataset_ids": [],
+            "prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]},
+        },
+    )
+    assert duplicate_create_res.status_code == 200
+    duplicate_create_payload = duplicate_create_res.json()
+    assert duplicate_create_payload["code"] == 102, duplicate_create_payload
+    assert duplicate_create_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_create_payload
+
+    duplicate_parameters_res = rest_client.put(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_res.status_code == 200
+    duplicate_parameters_payload = duplicate_parameters_res.json()
+    assert duplicate_parameters_payload["code"] == 102, duplicate_parameters_payload
+    assert duplicate_parameters_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_payload
+    get_after_put_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_put_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
+
+    duplicate_parameters_patch_res = rest_client.patch(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_patch_res.status_code == 200
+    duplicate_parameters_patch_payload = duplicate_parameters_patch_res.json()
+    assert duplicate_parameters_patch_payload["code"] == 102, duplicate_parameters_patch_payload
+    assert duplicate_parameters_patch_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_patch_payload
+    get_after_patch_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_patch_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
 
     unauthorized = rest_client.patch("/chats/invalid-chat-id", json={"name": "anything"})
     assert unauthorized.status_code == 200

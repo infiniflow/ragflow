@@ -32,18 +32,10 @@ import (
 	rag "ragflow/internal/binding"
 )
 
-// engineTypeProvider is injected at startup by engine.RegisterEngineType
-// to break the tokenizer → engine import cycle.
-var engineTypeProvider = func() string { return "" }
+var engineType string
 
-// RegisterEngineType wires the engine package's GetEngineType into the
-// tokenizer, breaking the circular import (engine/elasticsearch → tokenizer → engine).
-func RegisterEngineType(get func() string) {
-	if get == nil {
-		engineTypeProvider = func() string { return "" }
-		return
-	}
-	engineTypeProvider = get
+func SetEngineType(engine string) {
+	engineType = engine
 }
 
 // PoolConfig configures the elastic analyzer pool
@@ -464,7 +456,7 @@ func Tokenize(text string) (string, error) {
 
 // Tokenize tokenizes the text using the tokenizer's request-scoped language.
 func (t Tokenizer) Tokenize(text string) (string, error) {
-	if engineTypeProvider() == "infinity" {
+	if engineType == "infinity" {
 		return text, nil
 	}
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
@@ -518,7 +510,7 @@ func FineGrainedTokenize(tokens string) (string, error) {
 // FineGrainedTokenize performs fine-grained tokenization using the tokenizer's
 // request-scoped language.
 func (t Tokenizer) FineGrainedTokenize(tokens string) (string, error) {
-	if engineTypeProvider() == "infinity" {
+	if engineType == "infinity" {
 		return tokens, nil
 	}
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {

@@ -27,7 +27,49 @@ from langfuse import propagate_attributes
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant
-from common.token_utils import num_tokens_from_string, record_run_token_usage, langfuse_run_attrs
+from common.token_utils import langfuse_run_attrs, num_tokens_from_string, record_run_token_usage, truncate
+
+# Default values for the four LLM generation parameters stored in
+# search_config.llm_setting.  When the corresponding ``_enabled`` flag is
+# ``False`` (or the key is absent), the default is used instead of whatever
+# the user may have stored in ``llm_setting``.
+LLM_SETTING_DEFAULTS = {
+    "temperature": 0.1,
+    "top_p": 0.3,
+    "frequency_penalty": 0.7,
+    "presence_penalty": 0.4,
+}
+
+
+def resolve_llm_setting(llm_setting):
+    """Resolve *llm_setting* values according to their enable flags.
+
+    For each of the four generation parameters the dictionary may carry a
+    ``{key}_enabled`` boolean.  When the flag is ``True`` and the value
+    exists in *llm_setting*, the user-configured value is kept; otherwise
+    the default from :data:`LLM_SETTING_DEFAULTS` is substituted.
+
+    Keys whose name ends with ``_enabled`` are stripped from the result so
+    they are never forwarded to the downstream LLM call.
+    """
+    if not llm_setting:
+        return dict(LLM_SETTING_DEFAULTS)
+
+    resolved = {}
+    for key, default_val in LLM_SETTING_DEFAULTS.items():
+        enabled_key = f"{key}_enabled"
+        if llm_setting.get(enabled_key, True) and key in llm_setting:
+            resolved[key] = llm_setting[key]
+        else:
+            resolved[key] = default_val
+
+    # Carry over any extra keys that are not generation parameters and not
+    # enable flags (e.g. ``llm_id``, ``model_type``).
+    for key, val in llm_setting.items():
+        if key not in resolved and not key.endswith("_enabled"):
+            resolved[key] = val
+
+    return resolved
 
 
 class LLMService(CommonService):
@@ -86,6 +128,18 @@ class LLMBundle(LLM4Tenant):
         """Release resources held by this LLMBundle instance."""
         super().close()
 
+    def clone(self):
+        kwargs = {
+            "trace_context": dict(self.trace_context or {}),
+            "langfuse_session_id": self.langfuse_session_id,
+            "verbose_tool_use": self.verbose_tool_use,
+        }
+        for attr, key in (("max_retries", "max_retries"), ("base_delay", "retry_interval"), ("max_rounds", "max_rounds")):
+            value = getattr(self.mdl, attr, None)
+            if value is not None:
+                kwargs[key] = value
+        return LLMBundle(self.tenant_id, dict(self.model_config), lang=getattr(self, "lang", "Chinese"), **kwargs)
+
     def __enter__(self):
         """Enter context manager."""
         return self
@@ -132,7 +186,14 @@ class LLMBundle(LLM4Tenant):
             token_size = num_tokens_from_string(text)
             if token_size > self.max_length * 0.95:
                 target_len = int(self.max_length * 0.95)
-                safe_texts.append(text[:target_len])
+                logging.debug(
+                    "LLMBundle.encode truncating input: index=%d model=%s original_tokens=%d target_tokens=%d",
+                    idx,
+                    self.model_config["llm_name"],
+                    token_size,
+                    target_len,
+                )
+                safe_texts.append(truncate(text, target_len))
             else:
                 safe_texts.append(text)
 

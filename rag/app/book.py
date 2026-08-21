@@ -86,7 +86,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
 
-        tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
+        tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, lang=lang, **kwargs)
         # tbls = [((None, lns), None) for lns in tbls]
         sections = [(item[0], item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], (Image.Image, LazyImage))]
         callback(0.8, "Finish parsing.")
@@ -166,13 +166,22 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")
 
     make_colon_as_title(sections)
-    bull = bullets_category([t for t in random_choices([t for t, _ in sections], k=100)])
+    # Scan ALL sections (not a random sample) so the bull/structure decision is
+    # deterministic and never misses a sparse bullet. The old random sample made
+    # highlight availability flaky for the same document across runs.
+    bull = bullets_category([t for t, _ in sections])
     if bull >= 0:
         chunks = ["\n".join(ck) for ck in hierarchical_merge(bull, sections, 5)]
     else:
-        sections = [s.split("@") for s, _ in sections]
-        sections = [(pr[0], "@" + pr[1]) if len(pr) == 2 else (pr[0], "") for pr in sections]
-        chunks = naive_merge(sections, parser_config.get("chunk_token_num", 256), parser_config.get("delimiter", "\n。；！？"))
+        # Keep the "@@" coordinate tag in the section text; it is extracted by
+        # crop() and stripped by remove_tag() downstream in tokenize_chunks.
+        # Pass "" for the legacy layoutno slot so naive_merge's
+        # _reconstruct_text_chunk does not append a stray layout number to the
+        # chunk text. hierarchical_merge drops layoutno the same way (it keeps
+        # only the text), so the two branches stay consistent and the fix
+        # changes nothing in the displayed chunk text except restoring the lost
+        # highlight.
+        chunks = naive_merge([(t, "") for t, _ in sections], parser_config.get("chunk_token_num", 256), parser_config.get("delimiter", "\n。；！？"))
 
     # is it English
     # is_english(random_choices([t for t, _ in sections], k=218))
