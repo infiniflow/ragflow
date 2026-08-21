@@ -281,6 +281,9 @@ export const MultiSelect = React.forwardRef<
     const handleInputKeyDown = (
       event: React.KeyboardEvent<HTMLInputElement>,
     ) => {
+      // Read currentTarget synchronously: React clears it once the handler
+      // returns, so it must be captured before any deferred access.
+      const input = event.currentTarget;
       if (event.key === 'Enter') {
         if (!isPopoverOpen) {
           setIsPopoverOpen(true);
@@ -291,7 +294,7 @@ export const MultiSelect = React.forwardRef<
         // already-selected option as confirmation instead: keep the selection
         // and close the dropdown. Other items (unselected options, select
         // all, clear, close) keep cmdk's default Enter handling.
-        const highlightedItem = event.currentTarget
+        const highlightedItem = input
           .closest('[cmdk-root]')
           ?.querySelector('[cmdk-item][aria-selected="true"]');
         const optionValue =
@@ -302,7 +305,7 @@ export const MultiSelect = React.forwardRef<
           event.preventDefault();
           setIsPopoverOpen(false);
         }
-      } else if (event.key === 'Backspace' && !event.currentTarget.value) {
+      } else if (event.key === 'Backspace' && !input.value) {
         const newSelectedValues = [...selectedValues];
         const removableIndex = [...newSelectedValues]
           .reverse()
