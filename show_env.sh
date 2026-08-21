@@ -17,12 +17,16 @@ get_distro_info() {
 
 # get Git repository name
 git_repo_name=''
-if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = "true" ]; then
-    if git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null); then
-        git_repo_name=$(basename "$git_toplevel")
-    else
-        git_repo_name="(Can't get repo name)"
-    fi
+if git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null); then
+    git_repo_name=$(basename "$git_toplevel")
+elif git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null); then
+    # Inside .git, or in a bare repo: there is no work tree to name, but this is
+    # still a repository. A ".git" directory is named by its parent; a bare one
+    # names itself.
+    case "$git_dir" in
+        */.git) git_repo_name=$(basename "$(dirname "$git_dir")") ;;
+        *) git_repo_name=$(basename "$git_dir") ;;
+    esac
 else
     git_repo_name="It is NOT a Git repo"
 fi
