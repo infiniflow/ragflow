@@ -29,6 +29,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
+	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
 	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
