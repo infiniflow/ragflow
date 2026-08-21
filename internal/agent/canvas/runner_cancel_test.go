@@ -100,6 +100,22 @@ func TestRunnerEmitsCancelledEvent(t *testing.T) {
 	}
 }
 
+// TestPushEventSkipsCancelledConsumer verifies that an already-cancelled
+// event context prevents delivery even when the destination buffer is writable.
+func TestPushEventSkipsCancelledConsumer(t *testing.T) {
+	eventCtx, cancelEvents := context.WithCancel(context.Background())
+	workflowCtx := WithEventContext(context.Background(), eventCtx)
+	events := make(chan RunEvent, 1)
+	cancelEvents()
+
+	PushEvent(workflowCtx, events, RunEvent{Type: "message"})
+	if len(events) != 0 {
+		t.Fatalf("event channel length = %d, want 0 after consumer cancellation", len(events))
+	}
+}
+
+// TestRunnerDropsEventsAfterConsumerCancellation verifies that a blocked
+// producer is released when the event consumer cancels its context.
 func TestRunnerDropsEventsAfterConsumerCancellation(t *testing.T) {
 	r := NewRunner()
 	runCtx := context.Background()

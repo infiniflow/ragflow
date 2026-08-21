@@ -160,6 +160,8 @@ func WithEventContext(ctx, eventCtx context.Context) context.Context {
 	return context.WithValue(ctx, eventContextKey{}, eventCtx)
 }
 
+// getEventContext returns the consumer context attached to a workflow context,
+// falling back to the workflow context when no separate consumer exists.
 func getEventContext(ctx context.Context) context.Context {
 	if ctx == nil {
 		return context.Background()
@@ -422,9 +424,13 @@ func PushEvent(ctx context.Context, ch chan<- RunEvent, ev RunEvent) {
 		return
 	}
 	defer func() { _ = recover() }()
+	eventCtx := getEventContext(ctx)
+	if eventCtx.Err() != nil {
+		return
+	}
 	select {
 	case ch <- ev:
-	case <-getEventContext(ctx).Done():
+	case <-eventCtx.Done():
 	}
 }
 
