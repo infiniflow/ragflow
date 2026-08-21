@@ -64,6 +64,10 @@ type PythonTSRCell struct {
 	X1         float64 `json:"x1"`
 	Y1         float64 `json:"y1"`
 	Text       string  `json:"text"`
+	// Score is the detection confidence. Python's layouts_cleanup keeps the
+	// higher-score line when two overlap (recognizer.py:141); it is required
+	// to reproduce the exact structure-line cleanup.
+	Score float64 `json:"score"`
 }
 
 // LoadPythonTSR parses output/py/ocr/tsr_raw/{name}.pdf.json into the raw
@@ -114,6 +118,42 @@ func (c PythonTSRCell) ToTSRCell(cropOffX, cropOffY, cumOffsetPx float64) pdf.TS
 }
 
 // ── Phase 3: OCR replay ────────────────────────────────────────────────────
+
+// PythonAllBox is one entry of the table_boxes/{name}.all_boxes.json snapshot:
+// a page box (table or non-table) present at R/C-annotation time, carrying
+// only the coordinates Python's layouts_cleanup area branch needs.
+type PythonAllBox struct {
+	X0         float64 `json:"x0"`
+	X1         float64 `json:"x1"`
+	Top        float64 `json:"top"`
+	Bottom     float64 `json:"bottom"`
+	PageNumber int     `json:"page_number"`
+}
+
+// LoadPythonAllBoxes parses output/py/{variant}/table_boxes/{name}.all_boxes.json
+// (the full page box set at R/C-annotation time) into []pdf.TextBox. A missing
+// file is reported via error so callers can fall back to the table boxes only.
+func LoadPythonAllBoxes(jsonPath string) ([]pdf.TextBox, error) {
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return nil, err
+	}
+	var dumped []PythonAllBox
+	if err := json.Unmarshal(data, &dumped); err != nil {
+		return nil, err
+	}
+	boxes := make([]pdf.TextBox, 0, len(dumped))
+	for _, b := range dumped {
+		boxes = append(boxes, pdf.TextBox{
+			X0:         b.X0,
+			X1:         b.X1,
+			Top:        b.Top,
+			Bottom:     b.Bottom,
+			PageNumber: b.PageNumber,
+		})
+	}
+	return boxes, nil
+}
 
 // PythonOCRPage holds one page's final OCR-derived text boxes (the box list
 // __ocr appends to parser.boxes). The coordinates are PAGE-POINTS but
