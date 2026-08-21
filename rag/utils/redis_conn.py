@@ -61,6 +61,24 @@ class RedisMsg:
 class RedisDB:
     lua_delete_if_equal = None
     lua_token_bucket = None
+    lua_requeue_msg = None
+    LUA_REQUEUE_MSG_SCRIPT = """
+        -- KEYS[1] = stream
+        -- KEYS[2] = retry-deduplication marker
+        -- ARGV[1] = consumer group
+        -- ARGV[2] = pending message id
+        -- ARGV[3] = marker TTL in seconds
+
+        if redis.call("SET", KEYS[2], "1", "NX", "EX", tonumber(ARGV[3])) then
+            local entries = redis.call("XRANGE", KEYS[1], ARGV[2], ARGV[2])
+            if #entries > 0 then
+                redis.call("XADD", KEYS[1], "*", unpack(entries[1][2]))
+            end
+        end
+        redis.call("XACK", KEYS[1], ARGV[1], ARGV[2])
+        return 1
+    """
+
     LUA_DELETE_IF_EQUAL_SCRIPT = """
         local current_value = redis.call('get', KEYS[1])
         if current_value and current_value == ARGV[1] then
@@ -121,6 +139,7 @@ class RedisDB:
         client = self.REDIS
         cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
         cls.lua_token_bucket = client.register_script(cls.LUA_TOKEN_BUCKET_SCRIPT)
+        cls.lua_requeue_msg = client.register_script(cls.LUA_REQUEUE_MSG_SCRIPT)
 
     def __open__(self):
         try:
@@ -454,17 +473,22 @@ class RedisDB:
         return None
 
     def get_unacked_iterator(self, queue_names: list[str], group_name, consumer_name):
-        try:
-            for queue_name in queue_names:
+        """Replay this consumer's pending entries without one queue blocking the rest."""
+        for queue_name in queue_names:
+            try:
                 try:
                     group_info = self.REDIS.xinfo_groups(queue_name)
-                except Exception as e:
-                    if str(e) == "no such key":
+                except redis.exceptions.ResponseError as e:
+                    if "no such key" in str(e).lower() or "nogroup" in str(e).lower():
                         logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} doesn't exist")
-                        continue
+                    else:
+                        logging.exception(f"RedisDB.get_unacked_iterator queue {queue_name} group lookup failed")
+                    continue
+
                 if not any(gi["name"] == group_name for gi in group_info):
                     logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} group {group_name} doesn't exist")
                     continue
+
                 current_min = 0
                 while True:
                     payload = self.queue_consumer(queue_name, group_name, consumer_name, current_min)
@@ -473,29 +497,81 @@ class RedisDB:
                     current_min = payload.get_msg_id()
                     logging.info(f"RedisDB.get_unacked_iterator {queue_name} {consumer_name} {current_min}")
                     yield payload
-        except Exception:
-            logging.exception("RedisDB.get_unacked_iterator got exception: ")
-            self.__open__()
+            except Exception:
+                logging.exception(f"RedisDB.get_unacked_iterator queue {queue_name} got exception")
+                self.__open__()
 
-    def get_pending_msg(self, queue, group_name):
+    def get_pending_msg(self, queue, group_name, consumer_name=None, min_idle_ms=None, count=256):
+        """Return the entire pending-entry list, optionally filtered by owner and idle time."""
+        pending = []
+        current_min = "-"
+        previous_last_id = None
         try:
-            messages = self.REDIS.xpending_range(queue, group_name, "-", "+", 10)
-            return messages
-        except Exception as e:
-            if "No such key" not in (str(e) or ""):
-                logging.warning("RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e))
-        return []
+            while True:
+                messages = self.REDIS.xpending_range(
+                    queue,
+                    group_name,
+                    min=current_min,
+                    max="+",
+                    count=count,
+                    consumername=consumer_name,
+                    idle=min_idle_ms,
+                )
+                if not messages:
+                    break
 
-    def requeue_msg(self, queue: str, group_name: str, msg_id: str):
+                pending.extend(messages)
+                if len(messages) < count:
+                    break
+
+                last_id = messages[-1]["message_id"]
+                if isinstance(last_id, bytes):
+                    last_id = last_id.decode()
+                else:
+                    last_id = str(last_id)
+                if last_id == previous_last_id:
+                    break
+                previous_last_id = last_id
+                current_min = f"({last_id}"
+        except redis.exceptions.ResponseError as e:
+            error = str(e).lower()
+            if "no such key" not in error and "nogroup" not in error:
+                logging.warning("RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e))
+        except Exception as e:
+            logging.warning("RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e))
+            self.__open__()
+        return pending
+
+    def requeue_msg(self, queue: str, group_name: str, msg_id: str) -> bool:
+        """Atomically append a fresh delivery and acknowledge the orphaned entry."""
+        marker = f"{queue}:reclaim:{group_name}:{msg_id}"
         for _ in range(3):
             try:
-                messages = self.REDIS.xrange(queue, msg_id, msg_id)
-                if messages:
-                    self.REDIS.xadd(queue, messages[0][1])
-                    self.REDIS.xack(queue, group_name, msg_id)
+                self.lua_requeue_msg(keys=[queue, marker], args=[group_name, msg_id, 300], client=self.REDIS)
+                return True
             except Exception as e:
-                logging.warning("RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e))
+                logging.warning("RedisDB.requeue_msg " + str(queue) + " got exception: " + str(e))
                 self.__open__()
+        return False
+
+    def reclaim_pending_msg(self, queue_names: list[str], group_name: str, live_consumers, min_idle_ms: int = 0) -> int:
+        """Requeue idle entries whose owning consumer is no longer alive."""
+        reclaimed = 0
+        live_consumers = set(live_consumers)
+        for queue_name in queue_names:
+            messages = self.get_pending_msg(
+                queue_name,
+                group_name,
+                min_idle_ms=min_idle_ms or None,
+            )
+            for message in messages:
+                if message.get("consumer") in live_consumers:
+                    continue
+                msg_id = message["message_id"]
+                if self.requeue_msg(queue_name, group_name, msg_id):
+                    reclaimed += 1
+                    logging.info(f"RedisDB.reclaim_pending_msg requeued {queue_name} {msg_id} from dead consumer {message.get('consumer')}")
+        return reclaimed
 
     def queue_info(self, queue, group_name) -> dict | None:
         for _ in range(3):
