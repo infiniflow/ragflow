@@ -512,19 +512,56 @@ class TencentCloudSeq2txt(Base):
 
 class GPUStackSeq2txt(Base):
     _FACTORY_NAME = "GPUStack"
+    _LANGUAGE_ALIASES = {
+        "chinese": "zh",
+        "中文": "zh",
+        "zh_cn": "zh",
+        "zh-cn": "zh",
+        "english": "en",
+        "英语": "en",
+        "en-us": "en",
+        "en_us": "en",
+    }
 
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.model_name = model_name
         self.key = key
 
-    def check_available(self) -> tuple[bool, str]:
-        """GPUStack ASR transcription endpoint is not yet implemented."""
-        return False, "GPUStack ASR transcription is not yet implemented"
+    def transcription(self, audio, language="Chinese", prompt=None, response_format="json"):
+        if isinstance(audio, str):
+            with open(audio, "rb") as audio_file:
+                audio_data = audio_file.read()
+            audio_file_name = os.path.basename(audio)
+        else:
+            audio_data = audio
+            audio_file_name = "audio.wav"
+
+        normalized_language = self._LANGUAGE_ALIASES.get(language.strip().lower(), language) if language else None
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "response_format": response_format,
+        }
+        if normalized_language:
+            payload["language"] = normalized_language
+        files = {"file": (audio_file_name, audio_data, "audio/wav")}
+        headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
+
+        try:
+            response = requests.post(url=append_api_path(self.base_url, "audio/transcriptions"), files=files, data=payload, headers=headers, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            text = (result.get("text") or "").strip()
+            if text:
+                return text, num_tokens_from_string(text)
+            return "**ERROR**: Failed to retrieve transcription.", 0
+        except requests.exceptions.RequestException as e:
+            return f"**ERROR**: {str(e)}", 0
+        except (ValueError, KeyError) as e:
+            return f"**ERROR**: Invalid transcription response: {str(e)}", 0
 
 
 class GiteeSeq2txt(Base):

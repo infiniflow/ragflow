@@ -378,6 +378,7 @@ class GPUStackTTS(HTTPBasedTTS):
         super().__init__(key, model_name, base_url)
         # Add accept header
         self.headers["accept"] = "application/json"
+        self.default_voice = os.environ.get("GPUSTACK_TTS_VOICE", "aiden")
 
     def _process_response(self, response):
         # Use chunk_size=1024 for processing response
@@ -387,8 +388,14 @@ class GPUStackTTS(HTTPBasedTTS):
 
     def tts(self, text, voice="Chinese Female", stream=True):
         text = self.normalize_text(text)
-        payload = self._build_payload(text, voice)
-        response = self._send_request("/v1/audio/speech", payload, stream=stream)
+        voice_key = (voice or self.default_voice).strip().lower()
+        voice_aliases = {
+            "chinese female": self.default_voice,
+            "chinese_female": self.default_voice,
+            "alloy": self.default_voice,
+        }
+        payload = self._build_payload(text, voice_aliases.get(voice_key, voice_key))
+        response = self._send_request("/audio/speech", payload, stream=stream)
         return self._process_response(response)
 
 
