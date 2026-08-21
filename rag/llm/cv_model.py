@@ -32,6 +32,7 @@ from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.key_utils import _resolve_azure_credentials
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils.url_utils import ensure_v1
@@ -362,21 +363,17 @@ class GptV4(Base):
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
 
-def _resolve_azure_credentials(key):
-    try:
-        key_obj = json.loads(key)
-        if isinstance(key_obj, dict):
-            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
-        logging.warning("Azure credential payload parsed as JSON but is not an object; using raw api_key string")
-    except (json.JSONDecodeError, TypeError):
-        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
-    return key, "2024-02-01"
-
-
 class AzureGptV4(GptV4):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
+        # Parse the key via the shared helper in rag.llm.key_utils. The
+        # local copy of ``_resolve_azure_credentials`` was removed in
+        # favor of the shared helper to consolidate the Azure-OpenAI
+        # pattern with the other 5 providers (Bedrock, BaiduYiyan,
+        # VolcEngine, OpenRouter, GoogleCV) and align the silent
+        # fallback for JSON non-object input with a clear
+        # ``ModelException``. See #17675.
         api_key, api_version = _resolve_azure_credentials(key)
         self.base_url = ensure_v1(kwargs["base_url"])
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
