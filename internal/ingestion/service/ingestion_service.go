@@ -599,17 +599,26 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
+		e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
 		return e.markStopped(context.Background(), task.ID)
 	default:
 	}
 
 	if err := e.ingestionTaskSvc.IncrementRunCount(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
 	if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
@@ -630,15 +639,24 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
 			return e.markStopped(ctx, task.ID)
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTimeoutProgress(task)
-			return e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task.ID)
+			if ok {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			}
+			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
 
 	if err := e.completeTask(ctx, task.ID); err != nil {
@@ -979,6 +997,54 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	}
 	e.docState.apply(ctx, result)
 	return nil
+}
+
+func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status string) {
+	if ingestionTask == nil || status == "" {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, ingestionTask)
+	if err != nil {
+		common.Warn(fmt.Sprintf("record terminal pipeline log: load task context for %s: %v", ingestionTask.ID, err))
+		return
+	}
+
+	pipelineID := strings.TrimSpace(docTaskCtx.PipelineID)
+	parserID := strings.TrimSpace(docTaskCtx.Doc.ParserID)
+	canvasID := pipelineID
+	var dsl string
+	if canvasID == "" {
+		if parserID == "" {
+			common.Warn(fmt.Sprintf("record terminal pipeline log: no pipeline_id or parser_id for document %s", docTaskCtx.Doc.ID))
+			return
+		}
+		canvasID = parserID
+		dsl, err = pipelinepkg.LoadBuiltinDSL(parserID)
+		if err != nil {
+			common.Warn(fmt.Sprintf("record terminal pipeline log: load builtin DSL %s: %v", parserID, err))
+			return
+		}
+	} else {
+		canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
+		if err != nil {
+			common.Warn(fmt.Sprintf("record terminal pipeline log: load canvas %s: %v", canvasID, err))
+			return
+		}
+		raw, err := json.Marshal(canvas.DSL)
+		if err != nil {
+			common.Warn(fmt.Sprintf("record terminal pipeline log: marshal canvas %s DSL: %v", canvasID, err))
+			return
+		}
+		dsl = string(raw)
+	}
+
+	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, canvasID, 0)
+	if err != nil {
+		common.Warn(fmt.Sprintf("record terminal pipeline log: create executor for %s: %v", ingestionTask.ID, err))
+		return
+	}
+	executor.RecordPipelineLog(ctx, dao.DB, docTaskCtx.Doc.ID, dsl, status)
 }
 
 // Stop gracefully shuts down the ingestor. It cancels the root context so

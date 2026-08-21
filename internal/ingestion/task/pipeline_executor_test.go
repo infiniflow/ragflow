@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -606,6 +607,50 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	}
 	if !logged {
 		t.Fatal("expected pipeline log to be created")
+	}
+}
+
+func TestPipelineExecutor_Execute_DoesNotLogFailedRun(t *testing.T) {
+	logged := false
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			return nil, dsl, errors.New("pipeline failed")
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			logged = true
+			return nil
+		})
+
+	if _, err := svc.Execute(context.Background()); err == nil {
+		t.Fatal("Execute error = nil, want failure")
+	}
+	if logged {
+		t.Fatal("executor must not log failed runs before ingestor writes final document status")
+	}
+}
+
+func TestPipelineExecutor_Execute_DoesNotLogCanceledRun(t *testing.T) {
+	logged := false
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			return nil, dsl, context.Canceled
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			logged = true
+			return nil
+		})
+
+	if _, err := svc.Execute(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context.Canceled", err)
+	}
+	if logged {
+		t.Fatal("executor must not log canceled runs before ingestor writes final document status")
 	}
 }
 

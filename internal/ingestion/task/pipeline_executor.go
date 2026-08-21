@@ -198,7 +198,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.RecordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "")
 	}
 
 	return result, nil
@@ -670,7 +670,7 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	}
 
 	operationStatus := status
-	if doc.Run != nil && *doc.Run != "" {
+	if operationStatus == "" && doc.Run != nil && *doc.Run != "" {
 		operationStatus = *doc.Run
 	}
 	statusValue := "1"
@@ -710,6 +710,10 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	if err := s.logCreateFunc(ctx, db, log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
+}
+
+func (s *PipelineExecutor) RecordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+	s.recordPipelineLog(ctx, db, docID, dsl, status)
 }
 
 func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID string) (string, string, error) {
