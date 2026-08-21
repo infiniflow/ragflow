@@ -45,6 +45,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "moodle", NewMoodleConnector)
 	registerBuiltIn(registry, "mysql", NewMySQLConnector)
 	registerBuiltIn(registry, "postgresql", NewPostgreSQLConnector)
+	registerBuiltIn(registry, "slack", NewSlackConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
 }
