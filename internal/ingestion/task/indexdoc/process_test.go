@@ -461,3 +461,36 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 		t.Fatalf("executor important_kwd = %v, want %v (empty parts dropped)", kwd, want)
 	}
 }
+
+// TestProcessChunksForPipeline_ContentWithWeightOnlyDistinctIDs guards
+// against the Q&A/Tag chunk collapse: a chunk that carries
+// content_with_weight directly (no text) must hash that content into its
+// id so siblings stay distinct, mirroring Python
+// rag/svr/task_executor.py:407 which hashes content_with_weight. Hashing
+// the missing text would give every sibling the same empty-text id and
+// the index write would keep only the last chunk.
+func TestProcessChunksForPipeline_ContentWithWeightOnlyDistinctIDs(t *testing.T) {
+	chunks := []map[string]any{
+		{"content_with_weight": "问题：Q1\t回答：A1"},
+		{"content_with_weight": "问题：Q2\t回答：A2"},
+	}
+	if _, err := ProcessChunksForPipeline(chunks, "doc-1", "qa.xlsx", time.Now()); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	id0, _ := chunks[0]["id"].(string)
+	id1, _ := chunks[1]["id"].(string)
+	if id0 == "" || id1 == "" {
+		t.Fatalf("ids must be assigned, got %q / %q", id0, id1)
+	}
+	if id0 == id1 {
+		t.Fatalf("distinct content must yield distinct ids, both %q", id0)
+	}
+	for i, ck := range chunks {
+		if _, hasText := ck["text"]; hasText {
+			t.Errorf("chunk %d: text must not be introduced for content_with_weight-only chunks", i)
+		}
+		if cw, _ := ck["content_with_weight"].(string); cw == "" {
+			t.Errorf("chunk %d: content_with_weight must be preserved", i)
+		}
+	}
+}

@@ -57,7 +57,7 @@ func TestQAChunker_DelimiterTab(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 	chunk := chunks[0]
-	cww, _ := chunk["content_with_weight"].(string)
+	cww, _ := chunk["text"].(string)
 	if cww != "Question: What is Go?\tAnswer: Go is a programming language." {
 		t.Fatalf("unexpected content: %q", cww)
 	}
@@ -82,7 +82,7 @@ func TestQAChunker_DelimiterComma(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 	chunk := chunks[0]
-	cww, _ := chunk["content_with_weight"].(string)
+	cww, _ := chunk["text"].(string)
 	if cww != "Question: What is Rust?\tAnswer: Rust is a systems language." {
 		t.Fatalf("unexpected content: %q", cww)
 	}
@@ -143,7 +143,7 @@ func TestQAChunker_RmQAPrefix(t *testing.T) {
 		t.Fatalf("Invoke failed: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if cww != "Question: What is Go?\tAnswer: Go is a language." {
 		t.Fatalf("prefix not stripped: %q", cww)
 	}
@@ -187,7 +187,7 @@ func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if cww != "Question: Hello\tAnswer: World" {
 		t.Fatalf("case-insensitive prefix not stripped: %q", cww)
 	}
@@ -211,7 +211,7 @@ func TestQAChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	// Python qa.py:241 uses `[\t:： ]+`, so a space is a valid separator:
 	// a leading "A"/"Q" followed by a space is stripped.
 	if cww != "Question: language model is useful\tAnswer: How does it work" {
@@ -257,7 +257,7 @@ func TestQAChunker_ChineseLang(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if want := "问题：什么是Go？\t回答：Go是一种编程语言。"; cww != want {
 		t.Fatalf("unexpected content: %q, want %q", cww, want)
 	}
@@ -281,7 +281,7 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if !strings.Contains(cww, "<strong>bold</strong>") &&
 		!strings.Contains(cww, "<b>bold</b>") {
 		t.Fatalf("markdown not rendered to HTML: %q", cww)

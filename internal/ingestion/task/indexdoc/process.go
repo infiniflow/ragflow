@@ -86,7 +86,17 @@ func ProcessChunksForPipeline(
 		ck["create_timestamp_flt"] = timestamp
 
 		if _, exists := ck["id"]; !exists {
+			// Hash the content that will be indexed. Text-only chunks hash
+			// their text (which RenameTextToContentWithWeight promotes to
+			// content_with_weight below); chunks that already carry
+			// content_with_weight hash it directly, mirroring Python
+			// rag/svr/task_executor.py:407. Hashing the empty text of a
+			// content_with_weight-only chunk would give every sibling the
+			// same id and the index write would keep only the last one.
 			text, _ := ck["text"].(string)
+			if text == "" {
+				text, _ = ck["content_with_weight"].(string)
+			}
 			ck["id"] = common.ChunkID(docID, text)
 		}
 
