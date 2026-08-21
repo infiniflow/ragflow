@@ -44,12 +44,15 @@ import (
 //     Python, e.g. table segmentation). Any genuine Go content regression is a
 //     FAIL.
 func TestPipelineParity(t *testing.T) {
-	charspyDir := filepath.Join("testdata", "charspy")
-	pyTextDir := filepath.Join("testdata", "output", "py", "ocr", "text")
-	dlaDir := filepath.Join("testdata", "output", "py", "ocr", "dla")
-	tsrDir := filepath.Join("testdata", "output", "py", "ocr", "tsr_raw")
-	ocrDir := filepath.Join("testdata", "output", "py", "ocr", "ocr")
-	tablesDir := filepath.Join("testdata", "output", "py", "ocr", "tables")
+	// Dataset variant: "" (default) or "ocr" resolve to the built-in layout
+	// (charspy/, output/py/ocr/...) for the original 35-PDF fixture set; a
+	// custom variant such as "ocr_real" reads its own isolated directories
+	// (charspy_ocr_real/, output/py/ocr_real/...), so a second dataset (e.g.
+	// real_pdfs/) gets its own dumps and verdicts without touching the default
+	// set. See tool.ParityDirsFor.
+	dirs := tool.ParityDirsFor(common.GetEnv(common.EnvBatchParityVariant))
+	charspyDir, pyTextDir := dirs.Charspy, dirs.Text
+	dlaDir, tsrDir, ocrDir, tablesDir := dirs.DLA, dirs.TSRRaw, dirs.OCR, dirs.Tables
 
 	entries, err := os.ReadDir(charspyDir)
 	if err != nil {
@@ -158,7 +161,7 @@ func TestPipelineParity(t *testing.T) {
 		// Debug aid: BATCH_PARITY_DUMP_GO=1 writes the Go output text next to
 		// the Python golden so failing PDFs can be diffed case by case.
 		if common.GetEnv("BATCH_PARITY_DUMP_GO") != "" {
-			dumpDir := filepath.Join("testdata", "output", "go", "ocr", "text")
+			dumpDir := dirs.GoText
 			_ = os.MkdirAll(dumpDir, 0o755)
 			_ = os.WriteFile(filepath.Join(dumpDir, name+".txt"), []byte(goText.String()), 0o644)
 		}

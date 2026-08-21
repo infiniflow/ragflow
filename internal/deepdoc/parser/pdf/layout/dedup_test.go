@@ -175,6 +175,30 @@ func TestDedupSubstringOverlaps(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_YOvershootFragmentDropped locks root-cause-A:
+// an OCR double-detection fragment whose text is a whitespace-normalized
+// substring of the container but whose Y bounds overshoot by a few points of
+// detection noise (beyond boxInsideTolerant's 3pt Y tolerance) must STILL be collapsed. This
+// is the exact geometry Rag Flow Usage / 三国人物 produce and that leaks
+// duplicated text into the Go output without it.
+func TestDedupSubstringOverlaps_YOvershootFragmentDropped(t *testing.T) {
+	full := pdf.TextBox{
+		Text:       "We'resoextoseeyou again",
+		PageNumber: 0, Top: 224.8, Bottom: 233.3, X0: 477, X1: 599, IsOCR: true,
+	}
+	frag := pdf.TextBox{
+		Text:       "toseeyou again", // substring of full; Y overshoots 0.5pt top / 1.0pt bottom
+		PageNumber: 0, Top: 224.3, Bottom: 234.3, X0: 537, X1: 599, IsOCR: true,
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, frag})
+	if len(got) != 1 {
+		t.Fatalf("Y-overshoot substring fragment must be dropped, got %d boxes", len(got))
+	}
+	if got[0].Text != full.Text {
+		t.Fatalf("the full box must be kept, got %q", got[0].Text)
+	}
+}
+
 // TestDedupSubstringOverlaps_DisjointYKept ensures a substring box at a
 // DISJOINT Y position is kept — a real repeated heading or sentence is legal.
 func TestDedupSubstringOverlaps_DisjointYKept(t *testing.T) {
@@ -226,7 +250,7 @@ func TestDedupSubstringOverlaps_AdjacentLinesKept(t *testing.T) {
 // TestDedupSubstringOverlaps_PartialYOverlapKept locks the Y-containment
 // boundary: a substring box that PARTIALLY overlaps the containing box in Y
 // (extends below it) is KEPT — it is an adjacent-line fragment, not a contained
-// duplicate. Only a fragment FULLY inside the containing box (boxInside) is
+// duplicate. Only a fragment contained in the box (boxInsideTolerant) is
 // collapsed. With the height-vs-text decoupled guard this case is also kept;
 // the test pins the boundary against future over-collapsing.
 func TestDedupSubstringOverlaps_PartialYOverlapKept(t *testing.T) {
@@ -247,7 +271,7 @@ func TestDedupSubstringOverlaps_PartialYOverlapKept(t *testing.T) {
 // beyond the containing box (to either side) must be KEPT — it is not an OCR
 // fragment of the container (e.g. an adjacent-column line whose text happens
 // to be a whitespace-normalized substring of the paragraph). Only a box fully
-// inside on BOTH axes is collapsed. This pins the boxInside hardening that the
+// inside on BOTH axes is collapsed. This pins the boxInsideTolerant hardening that the
 // whitespace-insensitive match otherwise leaves exposed (a plain horizontal
 // intersect used to pass the X check).
 func TestDedupSubstringOverlaps_HorizontalOverhangKept(t *testing.T) {
@@ -290,7 +314,7 @@ func TestDedupSubstringOverlaps_TallerFragmentKept(t *testing.T) {
 // ("-name:" vs "- name:") normalize to the SAME text and must collapse when
 // geometrically contained. The legacy `len(ai) == len(aj)` skip would have
 // kept the duplicate; whitespace normalization makes the two look identical,
-// and boxInside decides the containment.
+// and boxInsideTolerant decides the containment.
 func TestDedupSubstringOverlaps_WhitespaceInsensitive_EqualAfterNorm(t *testing.T) {
 	outer := pdf.TextBox{
 		Text:       "-name:", // OCR recognizer stripped the space after '-'

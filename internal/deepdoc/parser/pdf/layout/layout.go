@@ -139,9 +139,9 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 // "⽂章中提到"). Byte-wise matching would miss the fragment relation and the
 // inner box survives to NaiveVerticalMerge, which concatenates it into the
 // paragraph — duplicating text (the ocr_real text gaps: plugin-daemon,
-// RAG分词, 三国人物). Geometry (boxInside) remains the actual containment
-// proof; whitespace normalization only makes the fragment check robust to the
-// char-vs-OCR space divergence.
+// RAG分词, 三国人物). Geometry (boxInsideTolerant) remains the actual
+// containment proof; whitespace normalization only makes the fragment check
+// robust to the char-vs-OCR space divergence.
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
 	// Precompute the whitespace-normalized text once per box. The inner loop
@@ -183,12 +183,12 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 			// the smaller, contained box, so the taller container is kept.
 			if len(ni) >= len(nj) && strings.Contains(ni, nj) {
 				// j's text is a substring of i's -> drop j only if j sits inside i.
-				if boxInside(boxes[j], boxes[i]) {
+				if boxInsideTolerant(boxes[j], boxes[i]) {
 					drop[j] = true
 				}
 			} else if len(nj) > len(ni) && strings.Contains(nj, ni) {
 				// i's text is a substring of j's -> drop i only if i sits inside j.
-				if boxInside(boxes[i], boxes[j]) {
+				if boxInsideTolerant(boxes[i], boxes[j]) {
 					drop[i] = true
 					break
 				}
@@ -220,18 +220,32 @@ func dedupNormText(s string) string {
 	return b.String()
 }
 
-// boxInside reports whether inner is FULLY contained within outer on BOTH
-// axes. It confirms an OCR substring fragment sits inside the box whose text
-// contains it — not merely sharing a Y band at a different column, nor poking
-// out horizontally beyond the container. Requiring horizontal containment
-// stops a whitespace-normalized substring match from dropping a box that
-// extends past the container's X range (e.g. an adjacent-column line whose
-// text happens to be a substring of the paragraph's).
-func boxInside(inner, outer pdf.TextBox) bool {
-	if inner.Top < outer.Top || inner.Bottom > outer.Bottom {
+// dedupYTolerancePt tolerates a small Y-boundary overshoot of an OCR
+// double-detection fragment. Such fragments sit on the SAME text line as their
+// container but their detected Y bounds jitter by ~0.5-2pt of detection noise
+// (observed on Rag Flow Usage / 三国人物); strict Y containment then misses
+// them and the duplicate text leaks into the output after TextMerge. We only
+// relax Y (never X) and only inside DedupSubstringOverlaps, where the
+// text-substring precondition already proves the box is an OCR duplicate — so
+// a few points of Y noise must not keep it. The tolerance stays far below a
+// full line height, so genuine adjacent-line or partial-overlap boxes (kept by
+// the #18568 guards) are never collapsed here.
+const dedupYTolerancePt = 3.0
+
+// boxInsideTolerant reports whether inner is contained within outer: X is
+// strict, Y allows up to dedupYTolerancePt of overshoot. It confirms an OCR
+// substring fragment sits inside the box whose text contains it — not merely
+// sharing a Y band at a different column, nor poking out horizontally beyond
+// the container. Requiring horizontal containment stops a whitespace-
+// normalized substring match from dropping a box that extends past the
+// container's X range (e.g. an adjacent-column line whose text happens to be a
+// substring of the paragraph's). The Y tolerance absorbs double-detection
+// noise; X stays strict so adjacent-column duplicates remain kept.
+func boxInsideTolerant(inner, outer pdf.TextBox) bool {
+	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
 		return false
 	}
-	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
+	if inner.Top < outer.Top-dedupYTolerancePt || inner.Bottom > outer.Bottom+dedupYTolerancePt {
 		return false
 	}
 	return true
