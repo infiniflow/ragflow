@@ -5,9 +5,9 @@ import { useTranslation } from 'react-i18next';
 type SwitchPromptField = 'field_name' | 'sys_prompt' | 'prompts';
 
 // The Python canvas Extractor has no top_n input and sends sys_prompt to the
-// LLM verbatim, so pin the {{ topn }} placeholder to the fixed counts these
-// prompts carried before.
-const legacyTopN: Record<string, number> = { keywords: 5, questions: 3 };
+// LLM verbatim, so its keyword and question prompts pin the {{ topn }}
+// placeholder to fixed counts.
+const pythonCanvasTopN: Record<string, number> = { keywords: 5, questions: 3 };
 
 type SwitchPromptForm = {
   getValues(name: 'field_name'): string;
@@ -28,8 +28,8 @@ export function useSwitchPrompt(form: SwitchPromptForm) {
       const prompt = t(`flow.prompts.${key}.${value}`);
       form.setValue(
         field,
-        value in legacyTopN
-          ? prompt.replace(/\{\{\s*topn\s*\}\}/g, String(legacyTopN[value]))
+        Object.hasOwn(pythonCanvasTopN, value)
+          ? prompt.replace(/\{\{\s*topn\s*\}\}/g, String(pythonCanvasTopN[value]))
           : prompt,
         {
           shouldDirty: true,
