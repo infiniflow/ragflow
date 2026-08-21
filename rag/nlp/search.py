@@ -533,8 +533,12 @@ class Dealer:
             # content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             content_ltks = sres.field[i][cfield].split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
+            question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
-            tks = content_ltks + title_tks + important_kwd
+            # Unlike rerank()/rerank_with_knn(), the fields are not repeated here:
+            # these tokens are joined back into `docs` for a cross-encoder, where
+            # duplicating a field would distort the model's own scoring.
+            tks = content_ltks + title_tks + important_kwd + question_tks
             ins_tw.append(tks)
 
         docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
