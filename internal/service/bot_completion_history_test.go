@@ -865,3 +865,54 @@ func TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire(t *testing.T) {
 		t.Errorf("error turns must not persist, got %+v", turns)
 	}
 }
+
+// TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText covers the
+// tool-path delivery mode: chat_pipeline.go's ChatStreamlyWithTools
+// callback routes in-think text through the Reasoning field (so the
+// OpenAI-compat SSE handler can map it to delta.reasoning_content)
+// instead of Answer deltas. Python delivers the same reasoning as
+// <think>-wrapped answer stream text (rag/llm/chat_model.py), so the
+// iframe wire and the persisted history must carry it too — dropping it
+// would leave the widget's think block empty.
+func TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s6")
+	svc := NewBotService(nil, nil)
+
+	results := make(chan AsyncChatResult, 5)
+	results <- AsyncChatResult{StartToThink: true}
+	results <- AsyncChatResult{Reasoning: "推理中", Reference: map[string]any{}}
+	results <- AsyncChatResult{EndToThink: true}
+	results <- AsyncChatResult{Answer: "结论", Reference: map[string]any{}}
+	results <- AsyncChatResult{Answer: "<think>推理中</think>结论", Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s6", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for f := range svc.streamChatbotTurn(t.Context(), sess, "q6", "msg-s6", results) {
+		frames = append(frames, f)
+	}
+	if len(frames) != 6 || !frames[5].Done {
+		t.Fatalf("want think + reasoning + think + delta + final + done, got %+v", frames)
+	}
+	if frames[1].Data != "推理中" {
+		t.Errorf("reasoning frame must forward the reasoning text, got %+v", frames[1])
+	}
+	if frames[4].Final && frames[4].Data != "" {
+		t.Errorf("final frame answer = %q, want empty (deltas already streamed)", frames[4].Data)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s6", "dlg-s1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 2 {
+		t.Fatalf("want user+assistant pair, got %+v", turns)
+	}
+	if got := turns[1]["content"]; got != "<think>推理中</think>结论" {
+		t.Errorf("persisted assistant content = %v, want <think>推理中</think>结论", got)
+	}
+}

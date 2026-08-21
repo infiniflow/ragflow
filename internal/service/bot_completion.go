@@ -525,8 +525,24 @@ func (s *BotService) streamChatbotTurn(
 				}
 				continue
 			}
-			rawAnswer += res.Answer
-			fullAnswer += res.Answer
+			// Reasoning text arrives through two delivery modes: the
+			// plain streaming path emits it as Answer deltas between
+			// the StartToThink/EndToThink markers (chat_pipeline.go
+			// think-state machine), while the tool path
+			// (chat_pipeline.go ChatStreamlyWithTools callback) routes
+			// in-think text through the Reasoning field so the
+			// OpenAI-compat SSE handler can map it to
+			// delta.reasoning_content. Python delivers reasoning as
+			// <think>-wrapped answer stream text in both modes
+			// (rag/llm/chat_model.py), so forward it as stream text
+			// here; dropping it would leave the widget's think block
+			// empty and persist history without the reasoning.
+			delta := res.Answer
+			if delta == "" {
+				delta = res.Reasoning
+			}
+			rawAnswer += delta
+			fullAnswer += delta
 			if len(res.Reference) > 0 {
 				// The pipeline only populates Reference on the final
 				// result today; tracking it here keeps finalRef
@@ -538,7 +554,7 @@ func (s *BotService) streamChatbotTurn(
 				finalRef = res.Reference
 			}
 			out <- ChatbotSSEFrame{
-				Data:      res.Answer,
+				Data:      delta,
 				Reference: map[string]any{},
 				SessionID: session.ID,
 			}
@@ -553,6 +569,16 @@ func (s *BotService) streamChatbotTurn(
 		// persisted, matching the python exception path.
 		persisted := rawAnswer
 		if persisted == "" {
+			// No-delta finals never carry server-inserted [ID:n]
+			// citation markers: the structured-SQL path returns its
+			// markdown table (with ##N$$ source markers the frontend
+			// resolves client-side, same as python use_sql) before
+			// decorateAnswer runs, the empty_response fallback yields
+			// the user-configured text undecorated, and the streaming
+			// path always streams the full visible text as deltas
+			// before its decorated final (so rawAnswer is non-empty
+			// whenever the final was decorated). Falling back to
+			// fullAnswer here is therefore marker-free.
 			persisted = fullAnswer
 		}
 		if !errored {
