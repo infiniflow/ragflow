@@ -33,13 +33,13 @@ import (
 )
 
 const (
-	// defaultMatchCoverageThreshold 阶段一非对称包含度阈值 (45%)
+	// defaultMatchCoverageThreshold is the asymmetric coverage threshold for Phase 1 (45%).
 	defaultMatchCoverageThreshold = 0.45
 
-	// defaultTopK 阶段一多样本聚合上限
+	// defaultTopK is the maximum number of matched example candidates to aggregate in Phase 1.
 	defaultTopK = 5
 
-	// bgSmoothing 背景先验分布平滑常数
+	// bgSmoothing is the smoothing constant for background prior tag probabilities.
 	bgSmoothing = 10.0
 )
 
@@ -83,10 +83,10 @@ Output:
 
 `
 
-// MemoryTagIndex 预构建内存倒排索引 (构建完成后完全只读，天然并发安全)
+// MemoryTagIndex is an in-memory inverted index of tag examples (immutable after construction, safe for concurrent use).
 type MemoryTagIndex struct {
 	examples   []schema.TagLabel
-	postings   map[string][]int   // word -> doc_ids (纯切片，无多余 map 堆开销)
+	postings   map[string][]int   // word -> doc_ids (compact slice without per-doc map overhead)
 	idfs       map[string]float64 // word -> idf
 	exTotalIDF []float64          // doc_id -> sum(IDF(w))
 	allTags    map[string]float64 // tag -> background prob (S=10)
@@ -102,16 +102,16 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 	allTagCounts := make(map[string]int)
 	totalTagCount := 0
 
-	// 1. 过滤空内容样本、单样本标签去重与点号规范化 (深拷贝，严禁原地污染输入切片)
+	// 1. Filter empty contents, deduplicate tags per sample, and normalize dots with deep copies.
 	for _, ex := range rawExamples {
 		content := strings.TrimSpace(ex.Content)
 		if content == "" {
-			continue // 过滤空 Content 样本
+			continue // Skip empty content.
 		}
 		tks, _ := tok.Tokenize(content)
 		fields := strings.Fields(tks)
 		if len(fields) == 0 {
-			continue // 分词后为空也过滤
+			continue // Skip samples with no tokens.
 		}
 		wordSet := make(map[string]struct{}, len(fields))
 		for _, w := range fields {
@@ -146,27 +146,27 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 
 	N := float64(len(cleanExamples))
 	if N == 0 || totalTagCount == 0 {
-		return nil // 防御全部样本 Tags 为空的情况
+		return nil // Guard against all samples having empty tags.
 	}
 
 	docFreq := make(map[string]int)
 	postings := make(map[string][]int)
 
 	for i, wordSet := range exWordSets {
-		// 不变量保证: 每个 docID 针对特定词只加入 postings[w] 一次
+		// Invariant: each docID is added to postings[w] at most once.
 		for w := range wordSet {
 			postings[w] = append(postings[w], i)
-			docFreq[w]++ // 每篇样本只对 DF 贡献 1 次
+			docFreq[w]++ // Each document contributes at most 1 to document frequency.
 		}
 	}
 
-	// 2. 标准平滑 IDF (全覆盖词自然接近 0，不加 +1.0)
+	// 2. Standard smoothed IDF (terms covering all documents smoothly approach 0).
 	idfs := make(map[string]float64, len(docFreq))
 	for w, df := range docFreq {
 		idfs[w] = math.Log(1.0 + (N-float64(df)+0.5)/(float64(df)+0.5))
 	}
 
-	// 3. 预计算每个有效 Example 的总 IDF (短句 TF 恒 1，无需 exTF map，节省内存)
+	// 3. Precompute total IDF per valid example (short-text TF=1, avoiding per-example TF maps).
 	exTotalIDF := make([]float64, len(cleanExamples))
 	for i, wordSet := range exWordSets {
 		var sum float64
@@ -176,7 +176,7 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 		exTotalIDF[i] = sum
 	}
 
-	// 4. 背景分布计算
+	// 4. Background prior probability distribution.
 	bgProportions := make(map[string]float64, len(allTagCounts))
 	for t, count := range allTagCounts {
 		bgProportions[t] = float64(count+1) / (float64(totalTagCount) + bgSmoothing)
@@ -192,7 +192,7 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 }
 
 // ----------------------------------------------------------------------
-// 阶段一匹配主函数
+// Phase 1 local matching
 // ----------------------------------------------------------------------
 
 func matchAndTagChunk(
@@ -216,7 +216,7 @@ func matchAndTagChunk(
 		chunkWordSet[w] = struct{}{}
 	}
 
-	// 1. 倒排链表求交 (跳过 99% 无关样本)
+	// 1. Inverted index lookup (skips irrelevant samples).
 	candidateInterIDF := make(map[int]float64)
 	for w := range chunkWordSet {
 		idf, exists := idx.idfs[w]
@@ -231,7 +231,7 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	// 2. 非对称覆盖率计算 (阈值 0.45)
+	// 2. Asymmetric coverage computation (threshold 0.45).
 	type candidateScore struct {
 		docID    int
 		coverage float64
@@ -251,7 +251,7 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	// 3. Top-K 样本按照 Coverage 加权聚合 (解决标签污染)
+	// 3. Aggregate Top-K samples weighted by Coverage to eliminate label pollution.
 	sort.Slice(passed, func(i, j int) bool { return passed[i].coverage > passed[j].coverage })
 	topK := min(defaultTopK, len(passed))
 
@@ -264,9 +264,9 @@ func matchAndTagChunk(
 		if len(ex.Tags) == 0 {
 			continue
 		}
-		totalWeightSum += cov // 外层累加，每篇命中文档贡献一次匹配权重
+		totalWeightSum += cov // Accumulate total weight once per matched candidate document.
 		for _, t := range ex.Tags {
-			tagWeightedCounts[t] += cov // 加权累加
+			tagWeightedCounts[t] += cov // Weighted tag accumulation.
 		}
 	}
 
@@ -274,7 +274,7 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	// 4. 打分: 纯 Lift 结合平均覆盖度保底 (无脆弱的乘法因子，高低频分布健康)
+	// 4. Score calculation: pure Lift with average coverage floor.
 	avgCov := totalWeightSum / float64(topK)
 
 	type tagScore struct {
@@ -320,7 +320,7 @@ func matchAndTagChunk(
 }
 
 // ----------------------------------------------------------------------
-// 缓存与调度加载链路 (全链路补齐 lang 透传与真实 Few-shot 兜底)
+// Cache & scheduling pipeline with language passthrough and few-shot fallback.
 // ----------------------------------------------------------------------
 
 const tagSourceCacheMax = 128
@@ -487,7 +487,7 @@ func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context, lang string
 	}
 	indexed, ok := buildIndexedTagSourceFromBytes(data, f.Name, lang)
 	if !ok || indexed == nil {
-		return nil, false // 防御 nil 存入 LRU 缓存
+		return nil, false // Guard against caching nil index in LRU.
 	}
 	indexed = tagSourceFileIndexCache.store(cacheKey, indexed)
 	common.Info("extractor tags: loaded tag source file",
@@ -746,7 +746,7 @@ func roundInt(f float64) int {
 }
 
 // ----------------------------------------------------------------------
-// 阶段二 LLM 真实样本兜底与响应点号清洗
+// Phase 2 LLM tagging with real example cold-start and dot sanitization
 // ----------------------------------------------------------------------
 
 func llmTagChunk(
@@ -776,7 +776,7 @@ func llmTagChunk(
 	} else if len(examples) > 0 {
 		picked = examples
 	} else if idx != nil && len(idx.examples) > 0 {
-		// 冷启动兜底: 从真实参考样本中采样，彻底废弃不在 TAG SET 中的假样本
+		// Cold-start fallback: sample real examples from index, avoiding fake mock tags.
 		sampleCount := min(2, len(idx.examples))
 		for i := 0; i < sampleCount; i++ {
 			ex := idx.examples[i]
