@@ -1052,7 +1052,7 @@ func TestReadMailBody_AttachmentPreservesRaw(t *testing.T) {
 	ap.Write([]byte(base64.StdEncoding.EncodeToString(gbk)))
 	mw.Close()
 
-	_, _, attachments := readMailBody(strings.NewReader(buf.String()), "multipart/mixed; boundary="+mw.Boundary(), true)
+	_, _, attachments := readMailBody(strings.NewReader(buf.String()), "multipart/mixed; boundary="+mw.Boundary(), "", true)
 	if len(attachments) != 1 {
 		t.Fatalf("expected 1 attachment, got %d: %#v", len(attachments), attachments)
 	}
