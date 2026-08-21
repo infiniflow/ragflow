@@ -48,6 +48,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "slack", NewSlackConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
+	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
