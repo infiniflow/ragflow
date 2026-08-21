@@ -127,7 +127,11 @@ func (c *DropboxConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 			continue
 		}
 		blob, err := c.downloadFile(ctx, file.downloadPath())
-		if err != nil || len(blob) == 0 {
+		if err != nil {
+			log.Printf("dropbox: download %s failed: %v", file.sourceID(), err)
+			continue
+		}
+		if len(blob) == 0 {
 			continue
 		}
 		documents = append(documents, c.buildDocument(file, blob, nameCounts))
