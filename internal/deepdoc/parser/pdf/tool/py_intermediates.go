@@ -114,6 +114,7 @@ func (c PythonTSRCell) ToTSRCell(cropOffX, cropOffY, cumOffsetPx float64) pdf.TS
 		Y1:    c.Y1*pdf.DlaScale - cumOffsetPx - cropOffY,
 		Label: c.Label,
 		Text:  c.Text,
+		Score: c.Score,
 	}
 }
 

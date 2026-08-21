@@ -135,6 +135,7 @@ func (c *Client) TSR(ctx context.Context, cropped image.Image) ([]pdf.TSRCell, e
 		cells = append(cells, pdf.TSRCell{
 			X0: b[0], Y0: b[1], X1: b[2], Y1: b[3],
 			Label: label,
+			Score: b[4],
 		})
 	}
 	return cells, nil

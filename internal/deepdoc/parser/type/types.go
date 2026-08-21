@@ -181,6 +181,11 @@ type TSRCell struct {
 	X0, Y0, X1, Y1 float64
 	Text           string
 	Label          string
+	// Score is the TSR detection confidence. Python's layouts_cleanup keeps
+	// the higher-score line when two structure lines overlap (recognizer.py:141),
+	// so the production table assembly needs it to de-duplicate rows/columns
+	// the same way Python does.
+	Score float64
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {
