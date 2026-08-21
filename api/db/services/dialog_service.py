@@ -670,7 +670,16 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=scoped_doc_ids)
+        # Derive the SQL target index from the dataset owner tenant, not the
+        # chat tenant. dialog.tenant_id is the chat's user; the chunks live
+        # in `ragflow_<kb_owner_tenant_id>`. A user authorised on a team-shared
+        # KB owned by another tenant has dialog.tenant_id != kb.tenant_id;
+        # the vector retrieval path already uses kb.tenant_id (see
+        # `tenant_ids = list(set([kb.tenant_id for kb in kbs]))` below), the
+        # SQL path was passing the wrong tenant and querying a non-existent
+        # index. See issue #18514.
+        sql_tenant_id = kbs[0].tenant_id if kbs else dialog.tenant_id
+        ans = await use_sql(questions[-1], field_map, sql_tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=scoped_doc_ids)
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
             if include_reference_metadata and ans.get("reference", {}).get("chunks"):
