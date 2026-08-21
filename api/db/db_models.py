@@ -1455,8 +1455,8 @@ class Dialog(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     tenant_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=255, null=True, help_text="dialog application name", index=True)
-    description = TextField(null=True, help_text="Dialog description")
-    icon = TextField(null=True, help_text="icon base64 string")
+    description = EmptyStringTextField(null=True, help_text="Dialog description")
+    icon = EmptyStringTextField(null=True, help_text="icon base64 string")
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     # Map application-level empty chat/reranker model IDs to storage NULL in the
     # field instead of handling None throughout the business code.

@@ -7,7 +7,7 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
-import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
+import { useKnowledgeBaseContext } from '../../../contexts/knowledge-base-context';
 import { AutoMetadata } from './common-item';
 import { FormLayout } from '@/constants/form';
 

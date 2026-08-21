@@ -19,7 +19,7 @@ import { DocumentParserType, GenerateType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
-import { LLMModelItem } from '@/pages/dataset/dataset-setting/configuration/common-item';
+import { LLMModelItem } from '@/pages/dataset/setting/python/configuration/common-item';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';

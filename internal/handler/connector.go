@@ -105,7 +105,9 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
+		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
+	case errors.Is(err, service.ErrConnectorSourceNotImplemented):
+		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
 	default:
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 	}
@@ -381,7 +383,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	}
 
 	err := h.connectorService.TestConnector(ctx, connectorID, user.ID, request)
-	if errors.Is(err, service.ErrConnectorTestUnsupported) {
+	if errors.Is(err, service.ErrConnectorTestUnsupported) || errors.Is(err, service.ErrConnectorSourceNotImplemented) {
 		connectorErrorResponse(c, err)
 		return
 	}
@@ -397,7 +399,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeServerError, false, "REST API connector validation failed, please check logs.")
+		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
 	}
 	if connectorErrorResponse(c, err) {
