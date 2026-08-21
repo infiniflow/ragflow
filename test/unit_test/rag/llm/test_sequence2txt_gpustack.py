@@ -52,3 +52,33 @@ def test_gpustack_asr_check_available_transcribes_generated_wav():
     assert ok is True
     assert reason == ""
     transcription.assert_called_once()
+
+
+def test_gpustack_asr_returns_error_for_non_object_response(tmp_path):
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"RIFF-test-audio")
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = []
+    provider = GPUStackSeq2txt("sk-test", "qwen3-asr", "http://gpustack:80")
+
+    with patch("rag.llm.sequence2txt_model.requests.post", return_value=response):
+        text, token_count = provider.transcription(str(audio_path))
+
+    assert text.startswith("**ERROR**: Invalid transcription response:")
+    assert token_count == 0
+
+
+def test_gpustack_asr_returns_error_for_non_string_text(tmp_path):
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"RIFF-test-audio")
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {"text": 123}
+    provider = GPUStackSeq2txt("sk-test", "qwen3-asr", "http://gpustack:80")
+
+    with patch("rag.llm.sequence2txt_model.requests.post", return_value=response):
+        text, token_count = provider.transcription(str(audio_path))
+
+    assert text == "**ERROR**: Failed to retrieve transcription."
+    assert token_count == 0

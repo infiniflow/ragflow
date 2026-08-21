@@ -371,6 +371,8 @@ class OllamaTTS(HTTPBasedTTS):
 
 
 class GPUStackTTS(HTTPBasedTTS):
+    """GPUStack text-to-speech adapter using its OpenAI-compatible API."""
+
     _FACTORY_NAME = "GPUStack"
 
     def __init__(self, key, model_name, **kwargs):
@@ -379,6 +381,7 @@ class GPUStackTTS(HTTPBasedTTS):
         # Add accept header
         self.headers["accept"] = "application/json"
         self.default_voice = os.environ.get("GPUSTACK_TTS_VOICE", "aiden")
+        logging.info("GPUStack TTS initialized for model %s", self.model_name)
 
     def _process_response(self, response):
         # Use chunk_size=1024 for processing response
@@ -387,15 +390,23 @@ class GPUStackTTS(HTTPBasedTTS):
                 yield chunk
 
     def tts(self, text, voice="Chinese Female", stream=True):
+        """Generate speech through GPUStack without logging input text."""
         text = self.normalize_text(text)
-        voice_key = (voice or self.default_voice).strip().lower()
+        voice_value = (voice or self.default_voice).strip()
         voice_aliases = {
             "chinese female": self.default_voice,
             "chinese_female": self.default_voice,
             "alloy": self.default_voice,
         }
-        payload = self._build_payload(text, voice_aliases.get(voice_key, voice_key))
-        response = self._send_request("/audio/speech", payload, stream=stream)
+        selected_voice = voice_aliases.get(voice_value.lower(), voice_value)
+        logging.info("GPUStack TTS request started for model %s with voice %s", self.model_name, selected_voice)
+        payload = self._build_payload(text, selected_voice)
+        try:
+            response = self._send_request("/audio/speech", payload, stream=stream)
+            logging.info("GPUStack TTS request completed for model %s with status %s", self.model_name, response.status_code)
+        except Exception as e:
+            logging.warning("GPUStack TTS request failed for model %s: %s", self.model_name, e)
+            raise
         return self._process_response(response)
 
 

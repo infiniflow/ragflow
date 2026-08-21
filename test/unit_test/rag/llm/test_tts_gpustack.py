@@ -43,3 +43,12 @@ def test_gpustack_tts_maps_ragflow_default_voice_to_supported_default(monkeypatc
         list(provider.tts("hello"))
 
     assert send_request.call_args.args[1]["voice"] == "serena"
+
+
+def test_gpustack_tts_preserves_non_alias_voice_casing():
+    provider = GPUStackTTS("sk-test", "qwen3-tts", base_url="http://gpustack:80")
+
+    with patch.object(provider, "_send_request") as send_request, patch.object(provider, "_process_response", return_value=iter([b"audio"])):
+        list(provider.tts("hello", voice="Uncle_Fu"))
+
+    assert send_request.call_args.args[1]["voice"] == "Uncle_Fu"

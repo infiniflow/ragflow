@@ -511,6 +511,8 @@ class TencentCloudSeq2txt(Base):
 
 
 class GPUStackSeq2txt(Base):
+    """GPUStack speech-to-text adapter using its OpenAI-compatible API."""
+
     _FACTORY_NAME = "GPUStack"
     _LANGUAGE_ALIASES = {
         "chinese": "zh",
@@ -531,6 +533,7 @@ class GPUStackSeq2txt(Base):
         self.key = key
 
     def transcription(self, audio, language="Chinese", prompt=None, response_format="json"):
+        """Transcribe audio through GPUStack without logging sensitive request data."""
         if isinstance(audio, str):
             with open(audio, "rb") as audio_file:
                 audio_data = audio_file.read()
@@ -551,17 +554,24 @@ class GPUStackSeq2txt(Base):
         headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
 
         try:
+            logger.info("GPUStack ASR request started for model %s", self.model_name)
             response = requests.post(url=append_api_path(self.base_url, "audio/transcriptions"), files=files, data=payload, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
-            text = (result.get("text") or "").strip()
-            if text:
+            if not isinstance(result, Mapping):
+                raise ValueError("response root must be an object")
+            raw_text = result.get("text")
+            if isinstance(raw_text, str) and (text := raw_text.strip()):
+                logger.info("GPUStack ASR request completed for model %s with status %s and response text", self.model_name, response.status_code)
                 return text, num_tokens_from_string(text)
+            logger.info("GPUStack ASR request completed for model %s with status %s and empty response text", self.model_name, response.status_code)
             return "**ERROR**: Failed to retrieve transcription.", 0
         except requests.exceptions.RequestException as e:
-            return f"**ERROR**: {str(e)}", 0
-        except (ValueError, KeyError) as e:
-            return f"**ERROR**: Invalid transcription response: {str(e)}", 0
+            logger.warning("GPUStack ASR request failed for model %s: %s", self.model_name, e)
+            return f"**ERROR**: {e!s}", 0
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
+            logger.warning("GPUStack ASR response parsing failed for model %s: %s", self.model_name, e)
+            return f"**ERROR**: Invalid transcription response: {e!s}", 0
 
 
 class GiteeSeq2txt(Base):
