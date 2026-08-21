@@ -20,7 +20,6 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
-import { IAnswer } from '@/interfaces/database/chat';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { removeThinkSection } from '@/utils/chat';
@@ -100,6 +99,13 @@ const normalizeWidgetFooterLink = (value: string | null) => {
 };
 
 /**
+ * Stable id for the seeded agent prologue. `addNewestOneAnswer` dedupes by
+ * message id, so a re-invoked effect (e.g. under React StrictMode) merges
+ * into the seeded message instead of appending a duplicate.
+ */
+const PROLOGUE_MESSAGE_ID = 'prologue';
+
+/**
  * Renders the embeddable floating chat widget and applies URL-driven widget settings.
  */
 const FloatingChatWidget = () => {
@@ -166,11 +172,13 @@ const FloatingChatWidget = () => {
   } = hookResult;
   const findReferenceByMessageId = (hookResult as any).findReferenceByMessageId;
   // Only the agent flow exposes these. The chat flow receives its prologue
-  // through the completions handshake instead.
-  const { addNewestOneAnswer, isTaskMode } = hookResult as {
-    addNewestOneAnswer?: (answer: IAnswer) => void;
-    isTaskMode?: boolean;
-  };
+  // through the completions handshake instead, so both stay optional here.
+  const { addNewestOneAnswer, isTaskMode } = hookResult as Partial<
+    Pick<
+      ReturnType<typeof useSendNextSharedMessage>,
+      'addNewestOneAnswer' | 'isTaskMode'
+    >
+  >;
 
   // Sync our local input with the hook's value when needed
   useEffect(() => {
@@ -195,8 +203,7 @@ const FloatingChatWidget = () => {
     if (data?.prologue) {
       addNewestOneAnswer?.({
         answer: data.prologue,
-        // Stable id so a re-invoked effect merges instead of duplicating.
-        id: 'prologue',
+        id: PROLOGUE_MESSAGE_ID,
       });
     }
   }, [isFromAgent, isTaskMode, data?.prologue, addNewestOneAnswer]);
