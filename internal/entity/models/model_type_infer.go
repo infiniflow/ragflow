@@ -69,11 +69,18 @@ func FillMissingModelTypes(models []ListModelResponse) []ListModelResponse {
 			models[i].ModelTypes = normalizeModelTypes(modelTypes)
 		}
 	}
+	candidates := append([]ListModelResponse(nil), models...)
+	inferred := make([][]string, len(models))
 	for i := range models {
 		if len(models[i].ModelTypes) == 0 {
-			if modelTypes := inferModelTypesBySimilarity(models[i].Name, models); len(modelTypes) > 0 {
-				models[i].ModelTypes = normalizeModelTypes(modelTypes)
+			if modelTypes := inferModelTypesBySimilarity(models[i].Name, candidates); len(modelTypes) > 0 {
+				inferred[i] = normalizeModelTypes(modelTypes)
 			}
+		}
+	}
+	for i := range models {
+		if len(models[i].ModelTypes) == 0 && len(inferred[i]) > 0 {
+			models[i].ModelTypes = inferred[i]
 		}
 		if len(models[i].ModelTypes) == 0 {
 			models[i].ModelTypes = []string{modelTypeChat}
