@@ -33,26 +33,26 @@ If parsing fails for only one document, a document stays processing for a long t
 
 ## Dataset-Level Logs
 
-Dataset-level logs are used to view task execution records whose processing object is the entire dataset. Unlike document logs for single-document parsing tasks, dataset-level logs mainly record dataset-level processing tasks, such as **Knowledge Graph**, **RAPTOR**, **Artifact**, **Skill**, **Mind Map**, and **Timeline**.
+Dataset-level logs are used to view task execution records whose processing object is the entire dataset. Unlike document logs for single-document parsing tasks, dataset-level logs mainly record dataset-level processing tasks, such as **Knowledge Compilation**.
 
 Dataset-level logs mainly include:
 
 - **ID**: The unique identifier of the task record.
 - **Start date**: The task start time.
-- **Processing type**: The processing type, used to indicate the current dataset-level task, such as **Knowledge Graph**, **RAPTOR**, or **Artifact**.
+- **Processing type**: The processing type, used to indicate the current dataset-level task, such as **Wiki**.
 - **Status**: The current task execution status.
 - **Operations**: Operation entry. You can view log details and execution information for the current task.
 
 When a dataset-level processing task fails, does not complete for a long time, or needs execution confirmation, view the corresponding task record and log details here.
 
-> Tip: For tasks executed on a single document, such as document parsing, view document logs. For tasks executed on the entire dataset, such as **Knowledge Graph**, **RAPTOR**, and **Artifact**, view dataset-level logs.
+> Tip: For tasks executed on a single document, such as document parsing, view document logs. For tasks executed on the entire dataset, such as **Knowledge Compilation**, view dataset-level logs.
 
 ## Log Troubleshooting Suggestions
 
 When task execution is abnormal or does not complete for a long time, first select the corresponding logs based on task type, then troubleshoot based on task status and log details.
 
 - **Document processing tasks**: View document logs. Document logs record processing tasks for specific documents. Use information such as **Filename**, **Source**, **Ingestion pipeline**, **Task**, and **Status** to confirm which document and processing flow has the exception. For documents processed with **Data Pipeline**, you can also use the entry in **Operations** to view the corresponding pipeline execution result.
-- **Dataset-level processing tasks**: View dataset-level logs. Dataset-level tasks such as **Knowledge Graph**, **RAPTOR**, **Artifact**, **Skill**, **Mind Map**, and **Timeline** are recorded here. Use **Processing type** and **Status** to find the corresponding task, and view log details through **Operations**.
+- **Dataset-level processing tasks**: View dataset-level logs. Dataset-level tasks such as **Knowledge Compilation** are recorded here. Use **Processing type** and **Status** to find the corresponding task, and view log details through **Operations**.
 - **Task execution failed**: When **Status** is **Failed**, open the corresponding task log details and view the specific error information.
 - **Task does not complete for a long time**: When a task stays in **Pending**, **Running**, or **Schedule** for a long time, first confirm the current task status and start time, then view log details to determine whether the task is still running normally.
 
