@@ -582,13 +582,29 @@ You can control the batch size for document parsing and embedding by setting the
 
 ### How to accelerate the question-answering speed of my chat assistant?
 
+To reduce response latency, consider the following:
+- Use a faster LLM with lower inference latency.
+- Reduce the number of retrieved chunks by adjusting retrieval parameters such as **Top N**.
+- Keep prompts concise and avoid unnecessary context.
+- Disable optional features that require additional model calls when they are not needed.
+- Use a reranker only when it provides a meaningful improvement in retrieval quality.
+- Make sure the deployed model service has sufficient computing resources and low network latency.
+
 See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
 
 ---
 
 ### How to accelerate the question-answering speed of my Agent?
 
-See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
+Agent response time depends on the number of components, model calls, and external services involved in the workflow.
+To improve response speed:
+- Use faster models for components that do not require strong reasoning capabilities.
+- Reduce unnecessary LLM, retrieval, tool, and HTTP calls.
+- Simplify the Agent workflow and avoid excessively long execution paths.
+- Limit the number of iterations in loops or reasoning-intensive components.
+- Reduce the amount of context passed between components where possible.
+- Run independent operations in parallel when the workflow supports it.
+- Make sure external APIs and model services used by the Agent have low latency.
 
 ### How to use MinerU to parse PDF documents?
 

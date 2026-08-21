@@ -269,18 +269,21 @@ def _pipeline_compiler_llm_id(pipeline_id: str) -> str | None:
     return None
 
 
-def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, str | None]:
+def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, str]:
     """Validate one Wiki template and return each doc's pipeline chat model."""
     template_ids = {template_id for _, template_id in eligible}
     if len(template_ids) > 1:
         raise ValueError("Eligible Wiki documents must use the same template")
-    pipeline_chat_llm_ids: dict[str, str | None] = {}
+    pipeline_chat_llm_ids: dict[str, str] = {}
     for doc, _ in eligible:
         doc_id = str(doc.get("id") or "")
         pipeline_id = (doc.get("pipeline_id") or "").strip()
         if not pipeline_id:
             raise ValueError(f"Wiki document {doc_id} must use a pipeline")
-        pipeline_chat_llm_ids[doc_id] = _pipeline_compiler_llm_id(pipeline_id)
+        llm_id = _pipeline_compiler_llm_id(pipeline_id)
+        if not llm_id:
+            raise ValueError(f"Wiki document {doc_id} pipeline Compiler must configure an LLM")
+        pipeline_chat_llm_ids[doc_id] = llm_id
     return pipeline_chat_llm_ids
 
 
@@ -1273,10 +1276,7 @@ async def run_wiki(
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.compilation_template_service import CompilationTemplateService
     from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import (
-        get_tenant_default_model_by_type,
-        resolve_model_config,
-    )
+    from api.db.joint_services.tenant_model_service import resolve_model_config
 
     progress = ctx.progress_cb
     progress(0.0, "Loading documents for wiki compilation...")
@@ -1331,31 +1331,16 @@ async def run_wiki(
     # pipeline Compiler's ``llm_id`` as the canonical KB chat model.
     llm_bundle_cache: dict[str, LLMBundle] = {}
 
-    def _bundle_for(llm_id: str | None) -> LLMBundle:
-        key = (llm_id or "").strip() or "__tenant_default__"
+    def _bundle_for(llm_id: str) -> LLMBundle:
+        key = llm_id.strip()
         cached = llm_bundle_cache.get(key)
         if cached is not None:
             return cached
-        try:
-            if key == "__tenant_default__":
-                cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-            else:
-                cfg = resolve_model_config(
-                    ctx.tenant_id,
-                    LLMType.CHAT,
-                    key,
-                )
-        except Exception:
-            logging.exception(
-                "wiki: chat model resolution failed for llm_id=%s (kb=%s); falling back to tenant default",
-                key,
-                ctx.kb_id,
-            )
-            cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-            key = "__tenant_default__"
-            cached = llm_bundle_cache.get(key)
-            if cached is not None:
-                return cached
+        cfg = resolve_model_config(
+            ctx.tenant_id,
+            LLMType.CHAT,
+            key,
+        )
         bundle = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
         llm_bundle_cache[key] = bundle
         return bundle
@@ -1404,7 +1389,7 @@ async def run_wiki(
     first_doc = resolved_eligible[0][0]
     first_parser_cfg = resolved_eligible[0][2]
     first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
-    kb_chat_llm_id = pipeline_chat_llm_ids.get(str(first_doc.get("id") or ""))
+    kb_chat_llm_id = pipeline_chat_llm_ids[str(first_doc.get("id") or "")]
     first_instruction = first_parser_cfg.get("instruction")
     first_example = first_parser_cfg.get("example")
     kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
@@ -1452,7 +1437,7 @@ async def run_wiki(
                 i, doc, template_id, parser_cfg, batch, batch_no = item
                 doc_id = doc["id"]
                 stats = doc_stats[i]
-                map_llm_id = pipeline_chat_llm_ids.get(str(doc_id))
+                map_llm_id = pipeline_chat_llm_ids[str(doc_id)]
                 phase1 = await wiki_map_from_chunks(
                     chunks=batch,
                     chat_mdl=map_llm_pool.wrap(
@@ -1624,10 +1609,7 @@ async def run_wiki_incremental(
     from api.db.services.document_service import DocumentService
     from api.db.services.compilation_template_service import CompilationTemplateService
     from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import (
-        get_tenant_default_model_by_type,
-        resolve_model_config,
-    )
+    from api.db.joint_services.tenant_model_service import resolve_model_config
     from rag.advanced_rag.knowlege_compile.wiki_incremental import (
         wiki_compile_incremental,
     )
@@ -1752,22 +1734,12 @@ async def run_wiki_incremental(
     # 3. Resolve chat model
     llm_bundle_cache: dict[str, LLMBundle] = {}
 
-    def _bundle_for(llm_id: str | None) -> LLMBundle:
-        key = (llm_id or "").strip() or "__tenant_default__"
+    def _bundle_for(llm_id: str) -> LLMBundle:
+        key = llm_id.strip()
         cached = llm_bundle_cache.get(key)
         if cached is not None:
             return cached
-        try:
-            if key == "__tenant_default__":
-                cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-            else:
-                cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, key)
-        except Exception:
-            cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-            key = "__tenant_default__"
-            cached = llm_bundle_cache.get(key)
-            if cached is not None:
-                return cached
+        cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, key)
         bundle = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
         llm_bundle_cache[key] = bundle
         return bundle
@@ -1789,7 +1761,7 @@ async def run_wiki_incremental(
             doc_configs[d["id"]] = cfg
             if not first_template_found and isinstance(cfg, dict):
                 first_template_found = True
-                kb_chat_llm_id = pipeline_chat_llm_ids.get(str(d.get("id") or ""))
+                kb_chat_llm_id = pipeline_chat_llm_ids[str(d.get("id") or "")]
         except Exception:
             logging.exception("wiki: config resolve failed for doc %s", d["id"])
             doc_configs[d["id"]] = {}
@@ -1817,7 +1789,7 @@ async def run_wiki_incremental(
                     return
                 _, doc, template_id, parser_cfg, batch = item
                 doc_id = doc["id"]
-                map_llm_id = pipeline_chat_llm_ids.get(str(doc_id))
+                map_llm_id = pipeline_chat_llm_ids[str(doc_id)]
 
                 await wiki_map_from_chunks(
                     chunks=batch,
@@ -1922,7 +1894,9 @@ async def run_wiki_incremental(
         logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
 
     # 5. Run incremental wiki compilation (Mode A or Mode B)
-    kb_chat_mdl = _bundle_for(kb_chat_llm_id) if kb_chat_llm_id else _bundle_for(None)
+    if not kb_chat_llm_id:
+        raise ValueError("Wiki compilation requires an ingestion pipeline Compiler with an LLM configured")
+    kb_chat_mdl = _bundle_for(kb_chat_llm_id)
 
     progress(0.65, f"Wiki {mode} incremental compilation ...")
     summary = await wiki_compile_incremental(

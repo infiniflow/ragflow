@@ -22,12 +22,21 @@ import (
 // DedupIdenticalText collapses boxes whose text is byte-identical on the SAME
 // page AND whose Y bands are pairwise DISJOINT, keeping the first
 // (reading-order) occurrence. OCR repeatedly detects the same text at disjoint
-// Y positions (09_crosspage_paragraph detects each paragraph 5-6x per page);
+// Y positions (09_crosspage_paragraph detects each paragraph 14-18x per page);
 // Python's downstream merge collapses these, so Go must too or the replay
 // output duplicates every paragraph. Boxes that OVERLAP in Y are kept: multiple
 // columns / adjacent lines on one page legitimately share text (e.g.
 // eval_three_wide has 3 columns at the same Y). Different pages keep their own
 // copies (a cross-page paragraph appears once per page).
+//
+// A same-text group is treated as a pseudo-duplicate only when it forms a
+// REGULAR rolling-stride CHAIN of at least pseudoDupChainMin boxes (same X,
+// pairwise disjoint Y, gaps > 4x height). Shorter groups (2-4 copies, e.g. the
+// identical template rows of eval_two_wide_gutter / eval_two_indented_first_para)
+// are real document content — distinct physical lines that happen to share
+// text — and are kept verbatim.
+const pseudoDupChainMin = 5
+
 func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 	type key struct {
 		page int
@@ -50,7 +59,12 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 
 	drop := make(map[int]bool, len(boxes))
 	for _, idxs := range groups {
-		if len(idxs) < 2 {
+		// A pseudo-duplicate needs a rolling-stride CHAIN of at least
+		// pseudoDupChainMin detections. Isolated pairs / short groups of
+		// identical text are real repeated lines and must be kept (e.g. the
+		// eval_two_* template rows detected 2-4x, where dropping any copy
+		// loses a real line).
+		if len(idxs) < pseudoDupChainMin {
 			continue
 		}
 		// Short identical texts (e.g. the repeated keyword 'Transformer' in
@@ -117,8 +131,28 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 // text is legal. The containment test is bound to the substring box (not just
 // the shorter-height box) so a physically taller box whose short text is a
 // substring of a neighbour is never silently dropped.
+//
+// The substring comparison is whitespace-insensitive: ocrMergeChars fills line
+// fragments with char-layer text that preserves the PDF's original spaces
+// ("- name: SSL_CERT_FILE", "⽂章 中 提到") while the containing paragraph OCR
+// box carries the recognizer's joined text ("-name: SSL_CERT_FILE",
+// "⽂章中提到"). Byte-wise matching would miss the fragment relation and the
+// inner box survives to NaiveVerticalMerge, which concatenates it into the
+// paragraph — duplicating text (the ocr_real text gaps: plugin-daemon,
+// RAG分词, 三国人物). Geometry (boxInside) remains the actual containment
+// proof; whitespace normalization only makes the fragment check robust to the
+// char-vs-OCR space divergence.
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
+	// Precompute the whitespace-normalized text once per box. The inner loop
+	// compares every OCR pair, so recomputing norm there would make the O(n²)
+	// loop O(n²·len) in the worst case (a large scan document hits ~3k boxes).
+	norm := make([]string, len(boxes))
+	for i, b := range boxes {
+		if b.IsOCR {
+			norm[i] = dedupNormText(strings.TrimSpace(b.Text))
+		}
+	}
 	for i := range boxes {
 		if drop[i] {
 			continue
@@ -137,21 +171,22 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 				continue
 			}
 			aj := strings.TrimSpace(boxes[j].Text)
-			if aj == "" || len(ai) == len(aj) {
+			if aj == "" || ai == aj {
 				continue
 			}
+			ni, nj := norm[i], norm[j]
 			// Collapse only when the SUBSTRING-text box is geometrically CONTAINED
 			// in the text-containing box. Binding the geometry to the actual
 			// substring (not merely the shorter-height box) avoids silently
 			// dropping a physically taller box whose short text happens to be a
 			// substring of a neighbour — OCR double-detection fragments are always
 			// the smaller, contained box, so the taller container is kept.
-			if len(ai) > len(aj) && strings.Contains(ai, aj) {
+			if len(ni) >= len(nj) && strings.Contains(ni, nj) {
 				// j's text is a substring of i's -> drop j only if j sits inside i.
 				if boxInside(boxes[j], boxes[i]) {
 					drop[j] = true
 				}
-			} else if len(aj) > len(ai) && strings.Contains(aj, ai) {
+			} else if len(nj) > len(ni) && strings.Contains(nj, ni) {
 				// i's text is a substring of j's -> drop i only if i sits inside j.
 				if boxInside(boxes[i], boxes[j]) {
 					drop[i] = true
@@ -170,14 +205,33 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	return out
 }
 
-// boxInside reports whether inner is fully contained within outer in Y and
-// overlaps it in X. It confirms an OCR substring fragment sits inside the box
-// whose text contains it (not merely shares a Y band at a different column).
+// dedupNormText strips all whitespace for substring comparison. Spaces are the
+// only divergence between the char-derived fragment text and the OCR box text,
+// and whitespace carries no content identity here — the containment geometry is
+// the real proof (see DedupSubstringOverlaps).
+func dedupNormText(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// boxInside reports whether inner is FULLY contained within outer on BOTH
+// axes. It confirms an OCR substring fragment sits inside the box whose text
+// contains it — not merely sharing a Y band at a different column, nor poking
+// out horizontally beyond the container. Requiring horizontal containment
+// stops a whitespace-normalized substring match from dropping a box that
+// extends past the container's X range (e.g. an adjacent-column line whose
+// text happens to be a substring of the paragraph's).
 func boxInside(inner, outer pdf.TextBox) bool {
 	if inner.Top < outer.Top || inner.Bottom > outer.Bottom {
 		return false
 	}
-	if outer.X1 <= inner.X0 || inner.X1 <= outer.X0 {
+	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
 		return false
 	}
 	return true

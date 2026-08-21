@@ -19,6 +19,7 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/utility"
 	"sort"
@@ -28,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -261,8 +263,22 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// Ordinary source chunks stay available_int=1 (the index default).
 	markCompiledProductsHidden(chunks)
 
+	oldCompiledProductIDs, err := s.loadDocumentCompiledProductIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
+	}
+	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
+		return nil, err
+	}
+	activeStates, err := wikiActiveStates(pipelineOutput)
+	if err != nil {
+		return nil, err
+	}
+	if err := putWikiActiveStates(ctx, engine.Get(), activeStates); err != nil {
+		return nil, fmt.Errorf("persist Wiki active MAP state: %w", err)
 	}
 
 	// All chunks are now persisted. Notify the dataset-level post-processing consumer
@@ -303,9 +319,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 }
 
 // builtInMetadataFromParserConfig extracts the built-in metadata config
-// (update_time / file_name) and whether auto-metadata is enabled. Supports
-// modular metadata_config sub-objects as well as legacy flat fields on
-// Extractor nodes and top-level parser_config.
+// (update_time / file_name) and whether auto-metadata is enabled from the
+// component-scoped Extractor node's modular metadata config. Legacy flat
+// fields (enable_metadata / metadata_config / built_in_metadata at either the
+// top level or on the node) are intentionally not supported.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
 	var extractorKeys []string
 	for k := range parserConfig {
@@ -320,37 +337,29 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 		nodeRaw := parserConfig[k]
 		if node, ok := nodeRaw.(map[string]any); ok {
 			if metaObj, ok := node["metadata"].(map[string]any); ok {
-				enabled := parserConfigBool(metaObj["enabled"])
-				if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-					return arr, enabled
-				}
-			}
-			if metaConf, ok := node["metadata_config"].(map[string]any); ok {
-				enabled := parserConfigBool(metaConf["enabled"])
-				if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-					return arr, enabled
-				}
-			}
-			enabled := parserConfigBool(node["enable_metadata"])
-			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
-				return arr, enabled
+				arr := metadataFieldSlice(metaObj["built_in_metadata"])
+				return arr, parserConfigBool(metaObj["enabled"])
 			}
 		}
-	}
-	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
-		if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, true
-		}
-	}
-	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
-		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, true
-		}
-	}
-	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
-		return arr, true
 	}
 	return nil, false
+}
+
+// metadataFieldSlice normalizes a built_in_metadata / metadata value that may
+// arrive as []interface{} (DB round-trip) or []map[string]interface{} (in-memory
+// construction) into a []any.
+func metadataFieldSlice(value any) []any {
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	if list, ok := value.([]map[string]any); ok {
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	}
+	return nil
 }
 
 // parserConfigBool coerces a parser_config boolean-like value (bool / number)
@@ -412,6 +421,86 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 		}
 		ck["available_int"] = 0
 	}
+}
+
+// loadDocumentCompiledProductIDs snapshots the previous successful document
+// compiler generation before the new pipeline output is written. Reading first
+// avoids relying on immediate search visibility after a bulk index write.
+func (s *PipelineExecutor) loadDocumentCompiledProductIDs(ctx context.Context) ([]string, error) {
+	docEngine := engine.Get()
+	if docEngine == nil || s == nil || s.taskCtx == nil {
+		return nil, nil
+	}
+	const pageSize = 1000
+	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
+	oldIDs := make([]string, 0)
+	for offset := 0; ; offset += pageSize {
+		result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
+			IndexNames:   []string{indexName},
+			KbIDs:        []string{s.taskCtx.Doc.KbID},
+			Offset:       offset,
+			Limit:        pageSize,
+			SelectFields: []string{"id", "compile_kwd"},
+			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load document compiler products: %w", err)
+		}
+		if result == nil || len(result.Chunks) == 0 {
+			break
+		}
+		for _, row := range result.Chunks {
+			if strings.TrimSpace(asCompiledKwd(row)) == "" {
+				continue
+			}
+			if id := strings.TrimSpace(anyString(row["id"])); id != "" {
+				oldIDs = append(oldIDs, id)
+			}
+		}
+		if int64(offset+len(result.Chunks)) >= result.Total {
+			break
+		}
+	}
+	return oldIDs, nil
+}
+
+// reconcileDocumentCompiledProducts advances the document-level compiler
+// generation only after the new pipeline output has been persisted. Reparse
+// preparation keeps the previous compiled rows so a failed run does not erase
+// the last usable document Wiki; this method removes rows absent from the new
+// successful generation immediately before the dataset completion event.
+func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context, oldIDs []string, chunks []map[string]any) error {
+	docEngine := engine.Get()
+	if docEngine == nil || s == nil || s.taskCtx == nil {
+		return nil
+	}
+	newIDs := make(map[string]struct{})
+	for _, chunk := range chunks {
+		if strings.TrimSpace(asCompiledKwd(chunk)) == "" {
+			continue
+		}
+		if id := strings.TrimSpace(anyString(chunk["id"])); id != "" {
+			newIDs[id] = struct{}{}
+		}
+	}
+	staleIDs := make([]string, 0, len(oldIDs))
+	for _, id := range oldIDs {
+		if _, keep := newIDs[id]; !keep {
+			staleIDs = append(staleIDs, id)
+		}
+	}
+	const pageSize = 1000
+	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
+	for start := 0; start < len(staleIDs); start += pageSize {
+		end := min(start+pageSize, len(staleIDs))
+		if _, err := docEngine.DeleteChunks(ctx, map[string]any{
+			"id":    staleIDs[start:end],
+			"kb_id": s.taskCtx.Doc.KbID,
+		}, indexName, s.taskCtx.Doc.KbID); err != nil {
+			return fmt.Errorf("delete stale document compiler products: %w", err)
+		}
+	}
+	return nil
 }
 
 // compiledVariants returns the sorted, de-duplicated set of compile types a
@@ -482,6 +571,63 @@ func asCompiledKwd(c map[string]any) string {
 	return ""
 }
 
+func wikiActiveStates(output map[string]any) ([]kccommon.WikiMapActiveState, error) {
+	if output == nil || output["wiki_active_map_states"] == nil {
+		return nil, nil
+	}
+	appendState := func(states []kccommon.WikiMapActiveState, value map[string]any) ([]kccommon.WikiMapActiveState, error) {
+		state := kccommon.WikiMapActiveState{
+			Key:        strings.TrimSpace(anyString(value["key"])),
+			TenantID:   strings.TrimSpace(anyString(value["tenant_id"])),
+			DatasetID:  strings.TrimSpace(anyString(value["dataset_id"])),
+			DocumentID: strings.TrimSpace(anyString(value["document_id"])),
+		}
+		switch payload := value["payload"].(type) {
+		case string:
+			state.Payload = []byte(payload)
+		case []byte:
+			state.Payload = append([]byte(nil), payload...)
+		default:
+			return nil, fmt.Errorf("decode Wiki active MAP state: unsupported payload type %T", value["payload"])
+		}
+		if state.Key == "" || state.TenantID == "" || state.DatasetID == "" || state.DocumentID == "" {
+			return nil, fmt.Errorf("decode Wiki active MAP state: incomplete scope")
+		}
+		return append(states, state), nil
+	}
+
+	switch values := output["wiki_active_map_states"].(type) {
+	case []kccommon.WikiMapActiveState:
+		return append([]kccommon.WikiMapActiveState(nil), values...), nil
+	case []map[string]any:
+		states := make([]kccommon.WikiMapActiveState, 0, len(values))
+		for _, value := range values {
+			var err error
+			states, err = appendState(states, value)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return states, nil
+	case []any:
+		states := make([]kccommon.WikiMapActiveState, 0, len(values))
+		for _, raw := range values {
+			value, ok := raw.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("decode Wiki active MAP state: unsupported item type %T", raw)
+			}
+			var err error
+			states, err = appendState(states, value)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return states, nil
+	default:
+		return nil, fmt.Errorf("decode Wiki active MAP states: unsupported type %T", output["wiki_active_map_states"])
+	}
+}
+
 func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	var dslMap entity.JSONMap
 	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
@@ -501,16 +647,25 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		}
 	}
 
-	pipelineTitle := ""
-	var pipelineAvatar *string
-	if db != nil {
-		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
-			if canvas.Title != nil {
-				pipelineTitle = *canvas.Title
+	// Pipeline identity for the log row. A document without a user pipeline
+	// selection runs on a builtin registry pipeline: its canvasID is the
+	// parser_id, not a canvas row, so the log is titled with the document's
+	// parser_id, reuses the document thumbnail as avatar, and leaves
+	// pipeline_id empty.
+	pipelineTitle := doc.ParserID
+	pipelineAvatar := doc.Thumbnail
+	var pipelineID *string
+	if s.taskCtx.PipelineID != "" {
+		pipelineID = &s.canvasID
+		if db != nil {
+			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+				if canvas.Title != nil {
+					pipelineTitle = *canvas.Title
+				}
+				pipelineAvatar = canvas.Avatar
+			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
+				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
 			}
-			pipelineAvatar = canvas.Avatar
-		} else if err != nil {
-			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
 		}
 	}
 
@@ -535,7 +690,7 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		TenantID:        s.Tenant().ID,
 		KbID:            s.KB().ID,
 		DocumentID:      docID,
-		PipelineID:      &s.canvasID,
+		PipelineID:      pipelineID,
 		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		DSL:             dslMap,

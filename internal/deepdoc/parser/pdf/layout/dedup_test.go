@@ -6,23 +6,24 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// TestDedupIdenticalText locks that boxes carrying TRIM-EQUAL text (identical
-// after strings.TrimSpace — trailing whitespace normalized) on the SAME page
-// with DISJOINT Y bands are collapsed to one. OCR repeatedly detects the same
-// text at different Y positions (09_crosspage_paragraph detects each paragraph
-// 5-6x per page, all disjoint), and Python's downstream merge collapses these;
-// Go must too, or the replay output duplicates paragraphs.
+// TestDedupIdenticalText locks that a rolling-stride CHAIN of identical-text
+// boxes (>= pseudoDupChainMin disjoint same-X copies, e.g. 09_crosspage_paragraph
+// detects each paragraph 14-18x per page) is collapsed to one, while a
+// cross-page copy and unrelated text are kept.
 func TestDedupIdenticalText(t *testing.T) {
 	long := "paragraph one with enough words to qualify as a real paragraph duplicate text for collapsing"
 	boxes := []pdf.TextBox{
 		{Text: long, PageNumber: 0, Top: 100, Bottom: 115, X0: 60, X1: 520, IsOCR: true},
-		{Text: long, PageNumber: 0, Top: 300, Bottom: 315, X0: 60, X1: 520, IsOCR: true}, // disjoint dup -> drop
+		{Text: long, PageNumber: 0, Top: 200, Bottom: 215, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 300, Bottom: 315, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 400, Bottom: 415, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 500, Bottom: 515, X0: 60, X1: 520, IsOCR: true}, // 5-copy chain -> collapse
 		{Text: long, PageNumber: 1, Top: 100, Bottom: 115, X0: 60, X1: 520, IsOCR: true}, // other page -> keep
-		{Text: "paragraph two", PageNumber: 0, Top: 200, Bottom: 215, IsOCR: true},
+		{Text: "paragraph two", PageNumber: 0, Top: 600, Bottom: 615, IsOCR: true},
 	}
 	got := DedupIdenticalText(boxes)
 	if len(got) != 3 {
-		t.Fatalf("want 3 boxes (1 disjoint dup dropped), got %d: %+v", len(got), got)
+		t.Fatalf("want 3 boxes (5-copy chain collapsed to 1), got %d: %+v", len(got), got)
 	}
 	if got[0].Text != long || got[1].Text != long {
 		t.Fatalf("page-0 and page-1 copies must both be kept in order")
@@ -49,16 +50,20 @@ func TestDedupIdenticalText_YOverlap(t *testing.T) {
 }
 
 // TestDedupIdenticalText_WhitespaceSensitive ensures trimming does not merge
-// boxes that differ only by trailing spaces into a false duplicate.
+// boxes that differ only by trailing spaces into a false duplicate — the
+// trimmed-equal copies are still grouped and a full CHAIN collapses.
 func TestDedupIdenticalText_WhitespaceSensitive(t *testing.T) {
 	long := "a sufficiently long repeated sentence that qualifies as a paragraph"
 	boxes := []pdf.TextBox{
 		{Text: long, PageNumber: 0, Top: 10, Bottom: 20, X0: 60, X1: 520, IsOCR: true},
-		{Text: long + " ", PageNumber: 0, Top: 90, Bottom: 100, X0: 60, X1: 520, IsOCR: true}, // 80pt gap > 4x height
+		{Text: long + " ", PageNumber: 0, Top: 90, Bottom: 100, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 170, Bottom: 180, X0: 60, X1: 520, IsOCR: true},
+		{Text: long + " ", PageNumber: 0, Top: 250, Bottom: 260, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 330, Bottom: 340, X0: 60, X1: 520, IsOCR: true}, // 5-copy trimmed-equal chain
 	}
 	got := DedupIdenticalText(boxes)
 	if len(got) != 1 {
-		t.Fatalf("trimmed-equal texts should be treated as duplicates, got %d", len(got))
+		t.Fatalf("trimmed-equal 5-copy chain should collapse to 1, got %d", len(got))
 	}
 }
 
@@ -92,18 +97,40 @@ func TestDedupIdenticalText_AdjacentRepeatsKept(t *testing.T) {
 	}
 }
 
-// TestDedupIdenticalText_StridedPseudoDuplicate collapses identical text far
-// apart (>4x height) at the same X — the OCR rolling-stride duplicate
-// (eval_single_wide / 09_crosspage_paragraph).
+// TestDedupIdenticalText_StridedPseudoDuplicate collapses a rolling-stride
+// CHAIN of identical text far apart (>4x height) at the same X — the OCR
+// rolling-stride duplicate (eval_single_wide / 09_crosspage_paragraph). A
+// chain needs pseudoDupChainMin copies; short pairs are real content and are
+// kept (see TestDedupIdenticalText_ShortPairKept).
 func TestDedupIdenticalText_StridedPseudoDuplicate(t *testing.T) {
 	long := "a sufficiently long repeated sentence that qualifies as a paragraph duplicate"
-	boxes := []pdf.TextBox{
-		{Text: long, PageNumber: 0, Top: 100, Bottom: 115, X0: 60, X1: 520, IsOCR: true},
-		{Text: long, PageNumber: 0, Top: 300, Bottom: 315, X0: 60, X1: 520, IsOCR: true}, // 200pt gap -> drop
+	var boxes []pdf.TextBox
+	for i := 0; i < pseudoDupChainMin; i++ {
+		top := float64(100 + i*200)
+		boxes = append(boxes, pdf.TextBox{
+			Text: long, PageNumber: 0, Top: top, Bottom: top + 15, X0: 60, X1: 520, IsOCR: true,
+		})
 	}
 	got := DedupIdenticalText(boxes)
 	if len(got) != 1 {
-		t.Fatalf("strided pseudo-duplicate must be dropped, got %d boxes", len(got))
+		t.Fatalf("5-copy strided pseudo-duplicate chain must collapse to 1, got %d boxes", len(got))
+	}
+}
+
+// TestDedupIdenticalText_ShortPairKept locks the eval_two_* fix: a same-text
+// group of only 2-4 copies (distinct physical lines that happen to share text,
+// e.g. the template rows of eval_two_wide_gutter / eval_two_indented_first_para)
+// is NOT a rolling-stride OCR pseudo-duplicate — every copy is a real line and
+// must be kept verbatim. Dropping any copy silently loses document content.
+func TestDedupIdenticalText_ShortPairKept(t *testing.T) {
+	row := "line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxXx"
+	boxes := []pdf.TextBox{
+		{Text: row, PageNumber: 0, Top: 165, Bottom: 176, X0: 54, X1: 229, IsOCR: true},
+		{Text: row, PageNumber: 0, Top: 300, Bottom: 311, X0: 54, X1: 229, IsOCR: true}, // far-apart identical row -> keep
+	}
+	got := DedupIdenticalText(boxes)
+	if len(got) != 2 {
+		t.Fatalf("2-copy identical row pair must be kept (real content), got %d boxes", len(got))
 	}
 }
 
@@ -215,6 +242,30 @@ func TestDedupSubstringOverlaps_PartialYOverlapKept(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_HorizontalOverhangKept locks the horizontal-
+// containment boundary: a box FULLY inside in Y but extending horizontally
+// beyond the containing box (to either side) must be KEPT — it is not an OCR
+// fragment of the container (e.g. an adjacent-column line whose text happens
+// to be a whitespace-normalized substring of the paragraph). Only a box fully
+// inside on BOTH axes is collapsed. This pins the boxInside hardening that the
+// whitespace-insensitive match otherwise leaves exposed (a plain horizontal
+// intersect used to pass the X check).
+func TestDedupSubstringOverlaps_HorizontalOverhangKept(t *testing.T) {
+	outer := pdf.TextBox{
+		Text: "the quick brown fox jumps over the lazy dog near the river bank", PageNumber: 0, Top: 100, Bottom: 130, X0: 60, X1: 260, IsOCR: true,
+	}
+	right := pdf.TextBox{
+		Text: "brown fox jumps over the lazy", PageNumber: 0, Top: 105, Bottom: 120, X0: 240, X1: 320, IsOCR: true, // X1 extends past outer.X1
+	}
+	left := pdf.TextBox{
+		Text: "lazy dog near the river", PageNumber: 0, Top: 105, Bottom: 120, X0: 40, X1: 120, IsOCR: true, // X0 extends past outer.X0
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, right, left})
+	if len(got) != 3 {
+		t.Fatalf("horizontally-overhanging substrings must be kept, got %d boxes", len(got))
+	}
+}
+
 // TestDedupSubstringOverlaps_TallerFragmentKept locks the defensive invariant:
 // a PHYSICALLY TALLER box whose SHORT text is a substring of a shorter, contained
 // box's longer text is NOT silently dropped. Collapse requires the substring-text
@@ -234,6 +285,30 @@ func TestDedupSubstringOverlaps_TallerFragmentKept(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_EqualAfterNorm locks the
+// `>=` branch: two boxes whose text differs ONLY by whitespace placement
+// ("-name:" vs "- name:") normalize to the SAME text and must collapse when
+// geometrically contained. The legacy `len(ai) == len(aj)` skip would have
+// kept the duplicate; whitespace normalization makes the two look identical,
+// and boxInside decides the containment.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_EqualAfterNorm(t *testing.T) {
+	outer := pdf.TextBox{
+		Text:       "-name:", // OCR recognizer stripped the space after '-'
+		PageNumber: 0, Top: 100, Bottom: 120, X0: 60, X1: 120, IsOCR: true,
+	}
+	inner := pdf.TextBox{
+		Text:       "- name:",                                              // char-layer text kept the space
+		PageNumber: 0, Top: 105, Bottom: 115, X0: 60, X1: 120, IsOCR: true, // fully inside outer
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, inner})
+	if len(got) != 1 {
+		t.Fatalf("whitespace-equal contained fragment must be dropped, got %d boxes", len(got))
+	}
+	if got[0].Text != outer.Text {
+		t.Fatalf("outer box must be kept, got %q", got[0].Text)
+	}
+}
+
 // TestDedupSubstringOverlaps_CharPathKept locks that a char-path box whose text
 // is a substring of another char-path box is NEVER collapsed — e.g. a repeated
 // heading inside another paragraph's text range on a digital PDF. Only OCR
@@ -248,5 +323,100 @@ func TestDedupSubstringOverlaps_CharPathKept(t *testing.T) {
 	got := DedupSubstringOverlaps([]pdf.TextBox{full, repeat})
 	if len(got) != 2 {
 		t.Fatalf("char-path substring must be kept, got %d boxes (lost content?)", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive locks that a substring box
+// whose char-derived text preserves the PDF's original spaces is STILL
+// collapsed when the containing OCR box carries a space-stripped recognition.
+// ocrMergeChars fills inner line boxes with char-layer text that keeps spaces
+// ("- name: SSL_CERT_FILE", "⽂章 中 提到") while the outer paragraph/OCR box
+// carries the recognizer's joined text ("-name: SSL_CERT_FILE",
+// "⽂章中提到"); the two are no longer contiguous substrings of each other
+// byte-wise, so dedup must compare whitespace-normalized text. This is the
+// root cause of the ocr_real text gaps (plugin-daemon/RAG分词/三国人物
+// duplicated lines after vertical merge).
+func TestDedupSubstringOverlaps_WhitespaceInsensitive(t *testing.T) {
+	outer := pdf.TextBox{
+		Text:       "直接⽤rag分词建⽴索引，这时⽤分词1来查询，服务体系?都会保留，因为根据rag分词不会删除标点。但是，在原⽂中，并没有服务体系?这样的⽂字，因此这个短语查询⽆法命中。",
+		PageNumber: 0, Top: 100, Bottom: 400, X0: 60, X1: 520, IsOCR: true,
+	}
+	inner := pdf.TextBox{
+		Text:       "直接⽤ rag 分词建⽴索引，这时⽤分词 1 来查询",                           // char layer kept the PDF's original spaces
+		PageNumber: 0, Top: 120, Bottom: 135, X0: 60, X1: 520, IsOCR: true, // fully inside outer
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, inner})
+	if len(got) != 1 {
+		t.Fatalf("whitespace-divergent substring fragment must be dropped, got %d boxes: %+v", len(got), got)
+	}
+	if got[0].Text != outer.Text {
+		t.Fatalf("outer paragraph must be kept, got %q", got[0].Text)
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_CJK uses the CJK case from
+// RAG分词召回分析.pdf: the outer OCR box joined CJK without spaces while the
+// inner char-derived fragment kept per-word spaces ("⽂章 中 提到" vs "⽂章中提到").
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_CJK(t *testing.T) {
+	outer := pdf.TextBox{
+		Text:       "⽤Python⽣成的分词1为：⽂章中提到了哪些健康服务体系?",
+		PageNumber: 0, Top: 100, Bottom: 400, X0: 60, X1: 520, IsOCR: true,
+	}
+	inner := pdf.TextBox{
+		Text:       "⽂章 中 提到 了 哪些 健康 服务体系", // char layer preserved spaces between CJK words
+		PageNumber: 0, Top: 150, Bottom: 165, X0: 60, X1: 520, IsOCR: true,
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, inner})
+	if len(got) != 1 {
+		t.Fatalf("CJK whitespace-divergent fragment must be dropped, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_DifferentColumnKept locks
+// the boundary guard: whitespace normalization must NOT let a substring box in
+// a DIFFERENT column (disjoint X) be dropped — the geometry check still
+// governs, only the text comparison became whitespace-insensitive.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_DifferentColumnKept(t *testing.T) {
+	colA := pdf.TextBox{
+		Text: "line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", PageNumber: 0, Top: 100, Bottom: 115, X0: 60, X1: 260, IsOCR: true,
+	}
+	colB := pdf.TextBox{
+		Text: "line x x x x x x x x x", PageNumber: 0, Top: 100, Bottom: 115, X0: 320, X1: 520, IsOCR: true, // disjoint X
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{colA, colB})
+	if len(got) != 2 {
+		t.Fatalf("different-column whitespace-divergent substring must be kept, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_DisjointYKept locks that a
+// whitespace-divergent substring at a DISJOINT Y position is kept — a real
+// repeated heading, not an OCR fragment.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_DisjointYKept(t *testing.T) {
+	full := pdf.TextBox{
+		Text: "Conclusion summary of the whole document body text", PageNumber: 0, Top: 100, Bottom: 115, IsOCR: true,
+	}
+	repeat := pdf.TextBox{
+		Text: "C o n c l u s i o n", PageNumber: 0, Top: 300, Bottom: 315, IsOCR: true, // disjoint Y
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, repeat})
+	if len(got) != 2 {
+		t.Fatalf("disjoint-Y whitespace-divergent substring must be kept, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_CharPathKept locks that a
+// char-path (IsOCR=false) box is never collapsed even when its whitespace-
+// normalized text is a substring of another char-path box.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_CharPathKept(t *testing.T) {
+	full := pdf.TextBox{
+		Text: "本协议终止后保密条款继续有效双方仍应承担保密义务", PageNumber: 0, Top: 100, Bottom: 120,
+	}
+	repeat := pdf.TextBox{
+		Text: "保密 条款 继续 有效", PageNumber: 0, Top: 110, Bottom: 118, // nested substring, char path
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, repeat})
+	if len(got) != 2 {
+		t.Fatalf("char-path whitespace-divergent substring must be kept, got %d boxes", len(got))
 	}
 }

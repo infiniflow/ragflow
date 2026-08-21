@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -261,6 +262,15 @@ func TestTokenizerComponent_InputsOutputs_NonEmpty(t *testing.T) {
 		if _, ok := ins[key]; !ok {
 			t.Errorf("Inputs() missing %q", key)
 		}
+	}
+}
+
+func TestCopyPipelineControlValuesPreservesWikiActiveState(t *testing.T) {
+	states := []map[string]any{{"key": "state-1", "payload": `{"plan":[]}`}}
+	output := map[string]any{"chunks": []any{}}
+	copyPipelineControlValues(output, map[string]any{"wiki_active_map_states": states})
+	if !reflect.DeepEqual(output["wiki_active_map_states"], states) {
+		t.Fatalf("wiki active states = %#v, want %#v", output["wiki_active_map_states"], states)
 	}
 }
 

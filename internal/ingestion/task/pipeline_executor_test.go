@@ -51,6 +51,20 @@ func TestMarkCompiledProductsHidden(t *testing.T) {
 	}
 }
 
+func TestWikiActiveStatesDecodeCheckpointValues(t *testing.T) {
+	states, err := wikiActiveStates(map[string]any{
+		"wiki_active_map_states": []any{map[string]any{
+			"key": "state-1", "tenant_id": "tenant-1", "dataset_id": "kb-1", "document_id": "doc-1", "payload": `{"plan":[]}`,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("wikiActiveStates failed: %v", err)
+	}
+	if len(states) != 1 || states[0].Key != "state-1" || string(states[0].Payload) != `{"plan":[]}` {
+		t.Fatalf("decoded states = %#v", states)
+	}
+}
+
 func makeTaskCtx() *TaskContext {
 	return &TaskContext{
 		IngestionTask: &entity.IngestionTask{
@@ -81,7 +95,7 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -301,6 +315,172 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLog_BuiltinUsesParserIDFallback(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "general"
+	taskCtx.Doc.Thumbnail = strPtr("thumb.png")
+
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "general", 0).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		})
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{}`, "done")
+
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.PipelineTitle == nil || *captured.PipelineTitle != "general" {
+		t.Fatalf("PipelineTitle = %v, want \"general\"", captured.PipelineTitle)
+	}
+	if captured.Avatar == nil || *captured.Avatar != "thumb.png" {
+		t.Fatalf("Avatar = %v, want \"thumb.png\"", captured.Avatar)
+	}
+	if captured.PipelineID != nil {
+		t.Fatalf("PipelineID = %q, want nil for builtin pipeline", *captured.PipelineID)
+	}
+}
+
+func TestRecordPipelineLog_CustomCanvasTitle(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "tenant-1",
+		Title:  strPtr("My Pipeline"),
+		Avatar: strPtr("a.png"),
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "general"
+	taskCtx.PipelineID = "canvas-1"
+
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		})
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{}`, "done")
+
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.PipelineTitle == nil || *captured.PipelineTitle != "My Pipeline" {
+		t.Fatalf("PipelineTitle = %v, want \"My Pipeline\"", captured.PipelineTitle)
+	}
+	if captured.Avatar == nil || *captured.Avatar != "a.png" {
+		t.Fatalf("Avatar = %v, want \"a.png\"", captured.Avatar)
+	}
+	if captured.PipelineID == nil || *captured.PipelineID != "canvas-1" {
+		t.Fatalf("PipelineID = %v, want \"canvas-1\"", captured.PipelineID)
+	}
+}
+
+func TestRecordPipelineLog_CustomCanvasMissingFallsBackToParserID(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "general"
+	taskCtx.PipelineID = "canvas-gone"
+
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-gone", 0).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		})
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{}`, "done")
+
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.PipelineTitle == nil || *captured.PipelineTitle != "general" {
+		t.Fatalf("PipelineTitle = %v, want \"general\" fallback", captured.PipelineTitle)
+	}
+	if captured.PipelineID == nil || *captured.PipelineID != "canvas-gone" {
+		t.Fatalf("PipelineID = %v, want \"canvas-gone\"", captured.PipelineID)
+	}
+}
+
+func TestRecordPipelineLog_SourceFrom(t *testing.T) {
+	cases := []struct {
+		name       string
+		sourceType string
+		want       string
+	}{
+		{name: "connector source strips connector id", sourceType: "rss/connector-811", want: "rss"},
+		{name: "plain source unchanged", sourceType: "local", want: "local"},
+		{name: "empty source unchanged", sourceType: "", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			taskCtx := makeTaskCtx()
+			taskCtx.Doc.SourceType = tc.sourceType
+			var captured *entity.PipelineOperationLog
+			svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
+				func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+					captured = log
+					return nil
+				},
+			)
+			svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
+			if captured == nil {
+				t.Fatal("logCreateFunc was not called")
+			}
+			if captured.SourceFrom != tc.want {
+				t.Errorf("SourceFrom = %q, want %q", captured.SourceFrom, tc.want)
+			}
+		})
+	}
+}
+
+// recordPipelineLog reloads the persisted document and derives source_from
+// from that row, so a stale task-context snapshot must not leak into the log.
+func TestRecordPipelineLog_SourceFromReloadedDoc(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	persisted := &entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "rss/connector-811",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+	}
+	if err := dao.NewDocumentDAO().Create(t.Context(), dao.DB, persisted); err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.SourceType = "local"
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		},
+	)
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.SourceFrom != "rss" {
+		t.Errorf("SourceFrom = %q, want %q", captured.SourceFrom, "rss")
+	}
+}
+
 // =============================================================================
 // updateDocumentMetadata
 // =============================================================================
@@ -391,7 +571,10 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	logged := false
 	inserted := false
 
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+	taskCtx := makeTaskCtx()
+	taskCtx.PipelineID = "flow-1"
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
 		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
 			return `{"nodes":[{"id":"n1"}],"edges":[]}`, "flow-corrected", nil
 		}).
@@ -573,27 +756,5 @@ func TestCountOriginalChunkIDs(t *testing.T) {
 	}
 	if n := countOriginalChunkIDs(chunks); n != 2 {
 		t.Fatalf("compiler products: got %d, want 2", n)
-	}
-}
-
-func TestBuiltInMetadata_ZeroExtractorFallback(t *testing.T) {
-	// Scenario: User constructed a pipeline with 0 Extractor components,
-	// but dataset parser_config has top-level built_in_metadata.
-	parserConfig := map[string]any{
-		"Parser:HipSignsRhyme": map[string]any{
-			"setups": map[string]any{},
-		},
-		"built_in_metadata": []any{
-			map[string]any{"key": "file_name", "type": "string"},
-			map[string]any{"key": "update_time", "type": "time"},
-		},
-	}
-
-	arr, enabled := builtInMetadataFromParserConfig(parserConfig)
-	if !enabled {
-		t.Errorf("expected builtInMetadataFromParserConfig enabled=true for zero-extractor pipeline with top-level built_in_metadata")
-	}
-	if len(arr) != 2 {
-		t.Errorf("expected 2 built-in metadata items, got %d", len(arr))
 	}
 }

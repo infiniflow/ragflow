@@ -2287,7 +2287,8 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
     assert success_res.status_code == 200
     success_payload = success_res.json()
     assert success_payload["code"] == 0, success_payload
-    assert success_payload["data"] == {"metadata": [], "built_in_metadata": []}, success_payload
+    expected_empty = {"enabled": False, "metadata": [], "built_in_metadata": []} if IS_GO_PROXY else {"metadata": [], "built_in_metadata": []}
+    assert success_payload["data"] == expected_empty, success_payload
 
     for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
         get_res = client.get(f"/datasets/{dataset_id}/metadata/config")
@@ -2327,6 +2328,8 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
             {"key": "size", "type": "number", "description": "File size", "enum": None},
         ],
     }
+    if IS_GO_PROXY:
+        normalized_update_payload["enabled"] = True
     update_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json=update_payload)
     assert update_res.status_code == 200
     update_body = update_res.json()
@@ -2343,7 +2346,7 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
     assert missing_payload_res.status_code == 200
     missing_payload = missing_payload_res.json()
     assert missing_payload["code"] == 0, missing_payload
-    assert missing_payload["data"] == {"metadata": [], "built_in_metadata": []}, missing_payload
+    assert missing_payload["data"] == expected_empty, missing_payload
 
     invalid_update_dataset_res = rest_client.put(
         "/datasets/invalid_dataset_id/metadata/config",

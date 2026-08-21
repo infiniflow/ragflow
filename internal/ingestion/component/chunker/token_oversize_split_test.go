@@ -20,13 +20,12 @@ import (
 	"testing"
 )
 
-// TestTokenChunker_OversizeUnitKeptWhole pins the Python OVER_CAP contract for
+// TestTokenChunker_OversizeUnitSplit pins the hard-cap contract (方案 B) for
 // the text/markdown path: a single paragraph that exceeds chunk_token_size is
-// kept as one standalone chunk. Python's naive_merge (_merge_paragraph_groups,
-// rag/nlp/__init__.py) never atom-splits an oversize unit; it is kept whole and
-// the model layer truncates it later. An unbroken input line with no delimiter
-// forces the oversize path while isolating it from the delimiter-splitting logic.
-func TestTokenChunker_OversizeUnitKeptWhole(t *testing.T) {
+// re-split into <= budget pieces (sentence boundaries first, hard token-split
+// fallback), never kept whole. An unbroken input line with no delimiter forces
+// the hard-split path while isolating it from the delimiter-splitting logic.
+func TestTokenChunker_OversizeUnitSplit(t *testing.T) {
 	var longLine = strings.Repeat("word ", 400) // ~400 tokens, far above the 32 budget
 
 	cases := []struct {
@@ -64,25 +63,35 @@ func TestTokenChunker_OversizeUnitKeptWhole(t *testing.T) {
 			if !ok {
 				t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
 			}
-			if len(chunks) != 1 {
-				t.Fatalf("oversize unit: want 1 standalone chunk, got %d", len(chunks))
+			if len(chunks) < 2 {
+				t.Fatalf("oversize unit must be split, got %d chunk(s)", len(chunks))
 			}
-			if got, _ := chunks[0]["text"].(string); strings.TrimSpace(got) != strings.TrimSpace(longLine) {
-				t.Fatalf("oversize unit content not preserved: got %q", got)
+			for i, ck := range chunks {
+				text, _ := ck["text"].(string)
+				if n := tokenizeStr(text); n > 32 {
+					t.Errorf("chunk %d exceeds budget: tokens=%d (cap=32)", i, n)
+				}
+			}
+			// Lossless modulo whitespace normalization: each emitted chunk is
+			// trimmed, and hard-split pieces cut at token/word boundaries, so
+			// the concatenated words reproduce the original word sequence.
+			var joined string
+			for _, ck := range chunks {
+				joined += strings.TrimSpace(ck["text"].(string))
+			}
+			if strings.ReplaceAll(joined, " ", "") != strings.ReplaceAll(longLine, " ", "") {
+				t.Errorf("split content lost words:\n got %q\nwant %q", joined, longLine)
 			}
 		})
 	}
 }
 
-// TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit pins the #17799
-// contract under the unified algorithm: an oversize unit (single paragraph >
-// chunk_token_size) STANDS ALONE as its own chunk, even when an in-budget
-// sentence precedes it. The unified merge decision depends only on
-// prev.tk_nums > threshold for merging, but an over-budget unit never merges
-// into the previous chunk (#17799 retained on purpose to avoid a product-wide
-// behaviour change). The lone oversize case is pinned by
-// TestTokenChunker_OversizeUnitKeptWhole.
-func TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit(t *testing.T) {
+// TestTokenChunker_OversizeUnitSplitAfterInBudgetUnit pins the hard-cap
+// contract under the merge: an in-budget unit is followed by an oversized
+// unit, which is re-split into <= budget pieces. The in-budget unit stays a
+// chunk of its own; the oversized unit becomes multiple chunks that together
+// reproduce its text.
+func TestTokenChunker_OversizeUnitSplitAfterInBudgetUnit(t *testing.T) {
 	var longLine = strings.Repeat("word ", 400) // ~400 tokens, far above the 32 budget
 	inBudget := "Hello world."                  // ASCII period is not a sentence delimiter; fits 32
 
@@ -123,16 +132,18 @@ func TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit(t *testing.T) {
 			if !ok {
 				t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
 			}
-			if len(chunks) != 2 {
-				t.Fatalf("oversize after in-budget: want 2 chunks (in-budget + standalone oversize), got %d", len(chunks))
+			if len(chunks) < 3 {
+				t.Fatalf("want in-budget chunk + split pieces, got %d chunk(s)", len(chunks))
 			}
 			first, _ := chunks[0]["text"].(string)
 			if first != inBudget {
 				t.Fatalf("first chunk should be only the in-budget sentence %q, got %q", inBudget, first)
 			}
-			second, _ := chunks[1]["text"].(string)
-			if second != strings.TrimSpace(longLine) {
-				t.Fatalf("oversize chunk should be the whole long line kept whole, got %q", second)
+			for i := 1; i < len(chunks); i++ {
+				text, _ := chunks[i]["text"].(string)
+				if n := tokenizeStr(text); n > 32 {
+					t.Errorf("split chunk %d exceeds budget: tokens=%d (cap=32)", i, n)
+				}
 			}
 		})
 	}

@@ -87,28 +87,6 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     return template_ids
 
 
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order:
-      1. The template's own ``llm_id`` (what the user picked in the
-         compilation-template panel).
-      2. The doc's ``parser_config.llm_id`` (the doc-level chunking
-         model).
-      3. ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
-    doc_cfg = getattr(ctx, "parser_config", None) or {}
-    if isinstance(doc_cfg, dict):
-        did = doc_cfg.get("llm_id")
-        if isinstance(did, str) and did.strip():
-            return did.strip()
-    return ctx.llm_id
-
-
 # Document-structure compilation tunables
 # (DOC_STRUCTURE_COMPILE_BATCH_CHUNKS, DOC_STRUCTURE_MERGE_MAX_DOCS,
 # STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S) moved to
