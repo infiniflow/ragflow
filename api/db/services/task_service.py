@@ -480,15 +480,17 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             page_size = doc["parser_config"].get("task_page_size") or 22
 
         # Splitting MinerU parsing into page-based tasks would repeatedly upload the entire PDF to the MinerU API server, increasing network bandwidth usage without improving parsing speed. The MinerU API server would also store duplicate copies of these files, wasting disk space.
-
+        is_mineru = False
         layout_recognizer = doc["parser_config"].get("layout_recognize", "")
         if isinstance(layout_recognizer, str) and len(layout_recognizer) == 32:
             try:
                 layout_recognizer = get_composite_model_name_by_id(layout_recognizer)
+                if layout_recognizer.lower().endswith("@mineru"):
+                    is_mineru = True
             except LookupError:
                 pass
-        is_mineru = True if layout_recognizer.lower().endswith("@mineru") else False
-
+        if is_mineru:
+            logging.info("Document %s selected MinerU unsplit-task mode with page size %s", doc["id"], MAXIMUM_TASK_PAGE_NUMBER)
         if doc["parser_id"] in ["one", "knowledge_graph"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
