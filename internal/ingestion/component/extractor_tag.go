@@ -176,10 +176,11 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 		exTotalIDF[i] = sum
 	}
 
-	// 4. Background prior probability distribution.
+	// 4. Background prior probability distribution (smoothed Dirichlet prior).
+	alpha := bgSmoothing / float64(len(allTagCounts))
 	bgProportions := make(map[string]float64, len(allTagCounts))
 	for t, count := range allTagCounts {
-		bgProportions[t] = float64(count+1) / (float64(totalTagCount) + bgSmoothing)
+		bgProportions[t] = (float64(count) + alpha) / (float64(totalTagCount) + bgSmoothing)
 	}
 
 	return &MemoryTagIndex{
@@ -887,7 +888,9 @@ func parseTaggerResponse(raw string, topN int) map[string]int {
 		}
 		cleanKey := strings.ReplaceAll(strings.TrimSpace(k), ".", "_")
 		if score > 0 && cleanKey != "" {
-			result[cleanKey] = score
+			if existing, ok := result[cleanKey]; !ok || score > existing {
+				result[cleanKey] = score
+			}
 		}
 	}
 

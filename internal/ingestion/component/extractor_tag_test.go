@@ -449,6 +449,14 @@ func TestBuildMemoryTagIndex(t *testing.T) {
 	if _, ok := idx.allTags["ML.v1"]; ok {
 		t.Fatal("expected ML.v1 with dot to be replaced")
 	}
+
+	var sumProb float64
+	for _, p := range idx.allTags {
+		sumProb += p
+	}
+	if sumProb < 0.9999 || sumProb > 1.0001 {
+		t.Fatalf("expected background probabilities to sum to 1.0, got %f", sumProb)
+	}
 }
 
 func TestMatchAndTagChunk_AsymmetricLength(t *testing.T) {
@@ -575,6 +583,16 @@ func TestParseTaggerResponse_DotSanitization(t *testing.T) {
 		if strings.Contains(k, ".") {
 			t.Fatalf("found unescaped dot in tag key: %s", k)
 		}
+	}
+
+	// Test collision preservation of higher score
+	collisionRaw := `{"model.v1.0": 3, "model_v1_0": 9, "tag.a": 8, "tag_a": 4}`
+	collisionResult := parseTaggerResponse(collisionRaw, 5)
+	if collisionResult["model_v1_0"] != 9 {
+		t.Fatalf("expected highest score 9 for model_v1_0 collision, got %d", collisionResult["model_v1_0"])
+	}
+	if collisionResult["tag_a"] != 8 {
+		t.Fatalf("expected highest score 8 for tag_a collision, got %d", collisionResult["tag_a"])
 	}
 }
 
