@@ -63,6 +63,7 @@ func InferModelTypes(modelName string) []string {
 func FillMissingModelTypes(models []ListModelResponse) []ListModelResponse {
 	for i := range models {
 		if len(models[i].ModelTypes) > 0 {
+			models[i].ModelTypes = normalizeModelTypes(models[i].ModelTypes)
 			continue
 		}
 		if modelTypes := inferModelTypesByName(models[i].Name); len(modelTypes) > 0 {
