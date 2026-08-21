@@ -42,3 +42,37 @@ def test_update_metadata_to_skips_empty_string_list():
     base = {"tags": ["a"]}
     update_metadata_to(base, {"tags": [], "other": []})
     assert base == {"tags": ["a"]}
+
+
+def test_update_metadata_to_preserves_float_and_none():
+    merged = update_metadata_to({}, {"score": 1.5, "note": None})
+    assert merged["score"] == 1.5
+    assert merged["note"] is None
+
+
+def test_update_metadata_to_preserves_dict_when_absent():
+    merged = update_metadata_to({}, {"extra": {"a": 1}})
+    assert merged["extra"] == {"a": 1}
+
+
+def test_update_metadata_to_skips_dict_when_present():
+    base = {"extra": {"a": 1}}
+    update_metadata_to(base, {"extra": {"b": 2}})
+    assert base["extra"] == {"a": 1}
+
+
+def test_update_metadata_to_inserts_structured_list_when_absent():
+    merged = update_metadata_to({}, {"outline": [{"title": "Ch1", "depth": 0}]})
+    assert merged["outline"] == [{"title": "Ch1", "depth": 0}]
+
+
+def test_update_metadata_to_does_not_append_string_to_structured_list():
+    base = {"outline": [{"title": "Ch1", "depth": 0}]}
+    update_metadata_to(base, {"outline": "chapter"})
+    assert base["outline"] == [{"title": "Ch1", "depth": 0}]
+
+
+def test_update_metadata_to_does_not_extend_structured_list_with_strings():
+    base = {"outline": [{"title": "Ch1", "depth": 0}]}
+    update_metadata_to(base, {"outline": ["a", "b"]})
+    assert base["outline"] == [{"title": "Ch1", "depth": 0}]

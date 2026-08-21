@@ -327,27 +327,71 @@ def update_metadata_to(metadata, meta):
             else:
                 # Structured list (e.g. outline [{title, depth}, ...]).
                 if k not in metadata:
+                    logging.debug(
+                        "update_metadata_to preserve structured list key=%s src=%s",
+                        k,
+                        type(v).__name__,
+                    )
                     metadata[k] = v
+                else:
+                    logging.debug(
+                        "update_metadata_to skip structured list key=%s src=%s dst=%s",
+                        k,
+                        type(v).__name__,
+                        type(metadata[k]).__name__,
+                    )
                 continue
         elif isinstance(v, (str, bool, int, float)) or v is None:
             pass
         else:
             # dict / other structured values: keep if absent.
             if k not in metadata:
+                logging.debug(
+                    "update_metadata_to preserve structured value key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
                 metadata[k] = v
+            else:
+                logging.debug(
+                    "update_metadata_to skip structured value key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             continue
 
         if k not in metadata:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to preserve scalar key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
             metadata[k] = v
             continue
         if isinstance(metadata[k], list) and isinstance(v, (list, str)):
+            if not all(isinstance(x, str) for x in metadata[k]):
+                logging.debug(
+                    "update_metadata_to skip merge into structured list key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
+                continue
             if isinstance(v, list):
                 metadata[k].extend(v)
             else:
                 metadata[k].append(v)
-            if all(isinstance(x, str) for x in metadata[k]):
-                metadata[k] = dedupe_list(metadata[k])
+            metadata[k] = dedupe_list(metadata[k])
         else:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to replace scalar key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             metadata[k] = v
 
     return metadata
