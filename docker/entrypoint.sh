@@ -293,8 +293,9 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
         while true; do
             echo "Attempt to start RAGFlow python server..."
-            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-            echo "RAGFlow python server started."
+            exit_code=0
+            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} || exit_code=$?
+            echo "RAGFlow python server exited with status ${exit_code}. Restarting..."
             sleep 1;
         done &
     fi
