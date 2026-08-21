@@ -552,52 +552,16 @@ class Compiler(ProcessBase, LLM):
             self.set_output("chunks", chunks)
             return
 
-        # Per-template chat model: a template may pin its own ``llm_id``;
-        # otherwise fall back to this component's configured chat model.
-        llm_bundle_cache: dict[str, LLMBundle] = {}
-        chat_mdl_by_tid: dict[str, LLMBundle] = {}
-        filtered_templates: list[tuple[str, dict]] = []
-        default_chat_mdl = None
-        for template_id, parser_cfg in active_templates:
-            tpl_llm_id = parser_cfg.get("llm_id") if isinstance(parser_cfg, dict) else None
-            if isinstance(tpl_llm_id, str) and tpl_llm_id.strip():
-                chat_llm_id = tpl_llm_id.strip()
-                if chat_llm_id not in llm_bundle_cache:
-                    try:
-                        cfg = resolve_model_config(tenant_id, LLMType.CHAT, chat_llm_id)
-                        llm_bundle_cache[chat_llm_id] = LLMBundle(
-                            tenant_id,
-                            cfg,
-                            lang=language,
-                            max_retries=self._param.max_retries,
-                            retry_interval=self._param.delay_after_error,
-                        )
-                    except Exception:
-                        logging.exception(
-                            "Compiler: cannot resolve chat model %s for template %s; skipping",
-                            chat_llm_id,
-                            template_id,
-                        )
-                        continue
-                chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
-            else:
-                if default_chat_mdl is None:
-                    default_chat_mdl = LLMBundle(
-                        tenant_id,
-                        self.chat_mdl.model_config,
-                        lang=language,
-                        max_retries=self._param.max_retries,
-                        retry_interval=self._param.delay_after_error,
-                    )
-                chat_mdl_by_tid[template_id] = default_chat_mdl
-            filtered_templates.append((template_id, parser_cfg))
-
-        if not filtered_templates:
-            if chunks is None:
-                chunks = self._normalize_upstream_chunks(kwargs)
-            self.set_output("chunks", chunks)
-            return
-        active_templates = filtered_templates
+        # Compilation templates describe output structure, not model selection.
+        # Every template in this pipeline must use the Compiler component's LLM.
+        chat_mdl = LLMBundle(
+            tenant_id,
+            self.chat_mdl.model_config,
+            lang=language,
+            max_retries=self._param.max_retries,
+            retry_interval=self._param.delay_after_error,
+        )
+        chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
 
         def _template_requests_rechunk(cfg: dict) -> bool:
             if not isinstance(cfg, dict):
