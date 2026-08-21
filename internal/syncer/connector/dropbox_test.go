@@ -47,7 +47,9 @@ func newDropboxTestServer(t *testing.T) *dropboxTestServer {
 		case "/2/files/list_folder":
 			var request dropboxListFolderRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				t.Fatalf("decode list_folder request: %v", err)
+				t.Errorf("decode list_folder request: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 			fixture.listRequests = append(fixture.listRequests, request)
 			if request.Limit == 1 {
@@ -65,10 +67,14 @@ func newDropboxTestServer(t *testing.T) *dropboxTestServer {
 			fixture.continueCalls++
 			var request map[string]string
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				t.Fatalf("decode continue request: %v", err)
+				t.Errorf("decode continue request: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 			if request["cursor"] != "cursor-1" {
-				t.Fatalf("cursor = %q", request["cursor"])
+				t.Errorf("cursor = %q", request["cursor"])
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 			writeDropboxTestListResponse(w, []map[string]any{
 				{".tag": "file", "id": "id:dup-2", "name": "dup.md", "path_display": "/b/dup.md", "client_modified": "2026-01-04T00:00:00Z", "size": 5},
@@ -78,7 +84,9 @@ func newDropboxTestServer(t *testing.T) *dropboxTestServer {
 		case "/2/files/download":
 			var arg map[string]string
 			if err := json.Unmarshal([]byte(r.Header.Get("Dropbox-API-Arg")), &arg); err != nil {
-				t.Fatalf("decode download arg: %v", err)
+				t.Errorf("decode download arg: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 			fixture.downloadPaths = append(fixture.downloadPaths, arg["path"])
 			_, _ = io.WriteString(w, "body:"+arg["path"])
