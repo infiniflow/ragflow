@@ -25,7 +25,12 @@ from functools import partial
 from common.constants import LLMType
 from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
+from api.db.joint_services.tenant_model_service import (
+    get_model_config_from_provider_instance,
+    get_model_type_by_name,
+    resolve_model_config,
+    resolve_model_type,
+)
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt

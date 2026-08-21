@@ -160,9 +160,11 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
         case LLMType.EMBEDDING.value:
             model_id = tenant.tenant_embd_id
             model_name = tenant.embd_id
-        case LLMType.SPEECH2TEXT.value:
+        case LLMType.ASR.value:
+            model_id = tenant.tenant_asr_id
             model_name = tenant.asr_id
-        case LLMType.IMAGE2TEXT.value:
+        case LLMType.VISION.value:
+            model_id = tenant.tenant_img2txt_id
             model_name = tenant.img2txt_id
         case LLMType.CHAT.value:
             model_id = tenant.tenant_llm_id
@@ -219,7 +221,7 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
     if instance_obj:
         return instance_obj
     if instance_name != "default":
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+        raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
 
     active_instances = [inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id) if inst.status == ActiveStatusEnum.ACTIVE.value]
     if len(active_instances) == 1:
@@ -234,7 +236,7 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
         )
         return active_instances[0]
 
-    raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
 
 
 def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.Enum, model_name: str):
@@ -306,7 +308,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             raise LookupError(f"Model provider config not found: {provider_name}")
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
-            raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+            raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
         llm_info = llm_list[0]
         if model_type_val not in _factory_model_types(llm_info):
             raise LookupError(f"Model {model_name} is not a {model_type_val} model.")
@@ -388,7 +390,7 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
     if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+        raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
     if not model_obj:
         raise LookupError(f"Model {model_name} not found.")
@@ -453,7 +455,7 @@ def get_composite_model_name_by_id(model_id: str) -> str:
 
     ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
     if not ok:
-        raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
+        raise LookupError(f"Model id={model_id} not found for model instance id={model_obj.instance_id}.")
 
     ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     if not ok:
