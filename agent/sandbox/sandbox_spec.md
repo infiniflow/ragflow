@@ -138,7 +138,7 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - `endpoint`: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
-- `pool_size`: Container pool size (default: 10)
+- `pool_size`: Container pool size (default: 3)
 
 **Languages**:
 - Python
@@ -162,7 +162,7 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - Pool exhaustion causes "Container pool is busy" errors
 
 **Common issues**:
-- `"Container pool is busy"`: Increase `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` (default: 1 in .env, should be 5+)
+- `"Container pool is busy"`: Increase `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` (5 with the standalone compose file, 3 in the main RAGFlow stack)
 - `Container creation fails`: Ensure gVisor is installed and accessible at `/usr/local/bin/runsc`
 
 #### 2.2.2 Aliyun code interpreter provider
