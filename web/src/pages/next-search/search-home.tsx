@@ -50,7 +50,7 @@ export default function SearchHome({
 
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-[15vh]">
-      <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-[780px]">
+      <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-full max-w-[780px]">
         <RAGFlowLogo showEmbedIcon={showEmbedLogo}></RAGFlowLogo>
         <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 min-h-[240px] border">
           {!isSearching && <Spotlight className="z-0" />}
