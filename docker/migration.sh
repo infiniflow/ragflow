@@ -9,11 +9,22 @@
 set -e  # Exit on any error
 # Instead, we'll handle errors manually for better debugging experience
 
+# Source the index-volume resolver. Sourced here so the rest of the
+# script can use ``get_index_volume_for_engine`` without re-defining it.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./migration_volumes.sh
+source "${SCRIPT_DIR}/migration_volumes.sh"
+
 # Default values
 DEFAULT_BACKUP_FOLDER="backup"
 DEFAULT_PROJECT_NAME="docker"
-VOLUME_BASES=("mysql_data" "minio_data" "redis_data" "esdata01")
-BACKUP_FILES=("mysql_backup.tar.gz" "minio_backup.tar.gz" "redis_backup.tar.gz" "es_backup.tar.gz")
+# Index volume is engine-specific; see get_index_volume_for_engine in
+# migration_volumes.sh. VOLUME_BASES and BACKUP_FILES are populated from
+# the configured DOC_ENGINE in main(), after the env is read.
+VOLUME_BASES=("mysql_data" "minio_data" "redis_data")
+BACKUP_FILES=("mysql_backup.tar.gz" "minio_backup.tar.gz" "redis_backup.tar.gz")
+INDEX_VOL_BASE=""
+INDEX_BACKUP_FILE=""
 
 # Build volume names from project name and base names
 build_volume_names() {
@@ -54,7 +65,17 @@ show_help() {
     echo "  - ${DEFAULT_PROJECT_NAME}_mysql_data     (MySQL database)"
     echo "  - ${DEFAULT_PROJECT_NAME}_minio_data     (MinIO object storage)"
     echo "  - ${DEFAULT_PROJECT_NAME}_redis_data     (Redis cache)"
-    echo "  - ${DEFAULT_PROJECT_NAME}_esdata01       (Elasticsearch indices)"
+    echo "  - <index volume>                       (DOC_ENGINE indices; see below)"
+    echo ""
+    echo "INDEX VOLUME BY DOC_ENGINE:"
+    echo "  elasticsearch -> ${DEFAULT_PROJECT_NAME}_esdata01       (file: es_backup.tar.gz)"
+    echo "  opensearch     -> ${DEFAULT_PROJECT_NAME}_osdata01       (file: os_backup.tar.gz)"
+    echo "  infinity       -> ${DEFAULT_PROJECT_NAME}_infinity_data  (file: infinity_backup.tar.gz)"
+    echo "  serenedb       -> ${DEFAULT_PROJECT_NAME}_serenedb_data  (file: serenedb_backup.tar.gz)"
+    echo "  oceanbase / seekdb use bind mounts; index backup is not supported by this script."
+    echo ""
+    echo "DOC_ENGINE is read from the environment (default: elasticsearch). To back up"
+    echo "an Infinity deployment, run e.g.  DOC_ENGINE=infinity $0 backup  ."
     echo ""
     echo "NOTE:"
     echo "  If you started RAGFlow with 'docker compose -p myproject up', the volume"
@@ -314,6 +335,27 @@ main() {
                 ;;
         esac
     done
+
+    # Read DOC_ENGINE from the environment, default elasticsearch. The
+    # index volume and backup file are engine-specific; the other three
+    # (mysql, minio, redis) are engine-independent.
+    DOC_ENGINE="${DOC_ENGINE:-elasticsearch}"
+    local index_spec
+    index_spec="$(get_index_volume_for_engine "$DOC_ENGINE")"
+    if [ -n "$index_spec" ]; then
+        INDEX_VOL_BASE="${index_spec%% *}"
+        INDEX_BACKUP_FILE="${index_spec##* }"
+        VOLUME_BASES=("mysql_data" "minio_data" "redis_data" "$INDEX_VOL_BASE")
+        BACKUP_FILES=("mysql_backup.tar.gz" "minio_backup.tar.gz" "redis_backup.tar.gz" "$INDEX_BACKUP_FILE")
+    else
+        # oceanbase / seekdb: bind-mounted, not a named volume. Skip the
+        # index backup and warn the user that restore will not include
+        # the index data. (Backup files and volumes are aligned so the
+        # restore gate at line ~228 does not complain about a missing
+        # es_backup.tar.gz on these engines.)
+        echo "ℹ️  DOC_ENGINE=$DOC_ENGINE uses bind mounts; index backup is not supported by this script."
+        echo "   Copy docker/oceanbase/data (or docker/seekdb/data) separately to back up the index."
+    fi
 
     # Build volume names based on project name
     build_volume_names
