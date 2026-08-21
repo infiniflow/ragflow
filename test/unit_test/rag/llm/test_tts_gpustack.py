@@ -58,13 +58,26 @@ def test_gpustack_tts_logs_stream_completion_after_audio_consumption():
     provider = GPUStackTTS("sk-test", "qwen3-tts", base_url="http://gpustack:80")
     response = MagicMock()
     response.status_code = 200
+    events = []
 
-    with patch.object(provider, "_send_request", return_value=response), patch.object(provider, "_process_response", return_value=iter([b"audio"])), patch("rag.llm.tts_model.logger.info") as info:
-        assert list(provider.tts("hello", voice="aiden")) == [b"audio"]
+    def audio_iterator():
+        events.append("audio-yielded")
+        yield b"audio"
+        events.append("audio-exhausted")
 
-    logged_messages = [call.args[0] for call in info.call_args_list]
-    assert "GPUStack TTS response received for model %s with status %s" in logged_messages
-    assert "GPUStack TTS audio stream completed for model %s with status %s" in logged_messages
+    def record_info(message, *args):
+        events.append(message)
+
+    with patch.object(provider, "_send_request", return_value=response), patch.object(provider, "_process_response", return_value=audio_iterator()), patch("rag.llm.tts_model.logger.info", side_effect=record_info):
+        stream = provider.tts("hello", voice="aiden")
+        assert "GPUStack TTS response received for model %s with status %s" in events
+        assert "GPUStack TTS audio stream completed for model %s with status %s" not in events
+        assert next(stream) == b"audio"
+        assert "GPUStack TTS audio stream completed for model %s with status %s" not in events
+        with pytest.raises(StopIteration):
+            next(stream)
+
+    assert events.index("audio-exhausted") < events.index("GPUStack TTS audio stream completed for model %s with status %s")
 
 
 def test_gpustack_tts_request_failure_log_omits_exception_text():
@@ -73,5 +86,6 @@ def test_gpustack_tts_request_failure_log_omits_exception_text():
     with patch.object(provider, "_send_request", side_effect=RuntimeError("secret response body")), patch("rag.llm.tts_model.logger.warning") as warning, pytest.raises(RuntimeError):
         list(provider.tts("hello", voice="aiden"))
 
+    warning.assert_called_once_with("GPUStack TTS request failed for model %s before audio streaming", "qwen3-tts")
     logged_parts = " ".join(str(arg) for call in warning.call_args_list for arg in call.args)
     assert "secret response body" not in logged_parts
