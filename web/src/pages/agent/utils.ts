@@ -20,6 +20,7 @@ import {
   isEmpty,
   isEqual,
   omit,
+  pick,
   sample,
 } from 'lodash';
 import isObject from 'lodash/isObject';
@@ -399,82 +400,99 @@ export function transformTitleChunkerParams(
   };
 }
 
+// LLM setting keys the Go extractor DSL keeps besides the nested groups.
+// Mirrors LlmSettingSchema (components/llm-setting-items/next) — duplicated
+// here as a plain list so this module doesn't import the form components.
+const ExtractorLlmSettingKeys = [
+  'llm_id',
+  'temperature',
+  'top_p',
+  'presence_penalty',
+  'frequency_penalty',
+  'max_tokens',
+  'parameter',
+  'thinking',
+  'temperatureEnabled',
+  'topPEnabled',
+  'presencePenaltyEnabled',
+  'frequencyPenaltyEnabled',
+  'maxTokensEnabled',
+];
+
 export function transformExtractorParams(
   params: ExtractorFormSchemaType,
-): Record<string, any> {
+): Record<string, any> {  const raw = params as Record<string, any>;
   // The Python extractor only reads the legacy flat fields; the nested
   // per-feature configs below are Go-only.
   if (!isGoBackend()) {
-    return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+    return { ...params, prompts: [{ content: raw.prompts, role: 'user' }] };
   }
 
+  // An unopened legacy node can still flow through here with flat keys
+  // (auto_keywords, keywords_sys_prompt, enable_metadata + metadata[],
+  // the transitional "metadata_config", ...). Accept them as read
+  // fallbacks — flat "metadata" is an array, which distinguishes it from
+  // the group object — but never re-emit them.
+  const metadataGroup =
+    raw.metadata !== undefined && !Array.isArray(raw.metadata)
+      ? raw.metadata
+      : raw.metadata_config;
+
   const isMetadataEnabled =
-    params.metadata_config?.enabled !== undefined
-      ? Boolean(params.metadata_config?.enabled)
-      : params.enable_metadata === 1 || params.enable_metadata === true;
+    metadataGroup?.enabled !== undefined
+      ? Boolean(metadataGroup.enabled)
+      : raw.enable_metadata === 1 || raw.enable_metadata === true;
 
   const isSummaryEnabled =
     params.summary?.enabled !== undefined
       ? Boolean(params.summary?.enabled)
-      : params.enable_summary === 1 ||
-        params.enable_summary === true ||
-        params.field_name === 'summary';
+      : raw.enable_summary === 1 ||
+        raw.enable_summary === true ||
+        raw.field_name === 'summary';
 
   const metadataList =
-    params.metadata_config?.metadata ?? params.metadata ?? [];
+    metadataGroup?.metadata ??
+    (Array.isArray(raw.metadata) ? raw.metadata : []);
   const builtInMetadataList =
-    params.metadata_config?.built_in_metadata ??
-    params.built_in_metadata ??
-    [];
+    metadataGroup?.built_in_metadata ?? raw.built_in_metadata ?? [];
 
   const summarySysPrompt =
-    params.summary?.system_prompt ?? params.sys_prompt ?? '';
+    params.summary?.system_prompt ?? raw.sys_prompt ?? '';
 
-  const keywordsTopN = params.keywords?.top_n ?? params.auto_keywords ?? 0;
+  const keywordsTopN = params.keywords?.top_n ?? raw.auto_keywords ?? 0;
   const keywordsSysPrompt =
-    params.keywords?.system_prompt ?? params.keywords_sys_prompt ?? '';
+    params.keywords?.system_prompt ?? raw.keywords_sys_prompt ?? '';
 
-  const questionsTopN = params.questions?.top_n ?? params.auto_questions ?? 0;
+  const questionsTopN = params.questions?.top_n ?? raw.auto_questions ?? 0;
   const questionsSysPrompt =
-    params.questions?.system_prompt ?? params.questions_sys_prompt ?? '';
+    params.questions?.system_prompt ?? raw.questions_sys_prompt ?? '';
 
-  const tagsTopN = params.tags?.top_n ?? params.auto_tags ?? 0;
-  const tagFileId = params.tags?.tag_file_id ?? params.tag_file_id ?? '';
+  const tagsTopN = params.tags?.top_n ?? raw.auto_tags ?? 0;
+  const tagFileId = params.tags?.tag_file_id ?? raw.tag_file_id ?? '';
 
+  // The Go extractor (schema.ExtractorParam) reads only llm_id plus the
+  // nested per-feature groups, so emit exactly that whitelist along with
+  // the LLM settings the form defines — no legacy flat mirrors, no
+  // display-only fields like outputs.
   return {
-    ...params,
-    prompts: [{ content: params.prompts, role: 'user' }],
-    auto_keywords: keywordsTopN,
-    keywords_sys_prompt: keywordsSysPrompt,
+    ...pick(params, ExtractorLlmSettingKeys),
     keywords: {
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,
     },
-    auto_questions: questionsTopN,
-    questions_sys_prompt: questionsSysPrompt,
     questions: {
       top_n: questionsTopN,
       system_prompt: questionsSysPrompt,
     },
-    auto_tags: tagsTopN,
-    tag_file_id: tagFileId,
     tags: {
       top_n: tagsTopN,
       tag_file_id: tagFileId,
     },
-    enable_summary: isSummaryEnabled ? 1 : 0,
-    sys_prompt: summarySysPrompt,
-    field_name: isSummaryEnabled
-      ? (params.field_name || 'summary')
-      : (params.field_name === 'summary' ? '' : (params.field_name || '')),
     summary: {
       enabled: isSummaryEnabled,
       system_prompt: summarySysPrompt,
     },
-    enable_metadata: isMetadataEnabled ? 1 : 0,
-    metadata: metadataList,
-    built_in_metadata: builtInMetadataList,
-    metadata_config: {
+    metadata: {
       enabled: isMetadataEnabled,
       metadata: metadataList,
       built_in_metadata: builtInMetadataList,
