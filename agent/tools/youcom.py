@@ -34,6 +34,10 @@ YOUCOM_KEYLESS_SEARCH_URL = "https://api.you.com/v1/agents/search"
 YOUCOM_USER_AGENT = "RAGFlow youdotcom-integration/infiniflow-ragflow"
 # You.com clamps `count` to 1-100.
 YOUCOM_MAX_COUNT = 100
+# You.com accepts a fixed set of recency windows. `any` is the no-restriction
+# default and is never forwarded; the rest go straight into the request.
+YOUCOM_FRESHNESS_ANY = "any"
+YOUCOM_FRESHNESS_VALUES = [YOUCOM_FRESHNESS_ANY, "day", "week", "month", "year"]
 
 
 def _search(api_key: str, params: dict, timeout_s: int = 30) -> dict:
@@ -49,6 +53,20 @@ def _search(api_key: str, params: dict, timeout_s: int = 30) -> dict:
     response = requests.get(url, headers=headers, params=params, timeout=timeout_s)
     response.raise_for_status()
     return response.json()
+
+
+def _freshness(value) -> str:
+    """Normalize a freshness value to a You.com window, or "" for no limit.
+
+    Blank and `any` both mean no restriction. Anything else has to be one of the
+    published windows, because the value is forwarded to You.com as-is.
+    """
+    freshness = str(value or "").strip().lower()
+    if not freshness or freshness == YOUCOM_FRESHNESS_ANY:
+        return ""
+    if freshness not in YOUCOM_FRESHNESS_VALUES:
+        raise ValueError("Freshness {} is not supported, it should be in {}".format(freshness, YOUCOM_FRESHNESS_VALUES))
+    return freshness
 
 
 def _result_content(result: dict) -> str:
@@ -106,8 +124,9 @@ When searching:
                 },
                 "freshness": {
                     "type": "string",
-                    "description": "default:''. Restrict results by recency. One of 'day', 'week', 'month', 'year', or '' for no limit.",
-                    "default": "",
+                    "description": "default:'any'. Restrict results by recency. One of 'day', 'week', 'month', 'year', or 'any' for no limit.",
+                    "enum": YOUCOM_FRESHNESS_VALUES,
+                    "default": YOUCOM_FRESHNESS_ANY,
                     "required": False,
                 },
             },
@@ -129,7 +148,9 @@ When searching:
             },
             "freshness": {
                 "name": "Freshness",
-                "type": "line",
+                "type": "options",
+                "value": YOUCOM_FRESHNESS_ANY,
+                "options": YOUCOM_FRESHNESS_VALUES,
             },
         }
 
@@ -151,12 +172,14 @@ class YouComSearch(ToolBase, ABC):
             "query": kwargs["query"],
             "count": min(max(1, int(self._param.top_n)), YOUCOM_MAX_COUNT),
         }
-        if kwargs.get("freshness"):
-            params["freshness"] = kwargs["freshness"]
+        freshness = _freshness(kwargs.get("freshness"))
+        if freshness:
+            params["freshness"] = freshness
 
         logging.info(f"YouComSearch: starting search (keyed={keyed})")
         last_e = None
-        for _ in range(self._param.max_retries + 1):
+        attempts = self._param.max_retries + 1
+        for attempt in range(attempts):
             if self.check_if_canceled("YouComSearch processing"):
                 logging.info("YouComSearch: cancelled before request")
                 return
@@ -185,7 +208,8 @@ class YouComSearch(ToolBase, ABC):
                 # parameter here, so the requests error message contains it.
                 last_e = e
                 logging.error(f"You.com error: {type(e).__name__}")
-                time.sleep(self._param.delay_after_error)
+                if attempt < attempts - 1:
+                    time.sleep(self._param.delay_after_error)
 
         if last_e:
             return f"You.com error: {type(last_e).__name__}"

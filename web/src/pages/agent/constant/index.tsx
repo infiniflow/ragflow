@@ -197,7 +197,7 @@ export enum KeenableMode {
 }
 
 export enum YouComFreshness {
-  Any = '',
+  Any = 'any',
   Day = 'day',
   Week = 'week',
   Month = 'month',

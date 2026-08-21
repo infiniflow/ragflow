@@ -156,15 +156,38 @@ def test_top_n_caps_the_merged_sections(monkeypatch):
     assert [r["title"] for r in captured["references"]] == ["W0", "W1", "W2", "W3"]
 
 
-def test_freshness_is_forwarded_only_when_set(monkeypatch):
+def test_freshness_is_forwarded_only_when_a_window_is_set(monkeypatch):
     calls = _capture_get(monkeypatch)
     tool, _captured, _outputs = _make_tool()
 
     tool._invoke(query="q", freshness="week")
     assert calls[0]["params"]["freshness"] == "week"
 
+    # Blank and `any` both mean no restriction.
     tool._invoke(query="q", freshness="")
     assert "freshness" not in calls[1]["params"]
+
+    tool._invoke(query="q", freshness="any")
+    assert "freshness" not in calls[2]["params"]
+
+
+def test_an_unsupported_freshness_is_rejected_before_the_request(monkeypatch):
+    calls = _capture_get(monkeypatch)
+    tool, _captured, _outputs = _make_tool()
+
+    try:
+        tool._invoke(query="q", freshness="decade")
+    except ValueError as e:
+        assert "decade" in str(e)
+        assert calls == []
+        return
+    raise AssertionError("expected an unsupported freshness to raise")
+
+
+def test_the_published_schema_restricts_freshness():
+    freshness = YouComSearchParam().get_meta()["function"]["parameters"]["properties"]["freshness"]
+
+    assert freshness["enum"] == ["any", "day", "week", "month", "year"]
 
 
 def test_blank_query_short_circuits(monkeypatch):
@@ -188,6 +211,46 @@ def test_failures_never_log_the_query_or_the_key(monkeypatch, caplog):
     assert "ydc-secret" not in caplog.text
     assert "my%20private%20query" not in str(result)
     assert "HTTPError" in str(result)
+
+
+def _capture_sleep(monkeypatch):
+    """Record the retry delays without patching the stdlib for other threads."""
+    slept = []
+
+    class _Clock:
+        @staticmethod
+        def sleep(seconds):
+            slept.append(seconds)
+
+    monkeypatch.setattr(youcom_module, "time", _Clock)
+    return slept
+
+
+def test_a_failed_final_attempt_does_not_sleep(monkeypatch):
+    """The delay only buys something when another attempt follows it."""
+    _capture_get(monkeypatch, _FakeResponse({}, status_code=402))
+    slept = _capture_sleep(monkeypatch)
+    tool, _captured, _outputs = _make_tool()
+    tool._param.max_retries = 0
+    tool._param.delay_after_error = 5
+
+    tool._invoke(query="q")
+
+    assert slept == []
+
+
+def test_retries_sleep_between_attempts(monkeypatch):
+    calls = _capture_get(monkeypatch, _FakeResponse({}, status_code=402))
+    slept = _capture_sleep(monkeypatch)
+    tool, _captured, _outputs = _make_tool()
+    tool._param.max_retries = 2
+    tool._param.delay_after_error = 5
+
+    tool._invoke(query="q")
+
+    assert len(calls) == 3
+    # Two gaps between three attempts, and nothing after the last one.
+    assert slept == [5, 5]
 
 
 def test_param_check_rejects_a_non_positive_top_n():
