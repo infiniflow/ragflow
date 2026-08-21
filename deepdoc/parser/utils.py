@@ -22,18 +22,11 @@ from rag.nlp import find_codec
 
 
 def get_text(fnm: str, binary=None) -> str:
-    txt = ""
-    if binary is not None:
-        encoding = find_codec(binary)
-        txt = binary.decode(encoding, errors="ignore")
-    else:
-        with open(fnm, "r") as f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                txt += line
-    return txt
+    if binary is None:
+        with open(fnm, "rb") as f:
+            binary = f.read()
+    encoding = find_codec(binary)
+    return binary.decode(encoding, errors="ignore")
 
 
 def extract_pdf_outlines(source):
