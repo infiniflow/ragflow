@@ -32,9 +32,14 @@ from common import settings
 from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+<<<<<<< HEAD
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
+=======
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
+from rag.utils.url_utils import ensure_v1
+>>>>>>> 997da0759 (fix(chat, cv, embedding, rerank): wire Bedrock key through shared helper (#17373))
 import logging
 import base64
 
@@ -673,7 +678,11 @@ class BedrockEmbed(Base):
         #   - "access_key_secret": requires `bedrock_ak` + `bedrock_sk`.
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
         #   - else: treated as "assume_role" (default AWS credential chain).
-        key = json.loads(key)
+        # On non-JSON input the helper raises a clear ModelException
+        # pointing at the required schema; without this guard a raw
+        # json.loads would surface a JSONDecodeError from inside
+        # rag/llm internals (see #17373).
+        key = _resolve_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")

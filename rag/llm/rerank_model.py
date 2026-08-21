@@ -28,6 +28,7 @@ from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from rag.llm.key_utils import _resolve_bedrock_credentials
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 
 
@@ -435,7 +436,12 @@ class BedrockRerank(Base):
     def __init__(self, key, model_name, **kwargs):
         import boto3
 
-        key = json.loads(key)
+        # Parse via the shared helper. On non-JSON input (e.g. a plain AWS
+        # access key) the helper raises a clear ModelException pointing at
+        # the required schema; without this guard the raw json.loads
+        # would surface a JSONDecodeError from inside rag/llm internals
+        # (see #17373).
+        key = _resolve_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")
