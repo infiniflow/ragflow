@@ -80,6 +80,8 @@ var (
 	ErrConnectorNoAuth = errors.New("no authorization")
 	// ErrConnectorTestUnsupported is returned for connector sources without a settings validator.
 	ErrConnectorTestUnsupported = errors.New("connector test is not supported for this source")
+	// ErrConnectorSourceNotImplemented is returned for connector sources not registered in the Go syncer.
+	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
 )
 
 // ConnectorService connector service
@@ -422,6 +424,10 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userI
 	}
 	connector, err := s.connectorRegistry.OpenFromConfig(source, connectorConfig)
 	if err != nil {
+		var unsupported *syncerconnector.UnsupportedSourceError
+		if errors.As(err, &unsupported) {
+			return fmt.Errorf("%w: %s", ErrConnectorSourceNotImplemented, unsupported.Source)
+		}
 		return err
 	}
 	validator, ok := connector.(syncerconnector.SettingValidator)
