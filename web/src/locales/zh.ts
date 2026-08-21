@@ -1002,6 +1002,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
+      valueRangeMessage: '请输入介于 {{min}} 和 {{max}} 之间的数值。',
       thinking: '思考中...',
       thought: '思考完成',
       thinkingDefault: '系统默认',

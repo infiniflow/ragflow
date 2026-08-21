@@ -1069,6 +1069,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       maxTokensTip: `La dimensione massima del contesto del modello; un valore non valido o errato causerà un errore. Valore predefinito 512.`,
       maxTokensInvalidMessage: 'Inserisci un numero valido per Token massimi.',
       maxTokensMinMessage: 'Token massimi non può essere inferiore a 0.',
+      valueRangeMessage: 'Inserisci un valore compreso tra {{min}} e {{max}}.',
       quote: 'Mostra citazione',
       quoteTip: 'Se visualizzare il testo originale come riferimento.',
       selfRag: 'Self-RAG',

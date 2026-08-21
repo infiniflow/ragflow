@@ -426,6 +426,7 @@ export default {
       maxTokensInvalidMessage:
         'Por favor, insira um número válido para o máximo de tokens.',
       maxTokensMinMessage: 'O máximo de tokens não pode ser menor que 0.',
+      valueRangeMessage: 'Insira um valor entre {{min}} e {{max}}.',
       quote: 'Mostrar citação',
       quoteTip: 'Exibir ou não o texto original como referência.',
       selfRag: 'Self-RAG',

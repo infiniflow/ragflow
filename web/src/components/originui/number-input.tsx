@@ -21,6 +21,7 @@ interface NumberInputProps {
   max?: number;
   hideIcons?: boolean;
   inputClassName?: string;
+  onRangeViolation?: (outOfRange: boolean) => void;
 }
 
 const NumberInput = forwardRef<
@@ -37,6 +38,8 @@ const NumberInput = forwardRef<
     max = Infinity,
     hideIcons = false,
     inputClassName,
+    onRangeViolation,
+    disabled,
     ...props
   },
   ref,
@@ -45,18 +48,46 @@ const NumberInput = forwardRef<
     return initialValue ?? 0;
   });
 
+  const isFocusedRef = useRef(false);
+
   const valueRef = useRef<number>();
+
+  const clamp = useCallback(
+    (v: number) => Math.min(Math.max(v, min), max),
+    [min, max],
+  );
 
   useEffect(() => {
     if (initialValue !== undefined) {
-      setValue(initialValue);
+      setValue((prev) => {
+        // Keep the raw typed value while the input is focused: the effective
+        // (clamped) value has already been propagated via onChange, and the
+        // display is normalized back into the range on blur. The focus flag
+        // lives in a ref so the transition itself does not re-trigger this
+        // sync with a stale initialValue.
+        if (isFocusedRef.current) {
+          return prev;
+        }
+        return initialValue;
+      });
     }
   }, [initialValue]);
 
+  useEffect(() => {
+    // A disabled input cannot be edited, so there is no draft to protect:
+    // drop any stale out-of-range display value and show the effective one.
+    if (disabled && initialValue !== undefined) {
+      setValue(initialValue);
+      isFocusedRef.current = false;
+    }
+  }, [disabled, initialValue]);
+
   const handleDecrement = () => {
     if (isNumber(value) && value > min) {
-      setValue(value - 1);
-      onChange?.(value - 1);
+      const nextValue = clamp(value - 1);
+      setValue(nextValue);
+      onChange?.(nextValue);
+      onRangeViolation?.(false);
     }
   };
 
@@ -64,11 +95,13 @@ const NumberInput = forwardRef<
     if (!isNumber(value)) {
       return;
     }
-    if (value > max - 1) {
+    const nextValue = clamp(value + 1);
+    if (nextValue <= value) {
       return;
     }
-    setValue(value + 1);
-    onChange?.(value + 1);
+    setValue(nextValue);
+    onChange?.(nextValue);
+    onRangeViolation?.(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,44 +112,38 @@ const NumberInput = forwardRef<
       if (isNumber(value)) {
         valueRef.current = value;
       }
+      onRangeViolation?.(false);
       setValue('');
       return;
     }
 
     if (!isNaN(newValue)) {
-      // Show the raw typed value as-is, even when it falls outside [min, max]
-      // (e.g. deleting "1024" → "102" when min=512), so the controlled input
-      // never snaps back mid-edit. Out-of-range values are not propagated to
-      // the form; handleBlur clamps them into range on focus loss.
+      // Allow intermediate editing states that fall outside [min, max]
+      // (e.g. deleting "1024" → "102" when min=512): the raw value stays in
+      // the input, while the clamped value is propagated immediately so
+      // bound UI (e.g. sliders) never shows a stale position. The input is
+      // normalized back into the range on blur.
+      onRangeViolation?.(newValue < min || newValue > max);
       setValue(newValue);
-      if (newValue >= min && newValue <= max) {
-        onChange?.(newValue);
-      }
+      onChange?.(clamp(newValue));
     }
   };
 
   const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(
     (e) => {
+      isFocusedRef.current = false;
       if (isNumber(value)) {
-        let finalValue = value;
-        if (value < min) {
-          finalValue = min;
-        } else if (value > max) {
-          finalValue = max;
-        }
+        const finalValue = clamp(value);
         if (finalValue !== value) {
           setValue(finalValue);
         }
+        onRangeViolation?.(false);
         onChange?.(finalValue);
       } else {
         const previousValue = valueRef.current ?? min;
-        let finalValue = previousValue;
-        if (previousValue < min) {
-          finalValue = min;
-        } else if (previousValue > max) {
-          finalValue = max;
-        }
+        const finalValue = clamp(previousValue);
         setValue(finalValue);
+        onRangeViolation?.(false);
         onChange?.(finalValue);
       }
       // Keep the caller's blur notification (e.g. react-hook-form's
@@ -124,8 +151,12 @@ const NumberInput = forwardRef<
       // spread below cannot silently replace this handler.
       onBlurProp?.(e);
     },
-    [min, max, onChange, onBlurProp, value],
+    [min, onChange, onRangeViolation, onBlurProp, value, clamp],
   );
+
+  const handleFocus = useCallback(() => {
+    isFocusedRef.current = true;
+  }, []);
 
   const style = useMemo(
     () => ({
@@ -164,10 +195,13 @@ const NumberInput = forwardRef<
           </button>
         )}
         <input
+          {...omit(props, ['prefix', 'suffix'])}
           type="number"
           value={value}
+          disabled={disabled}
           onChange={handleChange}
           onBlur={handleBlur}
+          onFocus={handleFocus}
           className={cn(
             'w-full flex-1 text-center bg-transparent focus-visible:outline-none number-input-hide-spin',
             'disabled:cursor-not-allowed disabled:opacity-50 transition-colors',
@@ -179,7 +213,6 @@ const NumberInput = forwardRef<
           )}
           style={style}
           min={min}
-          {...omit(props, ['prefix', 'suffix'])}
         />
         {hideIcons || (
           <button

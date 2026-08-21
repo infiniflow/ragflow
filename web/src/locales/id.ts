@@ -438,6 +438,7 @@ export default {
       maxTokensInvalidMessage:
         'Silakan masukkan angka yang valid untuk Max Tokens.',
       maxTokensMinMessage: 'Max Tokens tidak boleh kurang dari 0.',
+      valueRangeMessage: 'Masukkan nilai antara {{min}} dan {{max}}.',
       quote: 'Tampilkan Kutipan',
       quoteTip: 'Haruskah sumber teks asli ditampilkan?',
       selfRag: 'Self-RAG',

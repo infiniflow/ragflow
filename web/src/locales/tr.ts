@@ -1030,6 +1030,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       maxTokensInvalidMessage:
         'Lütfen Maksimum token için geçerli bir sayı girin.',
       maxTokensMinMessage: "Maksimum token 0'dan az olamaz.",
+      valueRangeMessage: 'Lütfen {{min}} ile {{max}} arasında bir değer girin.',
       quote: 'Alıntı göster',
       quoteTip: 'Orijinal metnin referans olarak gösterilip gösterilmeyeceği.',
       selfRag: 'Self-RAG',
