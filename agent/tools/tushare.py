@@ -44,8 +44,7 @@ class TuShareParam(ToolParamBase):
             "parameters": {
                 "query": {
                     "type": "string",
-                    "description": "Optional user query. Used as the news-filter keyword when the "
-                    "tool's `keyword` field is empty; otherwise the tool's `keyword` config wins.",
+                    "description": "Optional user query. Used as the news-filter keyword when the tool's `keyword` field is empty; otherwise the tool's `keyword` config wins.",
                     "default": "{sys.query}",
                     "required": False,
                 }
