@@ -27,7 +27,11 @@ elif git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null); then
     if [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = "true" ]; then
         git_repo_name=$(basename "$git_dir")
     else
-        git_repo_name=$(basename "$(dirname "$git_dir")")
+        # A linked worktree's git dir lives under .git/worktrees, so the main
+        # repository is found through the common dir. That is reported relative
+        # to the git dir (plain "." inside .git), hence resolving it here.
+        git_common=$(cd "$git_dir" && cd "$(git rev-parse --git-common-dir)" && pwd)
+        git_repo_name=$(basename "$(dirname "$git_common")")
     fi
 else
     git_repo_name="It is NOT a Git repo"
