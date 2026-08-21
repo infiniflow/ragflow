@@ -13,12 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import base64
 import binascii
+import contextvars
 import datetime
 import json
 import logging
+import math
+import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import xxhash
 from pydantic import BaseModel, Field, validator
@@ -67,6 +73,58 @@ from rag.prompts.generator import cross_languages, keyword_extraction
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
+def _positive_env(name, default, cast):
+    """Read a strictly positive environment value or return its default."""
+    raw = os.environ.get(name, default)
+    try:
+        value = cast(raw)
+    except (TypeError, ValueError):
+        logging.warning("Invalid %s=%r; falling back to %s", name, raw, default)
+        return cast(default)
+    if not math.isfinite(value) or value <= 0:
+        logging.warning("Invalid %s=%r; expected a positive finite value, falling back to %s", name, raw, default)
+        return cast(default)
+    return value
+
+
+_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS = _positive_env("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS", "60", float)
+_ADD_CHUNK_WORKERS = _positive_env("RAGFLOW_ADD_CHUNK_WORKERS", "1", int)
+_ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_ADD_CHUNK_WORKERS,
+    thread_name_prefix="add-chunk",
+)
+
+
+class _AddChunkOperationTimeout(TimeoutError):
+    """Raised when add-chunk work exceeds its request deadline."""
+
+
+async def _run_add_chunk_operation(func, *args, stop_event=None):
+    """Run blocking add-chunk work in the route's dedicated executor.
+
+    Timing out cancels work that is still queued and releases the request task,
+    but Python cannot stop a callable that is already running in a thread. The
+    dedicated pool limits concurrent lingering operations without occupying
+    Quart's default executor or event loop.
+    """
+    loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
+    future = loop.run_in_executor(_ADD_CHUNK_EXECUTOR, ctx.run, func, *args)
+    try:
+        done, _ = await asyncio.wait({future}, timeout=_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        if stop_event is not None:
+            stop_event.set()
+        future.cancel()
+        raise
+    if not done:
+        if stop_event is not None:
+            stop_event.set()
+        future.cancel()
+        raise _AddChunkOperationTimeout
+    return await future
 
 
 def _decode_chunk_image_base64(image_base64):
@@ -1037,12 +1095,29 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
-    v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
-    v = 0.1 * v[0] + 0.9 * v[1]
-    d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
+    stop_event = threading.Event()
 
-    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+    def _add_chunk_sync():
+        """Embed, index, and count one chunk as one consistency unit."""
+        if stop_event.is_set():
+            return
+        v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+        if stop_event.is_set():
+            return
+        v = 0.1 * v[0] + 0.9 * v[1]
+        d[f"q_{len(v)}_vec"] = v.tolist()
+        if stop_event.is_set():
+            return
+        settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
+        DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+
+    try:
+        await _run_add_chunk_operation(_add_chunk_sync, stop_event=stop_event)
+    except _AddChunkOperationTimeout:
+        message = f"Chunk creation timed out after {_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS:g} seconds"
+        logging.error("%s; the worker may still be running. dataset_id=%s document_id=%s chunk_id=%s", message, dataset_id, document_id, chunk_id)
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=message)
+
     key_mapping = {
         "id": "id",
         "content_with_weight": "content",
