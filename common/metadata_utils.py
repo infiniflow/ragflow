@@ -306,6 +306,14 @@ def dedupe_list(values: list) -> list:
 
 
 def update_metadata_to(metadata, meta):
+    """Merge ``meta`` into ``metadata``.
+
+    String / list[str] values keep the previous multi-value merge + dedupe
+    behavior (used by LLM-extracted metadata). Scalars (bool / int / float /
+    None) and structured values (list[dict], dict, ...) are preserved so that
+    document system fields such as ``_isCurrent`` / ``_version`` and PDF
+    ``outline`` survive merges that later fully replace ``meta_fields``.
+    """
     if not meta:
         return metadata
     if isinstance(meta, str):
@@ -319,22 +327,78 @@ def update_metadata_to(metadata, meta):
 
     for k, v in meta.items():
         if isinstance(v, list):
-            v = [vv for vv in v if isinstance(vv, str)]
-            if not v:
+            if all(isinstance(vv, str) for vv in v):
+                if not v:
+                    continue
+                v = dedupe_list(v)
+            else:
+                # Structured list (e.g. outline [{title, depth}, ...]).
+                if k not in metadata:
+                    logging.debug(
+                        "update_metadata_to preserve structured list key=%s src=%s",
+                        k,
+                        type(v).__name__,
+                    )
+                    metadata[k] = v
+                else:
+                    logging.debug(
+                        "update_metadata_to skip structured list key=%s src=%s dst=%s",
+                        k,
+                        type(v).__name__,
+                        type(metadata[k]).__name__,
+                    )
                 continue
-            v = dedupe_list(v)
-        if not isinstance(v, list) and not isinstance(v, str):
+        elif isinstance(v, (str, bool, int, float)) or v is None:
+            pass
+        else:
+            # dict / other structured values: keep if absent.
+            if k not in metadata:
+                logging.debug(
+                    "update_metadata_to preserve structured value key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
+                metadata[k] = v
+            else:
+                logging.debug(
+                    "update_metadata_to skip structured value key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             continue
+
         if k not in metadata:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to preserve scalar key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
             metadata[k] = v
             continue
-        if isinstance(metadata[k], list):
+        if isinstance(metadata[k], list) and isinstance(v, (list, str)):
+            if not all(isinstance(x, str) for x in metadata[k]):
+                logging.debug(
+                    "update_metadata_to skip merge into structured list key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
+                continue
             if isinstance(v, list):
                 metadata[k].extend(v)
             else:
                 metadata[k].append(v)
             metadata[k] = dedupe_list(metadata[k])
         else:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to replace scalar key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             metadata[k] = v
 
     return metadata
