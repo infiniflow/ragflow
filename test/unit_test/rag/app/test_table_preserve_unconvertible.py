@@ -1,0 +1,153 @@
+#
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+"""#18459: cells the column-level type conversion cannot represent must be
+preserved, not silently dropped.
+
+The column type is a majority vote, and any cell the winning converter
+cannot represent (``N/A`` in a numeric column, ``unknown`` in a bool
+column, ``ongoing`` in a datetime column) was replaced with ``None`` —
+missing from the chunk body (chunk() skips None cells) AND from the stored
+field. The fix makes the conversion keep the original value, which is
+exactly the shape chunk()'s ES branch for strings in non-text columns was
+written against (that branch was unreachable dead code before)."""
+
+import sys
+from unittest.mock import MagicMock
+
+import pytest
+
+# Same shape as test_table_chunk_column_roles.py: keep optional
+# storage/parser backends out of the import path. Installed (and torn
+# down) per test so the stubs never leak into a sibling module's import
+# of the real dependency tree.
+_STUB_NAMES = (
+    "api.db.services.knowledgebase_service",
+    "deepdoc.parser",
+    "deepdoc.parser.figure_parser",
+    "deepdoc.parser.utils",
+    "deepdoc.vision.ocr",
+    "rag.app.picture",
+    "common.settings",
+)
+
+
+@pytest.fixture(autouse=True)
+def _import_table_module():
+    saved = {name: sys.modules.get(name) for name in _STUB_NAMES}
+    # Drop any cached rag.app.table too: the module imports with the stubs
+    # active and stays cached otherwise, so a sibling test could import the
+    # mocked version (#18466 review).
+    saved_table = sys.modules.pop("rag.app.table", None)
+    try:
+        for name in _STUB_NAMES:
+            m = MagicMock()
+            m.__path__ = []
+            sys.modules[name] = m
+        sys.modules["common.settings"].DOC_ENGINE_INFINITY = False
+        yield
+    finally:
+        sys.modules.pop("rag.app.table", None)
+        if saved_table is not None:
+            sys.modules["rag.app.table"] = saved_table
+        for name, original in saved.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
+
+
+def column_data_type(arr):
+    """Late-bound: the module import needs the stubs the fixture installs."""
+    from rag.app.table import column_data_type as _fn
+
+    return _fn(arr)
+
+
+@pytest.mark.p1
+def test_int_column_preserves_unconvertible_cell():
+    out, ty = column_data_type(["1", "2", "3", "N/A"])
+    assert ty == "int"
+    assert out == [1, 2, 3, "N/A"]
+
+
+@pytest.mark.p1
+def test_float_column_preserves_unconvertible_cell():
+    out, ty = column_data_type(["1.5", "2.5", "3.5", "see note"])
+    assert ty == "float"
+    assert out == [1.5, 2.5, 3.5, "see note"]
+
+
+@pytest.mark.p1
+def test_bool_column_preserves_unknown_cell():
+    # trans_bool returns None for unrecognized strings (it does not raise),
+    # so the old code nulled these through the SUCCESS path.
+    out, ty = column_data_type(["yes", "no", "yes", "unknown"])
+    assert ty == "bool"
+    # trans_bool returns the strings "yes"/"no", not Python bools.
+    assert out == ["yes", "no", "yes", "unknown"]
+
+
+@pytest.mark.p1
+def test_datetime_column_preserves_unparseable_cell():
+    # trans_datatime also returns None instead of raising.
+    out, ty = column_data_type(["2025-01-01", "2025-02-01", "ongoing"])
+    assert ty == "datetime"
+    # trans_datatime returns normalized datetime STRINGS.
+    assert out[0] == "2025-01-01 00:00:00"
+    assert out[1] == "2025-02-01 00:00:00"
+    assert out[2] == "ongoing"
+
+
+@pytest.mark.p1
+def test_fully_convertible_columns_are_unchanged():
+    out, ty = column_data_type(["10", "20", "30"])
+    assert ty == "int"
+    assert out == [10, 20, 30]
+
+    out, ty = column_data_type(["2025-01-01", "2025-02-01"])
+    assert ty == "datetime"
+    assert all(str(v).startswith("2025") for v in out)
+
+
+@pytest.mark.p1
+def test_nan_input_still_normalizes_to_none():
+    import math
+
+    out, ty = column_data_type(["1", "2", "3", float("nan")])
+    assert ty == "int"
+    assert out == [1, 2, 3, None]
+
+
+@pytest.mark.p1
+def test_nat_input_still_normalizes_to_none():
+    from datetime import datetime
+
+    import pandas as pd
+
+    out, ty = column_data_type(
+        [pd.Timestamp("2025-01-01"), pd.Timestamp("2025-02-01"), pd.NaT]
+    )
+    assert ty == "datetime"
+    assert str(out[0]).startswith("2025-01-01")
+    assert out[2] is None
+
+
+@pytest.mark.p1
+def test_none_input_still_normalizes_to_none():
+    out, ty = column_data_type(["1", "2", "3", None])
+    assert ty == "int"
+    assert out == [1, 2, 3, None]
