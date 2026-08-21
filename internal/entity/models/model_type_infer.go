@@ -59,7 +59,7 @@ func InferModelTypes(modelName string) []string {
 }
 
 // FillMissingModelTypes fills missing model types using only the models present
-// in the provided list. Existing model types are preserved as reported.
+// in the provided list. Existing model types are normalized before returning.
 func FillMissingModelTypes(models []ListModelResponse) []ListModelResponse {
 	for i := range models {
 		if len(models[i].ModelTypes) > 0 {
@@ -346,9 +346,14 @@ func normalizeModelTypes(modelTypes []string) []string {
 
 	hasChat := false
 	hasVision := false
+	hasOCR := false
 	for _, modelType := range unique {
 		hasChat = hasChat || modelType == modelTypeChat
 		hasVision = hasVision || modelType == modelTypeVision
+		hasOCR = hasOCR || modelType == modelTypeOCR
+	}
+	if hasChat && hasOCR {
+		return []string{modelTypeChat, modelTypeVision}
 	}
 	for _, modelType := range unique {
 		if modelType != modelTypeChat && modelType != modelTypeVision {
