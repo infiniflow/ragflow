@@ -1164,9 +1164,9 @@ func TestReadMailBody_AttachmentPreservesRaw(t *testing.T) {
 // TestDecodeHeaderWord_Charsets verifies the charset routing behind RFC 2047
 // encoded-word decoding. The "gb2312" label must decode plain 8-bit
 // GB2312/GBK bytes — not HZ escape sequences — because real-world mail
-// labeled gb2312 carries plain bytes (GBK is a compatible superset; Python's
-// gb2312 codec behaves the same). HZ decoding stays available under its own
-// "hz-gb-2312" label. An unsupported charset leaves the value untouched.
+// labeled gb2312 carries plain bytes and GBK is a compatible superset. HZ
+// decoding stays available under its own "hz-gb-2312" label. An unsupported
+// charset leaves the value untouched.
 func TestDecodeHeaderWord_Charsets(t *testing.T) {
 	encodedWord := func(charset string, raw []byte) string {
 		return "=?" + charset + "?B?" + base64.StdEncoding.EncodeToString(raw) + "?="
@@ -1229,5 +1229,31 @@ func TestDecodeMailPayload_DeclaredCharsets(t *testing.T) {
 	}
 	if got := decodeMailPayload([]byte{0xA4, 0xA4, 0xA4, 0xE5}, "big5"); got != "中文" {
 		t.Errorf("big5 body = %q, want 中文", got)
+	}
+}
+
+// TestHTMLBodyToText verifies the visible-text flattening of email HTML
+// bodies, above all that text preceding a nested block-level element starts
+// a new line instead of fusing with the block's own text.
+func TestHTMLBodyToText(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"text before nested block", `<div>prefix<p>paragraph</p></div>`, "prefix\nparagraph"},
+		{"nested divs", `<div>outer<div>inner</div></div>`, "outer\ninner"},
+		{"sibling blocks", `<p>one</p><p>two</p>`, "one\ntwo"},
+		{"layout table cells", `<table><tr><td>a</td><td>b</td></tr></table>`, "a\nb"},
+		{"inline tags stay on one line", `<p>Hello <b>world</b></p>`, "Hello world"},
+		{"br forces a break", `one<br>two`, "one\ntwo"},
+		{"head script style skipped", `<html><head><title>t</title><style>.x{color:red}</style></head><body><p>visible</p><script>var x=1;</script></body></html>`, "visible"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := htmlBodyToText(tt.body); got != tt.want {
+				t.Errorf("htmlBodyToText(%q) = %q, want %q", tt.body, got, tt.want)
+			}
+		})
 	}
 }

@@ -227,7 +227,7 @@ func targetFieldsSet(fields []string) map[string]bool {
 // The "gb2312" label maps to GBK, not HZGB2312: mail labeled gb2312 carries
 // plain 8-bit GB2312 bytes (GBK is a compatible superset), while HZGB2312
 // only decodes the 7-bit HZ escape form used under the distinct "hz-gb-2312"
-// label. This mirrors Python, where the gb2312 codec decodes plain bytes.
+// label.
 func charsetEncoding(charset string) (encoding.Encoding, bool) {
 	switch strings.ToLower(strings.TrimSpace(charset)) {
 	case "gb2312", "gbk":
@@ -502,6 +502,13 @@ func htmlBodyToText(body string) string {
 	return strings.TrimSpace(b.String())
 }
 
+// isEmailBlockTag reports whether tag delimits a line in flattened email
+// body text: the standard block tags plus table tags, since email uses
+// tables for layout and their cells/rows must not fuse either.
+func isEmailBlockTag(tag string) bool {
+	return isBlockTag(tag) || tag == "table" || tag == "td" || tag == "th"
+}
+
 func walkHTMLBodyText(n *html.Node, w *leafWriter) {
 	switch n.Type {
 	case html.TextNode:
@@ -523,12 +530,18 @@ func walkHTMLBodyText(n *html.Node, w *leafWriter) {
 			w.hardBreak()
 			return
 		}
+		// A nested block starts on a new line when text already precedes
+		// it, so outer text and inner block text stay separate
+		// ("<div>a<p>b</p></div>" flattens to "a\nb", not "ab").
+		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
+			w.hardBreak()
+		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
 			walkHTMLBodyText(child, w)
 		}
 		// Block-level tags and table cells/rows end the current line so
 		// adjacent block/cell text does not fuse together.
-		if (isBlockTag(n.Data) || n.Data == "table" || n.Data == "td" || n.Data == "th") && w.b.Len() > 0 && !w.endsNL {
+		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
 			w.hardBreak()
 		}
 	}
