@@ -278,11 +278,18 @@ perform_restore() {
         fi
 
         # Restore data
+        # The previous behaviour extracted the archive on top of any
+        # existing files in the volume. That silently merged old and new
+        # state (deleted-in-new files would still be served from the
+        # volume, file format upgrades never took effect, etc.). Clean the
+        # target path inside the helper container before extracting, so
+        # stateful volumes land as a faithful copy of the backup.
+        # Regression for #18354.
         echo "  📥 Restoring data from $backup_file..."
         docker run --rm \
             -v "$volume":/target \
             -v "$(pwd)/$backup_folder":/backup \
-            alpine tar xzf "/backup/$backup_file" -C /target
+            alpine sh -c "rm -rf /target/* /target/.[!.]* && tar xzf \"/backup/$backup_file\" -C /target"
 
         echo "✅ Successfully restored $volume"
         echo ""
