@@ -383,3 +383,30 @@ class TestDataflowServiceLoadDsl:
             assert dsl == '{"id": "test_pipeline"}'
             assert corrected_id == "corrected_pipeline_id"
             mock_log.get_by_id.assert_called_once_with(dataflow_id)
+
+
+class TestDataflowServiceEncodeBatch:
+    """Regression tests for _encode_batch (issue #16581)."""
+
+    @pytest.mark.asyncio
+    async def test_encode_batch_runs_in_thread_pool_and_unpacks(self):
+        # _encode_batch is submitted to a worker thread via thread_pool_exec and
+        # its result is unpacked as (vectors, tokens). If it were an async def it
+        # would return a bare coroutine here, raising
+        # "cannot unpack non-iterable coroutine object".
+        from common.misc_utils import thread_pool_exec
+
+        embedding_model = MagicMock()
+        embedding_model.max_length = 512
+        embedding_model.encode.return_value = ([[0.1, 0.2]], 7)
+
+        with patch(
+            "rag.svr.task_executor_refactor.dataflow_service.EmbeddingUtils.truncate_texts",
+            side_effect=lambda texts, max_length: texts,
+        ):
+            vts, c = await thread_pool_exec(
+                DataflowService._encode_batch, ["hello"], embedding_model
+            )
+
+        assert vts == [[0.1, 0.2]]
+        assert c == 7
