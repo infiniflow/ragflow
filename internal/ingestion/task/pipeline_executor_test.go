@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -315,6 +316,44 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	docName := "terminal.pdf"
+	run := "1"
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+		Document: entity.Document{
+			ID:           "doc-1",
+			KbID:         "kb-1",
+			ParserID:     "naive",
+			ParserConfig: entity.JSONMap{},
+			SourceType:   "local",
+			Type:         "pdf",
+			Name:         &docName,
+			Suffix:       ".pdf",
+			Run:          &run,
+		},
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "document_id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want explicit terminal status", log.OperationStatus)
+	}
+	if len(log.DSL) != 0 {
+		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
+	}
+}
+
 func TestRecordPipelineLog_BuiltinUsesParserIDFallback(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
@@ -606,6 +645,50 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	}
 	if !logged {
 		t.Fatal("expected pipeline log to be created")
+	}
+}
+
+func TestPipelineExecutor_Execute_DoesNotLogFailedRun(t *testing.T) {
+	logged := false
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			return nil, dsl, errors.New("pipeline failed")
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			logged = true
+			return nil
+		})
+
+	if _, err := svc.Execute(context.Background()); err == nil {
+		t.Fatal("Execute error = nil, want failure")
+	}
+	if logged {
+		t.Fatal("executor must not log failed runs before ingestor writes final document status")
+	}
+}
+
+func TestPipelineExecutor_Execute_DoesNotLogCanceledRun(t *testing.T) {
+	logged := false
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			return nil, dsl, context.Canceled
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			logged = true
+			return nil
+		})
+
+	if _, err := svc.Execute(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context.Canceled", err)
+	}
+	if logged {
+		t.Fatal("executor must not log canceled runs before ingestor writes final document status")
 	}
 }
 

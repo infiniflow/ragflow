@@ -515,9 +515,8 @@ func (s *IngestionTaskService) lastRunCount(ctx context.Context, taskID string) 
 // failure. ListAllForAdmin reads run_count back to render the attempt number.
 //
 // A corrupted run_count value in an existing row is skipped (the row is
-// ignored). A failure to persist the new row is best-effort (logged) and
-// does not return an error — matching the legacy semantics that the run
-// proceeds even if the counter write fails.
+// ignored). A failure to persist the new row is returned so the caller can
+// fail the task before running the pipeline.
 func (s *IngestionTaskService) IncrementRunCount(ctx context.Context, taskID string) error {
 	prevCount, _ := s.lastRunCount(ctx, taskID)
 
@@ -525,8 +524,5 @@ func (s *IngestionTaskService) IncrementRunCount(ctx context.Context, taskID str
 		TaskID:     taskID,
 		Checkpoint: entity.JSONMap{stepKeyRunCount: prevCount + 1},
 	}
-	if err := s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry); err != nil {
-		common.Error(fmt.Sprintf("Failed to persist run_count for task %s", taskID), err)
-	}
-	return nil
+	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
 }

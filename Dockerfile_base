@@ -4,7 +4,7 @@ USER root
 SHELL ["/bin/bash", "-c"]
 
 ARG NEED_MIRROR=1
-# need to set  docker build --build-arg GITEE_TOKEN="xxxxx"  when build base image
+# if set NEED_MIRROR=1, need to set  docker build --build-arg GITEE_TOKEN="xxxxx"  when build base image, otherwise set NEED_MIRROR=0
 ARG GITEE_TOKEN=""
 
 WORKDIR /ragflow

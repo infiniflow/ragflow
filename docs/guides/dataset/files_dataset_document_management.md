@@ -51,11 +51,13 @@ Operation steps:
 3. Select the documents to add.
 4. Confirm the addition and view the document status in the document list.
 
-### Add Documents from File Management
+### Add Documents from File
 
-Documents can also be added from RAGFlow's file management module. This method is suitable when files have already been uploaded to file management and need to be referenced by a dataset.
+Add documents from File Management
 
-After documents are added to the dataset, subsequent parsing and enabling status are still managed on the dataset's **Files** page. Documents that have not been parsed cannot generate chunks or participate in retrieval.
+Files that have already been uploaded to **File** can be added to a knowledge base by connecting them to the target knowledge base.
+Once connected, the files will be processed according to the configuration of the target knowledge base.
+For detailed instructions, see [**File > Connect to a knowledge base**](../file/link_dataset.md)
 
 ## Parse Documents
 
