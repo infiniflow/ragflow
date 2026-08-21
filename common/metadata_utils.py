@@ -207,20 +207,7 @@ async def apply_meta_data_filter(
 
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
-        if conditions and kb_ids:
-            try:
-                from api.db.services.doc_metadata_service import DocMetadataService
-
-                doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
-                logging.debug(f"Doc ids filtered by metadata: {doc_ids}")
-                if doc_ids is not None:
-                    return doc_ids
-            except Exception as e:
-                logging.error(f"Metadata filter push down errored: {e}")
-
-        # In-memory fallback
-        logging.debug("Metadata filter falls back to in-memory filter")
-        return meta_filter(_get_metas(), conditions, logic)
+        return filter_doc_ids_by_metadata(kb_ids or [], conditions, logic, _get_metas)
 
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
@@ -268,7 +255,7 @@ def _try_meta_pushdown(
     conditions: list[dict],
     logic: str,
 ) -> list[str] | None:
-    """Attempt the ES push-down path; return ``None`` to fall back in-memory.
+    """Attempt metadata-index push-down; return ``None`` to fall back in memory.
 
     Lazy-imports ``DocMetadataService`` so this module stays usable in
     environments where the API/db layer hasn't been wired up (e.g. unit tests
@@ -276,14 +263,34 @@ def _try_meta_pushdown(
     """
     try:
         from api.db.services.doc_metadata_service import DocMetadataService
-    except Exception as e:
-        logging.debug(f"[apply_meta_data_filter] push-down disabled, import failed: {e}")
+    except ImportError as e:
+        logging.debug(f"Metadata filter push-down disabled because the service import failed: {e}")
         return None
-    try:
-        return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
-    except Exception as e:
-        logging.warning(f"[apply_meta_data_filter] push-down errored, falling back: {e}")
-        return None
+    return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
+
+
+def filter_doc_ids_by_metadata(
+    kb_ids: list[str],
+    conditions: list[dict],
+    logic: str,
+    metas_loader: Callable[[], dict],
+) -> list[str]:
+    """Filter document IDs through the metadata index with a lazy exact fallback."""
+    doc_ids = _try_meta_pushdown(kb_ids, conditions, logic) if conditions and kb_ids else None
+    if doc_ids is not None:
+        logging.debug(
+            "Metadata filter used push-down: kb_count=%d condition_count=%d matched_doc_count=%d",
+            len(kb_ids),
+            len(conditions),
+            len(doc_ids),
+        )
+        return doc_ids
+    logging.debug(
+        "Metadata filter uses in-memory fallback: kb_count=%d condition_count=%d",
+        len(kb_ids),
+        len(conditions),
+    )
+    return meta_filter(metas_loader(), conditions, logic)
 
 
 def dedupe_list(values: list) -> list:
