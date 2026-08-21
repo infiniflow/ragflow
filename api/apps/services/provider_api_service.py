@@ -750,12 +750,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
-    if provider_name == "BaiduYiyan":
-        if isinstance(api_key, str):
-            try:
-                json.loads(api_key)
-            except (json.JSONDecodeError, TypeError):
-                api_key = {"yiyan_ak": api_key, "yiyan_sk": ""}
     api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
     # check passed types
     passed_types = set()
