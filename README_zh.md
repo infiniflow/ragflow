@@ -146,6 +146,12 @@
 
 ## 🎬 自主托管
 
+### 在 Sealos 上部署
+
+[![Deploy on Sealos](https://sealos.io/Deploy-on-Sealos.svg)](https://sealos.io/products/app-store/ragflow)
+
+这份由社区维护的 [Sealos 模板](https://github.com/labring-actions/templates/tree/kb-0.9/template/ragflow) 会为 RAGFlow 0.26.4 配置托管的 MySQL、Redis、Infinity，以及私有的 S3 兼容对象存储。端到端部署检查记录在 [labring-actions/templates#737](https://github.com/labring-actions/templates/pull/737) 中。
+
 ### 📝 前提条件
 
 - CPU >= 4 核
