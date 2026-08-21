@@ -27,7 +27,8 @@ from quart import Response, request
 from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
-from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config, resolve_llm_setting
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
+from api.db.services.llm_service import resolve_llm_setting
 from api.db.joint_services.tenant_model_service import (
     get_api_key,
     get_composite_model_name_by_id,
