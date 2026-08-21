@@ -17,7 +17,9 @@
 package models
 
 import (
+	"math"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -31,7 +33,16 @@ const (
 	modelTypeOCR       = "ocr"
 )
 
-var modelNameTokenRE = regexp.MustCompile(`[a-z0-9]+`)
+const (
+	modelTypeSimilarityBaseline = 0.78
+	modelTypeSimilarityMargin   = 0.005
+)
+
+var (
+	modelNameTokenRE             = regexp.MustCompile(`[a-z0-9]+`)
+	modelNameLetterNumberTokenRE = regexp.MustCompile(`^([a-z]+)([0-9]+)$`)
+	modelNameNumberTokenRE       = regexp.MustCompile(`^[0-9]+$`)
+)
 
 // InferMissingModelTypes returns model types for a provider model whose upstream
 // list does not carry type metadata. It prefers exact all_models.json metadata,
@@ -48,6 +59,11 @@ func InferMissingModelTypes(modelName string) []string {
 	}
 	if modelTypes := inferModelTypesByName(modelName); len(modelTypes) > 0 {
 		return normalizeModelTypes(modelTypes)
+	}
+	if pm := GetProviderManager(); pm != nil {
+		if modelTypes := pm.inferModelTypesBySimilarity(modelName); len(modelTypes) > 0 {
+			return normalizeModelTypes(modelTypes)
+		}
 	}
 	return []string{modelTypeChat}
 }
@@ -87,16 +103,205 @@ func inferModelTypesByName(modelName string) []string {
 }
 
 func modelNameTokens(modelName string) map[string]struct{} {
+	tokens := modelNameComparableTokens(modelName)
+	tokenSet := map[string]struct{}{}
+	for _, token := range tokens {
+		tokenSet[token] = struct{}{}
+	}
+	return tokenSet
+}
+
+func modelNameComparableTokens(modelName string) []string {
+	modelName = comparableModelNameText(modelName)
+	tokens := map[string]struct{}{}
+	ordered := []string{}
+	add := func(token string) {
+		if token == "" {
+			return
+		}
+		if _, ok := tokens[token]; ok {
+			return
+		}
+		tokens[token] = struct{}{}
+		ordered = append(ordered, token)
+	}
+	for _, token := range modelNameTokenRE.FindAllString(modelName, -1) {
+		if parts := modelNameLetterNumberTokenRE.FindStringSubmatch(token); len(parts) == 3 {
+			add(parts[1])
+			add(parts[2])
+			continue
+		}
+		add(token)
+	}
+	return ordered
+}
+
+func comparableModelNameText(modelName string) string {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
 	if idx := strings.LastIndex(modelName, "/"); idx >= 0 && idx+1 < len(modelName) {
 		modelName = modelName[idx+1:]
 	}
-	tokens := map[string]struct{}{}
-	for _, token := range modelNameTokenRE.FindAllString(strings.ToLower(modelName), -1) {
-		if token != "" {
-			tokens[token] = struct{}{}
+	return modelName
+}
+
+func (pm *ProviderManager) inferModelTypesBySimilarity(modelName string) []string {
+	targetHint := inferModelTypesByName(modelName)
+	target := newModelNameProfile(modelName)
+	if len(target.tokenSet) == 0 {
+		return nil
+	}
+
+	bestScore := 0.0
+	secondScore := 0.0
+	var bestTypes []string
+	var secondTypes []string
+	for _, model := range pm.AllModels {
+		if len(model.ModelTypes) == 0 {
+			continue
+		}
+		names := append([]string{model.Name}, model.Alias...)
+		for _, candidateName := range names {
+			if !compatibleModelNameCapabilities(targetHint, inferModelTypesByName(candidateName)) {
+				continue
+			}
+			score := modelNameSimilarityScore(target, newModelNameProfile(candidateName))
+			if score > bestScore {
+				secondScore = bestScore
+				secondTypes = bestTypes
+				bestScore = score
+				bestTypes = normalizeModelTypes(model.ModelTypes)
+				continue
+			}
+			if score > secondScore {
+				secondScore = score
+				secondTypes = normalizeModelTypes(model.ModelTypes)
+			}
 		}
 	}
-	return tokens
+	if bestScore < modelTypeSimilarityBaseline {
+		return nil
+	}
+	if secondScore > 0 && bestScore-secondScore < modelTypeSimilarityMargin && !sameModelTypes(bestTypes, secondTypes) {
+		return nil
+	}
+	return bestTypes
+}
+
+func compatibleModelNameCapabilities(targetHint, candidateHint []string) bool {
+	targetCapability := capabilityModelType(targetHint)
+	candidateCapability := capabilityModelType(candidateHint)
+	if targetCapability == "" {
+		return candidateCapability == ""
+	}
+	return targetCapability == candidateCapability
+}
+
+func capabilityModelType(modelTypes []string) string {
+	for _, modelType := range normalizeModelTypes(modelTypes) {
+		if modelType != modelTypeChat {
+			return modelType
+		}
+	}
+	return ""
+}
+
+type modelNameProfile struct {
+	tokens     []string
+	tokenSet   map[string]struct{}
+	brand      string
+	series     string
+	version    float64
+	hasVersion bool
+}
+
+func newModelNameProfile(modelName string) modelNameProfile {
+	rawTokens := modelNameTokenRE.FindAllString(comparableModelNameText(modelName), -1)
+	profile := modelNameProfile{
+		tokens:   modelNameComparableTokens(modelName),
+		tokenSet: map[string]struct{}{},
+	}
+	for _, token := range profile.tokens {
+		profile.tokenSet[token] = struct{}{}
+	}
+	if len(rawTokens) > 0 {
+		profile.brand = rawTokens[0]
+		profile.series = rawTokens[0]
+	}
+	for index, token := range rawTokens {
+		parts := modelNameLetterNumberTokenRE.FindStringSubmatch(token)
+		if len(parts) != 3 {
+			continue
+		}
+		versionText := parts[2]
+		if index+1 < len(rawTokens) && modelNameNumberTokenRE.MatchString(rawTokens[index+1]) {
+			versionText += "." + rawTokens[index+1]
+		}
+		version, err := strconv.ParseFloat(versionText, 64)
+		if err != nil {
+			continue
+		}
+		profile.series = parts[1]
+		profile.version = version
+		profile.hasVersion = true
+		if index > 0 {
+			profile.brand = rawTokens[0]
+		} else {
+			profile.brand = parts[1]
+		}
+		break
+	}
+	return profile
+}
+
+func modelNameSimilarityScore(a, b modelNameProfile) float64 {
+	if len(a.tokenSet) == 0 || len(b.tokenSet) == 0 || tokenSetIntersectionSize(a.tokenSet, b.tokenSet) == 0 {
+		return 0
+	}
+	jaccard := tokenSetJaccard(a.tokenSet, b.tokenSet)
+	series := modelNameSeriesScore(a, b)
+	version := modelNameVersionScore(a, b)
+	return 0.25*jaccard + 0.45*series + 0.30*version
+}
+
+func modelNameSeriesScore(a, b modelNameProfile) float64 {
+	if a.brand == "" || b.brand == "" || a.brand != b.brand {
+		return 0
+	}
+	if a.series != "" && a.series == b.series {
+		return 1
+	}
+	return 0.6
+}
+
+func modelNameVersionScore(a, b modelNameProfile) float64 {
+	if !a.hasVersion || !b.hasVersion || a.series == "" || a.series != b.series {
+		return 0
+	}
+	maxVersion := math.Max(1, math.Max(a.version, b.version))
+	score := 1 - math.Abs(a.version-b.version)/maxVersion
+	if score < 0 {
+		return 0
+	}
+	return score
+}
+
+func tokenSetIntersectionSize(a, b map[string]struct{}) int {
+	count := 0
+	for token := range a {
+		if _, ok := b[token]; ok {
+			count++
+		}
+	}
+	return count
+}
+
+func tokenSetJaccard(a, b map[string]struct{}) float64 {
+	intersection := tokenSetIntersectionSize(a, b)
+	union := len(a) + len(b) - intersection
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
 }
 
 func normalizeModelTypes(modelTypes []string) []string {
@@ -135,4 +340,18 @@ func normalizeModelTypes(modelTypes []string) []string {
 		return []string{modelTypeChat}
 	}
 	return []string{modelTypeChat}
+}
+
+func sameModelTypes(a, b []string) bool {
+	a = normalizeModelTypes(a)
+	b = normalizeModelTypes(b)
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

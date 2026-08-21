@@ -63,6 +63,33 @@ func TestInferMissingModelTypesDoesNotUseSimilarKnownModel(t *testing.T) {
 	}
 }
 
+func TestInferMissingModelTypesUsesHighConfidenceSimilarKnownModel(t *testing.T) {
+	withProviderManager(t, &ProviderManager{
+		AllModels: []Model{
+			{Name: "KIMI-K2.5", ModelTypes: []string{"chat"}},
+			{Name: "KIMI-K2.6", ModelTypes: []string{"tts"}},
+		},
+		Alias2ModelIndex: map[string]int{},
+	})
+
+	if got := InferMissingModelTypes("KIMI-K3"); !reflect.DeepEqual(got, []string{"tts"}) {
+		t.Fatalf("InferMissingModelTypes KIMI-K3 = %v, want [tts]", got)
+	}
+}
+
+func TestInferMissingModelTypesRejectsCapabilityConflictingSimilarKnownModel(t *testing.T) {
+	withProviderManager(t, &ProviderManager{
+		AllModels: []Model{
+			{Name: "qwen3-embedding", ModelTypes: []string{"embedding"}},
+		},
+		Alias2ModelIndex: map[string]int{},
+	})
+
+	if got := InferMissingModelTypes("qwen3"); !reflect.DeepEqual(got, []string{"chat"}) {
+		t.Fatalf("InferMissingModelTypes qwen3 = %v, want [chat]", got)
+	}
+}
+
 func TestInferMissingModelTypesKeepsOnlyChatVisionCoexistence(t *testing.T) {
 	withProviderManager(t, &ProviderManager{
 		AllModels: []Model{
