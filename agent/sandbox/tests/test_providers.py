@@ -120,7 +120,7 @@ class TestSelfManagedProvider:
         assert provider.endpoint == "http://sandbox-executor-manager:9385"
         assert provider.timeout == 30
         assert provider.max_retries == 3
-        assert provider.pool_size == 10
+        assert provider.pool_size == 3
         assert not provider._initialized
 
     @patch("requests.get")
