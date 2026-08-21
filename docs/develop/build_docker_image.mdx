@@ -39,7 +39,7 @@ RAGFlow's main Docker image is approximately 2 GB in size and relies on external
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/ragflow_deps
 uv run python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
+docker build -f Dockerfile -t infiniflow/ragflow_deps .
 ```
 
 The `infiniflow/ragflow_deps:latest` image contains the resources required by the main RAGFlow `Dockerfile`. It only needs to be rebuilt when these downloaded dependencies change.
