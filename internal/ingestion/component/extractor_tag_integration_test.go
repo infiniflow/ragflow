@@ -190,6 +190,34 @@ func TestMatchAndTagChunk_DeterministicTieBreak(t *testing.T) {
 	}
 }
 
+func TestMatchAndTagChunk_TitleAndKeywordMatch(t *testing.T) {
+	requireTokenizerPool(t)
+	tok := tokenizer.New("english")
+	rawEx := []schema.TagLabel{
+		{Content: "engineering bidding specifications procurement procedure", Tags: []string{"BiddingDoc", "Engineering"}},
+		{Content: "culinary recipe cooking", Tags: []string{"Cooking"}},
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx == nil {
+		t.Fatal("expected non-nil index")
+	}
+
+	// Body text contains only generic words, but docnm_kwd contains title and important_kwd contains keywords
+	chunk := map[string]any{
+		"docnm_kwd":           "2026_Engineering_Bidding_Specifications.pdf",
+		"important_kwd":       []string{"procurement", "procedure"},
+		"content_with_weight": "This section outlines general guidelines for all participating entities.",
+	}
+
+	matched := matchAndTagChunk(chunk, idx, tok, 5)
+	if matched == nil {
+		t.Fatal("expected non-nil matched chunk triggered by title and keywords")
+	}
+	if matched.TagWeights["BiddingDoc"] <= 0 || matched.TagWeights["Engineering"] <= 0 {
+		t.Fatalf("expected BiddingDoc and Engineering tags matched, got: %v", matched.TagWeights)
+	}
+}
+
 func BenchmarkMatchAndTagChunk_5000Examples(b *testing.B) {
 	requireTokenizerPool(b)
 	tok := tokenizer.New("english")

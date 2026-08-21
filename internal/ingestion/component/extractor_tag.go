@@ -745,14 +745,66 @@ func splitAndTrim(s, sep string) []string {
 	return out
 }
 
+func cleanTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if ext := filepath.Ext(title); ext != "" && len(ext) <= 6 {
+		title = strings.TrimSuffix(title, ext)
+	}
+	return strings.TrimSpace(title)
+}
+
 func getChunkText(chunk map[string]any) string {
-	if v, ok := chunk["content_with_weight"].(string); ok && v != "" {
-		return v
+	if chunk == nil {
+		return ""
 	}
-	if v, ok := chunk["text"].(string); ok && v != "" {
-		return v
+
+	var parts []string
+
+	// 1. Extract document title / name with extension stripping and fallback chain
+	for _, titleKey := range []string{"docnm_kwd", "title_tks", "title"} {
+		if v, ok := chunk[titleKey].(string); ok && strings.TrimSpace(v) != "" {
+			if cleaned := cleanTitle(v); cleaned != "" {
+				parts = append(parts, cleaned)
+				break
+			}
+		}
 	}
-	return ""
+
+	// 2. Extract important keywords if present (supports []string, []any, string)
+	if kwdRaw, exists := chunk["important_kwd"]; exists && kwdRaw != nil {
+		switch kwds := kwdRaw.(type) {
+		case []string:
+			for _, k := range kwds {
+				if k = strings.TrimSpace(k); k != "" {
+					parts = append(parts, k)
+				}
+			}
+		case []any:
+			for _, item := range kwds {
+				if s, ok := item.(string); ok {
+					if s = strings.TrimSpace(s); s != "" {
+						parts = append(parts, s)
+					}
+				}
+			}
+		case string:
+			if k := strings.TrimSpace(kwds); k != "" {
+				parts = append(parts, k)
+			}
+		}
+	}
+
+	// 3. Extract main chunk content
+	if v, ok := chunk["content_with_weight"].(string); ok && strings.TrimSpace(v) != "" {
+		parts = append(parts, strings.TrimSpace(v))
+	} else if v, ok := chunk["text"].(string); ok && strings.TrimSpace(v) != "" {
+		parts = append(parts, strings.TrimSpace(v))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ")
 }
 
 func roundInt(f float64) int {

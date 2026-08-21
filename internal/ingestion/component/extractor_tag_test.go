@@ -254,7 +254,7 @@ func pushCapturingTagChat(t *testing.T) *capturingExtractorTagChat {
 }
 
 func longChunkText() string {
-	return strings.Repeat("RAGFlow is an open source retrieval augmented generation engine. ", 10)
+	return strings.TrimSpace(strings.Repeat("RAGFlow is an open source retrieval augmented generation engine. ", 10))
 }
 
 func TestLlmtagChunk_MessageFit(t *testing.T) {
@@ -515,6 +515,106 @@ func TestParseTaggerResponse_LastThinkTag(t *testing.T) {
 				if _, ok := got[k]; !ok {
 					t.Errorf("expected key %q in result, got %v", k, got)
 				}
+			}
+		})
+	}
+}
+
+func TestGetChunkText_Enrichment(t *testing.T) {
+	tests := []struct {
+		name  string
+		chunk map[string]any
+		want  string
+	}{
+		{
+			name:  "nil chunk",
+			chunk: nil,
+			want:  "",
+		},
+		{
+			name:  "content only",
+			chunk: map[string]any{"content_with_weight": "simple body text"},
+			want:  "simple body text",
+		},
+		{
+			name:  "text fallback",
+			chunk: map[string]any{"text": "text fallback body"},
+			want:  "text fallback body",
+		},
+		{
+			name: "title extension stripped with content",
+			chunk: map[string]any{
+				"docnm_kwd":           "2026_Engineering_Bidding_Doc.pdf",
+				"content_with_weight": "contract guidelines",
+			},
+			want: "2026_Engineering_Bidding_Doc contract guidelines",
+		},
+		{
+			name: "title fallback chain docnm_kwd wins",
+			chunk: map[string]any{
+				"docnm_kwd":           "doc_name.docx",
+				"title_tks":           "ignored_title",
+				"content_with_weight": "body",
+			},
+			want: "doc_name body",
+		},
+		{
+			name: "title fallback to title_tks when docnm_kwd absent",
+			chunk: map[string]any{
+				"title_tks":           "parsed_title.txt",
+				"content_with_weight": "body",
+			},
+			want: "parsed_title body",
+		},
+		{
+			name: "important_kwd string slice",
+			chunk: map[string]any{
+				"important_kwd":       []string{"Bidding", "Tender"},
+				"content_with_weight": "body",
+			},
+			want: "Bidding Tender body",
+		},
+		{
+			name: "important_kwd any slice",
+			chunk: map[string]any{
+				"important_kwd":       []any{"Alpha", "Beta"},
+				"content_with_weight": "body",
+			},
+			want: "Alpha Beta body",
+		},
+		{
+			name: "important_kwd string",
+			chunk: map[string]any{
+				"important_kwd":       "SingleKey",
+				"content_with_weight": "body",
+			},
+			want: "SingleKey body",
+		},
+		{
+			name: "all sources combined",
+			chunk: map[string]any{
+				"docnm_kwd":           "Project_Tender_Specification.pdf",
+				"important_kwd":       []string{"Procurement", "Compliance"},
+				"content_with_weight": "All bidders must follow instructions.",
+			},
+			want: "Project_Tender_Specification Procurement Compliance All bidders must follow instructions.",
+		},
+		{
+			name: "all fields empty or whitespace",
+			chunk: map[string]any{
+				"docnm_kwd":           "   ",
+				"important_kwd":       []string{"  ", ""},
+				"content_with_weight": "   ",
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getChunkText(tt.chunk)
+			if got != tt.want {
+				t.Errorf("getChunkText() = %q, want %q", got, tt.want)
 			}
 		})
 	}
