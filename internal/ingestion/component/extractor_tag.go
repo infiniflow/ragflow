@@ -108,7 +108,11 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 		if content == "" {
 			continue // Skip empty content.
 		}
-		tks, _ := tok.Tokenize(content)
+		tks, err := tok.Tokenize(content)
+		if err != nil {
+			common.Warn(fmt.Sprintf("extractor tags: tokenize example failed: %v", err))
+			continue
+		}
 		fields := strings.Fields(tks)
 		if len(fields) == 0 {
 			continue // Skip samples with no tokens.
@@ -131,10 +135,15 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 				if _, exists := tagSet[t]; !exists {
 					tagSet[t] = struct{}{}
 					cleanTags = append(cleanTags, t)
-					allTagCounts[t]++
-					totalTagCount++
 				}
 			}
+		}
+		if len(cleanTags) == 0 {
+			continue // Skip examples with no usable tags.
+		}
+		for _, t := range cleanTags {
+			allTagCounts[t]++
+			totalTagCount++
 		}
 
 		cleanExamples = append(cleanExamples, schema.TagLabel{
@@ -267,9 +276,6 @@ func matchAndTagChunk(
 	for i := 0; i < topK; i++ {
 		cov := passed[i].coverage
 		ex := idx.examples[passed[i].docID]
-		if len(ex.Tags) == 0 {
-			continue
-		}
 		totalWeightSum += cov // Accumulate total weight once per matched candidate document.
 		for _, t := range ex.Tags {
 			tagWeightedCounts[t] += cov // Weighted tag accumulation.
