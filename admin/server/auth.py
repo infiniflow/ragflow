@@ -28,6 +28,7 @@ from api.common.base64 import encode_to_base64
 from api.db.services import UserService
 from api.db import UserTenantRole
 from api.db.services.user_service import TenantService, UserTenantService
+from api.db.joint_services.tenant_model_service import seed_tenant_default_models
 from common.constants import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
@@ -126,10 +127,9 @@ def add_tenant_for_admin(user_info: dict, role: str):
     }
     usr_tenant = {"tenant_id": user_info["id"], "user_id": user_info["id"], "invited_by": user_info["id"], "role": role}
 
-    # tenant_llm = get_init_tenant_llm(user_info["id"])
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
-    # TenantLLMService.insert_many(tenant_llm)
+    seed_tenant_default_models(user_info["id"])
     logging.info(f"Added tenant for email: {user_info['email']}, A default tenant has been set; changing the default models after login is strongly recommended.")
 
 

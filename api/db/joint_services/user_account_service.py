@@ -34,6 +34,7 @@ from api.db.services.task_service import TaskService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.db.services.memory_service import MemoryService
+from api.db.joint_services.tenant_model_service import seed_tenant_default_models
 from memory.services.messages import MessageService
 from rag.nlp import search
 from common.constants import ActiveEnum
@@ -89,14 +90,12 @@ def create_new_user(user_info: dict) -> dict:
         "location": "",
     }
     try:
-        # tenant_llm = get_init_tenant_llm(user_id)
-
         if not UserService.save(**user_info):
             return {"success": False}
 
         TenantService.insert(**tenant)
         UserTenantService.insert(**usr_tenant)
-        # TenantLLMService.insert_many(tenant_llm)
+        seed_tenant_default_models(user_id)
         FileService.insert(file)
 
         return {
@@ -201,8 +200,6 @@ def delete_user_data(user_id: str) -> dict:
                 search_delete_res = SearchService.delete_by_tenant_id(usr.id)
                 done_msg += f"- Deleted {search_delete_res} search records.\n"
             # step1.2 delete tenant_langfuse
-            # llm_delete_res = TenantLLMService.delete_by_tenant_id(tenant_id)
-            # done_msg += f"- Deleted {llm_delete_res} tenant-LLM records.\n"
             langfuse_delete_res = TenantLangfuseService.delete_ty_tenant_id(tenant_id)
             done_msg += f"- Deleted {langfuse_delete_res} langfuse records.\n"
             try:
