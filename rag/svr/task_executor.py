@@ -1300,6 +1300,14 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         chunks: List of chunk dictionaries to insert
         progress_callback: Callback function for progress updates
     """
+    from rag.svr.task_executor_refactor.chunk_service import apply_document_availability
+
+    doc_id = next((ck.get("doc_id") for ck in chunks if ck.get("doc_id")), None)
+    if doc_id and doc_id != GRAPH_RAPTOR_FAKE_DOC_ID:
+        ok, doc = DocumentService.get_by_id(doc_id)
+        if ok and doc is not None:
+            apply_document_availability(chunks, getattr(doc, "status", "1"))
+
     mothers = []
     mother_ids = set([])
     for ck in chunks:
