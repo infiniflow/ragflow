@@ -35,6 +35,10 @@ const (
 	DefaultAskVectorSimilarityWeight = 0.3
 	DefaultAskTokenBudget            = 4096
 	DefaultAskStreamMinTokens        = 16
+	// DefaultAskTemperature and DefaultAskTopP mirror Python's
+	// LLM_SETTING_DEFAULTS in api/db/services/llm_service.py.
+	DefaultAskTemperature = 0.1
+	DefaultAskTopP        = 0.3
 )
 
 // AskDeltaKind classifies a streaming event emitted by AskService.
@@ -210,7 +214,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	// first, then collapses into a hidden think block, and the provider may
 	// emit only a fragment as the visible answer once the reasoning has
 	// consumed the output budget.
-	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1), Thinking: ptrBool(false)}
+	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(DefaultAskTemperature), Thinking: ptrBool(false)}
 	if opts.Temperature != nil {
 		genConf.Temperature = opts.Temperature
 	}

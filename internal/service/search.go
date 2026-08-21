@@ -454,25 +454,25 @@ func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interfa
 		opts.VectorSimilarityWeight = &value
 	}
 	if llmSetting, ok := searchConfigMapValue(searchConfig["llm_setting"]); ok {
-		opts.Temperature = generationFloat(llmSetting, "temperature")
-		opts.TopP = generationFloat(llmSetting, "top_p")
+		opts.Temperature = generationFloat(llmSetting, "temperature", DefaultAskTemperature)
+		opts.TopP = generationFloat(llmSetting, "top_p", DefaultAskTopP)
 	}
 	return opts
 }
 
 // generationFloat resolves a chat-generation parameter from the llm_setting
-// saved in search_config, honoring the {key}_enabled flag the same way as
-// Python's resolve_llm_setting: an explicitly false flag yields nil (the
-// caller's default applies); otherwise the stored value is returned when
-// present.
-func generationFloat(llmSetting map[string]interface{}, key string) *float64 {
+// saved in search_config, matching Python's resolve_llm_setting: the
+// user-configured value is kept only when the {key}_enabled flag is enabled
+// (absent flags count as enabled) and the value is present; otherwise the
+// parameter's LLM_SETTING_DEFAULTS fallback is substituted.
+func generationFloat(llmSetting map[string]interface{}, key string, fallback float64) *float64 {
 	if enabled, ok := llmSetting[key+"_enabled"].(bool); ok && !enabled {
-		return nil
+		return &fallback
 	}
 	if v, ok := floatFromSearchConfig(llmSetting[key]); ok {
 		return &v
 	}
-	return nil
+	return &fallback
 }
 
 func searchConfigMapFromValue(value interface{}) map[string]interface{} {

@@ -257,6 +257,33 @@ func TestAskService_TemperatureDisabledUsesDefault(t *testing.T) {
 	}
 }
 
+func TestAskService_TemperatureMissingUsesLLMSettingDefaults(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"},
+		},
+		DocAggs: []map[string]interface{}{},
+	}}
+	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
+	svc := NewAskService(ret, nil, 0, 0)
+
+	// Flag enabled but value absent (and a completely absent flag) must
+	// substitute the Python LLM_SETTING_DEFAULTS, matching resolve_llm_setting.
+	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+		"llm_setting": map[string]interface{}{
+			"temperature_enabled": true,
+		},
+	})
+	collect(svc.StreamWithOptions(context.Background(), llm, "user1", "test", []string{"kb1"}, opts))
+
+	if llm.gotConfig == nil || llm.gotConfig.Temperature == nil || *llm.gotConfig.Temperature != DefaultAskTemperature {
+		t.Errorf("expected LLM_SETTING_DEFAULTS temperature %v, got %+v", DefaultAskTemperature, llm.gotConfig)
+	}
+	if llm.gotConfig.TopP == nil || *llm.gotConfig.TopP != DefaultAskTopP {
+		t.Errorf("expected LLM_SETTING_DEFAULTS top_p %v, got %+v", DefaultAskTopP, llm.gotConfig)
+	}
+}
+
 func TestExtractChunkVectors_Empty(t *testing.T) {
 	if got := ExtractChunkVectors(nil); got != nil {
 		t.Errorf("expected nil for nil input, got %v", got)
