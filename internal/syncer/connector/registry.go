@@ -18,10 +18,27 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/dao"
 	"sync"
 )
+
+// ErrUnsupportedSource is returned when no Go connector is registered for a source.
+var ErrUnsupportedSource = errors.New("unsupported connector source")
+
+// UnsupportedSourceError identifies a connector source that is not implemented.
+type UnsupportedSourceError struct {
+	Source string
+}
+
+func (e *UnsupportedSourceError) Error() string {
+	return fmt.Sprintf("%s %q", ErrUnsupportedSource, e.Source)
+}
+
+func (e *UnsupportedSourceError) Unwrap() error {
+	return ErrUnsupportedSource
+}
 
 // Factory creates a connector for a task context.
 type Factory func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error)
@@ -69,7 +86,7 @@ func (r *Registry) OpenFromConfig(source string, config map[string]any) (Connect
 	factory := r.configFactories[source]
 	r.mu.RUnlock()
 	if factory == nil {
-		return nil, fmt.Errorf("unsupported connector source %q", source)
+		return nil, &UnsupportedSourceError{Source: source}
 	}
 	return factory(config)
 }
@@ -80,7 +97,7 @@ func (r *Registry) openSource(ctx context.Context, source string, taskContext da
 	factory := r.factories[source]
 	r.mu.RUnlock()
 	if factory == nil {
-		return nil, fmt.Errorf("unsupported connector source %q", source)
+		return nil, &UnsupportedSourceError{Source: source}
 	}
 	return factory(ctx, taskContext)
 }
