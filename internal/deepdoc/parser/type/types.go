@@ -170,6 +170,10 @@ type TableItem struct {
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// Page is the 0-based page index this table was detected on. It is set
+	// by the pipeline and used by parity/replay harnesses to map replay
+	// intermediates (which are keyed by page) back onto the correct table.
+	Page int
 }
 
 // TSRCell represents one table cell from TSR.

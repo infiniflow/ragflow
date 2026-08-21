@@ -227,6 +227,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,
+		Page: pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	return item

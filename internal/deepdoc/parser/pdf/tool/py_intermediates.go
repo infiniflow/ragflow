@@ -126,6 +126,70 @@ type PythonOCRPage struct {
 	Boxes []PythonOCRBox
 }
 
+// ── Per-char R/C dump (table_boxes/) ──────────────────────────────────────
+// table_boxes/{name}.json carries each table cell box WITH its TSR-assigned
+// R/C/H/SP annotations (the authoritative per-char row/column assignment
+// Python's construct_table groups by). This is the signal Go's line-based
+// GroupCells cross-product ignores; the replay harness feeds it to
+// GroupBoxesByRC so Go's assembly matches Python's R/C view. See
+// ApplyRCToResult in replay_analyzer_test.go.
+//
+// The dump is a FLAT list of boxes (one object per table cell), not
+// page-wrapped. Each box carries page_number (1-based) and layoutno (the
+// per-page table key, e.g. "table-0") so callers can split boxes back into
+// per-table groups.
+
+// PythonTableBox mirrors one table-cell box with per-char R/C/H/SP labels.
+// Field names follow the dump's JSON keys exactly.
+type PythonTableBox struct {
+	X0         float64 `json:"x0"`
+	X1         float64 `json:"x1"`
+	Top        float64 `json:"top"`
+	Bottom     float64 `json:"bottom"`
+	Text       string  `json:"text"`
+	PageNumber int     `json:"page_number"`
+	LayoutNo   string  `json:"layoutno"`
+	R          int     `json:"R"`
+	C          int     `json:"C"`
+	H          int     `json:"H"`
+	SP         int     `json:"SP"`
+	LayoutType string  `json:"layout_type"`
+}
+
+// LoadPythonTableBoxes parses output/py/{variant}/table_boxes/{name}.json
+// (a flat box list) into a []pdf.TextBox with R/C/H/SP carried over. A
+// missing file is reported via error so callers can treat "no R/C dump" as a
+// no-op (e.g. PDFs without tables, or the old ocr_real dump before the R/C
+// capture was added).
+func LoadPythonTableBoxes(jsonPath string) ([]pdf.TextBox, error) {
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return nil, err
+	}
+	var dumped []PythonTableBox
+	if err := json.Unmarshal(data, &dumped); err != nil {
+		return nil, err
+	}
+	boxes := make([]pdf.TextBox, 0, len(dumped))
+	for _, b := range dumped {
+		boxes = append(boxes, pdf.TextBox{
+			X0:         b.X0,
+			X1:         b.X1,
+			Top:        b.Top,
+			Bottom:     b.Bottom,
+			Text:       b.Text,
+			R:          b.R,
+			C:          b.C,
+			H:          b.H,
+			SP:         b.SP,
+			PageNumber: b.PageNumber,
+			LayoutNo:   b.LayoutNo,
+			LayoutType: b.LayoutType,
+		})
+	}
+	return boxes, nil
+}
+
 // PythonOCRBox mirrors one final OCR text box: axis-aligned bbox in
 // page-cumulative points, plus the assembled recognized text. Confidence is
 // not preserved in the dump (the assembled boxes do not carry it), so replay
