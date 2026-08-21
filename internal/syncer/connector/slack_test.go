@@ -603,6 +603,7 @@ func TestSlackConnectorOpenPruneThreadRootIdentity(t *testing.T) {
 	fixtures := &slackTestFixtures{
 		channelsJSON:     slackChannelsTwo,
 		historyByChannel: map[string]string{"C1": history},
+		repliesByKey:     map[string]string{"C1:1700000001.000001": slackThreadBody()},
 	}
 	server := newTestSlackServer(t, fixtures)
 	connector := mustSlackConnector(t, server.URL, nil)
@@ -646,6 +647,12 @@ func TestSlackConnectorOpenPruneBotRootThread(t *testing.T) {
 	fixtures := &slackTestFixtures{
 		channelsJSON:     slackChannelsTwo,
 		historyByChannel: map[string]string{"C1": history},
+		repliesByKey: map[string]string{
+			"C1:1700000001.000001": `{"ok":true,"messages":[
+				{"type":"message","ts":"1700000001.000001","user":"U123","text":"bot root","thread_ts":"1700000001.000001","bot_id":"B1","bot_profile":{"name":"Some Bot"}},
+				{"type":"message","ts":"1700000002.000002","user":"U456","text":"A reply","thread_ts":"1700000001.000001"}
+			],"has_more":false,"response_metadata":{"next_cursor":""}}`,
+		},
 	}
 	server := newTestSlackServer(t, fixtures)
 	connector := mustSlackConnector(t, server.URL, nil)
@@ -703,6 +710,90 @@ func TestSlackConnectorOpenPrunePagesChannelsLazily(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "C1__1700000000.000001" {
 		t.Fatalf("batch documents = %+v", batch.Documents)
+	}
+}
+
+func TestSlackConnectorOpenPruneResolvesRepliesFromThreadAPI(t *testing.T) {
+	withSlackTestHooks(t)
+	// The bot root is not accepted, and history carries no replies. Only
+	// conversations.replies reveals the accepted reply, so prune must resolve
+	// the thread like sync does instead of trusting history alone.
+	history := slackHistoryBody(
+		`{"type":"message","ts":"1700000001.000001","user":"U123","text":"bot root","thread_ts":"1700000001.000001","bot_id":"B1","bot_profile":{"name":"Some Bot"}}`,
+	)
+	fixtures := &slackTestFixtures{
+		channelsJSON:     slackChannelsTwo,
+		historyByChannel: map[string]string{"C1": history},
+		repliesByKey: map[string]string{
+			"C1:1700000001.000001": `{"ok":true,"messages":[
+				{"type":"message","ts":"1700000001.000001","user":"U123","text":"bot root","thread_ts":"1700000001.000001","bot_id":"B1","bot_profile":{"name":"Some Bot"}},
+				{"type":"message","ts":"1700000002.000002","user":"U456","text":"A reply","thread_ts":"1700000001.000001"}
+			],"has_more":false,"response_metadata":{"next_cursor":""}}`,
+		},
+	}
+	server := newTestSlackServer(t, fixtures)
+	connector := mustSlackConnector(t, server.URL, nil)
+
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{TaskID: "t1"})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer session.Close()
+
+	var slim []SlimDocument
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		slim = append(slim, batch.Documents...)
+	}
+	if len(slim) != 1 || slim[0].SourceID != "C1__1700000001.000001" {
+		t.Fatalf("slim documents = %+v, want [C1__1700000001.000001]", slim)
+	}
+}
+
+func TestSlackConnectorOpenPrunePropagatesThreadResolutionError(t *testing.T) {
+	withSlackTestHooks(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth.test", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true}`))
+	})
+	mux.HandleFunc("/api/conversations.list", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackChannelsTwo))
+	})
+	mux.HandleFunc("/api/conversations.join", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true}`))
+	})
+	mux.HandleFunc("/api/conversations.history", func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("channel") != "C1" {
+			w.Write([]byte(`{"ok":true,"messages":[],"has_more":false,"response_metadata":{"next_cursor":""}}`))
+			return
+		}
+		w.Write([]byte(slackHistoryBody(slackMsgThreadParent)))
+	})
+	mux.HandleFunc("/api/conversations.replies", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":false,"error":"invalid_auth"}`))
+	})
+	mux.HandleFunc("/api/users.info", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackUserAlice()))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	connector := mustSlackConnector(t, server.URL, nil)
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{TaskID: "t1"})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer session.Close()
+
+	_, err = session.NextBatch(context.Background())
+	if err == nil {
+		t.Fatalf("NextBatch: want thread resolution error, got nil")
 	}
 }
 

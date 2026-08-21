@@ -1067,33 +1067,36 @@ func (c *SlackConnector) pruneChannelDocuments(ctx context.Context, channel slac
 		}
 		return nil, err
 	}
-	return slackPruneDocuments(channel, messages), nil
+	return c.slackPruneDocuments(ctx, channel, messages)
 }
 
-// slackPruneDocuments maps channel history to slim snapshot documents. Every
-// thread is emitted once under its root timestamp when at least one of its
-// messages is accepted, matching the identity sync uses for thread documents.
-func slackPruneDocuments(channel slackChannel, messages []slackMessage) []SlimDocument {
-	acceptedThreads := map[string]struct{}{}
-	for _, message := range messages {
-		if acceptSlackMessage(message) {
-			acceptedThreads[slackThreadRootTS(message)] = struct{}{}
-		}
-	}
-	var documents []SlimDocument
+// slackPruneDocuments maps channel history to slim snapshot documents. Each
+// thread is resolved with the same full-thread view and acceptance logic as
+// sync (conversations.replies), so prune identities match sync documents.
+func (c *SlackConnector) slackPruneDocuments(ctx context.Context, channel slackChannel, messages []slackMessage) ([]SlimDocument, error) {
 	seen := map[string]struct{}{}
+	var documents []SlimDocument
 	for _, message := range messages {
 		rootTS := slackThreadRootTS(message)
-		if _, ok := acceptedThreads[rootTS]; !ok {
-			continue
-		}
 		if _, ok := seen[rootTS]; ok {
 			continue
 		}
 		seen[rootTS] = struct{}{}
-		documents = append(documents, SlimDocument{SourceID: slackDocID(channel.ID, rootTS)})
+		accepted := false
+		if message.ThreadTS != "" {
+			thread, err := c.getThread(ctx, channel.ID, message.ThreadTS)
+			if err != nil {
+				return nil, err
+			}
+			accepted = len(filterSlackMessages(thread)) > 0
+		} else {
+			accepted = acceptSlackMessage(message)
+		}
+		if accepted {
+			documents = append(documents, SlimDocument{SourceID: slackDocID(channel.ID, rootTS)})
+		}
 	}
-	return documents
+	return documents, nil
 }
 
 // slackThreadRootTS returns the root timestamp of a message's thread, falling
