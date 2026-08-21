@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// TestParityDirsForDefaultVariant pins the legacy directory layout: the
-// default variant ("" or "ocr") must resolve exactly to the pre-variant
-// hardcoded paths so existing dumps (charspy/, output/py/ocr/...) keep
-// working untouched.
+// TestParityDirsForDefaultVariant pins the default directory layout: the
+// default variant ("" or "ocr") must resolve exactly to the built-in paths
+// (charspy/, output/py/ocr/...).
 func TestParityDirsForDefaultVariant(t *testing.T) {
 	for _, v := range []string{"", "ocr"} {
 		d := ParityDirsFor(v)
@@ -29,7 +28,7 @@ func TestParityDirsForDefaultVariant(t *testing.T) {
 
 // TestParityDirsForCustomVariant pins the variant-isolated layout: a custom
 // variant moves every artifact under its own subdirectory so a second dataset
-// (e.g. real_pdfs) never collides with the legacy 35-PDF set.
+// (e.g. real_pdfs) never collides with the default 35-PDF set.
 func TestParityDirsForCustomVariant(t *testing.T) {
 	d := ParityDirsFor("ocr_real")
 	want := ParityDirs{

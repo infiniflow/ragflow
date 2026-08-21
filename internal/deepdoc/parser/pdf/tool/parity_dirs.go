@@ -8,7 +8,7 @@ import (
 
 // ParityDirs holds every testdata directory the pipeline-parity harness
 // reads/writes for one dataset variant. The variant isolates a second set of
-// PDFs (e.g. real_pdfs/) from the legacy 35-PDF fixture set so dumps and
+// PDFs (e.g. real_pdfs/) from the default 35-PDF fixture set so dumps and
 // parity verdicts never collide.
 type ParityDirs struct {
 	// Charspy is the Python pdfplumber chars dump directory.
@@ -28,16 +28,15 @@ type ParityDirs struct {
 }
 
 // ParityDirsFor maps a dataset variant to its testdata directories. The
-// default variant ("" or "ocr") resolves to the legacy hardcoded layout
-// (charspy/, output/py/ocr/...), so existing dumps keep working untouched; a
-// custom variant such as "ocr_real" moves every artifact under a variant
-// suffix (charspy_ocr_real/, output/py/ocr_real/...) so two datasets never
-// share a file.
+// default variant ("" or "ocr") resolves to the built-in layout (charspy/,
+// output/py/ocr/...); a custom variant such as "ocr_real" moves every artifact
+// under a variant suffix (charspy_ocr_real/, output/py/ocr_real/...) so two
+// datasets never share a file.
 //
 // For a custom variant the root directory can be redirected via
 // BATCH_PARITY_DATA_ROOT (e.g. a shared directory outside the worktree so
 // multiple worktrees reuse one dump). The default variant always stays under
-// the local "testdata", keeping the legacy 35-PDF fixtures untouched.
+// the local "testdata".
 func ParityDirsFor(variant string) ParityDirs {
 	if variant == "" {
 		variant = "ocr"
@@ -48,8 +47,15 @@ func ParityDirsFor(variant string) ParityDirs {
 			root = r
 		}
 	}
-	d := ParityDirs{
-		Charspy: filepath.Join(root, "charspy"),
+	// The charspy dir is the only artifact whose name does not carry the
+	// variant suffix for the default variant (charspy/), matching the layout
+	// the dumps were generated with; custom variants append the suffix.
+	charspyDir := "charspy"
+	if variant != "ocr" {
+		charspyDir = "charspy_" + variant
+	}
+	return ParityDirs{
+		Charspy: filepath.Join(root, charspyDir),
 		Text:    filepath.Join(root, "output", "py", variant, "text"),
 		DLA:     filepath.Join(root, "output", "py", variant, "dla"),
 		TSRRaw:  filepath.Join(root, "output", "py", variant, "tsr_raw"),
@@ -57,8 +63,4 @@ func ParityDirsFor(variant string) ParityDirs {
 		Tables:  filepath.Join(root, "output", "py", variant, "tables"),
 		GoText:  filepath.Join(root, "output", "go", variant, "text"),
 	}
-	if variant != "ocr" {
-		d.Charspy = filepath.Join(root, "charspy_"+variant)
-	}
-	return d
 }

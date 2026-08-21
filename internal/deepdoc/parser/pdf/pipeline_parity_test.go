@@ -44,12 +44,12 @@ import (
 //     Python, e.g. table segmentation). Any genuine Go content regression is a
 //     FAIL.
 func TestPipelineParity(t *testing.T) {
-	// Dataset variant: "" (default) or "ocr" resolve to the legacy layout
+	// Dataset variant: "" (default) or "ocr" resolve to the built-in layout
 	// (charspy/, output/py/ocr/...) for the original 35-PDF fixture set; a
 	// custom variant such as "ocr_real" reads its own isolated directories
 	// (charspy_ocr_real/, output/py/ocr_real/...), so a second dataset (e.g.
-	// real_pdfs/) gets its own dumps and verdicts without touching the
-	// legacy set. See tool.ParityDirsFor.
+	// real_pdfs/) gets its own dumps and verdicts without touching the default
+	// set. See tool.ParityDirsFor.
 	dirs := tool.ParityDirsFor(common.GetEnv(common.EnvBatchParityVariant))
 	charspyDir, pyTextDir := dirs.Charspy, dirs.Text
 	dlaDir, tsrDir, ocrDir, tablesDir := dirs.DLA, dirs.TSRRaw, dirs.OCR, dirs.Tables

@@ -192,3 +192,30 @@ func TestMatchCharsToBoxes_DeferredSpaceOnlyNormalDropped(t *testing.T) {
 		}
 	}
 }
+
+// TestMatchCharsToBoxes_PartialOverlapHeightFiltered locks that a char which
+// only PARTIALLY overlaps its assigned box (overlap < 0.95) is STILL dropped
+// by the height gate when its height differs from the box by >=70% — it is an
+// adjacent-line glyph poking into the box, not inline content. The deferred
+// inline-glyph path requires full containment (bestOverlap >= 0.95), so a
+// partial overlap must never be re-kept there.
+func TestMatchCharsToBoxes_PartialOverlapHeightFiltered(t *testing.T) {
+	box := ocrDetectBox{
+		box: pdftype.TextBox{X0: 0, X1: 90, Top: 0, Bottom: 40},
+		x0:  0, y0: 0, x1: 90, y1: 40,
+	}
+	boxes := []ocrDetectBox{box}
+	// h=5 vs bh=40 -> ratio 0.875 >= 0.7; the char spans top=-2..3, so only
+	// 3 of its 5pt vertically overlap the box (top 0..3) -> overlap 0.6 < 0.95,
+	// i.e. NOT fully contained -> deferred path must not absorb it.
+	chars := []pdftype.TextChar{
+		{X0: 5, X1: 12, Top: -2, Bottom: 3, Text: "x"},
+	}
+	got := matchCharsToBoxes(boxes, chars)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 box group, got %d", len(got))
+	}
+	if len(got[0]) != 0 {
+		t.Errorf("partial-overlap height-mismatched glyph must be dropped by the height gate, got %+v", got[0])
+	}
+}
