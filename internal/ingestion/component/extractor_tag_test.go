@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xuri/excelize/v2"
 
@@ -145,8 +147,6 @@ func TestParseTaggerResponse_JSONRepair(t *testing.T) {
 }
 
 func TestParseCSVTagSource_Comma(t *testing.T) {
-	// A comma-delimited file maps to exactly two columns, so each line can
-	// carry only a single tag (tags are comma-separated within the 2nd col).
 	text := "RAGFlow tutorial,RAG\nsome text,LLM"
 	result := parseCSVTagSource(text)
 	if len(result) != 2 {
@@ -200,9 +200,6 @@ func TestParseCSVTagSource_Tab(t *testing.T) {
 }
 
 func TestParseCSVTagSource_Accumulation(t *testing.T) {
-	// Mirrors rag/app/tag.py txt semantics: lines that do not split into two
-	// columns are accumulated as body text and prepended to the next tagged
-	// line's content.
 	text := "intro paragraph\nmore body\nRAGFlow tutorial\tRAG,tutorial"
 	result := parseCSVTagSource(text)
 	if len(result) != 1 {
@@ -241,8 +238,6 @@ func stubXLSXBytes(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-// capturingExtractorTagChat records the request it was given so tests can
-// assert on the exact messages sent to the LLM.
 type capturingExtractorTagChat struct {
 	req extractorChatRequest
 }
@@ -264,11 +259,6 @@ func longChunkText() string {
 	return strings.Repeat("RAGFlow is an open source retrieval augmented generation engine. ", 10)
 }
 
-// TestLlmtagChunk_MessageFit verifies that llmTagChunk trims the prompt to the
-// model's context window before sending, mirroring Python's message_fit_in in
-// content_tagging (generator.py:331). The tagger system prompt embeds the full
-// chunk text plus the whole tag set, so an oversized chunk must be trimmed
-// rather than rejected by the provider with "context length exceeded".
 func TestLlmtagChunk_MessageFit(t *testing.T) {
 	const budget = 20
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return budget })
@@ -281,28 +271,21 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
 	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
 	}
-	// The full chunk text must have been trimmed away from the system prompt.
 	if strings.Contains(capt.req.Messages[0].Content, longText) {
 		t.Fatal("system prompt was not trimmed to the context budget")
 	}
 	total := tokenizer.NumTokensFromString(capt.req.Messages[0].Content) +
 		tokenizer.NumTokensFromString(capt.req.Messages[1].Content)
-	// The budget is 97% of the resolved content_length (the override value),
-	// mirroring the agent's contextFitBudget; the margin keeps a fitted
-	// prompt inside the provider's real context limit.
 	if total > extractorContextFitBudget(budget) {
 		t.Fatalf("fitted messages total %d tokens exceeds the margin-adjusted budget %d", total, extractorContextFitBudget(budget))
 	}
 }
 
-// TestLlmtagChunk_NoContextLength_SkipsFit verifies the guard: when the model's
-// context length is unknown (extractorContextLength returns 0), the tagger
-// passes the prompt through untrimmed instead of erroring.
 func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	capt := pushCapturingTagChat(t)
 
@@ -311,7 +294,7 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1}
 	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -321,22 +304,49 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	}
 }
 
+func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
+	requireTokenizerPool(t)
+	capt := pushCapturingTagChat(t)
+
+	tok := tokenizer.New("english")
+	rawEx := []schema.TagLabel{
+		{Content: "real sample text one", Tags: []string{"NLP", "AI"}},
+		{Content: "real sample text two", Tags: []string{"Search"}},
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx == nil {
+		t.Fatal("expected non-nil index")
+	}
+
+	chunk := map[string]any{"content_with_weight": "some content"}
+	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
+
+	if len(capt.req.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
+	}
+	// Verify that real sample content is present in prompt
+	promptContent := capt.req.Messages[0].Content
+	if !strings.Contains(promptContent, "real sample text one") && !strings.Contains(promptContent, "real sample text two") {
+		t.Fatalf("cold start fallback did not include real sample text: %s", promptContent)
+	}
+	// Verify fake mock example is NOT present
+	if strings.Contains(promptContent, "This is an example") {
+		t.Fatal("prompt contains fake example 'This is an example'")
+	}
+}
+
 func TestParseCSVQuoteAwareReader(t *testing.T) {
-	// A quoted content field containing a comma must not be split into extra
-	// columns: "RAGFlow, the guide",RAG is two fields, not three.
 	text := "\"RAGFlow, the guide\",RAG\nplain line,LLM"
 	result := parseCSVQuoteAwareReader(strings.NewReader(text))
 	if len(result) != 2 {
 		t.Fatalf("expected 2 examples, got %d", len(result))
 	}
-	// First line: quoted content keeps the comma -> content "RAGFlow, the guide", tags [RAG]
 	if result[0].Content != "RAGFlow, the guide" {
 		t.Errorf("content[0] = %q", result[0].Content)
 	}
 	if len(result[0].Tags) != 1 || result[0].Tags[0] != "RAG" {
 		t.Errorf("tags[0] = %v", result[0].Tags)
 	}
-	// Second line: plain comma split -> content "plain line", tags [LLM]
 	if result[1].Content != "plain line" {
 		t.Errorf("content[1] = %q", result[1].Content)
 	}
@@ -351,7 +361,6 @@ func TestParseXLSXTagSource(t *testing.T) {
 	if len(result) != 3 {
 		t.Fatalf("expected 3 examples (multi-sheet), got %d", len(result))
 	}
-	// Each row's first cell is content, second is comma-separated tags.
 	if result[0].Content != "RAGFlow guide" {
 		t.Errorf("content[0] = %q", result[0].Content)
 	}
@@ -367,8 +376,6 @@ func TestParseXLSXTagSource(t *testing.T) {
 }
 
 func TestParseCSVTagSource_EmptyTags(t *testing.T) {
-	// Mirrors rag/app/tag.py: a row with exactly two columns is appended even
-	// when the tag column is empty (beAdoc always appends for a 2-column row).
 	text := "content one\tRAG,tutorial\nsolo line\t"
 	result := parseCSVTagSource(text)
 	if len(result) != 2 {
@@ -377,9 +384,8 @@ func TestParseCSVTagSource_EmptyTags(t *testing.T) {
 	if len(result[0].Tags) != 2 {
 		t.Errorf("tags[0] = %v", result[0].Tags)
 	}
-	// Second row has an empty tag column -> still an example, with no tags.
 	if len(result[1].Tags) != 0 {
-		t.Errorf("tags[1] = %v, want empty (matches Python)", result[1].Tags)
+		t.Errorf("tags[1] = %v, want empty", result[1].Tags)
 	}
 	if result[1].Content != "solo line" {
 		t.Errorf("content[1] = %q", result[1].Content)
@@ -387,11 +393,9 @@ func TestParseCSVTagSource_EmptyTags(t *testing.T) {
 }
 
 func TestParseTagSourceByFilename(t *testing.T) {
-	// .xlsx -> multi-sheet, 2 columns per row.
 	if got, err := parseTagSourceByFilename(stubXLSXBytes(t), "tags.xlsx"); err != nil || len(got) != 3 {
 		t.Errorf("xlsx: expected 3 examples, got %d (err=%v)", len(got), err)
 	}
-	// .csv -> quote-aware comma parsing.
 	csvData := []byte("\"a, b\",RAG\nsimple,LLM")
 	if got, err := parseTagSourceByFilename(csvData, "tags.csv"); err != nil || len(got) != 2 {
 		t.Errorf("csv: expected 2 examples, got %d (err=%v)", len(got), err)
@@ -399,13 +403,10 @@ func TestParseTagSourceByFilename(t *testing.T) {
 	if got, err := parseTagSourceByFilename(csvData, "tags.CSV"); err != nil || len(got) != 2 {
 		t.Errorf("csv (uppercase ext): expected 2 examples, got %d (err=%v)", len(got), err)
 	}
-	// .txt -> delimiter-detecting txt reader.
 	txtData := []byte("content one\tRAG,tutorial")
 	if got, err := parseTagSourceByFilename(txtData, "tags.txt"); err != nil || len(got) != 1 {
 		t.Errorf("txt: expected 1 example, got %d (err=%v)", len(got), err)
 	}
-	// Unsupported / no extension mirrors Python's NotImplementedError: the tag
-	// source is not parsed and an error is returned.
 	if _, err := parseTagSourceByFilename(txtData, "noextension"); err == nil {
 		t.Error("no extension: expected an error (unsupported extension)")
 	}
@@ -414,42 +415,166 @@ func TestParseTagSourceByFilename(t *testing.T) {
 	}
 }
 
-func TestJaccardOverlap(t *testing.T) {
-	tests := []struct {
-		name     string
-		a, b     []string
-		expected float64
-	}{
-		{"identical", []string{"a", "b"}, []string{"a", "b"}, 1.0},
-		{"half overlap", []string{"a", "b"}, []string{"b", "c"}, 1.0 / 3.0},
-		{"no overlap", []string{"a", "b"}, []string{"c", "d"}, 0.0},
-		{"empty a", []string{}, []string{"a"}, 0.0},
-		{"empty b", []string{"a"}, []string{}, 0.0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := jaccardOverlap(tt.a, tt.b)
-			if got != tt.expected {
-				t.Fatalf("jaccard(%v, %v) = %.4f, want %.4f", tt.a, tt.b, got, tt.expected)
-			}
-		})
+func requireTokenizerPool(t testing.TB) {
+	t.Helper()
+	if err := tokenizer.Init(&tokenizer.PoolConfig{
+		DictPath:       "/usr/share/infinity/resource",
+		MinSize:        1,
+		MaxSize:        2,
+		IdleTimeout:    30 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Skipf("tokenizer pool unavailable: %v", err)
 	}
 }
 
-func TestBuildAllTagsProportions(t *testing.T) {
-	ts := []schema.TagLabel{
-		{Content: "a", Tags: []string{"RAG", "LLM"}},
-		{Content: "b", Tags: []string{"RAG", "open"}},
+func TestBuildMemoryTagIndex(t *testing.T) {
+	requireTokenizerPool(t)
+	tok := tokenizer.New("english")
+	raw := []schema.TagLabel{
+		{Content: "machine learning models", Tags: []string{"ML.v1", "AI"}},
+		{Content: "deep learning neural nets", Tags: []string{"AI", "DL"}},
+		{Content: "   ", Tags: []string{"Ignored"}},
 	}
-	result := buildAllTagsProportions(ts)
-	if len(result) != 3 {
-		t.Fatalf("expected 3 tags, got %d", len(result))
+	idx := buildMemoryTagIndex(raw, tok)
+	if idx == nil {
+		t.Fatal("expected non-nil MemoryTagIndex")
 	}
-	if result["RAG"] <= result["LLM"] {
-		t.Fatalf("expected RAG proportion > LLM, got RAG=%.6f LLM=%.6f", result["RAG"], result["LLM"])
+	if len(idx.examples) != 2 {
+		t.Fatalf("expected 2 clean examples, got %d", len(idx.examples))
 	}
-	if result["LLM"] <= 0 {
-		t.Fatal("expected LLM proportion > 0")
+	if _, ok := idx.allTags["ML_v1"]; !ok {
+		t.Fatalf("expected tag ML_v1 after dot sanitization, got %v", idx.allTags)
+	}
+	if _, ok := idx.allTags["ML.v1"]; ok {
+		t.Fatal("expected ML.v1 with dot to be replaced")
+	}
+}
+
+func TestMatchAndTagChunk_AsymmetricLength(t *testing.T) {
+	requireTokenizerPool(t)
+	tok := tokenizer.New("english")
+	// Reference set: 10-word rare example
+	rawEx := []schema.TagLabel{
+		{Content: "RAGFlow vector database retrieval architecture engine", Tags: []string{"RAG", "VectorDB"}},
+		{Content: "general culinary cooking recipe baking", Tags: []string{"Cooking"}},
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx == nil {
+		t.Fatal("expected non-nil index")
+	}
+
+	// 800-word long technical chunk containing the reference example words
+	longBody := strings.Repeat("RAGFlow is an advanced system that integrates vector database and retrieval architecture engine into scalable workflows. ", 40)
+	chunk := map[string]any{"content_with_weight": longBody}
+
+	matched := matchAndTagChunk(chunk, idx, tok, 5)
+	if matched == nil {
+		t.Fatal("expected non-nil matched chunk for asymmetric length matching")
+	}
+	if len(matched.Tags) == 0 {
+		t.Fatal("expected non-empty matched tags")
+	}
+	if matched.TagWeights["RAG"] <= 0 || matched.TagWeights["VectorDB"] <= 0 {
+		t.Fatalf("expected positive scores for RAG and VectorDB, got: %v", matched.TagWeights)
+	}
+	for tag, score := range matched.TagWeights {
+		if score < 1 || score > 10 {
+			t.Fatalf("tag %s score %d is outside [1, 10]", tag, score)
+		}
+	}
+}
+
+func TestMatchAndTagChunk_TopKWeighted(t *testing.T) {
+	requireTokenizerPool(t)
+	tok := tokenizer.New("english")
+	rawEx := []schema.TagLabel{
+		{Content: "machine learning artificial intelligence deep neural networks", Tags: []string{"AI"}},
+		{Content: "financial market stocks bonds banking economy", Tags: []string{"Finance"}},
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx == nil {
+		t.Fatal("expected non-nil index")
+	}
+
+	// Chunk has high overlap with AI example, slight overlap with Finance
+	chunk := map[string]any{
+		"content_with_weight": "machine learning artificial intelligence deep neural networks banking financial",
+	}
+
+	matched := matchAndTagChunk(chunk, idx, tok, 5)
+	if matched == nil {
+		t.Fatal("expected non-nil matched chunk")
+	}
+	aiScore := matched.TagWeights["AI"]
+	finScore := matched.TagWeights["Finance"]
+	if aiScore <= finScore {
+		t.Fatalf("expected AI score (%d) > Finance score (%d)", aiScore, finScore)
+	}
+}
+
+func TestMatchAndTagChunk_DuplicateTagsDedup(t *testing.T) {
+	requireTokenizerPool(t)
+	tok := tokenizer.New("english")
+	rawEx := []schema.TagLabel{
+		{Content: "natural language processing text analysis", Tags: []string{"NLP", "NLP", "AI"}},
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx == nil {
+		t.Fatal("expected non-nil index")
+	}
+	if len(idx.examples[0].Tags) != 2 {
+		t.Fatalf("expected 2 unique tags in example, got %v", idx.examples[0].Tags)
+	}
+
+	chunk := map[string]any{"content_with_weight": "natural language processing text analysis"}
+	matched := matchAndTagChunk(chunk, idx, tok, 5)
+	if matched == nil {
+		t.Fatal("expected non-nil match")
+	}
+	if matched.TagWeights["NLP"] < 1 || matched.TagWeights["NLP"] > 10 {
+		t.Fatalf("invalid score for NLP: %d", matched.TagWeights["NLP"])
+	}
+}
+
+func TestMatchAndTagChunk_AllEmptyTags(t *testing.T) {
+	requireTokenizerPool(t)
+	tok := tokenizer.New("english")
+	rawEx := []schema.TagLabel{
+		{Content: "some text without tags", Tags: []string{}},
+		{Content: "another text with empty tag", Tags: []string{"", "  "}},
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx != nil {
+		t.Fatalf("expected nil index when all tags are empty, got %v", idx)
+	}
+
+	chunk := map[string]any{"content_with_weight": "some text without tags"}
+	matched := matchAndTagChunk(chunk, idx, tok, 5)
+	if matched != nil {
+		t.Fatalf("expected nil match when index is nil, got %v", matched)
+	}
+}
+
+func TestParseTaggerResponse_DotSanitization(t *testing.T) {
+	raw := `{"model.v1.0": 8, "rag_tech": 6, "rag.db.v2": 4}`
+	result := parseTaggerResponse(raw, 5)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result["model_v1_0"] != 8 {
+		t.Fatalf("expected model_v1_0=8, got %d", result["model_v1_0"])
+	}
+	if result["rag_tech"] != 6 {
+		t.Fatalf("expected rag_tech=6, got %d", result["rag_tech"])
+	}
+	if result["rag_db_v2"] != 4 {
+		t.Fatalf("expected rag_db_v2=4, got %d", result["rag_db_v2"])
+	}
+	for k := range result {
+		if strings.Contains(k, ".") {
+			t.Fatalf("found unescaped dot in tag key: %s", k)
+		}
 	}
 }
 
@@ -487,10 +612,6 @@ func TestJsonRepairExtract(t *testing.T) {
 	}
 }
 
-// TestParseTaggerResponse_LastThinkTag verifies that when the LLM
-// response contains multiple </think> tags, parseTaggerResponse strips
-// up to the LAST one (greedy, matching Python's re.sub), not just the
-// first (which would leave a residual think block).
 func TestParseTaggerResponse_LastThinkTag(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -534,3 +655,30 @@ func TestParseTaggerResponse_LastThinkTag(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkMatchAndTagChunk_5000Examples(b *testing.B) {
+	requireTokenizerPool(b)
+	tok := tokenizer.New("english")
+	rawEx := make([]schema.TagLabel, 5000)
+	for i := 0; i < 5000; i++ {
+		rawEx[i] = schema.TagLabel{
+			Content: fmt.Sprintf("sample content document %d with keywords topic%d and subtopic%d for domain categorization", i, i%50, i%100),
+			Tags:    []string{fmt.Sprintf("topic_%d", i%50), fmt.Sprintf("subtopic_%d", i%100)},
+		}
+	}
+	idx := buildMemoryTagIndex(rawEx, tok)
+	if idx == nil {
+		b.Fatal("failed to build index")
+	}
+
+	chunk := map[string]any{
+		"content_with_weight": "This is a detailed chunk talking about sample content document 42 with keywords topic42 and subtopic42 for domain categorization in practice.",
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		matchAndTagChunk(chunk, idx, tok, 3)
+	}
+}
+
