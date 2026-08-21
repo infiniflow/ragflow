@@ -27,12 +27,12 @@
     "no-console": ["warn", { "allow": ["warn", "error"] }],
     "no-unused-vars": ["warn", { "fix": { "imports": "safe-fix" } }],
     "no-restricted-imports": [
-      "warn",
+      "error",
       {
         "paths": [
           {
             "name": "@/utils/backend-runtime",
-            "message": "Branch on the backend only through the dispatch primitives in @/utils/backend-variant (useIsGoBackend / <BackendVariant> / resolveVariant). backend-runtime may only be imported by backend-variant itself and the main.tsx bootstrap gate. Escalate to \"error\" once the remaining legacy call sites are migrated."
+            "message": "Branch on the backend only through the dispatch primitives in @/utils/backend-variant (useIsGoBackend / <BackendVariant> / pickByBackend). backend-runtime may only be imported by backend-variant itself and the main.tsx bootstrap gate."
           }
         ]
       }

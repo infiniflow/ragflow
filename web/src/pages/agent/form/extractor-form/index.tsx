@@ -18,7 +18,7 @@ import { BackendVariant } from '@/utils/backend-variant';
 import { memo } from 'react';
 import { INextOperatorForm } from '../../interface';
 import GoExtractorForm from './go-form';
-import LegacyExtractorForm from './legacy-form';
+import PythonExtractorForm from './python-form';
 
 export { FormSchema } from './go-form';
 export type { ExtractorFormSchemaType } from './go-form';
@@ -29,7 +29,7 @@ export type { ExtractorFormSchemaType } from './go-form';
 const ExtractorForm = (props: INextOperatorForm) => (
   <BackendVariant
     go={<GoExtractorForm {...props} />}
-    python={<LegacyExtractorForm {...props} />}
+    python={<PythonExtractorForm {...props} />}
   />
 );
 

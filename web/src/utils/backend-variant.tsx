@@ -28,12 +28,12 @@
  *   at a dispatcher file (page `index.tsx` / form dispatcher), never inline
  *   in business components.
  * - Value divergence (field names, defaults, payload transforms): select
- *   through `resolveVariant({ go, python })` inside an adapter file.
+ *   through `pickByBackend({ go, python })` inside an adapter file.
  * - Hook-level needs (e.g. a query `enabled` flag): `useIsGoBackend()`.
  *
  * The app render is gated on the language fetch in `main.tsx`, so below the
  * gate the variant never changes for the session lifetime and both sync
- * reads (`resolveVariant`) and hook reads are race-free.
+ * reads (`pickByBackend`) and hook reads are race-free.
  */
 
 // oxlint-disable-next-line no-restricted-imports -- sanctioned boundary over the raw store
@@ -66,6 +66,6 @@ export function BackendVariant({
 }
 
 /** Pick a value per backend, synchronously. Use inside adapter/dispatcher files only. */
-export function resolveVariant<T>(variants: { go: T; python: T }): T {
+export function pickByBackend<T>(variants: { go: T; python: T }): T {
   return isGo() ? variants.go : variants.python;
 }

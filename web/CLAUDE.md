@@ -36,13 +36,13 @@ All divergence between the two backends is funneled through dispatch points. Bus
    - `src/main.tsx` — the bootstrap gate.
 2. Branch only through the primitives from `@/utils/backend-variant`:
    - JSX: `<BackendVariant go={...} python={...} />` inside a dispatcher file (a page `index.tsx` or form dispatcher) — never inline in business components.
-   - Values (field names, defaults, payload transforms): `resolveVariant({ go, python })` inside an adapter file.
+   - Values (field names, defaults, payload transforms): `pickByBackend({ go, python })` inside an adapter file.
    - Hook-level needs (e.g. a query `enabled` flag): `useIsGoBackend()`.
 3. Routes never fork per backend: one route, one dispatcher component, with the variant implementations under `go/` and `python/` subdirectories. Reference example: `src/pages/dataset/setting/`.
 4. Variant file naming: `Xxx.go.tsx` / `Xxx.python.ts(x)` siblings behind a same-named dispatcher, or `go/` + `python/` subdirectories for whole pages. No temporal names (`Next`, `Legacy`, `New`).
-5. Small differences (a field's visibility, a field name) belong in capability-style adapter/config files reached through `resolveVariant`, not scattered inline ternaries in shared components.
+5. Small differences (a field's visibility, a field name) belong in capability-style adapter/config files reached through `pickByBackend`, not scattered inline ternaries in shared components.
 
-Migration status: dispatch primitives + bootstrap gate and the dataset configuration route consolidation (`src/pages/dataset/setting/`) are done. Scattered raw `isGoBackend()` call sites (pipeline DSL transforms, dataset tables/dialogs, parser-form fields) still import `@/utils/backend-runtime` directly — `no-restricted-imports` stays at `warn` until they are migrated, then escalates to `error`.
+Migration status: complete. All former `isGoBackend()` call sites go through the primitives — per-variant transforms are dispatched inside `src/pages/agent/utils.ts` and `src/utils/pipeline-operator.ts`, extractor initial values inside `src/pages/agent/constant/pipeline.tsx`, the parser-change dialog inside `src/pages/dataset/dataset/change-parser-dialog.tsx`, and the dataset configuration route is a single dispatcher (`src/pages/dataset/setting/`). `no-restricted-imports` is enforced at `error`.
 
 ### CSS and Layout Debugging
 
