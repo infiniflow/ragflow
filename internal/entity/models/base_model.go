@@ -407,13 +407,9 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 			modelResponse.Thinking = modelEntity.Thinking
 			modelResponse.Dimensions = modelEntity.Dimensions
 		}
-		if len(modelResponse.ModelTypes) == 0 {
-			modelResponse.ModelTypes = InferMissingModelTypes(modelName)
-		}
-
 		models = append(models, modelResponse)
 	}
-	return models
+	return FillMissingModelTypes(models)
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool

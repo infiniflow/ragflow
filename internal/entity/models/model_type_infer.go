@@ -44,28 +44,42 @@ var (
 	modelNameNumberTokenRE       = regexp.MustCompile(`^[0-9]+$`)
 )
 
-// InferMissingModelTypes returns model types for a provider model whose upstream
-// list does not carry type metadata. It prefers exact all_models.json metadata,
-// then strong capability hints in the name, and finally falls back to chat.
-func InferMissingModelTypes(modelName string) []string {
+// InferModelTypes derives RAGFlow LLM model types from the model name using
+// keyword heuristics, covering all seven supported types: chat, embedding,
+// rerank, asr, tts, ocr, and vision (always combined with chat).
+func InferModelTypes(modelName string) []string {
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return []string{modelTypeChat}
 	}
-	if pm := GetProviderManager(); pm != nil {
-		if model := pm.GetModelByNameOrAlias(modelName); model != nil && len(model.ModelTypes) > 0 {
-			return normalizeModelTypes(model.ModelTypes)
-		}
-	}
 	if modelTypes := inferModelTypesByName(modelName); len(modelTypes) > 0 {
 		return normalizeModelTypes(modelTypes)
 	}
-	if pm := GetProviderManager(); pm != nil {
-		if modelTypes := pm.inferModelTypesBySimilarity(modelName); len(modelTypes) > 0 {
-			return normalizeModelTypes(modelTypes)
+	return []string{modelTypeChat}
+}
+
+// FillMissingModelTypes fills missing model types using only the models present
+// in the provided list. Existing model types are preserved as reported.
+func FillMissingModelTypes(models []ListModelResponse) []ListModelResponse {
+	for i := range models {
+		if len(models[i].ModelTypes) > 0 {
+			continue
+		}
+		if modelTypes := inferModelTypesByName(models[i].Name); len(modelTypes) > 0 {
+			models[i].ModelTypes = normalizeModelTypes(modelTypes)
 		}
 	}
-	return []string{modelTypeChat}
+	for i := range models {
+		if len(models[i].ModelTypes) == 0 {
+			if modelTypes := inferModelTypesBySimilarity(models[i].Name, models); len(modelTypes) > 0 {
+				models[i].ModelTypes = normalizeModelTypes(modelTypes)
+			}
+		}
+		if len(models[i].ModelTypes) == 0 {
+			models[i].ModelTypes = []string{modelTypeChat}
+		}
+	}
+	return models
 }
 
 func inferModelTypesByName(modelName string) []string {
@@ -95,7 +109,7 @@ func inferModelTypesByName(modelName string) []string {
 		strings.Contains(lowerName, "glm-4v") ||
 		strings.Contains(lowerName, "minicpm-v") ||
 		strings.Contains(lowerName, "gpt-4o") ||
-		hasToken("vl", "vlm", "vision", "llava", "internvl", "pixtral", "image", "video"):
+		hasToken("vl", "vlm", "vision", "llava", "internvl", "pixtral", "qvq", "image", "video"):
 		return []string{modelTypeChat, modelTypeVision}
 	default:
 		return nil
@@ -144,7 +158,7 @@ func comparableModelNameText(modelName string) string {
 	return modelName
 }
 
-func (pm *ProviderManager) inferModelTypesBySimilarity(modelName string) []string {
+func inferModelTypesBySimilarity(modelName string, models []ListModelResponse) []string {
 	targetHint := inferModelTypesByName(modelName)
 	target := newModelNameProfile(modelName)
 	if len(target.tokenSet) == 0 {
@@ -155,27 +169,27 @@ func (pm *ProviderManager) inferModelTypesBySimilarity(modelName string) []strin
 	secondScore := 0.0
 	var bestTypes []string
 	var secondTypes []string
-	for _, model := range pm.AllModels {
+	for _, model := range models {
 		if len(model.ModelTypes) == 0 {
 			continue
 		}
-		names := append([]string{model.Name}, model.Alias...)
-		for _, candidateName := range names {
-			if !compatibleModelNameCapabilities(targetHint, inferModelTypesByName(candidateName)) {
-				continue
-			}
-			score := modelNameSimilarityScore(target, newModelNameProfile(candidateName))
-			if score > bestScore {
-				secondScore = bestScore
-				secondTypes = bestTypes
-				bestScore = score
-				bestTypes = normalizeModelTypes(model.ModelTypes)
-				continue
-			}
-			if score > secondScore {
-				secondScore = score
-				secondTypes = normalizeModelTypes(model.ModelTypes)
-			}
+		if strings.EqualFold(model.Name, modelName) {
+			continue
+		}
+		if !compatibleModelNameCapabilities(targetHint, inferModelTypesByName(model.Name)) {
+			continue
+		}
+		score := modelNameSimilarityScore(target, newModelNameProfile(model.Name))
+		if score > bestScore {
+			secondScore = bestScore
+			secondTypes = bestTypes
+			bestScore = score
+			bestTypes = normalizeModelTypes(model.ModelTypes)
+			continue
+		}
+		if score > secondScore {
+			secondScore = score
+			secondTypes = normalizeModelTypes(model.ModelTypes)
 		}
 	}
 	if bestScore < modelTypeSimilarityBaseline {
