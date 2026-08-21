@@ -175,9 +175,7 @@ class Graph:
             obj = cpn.get("obj")
             if obj and hasattr(obj, "tools"):
                 for tool in obj.tools.values():
-                    session = tool if isinstance(tool, MCPToolCallSession) else (
-                        tool.session if isinstance(tool, MCPToolBinding) else None
-                    )
+                    session = tool if isinstance(tool, MCPToolCallSession) else (tool.session if isinstance(tool, MCPToolBinding) else None)
                     if isinstance(session, MCPToolCallSession) and id(session) not in seen:
                         seen.add(id(session))
                         try:
@@ -392,10 +390,12 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
-    def clear_history(self):
+    def start_new_session(self):
+        """Discard replica state that must not leak into a fresh session."""
         self.history = []
-        if isinstance(self.globals.get("sys.history"), list):
-            self.globals["sys.history"] = []
+        self.globals["sys.history"] = []
+        self.path = []
+        _logger.debug("Canvas conversation history and execution path reset for a new session")
 
     def reset(self, mem=False):
         super().reset()

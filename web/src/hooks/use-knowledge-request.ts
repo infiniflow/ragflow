@@ -78,7 +78,7 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
@@ -1110,41 +1110,6 @@ export const useFetchKnowledgeList = (
 };
 
 /**
- * For consumers that need the COMPLETE list (no scroll UI).
- * Uses a large page size to minimize round-trips, and auto-loads
- * until exhausted.
- */
-export const useFetchAllKnowledgeList = (
-  shouldFilterListWithoutDocument: boolean = false,
-  keywords = '',
-): { list: IDataset[]; loading: boolean } => {
-  const { list, loading, hasNextPage, fetchNextPage } = useFetchKnowledgeList(
-    shouldFilterListWithoutDocument,
-    keywords,
-    100,
-  );
-
-  useEffect(() => {
-    if (hasNextPage && !loading) {
-      fetchNextPage();
-    }
-  }, [hasNextPage, loading, fetchNextPage]);
-
-  return { list, loading };
-};
-
-export const useSelectKnowledgeOptions = () => {
-  const { list } = useFetchAllKnowledgeList();
-
-  const options = list?.map((item) => ({
-    label: item.name,
-    value: item.id,
-  }));
-
-  return options;
-};
-
-/**
  * Fetch datasets by a set of IDs. Used to resolve already-selected datasets
  * that are not present in the first page of the paginated list, e.g. to echo
  * their names in a form field. For staleness checks see `useStaleDatasetIds`.
@@ -1155,6 +1120,10 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
     queryKey: KnowledgeListKeys.byIds(sortedIds),
     enabled: sortedIds.length > 0,
     gcTime: 0,
+    // Hold the previous result across id-list changes so consumers rendering
+    // from `data` don't flash an empty state while the next lookup is in
+    // flight.
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data } = await listDatasetByIds(sortedIds);
       return (data?.data ?? []) as IDataset[];

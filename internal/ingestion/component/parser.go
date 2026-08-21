@@ -314,7 +314,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "json",
+			"output_format": "text",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
