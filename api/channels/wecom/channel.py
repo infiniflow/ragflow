@@ -102,10 +102,32 @@ class _SharedWebhookServer:
                 LOGGER.error("[wecom:%s] parse error", account_id, exc_info=True)
                 return web.Response(text="")
 
+            # WeCom retries callbacks that are not acknowledged within a few
+            # seconds. Answering a message runs an LLM completion that can take
+            # far longer, so acknowledge the webhook immediately and process
+            # the message in the background; a late retry is deduped by the
+            # message id instead of being answered a second time.
+            message_id = str(getattr(msg, "id", "") or "")
+            if message_id:
+                now = time.time()
+                last_seen = _recent_message_ids.get(message_id)
+                if last_seen is not None and now - last_seen < _MESSAGE_DEDUPE_WINDOW_SECS:
+                    LOGGER.info(
+                        "[wecom:%s] skip duplicate callback message_id=%s",
+                        account_id,
+                        message_id,
+                    )
+                    return web.Response(text="")
+                _recent_message_ids[message_id] = now
+                if len(_recent_message_ids) > _MESSAGE_DEDUPE_MAX:
+                    for mid, ts in list(_recent_message_ids.items()):
+                        if now - ts > _MESSAGE_DEDUPE_WINDOW_SECS:
+                            del _recent_message_ids[mid]
+
             try:
-                await channel.handle_decrypted_message(msg)
+                asyncio.create_task(channel.handle_decrypted_message(msg))
             except Exception:
-                LOGGER.error("[wecom:%s] handler error", account_id, exc_info=True)
+                LOGGER.error("[wecom:%s] failed to schedule handler", account_id, exc_info=True)
         except Exception:
             LOGGER.error("[wecom:%s] inbound request handling error", account_id, exc_info=True)
         # Empty 200 OK tells WeCom we accepted the event.
@@ -114,6 +136,12 @@ class _SharedWebhookServer:
 
 _servers: Dict[Tuple[str, int], _SharedWebhookServer] = {}
 _active_per_server: Dict[Tuple[str, int], int] = {}
+
+# In-process guard against WeCom callback retries: the same message id seen
+# within this window is acknowledged but not answered twice.
+_recent_message_ids: Dict[str, float] = {}
+_MESSAGE_DEDUPE_WINDOW_SECS = 30.0
+_MESSAGE_DEDUPE_MAX = 2000
 
 
 async def _acquire_server(host: str, port: int) -> _SharedWebhookServer:

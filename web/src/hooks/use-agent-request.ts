@@ -245,8 +245,8 @@ export function useFetchAllAgentList() {
         {
           params: buildAgentListParams({
             page: 1,
-            pageSize: 100000,
-            canvasCategory: AgentCategory.AgentCanvas,
+            pageSize: 100,
+            canvasCategoryIds: [AgentCategory.AgentCanvas],
           }),
         },
         true,

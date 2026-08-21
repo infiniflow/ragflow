@@ -1838,6 +1838,12 @@ Example: Virtual Hosted Style`,
       connectDialogTip:
         'Messages received by this channel will be answered by the connected assistant. Clear the selection to disconnect.',
       notConnected: 'No assistant connected',
+      connectTargetType: 'Target type',
+      targetAssistant: 'Chat assistant',
+      targetAgent: 'Agent',
+      selectAgent: 'Select an agent',
+      connectAgentTip:
+        'Messages received by this channel will be answered by the selected agent. Clear the selection to disconnect.',
       chatChannelDesc: {
         clickclack: 'Connect a ClickClack bot',
         discord: 'Connect a Discord bot',

@@ -25,6 +25,7 @@ import chatService from '@/services/next-chat-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
+import { useFetchAllAgentList } from '@/hooks/use-agent-request';
 import { ChatChannelKey, useChatChannelInfo } from './constant';
 import { IChatChannel, IChatChannelBase, IChatChannelInfo } from './interface';
 
@@ -178,19 +179,26 @@ export const useFetchChatChannelDetail = () => {
   return { fetchDetail };
 };
 
-// Connect (or disconnect) a chat channel to an assistant (dialog).
-export const useConnectChatChannelDialog = () => {
+// Connect (or disconnect) a chat channel to an assistant (dialog) or an agent.
+export const useConnectChatChannelTarget = () => {
   const queryClient = useQueryClient();
 
   const { mutateAsync, isPending } = useMutation({
-    mutationKey: ['connect-chat-channel-dialog'],
+    mutationKey: ['connect-chat-channel-target'],
     mutationFn: async (params: {
       channelId: string;
       dialogId: string | null;
+      agentId: string | null;
     }) => {
-      const { data } = await updateChatChannel(params.channelId, {
-        chat_id: params.dialogId,
-      });
+      // Only send the target that is actually selected: chat_id and agent_id
+      // are mutually exclusive on the server, so a null sibling would
+      // otherwise be treated as a disconnection.
+      const payload = params.agentId
+        ? { agent_id: params.agentId }
+        : params.dialogId
+          ? { chat_id: params.dialogId }
+          : { chat_id: null, agent_id: null };
+      const { data } = await updateChatChannel(params.channelId, payload);
       if (data.code === 0) {
         message.success(t('message.operated'));
         queryClient.invalidateQueries({ queryKey: ChatChannelKeys.list() });
@@ -216,4 +224,10 @@ export const useChatChannelDialogList = () => {
     },
   });
   return { dialogs: data, isFetching };
+};
+
+// Flow agents available to connect a channel to.
+export const useChatChannelAgentList = () => {
+  const { data: agents } = useFetchAllAgentList();
+  return { agents: agents ?? [], isFetching: false };
 };
