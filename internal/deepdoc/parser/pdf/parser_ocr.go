@@ -269,17 +269,21 @@ func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextC
 		bh := boxes[bestIdx].y1 - boxes[bestIdx].y0
 		// Char-height filter (mirrors Python pdf_parser.py:798): drop chars
 		// whose height differs greatly from the box height — they belong to
-		// another line. A fully-contained small glyph (overlap >= 0.95,
+		// another line. A fully-contained small glyph (overlap >= 0.90,
 		// ratio < 0.9) is an inline-text candidate (e.g. a code span like
 		// "certifi", ~8pt, inside a tall two-line detect box ~36pt — the Python
 		// golden keeps it, plugin-daemon box[16]): it cannot be from an
-		// adjacent line because it lies almost entirely inside the box. It is
-		// deferred and re-kept only when the box also carries normal-height
-		// content, so an isolated small glyph cannot suppress the OCR fallback.
+		// adjacent line because it lies almost entirely inside the box. The
+		// 0.90 bound (not 0.95) absorbs a sub-point detection overshoot where
+		// the glyph's top pokes ~0.6pt above the box edge (刑法's footnote ①,
+		// overlap 0.92) while still excluding a true partial-overlap adjacent
+		// line (overlap well below 0.90). It is deferred and re-kept only when
+		// the box also carries normal-height content, so an isolated small
+		// glyph cannot suppress the OCR fallback.
 		ratio := math.Abs(ch-bh) / math.Max(ch, bh)
 		if ratio < 0.7 || c.Text == " " {
 			boxChars[bestIdx] = append(boxChars[bestIdx], c)
-		} else if bestOverlap >= 0.95 && ratio < 0.9 {
+		} else if bestOverlap >= 0.90 && ratio < 0.9 {
 			deferred[bestIdx] = append(deferred[bestIdx], c)
 		}
 	}

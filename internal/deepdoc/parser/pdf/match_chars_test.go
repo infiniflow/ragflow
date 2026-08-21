@@ -219,3 +219,34 @@ func TestMatchCharsToBoxes_PartialOverlapHeightFiltered(t *testing.T) {
 		t.Errorf("partial-overlap height-mismatched glyph must be dropped by the height gate, got %+v", got[0])
 	}
 }
+
+// TestMatchCharsToBoxes_FullyContainedSmallOvershoot locks the 刑法 footnote
+// ① case: a small glyph (h=8.1) whose top rises ~0.6pt above the tall box's
+// edge (overlap ratio 0.92, NOT >= 0.95) is still an inline glyph of that box
+// — detection noise, not an adjacent line. The deferred inline-glyph path must
+// absorb a small top/bottom overshoot (bestOverlap >= 0.90), not just a
+// pixel-perfect 0.95.
+func TestMatchCharsToBoxes_FullyContainedSmallOvershoot(t *testing.T) {
+	box := ocrDetectBox{
+		box: pdftype.TextBox{X0: 70, X1: 763, Top: 494, Bottom: 528.7},
+		x0:  70, y0: 494, x1: 763, y1: 528.7,
+	}
+	boxes := []ocrDetectBox{box}
+	chars := []pdftype.TextChar{
+		{Text: "在", X0: 100, X1: 112, Top: 500, Bottom: 512},       // normal, h=12
+		{Text: "①", X0: 100, X1: 108, Top: 493.35, Bottom: 501.45}, // h=8.1, top 0.65pt above box -> overlap ~0.92
+	}
+	got := matchCharsToBoxes(boxes, chars)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 box group, got %d", len(got))
+	}
+	found := false
+	for _, c := range got[0] {
+		if c.Text == "①" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("small glyph with 0.92 overlap (0.6pt top overshoot) must be kept as inline content, got %+v", got[0])
+	}
+}
