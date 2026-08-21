@@ -27,9 +27,11 @@ function usage() {
     echo "  --mcp-base-url=<string>                 RAGFlow base URL the MCP server calls (default: http://127.0.0.1:9380)."
     echo "  --mcp-script-path=<path>                MCP server entry script (default: /ragflow/mcp/server/server.py)."
     echo "  --mcp-mode=<self-host|host>             MCP server mode (default: self-host)."
-    echo "  --mcp-host-api-key=<string>             API key used when --mcp-mode=self-host."
+    echo "  --mcp-host-api-key=<string>             API key required when --mcp-mode=self-host."
     echo "  --no-transport-sse-enabled              Disables the MCP SSE transport."
-    echo "  --no-transport-streamable-http-enabled  Disables the MCP streamable HTTP transport."
+    echo "  --no-transport-streamable-http-enabled  Disables the MCP streamable HTTP transport. Disabling"
+    echo "                                          both transports re-enables this one, since the server"
+    echo "                                          requires at least one."
     echo "  --no-json-response                      Disables JSON responses from the MCP server."
     echo
     echo "Examples:"
