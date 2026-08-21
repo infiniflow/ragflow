@@ -1815,6 +1815,8 @@ Exemple : Virtual Hosted Style`,
       listModelsLoading: 'Chargement des modèles…',
       selectModelBeforeVerify:
         'Veuillez sélectionner au moins un modèle avant la vérification.',
+      selectModelBeforeSave:
+        'Veuillez découvrir et sélectionner au moins un modèle avant l’enregistrement.',
       addCustomModel: 'Ajouter un modèle personnalisé',
       addCustomModelTitle: 'Ajouter un modèle personnalisé',
       editCustomModelTitle: 'Modifier le modèle',

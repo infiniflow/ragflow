@@ -1760,6 +1760,8 @@ export default {
       listModelsEmpty: '사용 가능한 모델 없음',
       listModelsLoading: '모델 로딩 중…',
       selectModelBeforeVerify: '검증 전 모델을 최소 하나 이상 선택해 주세요.',
+      selectModelBeforeSave:
+        '저장하기 전에 모델을 하나 이상 검색하고 선택해 주세요.',
       addCustomModel: '커스텀 모델 추가',
       addCustomModelTitle: '커스텀 모델 추가',
       editCustomModelTitle: '모델 편집',
