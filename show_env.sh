@@ -17,9 +17,10 @@ get_distro_info() {
 
 # get Git repository name
 git_repo_name=''
-if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-    git_repo_name=$(basename "$(git rev-parse --show-toplevel)")
-    if [ $? -ne 0 ]; then
+if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = "true" ]; then
+    if git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null); then
+        git_repo_name=$(basename "$git_toplevel")
+    else
         git_repo_name="(Can't get repo name)"
     fi
 else
@@ -47,7 +48,7 @@ python_version=$(python3 --version 2>&1 || python --version 2>&1 || echo "Python
 echo "Current Repository: $git_repo_name"
 
 # get Commit ID
-git_version=$(git log -1 --pretty=format:'%h')
+git_version=$(git log -1 --pretty=format:'%h' 2>/dev/null)
 
 if [ -z "$git_version" ]; then
     echo "Commit Id: The current directory is not a Git repository, or the Git command is not installed."
