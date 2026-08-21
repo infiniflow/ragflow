@@ -540,7 +540,7 @@ EXAMPLES:
 DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.24
-    - g++ with C++17/23 support
+    - clang++ with C++17/23 support
     - office_oxide native library (download with: uv run python3 ragflow_deps/download_go_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
@@ -636,7 +636,7 @@ main() {
             echo "Binary: $RAGFLOW_SERVER_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
-            echo -e "${RED}Unknown option: $1${NC}"
+            echo -e "${RED}Unknown option: ${args[0]}${NC}"
             show_help
             exit 1
             ;;
