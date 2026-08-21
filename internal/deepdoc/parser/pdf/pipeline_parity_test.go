@@ -52,7 +52,6 @@ func TestPipelineParity(t *testing.T) {
 	// set. See tool.ParityDirsFor.	dirs := tool.ParityDirsFor(common.GetEnv(common.EnvBatchParityVariant))
 	charspyDir, pyTextDir := dirs.Charspy, dirs.Text
 	dlaDir, tsrDir, ocrDir, tablesDir := dirs.DLA, dirs.TSRRaw, dirs.OCR, dirs.Tables
-	tableBoxesDir := dirs.TableBoxes
 
 	entries, err := os.ReadDir(charspyDir)
 	if err != nil {
@@ -143,10 +142,9 @@ func TestPipelineParity(t *testing.T) {
 			continue
 		}
 
-		// Row-segmentation fix (replay): rebuild each table's Grid from
-		// Python's authoritative per-char R/C so Go's row count aligns with
-		// TSR truth. No-op when the table_boxes/ dump is absent.
-		ApplyRCToResult(result, tableBoxesDir, name, engine.PageDims())
+		// Production path now derives per-char R/C itself (AnnotateBoxesWithGrid
+		// + GroupBoxesByRC); the replay harness measures that production output
+		// directly against Python's golden.
 
 		// Read Python sections
 		pyPath := filepath.Join(pyTextDir, name+".txt")

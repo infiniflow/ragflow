@@ -77,22 +77,8 @@ func TestTableRowSegmentationParity(t *testing.T) {
 		t.Fatalf("%s: parse: %v", name, err)
 	}
 
-	// Rebuild each table's Grid from Python's authoritative per-char R/C so
-	// Go's row count aligns with TSR truth (the row-segmentation fix).
-	if common.GetEnv("BATCH_PARITY_DEBUG") != "" {
-		t.Logf("DEBUG Go tables BEFORE ApplyRCToResult:")
-		for ti, tbl := range result.Tables {
-			t.Logf("  pre table[%d] page=%d rows=%d", ti, tbl.Page, len(tbl.Grid))
-		}
-	}
-	ApplyRCToResult(result, dirs.TableBoxes, name, engine.PageDims())
-
-	if common.GetEnv("BATCH_PARITY_DEBUG") != "" {
-		t.Logf("DEBUG Go tables AFTER ApplyRCToResult:")
-		for ti, tbl := range result.Tables {
-			t.Logf("  post table[%d] page=%d rows=%d", ti, tbl.Page, len(tbl.Grid))
-		}
-	}
+	// Production path derives R/C itself; Go's grid row count is measured
+	// directly against Python's golden row count.
 
 	// Python golden row grid (authoritative row count).
 	pyRows, pyHasTables := loadPythonTables(t, filepath.Join(tablesDir, name+".json"))

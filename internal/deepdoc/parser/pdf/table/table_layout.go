@@ -174,6 +174,14 @@ func findHorizontallyTightestFit(box pdf.TextBox, clmns []pdf.TSRCell) int {
 	return best
 }
 
+// AnnotateBoxesWithGrid derives per-box R/C/H/SP annotations in the SAME
+// coordinate frame as grid (e.g. a table's crop space), using Python's
+// _table_transformer_job semantics. It is the production entry point for
+// deriving R/C so the grid can be rebuilt from them (GroupBoxesByRC).
+func AnnotateBoxesWithGrid(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
+	AnnotateTableBoxes(boxes, grid)
+}
+
 // annotateTableBoxes tags table boxes with row/header/column indices using
 // TSR cell labels. Matching Python's R/H/C/SP annotation logic.
 //
