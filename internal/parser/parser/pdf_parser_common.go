@@ -310,24 +310,34 @@ func emptyPDFResult(filename string) ParseResult {
 	}
 }
 
-func deepDocAnalyzerFromEnv() deepdoctype.DocAnalyzer {
+// defaultDeepDocURL is where the OSS DeepDoc inference server listens by
+// default (see deepdoc/server/deepdoc_server.py and the deepdoc service in
+// docker/docker-compose.yml).
+const defaultDeepDocURL = "http://localhost:9390"
+
+// deepDocAnalyzerFromEnv resolves the DeepDoc inference endpoint (DEEPDOC_URL,
+// defaulting to defaultDeepDocURL) and returns an analyzer backed by it. It
+// returns an error when no healthy service is reachable so a PDF parse fails
+// loudly instead of silently degrading to layout-less text chunks (tables and
+// figures would otherwise be flattened into plain text).
+func deepDocAnalyzerFromEnv() (deepdoctype.DocAnalyzer, error) {
 	baseURL := strings.TrimSpace(common.GetEnv(common.EnvDeepDocURL))
 	if baseURL == "" {
-		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
+		baseURL = defaultDeepDocURL
 	}
 	client, err := inference.NewClient(baseURL)
 	if err != nil {
-		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
+		return nil, err
 	}
 	if !client.Health() {
-		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
+		return nil, fmt.Errorf("parser: DeepDoc inference service unreachable at %s: start deepdoc/server/deepdoc_server.py or set DEEPDOC_URL to a healthy instance", baseURL)
 	}
 	// Wrap with Redis-backed cache (1h TTL) so repeated
 	// DLA/TSR/OCR inference on the same image is served from
 	// Redis instead of re-hitting the DeepDoc HTTP service. The
 	// wrapper is a no-op when Redis is not configured (see
 	// internal/deepdoc/parser/pdf/inference/cache.go).
-	return inference.NewDocAnalyzerCache(client, inference.DefaultCacheTTL)
+	return inference.NewDocAnalyzerCache(client, inference.DefaultCacheTTL), nil
 }
 
 func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) ParseResult {
@@ -673,7 +683,11 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
-	parsed, err := parseFn(ctx, data, deepDocAnalyzerFromEnv())
+	analyzer, err := deepDocAnalyzerFromEnv()
+	if err != nil {
+		return ParseResult{Err: err}
+	}
+	parsed, err := parseFn(ctx, data, analyzer)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
