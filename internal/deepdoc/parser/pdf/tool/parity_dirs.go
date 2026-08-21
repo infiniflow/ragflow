@@ -1,6 +1,10 @@
 package tool
 
-import "path/filepath"
+import (
+	"path/filepath"
+
+	"ragflow/internal/common"
+)
 
 // ParityDirs holds every testdata directory the pipeline-parity harness
 // reads/writes for one dataset variant. The variant isolates a second set of
@@ -29,21 +33,32 @@ type ParityDirs struct {
 // custom variant such as "ocr_real" moves every artifact under a variant
 // suffix (charspy_ocr_real/, output/py/ocr_real/...) so two datasets never
 // share a file.
+//
+// For a custom variant the root directory can be redirected via
+// BATCH_PARITY_DATA_ROOT (e.g. a shared directory outside the worktree so
+// multiple worktrees reuse one dump). The default variant always stays under
+// the local "testdata", keeping the legacy 35-PDF fixtures untouched.
 func ParityDirsFor(variant string) ParityDirs {
 	if variant == "" {
 		variant = "ocr"
 	}
+	root := "testdata"
+	if variant != "ocr" {
+		if r := common.GetEnv(common.EnvBatchParityDataRoot); r != "" {
+			root = r
+		}
+	}
 	d := ParityDirs{
-		Charspy: filepath.Join("testdata", "charspy"),
-		Text:    filepath.Join("testdata", "output", "py", variant, "text"),
-		DLA:     filepath.Join("testdata", "output", "py", variant, "dla"),
-		TSRRaw:  filepath.Join("testdata", "output", "py", variant, "tsr_raw"),
-		OCR:     filepath.Join("testdata", "output", "py", variant, "ocr"),
-		Tables:  filepath.Join("testdata", "output", "py", variant, "tables"),
-		GoText:  filepath.Join("testdata", "output", "go", variant, "text"),
+		Charspy: filepath.Join(root, "charspy"),
+		Text:    filepath.Join(root, "output", "py", variant, "text"),
+		DLA:     filepath.Join(root, "output", "py", variant, "dla"),
+		TSRRaw:  filepath.Join(root, "output", "py", variant, "tsr_raw"),
+		OCR:     filepath.Join(root, "output", "py", variant, "ocr"),
+		Tables:  filepath.Join(root, "output", "py", variant, "tables"),
+		GoText:  filepath.Join(root, "output", "go", variant, "text"),
 	}
 	if variant != "ocr" {
-		d.Charspy = filepath.Join("testdata", "charspy_"+variant)
+		d.Charspy = filepath.Join(root, "charspy_"+variant)
 	}
 	return d
 }

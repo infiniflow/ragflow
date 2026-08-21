@@ -45,3 +45,30 @@ func TestParityDirsForCustomVariant(t *testing.T) {
 		t.Errorf("ParityDirsFor(\"ocr_real\") = %+v, want %+v", d, want)
 	}
 }
+
+// TestParityDirsForCustomVariantDataRoot pins the shared-data-root redirect:
+// when BATCH_PARITY_DATA_ROOT is set, a custom variant resolves every
+// artifact under that root (so multiple worktrees reuse one dump). The
+// default variant must ignore the env and stay under local testdata.
+func TestParityDirsForCustomVariantDataRoot(t *testing.T) {
+	t.Setenv("BATCH_PARITY_DATA_ROOT", "/srv/parity-data")
+	d := ParityDirsFor("ocr_real")
+	want := ParityDirs{
+		Charspy: filepath.Join("/srv/parity-data", "charspy_ocr_real"),
+		Text:    filepath.Join("/srv/parity-data", "output", "py", "ocr_real", "text"),
+		DLA:     filepath.Join("/srv/parity-data", "output", "py", "ocr_real", "dla"),
+		TSRRaw:  filepath.Join("/srv/parity-data", "output", "py", "ocr_real", "tsr_raw"),
+		OCR:     filepath.Join("/srv/parity-data", "output", "py", "ocr_real", "ocr"),
+		Tables:  filepath.Join("/srv/parity-data", "output", "py", "ocr_real", "tables"),
+		GoText:  filepath.Join("/srv/parity-data", "output", "go", "ocr_real", "text"),
+	}
+	if d != want {
+		t.Errorf("ParityDirsFor(\"ocr_real\") with BATCH_PARITY_DATA_ROOT = %+v, want %+v", d, want)
+	}
+
+	// Default variant must NOT be redirected by the env.
+	def := ParityDirsFor("")
+	if def.Charspy != filepath.Join("testdata", "charspy") {
+		t.Errorf("default variant Charspy = %q, want %q (env must be ignored)", def.Charspy, filepath.Join("testdata", "charspy"))
+	}
+}
