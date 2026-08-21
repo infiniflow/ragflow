@@ -258,6 +258,35 @@ func TestSlackConnectorValidateMissingScope(t *testing.T) {
 	}
 }
 
+func TestSlackConnectorMissingScopeMessageNamesNeededScope(t *testing.T) {
+	withSlackTestHooks(t)
+	body := []byte(`{"ok":false,"error":"missing_scope","needed":"channels:read","provided":"channels:write"}`)
+	err := classifySlackAPIError("conversations.list", "missing_scope", body)
+	var valErr *ConnectorValidationError
+	if !errors.As(err, &valErr) {
+		t.Fatalf("error = %T, want *ConnectorValidationError", err)
+	}
+	if !strings.Contains(valErr.Message, "channels:read") {
+		t.Fatalf("message = %q, want it to contain %q", valErr.Message, "channels:read")
+	}
+	if strings.Contains(valErr.Message, "channels:write") {
+		t.Fatalf("message = %q, want it not to mention provided scopes", valErr.Message)
+	}
+}
+
+func TestSlackConnectorMissingScopeMessageFallsBackWithoutNeeded(t *testing.T) {
+	withSlackTestHooks(t)
+	body := []byte(`{"ok":false,"error":"missing_scope"}`)
+	err := classifySlackAPIError("users.info", "missing_scope", body)
+	var valErr *ConnectorValidationError
+	if !errors.As(err, &valErr) {
+		t.Fatalf("error = %T, want *ConnectorValidationError", err)
+	}
+	if !strings.Contains(valErr.Message, "users.info") || !strings.Contains(valErr.Message, "missing_scope") {
+		t.Fatalf("message = %q, want generic missing scope message", valErr.Message)
+	}
+}
+
 func TestSlackConnectorValidateRateLimitedProceeds(t *testing.T) {
 	withSlackTestHooks(t)
 	fixtures := &slackTestFixtures{authError: "ratelimited"}

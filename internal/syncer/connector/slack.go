@@ -328,7 +328,7 @@ func classifySlackAPIError(method, apiError string, body []byte) error {
 	case "not_authed":
 		err = &ConnectorMissingCredentialError{Message: "Invalid or expired Slack bot token (not_authed)."}
 	case "missing_scope":
-		err = &ConnectorValidationError{Message: "Slack bot token lacks the necessary OAuth scope to access this API (missing_scope)."}
+		err = &ConnectorValidationError{Message: slackMissingScopeMessage(method, body)}
 	case "not_in_channel":
 		err = &ConnectorValidationError{Message: "Slack bot is not a member of the channel (not_in_channel)."}
 	case "channel_not_found":
@@ -348,6 +348,41 @@ func classifySlackAPIError(method, apiError string, body []byte) error {
 		return err
 	}
 	return &slackAPIError{code: apiError, err: err}
+}
+
+// slackMissingScopeMessage builds an actionable message for a missing_scope
+// Slack error, naming the scope the call needed. It falls back to a generic
+// message when Slack does not include the needed scope in the response.
+func slackMissingScopeMessage(method string, body []byte) string {
+	var payload struct {
+		Needed any `json:"needed"`
+	}
+	msg := fmt.Sprintf("Slack bot token lacks the necessary OAuth scope to access %s (missing_scope)", method)
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return msg + "."
+	}
+	if needed := slackScopeNames(payload.Needed); needed != "" {
+		return fmt.Sprintf("%s. Needed: %s", msg, needed)
+	}
+	return msg + "."
+}
+
+// slackScopeNames flattens a Slack scope field, which is either a single
+// comma-separated string or a JSON array of scope names.
+func slackScopeNames(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				parts = append(parts, strings.TrimSpace(s))
+			}
+		}
+		return strings.Join(parts, ", ")
+	}
+	return ""
 }
 
 func slackRetryAfterSeconds(header string, body []byte) time.Duration {
