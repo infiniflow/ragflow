@@ -22,6 +22,7 @@ export default {
       stop: 'Stop',
       resume: 'Resume',
       namePlaceholder: 'Please input name',
+      nameSlashError: 'Name cannot contain "/"',
       descriptionPlaceholder: 'Enter description',
       next: 'Next',
       create: 'Create',

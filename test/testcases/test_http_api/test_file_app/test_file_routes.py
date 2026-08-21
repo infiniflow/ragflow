@@ -251,6 +251,15 @@ def test_create_folder_rejects_duplicate_name(monkeypatch):
 
 
 @pytest.mark.p2
+def test_create_folder_rejects_slash_in_name(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+
+    ok, message = _run(module.create_folder("tenant1", "/", "pf1", module.FileType.FOLDER.value))
+    assert ok is False
+    assert message == 'Folder name cannot contain "/"'
+
+
+@pytest.mark.p2
 def test_delete_files_checks_team_permission(monkeypatch):
     module = _load_file_api_service(monkeypatch)
     monkeypatch.setattr(
@@ -277,6 +286,20 @@ def test_move_files_rejects_extension_change_in_new_name(monkeypatch):
     ok, message = _run(module.move_files("tenant1", ["file1"], new_name="a.pdf"))
     assert ok is False
     assert message == "The extension of file can't be changed"
+
+
+@pytest.mark.p2
+def test_move_files_rejects_slash_in_new_name(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_ids",
+        lambda _ids: [_DummyFile("file1", module.FileType.FOLDER.value, name="old")],
+    )
+
+    ok, message = _run(module.move_files("tenant1", ["file1"], new_name="a/b"))
+    assert ok is False
+    assert message == 'Name cannot contain "/"'
 
 
 @pytest.mark.p2

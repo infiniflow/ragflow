@@ -210,6 +210,7 @@ def _load_user_app(monkeypatch):
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.get_init_tenant_llm = lambda _user_id: []
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
