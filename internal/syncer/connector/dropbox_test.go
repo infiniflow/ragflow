@@ -32,6 +32,7 @@ type dropboxTestServer struct {
 	listRequests  []dropboxListFolderRequest
 	continueCalls int
 	downloadPaths []string
+	downloadArgs  []string
 }
 
 func newDropboxTestServer(t *testing.T) *dropboxTestServer {
@@ -60,6 +61,7 @@ func newDropboxTestServer(t *testing.T) *dropboxTestServer {
 				{".tag": "folder", "id": "id:folder", "name": "Folder", "path_display": "/Folder"},
 				{".tag": "file", "id": "id:old", "name": "old.txt", "path_display": "/old.txt", "client_modified": "2026-01-01T00:00:00Z", "size": 3},
 				{".tag": "file", "id": "id:alpha", "name": "alpha.txt", "path_display": "/alpha.txt", "client_modified": "2026-01-02T00:00:00Z", "size": 5},
+				{".tag": "file", "id": "id:broken", "name": "broken.txt", "path_display": "/broken.txt", "client_modified": "2026-01-02T00:00:00Z", "size": 5},
 				{".tag": "file", "id": "id:dup-1", "name": "dup.md", "path_display": "/a/dup.md", "client_modified": "2026-01-03T00:00:00Z", "size": 5},
 				{".tag": "file", "id": "id:image", "name": "image.png", "path_display": "/image.png", "client_modified": "2026-01-03T00:00:00Z", "size": 5},
 			}, "cursor-1", true)
@@ -82,6 +84,7 @@ func newDropboxTestServer(t *testing.T) *dropboxTestServer {
 				{".tag": "file", "id": "id:bin", "name": "skip.bin", "path_display": "/skip.bin", "client_modified": "2026-01-03T00:00:00Z", "size": 5},
 			}, "", false)
 		case "/2/files/download":
+			fixture.downloadArgs = append(fixture.downloadArgs, r.Header.Get("Dropbox-API-Arg"))
 			var arg map[string]string
 			if err := json.Unmarshal([]byte(r.Header.Get("Dropbox-API-Arg")), &arg); err != nil {
 				t.Errorf("decode download arg: %v", err)
@@ -89,6 +92,11 @@ func newDropboxTestServer(t *testing.T) *dropboxTestServer {
 				return
 			}
 			fixture.downloadPaths = append(fixture.downloadPaths, arg["path"])
+			if arg["path"] == "/broken.txt" {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = io.WriteString(w, `{"error_summary":"broken"}`)
+				return
+			}
 			_, _ = io.WriteString(w, "body:"+arg["path"])
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -158,30 +166,36 @@ func TestDropboxConnectorOpenSync(t *testing.T) {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
 	defer session.Close()
+	if len(fixture.downloadPaths) != 0 {
+		t.Fatalf("OpenSync downloaded files eagerly: %#v", fixture.downloadPaths)
+	}
 
 	first, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("NextBatch first failed: %v", err)
 	}
-	if len(first.Documents) != 2 {
+	if len(first.Documents) != 1 {
 		t.Fatalf("first batch size = %d", len(first.Documents))
 	}
 	if first.Documents[0].SourceID != "dropbox:id:alpha" || string(first.Documents[0].Blob) != "body:/alpha.txt" {
 		t.Fatalf("first document = %#v", first.Documents[0])
 	}
-	if first.Documents[1].SemanticIdentifier != "a / dup.md" {
-		t.Fatalf("duplicate semantic identifier = %q", first.Documents[1].SemanticIdentifier)
-	}
-	if first.Checkpoint == nil || first.Checkpoint.SourceID != first.Documents[1].SourceID {
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "dropbox:id:broken" {
 		t.Fatalf("checkpoint = %#v", first.Checkpoint)
+	}
+	if strings.Join(fixture.downloadPaths, ",") != "/alpha.txt,/broken.txt" {
+		t.Fatalf("first batch download paths = %#v", fixture.downloadPaths)
 	}
 
 	second, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("NextBatch second failed: %v", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "dropbox:id:dup-2" {
+	if len(second.Documents) != 2 || second.Documents[0].SourceID != "dropbox:id:dup-1" || second.Documents[1].SourceID != "dropbox:id:dup-2" {
 		t.Fatalf("second batch = %#v", second.Documents)
+	}
+	if second.Documents[0].SemanticIdentifier != "a / dup.md" {
+		t.Fatalf("duplicate semantic identifier = %q", second.Documents[0].SemanticIdentifier)
 	}
 	if _, err := session.NextBatch(context.Background()); err != io.EOF {
 		t.Fatalf("final NextBatch err = %v", err)
@@ -189,7 +203,7 @@ func TestDropboxConnectorOpenSync(t *testing.T) {
 	if fixture.continueCalls != 1 {
 		t.Fatalf("continue calls = %d", fixture.continueCalls)
 	}
-	if strings.Join(fixture.downloadPaths, ",") != "/alpha.txt,/a/dup.md,/b/dup.md" {
+	if strings.Join(fixture.downloadPaths, ",") != "/alpha.txt,/broken.txt,/a/dup.md,/b/dup.md" {
 		t.Fatalf("download paths = %#v", fixture.downloadPaths)
 	}
 }
@@ -228,5 +242,64 @@ func TestDropboxConnectorOpenPruneAndResume(t *testing.T) {
 	}
 	if len(resumed.Documents) != 2 || resumed.Documents[0].SourceID != "dropbox:id:dup-2" || resumed.Documents[1].SourceID != "dropbox:id:image" {
 		t.Fatalf("resumed docs = %#v", resumed.Documents)
+	}
+}
+
+func TestDropboxConnectorDownloadFileEscapesAPIArgHeader(t *testing.T) {
+	var gotHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("Dropbox-API-Arg")
+		_, _ = io.WriteString(w, "body")
+	}))
+	t.Cleanup(server.Close)
+
+	connector, err := NewDropboxConnector(map[string]any{
+		"credentials": map[string]any{"dropbox_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewDropboxConnector failed: %v", err)
+	}
+	connector.contentBaseURL = server.URL + "/2"
+
+	path := "/Résumé/数据/emoji-😀/del-\x7f.txt"
+	if _, err := connector.downloadFile(context.Background(), path); err != nil {
+		t.Fatalf("downloadFile failed: %v", err)
+	}
+	want := `{"path":"/R\u00e9sum\u00e9/\u6570\u636e/emoji-\ud83d\ude00/del-\u007f.txt"}`
+	if gotHeader != want {
+		t.Fatalf("Dropbox-API-Arg = %q, want %q", gotHeader, want)
+	}
+}
+
+func TestDropboxConnectorSessionsNormalizeNonPositiveBatchSize(t *testing.T) {
+	fixture := newDropboxTestServer(t)
+	connector := newDropboxTestConnector(t, fixture, true)
+	connector.batchSize = 0
+
+	syncSession, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	syncBatch, err := syncSession.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("sync NextBatch failed: %v", err)
+	}
+	if len(syncBatch.Documents) == 0 {
+		t.Fatalf("sync batch should advance with a positive effective size")
+	}
+
+	pruneSession, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune failed: %v", err)
+	}
+	pruneBatch, err := pruneSession.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("prune NextBatch failed: %v", err)
+	}
+	if len(pruneBatch.Documents) == 0 {
+		t.Fatalf("prune batch should advance with a positive effective size")
 	}
 }

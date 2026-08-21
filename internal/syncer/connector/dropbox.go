@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 )
 
 const (
@@ -114,7 +115,7 @@ func (c *DropboxConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 	}
 
 	nameCounts := dropboxNameCounts(files)
-	documents := make([]SourceDocument, 0, len(files))
+	acceptedFiles := make([]dropboxFileMetadata, 0, len(files))
 	for _, file := range files {
 		updatedAt := file.updatedAt()
 		if !request.FromBeginning && !start.Before(updatedAt) {
@@ -126,19 +127,16 @@ func (c *DropboxConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		if !c.isAcceptedFile(file) {
 			continue
 		}
-		blob, err := c.downloadFile(ctx, file.downloadPath())
-		if err != nil {
-			log.Printf("dropbox: download %s failed: %v", file.sourceID(), err)
-			continue
-		}
-		if len(blob) == 0 {
-			continue
-		}
-		documents = append(documents, c.buildDocument(file, blob, nameCounts))
+		acceptedFiles = append(acceptedFiles, file)
 	}
-	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
+	sort.Slice(acceptedFiles, func(i, j int) bool { return acceptedFiles[i].sourceID() < acceptedFiles[j].sourceID() })
 
-	session := &dropboxSyncSession{documents: documents, batchSize: c.batchSize}
+	session := &dropboxSyncSession{
+		connector:  c,
+		files:      acceptedFiles,
+		nameCounts: nameCounts,
+		batchSize:  positiveDropboxBatchSize(c.batchSize),
+	}
 	session.applyResume(request.Resume)
 	return session, nil
 }
@@ -157,7 +155,7 @@ func (c *DropboxConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 		documents = append(documents, SlimDocument{SourceID: file.sourceID()})
 	}
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
-	return &dropboxPruneSession{documents: documents, batchSize: c.batchSize}, nil
+	return &dropboxPruneSession{documents: documents, batchSize: positiveDropboxBatchSize(c.batchSize)}, nil
 }
 
 func (c *DropboxConnector) buildDocument(file dropboxFileMetadata, blob []byte, nameCounts map[string]int) SourceDocument {
@@ -258,16 +256,12 @@ func (c *DropboxConnector) postJSON(ctx context.Context, endpoint string, body a
 }
 
 func (c *DropboxConnector) downloadFile(ctx context.Context, path string) ([]byte, error) {
-	arg, err := json.Marshal(map[string]string{"path": path})
-	if err != nil {
-		return nil, err
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.contentBaseURL+"/files/download", nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.accessToken)
-	req.Header.Set("Dropbox-API-Arg", string(arg))
+	req.Header.Set("Dropbox-API-Arg", dropboxAPIArgHeader(path))
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -291,24 +285,35 @@ func (c *DropboxConnector) downloadFile(ctx context.Context, path string) ([]byt
 }
 
 type dropboxSyncSession struct {
-	documents []SourceDocument
-	batchSize int
-	index     int
+	connector  *DropboxConnector
+	files      []dropboxFileMetadata
+	nameCounts map[string]int
+	batchSize  int
+	index      int
 }
 
 // NextBatch returns the next Dropbox document batch.
 func (s *dropboxSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	if s.index >= len(s.documents) {
+	if s.index >= len(s.files) {
 		return SyncBatch{}, io.EOF
 	}
-	end := s.index + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
+	batchSize := positiveDropboxBatchSize(s.batchSize)
+	documents := make([]SourceDocument, 0, batchSize)
+	var lastAccepted dropboxFileMetadata
+	for attempts := 0; attempts < batchSize && s.index < len(s.files); attempts++ {
+		file := s.files[s.index]
+		s.index++
+		lastAccepted = file
+		blob, err := s.connector.downloadFile(ctx, file.downloadPath())
+		if err != nil || len(blob) == 0 {
+			continue
+		}
+		documents = append(documents, s.connector.buildDocument(file, blob, s.nameCounts))
 	}
-	batchDocuments := s.documents[s.index:end]
-	batch := SyncBatch{Documents: batchDocuments, Checkpoint: dropboxSyncCheckpoint(batchDocuments[len(batchDocuments)-1])}
-	s.index = end
-	return batch, nil
+	if len(documents) == 0 {
+		return SyncBatch{Checkpoint: dropboxSyncCheckpoint(lastAccepted)}, nil
+	}
+	return SyncBatch{Documents: documents, Checkpoint: dropboxSyncCheckpoint(lastAccepted)}, nil
 }
 
 // Close closes the Dropbox sync session.
@@ -324,19 +329,19 @@ func (s *dropboxSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 	if sourceID == "" {
 		return
 	}
-	for index, doc := range s.documents {
-		if doc.SourceID == sourceID {
+	for index, file := range s.files {
+		if file.sourceID() == sourceID {
 			s.index = index + 1
 			return
 		}
 	}
 }
 
-func dropboxSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {
-	updatedAt := doc.UpdatedAt
+func dropboxSyncCheckpoint(file dropboxFileMetadata) *SyncCheckpoint {
+	updatedAt := file.updatedAt()
 	return &SyncCheckpoint{
-		Cursor:    doc.SourceID,
-		SourceID:  doc.SourceID,
+		Cursor:    file.sourceID(),
+		SourceID:  file.sourceID(),
 		UpdatedAt: &updatedAt,
 	}
 }
@@ -352,7 +357,8 @@ func (s *dropboxPruneSession) NextBatch(ctx context.Context) (PruneBatch, error)
 	if s.index >= len(s.documents) {
 		return PruneBatch{}, io.EOF
 	}
-	end := s.index + s.batchSize
+	batchSize := positiveDropboxBatchSize(s.batchSize)
+	end := s.index + batchSize
 	if end > len(s.documents) {
 		end = len(s.documents)
 	}
@@ -364,6 +370,57 @@ func (s *dropboxPruneSession) NextBatch(ctx context.Context) (PruneBatch, error)
 // Close closes the Dropbox prune session.
 func (s *dropboxPruneSession) Close() error {
 	return nil
+}
+
+func positiveDropboxBatchSize(batchSize int) int {
+	if batchSize > 0 {
+		return batchSize
+	}
+	return defaultDropboxBatchSize
+}
+
+func dropboxAPIArgHeader(path string) string {
+	var builder strings.Builder
+	builder.Grow(len(path) + len(`{"path":""}`))
+	builder.WriteString(`{"path":"`)
+	for _, r := range path {
+		writeDropboxJSONStringRune(&builder, r)
+	}
+	builder.WriteString(`"}`)
+	return builder.String()
+}
+
+func writeDropboxJSONStringRune(builder *strings.Builder, r rune) {
+	switch r {
+	case '\\', '"':
+		builder.WriteByte('\\')
+		builder.WriteRune(r)
+		return
+	}
+	if r < 0x20 || r == 0x7f {
+		writeDropboxJSONUnicodeEscape(builder, uint16(r))
+		return
+	}
+	if r < 0x7f {
+		builder.WriteRune(r)
+		return
+	}
+	if r <= 0xffff {
+		writeDropboxJSONUnicodeEscape(builder, uint16(r))
+		return
+	}
+	high, low := utf16.EncodeRune(r)
+	writeDropboxJSONUnicodeEscape(builder, uint16(high))
+	writeDropboxJSONUnicodeEscape(builder, uint16(low))
+}
+
+func writeDropboxJSONUnicodeEscape(builder *strings.Builder, value uint16) {
+	const hex = "0123456789abcdef"
+	builder.WriteString(`\u`)
+	builder.WriteByte(hex[value>>12&0xf])
+	builder.WriteByte(hex[value>>8&0xf])
+	builder.WriteByte(hex[value>>4&0xf])
+	builder.WriteByte(hex[value&0xf])
 }
 
 type dropboxListFolderRequest struct {
