@@ -204,6 +204,14 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	}
 	for _, m := range remoteModels {
 		if name, ok := m["name"].(string); ok {
+			if !providerModelMapHasTypes(m) {
+				if existing := merged[name]; providerModelMapHasTypes(existing) {
+					m["model_types"] = existing["model_types"]
+				}
+			}
+			if !providerModelMapHasTypes(m) {
+				m["model_types"] = models.InferMissingModelTypes(name)
+			}
 			merged[name] = m
 		}
 	}
@@ -220,6 +228,21 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	})
 
 	common.SuccessWithData(c, result, "success")
+}
+
+func providerModelMapHasTypes(model map[string]interface{}) bool {
+	if len(model) == 0 {
+		return false
+	}
+
+	switch modelTypes := model["model_types"].(type) {
+	case []string:
+		return len(modelTypes) > 0
+	case []interface{}:
+		return len(modelTypes) > 0
+	default:
+		return false
+	}
 }
 
 func (h *ProviderHandler) ShowModel(c *gin.Context) {
