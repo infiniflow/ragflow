@@ -1335,7 +1335,6 @@ class BaiduYiyanChat(Base):
 
         import qianfan
 
-        logging.info(f"key: {key}")
         try:
             key_obj = json.loads(key)
         except (json.JSONDecodeError, TypeError):
