@@ -267,7 +267,12 @@ class OpenAIEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        # extra_body is forwarded verbatim to the provider. \`drop_params\` is
+        # an OpenRouter-specific convention; Together AI (and any strict
+        # OpenAI-compatible provider) rejects it with HTTP 400
+        # "Unrecognized request arguments supplied: drop_params". Send only
+        # fields that every OpenAI-compatible provider accepts.
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float")
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
