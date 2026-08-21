@@ -31,6 +31,9 @@ func TestParityDirsForDefaultVariant(t *testing.T) {
 // variant moves every artifact under its own subdirectory so a second dataset
 // (e.g. real_pdfs) never collides with the default 35-PDF set.
 func TestParityDirsForCustomVariant(t *testing.T) {
+	// Isolate from any ambient BATCH_PARITY_DATA_ROOT so this test pins the
+	// local testdata layout regardless of the environment it runs in.
+	t.Setenv("BATCH_PARITY_DATA_ROOT", "")
 	d := ParityDirsFor("ocr_real")
 	want := ParityDirs{
 		Charspy:    filepath.Join("testdata", "charspy_ocr_real"),

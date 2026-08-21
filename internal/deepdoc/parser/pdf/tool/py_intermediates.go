@@ -172,8 +172,7 @@ type PythonOCRPage struct {
 // R/C/H/SP annotations (the authoritative per-char row/column assignment
 // Python's construct_table groups by). This is the signal Go's line-based
 // GroupCells cross-product ignores; the replay harness feeds it to
-// GroupBoxesByRC so Go's assembly matches Python's R/C view. See
-// ApplyRCToResult in replay_analyzer_test.go.
+// GroupBoxesByRC so Go's assembly matches Python's R/C view.
 //
 // The dump is a FLAT list of boxes (one object per table cell), not
 // page-wrapped. Each box carries page_number (1-based) and layoutno (the
