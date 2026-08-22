@@ -1860,6 +1860,7 @@ async def report_status():
 
         # Report heartbeat to Redis
         try:
+            REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
             REDIS_CONN.zadd(CONSUMER_NAME, heartbeat, now_ts)
         except Exception as e:
             logging.warning(f"Failed to report heartbeat: {e}")
@@ -1881,20 +1882,35 @@ async def report_status():
             logging.warning(f"Failed to acquire Redis lock: {e}")
         if lock_acquired:
             try:
-                task_executors = REDIS_CONN.smembers("TASKEXE") or set()
-                for worker_name in task_executors:
-                    if worker_name == CONSUMER_NAME:
-                        continue
-                    try:
-                        last_heartbeat = REDIS_CONN.REDIS.zrevrange(worker_name, 0, 0, withscores=True)
-                    except Exception as e:
-                        logging.warning(f"Failed to read zset for {worker_name}: {e}")
-                        continue
+                task_executors = REDIS_CONN.smembers("TASKEXE")
+                if task_executors is None:
+                    logging.warning("Skipping task reclaim because executor membership is unavailable")
+                else:
+                    live_workers = set(task_executors)
+                    live_workers.add(CONSUMER_NAME)
+                    for worker_name in task_executors:
+                        if worker_name == CONSUMER_NAME:
+                            continue
+                        try:
+                            last_heartbeat = REDIS_CONN.REDIS.zrevrange(worker_name, 0, 0, withscores=True)
+                        except Exception as e:
+                            logging.warning(f"Failed to read zset for {worker_name}: {e}")
+                            continue
 
-                    if not last_heartbeat or now_ts - last_heartbeat[0][1] > WORKER_HEARTBEAT_TIMEOUT:
-                        logging.info(f"{worker_name} expired, removed")
-                        REDIS_CONN.srem("TASKEXE", worker_name)
-                        REDIS_CONN.delete(worker_name)
+                        if not last_heartbeat or now_ts - last_heartbeat[0][1] > WORKER_HEARTBEAT_TIMEOUT:
+                            logging.info(f"{worker_name} expired, removed")
+                            live_workers.discard(worker_name)
+                            REDIS_CONN.srem("TASKEXE", worker_name)
+                            REDIS_CONN.delete(worker_name)
+
+                    reclaimed = REDIS_CONN.reclaim_pending_msg(
+                        settings.get_svr_queue_names(TASK_TYPE),
+                        SVR_CONSUMER_GROUP_NAME,
+                        live_workers,
+                        min_idle_ms=WORKER_HEARTBEAT_TIMEOUT * 1000,
+                    )
+                    if reclaimed:
+                        logging.info(f"Reclaimed {reclaimed} orphaned pending message(s)")
             except Exception as e:
                 logging.warning(f"Failed to clean other executors: {e}")
             finally:
