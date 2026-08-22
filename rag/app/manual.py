@@ -283,7 +283,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
         return res
 
-    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
+    elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(
@@ -306,6 +306,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if table_ctx or image_ctx:
             attach_media_context(res, table_ctx, image_ctx)
         return res
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        raise NotImplementedError("Legacy .doc files are not supported by the Manual parser. Please convert the file to .docx or PDF.")
     else:
         raise NotImplementedError("file type not supported yet(pdf and docx supported)")
 
