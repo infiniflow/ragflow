@@ -906,6 +906,14 @@ class MinerUParser(RAGFlowPdfParser):
                 if not text.strip():
                     self.logger.warning("[MinerU] Empty table content at page_idx=%s; using fallback text.", output.get("page_idx"))
                     text = "FAILED TO PARSE TABLE"
+                else:
+                    # MinerU returns table_body as an HTML fragment (`<table><tr><td>...</td></tr>...`).
+                    # Without sanitization the literal tag markup ends up in the
+                    # chunk's `content_with_weight` field, which `tokenize_table`
+                    # stores verbatim and the user then sees as "garbled" table
+                    # content. The sections path (line 872) already sanitizes
+                    # when `table_enable=False`; the tables path was missed.
+                    text = self._sanitize_section_text(text)
                 tables.append(((None, text), positions))
                 continue
 
