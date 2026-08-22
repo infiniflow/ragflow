@@ -547,6 +547,7 @@ class OSConnection(DocStoreConnection):
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
         doc.pop("id", None)
+        condition["kb_id"] = knowledgebaseId
         if "id" in condition and isinstance(condition["id"], str):
             # update specific single document
             chunkId = condition["id"]
