@@ -1381,9 +1381,15 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     parsed_dels = parse_delimiter_field(delimiter)
     has_custom = has_wrapped_delimiter(delimiter)
     if has_custom:
-        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
+        # Custom delimiters split on the user's compiled pattern, then
+        # the resulting paragraphs are grouped with the same merge step
+        # the default path uses -- so chunk_token_num is honoured even
+        # when the user has a custom delimiter. The pre-fix behaviour
+        # bypassed the merge step entirely; one stray bare char in the
+        # user's delimiter (e.g. an unbalanced backtick) produced
+        # 300x more chunks than expected. See issue #18552.
         custom_pattern = compile_delimiter_pattern(parsed_dels)
-        cks = []
+        paragraphs = []  # list of (text, pos), same shape as the default path
         for sec, pos in sections:
             split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL) if custom_pattern else [sec]
             for sub_sec in split_sec:
@@ -1397,8 +1403,11 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
                     local_pos = ""
                 if local_pos and text.find(local_pos) < 0:
                     text += local_pos
-                cks.append(text)
-        return cks
+                paragraphs.append((text, local_pos))
+        groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
+        cks = [_reconstruct_text_chunk(paragraphs, g) for g in groups]
+        logging.debug("naive_merge: %d sections -> %d chunks (custom delimiter, chunk_token_num honoured)", len(sections), len(cks))
+        return _apply_overlap_unconditional(cks, overlapped_percent)
 
     # Default path: split every section on the delimiter into paragraphs (no
     # delimiter text), then group paragraphs with the chosen merge strategy.
@@ -1436,9 +1445,13 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     parsed_dels = parse_delimiter_field(delimiter)
     has_custom = has_wrapped_delimiter(delimiter)
     if has_custom:
-        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
+        # Custom delimiters split on the user's compiled pattern, then
+        # the resulting paragraphs are grouped with the same merge step
+        # the default path uses -- so chunk_token_num is honoured even
+        # when the user has a custom delimiter. See ``naive_merge`` for
+        # the rationale and issue #18552.
         custom_pattern = compile_delimiter_pattern(parsed_dels)
-        cks, result_images = [], []
+        paragraphs = []  # list of (text, pos, image)
         for text, image in zip(texts, images):
             text_str = text[0] if isinstance(text, tuple) else text
             if text_str is None:
@@ -1457,9 +1470,15 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                     local_pos = ""
                 if local_pos and text_seg.find(local_pos) < 0:
                     text_seg += local_pos
-                cks.append(text_seg)
-                result_images.append(image)
-        return cks, result_images
+                paragraphs.append((text_seg, local_pos, image))
+        groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
+        cks, result_images = [], []
+        for g in groups:
+            text, image = _reconstruct_image_chunk(paragraphs, g)
+            cks.append(text)
+            result_images.append(image)
+        logging.debug("naive_merge_with_images: %d texts -> %d chunks (custom delimiter, chunk_token_num honoured)", len(texts), len(cks))
+        return _apply_overlap_unconditional(cks, overlapped_percent), result_images
 
     # Default path: split every text on the delimiter into paragraphs (no
     # delimiter text) carrying its image, then group with the merge strategy.
