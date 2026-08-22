@@ -61,7 +61,7 @@ type ParseResult struct {
 	// Shape depends on the parser family: PDF emits
 	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
 	// optional `image` / `layout` / `positions` fields);
-	// markdown / html / text emit normalized
+	// Markdown / HTML / text emit normalized
 	// `{text, doc_type_kwd}` items; image emits OCR/VLM result
 	// items. Exactly one payload family is populated on success.
 	JSON []map[string]any

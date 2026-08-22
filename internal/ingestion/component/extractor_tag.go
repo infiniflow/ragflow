@@ -155,7 +155,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 		return in.chunks, nil
 	}
 
-	topN := c.Param.AutoTags
+	topN := c.Param.Tags.TopN
 
 	var examples []schema.TaggedChunk
 	var docsToTag []map[string]any
@@ -191,7 +191,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 					case <-ctx.Done():
 						return
 					}
-					llmTagChunk(ctx, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN)
+					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN)
 				}(i)
 			}
 			wg.Wait()
@@ -218,22 +218,22 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 }
 
 func (c *ExtractorComponent) resolveTagSource(ctx context.Context) (*indexedTagSource, bool) {
-	if c.Param.TagFileID == "" {
+	if c.Param.Tags.TagFileID == "" {
 		return nil, false
 	}
 	return c.loadTagFileIndexed(ctx)
 }
 
 func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context) (*indexedTagSource, bool) {
-	f, err := dao.NewFileDAO().GetByID(ctx, dao.DB, c.Param.TagFileID)
+	f, err := dao.NewFileDAO().GetByID(ctx, dao.DB, c.Param.Tags.TagFileID)
 	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
-		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.TagFileID, err))
+		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.Tags.TagFileID, err))
 		return nil, false
 	}
 	cacheKey := tagSourceFileCacheKey(f)
 	if cached, ok := tagSourceFileIndexCache.load(cacheKey); ok {
 		common.Info("extractor tags: reused tag source file index",
-			zap.String("file_id", c.Param.TagFileID),
+			zap.String("file_id", c.Param.Tags.TagFileID),
 			zap.String("bucket", f.ParentID),
 			zap.String("key", *f.Location),
 		)
@@ -256,7 +256,7 @@ func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context) (*indexedTa
 	}
 	indexed = tagSourceFileIndexCache.store(cacheKey, indexed)
 	common.Info("extractor tags: loaded tag source file",
-		zap.String("file_id", c.Param.TagFileID),
+		zap.String("file_id", c.Param.Tags.TagFileID),
 		zap.String("bucket", f.ParentID),
 		zap.String("key", *f.Location),
 		zap.Int64("size", f.Size),
@@ -652,6 +652,7 @@ func roundInt(f float64) int {
 
 func llmTagChunk(
 	ctx context.Context,
+	db *gorm.DB,
 	inv extractorChatInvoker,
 	chunk map[string]any,
 	allTags map[string]float64,
@@ -687,6 +688,17 @@ func llmTagChunk(
 		{Role: eschema.System, Content: prompt},
 		{Role: eschema.User, Content: "Output:"},
 	}
+	// Trim the prompt to the model's context window before sending. The
+	// system prompt embeds the full chunk text, the entire tag set and up
+	// to two full examples, so oversized chunks or tag files would
+	// otherwise be rejected by the provider (context length exceeded).
+	// Mirrors Python's message_fit_in in content_tagging (generator.py:331).
+	fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
+	if fitErr != nil {
+		common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))
+		return
+	}
+	msgs = fitted
 
 	temperature := 0.5
 	var result map[string]int
@@ -727,10 +739,7 @@ func buildTaggerPrompt(topN int, tagSetStr string, examples []schema.TaggedChunk
 }
 
 func parseTaggerResponse(raw string, topN int) map[string]int {
-	raw = strings.TrimSpace(raw)
-	if idx := strings.LastIndex(raw, "</think>"); idx >= 0 {
-		raw = strings.TrimSpace(raw[idx+len("</think>"):])
-	}
+	raw = strings.TrimSpace(common.StripThinkTrailing(raw))
 	if strings.Contains(raw, "**ERROR**") {
 		common.Warn("extractor tags: LLM returned **ERROR**")
 		return nil

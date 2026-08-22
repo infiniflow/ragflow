@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -97,6 +96,7 @@ func TestWikipedia_BuildURL(t *testing.T) {
 
 func TestWikipedia_ParseResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -114,12 +114,12 @@ func TestWikipedia_ParseResults(t *testing.T) {
 	defer srv.Close()
 
 	// Point the hard-coded en.wikipedia.org endpoint at the test server
-	// by injecting a transport that rewrites the request host.
+	// by injecting transport that rewrites the request host.
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewWikipediaToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(), `{"query":"RAG","lang":"en","max_results":5}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"RAG","lang":"en","max_results":5}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -179,9 +179,10 @@ func (t *hostSwapRT) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestWikipedia_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewWikipediaTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -195,9 +196,10 @@ func TestWikipedia_Info(t *testing.T) {
 
 func TestWikipedia_EmptyQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewWikipediaTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty): %v", err)
 	}
@@ -212,6 +214,7 @@ func TestWikipedia_EmptyQuery(t *testing.T) {
 
 func TestWikipedia_ComponentReferencesAndOutputs(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	wikipedia := NewWikipediaTool()
 	spec := wikipedia.ComponentSpec()
@@ -223,7 +226,7 @@ func TestWikipedia_ComponentReferencesAndOutputs(t *testing.T) {
 		"url":     "https://en.wikipedia.org/wiki/RAG",
 		"content": "RAG is an acronym.",
 	}}}
-	chunks, docAggs := wikipedia.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := wikipedia.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["document_name"] != "RAG" || chunks[0]["similarity"] != 1 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

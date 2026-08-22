@@ -1,7 +1,6 @@
 package elasticsearch
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -62,9 +61,9 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
-
+	ctx := t.Context()
 	engine := &Engine{client: client}
-	if err = engine.updateSingleMemoryMessage(context.Background(), "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
+	if err = engine.updateSingleMemoryMessage(ctx, "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
 		t.Fatalf("updateSingleMemoryMessage: %v", err)
 	}
 	if gotRefresh != "wait_for" {
@@ -96,13 +95,13 @@ func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
+	ctx := t.Context()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
 	if err != nil {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
 	engine := &Engine{client: client}
-	deleted, err := engine.DeleteChunks(context.Background(), map[string]interface{}{
+	deleted, err := engine.DeleteChunks(ctx, map[string]interface{}{
 		"kb_id":       "kb-1",
 		"compile_kwd": []string{"wiki_entity", "wiki_relation"},
 	}, "ragflow_tenant", "kb-1")
@@ -157,13 +156,13 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
+	ctx := t.Context()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
 	if err != nil {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
 	engine := &Engine{client: client}
-	if _, err = engine.DeleteChunks(context.Background(), map[string]interface{}{
+	if _, err = engine.DeleteChunks(ctx, map[string]interface{}{
 		"id": []string{"doc-a", "doc-b"},
 	}, "ragflow_tenant", "kb-1"); err != nil {
 		t.Fatalf("DeleteChunks: %v", err)

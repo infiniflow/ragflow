@@ -20,8 +20,14 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
+
+	"gorm.io/gorm"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/service/nav"
 )
 
@@ -36,17 +42,6 @@ const (
 	CompileKwdSkillAll     = "skill_all"
 	CompileKwdDatasetNav   = "dataset_nav"
 	CompileKwdRaptorGraph  = "raptor_graph"
-
-	CompileKwdStructure          = "structure"
-	CompileKwdStructureIndex     = "structureIndex"
-	CompileKwdStructureEntity    = "structureEntity"
-	CompileKwdStructureRelation  = "structureRelation"
-	CompileKwdStructureCommunity = "structureCommunity"
-
-	FieldStructureIndexType = "structure_index_type"
-	FieldStructureKind      = "structure_kind"
-	FieldPageID             = "page_id"
-	FieldGraphType          = "graph_type"
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
@@ -377,9 +372,22 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		it.PageCount = counts[t]
 		items = append(items, it)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Topic < items[j].Topic })
+	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
+	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
+	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
+	// which orders Chinese by pinyin and handles Latin/digits/other scripts
+	// correctly, case-insensitively, without assuming topics are all-Chinese.
+	sort.Slice(items, func(i, j int) bool {
+		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
+	})
 	return items, int64(len(items)), nil
 }
+
+// wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
+// selects the CLDR zh collation (pinyin-based for Han), while Latin/digits and
+// other scripts sort naturally, case-insensitively. It is safe for concurrent
+// use after construction.
+var wikiTopicCollator = collate.New(language.Chinese)
 
 // WikiGraph is the entity/relation graph for a dataset's wiki artifacts.
 type WikiGraph struct {
@@ -475,31 +483,204 @@ type WikiAlteration struct {
 
 // GetWikiAlteration returns the wiki alteration summary for a dataset.
 func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID, datasetID string) (*WikiAlteration, error) {
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
-		[]string{"source_doc_ids"}, 0, 10000, nil)
-	if err != nil {
-		return nil, err
-	}
 	involved := map[string]struct{}{}
-	for _, c := range chunks {
-		for _, d := range toStringSlice(c["source_doc_ids"]) {
-			involved[d] = struct{}{}
+	for offset := 0; ; offset += 1000 {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
+			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
+			[]string{"source_doc_ids"}, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range chunks {
+			for _, d := range toStringSlice(c["source_doc_ids"]) {
+				if d != "" {
+					involved[d] = struct{}{}
+				}
+			}
+		}
+		if len(chunks) == 0 || int64(offset+len(chunks)) >= total {
+			break
 		}
 	}
-	ids := make([]string, 0, len(involved))
-	for d := range involved {
-		ids = append(ids, d)
+	// The database is the source of truth for the current document set. The
+	// previous implementation returned the source_doc_ids from the compiled
+	// pages as both sides of the comparison, which made deletion impossible to
+	// observe. In particular, a deleted document remains in source_doc_ids until
+	// the dataset-level consumer removes the old page.
+	var documents []entity.Document
+	if err := dao.DB.WithContext(ctx).Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
+		return nil, fmt.Errorf("list dataset documents for wiki alteration: %w", err)
+	}
+	eligible := make(map[string]struct{}, len(documents))
+	for i := range documents {
+		if documents[i].Status != nil && *documents[i].Status == "0" {
+			continue
+		}
+		pipelineID := ""
+		if documents[i].PipelineID != nil {
+			pipelineID = *documents[i].PipelineID
+		}
+		ok, err := s.documentHasWikiTemplate(ctx, tenantID, documents[i].ParserConfig, pipelineID)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			eligible[documents[i].ID] = struct{}{}
+		}
+	}
+
+	removedIDs := setDifference(involved, eligible)
+	newlyUploadedIDs := setDifference(eligible, involved)
+	return &WikiAlteration{
+		Removed:             len(removedIDs),
+		NewlyUploaded:       len(newlyUploadedIDs),
+		RemovedDocIDs:       removedIDs,
+		NewlyUploadedDocIDs: newlyUploadedIDs,
+		InvolvedDocIDs:      sortedSetKeys(involved),
+		EligibleDocIDs:      sortedSetKeys(eligible),
+	}, nil
+}
+
+// documentHasWikiTemplate reports whether a document's saved pipeline config
+// contains a valid wiki compiler template. A document is eligible only when it
+// is configured for wiki compilation; treating every document in the dataset
+// as eligible would hide both template removal and document deletion.
+func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string) (bool, error) {
+	ok, err := s.valueHasWikiTemplate(ctx, tenantID, config)
+	if err != nil || ok {
+		return ok, err
+	}
+	if pipelineID == "" {
+		return false, nil
+	}
+	var canvas entity.UserCanvas
+	if err := dao.DB.WithContext(ctx).Where("id = ?", pipelineID).First(&canvas).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load pipeline %q for wiki alteration: %w", pipelineID, err)
+	}
+	return s.valueHasWikiTemplate(ctx, tenantID, canvas.DSL)
+}
+
+// valueHasWikiTemplate recursively inspects persisted parser/pipeline JSON.
+// Pipeline DSLs and document parser configs use different nesting layouts, so
+// looking only at a single top-level Compiler key misses pipeline documents.
+func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenantID string, value interface{}) (bool, error) {
+	if items, ok := value.([]interface{}); ok {
+		for _, item := range items {
+			if found, err := s.valueHasWikiTemplate(ctx, tenantID, item); err != nil || found {
+				return found, err
+			}
+		}
+		return false, nil
+	}
+	params, isMap := value.(map[string]interface{})
+	if !isMap {
+		if typed, ok := value.(entity.JSONMap); ok {
+			params = map[string]interface{}(typed)
+			isMap = true
+		}
+	}
+	if !isMap {
+		return false, nil
+	}
+	if id, ok := params["compilation_template_id"].(string); ok && id != "" {
+		var template entity.CompilationTemplate
+		if err := dao.DB.WithContext(ctx).
+			Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND status = ?", id, tenantID, string(entity.StatusValid)).
+			First(&template).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return false, nil
+			}
+			return false, fmt.Errorf("load wiki compilation template %q: %w", id, err)
+		}
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	if groupID, ok := params["compilation_template_group_id"].(string); ok && groupID != "" {
+		if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+			return found, err
+		}
+	}
+	if rawGroupIDs, ok := params["compilation_template_group_ids"]; ok {
+		groupIDs := []string{}
+		switch values := rawGroupIDs.(type) {
+		case string:
+			groupIDs = append(groupIDs, values)
+		case []interface{}:
+			for _, value := range values {
+				if groupID, ok := value.(string); ok {
+					groupIDs = append(groupIDs, groupID)
+				}
+			}
+		case []string:
+			groupIDs = values
+		}
+		for _, groupID := range groupIDs {
+			if strings.TrimSpace(groupID) != "" {
+				if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+					return found, err
+				}
+			}
+		}
+	}
+	for _, child := range params {
+		if found, err := s.valueHasWikiTemplate(ctx, tenantID, child); err != nil || found {
+			return found, err
+		}
+	}
+	return false, nil
+}
+
+func (s *DatasetArtifactService) groupHasWikiTemplate(ctx context.Context, tenantID, groupID string) (bool, error) {
+	var group entity.CompilationTemplateGroup
+	if err := dao.DB.WithContext(ctx).
+		Where("id = ? AND (tenant_id = ? OR tenant_id = '') AND status = ?", groupID, tenantID, string(entity.StatusValid)).
+		First(&group).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	var templates []entity.CompilationTemplate
+	if err := dao.DB.WithContext(ctx).Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).Find(&templates).Error; err != nil {
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	for _, template := range templates {
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func templateKind(template entity.CompilationTemplate) string {
+	if kind, ok := template.Config["kind"].(string); ok && strings.TrimSpace(kind) != "" {
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
+	return strings.ToLower(strings.TrimSpace(template.Kind))
+}
+
+func setDifference(left, right map[string]struct{}) []string {
+	ids := make([]string, 0)
+	for id := range left {
+		if _, ok := right[id]; !ok {
+			ids = append(ids, id)
+		}
 	}
 	sort.Strings(ids)
-	return &WikiAlteration{
-		Removed:             0,
-		NewlyUploaded:       0,
-		RemovedDocIDs:       []string{},
-		NewlyUploadedDocIDs: []string{},
-		InvolvedDocIDs:      ids,
-		EligibleDocIDs:      ids,
-	}, nil
+	return ids
+}
+
+func sortedSetKeys(set map[string]struct{}) []string {
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // ClearWiki deletes all wiki artifacts for a dataset.
@@ -535,107 +716,6 @@ func (s *DatasetArtifactService) ClearWiki(ctx context.Context, tenantID, datase
 	return deleted, nil
 }
 
-// StructureItem is a single compiled structure entry for a dataset.
-type StructureItem struct {
-	PageID             string `json:"page_id"`
-	StructureKind      string `json:"structure_kind"`
-	StructureIndexType string `json:"structure_index_type"`
-	Data               string `json:"data"`
-}
-
-// ListStructures returns the compiled structures of a dataset, filtered by
-// optional structure_kind and structure_index_type.
-func (s *DatasetArtifactService) ListStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) ([]StructureItem, int64, error) {
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{FieldPageID, FieldStructureKind, FieldStructureIndexType, "content_with_weight"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]StructureItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, StructureItem{
-			PageID:             firstStringValue(c[FieldPageID]),
-			StructureKind:      firstStringValue(c[FieldStructureKind]),
-			StructureIndexType: firstStringValue(c[FieldStructureIndexType]),
-			Data:               firstStringValue(c["content_with_weight"]),
-		})
-	}
-	return items, total, nil
-}
-
-// DeleteStructures deletes the compiled structures of a dataset, optionally
-// scoped by structure_kind and structure_index_type.
-func (s *DatasetArtifactService) DeleteStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 10000, nil)
-	if err != nil {
-		return 0, err
-	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
-		}
-	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
-// DocGraphItem is a single node/edge entry in a document's structure graph.
-type DocGraphItem struct {
-	ID       string `json:"id"`
-	Content  string `json:"content"`
-	SourceID string `json:"source_id"`
-}
-
-// GetDocumentGraph returns the structure graph of a single document.
-func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, tenantID, datasetID, documentID, graphType string) ([]DocGraphItem, int64, error) {
-	filter := map[string]interface{}{
-		"doc_id":             []string{documentID},
-		"compiled_graph_kwd": []string{"graph"},
-	}
-	if graphType != "" {
-		filter[FieldGraphType] = []string{graphType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"id", "content_with_weight", "source_id"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]DocGraphItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, DocGraphItem{
-			ID:       firstStringValue(c["id"]),
-			Content:  firstStringValue(c["content_with_weight"]),
-			SourceID: firstStringValue(c["source_id"]),
-		})
-	}
-	return items, total, nil
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -666,28 +746,12 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 	return len(ids), nil
 }
 
-// NavigationItem is a single navigation cluster (REST response shape, kept
-// stable for frontend compatibility).
-type NavigationItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// NavChildItem is a single child entry under a navigation cluster (REST
-// response shape, kept stable for frontend compatibility).
-type NavChildItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// ListNavClusters returns the navigation clusters of a dataset. It is DEPRECATED
-// and now delegates to the ES-backed NavService (internal/service datasetnav):
-// the previous implementation queried nav_cluster_kwd/count_int fields that
-// Python never writes, so it could never read the real nav tree. Do not add
-// field-level patches here — route everything through NavService.
-func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]NavigationItem, int64, error) {
+// ListNavClusters returns the navigation clusters of a dataset. It delegates to
+// the ES-backed NavService and returns the frontend DatasetNavNode shape
+// (snake_case NavNode JSON), matching Python GET /navigation exactly. The old
+// NavigationItem{name,title,count} shape did not match the frontend interface
+// and has been removed.
+func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
@@ -696,16 +760,12 @@ func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavigationItem, 0, len(nodes))
-	for _, n := range nodes {
-		items = append(items, NavigationItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
-	}
-	return items, total, nil
+	return nodes, total, nil
 }
 
-// ListNavChildren returns the children of a navigation cluster. DEPRECATED —
-// delegates to NavService.ListChildren.
-func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]NavChildItem, int64, error) {
+// ListNavChildren returns the children of a navigation cluster in the frontend
+// DatasetNavNode shape.
+func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
@@ -714,11 +774,7 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavChildItem, 0, len(nodes))
-	for _, n := range nodes {
-		items = append(items, NavChildItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
-	}
-	return items, total, nil
+	return nodes, total, nil
 }
 
 // DeleteNav removes the direct nav_doc children of every root cluster of a
@@ -911,6 +967,10 @@ func toStringSlice(v interface{}) []string {
 	case string:
 		if t == "" {
 			return []string{}
+		}
+		var decoded interface{}
+		if json.Unmarshal([]byte(t), &decoded) == nil {
+			return toStringSlice(decoded)
 		}
 		return []string{t}
 	case []interface{}:

@@ -21,6 +21,10 @@ import {
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -44,7 +48,7 @@ import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
-  keywords_similarity_weight: z.coerce.number(),
+  keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
   top_k: z.coerce.number(),
   dataset_ids: z.array(z.string()),
@@ -150,14 +154,22 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(node?.id, form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <Form {...form}>

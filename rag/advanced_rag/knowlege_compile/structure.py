@@ -648,6 +648,38 @@ def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
             target.get("source_chunk_ids"),
             entity.get("source_chunk_ids"),
         )
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            entity.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
+    return [merged[key] for key in order]
+
+
+def _struct_merge_graph_relations(relations: list[dict]) -> list[dict]:
+    """Deduplicate relation payloads while preserving source provenance."""
+    merged: dict[tuple[str, str, str], dict] = {}
+    order: list[tuple[str, str, str]] = []
+    for relation in relations:
+        key = (
+            str(relation.get("from") or "").strip().casefold(),
+            str(relation.get("to") or "").strip().casefold(),
+            str(relation.get("type") or "related").strip().casefold(),
+        )
+        if not key[0] or not key[1]:
+            continue
+        if key not in merged:
+            merged[key] = relation
+            order.append(key)
+            continue
+        target = merged[key]
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            relation.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
     return [merged[key] for key in order]
 
 
@@ -688,6 +720,7 @@ def _struct_to_doc_storage_doc(
     payload: dict,
     compile_kwd: str,
     doc_id: str,
+    doc_name: str,
     chunk_ids: list[str],
     vec,
     kind: str,
@@ -740,6 +773,7 @@ def _struct_to_doc_storage_doc(
         "knowledge_graph_kwd": kind,
         "scope_kwd": scope,
         "doc_id": doc_id_str,
+        "docnm_kwd": doc_name,
         "source_chunk_ids": list(chunk_ids or []),
         "content_ltks": content_ltks,
         "content_sm_ltks": content_sm_ltks,
@@ -795,6 +829,7 @@ async def _struct_process_batch(
     chat_mdl,
     embd_mdl,
     doc_id: str,
+    doc_name: str,
     language: str,
     callback,
     semaphore,
@@ -863,6 +898,7 @@ async def _struct_process_batch(
                 payload,
                 autotype,
                 doc_id,
+                doc_name,
                 _struct_payload_chunk_ids(payload, payload_chunk_ids),
                 vec,
                 kind,
@@ -891,6 +927,7 @@ async def compile_structure_from_text(
     chat_mdl,
     embd_mdl,
     doc_id: str,
+    doc_name: str = "",
     language: str = "en",
     callback=None,
     max_workers: int = 10,
@@ -971,6 +1008,7 @@ async def compile_structure_from_text(
             chat_mdl=chat_mdl,
             embd_mdl=embd_mdl,
             doc_id=doc_id,
+            doc_name=doc_name,
             language=language,
             callback=callback,
             semaphore=None,
@@ -1277,6 +1315,7 @@ def _struct_rebuild_doc_storage_doc(
         payload=payload,
         compile_kwd=base_doc.get("compile_kwd"),
         doc_id=base_doc.get("doc_id"),
+        doc_name=base_doc.get("docnm_kwd") or "",
         chunk_ids=chunk_ids,
         vec=vec,
         kind=kind,
@@ -1654,6 +1693,7 @@ async def _struct_doc_storage_dedup_batch(
         "knowledge_graph_kwd",
         "compile_kwd",
         "doc_id",
+        "docnm_kwd",
         "from_entity_kwd",
         "to_entity_kwd",
         "compilation_template_ids",
@@ -1875,6 +1915,7 @@ async def _struct_doc_storage_dedup_batch(
             "knowledge_graph_kwd",
             "compile_kwd",
             "doc_id",
+            "docnm_kwd",
             "from_entity_kwd",
             "to_entity_kwd",
             "compilation_template_ids",
@@ -2200,7 +2241,7 @@ async def _struct_rebuild_graph_json(
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _rag_search.index_name(tenant_id)
-    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids"]
+    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids", "doc_id"]
     # ``doc_id is None`` collects every document's entities/relations in the KB
     # for the dataset-level graph; a concrete id keeps it document-scoped.
     condition: dict = {
@@ -2225,22 +2266,35 @@ async def _struct_rebuild_graph_json(
     )
     rows = settings.docStoreConn.get_fields(res, fields)
 
+    disabled_doc_ids: set[str] = set()
+    if doc_id is None:
+        from api.db.services.document_service import DocumentService
+
+        disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
+        if str(row.get("doc_id") or "") in disabled_doc_ids:
+            continue
+        source_doc_id = str(row.get("doc_id") or "").strip()
         payload = _struct_load_payload(row)
         if row.get("knowledge_graph_kwd") == "relation":
             relation = _struct_graph_relation(payload)
             if relation:
+                if doc_id is None and source_doc_id:
+                    relation["doc_ids_kwd"] = [source_doc_id]
                 relations.append(relation)
         else:
             entity = _struct_graph_entity(payload, row.get("source_chunk_ids"))
             if entity:
+                if doc_id is None and source_doc_id:
+                    entity["doc_ids_kwd"] = [source_doc_id]
                 entities.append(entity)
 
     return {
         "entities": _struct_merge_graph_entities(entities),
-        "relations": relations,
+        "relations": _struct_merge_graph_relations(relations) if doc_id is None else relations,
     }
 
 
@@ -2248,6 +2302,7 @@ async def cleanup_timeline_isolated_entities(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compilation_template_id: str | None = None,
 ) -> int:
     """Remove timeline entity rows that are not used by any relation.
@@ -2318,6 +2373,7 @@ async def cleanup_timeline_isolated_entities(
         tenant_id,
         kb_id,
         doc_id,
+        doc_name,
         "timeline",
         compilation_template_id,
     )
@@ -2329,6 +2385,7 @@ async def _struct_upsert_graph_json(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> None:
@@ -2339,10 +2396,10 @@ async def _struct_upsert_graph_json(
     row_id = _struct_graph_row_id(doc_id, compile_kwd, compilation_template_id)
     row = {
         "id": row_id,
-        "content_with_weight": json.dumps(graph, ensure_ascii=False),
         "compile_kwd": compile_kwd,
         "knowledge_graph_kwd": "graph",
         "doc_id": doc_id,
+        "docnm_kwd": doc_name,
         "kb_id": kb_id,
         "available_int": 0,
     }
@@ -2366,6 +2423,7 @@ async def _struct_upsert_tree_graph_rows(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     embedding_model,
     compilation_template_id: str | None = None,
 ) -> None:
@@ -2396,6 +2454,7 @@ async def _struct_upsert_tree_graph_rows(
                     payload=payload,
                     compile_kwd="tree",
                     doc_id=doc_id,
+                    doc_name=doc_name,
                     chunk_ids=source_chunk_ids,
                     vec=vector,
                     kind=kind,
@@ -2422,6 +2481,7 @@ async def rebuild_structure_graph_json(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> dict:
@@ -2439,6 +2499,7 @@ async def rebuild_structure_graph_json(
         tenant_id,
         kb_id,
         doc_id,
+        doc_name,
         compile_kwd,
         compilation_template_id,
     )
@@ -2954,6 +3015,7 @@ async def merge_compiled_structures(
     doc_storage_waiter: Callable[[], Awaitable[None]] | None = None,
     doc_storage_releaser: Callable[[], Awaitable[None]] | None = None,
     merge_scope: str = MERGE_SCOPE_DOC,
+    doc_name: str = "",
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
     inserting them into ES.
@@ -3099,6 +3161,7 @@ async def merge_compiled_structures(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 compile_kwd,
                 compilation_template_id=template_id or None,
             )

@@ -166,6 +166,7 @@ type Model struct {
 	Thinking      *ModelThinking `json:"thinking"`
 	Tools         *ModelTools    `json:"tools"`
 	Class         *string        `json:"class"`
+	URL           string         `json:"url"`
 	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
 	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
 	Dimensions    []int          `json:"dimensions"`

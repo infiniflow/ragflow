@@ -65,6 +65,9 @@ func TestRSSConnectorOpenSyncFullAndIncremental(t *testing.T) {
 	if doc.Metadata["link"] != "https://example.com/new" {
 		t.Fatalf("link metadata = %v", doc.Metadata["link"])
 	}
+	if doc.Fingerprint == "" {
+		t.Fatalf("fingerprint is empty")
+	}
 }
 
 // TestRSSConnectorOpenPrune verifies complete slim snapshot generation.
@@ -89,6 +92,59 @@ func TestRSSConnectorOpenPrune(t *testing.T) {
 		batch.Documents[1].SourceID != expectedRSSSourceID("entry-new") ||
 		batch.Documents[2].SourceID != expectedRSSSourceID("entry-future") {
 		t.Fatalf("unexpected prune ids: %+v", batch.Documents)
+	}
+}
+
+// TestRSSConnectorOpenSyncResumesAfterCheckpoint verifies retry resumes after committed entries.
+func TestRSSConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
+	connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.xml", "batch_size": 2})
+	if err != nil {
+		t.Fatalf("NewRSSConnector failed: %v", err)
+	}
+	connector.fetchFeed = staticRSSFeed
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch first failed: %v", err)
+	}
+	if len(first.Documents) != 2 {
+		t.Fatalf("first batch len = %d, want 2", len(first.Documents))
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != expectedRSSSourceID("entry-new") {
+		t.Fatalf("first checkpoint = %+v, want entry-new", first.Checkpoint)
+	}
+
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z"), Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != expectedRSSSourceID("entry-future") {
+		t.Fatalf("resume documents = %+v, want entry-future", second.Documents)
+	}
+	if second.Checkpoint == nil || second.Checkpoint.SourceID != expectedRSSSourceID("entry-future") {
+		t.Fatalf("resume checkpoint = %+v, want entry-future", second.Checkpoint)
+	}
+	if _, err = resumed.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("resume EOF = %v", err)
+	}
+}
+
+func TestRSSConnectorValidateConnectorSetting(t *testing.T) {
+	connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.xml"})
+	if err != nil {
+		t.Fatalf("NewRSSConnector failed: %v", err)
+	}
+	connector.fetchFeed = staticRSSFeed
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting failed: %v", err)
 	}
 }
 

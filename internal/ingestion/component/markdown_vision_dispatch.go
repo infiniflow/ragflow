@@ -14,13 +14,13 @@
 //  limitations under the License.
 //
 
-// Markdown vision figure dispatch: enriches parsed markdown JSON
+// Markdown vision figure dispatch: enriches parsed Markdown JSON
 // items with LLM-generated descriptions of embedded images,
 // mirroring Python's enhance_media_sections_with_vision in
 // rag/flow/parser/utils.py, called from the _markdown path.
 //
 // Unlike the DOCX vision path (which processes a separate figures
-// array), markdown vision iterates over the JSON items produced by
+// array), Markdown vision iterates over the JSON items produced by
 // MarkdownParser.ParseWithResult and enhances items whose
 // doc_type_kwd == "image" and whose "image" field contains a
 // base64-encoded image.
@@ -29,7 +29,6 @@ package component
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 
@@ -43,7 +42,7 @@ var (
 	markdownVisionConcurrency uint = 10
 )
 
-// maybeDispatchMarkdownVision checks whether the markdown parse result
+// maybeDispatchMarkdownVision checks whether the Markdown parse result
 // contains JSON items with embedded images and, when a vision model is
 // available, enriches those items with AI-generated figure descriptions.
 //
@@ -102,6 +101,7 @@ func maybeDispatchMarkdownVision(
 	if tenantID == "" {
 		return dispatched, false, nil
 	}
+	language := resolveVisionLanguage(inputs, "")
 
 	// Resolve the tenant's IMAGE2TEXT model.
 	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
@@ -124,7 +124,7 @@ func maybeDispatchMarkdownVision(
 
 			// Markdown images have no context — use the
 			// default (no-context) prompt template.
-			prompt, err := buildMarkdownVisionPrompt()
+			prompt, err := figureVisionPromptBuilder("", "", language)
 			if err != nil {
 				return
 			}
@@ -156,15 +156,4 @@ func maybeDispatchMarkdownVision(
 	}
 
 	return dispatched, true, nil
-}
-
-// buildMarkdownVisionPrompt loads the default (no-context) figure
-// describe prompt template, mirroring Python's
-// vision_llm_figure_describe_prompt().
-func buildMarkdownVisionPrompt() (string, error) {
-	template, err := loadDOCXVisionPromptFile(docxVisionPromptFile)
-	if err != nil {
-		return "", fmt.Errorf("markdown vision prompt: %w", err)
-	}
-	return template, nil
 }

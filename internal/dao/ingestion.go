@@ -310,3 +310,23 @@ func (dao *IngestionTaskLogDAO) DeleteByTaskID(ctx context.Context, db *gorm.DB,
 	result := db.WithContext(ctx).Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
 	return result.RowsAffected, result.Error
 }
+
+// DeleteComponentLogsByTaskID removes component lifecycle rows from a new run
+// while preserving checkpoint rows such as run_count for task history.
+func (dao *IngestionTaskLogDAO) DeleteComponentLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
+	var logs []*entity.IngestionTaskLog
+	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Find(&logs).Error; err != nil {
+		return 0, err
+	}
+	ids := make([]int, 0, len(logs))
+	for _, log := range logs {
+		if log != nil && len(log.Checkpoint) == 0 {
+			ids = append(ids, log.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := db.WithContext(ctx).Unscoped().Where("id IN ?", ids).Delete(&entity.IngestionTaskLog{})
+	return result.RowsAffected, result.Error
+}

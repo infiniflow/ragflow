@@ -13,6 +13,7 @@ from rag.advanced_rag.harness.sufficiency import (
     route_sufficiency_verdict,
 )
 from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
+from rag.advanced_rag.harness.stats import in_phase
 from rag.advanced_rag.harness.tools.search import hybrid_search
 
 _LOG = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ Return JSON:
 Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one."""
 
 
+@in_phase("decompose")
 async def decompose_and_search(state: dict, tools) -> dict:
     """Decompose, retrieve, analyze evidence, then iterate with next-hop queries."""
     question = state.get("question", "")
@@ -213,6 +215,37 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 _LOG.info("[Decompose] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
             if boost:
                 _LOG.info("[Decompose] AutoRater is_sufficient=%s confidence=%.2f", boost.get("is_sufficient"), boost.get("confidence", 1.0))
+
+        # LLM groundedness review (Google "draft review"): runs unconditionally so every
+        # decomposed result — including a non-critical-band SUFFICIENT — is groundedness-
+        # validated before the status gate. (The lexical NER grounded check is disabled
+        # in favour of this LLM review, so it must not be skipped on any path.) Ungrounded
+        # claim drafts are merged into hard_violations → decision ladder caveat.
+        from rag.advanced_rag.harness.orchestrator.grounded_llm import llm_grounded_verify
+
+        # Union of cited evidence IDs across all claim results (matches the
+        # agentic orchestrator's cited-evidence behavior) so the reviewer sees
+        # the exact evidence each claim referenced, not a global prefix.
+        cited_evidence_ids: list[str] = []
+        for r in agent_results:
+            cited_evidence_ids.extend(r.evidence_ids or [])
+        grounded = await llm_grounded_verify(
+            tools,
+            ctx.question,
+            [(r.claim_id, r.report or "") for r in agent_results if r.report],
+            cited_evidence_ids or None,
+        )
+        # Treat a claim as violating when it is explicitly grounded=False OR has
+        # non-empty ungrounded assertions (covers the degenerate grounded=False /
+        # empty-ungrounded case too). Only accept IDs that exist in the original
+        # claims collection — the LLM may echo a bogus claim_id, which must not
+        # leak into hard_violations.
+        valid_claim_ids = {r.claim_id for r in agent_results}
+        ungrounded_ids = [cid for cid, g in grounded.items() if cid in valid_claim_ids and (g.get("grounded") is False or g.get("ungrounded"))]
+        if ungrounded_ids:
+            existing = set(verdict.hard_violations or [])
+            verdict.hard_violations = list(existing | set(ungrounded_ids))
+            _LOG.info("[Decompose] %d claim(s) have ungrounded (draft-review) assertions: %s", len(ungrounded_ids), ungrounded_ids)
 
         action, should_continue, caveat = route_sufficiency_verdict(
             verdict,

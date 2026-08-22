@@ -64,7 +64,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
@@ -698,6 +698,10 @@ def list_agents(tenant_id):
     canvas_type = request.args.get("canvas_type")
     owner_ids = [item for item in request.args.get("owner_ids", "").strip().split(",") if item]
     tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as e:
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
 
     page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
     items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
@@ -1177,7 +1181,10 @@ async def update_agent(agent_id, tenant_id):
 
     if req.get("dsl") is not None:
         try:
+            from agent.canvas import Canvas
+
             req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+            Canvas.validate_component_parameters(req["dsl"])
         except ValueError as exc:
             return get_json_result(
                 data=False,
@@ -1592,8 +1599,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 code=RetCode.OPERATING_ERROR,
             )
 
-        # Keep the original workflow execution path, but assign a session_id so the
-        # response shape stays closer to the older agent completion contract.
+        # Load the caller's runtime replica as the workflow template. Session-owned
+        # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
@@ -1684,7 +1691,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             from agent.canvas import Canvas
 
             canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
-            canvas.clear_history()
+            canvas.start_new_session()
         except Exception as exc:
             return server_error_response(exc)
         turn_id = get_uuid()

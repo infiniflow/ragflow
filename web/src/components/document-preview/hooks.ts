@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Authorization } from '@/constants/authorization';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useGetPipelineResultSearchParams } from '@/pages/dataflow-result/hooks';
@@ -347,23 +363,30 @@ export const useCatchDocumentError = (url: string) => {
 const ZOOM_STEPS = [25, 50, 75, 100, 125, 150, 175, 200] as const;
 
 const clampZoom = (scale: number, direction: 1 | -1): number => {
-  let idx = ZOOM_STEPS.indexOf(scale as (typeof ZOOM_STEPS)[number]);
-  if (idx < 0) {
-    if (direction > 0) {
-      idx = ZOOM_STEPS.findIndex((v) => v > scale);
-    } else {
-      for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
-        if (ZOOM_STEPS[i] < scale) {
-          idx = i;
-          break;
-        }
+  const exactIdx = ZOOM_STEPS.indexOf(scale as (typeof ZOOM_STEPS)[number]);
+  let idx: number;
+
+  if (exactIdx >= 0) {
+    // Already on a predefined step: move one step in the zoom direction.
+    idx = exactIdx + direction;
+  } else if (direction > 0) {
+    // Between steps and zooming in: snap up to the next higher step. This
+    // index is already the target, so it must not be advanced again.
+    const next = ZOOM_STEPS.findIndex((v) => v > scale);
+    idx = next < 0 ? ZOOM_STEPS.length - 1 : next;
+  } else {
+    // Between steps and zooming out: snap down to the next lower step.
+    let prev = 0;
+    for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
+      if (ZOOM_STEPS[i] < scale) {
+        prev = i;
+        break;
       }
     }
+    idx = prev;
   }
-  idx = Math.max(
-    0,
-    Math.min(ZOOM_STEPS.length - 1, idx < 0 ? 0 : idx + direction),
-  );
+
+  idx = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx));
   return ZOOM_STEPS[idx] ?? scale;
 };
 

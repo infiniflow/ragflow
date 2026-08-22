@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "generator": "rag/flow/parser/parser.py:_code",
+    "sample": "internal/parser/parser/testdata/textcode.sample.zh.txt",
+    "delimiter": "\n!?;。；！？",
+    "chunk_token_num": 128,
+    "keep_delimiters": true,
+    "separate_tables": false,
+    "accepted_divergences": [],
+    "python_engine": "deepdoc.parser.txt_parser.RAGFlowTxtParser",
+    "note": "No generator script is committed. To regenerate: call _code on the sample with keep_delimiters=True (chunk_token_num=128, default delimiter set), project each merged section to {\"text\": section[0], \"doc_type_kwd\": \"text\"}, then dump {meta, items}. The golden is a NORMALIZED content baseline, not a verbatim Python transcript (see TestTextParser_AlignmentGolden): a fresh _code run at chunk_token_num=128 may merge into a different item count/structure and may collapse inter-sentence newlines, so this file is not byte-exact."
+  },
+  "items": [
+    {
+      "text": "这是第一段中文。逗号不是分隔符，但句号是！第二句以感叹号结尾？第三句以问号结尾。中文段落同样按默认分隔符切分。",
+      "doc_type_kwd": "text"
+    }
+  ]
+}

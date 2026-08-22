@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	syncerconnector "ragflow/internal/syncer/connector"
 )
 
 type connectorServiceIface interface {
@@ -36,9 +38,11 @@ type connectorServiceIface interface {
 	CreateConnector(ctx context.Context, userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
 	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
 	ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
+	ListLogs(ctx context.Context, userID, datasetID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
 	DeleteConnector(ctx context.Context, connectorID, userID string) (bool, common.ErrorCode, error)
 	RebuildConnector(ctx context.Context, connectorID, userID, kbID string) (bool, common.ErrorCode, error)
-	TestConnector(ctx context.Context, connectorID, userID string) error
+	ResumeFailedSync(ctx context.Context, connectorID, userID string, req *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error)
+	TestConnector(ctx context.Context, connectorID, userID string, config entity.JSONMap) error
 	UpdateConnector(ctx context.Context, connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error)
 	StartGoogleWebOAuth(ctx context.Context, userID, source string, req *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error)
 	GoogleWebOAuthCallback(ctx context.Context, source, stateID, oauthError, errorDescription, code string) string
@@ -101,7 +105,9 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
+		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
+	case errors.Is(err, service.ErrConnectorSourceNotImplemented):
+		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
 	default:
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 	}
@@ -234,6 +240,58 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "logs": logs}, "success")
 }
 
+// ListSyncLogs handles GET /api/v1/connectors/sync_logs.
+// Lists sync logs for the current user; when dataset_id is provided, only
+// the logs of that dataset are returned.
+// @Summary list sync logs
+// @Description list sync logs for the current user, optionally filtered by dataset_id
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/connectors/sync_logs [get]
+func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	page := 1
+	pageSize := 15
+	if rawPage := strings.TrimSpace(c.Query("page")); rawPage != "" {
+		parsedPage, err := strconv.Atoi(rawPage)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
+			return
+		}
+		page = parsedPage
+	}
+	if rawPageSize := strings.TrimSpace(c.Query("page_size")); rawPageSize != "" {
+		parsedPageSize, err := strconv.Atoi(rawPageSize)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
+			return
+		}
+		pageSize = parsedPageSize
+	}
+
+	datasetID := strings.TrimSpace(c.Query("dataset_id"))
+
+	ctx := c.Request.Context()
+
+	logs, total, code, err := h.connectorService.ListLogs(ctx, user.ID, datasetID, page, pageSize)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+
+	common.SuccessWithData(c, gin.H{"total": total, "logs": logs}, "success")
+}
+
 // CreateConnector create connector
 // @Summary create Connectors
 // @Description create a connectors for the current user
@@ -279,7 +337,12 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	common.SuccessWithData(c, connector, "success")
 }
 
-// TestConnector validates an accessible connector's stored credentials.
+type testConnectorRequest struct {
+	Source string         `json:"source"`
+	Config entity.JSONMap `json:"config"`
+}
+
+// TestConnector validates connector settings.
 // @Summary Test Connector
 // @Description Validate connector credentials / connection (equivalent to Python's test_connector)
 // @Tags connector
@@ -287,6 +350,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 // @Param connector_id path string true "connector ID"
 // @Router /api/v1/connectors/{connector_id}/test [post]
 func (h *ConnectorHandler) TestConnector(c *gin.Context) {
+	// check user and connector
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -301,14 +365,41 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	err := h.connectorService.TestConnector(ctx, connectorID, user.ID)
-	if errors.Is(err, service.ErrConnectorTestUnsupported) {
+	// build request
+	var request entity.JSONMap
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		var body testConnectorRequest
+		if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
+			return
+		}
+		// get source and config from web
+		if body.Source != "" || body.Config != nil {
+			request = entity.JSONMap{
+				"source": body.Source,
+				"config": body.Config,
+			}
+		}
+	}
+
+	err := h.connectorService.TestConnector(ctx, connectorID, user.ID, request)
+	if errors.Is(err, service.ErrConnectorTestUnsupported) || errors.Is(err, service.ErrConnectorSourceNotImplemented) {
 		connectorErrorResponse(c, err)
 		return
 	}
 	if err != nil && !errors.Is(err, service.ErrConnectorNoAuth) && !errors.Is(err, service.ErrConnectorNotFound) {
-		// Validation failure (e.g. missing credentials): mirror Python's DATA_ERROR with data=false.
-		common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
+		// Schema/credential validation failures map to DATA_ERROR;
+		// anything unexpected falls back to SERVER_ERROR.
+		var (
+			valErr  *syncerconnector.ConnectorValidationError
+			credErr *syncerconnector.ConnectorMissingCredentialError
+			rateErr *syncerconnector.RateLimitTriedTooManyTimesError
+		)
+		if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
+			common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
 	}
 	if connectorErrorResponse(c, err) {
@@ -377,6 +468,36 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		return
 	}
 
+	common.SuccessWithData(c, ok, "success")
+}
+
+// ResumeFailedSync resumes a failed connector sync task from checkpoint. (when network outage)
+// @Summary Resume Failed Connector Sync
+// @Description Resume a failed connector sync task from its saved checkpoint
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /connector/:connector_id/resume-failed-sync [post]
+func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.ResumeFailedSyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "required argument is missing: kb_id or task_id")
+		return
+	}
+
+	ctx := c.Request.Context()
+	ok, code, err := h.connectorService.ResumeFailedSync(ctx, c.Param("connector_id"), user.ID, &req)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
 	common.SuccessWithData(c, ok, "success")
 }
 

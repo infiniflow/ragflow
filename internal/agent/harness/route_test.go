@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"gorm.io/gorm"
@@ -178,5 +179,32 @@ func TestPlannerNode_BadJSONFallsBack(t *testing.T) {
 	}, nil)
 	if plan.PlanType != "direct" || len(plan.Claims) != 1 {
 		t.Fatalf("fallback plan = %+v, want direct", plan)
+	}
+}
+
+// TestUnmarshalModelJSON pins unmarshalModelJSON: think preamble and Markdown
+// fences are stripped before JSON parsing, and an empty payload yields {}.
+func TestUnmarshalModelJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want map[string]any
+	}{
+		{name: "plain json", in: `{"answer":"42"}`, want: map[string]any{"answer": "42"}},
+		{name: "think prefix", in: `<think>reason</think>{"answer":"42"}`, want: map[string]any{"answer": "42"}},
+		{name: "json fence", in: "```json\n{\"answer\":\"42\"}\n```", want: map[string]any{"answer": "42"}},
+		{name: "think then fence", in: "<think>r</think>```json\n{\"answer\":\"42\"}\n```", want: map[string]any{"answer": "42"}},
+		{name: "empty becomes empty object", in: "", want: map[string]any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out map[string]any
+			if err := unmarshalModelJSON(tt.in, &out); err != nil {
+				t.Fatalf("unmarshalModelJSON(%q): %v", tt.in, err)
+			}
+			if !reflect.DeepEqual(out, tt.want) {
+				t.Errorf("unmarshalModelJSON(%q) = %#v, want %#v", tt.in, out, tt.want)
+			}
+		})
 	}
 }

@@ -46,12 +46,13 @@ export function UpdateRunProgress({
         <span className="size-2 rounded-full bg-accent-primary" />
         {data?.compilationError
           ? data.compilationError
-          : t('knowledgeDetails.compiling', {
+          : data?.currentPhase ||
+            t('knowledgeCompilation.compiling', {
               defaultValue: 'Compiling…',
             })}
         {!data?.compilationError && (
           <span>
-            {t('knowledgeDetails.compilingCounts', {
+            {t('knowledgeCompilation.compilingCounts', {
               inflight: data?.inflight ?? 0,
               backlog: data?.backlog ?? 0,
               defaultValue: '{{inflight}} processing / {{backlog}} queued',

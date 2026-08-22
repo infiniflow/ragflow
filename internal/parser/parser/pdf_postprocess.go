@@ -9,7 +9,11 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
-var pdfHeaderFooterPattern = regexp.MustCompile(`(?i)^(header|footer|number)$`)
+// Substring match to mirror Python's remove_header_footer:
+// re.search(r"(header|footer|number)", raw_layout, re.I) (rag/flow/parser/parser.py:754).
+// Python matches any layout type CONTAINING one of these words, not just the
+// exact token, so a composite label like "page-footer" is also stripped.
+var pdfHeaderFooterPattern = regexp.MustCompile(`(?i)header|footer|number`)
 var pdfTOCTitlePattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
 
 type pdfPostProcessOptions struct {
@@ -76,7 +80,7 @@ func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult, flatten bool) {
 		default:
 			// doc_type_kwd is derived from layout, not from whether a
 			// section image was cropped. Cropping happens lazily at
-			// markdown serialization / chunk time, so it must not
+			// Markdown serialization / chunk time, so it must not
 			// influence classification here (otherwise every positioned
 			// text box would be mislabeled "image").
 			section.DocTypeKwd = "text"

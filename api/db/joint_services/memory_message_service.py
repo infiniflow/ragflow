@@ -60,6 +60,8 @@ async def save_to_memory(memory_id: str, message_dict: dict):
             get_memory_type_human(memory.memory_type),
             message_dict.get("user_input", ""),
             message_dict.get("agent_response", ""),
+            system_prompt=memory.system_prompt,
+            user_prompt=memory.user_prompt,
             llm_id=memory.llm_id,
         )
         if memory.memory_type != MemoryType.RAW.value
@@ -124,6 +126,8 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
         message_dict.get("agent_response", ""),
+        system_prompt=memory.system_prompt,
+        user_prompt=memory.user_prompt,
         task_id=task_id,
         llm_id=memory.llm_id,
     )
@@ -194,8 +198,8 @@ async def extract_by_llm(
         return [
             {
                 "content": extracted_content["content"],
-                "valid_at": format_iso_8601_to_ymd_hms(extracted_content["valid_at"]),
-                "invalid_at": format_iso_8601_to_ymd_hms(extracted_content["invalid_at"]) if extracted_content.get("invalid_at") else "",
+                "valid_at": format_iso_8601_to_ymd_hms(extracted_content.get("valid_at", ""), fallback=conversation_time),
+                "invalid_at": format_iso_8601_to_ymd_hms(extracted_content["invalid_at"], fallback="") if extracted_content.get("invalid_at") else "",
                 "message_type": message_type,
             }
             for message_type, extracted_content_list in res_json.items()
@@ -229,7 +233,7 @@ async def embed_and_save(memory, message_list: list[dict], task_id: str = None):
                 return False, error_msg
 
         new_msg_size = sum([MessageService.calculate_message_size(m) for m in message_list])
-        current_memory_size = get_memory_size_cache(memory.tenant_id, memory.id)
+        current_memory_size = get_memory_size_cache(memory.id, memory.tenant_id)
         if new_msg_size + current_memory_size > memory.memory_size:
             size_to_delete = current_memory_size + new_msg_size - memory.memory_size
             if memory.forgetting_policy == "FIFO":
@@ -362,7 +366,7 @@ def fix_missing_tokenized_memory():
 
 def judge_system_prompt_is_default(system_prompt: str, memory_type: int | list[str]):
     memory_type_list = memory_type if isinstance(memory_type, list) else get_memory_type_human(memory_type)
-    return system_prompt == PromptAssembler.assemble_system_prompt({"memory_type": memory_type_list})
+    return PromptAssembler.is_default_system_prompt(system_prompt, {"memory_type": memory_type_list})
 
 
 async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):

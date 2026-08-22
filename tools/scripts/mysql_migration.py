@@ -33,12 +33,12 @@ import uuid
 
 from packaging.version import InvalidVersion, Version
 from peewee import (
-    CharField,
-    IntegerField,
     BigIntegerField,
+    CharField,
     DateTimeField,
-    MySQLDatabase,
+    IntegerField,
     Model,
+    MySQLDatabase,
     PrimaryKeyField,
     TextField,
 )
@@ -772,9 +772,11 @@ class TenantModelStage(MigrationStage):
         # We cannot JOIN tenant_model_instance on api_key directly because the instance
         # stage deduped api_keys (stripping is_tools), so a plain SQL equality won't
         # match records whose api_key was merged. Count at the provider level instead.
+        # Use a constant instead of tl.id: very old tenant_llm tables may lack the
+        # id column, and the count only cares about the number of rows.
         cursor = self.db.execute_sql(
             f"SELECT COUNT(*) FROM ("
-            f"  SELECT tl.id "
+            f"  SELECT 1 "
             f"  FROM tenant_llm tl "
             f"  INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
             f"  WHERE {status_condition} "
@@ -817,6 +819,14 @@ class TenantModelStage(MigrationStage):
         if self.create_table_only:
             logger.info("[CREATE TABLE ONLY] Target table created/verified, skipping data migration")
             return 0, self.target_tables
+
+        # Very old tenant_llm tables may lack the id column, while the migration
+        # SELECT below relies on it (source_id for audit logging). Add an
+        # auto-increment id column in place before running the data comparison
+        # and inserts. Fail hard when it cannot be ensured: silently returning
+        # would let the runner mark this stage as completed without migrating.
+        if not self._ensure_tenant_llm_id_column():
+            raise RuntimeError("tenant_llm has no 'id' column and it could not be added; aborting tenant_model stage")
 
         status_condition = self._build_status_condition()
 
@@ -895,6 +905,35 @@ class TenantModelStage(MigrationStage):
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
 
         return rows_inserted, self.target_tables
+
+    def _ensure_tenant_llm_id_column(self) -> bool:
+        """Ensure tenant_llm has an id column, adding an auto-increment one if missing.
+
+        Very old tenant_llm tables may predate the id column, while the migration
+        SELECT relies on it (tl.id is carried as source_id for audit logging).
+        The id is only used as a unique audit key, so it is added as an
+        AUTO_INCREMENT UNIQUE column rather than PRIMARY KEY: old tables may
+        already have another primary key. MySQL back-fills existing rows with
+        sequential values when adding an AUTO_INCREMENT column.
+
+        Returns:
+            True if the column exists (or was added successfully), False otherwise.
+        """
+        if self.db.column_exists("tenant_llm", "id"):
+            return True
+
+        logger.warning("Source table 'tenant_llm' has no 'id' column, adding auto-increment id column")
+        if self.dry_run:
+            logger.info("[DRY RUN] Would ALTER TABLE tenant_llm to add auto-increment id column")
+            return False
+
+        try:
+            self.db.execute_sql("ALTER TABLE tenant_llm ADD COLUMN id BIGINT AUTO_INCREMENT UNIQUE")
+        except Exception as e:
+            logger.error(f"Failed to add auto-increment id column to tenant_llm: {e}")
+            return False
+        logger.info("Added auto-increment id column to tenant_llm")
+        return True
 
     def _build_instance_lookup(self) -> dict:
         """Load all tenant_model_instance records, indexed by (provider_id, canonical_api_key).
@@ -2110,10 +2149,10 @@ Examples:
   python mysql_migration.py --list-stages
 
   # Check whether migration is needed for a target version
-  python mysql_migration.py --check-database-version --database-version v0.26.4 --config /path/to/config.yaml
+  python mysql_migration.py --check-database-version --database-version v0.27.0 --config /path/to/config.yaml
 
   # Mark database version separately
-  python mysql_migration.py --mark-database-version --database-version v0.26.4 --config /path/to/config.yaml
+  python mysql_migration.py --mark-database-version --database-version v0.27.0 --config /path/to/config.yaml
 
   # Dry run (default - check only, no write) with config file
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml
@@ -2127,11 +2166,11 @@ Examples:
   # Execute full migration (create tables and migrate data)
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute
 
-  # Execute migration only when database version is lower than v0.26.4
-  python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute --database-version v0.26.4
+  # Execute migration only when database version is lower than v0.27.0
+  python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute --database-version v0.27.0
 
   # Execute migration and mark the database version when all stages succeed
-  python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config --config /path/to/config.yaml --execute --database-version v0.26.4 --mark-database-version-on-success
+  python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config --config /path/to/config.yaml --execute --database-version v0.27.0 --mark-database-version-on-success
 
   # Normalize legacy model IDs in stored configs
   python mysql_migration.py --stages model_id_config --config /path/to/config.yaml --execute

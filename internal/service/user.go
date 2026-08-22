@@ -203,7 +203,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		RerankID:  rerankID,
 		TTSID:     &ttsID,
 		OCRID:     &ocrID,
-		ParserIDs: "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
 	userTenantID := utility.GenerateToken()

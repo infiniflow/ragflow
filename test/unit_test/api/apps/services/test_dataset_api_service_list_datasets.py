@@ -32,7 +32,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 pytestmark = pytest.mark.p2
 
 
@@ -79,6 +78,9 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     get_list_mock = MagicMock(return_value=(list(kbs), len(kbs)))
     get_accessible_ids_mock = MagicMock(return_value={kb["id"] for kb in kbs})
 
+    _stub(monkeypatch, "api.apps", __path__=[])
+    _stub(monkeypatch, "api.apps.services", __path__=[])
+    _stub(monkeypatch, "api.apps.services.structure_graph_common")
     _stub(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
@@ -94,6 +96,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
         PipelineTaskType=SimpleNamespace(),
         StatusEnum=SimpleNamespace(),
+        RetCode=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(
@@ -172,10 +175,13 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         thread_pool_exec=MagicMock(),
         thread_pool_exec_long_time=MagicMock(),
     )
+    _stub(monkeypatch, "rag.advanced_rag", __path__=[])
+    _stub(monkeypatch, "rag.advanced_rag.knowlege_compile", __path__=[])
     _stub(
         monkeypatch,
         "rag.advanced_rag.knowlege_compile.wiki",
         WIKI_PAGE_COMPILE_KWD="wiki",
+        _chunk_hash=lambda content: "stub-hash",
     )
 
     repo_root = Path(__file__).resolve().parents[5]
@@ -366,3 +372,118 @@ def test_list_datasets_with_include_parsing_status_missing_kb_gets_empty_dict(mo
     assert by_id["kb-a"]["parsing_status"]["unstart_count"] == 1
     assert by_id["kb-b"]["parsing_status"] == {}
     parsing_status_mock.assert_called_once()
+
+
+def test_string_list_decodes_legacy_json_and_native_arrays(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    assert module._string_list('["doc_1", "doc_2"]') == ["doc_1", "doc_2"]
+    assert module._string_list(["doc_1", "doc_2", "doc_1"]) == ["doc_1", "doc_2"]
+    assert module._string_list("doc_1###doc_2") == ["doc_1", "doc_2"]
+
+
+def test_wiki_alteration_treats_wiki_template_as_eligible(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+    _stub(
+        monkeypatch,
+        "api.db.services.compilation_template_service",
+        CompilationTemplateService=SimpleNamespace(
+            get_saved=lambda template_id, tenant_id: {
+                "id": template_id,
+                "kind": "wiki",
+                "config": {"kind": "wiki"},
+            }
+        ),
+    )
+    _stub(monkeypatch, "rag.svr", __path__=[])
+    _stub(monkeypatch, "rag.svr.task_executor_refactor", __path__=[])
+    _stub(
+        monkeypatch,
+        "rag.svr.task_executor_refactor.chunk_post_processor",
+        _parser_config_compilation_template_ids=lambda parser_config, tenant_id: parser_config.get("compilation_template_ids", []),
+    )
+
+    docs = [
+        {
+            "id": "doc-wiki",
+            "status": "1",
+            "parser_config": {"compilation_template_ids": ["template-wiki"]},
+        }
+    ]
+
+    assert module._eligible_doc_ids_for_kind(docs, "tenant-1", "wiki") == {"doc-wiki"}
+
+
+@pytest.mark.asyncio
+async def test_wiki_chunk_alteration_uses_full_successful_state(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    previous = {
+        "chunk-changed": {"doc_id": "doc-existing", "hash": "old"},
+        "chunk-deleted": {"doc_id": "doc-existing", "hash": "same"},
+        "chunk-template-off": {"doc_id": "doc-template-off", "hash": "same"},
+        "chunk-removed-doc": {"doc_id": "doc-removed", "hash": "same"},
+    }
+    current = {
+        "chunk-changed": {"doc_id": "doc-existing", "hash": "new"},
+        "chunk-new-existing": {"doc_id": "doc-existing", "hash": "same"},
+        "chunk-new-document": {"doc_id": "doc-new", "hash": "same"},
+    }
+
+    async def _load_state(tenant_id, dataset_id):
+        return previous
+
+    async def _scan_state(tenant_id, dataset_id, doc_ids):
+        assert doc_ids == {"doc-existing", "doc-new"}
+        return current
+
+    def _compare_states(old, new):
+        old_ids = set(old)
+        new_ids = set(new)
+        common = old_ids & new_ids
+        return {
+            "new_chunk_ids": new_ids - old_ids,
+            "changed_chunk_ids": {chunk_id for chunk_id in common if old[chunk_id]["hash"] != new[chunk_id]["hash"]},
+            "deleted_chunk_ids": old_ids - new_ids,
+            "unchanged_chunk_ids": {chunk_id for chunk_id in common if old[chunk_id]["hash"] == new[chunk_id]["hash"]},
+        }
+
+    _stub(
+        monkeypatch,
+        "rag.advanced_rag.knowlege_compile.wiki",
+        _wiki_compare_chunk_states=_compare_states,
+        _wiki_load_active_map_state=_load_state,
+        _wiki_scan_current_chunk_state=_scan_state,
+    )
+
+    result = await module._wiki_chunk_alteration(
+        "tenant-1",
+        "kb-1",
+        {"doc-existing", "doc-new"},
+        {"doc-existing", "doc-template-off", "doc-removed"},
+    )
+
+    assert result == {
+        "changed": 1,
+        "changed_doc_ids": ["doc-existing"],
+    }
+
+    membership = module._alteration_result(
+        {"doc-existing", "doc-new"},
+        {"doc-existing", "doc-template-off", "doc-removed"},
+        {"doc-existing", "doc-new"},
+    )
+    assert membership["removed_doc_ids"] == ["doc-removed", "doc-template-off"]
+    assert membership["newly_uploaded_doc_ids"] == ["doc-new"]

@@ -101,20 +101,27 @@ class Graph:
 
     def load(self):
         self.components = self.dsl["components"]
-        cpn_nms = set([])
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
+        for cpn in self.components.values():
             cpn["obj"]["params"]["custom_header"] = self.custom_header
+
+        component_params = self.validate_component_parameters(self.dsl)
+        for k, cpn in self.components.items():
+            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
+
+        self.path = self.dsl["path"]
+
+    @staticmethod
+    def validate_component_parameters(dsl):
+        component_params = {}
+        for k, cpn in dsl["components"].items():
+            param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
             except Exception as e:
-                raise ValueError(self.get_component_name(k) + f": {e}")
-
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-
-        self.path = self.dsl["path"]
+                raise ValueError(Graph._get_component_name(dsl, k) + f": {e}")
+            component_params[k] = param
+        return component_params
 
     def __str__(self):
         self.dsl["path"] = self.path
@@ -161,25 +168,30 @@ class Graph:
             logging.exception(e)
 
     def close(self):
-        from common.mcp_tool_call_conn import MCPToolCallSession
+        from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession
 
         seen = set()
         for cpn in self.components.values():
             obj = cpn.get("obj")
             if obj and hasattr(obj, "tools"):
                 for tool in obj.tools.values():
-                    if isinstance(tool, MCPToolCallSession) and id(tool) not in seen:
-                        seen.add(id(tool))
+                    session = tool if isinstance(tool, MCPToolCallSession) else (tool.session if isinstance(tool, MCPToolBinding) else None)
+                    if isinstance(session, MCPToolCallSession) and id(session) not in seen:
+                        seen.add(id(session))
                         try:
-                            tool.close_sync(timeout=3)
+                            session.close_sync(timeout=3)
                         except Exception:
-                            pass
+                            logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
 
-    def get_component_name(self, cid):
-        for n in self.dsl.get("graph", {}).get("nodes", []):
+    @staticmethod
+    def _get_component_name(dsl, cid):
+        for n in dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
                 return n["data"]["name"]
         return ""
+
+    def get_component_name(self, cid):
+        return self._get_component_name(self.dsl, cid)
 
     def run(self, **kwargs):
         raise NotImplementedError()
@@ -335,7 +347,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": [],
             "sys.history": [],
-            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.variables = {}
         # Aggregated provider token usage (prompt/completion/total) across every LLM
@@ -354,7 +366,7 @@ class Canvas(Graph):
             if "sys.history" not in self.globals:
                 self.globals["sys.history"] = []
             if "sys.date" not in self.globals:
-                self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
                 "sys.query": "",
@@ -362,7 +374,7 @@ class Canvas(Graph):
                 "sys.conversation_turns": 0,
                 "sys.files": [],
                 "sys.history": [],
-                "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -378,10 +390,12 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
-    def clear_history(self):
+    def start_new_session(self):
+        """Discard replica state that must not leak into a fresh session."""
         self.history = []
-        if isinstance(self.globals.get("sys.history"), list):
-            self.globals["sys.history"] = []
+        self.globals["sys.history"] = []
+        self.path = []
+        _logger.debug("Canvas conversation history and execution path reset for a new session")
 
     def reset(self, mem=False):
         super().reset()
@@ -468,7 +482,7 @@ class Canvas(Graph):
             reset_llm_request_context(_req_ctx_token)
 
     async def _run_impl(self, **kwargs):
-        self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()

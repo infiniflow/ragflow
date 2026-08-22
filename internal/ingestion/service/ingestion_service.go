@@ -335,11 +335,11 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		select {
 		case e.taskChan <- taskCtx:
 			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
-		default:
-			common.Info(fmt.Sprintf("No available slot for memory task %s, nack", taskMessage.TaskID))
-			if nackErr := handle.Nack(); nackErr != nil {
-				common.Error(fmt.Sprintf("error nack memory task %s", taskMessage.TaskID), nackErr)
-			}
+		case <-e.ctx.Done():
+			// Shutdown won the race: return without settling so the broker
+			// redelivers the memory task after restart.
+			common.Info(fmt.Sprintf("Ingestor shutting down; memory task %s not enqueued", taskMessage.TaskID))
+			return
 		}
 		return
 	}
@@ -414,17 +414,29 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
 
-	// Push to task channel; if full, reject the task (backpressure).
+	// Push to the task channel. Use a blocking send so backpressure is
+	// applied at the consumer: the consume loop waits for a free worker slot
+	// instead of dropping the message. Dropping on backpressure is unsafe
+	// because StartRunning (above) has already flipped the task — and its
+	// document — to RUNNING in the DB, and there is no scan-and-re-enqueue
+	// path on completion. A Nack that exceeds the broker's MaxDeliver (16,
+	// with no dead-letter in nats.go) would permanently lose the task and
+	// leave the document stuck in RUNNING — the "files get stuck after the
+	// first few parse" defect.
+	//
+	// The in-flight claim (set just above) guards against a redelivery racing
+	// the blocked send: a duplicate delivery sees claimTask fail and is
+	// ack-skipped, so a blocking send cannot double-execute a task.
 	select {
 	case e.taskChan <- taskCtx:
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
-	default:
-		common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
-		// claimedTaskID is still set; defer will call releaseTask.
-		if nackErr := handle.Nack(); nackErr != nil {
-			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
-		}
+	case <-e.ctx.Done():
+		// Shutdown won the race: release the claim and return without
+		// settling so the broker redelivers the message after restart
+		// rather than blocking the consume loop forever.
+		common.Info(fmt.Sprintf("Ingestor shutting down; releasing slot for task %s without ack", task.ID))
+		return
 	}
 }
 
@@ -587,13 +599,29 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
-		return e.markStopped(context.Background(), task.ID)
+		stopped := e.markStopped(context.Background(), task.ID)
+		if stopped {
+			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
+		}
+		return stopped
 	default:
 	}
 
 	if err := e.ingestionTaskSvc.IncrementRunCount(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
+	}
+	if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
+		common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
@@ -614,15 +642,27 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
-			return e.markStopped(ctx, task.ID)
+			stopped := e.markStopped(ctx, task.ID)
+			if stopped {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
+			}
+			return stopped
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTimeoutProgress(task)
-			return e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task.ID)
+			if ok {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			}
+			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
 
 	if err := e.completeTask(ctx, task.ID); err != nil {
@@ -963,6 +1003,20 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	}
 	e.docState.apply(ctx, result)
 	return nil
+}
+
+func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status string) {
+	if ingestionTask == nil || status == "" {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, taskpkg.PipelineLogInput{
+		KbID:       ingestionTask.DatasetID,
+		DocumentID: ingestionTask.DocumentID,
+		Status:     status,
+	}); err != nil {
+		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
+	}
 }
 
 // Stop gracefully shuts down the ingestor. It cancels the root context so

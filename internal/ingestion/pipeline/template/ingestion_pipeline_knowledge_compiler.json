@@ -187,9 +187,9 @@
                 "obj": {
                     "component_name": "Compiler",
                     "params": {
+                        "compilation_template_group_id": "",
                         "llm_id": "",
-                        "variant": "structure",
-                        "language": "English"
+                        "plan": false
                     }
                 },
                 "upstream": [

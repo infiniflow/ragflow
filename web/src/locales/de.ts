@@ -474,9 +474,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       linkSourceSetTip:
         'Verknüpfung der Datenquelle mit diesem Datensatz verwalten',
       linkDataSource: 'Datenquelle verknüpfen',
-      tocExtraction: 'Inhaltsverzeichnis verbessern',
-      tocExtractionTip:
-        'Für vorhandene Chunks, generieren Sie ein hierarchisches Inhaltsverzeichnis (ein Verzeichnis pro Datei). Bei Abfragen, wenn die Verzeichnisverbesserung aktiviert ist, verwendet das System ein großes Modell, um zu bestimmen, welche Verzeichniselemente für die Frage des Benutzers relevant sind, und identifiziert so die relevanten Chunks.',
       deleteGenerateModalContent: `
         <p>Das Löschen der generierten <strong class='text-text-primary'>{{type}}</strong> Ergebnisse
         entfernt alle abgeleiteten Entitäten und Beziehungen aus diesem Datensatz.
@@ -546,6 +543,12 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       dialogueExamplesTitle: 'Dialogbeispiele',
       methodEmpty:
         'Hier wird eine visuelle Erklärung der Wissensdatenbank-Kategorien angezeigt',
+      audio: `<p>Unterstützte Dateiformate sind <b>WAV, MP3, AAC, FLAC, OGG</b> und andere gängige Audioformate.</p>
+<p>Diese Methode transkribiert Audiodateien mithilfe eines Speech-to-Text-Modells in Text.</p>`,
+      email: `<p>Unterstützte Dateiformate sind <b>EML</b> und <b>MSG</b>.</p>
+<p>Diese Methode analysiert E-Mail-Dateien und extrahiert Kopfzeilen (wie Von, An, CC, Betreff und Datum), den Nachrichtentext und Anhänge.</p>`,
+      knowledgeCompiler: `<p>Diese Pipeline parst und zerlegt Dateien in Chunks und kompiliert die Chunks anschließend über die Knowledge-Compiler-Komponente in strukturierte Wissenseinheiten (Wissensgraph, Wiki, RAPTOR, Mindmap oder Datensatznavigation).</p>
+<p>Die kompilierten Wissenseinheiten werden als Chunks in den Chunk-Strom eingespeist – ideal, um auf Basis der zerlegten Dokumente eine durchsuchbare Wissensebene aufzubauen.</p>`,
       book: `<p>Unterstützte Dateiformate sind <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Für jedes Buch im PDF-Format stellen Sie bitte die <i>Seitenbereiche</i> ein, um unerwünschte Informationen zu entfernen und die Analysezeit zu reduzieren.</p>`,
       laws: `<p>Unterstützte Dateiformate sind <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -1389,7 +1392,7 @@ Beispiel: Virtual Hosted Style`,
         chat: 'Chat',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'Img2txt',
         speech2text: 'ASR',

@@ -27,7 +27,8 @@ from quart import Response, request
 from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
-from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config, resolve_llm_setting
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
+from api.db.services.llm_service import resolve_llm_setting
 from api.db.joint_services.tenant_model_service import (
     get_api_key,
     get_composite_model_name_by_id,
@@ -51,7 +52,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
+from api.utils.pagination_utils import validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -509,6 +510,11 @@ async def list_chats():
 
     if orderby not in ("create_time", "update_time", "name"):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
+
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as ex:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(ex))
 
     try:
         # Invalid or negative pagination values fall back to defaults
@@ -1146,6 +1152,8 @@ async def transcription():
             os.remove(temp_audio_path)
         except Exception as e:
             logging.error(f"Failed to remove temp audio file: {str(e)}")
+        if "**ERROR**" in text:
+            return get_data_error_result(message=text)
         return get_json_result(data={"text": text})
 
     async def event_stream():
@@ -1297,6 +1305,7 @@ async def session_completion(chat_id_in_arg=""):
             if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
+            dia.tenant_llm_id = None
             dia.llm_setting = chat_model_config
         elif not dia.llm_id:
             logging.info("empty chat_model_id in req, use default chat model.")

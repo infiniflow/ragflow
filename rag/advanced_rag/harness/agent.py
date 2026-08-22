@@ -15,18 +15,19 @@ import json
 import logging
 import re
 
-from rag.advanced_rag.harness.types import ClaimTarget, ExecutionStrategy, ToolResult
 from rag.advanced_rag.harness.pipeline import Pipeline
-from rag.advanced_rag.harness.tools.gating import (
-    get_gated_tools,
-    determine_current_phase,
-    SEARCH_PHASES,
-)
-from rag.advanced_rag.harness.tools.registry import _generate_report_schema, _think_schema
 from rag.advanced_rag.harness.prompts.research_agent_prompt import (
     RESEARCH_AGENT_PROMPT,
     RESEARCH_AGENT_TEXT_PROMPT,
 )
+from rag.advanced_rag.harness.stats import in_phase
+from rag.advanced_rag.harness.tools.gating import (
+    SEARCH_PHASES,
+    determine_current_phase,
+    get_gated_tools,
+)
+from rag.advanced_rag.harness.tools.registry import _generate_report_schema, _think_schema
+from rag.advanced_rag.harness.types import ClaimTarget, ExecutionStrategy, ToolResult
 
 _LOG = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class ResearchToolSession:
         self.evidence_ids: list[int] = []
         self._seen_evidence_ids: set[int] = set()
 
-    async def tool_call_async(self, name: str, arguments: dict, request_timeout: float | int = 300):
+    async def tool_call_async(self, name: str, arguments: dict, request_timeout: float = 300):
         arguments = arguments or {}
         if name == "generate_report":
             self.report = self._normalize_report(arguments)
@@ -87,24 +88,58 @@ class ResearchToolSession:
             if isinstance(ans, tuple):
                 ans = ans[0]
             ans = re.sub(r"^.*</think>", "", ans or "", flags=re.DOTALL)
-            _LOG.exception("[Navigation] sufficiency check: %s", ans)
+            _LOG.debug("[Navigation] sufficiency check: %s", ans)
             return ans.strip().lower().startswith("yes")
         except Exception:
             _LOG.exception("[Navigation] sufficiency check failed")
             return False
 
     def _normalize_report(self, report: dict) -> dict:
+        if not isinstance(report, dict):
+            # Unstrusted text-path parser output; never crash on it.
+            _LOG.warning("normalize_report: expected dict, got %s; using empty report", type(report).__name__)
+            report = {}
         normalized = dict(report)
+        recorded = set(self.evidence_ids)
         evidence_ids = []
-        for eid in normalized.get("evidence_ids") or []:
+        # The schema requires evidence_ids to be a list of integers. A scalar or
+        # string would either raise or, worse, let the loop walk characters as
+        # IDs, so coerce anything else to an empty list first.
+        raw_evidence_ids = normalized.get("evidence_ids")
+        if not isinstance(raw_evidence_ids, list):
+            raw_evidence_ids = []
+        for eid in raw_evidence_ids:
+            # The schema permits integer IDs only. Reject booleans and floats
+            # before conversion: int(True) == 1 and int(1.9) == 1 would both
+            # silently become valid indexes, retaining evidence the model never
+            # referenced. Keep only ints and numeric strings.
+            if isinstance(eid, bool) or not isinstance(eid, (int, str)):
+                continue
             try:
                 idx = int(eid)
-            except (TypeError, ValueError):
+            except ValueError:
                 continue
-            if idx not in evidence_ids:
-                evidence_ids.append(idx)
-        if not evidence_ids and self.evidence_ids:
-            evidence_ids = list(self.evidence_ids)
+            # Restrict to chunks this claim actually recorded. Claims are
+            # researched concurrently over a *shared* kbinfos pool, so a model
+            # can otherwise cite another claim's chunk (or an out-of-range
+            # index) via an arbitrary evidence_id.
+            if idx in recorded:
+                if idx not in evidence_ids:
+                    evidence_ids.append(idx)
+            elif recorded:
+                _LOG.warning(
+                    "evidence_id %s not in claim's recorded set (size=%d); dropping",
+                    idx,
+                    len(recorded),
+                )
+        if not evidence_ids:
+            # Do NOT repurpose every recorded chunk as a citation: evidence_ids
+            # means the chunks the report actually references, and the schema
+            # defines it that way. When no valid ID remains, leave it empty and
+            # mark the report unverified so downstream verifiers (which combine
+            # evidence_ids + is_verified + confidence) cannot mistake unrelated
+            # chunks for supporting evidence.
+            normalized["is_verified"] = False
         normalized["evidence_ids"] = evidence_ids
         return normalized
 
@@ -138,6 +173,7 @@ def _build_tool_schemas(gated_defs: list[dict]) -> list[dict]:
     return schemas
 
 
+@in_phase("claim_research")
 async def research_agent_loop(
     claim: ClaimTarget,
     tools,
@@ -157,7 +193,7 @@ async def research_agent_loop(
     per-claim would race: the first claim to execute would clear it, starving
     the rest).
     """
-    phase = determine_current_phase(context)
+    phase = determine_current_phase(context, claim=claim)
     phase_config = SEARCH_PHASES.get(phase, {})
     gated_defs = get_gated_tools(
         phase=phase,
@@ -166,15 +202,32 @@ async def research_agent_loop(
         context=context,
         has_routed_scope=bool(getattr(pipeline, "_routed_docs", None)),
         web_enabled=bool(getattr(tools, "has_web", lambda: False)()),
+        claim=claim,
     )
+
+    pipeline._active_phase = phase
+    pipeline._round_had_evidence = False
+    pipeline._round_had_routed_scope_progress = False
 
     # Clone so binding tools never leaks onto the shared chat model.
     agent_mdl = tools.chat_mdl.clone()
     if getattr(agent_mdl, "is_tools", False):
-        return await _research_native(claim, agent_mdl, pipeline, phase, phase_config, gated_defs, mode, followups)
+        result = await _research_native(claim, agent_mdl, pipeline, phase, phase_config, gated_defs, mode, followups)
+    else:
+        _LOG.info("research_agent: model lacks native tool support; falling back to text-based tool selection")
+        result = await _research_text(claim, tools, pipeline, phase, phase_config, gated_defs, mode, followups)
 
-    _LOG.info("research_agent: model lacks native tool support; falling back to text-based tool selection")
-    return await _research_text(claim, tools, pipeline, phase, phase_config, gated_defs, mode, followups)
+    # Bookkeeping for locate-phase web fallback: a locate round that produced
+    # evidence chunks or newly routed document scope counts as progress and
+    # resets this claim's streak. Pre-existing request doc_scope does not
+    # count: only scope produced by this round should prevent the fallback.
+    # The phase stays `locate`; gating.py decides when repeated locate
+    # failures should admit `web_search` into the candidate tool set.
+    if pipeline._round_had_evidence or pipeline._round_had_routed_scope_progress:
+        claim.locate_empty_streak = 0
+    elif phase == "locate":
+        claim.locate_empty_streak += 1
+    return result
 
 
 async def _research_native(
@@ -192,8 +245,9 @@ async def _research_native(
     session = ResearchToolSession(pipeline, phase, claim)
     agent_mdl.bind_tools(session, schemas)
     # Bound the model's internal tool loop to the mode's agent-cycle budget.
+    base_rounds = max(1, mode.max_agent_cycles)
     if hasattr(agent_mdl, "mdl") and hasattr(agent_mdl.mdl, "max_rounds"):
-        agent_mdl.mdl.max_rounds = max(1, mode.max_agent_cycles)
+        agent_mdl.mdl.max_rounds = base_rounds
 
     system = RESEARCH_AGENT_PROMPT.format(
         claim_description=claim.description,
@@ -247,12 +301,15 @@ async def _research_text(
     followups: list[str] | None = None,
 ) -> dict:
     """Fallback: prompt-based tool selection for models without native tools."""
+    # Mirror the native path's cycle budget; the locate→web_search fallback is
+    # handled by gating.get_gated_tools injecting web_search into the tool set.
+    text_max_cycles = mode.max_agent_cycles
     system = RESEARCH_AGENT_TEXT_PROMPT.format(
         claim_description=claim.description,
         phase=phase,
         phase_hint=phase_config.get("tool_hint", ""),
         tool_list=_fmt_tool_list(gated_defs),
-        max_cycles=mode.max_agent_cycles,
+        max_cycles=text_max_cycles,
     )
 
     history: list[dict] = []
@@ -264,7 +321,11 @@ async def _research_text(
             }
         )
 
-    for cycle in range(mode.max_agent_cycles):
+    # Use a session so evidence IDs are recorded and the final report is
+    # normalized against this claim's recorded chunks (same as the native path).
+    session = ResearchToolSession(pipeline, phase, claim)
+
+    for cycle in range(text_max_cycles):
         try:
             ans = await tools.chat_mdl.async_chat(system, history, {"temperature": 0.3})
             if isinstance(ans, tuple):
@@ -281,17 +342,25 @@ async def _research_text(
             continue
 
         if tool_call.get("name") == "generate_report":
-            return tool_call.get("arguments", {})
+            args = tool_call.get("arguments", {})
+            if not isinstance(args, dict):
+                _LOG.warning("generate_report: arguments not a dict (%s); using empty", type(args).__name__)
+                args = {}
+            report = session._normalize_report(args)
+            return report
 
         if tool_call.get("name") == "think_tool":
             history.append({"role": "user", "content": "[continue]"})
             continue
 
         args = tool_call.get("arguments", {})
+        # Text fallback bypasses ResearchToolSession.tool_call_async(), so it
         result = await execute_with_fallback(pipeline, tool_call["name"], phase, **args)
+        if result.chunks:
+            session._record_evidence_ids(result.chunks)
         history.append({"role": "user", "content": _fmt_tool_result(result)})
 
-    return await _force_generate_report(history, tools, claim.claim_id)
+    return await _force_generate_report(history, tools, claim.claim_id, session)
 
 
 def _parse_tool_call(text: str) -> dict | None:
@@ -356,6 +425,7 @@ async def _force_generate_report(
     history: list,
     tools,
     claim_id: str,
+    session: ResearchToolSession | None = None,
 ) -> dict:
     """Force generate report when max cycles reached (text-fallback path)."""
     try:
@@ -369,7 +439,11 @@ async def _force_generate_report(
         text = re.sub(r"```(?:json)?\s*|\s*```", "", ans).strip()
         import json_repair
 
-        return json_repair.loads(text)
+        report = json_repair.loads(text)
+        if isinstance(report, dict) and session is not None:
+            normalized = session._normalize_report(report)
+            return normalized
+        return report if isinstance(report, dict) else {"report": str(report)}
     except Exception:
         _LOG.exception("force_generate_report failed")
         return {
