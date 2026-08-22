@@ -98,6 +98,19 @@ def has_wrapped_delimiter(s: str) -> bool:
     return _BACKTICK_RE.search(s) is not None
 
 
+# Default delimiter for parser_config.get("delimiter", ...) calls in the
+# main parser entry points (txt, markdown, docx, image, email). The
+# previous state had 4 distinct default strings copy-pasted across at
+# least 5 sites with no documented reason for the divergence -- most
+# notably docx/email/image dropped the `;` so an English paragraph
+# like "The rain; the sun; the wind" parsed as one oversized chunk.
+# See issue #18562. The book parser (book.py) keeps its own
+# Chinese-only default ``\n。；！？`` -- the Chinese-text book audience
+# is a deliberate exclusion, not a drift, so it is left out of this
+# constant.
+DEFAULT_DELIMITER = "\n!?;。；！？"
+
+
 def parse_delimiter_field(s: str) -> list[str]:
     """Parse the delimiter field into a list of delimiter strings.
 
