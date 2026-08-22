@@ -26,6 +26,7 @@ docker compose down
 echo "🧹 Deleting sandbox containers..."
 if [ -f .env ]; then
   source .env
+  SANDBOX_EXECUTOR_MANAGER_POOL_SIZE="${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-5}" # Default to 5 if not set in .env, as in start.sh
   for i in $(seq 0 $((SANDBOX_EXECUTOR_MANAGER_POOL_SIZE - 1))); do
     echo "🧹 Deleting sandbox_python_$i..."
     docker rm -f "sandbox_python_$i" >/dev/null 2>&1 || true

@@ -104,6 +104,7 @@ clean:
 	@docker compose down -v || true
 	@if [ -f .env ]; then \
 		source .env && \
+		SANDBOX_EXECUTOR_MANAGER_POOL_SIZE="$${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-5}" && \
 		for i in $$(seq 0 $$((SANDBOX_EXECUTOR_MANAGER_POOL_SIZE - 1))); do \
 			echo "🧹 Deleting sandbox_python_$$i..." && \
 			docker rm -f sandbox_python_$$i 2>/dev/null || true && \
