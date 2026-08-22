@@ -1601,7 +1601,23 @@ async def do_handle_task(task):
         # Record chunks array for content comparison (first, middle, last, random)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
         if not chunks:
-            progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
+            # Distinguish two cases:
+            #   (a) A parser signaled a hard failure via progress_callback(-1, ...)
+            #       during build_chunks. Preserve the -1 by writing only the
+            #       message (set_progress skips the progress field when prog is
+            #       None).
+            #   (b) The parser succeeded but produced zero chunks. This is a
+            #       legitimate terminal state ("document parsed cleanly but is
+            #       empty"), so mark progress=1.0.
+            # Pre-fix (#18263 v1) used the msg-only call for both, which left
+            # genuinely-empty-but-non-failed documents in a non-terminal
+            # progress=0 state (regression flagged by @xugangqiang).
+            current_task = TaskService.get_task(task_id) or {}
+            current_progress = current_task.get("progress", 0)
+            if current_progress == -1:
+                progress_callback(msg=f"No chunk built from {task_document_name}")
+            else:
+                progress_callback(1.0, f"No chunk built from {task_document_name}")
             return
         progress_callback(msg="Generate {} chunks".format(len(chunks)))
         start_ts = timer()
