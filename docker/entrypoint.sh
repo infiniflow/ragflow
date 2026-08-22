@@ -272,7 +272,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     while true; do
         echo "Attempt to start RAGFlow server..."
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
+        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} || true
         echo "RAGFlow python server started."
         sleep 1;
     done &
@@ -282,7 +282,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
             echo "Attempt to start RAGFlow go server..."
             wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
             echo "Starting RAGFlow go server..."
-            bin/server_main
+            bin/server_main || true
             sleep 1;
         done &
     fi
@@ -292,7 +292,7 @@ fi
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     while true; do
         echo "Attempt to start Admin python server..."
-        "$PY" admin/server/admin_server.py
+        "$PY" admin/server/admin_server.py || true
         echo "Admin python server started"
         sleep 1;
     done &
@@ -302,7 +302,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
             echo "Attempt to starting Admin go server..."
             wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
             echo "Starting Admin go server..."
-            bin/admin_server
+            bin/admin_server || true
             sleep 1;
         done &
     fi
