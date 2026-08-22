@@ -2118,7 +2118,15 @@ class VisionParser(RAGFlowPdfParser):
 
         all_docs = []
 
-        for idx, img_binary in enumerate(self.page_images or []):
+        # If `__images__` failed (pdfplumber exception path), `self.page_images`
+        # is None and the loop below silently returns no chunks. Surface the
+        # failure through the callback so the user sees a useful message in
+        # the task log instead of a generic "No chunk built from …".
+        if not self.page_images:
+            callback(-1, "VisionParser could not rasterize the PDF page batch; check server logs for the pdfplumber exception.")
+            return all_docs, []
+
+        for idx, img_binary in enumerate(self.page_images):
             pdf_page_num = from_page + idx  # 0-based
             if pdf_page_num < start_page or pdf_page_num >= end_page:
                 continue
@@ -2138,6 +2146,20 @@ class VisionParser(RAGFlowPdfParser):
             if text:
                 width, height = self.page_images[idx].size
                 all_docs.append((text, f"@@{pdf_page_num + 1}\t{0.0:.1f}\t{width / zoomin:.1f}\t{0.0:.1f}\t{height / zoomin:.1f}##"))
+
+        # If the vision model produced no output for any page in the batch,
+        # log a clear warning so the user can distinguish "no images on these
+        # pages" from "vision model returned nothing for the configured
+        # layout_recognizer". This is the silent-failure mode behind #17173
+        # (qwen-VL returning empty for page batches 2+ while the first batch
+        # succeeded).
+        if not all_docs and self.page_images:
+            callback(
+                1.0,
+                f"VisionParser processed {len(self.page_images)} page(s) "
+                f"(pages {from_page + 1}-{min(to_page, total_pdf_pages)}) but the vision model returned no text. "
+                f"Check the configured layout_recognizer model configuration.",
+            )
         return all_docs, []
 
 
