@@ -146,6 +146,8 @@ class MinerUParser(RAGFlowPdfParser):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
         self.outlines = []
+        self.page_from = 0
+        self.page_to = MAXIMUM_PAGE_NUMBER
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @staticmethod
@@ -354,14 +356,24 @@ class MinerUParser(RAGFlowPdfParser):
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
+        if callback:
+            callback(0.16, "[MinerU] Rendering PDF pages...")
         try:
-            with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
-                self.pdf = pdf
-                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
+                    self.pdf = pdf
+                    self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
         except Exception as e:
             self.page_images = None
             self.total_page = 0
-            self.logger.exception(e)
+            self.logger.exception("[MinerU] PDF page rendering failed for pages %s:%s: %s", page_from, page_to, e)
+            if callback:
+                callback(0.16, f"[MinerU] PDF page rendering failed for pages {page_from}:{page_to}: {e}")
+        else:
+            # Report success only after every selected page rendered successfully.
+            self.logger.info("[MinerU] Rendered %d PDF page images.", len(self.page_images))
+            if callback:
+                callback(0.19, f"[MinerU] Rendered {len(self.page_images)} PDF page images.")
 
     @staticmethod
     def _normalize_bbox(bbox):
@@ -858,7 +870,17 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.EQUATION:
                     section = output.get("text", "")
                 case MinerUContentType.CODE:
-                    section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
+                    code_body = output.get("code_body", "")
+                    code_caption = "\n".join(output.get("code_caption", []))
+                    if code_caption:
+                        # MinerU VLM returns a fenced body while the pipeline backend
+                        # may return plain code. Replace only one complete outer fence.
+                        outer_fence = re.fullmatch(r"```[^`\r\n]*\r?\n(?P<body>.*)\r?\n```", code_body, flags=re.DOTALL)
+                        if outer_fence:
+                            code_body = outer_fence.group("body")
+                        section = f"```{code_caption}\n{code_body}\n```"
+                    else:
+                        section = code_body
                 case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
                 case MinerUContentType.HEADER | MinerUContentType.FOOTER | MinerUContentType.PAGE_NUMBER | MinerUContentType.DISCARDED:
@@ -899,7 +921,9 @@ class MinerUParser(RAGFlowPdfParser):
                 continue
 
             position_tag = self._line_tag(output) if "page_idx" in output and "bbox" in output else ""
-            positions = [(page, left, right, top, bottom) for pages, left, right, top, bottom in self.extract_positions(position_tag) for page in pages]
+            # MinerU numbers pages from zero within the selected PDF slice.
+            # Media positions leave the parser in the document-global domain.
+            positions = [(page + self.page_from, left, right, top, bottom) for pages, left, right, top, bottom in self.extract_positions(position_tag) for page in pages]
 
             if output_type == MinerUContentType.TABLE:
                 text = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
@@ -1030,7 +1054,7 @@ class MinerUParser(RAGFlowPdfParser):
         if callback:
             callback(0.15, f"[MinerU] Output directory: {out_dir}")
 
-        self.__images__(pdf, zoomin=1)
+        self.__images__(pdf, zoomin=1, page_from=page_from, page_to=page_to, callback=callback)
 
         try:
             options = MinerUParseOptions(
