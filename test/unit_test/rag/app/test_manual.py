@@ -44,10 +44,9 @@ def _file_routes():
 def test_legacy_doc_is_rejected_with_conversion_guidance(filename):
     routes = _file_routes()
 
-    assert any(re.search(pattern, "document.docx", re.IGNORECASE) for pattern, _ in routes)
+    assert any(pattern == r"\.docx$" for pattern, _ in routes)
     doc_route = next(node for pattern, node in routes if re.search(pattern, filename, re.IGNORECASE))
     error = next(node for node in doc_route.body if isinstance(node, ast.Raise))
     message = error.exc.args[0].value
 
-    assert ".docx" in message
-    assert "convert" in message.lower()
+    assert message == "Legacy .doc files are not supported by the Manual parser. Please convert the file to .docx or PDF."
