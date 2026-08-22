@@ -64,6 +64,10 @@ type PythonTSRCell struct {
 	X1         float64 `json:"x1"`
 	Y1         float64 `json:"y1"`
 	Text       string  `json:"text"`
+	// Score is the detection confidence. Python's layouts_cleanup keeps the
+	// higher-score line when two overlap (recognizer.py:141); it is required
+	// to reproduce the exact structure-line cleanup.
+	Score float64 `json:"score"`
 }
 
 // LoadPythonTSR parses output/py/ocr/tsr_raw/{name}.pdf.json into the raw
@@ -110,10 +114,47 @@ func (c PythonTSRCell) ToTSRCell(cropOffX, cropOffY, cumOffsetPx float64) pdf.TS
 		Y1:    c.Y1*pdf.DlaScale - cumOffsetPx - cropOffY,
 		Label: c.Label,
 		Text:  c.Text,
+		Score: c.Score,
 	}
 }
 
 // ── Phase 3: OCR replay ────────────────────────────────────────────────────
+
+// PythonAllBox is one entry of the table_boxes/{name}.all_boxes.json snapshot:
+// a page box (table or non-table) present at R/C-annotation time, carrying
+// only the coordinates Python's layouts_cleanup area branch needs.
+type PythonAllBox struct {
+	X0         float64 `json:"x0"`
+	X1         float64 `json:"x1"`
+	Top        float64 `json:"top"`
+	Bottom     float64 `json:"bottom"`
+	PageNumber int     `json:"page_number"`
+}
+
+// LoadPythonAllBoxes parses output/py/{variant}/table_boxes/{name}.all_boxes.json
+// (the full page box set at R/C-annotation time) into []pdf.TextBox. A missing
+// file is reported via error so callers can fall back to the table boxes only.
+func LoadPythonAllBoxes(jsonPath string) ([]pdf.TextBox, error) {
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return nil, err
+	}
+	var dumped []PythonAllBox
+	if err := json.Unmarshal(data, &dumped); err != nil {
+		return nil, err
+	}
+	boxes := make([]pdf.TextBox, 0, len(dumped))
+	for _, b := range dumped {
+		boxes = append(boxes, pdf.TextBox{
+			X0:         b.X0,
+			X1:         b.X1,
+			Top:        b.Top,
+			Bottom:     b.Bottom,
+			PageNumber: b.PageNumber,
+		})
+	}
+	return boxes, nil
+}
 
 // PythonOCRPage holds one page's final OCR-derived text boxes (the box list
 // __ocr appends to parser.boxes). The coordinates are PAGE-POINTS but
@@ -124,6 +165,69 @@ func (c PythonTSRCell) ToTSRCell(cropOffX, cropOffY, cumOffsetPx float64) pdf.TS
 type PythonOCRPage struct {
 	Page  int
 	Boxes []PythonOCRBox
+}
+
+// ── Per-char R/C dump (table_boxes/) ──────────────────────────────────────
+// table_boxes/{name}.json carries each table cell box WITH its TSR-assigned
+// R/C/H/SP annotations (the authoritative per-char row/column assignment
+// Python's construct_table groups by). This is the signal Go's line-based
+// GroupCells cross-product ignores; the replay harness feeds it to
+// GroupBoxesByRC so Go's assembly matches Python's R/C view.
+//
+// The dump is a FLAT list of boxes (one object per table cell), not
+// page-wrapped. Each box carries page_number (1-based) and layoutno (the
+// per-page table key, e.g. "table-0") so callers can split boxes back into
+// per-table groups.
+
+// PythonTableBox mirrors one table-cell box with per-char R/C/H/SP labels.
+// Field names follow the dump's JSON keys exactly.
+type PythonTableBox struct {
+	X0         float64 `json:"x0"`
+	X1         float64 `json:"x1"`
+	Top        float64 `json:"top"`
+	Bottom     float64 `json:"bottom"`
+	Text       string  `json:"text"`
+	PageNumber int     `json:"page_number"`
+	LayoutNo   string  `json:"layoutno"`
+	R          int     `json:"R"`
+	C          int     `json:"C"`
+	H          int     `json:"H"`
+	SP         int     `json:"SP"`
+	LayoutType string  `json:"layout_type"`
+}
+
+// LoadPythonTableBoxes parses output/py/{variant}/table_boxes/{name}.json
+// (a flat box list) into a []pdf.TextBox with R/C/H/SP carried over. A
+// missing file is reported via error so callers can treat "no R/C dump" as a
+// no-op (e.g. PDFs without tables, or the old ocr_real dump before the R/C
+// capture was added).
+func LoadPythonTableBoxes(jsonPath string) ([]pdf.TextBox, error) {
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return nil, err
+	}
+	var dumped []PythonTableBox
+	if err := json.Unmarshal(data, &dumped); err != nil {
+		return nil, err
+	}
+	boxes := make([]pdf.TextBox, 0, len(dumped))
+	for _, b := range dumped {
+		boxes = append(boxes, pdf.TextBox{
+			X0:         b.X0,
+			X1:         b.X1,
+			Top:        b.Top,
+			Bottom:     b.Bottom,
+			Text:       b.Text,
+			R:          b.R,
+			C:          b.C,
+			H:          b.H,
+			SP:         b.SP,
+			PageNumber: b.PageNumber,
+			LayoutNo:   b.LayoutNo,
+			LayoutType: b.LayoutType,
+		})
+	}
+	return boxes, nil
 }
 
 // PythonOCRBox mirrors one final OCR text box: axis-aligned bbox in
