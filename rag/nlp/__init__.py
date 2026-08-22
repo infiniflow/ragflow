@@ -1375,32 +1375,16 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     sections = [(normalize_text_newlines(s), pos) for s, pos in sections]
 
     # Parse the delimiter field once, via the canonical helper (#17383).
-    # `has_custom` means the field contains a backtick-wrapped token — the
-    # historical signal that chunk_token_num should be bypassed: each segment is
-    # its own chunk.
+    # Backtick-wrapped tokens are delimiters like any other: the shared path
+    # below splits on every parsed delimiter (wrapped and bare alike) and then
+    # merges the segments up to ``chunk_token_num``. A wrapped token used to
+    # bypass the merge entirely — each segment its own chunk — so a field that
+    # merely contained stray backticks turned a 2.8 MB book into ~430k
+    # one-word chunks (#18552). A delimiter marks a boundary; the cap still
+    # governs how much fits in one chunk.
     parsed_dels = parse_delimiter_field(delimiter)
-    has_custom = has_wrapped_delimiter(delimiter)
-    if has_custom:
-        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = compile_delimiter_pattern(parsed_dels)
-        cks = []
-        for sec, pos in sections:
-            split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL) if custom_pattern else [sec]
-            for sub_sec in split_sec:
-                if not sub_sec:
-                    continue
-                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
-                    continue
-                text = "\n" + sub_sec
-                local_pos = pos
-                if num_tokens_from_string(text) < 8:
-                    local_pos = ""
-                if local_pos and text.find(local_pos) < 0:
-                    text += local_pos
-                cks.append(text)
-        return cks
 
-    # Default path: split every section on the delimiter into paragraphs (no
+    # Split every section on the delimiter into paragraphs (no
     # delimiter text), then group paragraphs with the chosen merge strategy.
     # No atom-split is performed: a paragraph larger than ``chunk_token_num``
     # becomes its own chunk; the model layer truncates oversize units.
@@ -1432,36 +1416,11 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         return [], []
 
     # Parse the delimiter field once, via the canonical helper (#17383).
-    # See ``naive_merge`` for the ``has_custom`` rationale.
+    # See ``naive_merge``: backtick-wrapped tokens split like any other
+    # delimiter and the segments still merge up to ``chunk_token_num`` (#18552).
     parsed_dels = parse_delimiter_field(delimiter)
-    has_custom = has_wrapped_delimiter(delimiter)
-    if has_custom:
-        # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = compile_delimiter_pattern(parsed_dels)
-        cks, result_images = [], []
-        for text, image in zip(texts, images):
-            text_str = text[0] if isinstance(text, tuple) else text
-            if text_str is None:
-                text_str = ""
-            text_str = normalize_text_newlines(text_str)
-            text_pos = text[1] if isinstance(text, tuple) and len(text) > 1 else ""
-            split_sec = re.split(r"(%s)" % custom_pattern, text_str) if custom_pattern else [text_str]
-            for sub_sec in split_sec:
-                if not sub_sec:
-                    continue
-                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
-                    continue
-                text_seg = "\n" + sub_sec
-                local_pos = text_pos
-                if num_tokens_from_string(text_seg) < 8:
-                    local_pos = ""
-                if local_pos and text_seg.find(local_pos) < 0:
-                    text_seg += local_pos
-                cks.append(text_seg)
-                result_images.append(image)
-        return cks, result_images
 
-    # Default path: split every text on the delimiter into paragraphs (no
+    # Split every text on the delimiter into paragraphs (no
     # delimiter text) carrying its image, then group with the merge strategy.
     # Images of merged paragraphs are concatenated; no atom-split is performed.
     # As in ``naive_merge``, a small text is still split on the delimiter so
