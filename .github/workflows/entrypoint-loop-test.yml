@@ -1,0 +1,96 @@
+name: entrypoint-loop-test
+permissions:
+  contents: read
+
+# Triggered when the loop pattern in `docker/entrypoint.sh` or the test
+# itself changes. The test exercises the actual loop body from
+# `docker/entrypoint.sh`, so a change to either file is a relevant signal.
+# Push to main / release branches is also triggered so the test runs on
+# the merged code.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'docker/entrypoint.sh'
+      - 'test/integration/test_entrypoint_loop.py'
+      - '.github/workflows/entrypoint-loop-test.yml'
+  push:
+    branches:
+      - 'main'
+      - '*.*.*'
+    paths:
+      - 'docker/entrypoint.sh'
+      - 'test/integration/test_entrypoint_loop.py'
+      - '.github/workflows/entrypoint-loop-test.yml'
+
+# A regression test for the foreground restart loop pattern in
+# `docker/entrypoint.sh`. The loops in the script all use
+# `while true; do <binary>; done &` under `set -e` (line 3). On bash
+# 5.2.21 (the version in the official ragflow image), `set -e` is
+# enforced *inside* the `while` loop body even though the bash
+# documentation says it should be suspended. A non-zero exit from the
+# wrapped binary silently kills the loop wrapper, leaving the docker
+# stack without a supervisor for that service.
+#
+# The test extracts each loop body from `docker/entrypoint.sh` by
+# marker text, replaces the binary invocation with one that exits
+# with a chosen status, and runs the extracted body in a bash
+# subprocess. It asserts the wrapper survives multiple iterations of
+# both non-zero (exit 137) and clean (exit 0) exits, and that the
+# expected log lines appear.
+#
+# Requires bash 5.2+ to exercise the bash 5.2.21-specific behavior
+# that motivated the fix in #18545.
+#
+# Refs:
+#   - infiniflow/ragflow#18542 (the bug)
+#   - infiniflow/ragflow#18545 (the fix in docker/entrypoint.sh)
+#   - infiniflow/ragflow#17196 (complementary timeout fix)
+jobs:
+  pytest-entrypoint-loop:
+    name: pytest test/integration/test_entrypoint_loop.py
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install pytest
+        # The project's pyproject.toml pins both pytest and pytest-asyncio
+        # with options like `asyncio_default_fixture_loop_scope` that fail
+        # strict config validation if pytest-asyncio is not installed.
+        # Even though this test does not use asyncio, the project's full
+        # pytest config is loaded by default, so we install both.
+        run: pip install 'pytest>=8.3.5' 'pytest-asyncio>=1.3.0'
+
+      - name: Verify bash version
+        id: bash-version
+        run: |
+          bash --version | head -1
+          if [[ "${BASH_VERSINFO[0]}" -lt 5 \
+                || ( "${BASH_VERSINFO[0]}" -eq 5 && "${BASH_VERSINFO[1]}" -lt 2 ) ]]; then
+            echo "::error::Test requires bash 5.2+ to exercise the bash 5.2.21 set -e behavior that motivated the fix in #18545."
+            exit 1
+          fi
+          echo "bash_version_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run regression test
+        run: |
+          python3 -m pytest test/integration/test_entrypoint_loop.py -s -v \
+            --junitxml=pytest-entrypoint-loop.xml
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-entrypoint-loop-results
+          path: pytest-entrypoint-loop.xml
+          if-no-files-found: warn
