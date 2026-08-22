@@ -138,7 +138,7 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - `endpoint`: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
-- `pool_size`: Container pool size (default: 10)
+- `pool_size`: Container pool size (default: 3)
 
 **Languages**:
 - Python
@@ -162,7 +162,7 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - Pool exhaustion causes "Container pool is busy" errors
 
 **Common issues**:
-- `"Container pool is busy"`: Increase `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` (default: 1 in .env, should be 5+)
+- `"Container pool is busy"`: Raise `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` above the baseline your deployment already applies — 5 with the standalone compose file, 3 in the main RAGFlow stack
 - `Container creation fails`: Ensure gVisor is installed and accessible at `/usr/local/bin/runsc`
 
 #### 2.2.2 Aliyun code interpreter provider
@@ -507,7 +507,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
   "name": "sandbox.self_managed",
   "source": "variable",
   "data_type": "json",
-  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 10, \"max_memory\": \"256m\", \"timeout\": 30}"
+  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 3, \"max_memory\": \"256m\", \"timeout\": 30}"
 }
 ```
 
@@ -610,7 +610,7 @@ class SelfManagedProvider(SandboxProvider):
             },
             "pool_size": {
                 "type": "integer",
-                "default": 10,
+                "default": 3,
                 "label": "Container Pool Size",
                 "min": 1,
                 "max": 100
