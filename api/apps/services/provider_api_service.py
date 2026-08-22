@@ -766,8 +766,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     msg += f"\nEmbedding model from {provider_name} is not supported yet."
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     continue
-                mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
                 label = f"embedding model({llm['llm_name']})"
+                try:
+                    mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
+                except Exception as e:
+                    logging.exception("Fail to init %s", label)
+                    msg += f"\nFail to access {label}.{str(e)}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
                 ok, result = await _run_verification(label, asyncio.to_thread(mdl.encode, ["Test if the api key is available"]), timeout_seconds)
                 if not ok:
                     msg += result
@@ -784,7 +790,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     msg += f"\nChat model from {provider_name} is not supported yet."
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     continue
-                mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
+                label = f"model({provider_name}/{llm['llm_name']})"
+                try:
+                    mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
+                except Exception as e:
+                    logging.exception("Fail to init %s", label)
+                    msg += f"\nFail to access {label}.{str(e)}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
 
                 temperature = 1 if llm["llm_name"] in ("kimi-k3", "kimi-k2.7-code") else 0.9
 
@@ -798,7 +811,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                             return True
                     return False
 
-                label = f"model({provider_name}/{llm['llm_name']})"
                 ok, result = await _run_verification(label, check_streamly(), timeout_seconds)
                 if not ok:
                     msg += result
