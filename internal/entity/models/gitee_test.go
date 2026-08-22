@@ -169,8 +169,9 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 		if model.MaxOutput != nil && expected.MaxOutput != nil && *model.MaxOutput != *expected.MaxOutput {
 			t.Fatalf("models[%d] alias %q MaxOutput=%d, want %d", i, alias, *model.MaxOutput, *expected.MaxOutput)
 		}
-		if strings.Join(model.ModelTypes, ",") != strings.Join(expected.ModelTypes, ",") {
-			t.Fatalf("models[%d] alias %q ModelTypes=%v, want %v", i, alias, model.ModelTypes, expected.ModelTypes)
+		expectedModelTypes := normalizeModelTypes(expected.ModelTypes)
+		if strings.Join(model.ModelTypes, ",") != strings.Join(expectedModelTypes, ",") {
+			t.Fatalf("models[%d] alias %q ModelTypes=%v, want %v", i, alias, model.ModelTypes, expectedModelTypes)
 		}
 		if (model.Thinking == nil) != (expected.Thinking == nil) {
 			t.Fatalf("models[%d] alias %q Thinking nil=%t, want nil=%t", i, alias, model.Thinking == nil, expected.Thinking == nil)
@@ -184,8 +185,10 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 	if unknown.MaxOutput != nil {
 		t.Fatalf("unknown.MaxOutput=%v, want nil", *unknown.MaxOutput)
 	}
-	if len(unknown.ModelTypes) != 0 {
-		t.Fatalf("unknown.ModelTypes=%v, want empty", unknown.ModelTypes)
+	// Catalog misses fall back to name-based inference, which defaults to
+	// chat — remote entries must never surface type-less.
+	if len(unknown.ModelTypes) != 1 || unknown.ModelTypes[0] != "chat" {
+		t.Fatalf("unknown.ModelTypes=%v, want [chat]", unknown.ModelTypes)
 	}
 }
 

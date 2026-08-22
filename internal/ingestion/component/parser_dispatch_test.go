@@ -305,6 +305,84 @@ func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
 	}
 }
 
+// TestResolveOutputFormat_AudioOutputFormats pins the audio-family
+// whitelist against the builtin audio template. The template
+// (ingestion_pipeline_audio.json) and the Python default audio setup
+// (rag/flow/parser/parser.py) both use output_format="text" — an audio
+// transcription is inherently plain text. "text" must therefore pass
+// the whitelist, "json" must stay accepted, and a format outside the
+// whitelist must still be rejected.
+func TestResolveOutputFormat_AudioOutputFormats(t *testing.T) {
+	allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
+	audioAllowed, ok := allowed["audio"]
+	if !ok {
+		t.Fatal("allowed_output_format: audio key missing")
+	}
+	has := func(want string) bool {
+		for _, v := range audioAllowed {
+			if strings.EqualFold(v, want) {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("text") {
+		t.Errorf("allowed_output_format[audio] = %v, want it to include %q (builtin audio template and Python default use it)", audioAllowed, "text")
+	}
+	if !has("json") {
+		t.Errorf("allowed_output_format[audio] = %v, want it to include %q", audioAllowed, "json")
+	}
+
+	cases := []struct {
+		name    string
+		format  string
+		wantErr bool
+	}{
+		{name: "text accepted", format: "text"},
+		{name: "json accepted", format: "json"},
+		{name: "html rejected", format: "html", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setups := map[string]schema.ParserSetup{"audio": {"output_format": tc.format}}
+			got, err := resolveOutputFormat("audio", setups, allowed)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("want error for audio output_format=%q, got %q", tc.format, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("audio output_format=%q: unexpected error: %v", tc.format, err)
+			}
+			if got != tc.format {
+				t.Errorf("got %q, want %q", got, tc.format)
+			}
+		})
+	}
+}
+
+// TestDefaultSetups_Audio_OutputFormatText pins the audio default to
+// "text", matching the Python default setup
+// (rag/flow/parser/parser.py audio block) and the builtin audio
+// template. The default feeds both the whitelist gate and the ASR
+// dispatch, so it must not drift to a format the audio pipeline does
+// not produce.
+func TestDefaultSetups_Audio_OutputFormatText(t *testing.T) {
+	setups := defaultSetups()
+	audio, ok := setups["audio"]
+	if !ok {
+		t.Fatal("defaultSetups: audio key missing")
+	}
+	got, ok := audio["output_format"].(string)
+	if !ok {
+		t.Fatal("defaultSetups: audio.output_format missing or not a string")
+	}
+	if got != "text" {
+		t.Errorf("audio.output_format = %q, want %q", got, "text")
+	}
+}
+
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	setups := defaultSetups()
 	got := &captureSetupConfigurer{}

@@ -30,6 +30,7 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
+from rag.llm.key_utils import _resolve_provider_credentials
 from rag.utils.url_utils import append_api_path, ensure_v1
 
 logger = logging.getLogger(__name__)
@@ -444,7 +445,10 @@ class TencentCloudSeq2txt(Base):
         from tencentcloud.asr.v20190614 import asr_client
         from tencentcloud.common import credential
 
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         sid = key.get("tencent_cloud_sid", "")
         sk = key.get("tencent_cloud_sk", "")
         cred = credential.Credential(sid, sk)

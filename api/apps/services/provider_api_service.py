@@ -750,12 +750,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
-    if provider_name == "BaiduYiyan":
-        if isinstance(api_key, str):
-            try:
-                json.loads(api_key)
-            except (json.JSONDecodeError, TypeError):
-                api_key = {"yiyan_ak": api_key, "yiyan_sk": ""}
     api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
     # check passed types
     passed_types = set()
@@ -1288,6 +1282,9 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
+    if not model_obj:
+        return False, f"Model '{model_name}' not added for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
+
     to_update = {}
     if "status" in update_dict and update_dict.get("status") != model_obj.status:
         to_update.update({"status": update_dict["status"]})

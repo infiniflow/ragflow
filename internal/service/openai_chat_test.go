@@ -439,32 +439,32 @@ func TestOpenAI_PerDeltaTrimSpace_NotApplied(t *testing.T) {
 // Request preparation helpers (moved from internal/handler/openai_chat_completions_test.go)
 // =============================================================================
 
-// TestService_NormalizeMessageContent_String passes a plain string through.
-func TestService_NormalizeMessageContent_String(t *testing.T) {
-	got, err := normalizeMessageContent("hello")
+// TestService_NormalizeOpenAIMessageContent_String passes a plain string through.
+func TestService_NormalizeOpenAIMessageContent_String(t *testing.T) {
+	got, err := NormalizeOpenAIMessageContent("hello")
 	if err != nil || got != "hello" {
 		t.Fatalf("expected (%q,nil), got (%q,%v)", "hello", got, err)
 	}
 }
 
-// TestService_NormalizeMessageContent_Nil returns "" with no error.
-func TestService_NormalizeMessageContent_Nil(t *testing.T) {
-	got, err := normalizeMessageContent(nil)
+// TestService_NormalizeOpenAIMessageContent_Nil returns "" with no error.
+func TestService_NormalizeOpenAIMessageContent_Nil(t *testing.T) {
+	got, err := NormalizeOpenAIMessageContent(nil)
 	if err != nil || got != "" {
 		t.Fatalf("expected (\"\",nil), got (%q,%v)", got, err)
 	}
 }
 
-// TestService_NormalizeMessageContent_ArrayOfTextParts joins text parts
+// TestService_NormalizeOpenAIMessageContent_ArrayOfTextParts joins text parts
 // with "\n" and drops non-text parts (e.g. image_url). Mirrors
 // _normalize_message_content in openai_api.py:198-216.
-func TestService_NormalizeMessageContent_ArrayOfTextParts(t *testing.T) {
+func TestService_NormalizeOpenAIMessageContent_ArrayOfTextParts(t *testing.T) {
 	in := []interface{}{
 		map[string]interface{}{"type": "text", "text": "first"},
 		map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": "http://x"}},
 		map[string]interface{}{"type": "text", "text": "second"},
 	}
-	got, err := normalizeMessageContent(in)
+	got, err := NormalizeOpenAIMessageContent(in)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -473,9 +473,9 @@ func TestService_NormalizeMessageContent_ArrayOfTextParts(t *testing.T) {
 	}
 }
 
-// TestService_NormalizeMessageContent_InvalidType returns the Python error string.
-func TestService_NormalizeMessageContent_InvalidType(t *testing.T) {
-	_, err := normalizeMessageContent(42)
+// TestService_NormalizeOpenAIMessageContent_InvalidType returns the Python error string.
+func TestService_NormalizeOpenAIMessageContent_InvalidType(t *testing.T) {
+	_, err := NormalizeOpenAIMessageContent(42)
 	if err == nil || !strings.Contains(err.Error(), "must be a string or an array") {
 		t.Fatalf("expected content-type error, got %v", err)
 	}

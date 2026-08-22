@@ -19,6 +19,18 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestWikiActiveStateValuesAreCheckpointSafe(t *testing.T) {
+	values := wikiActiveStateValues([]common.WikiMapActiveState{{
+		Key: "state-1", TenantID: "tenant-1", DatasetID: "kb-1", DocumentID: "doc-1", Payload: []byte(`{"plan":[]}`),
+	}})
+	if len(values) != 1 || values[0]["payload"] != `{"plan":[]}` {
+		t.Fatalf("checkpoint values = %#v", values)
+	}
+	if _, err := json.Marshal(map[string]any{"wiki_active_map_states": values}); err != nil {
+		t.Fatalf("marshal checkpoint-safe active states: %v", err)
+	}
+}
+
 // mockChat answers the structure variant's three LLM call shapes under the
 // Python-aligned items contract: node extraction (entity items), edge
 // extraction (relation items constrained to Known Entities), and merge
