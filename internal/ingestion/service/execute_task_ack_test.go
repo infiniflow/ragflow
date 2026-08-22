@@ -198,23 +198,33 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 	}
 }
 
+func claimTaskForTest(t *testing.T, ingestor *Ingestor, taskID string) bool {
+	t.Helper()
+	_, claimed, err := ingestor.claimTask(t.Context(), taskID)
+	if err != nil {
+		t.Fatalf("claimTask(%q): %v", taskID, err)
+	}
+	return claimed
+}
+
 // TestClaimTask_FirstTrueThenFalse: claiming a task for the first time must
 // succeed; a second claim while the first worker is still processing must
-// fail. This is the local guard that catches MQ redeliveries.
+// fail. The local layer catches same-process MQ redeliveries before the
+// distributed store is consulted.
 func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 
-	if !ingestor.claimTask("task-1") {
+	if !claimTaskForTest(t, ingestor, "task-1") {
 		t.Fatal("first claim should succeed")
 	}
 
 	// Same task claimed again — must fail (another worker is already on it).
-	if ingestor.claimTask("task-1") {
+	if claimTaskForTest(t, ingestor, "task-1") {
 		t.Fatal("second claim should fail: task already claimed by another worker")
 	}
 
 	// Different task — should succeed.
-	if !ingestor.claimTask("task-2") {
+	if !claimTaskForTest(t, ingestor, "task-2") {
 		t.Fatal("different task should succeed")
 	}
 }
@@ -223,10 +233,10 @@ func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
 // the task, a fresh claim (e.g. on restart) must succeed again.
 func TestClaimTask_AfterReleaseCanReclaim(t *testing.T) {
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	ingestor.claimTask("task-1")
+	claimTaskForTest(t, ingestor, "task-1")
 	ingestor.releaseTask("task-1")
 
-	if !ingestor.claimTask("task-1") {
+	if !claimTaskForTest(t, ingestor, "task-1") {
 		t.Fatal("after release should be able to reclaim (previous worker finished)")
 	}
 }
@@ -248,7 +258,7 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
-	ingestor.claimTask(taskID)
+	claimTaskForTest(t, ingestor, taskID)
 	ctx := t.Context()
 
 	handle := &fakeTaskHandle{}
@@ -258,7 +268,7 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 		t.Fatal("expected task released from currentTasks after executeTask finished")
 	}
 	// After release, a new claim must succeed.
-	if !ingestor.claimTask(taskID) {
+	if !claimTaskForTest(t, ingestor, taskID) {
 		t.Fatal("expected reclaim after executeTask to succeed")
 	}
 }

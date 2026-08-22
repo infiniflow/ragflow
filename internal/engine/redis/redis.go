@@ -45,6 +45,7 @@ var (
 type Client struct {
 	client           *redis.Client
 	luaDeleteIfEqual *redis.Script
+	luaExpireIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
 	luaAutoIncrement *redis.Script
 	config           config.RedisConfig
@@ -65,6 +66,15 @@ const (
 		local current_value = redis.call('get', KEYS[1])
 		if current_value and current_value == ARGV[1] then
 			redis.call('del', KEYS[1])
+			return 1
+		end
+		return 0
+	`
+
+	luaExpireIfEqualScript = `
+		local current_value = redis.call('get', KEYS[1])
+		if current_value and current_value == ARGV[1] then
+			redis.call('pexpire', KEYS[1], ARGV[2])
 			return 1
 		end
 		return 0
@@ -137,6 +147,7 @@ func Init(ctx context.Context) error {
 			client:           client,
 			config:           redisConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
+			luaExpireIfEqual: redis.NewScript(luaExpireIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 		}
 
@@ -817,6 +828,58 @@ func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) b
 		return false
 	}
 	return result.(int64) == 1
+}
+
+// AcquireLease atomically creates an owner-scoped lease. A false result with
+// no error means another owner currently holds the lease.
+func (r *Client) AcquireLease(ctx context.Context, key, owner string, ttl time.Duration) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, fmt.Errorf("redis: not initialised")
+	}
+	if ttl <= 0 {
+		return false, fmt.Errorf("redis: lease TTL must be positive")
+	}
+	ok, err := r.client.SetNX(ctx, key, owner, ttl).Result()
+	if err != nil {
+		return false, fmt.Errorf("acquire lease %q: %w", key, err)
+	}
+	return ok, nil
+}
+
+// RenewLease extends a lease only while it is still owned by owner. The
+// compare-and-expire operation is atomic, so a delayed worker cannot extend a
+// lease that expired and was acquired by another process.
+func (r *Client) RenewLease(ctx context.Context, key, owner string, ttl time.Duration) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, fmt.Errorf("redis: not initialised")
+	}
+	if ttl <= 0 {
+		return false, fmt.Errorf("redis: lease TTL must be positive")
+	}
+	if r.luaExpireIfEqual == nil {
+		return false, fmt.Errorf("redis: lease renewal script not initialised")
+	}
+	result, err := r.luaExpireIfEqual.Run(ctx, r.client, []string{key}, owner, ttl.Milliseconds()).Int64()
+	if err != nil {
+		return false, fmt.Errorf("renew lease %q: %w", key, err)
+	}
+	return result == 1, nil
+}
+
+// ReleaseLease removes a lease only while it is still owned by owner. A false
+// result is harmless: the lease already expired or belongs to a successor.
+func (r *Client) ReleaseLease(ctx context.Context, key, owner string) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, fmt.Errorf("redis: not initialised")
+	}
+	if r.luaDeleteIfEqual == nil {
+		return false, fmt.Errorf("redis: lease release script not initialised")
+	}
+	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, owner).Int64()
+	if err != nil {
+		return false, fmt.Errorf("release lease %q: %w", key, err)
+	}
+	return result == 1, nil
 }
 
 // Delete deletes a key
