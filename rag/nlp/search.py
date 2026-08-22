@@ -533,8 +533,17 @@ class Dealer:
             # content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             content_ltks = sres.field[i][cfield].split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
+            question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
-            tks = content_ltks + title_tks + important_kwd
+            # The other two rerank paths multiply title_tks * 2, important_kwd
+            # * 5 and question_tks * 6 to weight the term-similarity score, but
+            # here the tokens are joined into a single document string and
+            # passed to the cross-encoder; repeating a field would distort the
+            # model's own scoring. So question_tks (like title_tks and
+            # important_kwd above) is added unweighted. The field is fetched
+            # from the index in Dealer.__init__ and was silently dropped
+            # pre-fix; see issue #18472.
+            tks = content_ltks + title_tks + important_kwd + question_tks
             ins_tw.append(tks)
 
         docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
