@@ -20,6 +20,7 @@ Both AzureSpn and AzureSas implementations must prepend the bucket
 parameter to file paths so that files with the same name from different
 datasets do not overwrite each other in flat blob storage.
 """
+
 import importlib
 import sys
 import types
@@ -71,16 +72,18 @@ def _install_stubs():
     azure_storage.filedatalake = azure_fdl
     azure_storage.blob = azure_blob
 
-    sys.modules.update({
-        "common": common_pkg,
-        "common.decorator": decorator_mod,
-        "common.settings": settings_mod,
-        "azure": azure_pkg,
-        "azure.identity": azure_identity,
-        "azure.storage": azure_storage,
-        "azure.storage.filedatalake": azure_fdl,
-        "azure.storage.blob": azure_blob,
-    })
+    sys.modules.update(
+        {
+            "common": common_pkg,
+            "common.decorator": decorator_mod,
+            "common.settings": settings_mod,
+            "azure": azure_pkg,
+            "azure.identity": azure_identity,
+            "azure.storage": azure_storage,
+            "azure.storage.filedatalake": azure_fdl,
+            "azure.storage.blob": azure_blob,
+        }
+    )
 
 
 @pytest.fixture(scope="module")
