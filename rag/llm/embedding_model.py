@@ -1092,10 +1092,17 @@ class BaiduYiyanEmbed(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
 
-        key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = qianfan.Embedding(ak=ak, sk=sk)
+        try:
+            key_obj = json.loads(key)
+        except (json.JSONDecodeError, TypeError):
+            key_obj = key
+        if isinstance(key_obj, dict):
+            ak = key_obj.get("yiyan_ak", "")
+            sk = key_obj.get("yiyan_sk", "")
+            self.client = qianfan.Embedding(ak=ak, sk=sk)
+        else:
+            # adapt to one-line api_key
+            self.client = qianfan.Embedding(access_token=key_obj)
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=16):

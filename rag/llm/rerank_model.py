@@ -580,10 +580,17 @@ class BaiduYiyanRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         from qianfan.resources import Reranker
 
-        key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = Reranker(ak=ak, sk=sk, request_timeout=30)
+        try:
+            key_obj = json.loads(key)
+        except (json.JSONDecodeError, TypeError):
+            key_obj = key
+        if isinstance(key_obj, dict):
+            ak = key_obj.get("yiyan_ak", "")
+            sk = key_obj.get("yiyan_sk", "")
+            self.client = Reranker(ak=ak, sk=sk, request_timeout=30)
+        else:
+            # adapt to one-line api_key
+            self.client = Reranker(access_token=key_obj, request_timeout=30)
         self.model_name = model_name
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:

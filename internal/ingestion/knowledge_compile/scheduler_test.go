@@ -56,6 +56,29 @@ func TestFakeSchedulerReclaimsInterruptedClaim(t *testing.T) {
 	}
 }
 
+func TestFakeSchedulerProgressIsClaimScoped(t *testing.T) {
+	f := NewFakeScheduler()
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), nil); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	claim, ok, err := f.Claim(t.Context(), "kb1")
+	if err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := f.UpdateProgress(t.Context(), "kb1", claim.Token, 0.5, "routing_pages", "Routing pages"); err != nil {
+		t.Fatalf("update progress: %v", err)
+	}
+	if err := f.UpdateProgress(t.Context(), "kb1", "stale-token", 0.9, "wrong", "Should be ignored"); err != nil {
+		t.Fatalf("stale update: %v", err)
+	}
+	f.mu.Lock()
+	row := f.rows["kb1"]
+	f.mu.Unlock()
+	if row.progress != 0.5 || row.currentPhase != "routing_pages" || row.progressMsg != "Routing pages" {
+		t.Fatalf("unexpected progress state: %+v", row)
+	}
+}
+
 func TestWithWriteLockRejectsSupersededClaim(t *testing.T) {
 	f := NewFakeScheduler()
 	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}); err != nil {

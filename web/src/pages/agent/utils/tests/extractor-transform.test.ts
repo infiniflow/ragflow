@@ -13,13 +13,13 @@ describe('Extractor parameter transformations & precedence', () => {
   });
 
   describe('transformExtractorParams', () => {
-    it('synchronizes nested modular configs to flat fields and preserves nested objects', () => {
+    it('emits only the LLM settings and the nested groups the Go extractor reads', () => {
       const input: any = {
         summary: {
           enabled: true,
           system_prompt: 'Custom summary prompt',
         },
-        metadata_config: {
+        metadata: {
           enabled: true,
           metadata: [{ key: 'category', type: 'string' }],
           built_in_metadata: [{ key: 'update_time', type: 'time' }],
@@ -37,22 +37,109 @@ describe('Extractor parameter transformations & precedence', () => {
           tag_file_id: 'tag-123',
         },
         llm_id: 'gpt-4',
+        temperature: 0.5,
+        temperatureEnabled: true,
+        // Fields that must not leak into the DSL params
+        outputs: { chunks: { type: 'Array<Object>', value: [] } },
+        prompts: 'user prompt',
+        sys_prompt: 'legacy sys',
+        field_name: 'summary',
+        auto_keywords: 9,
+        keywords_sys_prompt: 'legacy kw',
       };
 
       const result = transformExtractorParams(input);
 
-      expect(result.enable_summary).toBe(1);
-      expect(result.summary).toEqual({
-        enabled: true,
-        system_prompt: 'Custom summary prompt',
+      expect(result).toEqual({
+        llm_id: 'gpt-4',
+        temperature: 0.5,
+        temperatureEnabled: true,
+        keywords: {
+          top_n: 5,
+          system_prompt: 'KW prompt',
+        },
+        questions: {
+          top_n: 3,
+          system_prompt: 'Q prompt',
+        },
+        tags: {
+          top_n: 2,
+          tag_file_id: 'tag-123',
+        },
+        summary: {
+          enabled: true,
+          system_prompt: 'Custom summary prompt',
+        },
+        metadata: {
+          enabled: true,
+          metadata: [{ key: 'category', type: 'string' }],
+          built_in_metadata: [{ key: 'update_time', type: 'time' }],
+        },
       });
-      expect(result.enable_metadata).toBe(1);
-      expect(result.metadata_config.enabled).toBe(true);
-      expect(result.metadata_config.metadata).toHaveLength(1);
-      expect(result.auto_keywords).toBe(5);
-      expect(result.auto_questions).toBe(3);
-      expect(result.auto_tags).toBe(2);
-      expect(result.tag_file_id).toBe('tag-123');
+    });
+
+    it('maps legacy flat fields into the nested groups without re-emitting them', () => {
+      const input: any = {
+        auto_keywords: 4,
+        keywords_sys_prompt: 'legacy kw prompt',
+        auto_questions: 2,
+        questions_sys_prompt: 'legacy q prompt',
+        auto_tags: 1,
+        tag_file_id: 'tag-legacy',
+        enable_summary: 1,
+        sys_prompt: 'legacy summary prompt',
+      };
+
+      const result = transformExtractorParams(input);
+
+      expect(result).toEqual({
+        keywords: { top_n: 4, system_prompt: 'legacy kw prompt' },
+        questions: { top_n: 2, system_prompt: 'legacy q prompt' },
+        tags: { top_n: 1, tag_file_id: 'tag-legacy' },
+        summary: { enabled: true, system_prompt: 'legacy summary prompt' },
+        metadata: { enabled: false, metadata: [], built_in_metadata: [] },
+      });
+    });
+
+    it('accepts legacy flat metadata fields from unopened legacy nodes', () => {
+      const input: any = {
+        enable_metadata: 1,
+        metadata: [{ key: 'author', type: 'string' }],
+        built_in_metadata: [{ key: 'file_name', type: 'string' }],
+      };
+
+      const result = transformExtractorParams(input);
+
+      expect(result).toEqual({
+        keywords: { top_n: 0, system_prompt: '' },
+        questions: { top_n: 0, system_prompt: '' },
+        tags: { top_n: 0, tag_file_id: '' },
+        summary: { enabled: false, system_prompt: '' },
+        metadata: {
+          enabled: true,
+          metadata: [{ key: 'author', type: 'string' }],
+          built_in_metadata: [{ key: 'file_name', type: 'string' }],
+        },
+      });
+    });
+
+    it('accepts the transitional metadata_config key', () => {
+      const input: any = {
+        metadata_config: {
+          enabled: true,
+          metadata: [{ key: 'category', type: 'string' }],
+          built_in_metadata: [],
+        },
+      };
+
+      const result = transformExtractorParams(input);
+
+      expect(result.metadata).toEqual({
+        enabled: true,
+        metadata: [{ key: 'category', type: 'string' }],
+        built_in_metadata: [],
+      });
+      expect(result).not.toHaveProperty('metadata_config');
     });
 
     it('gives nested modular enabled: false precedence over legacy flat enable_*: 1', () => {
@@ -62,7 +149,7 @@ describe('Extractor parameter transformations & precedence', () => {
           system_prompt: '',
         },
         enable_summary: 1,
-        metadata_config: {
+        metadata: {
           enabled: false,
           metadata: [],
           built_in_metadata: [],
@@ -73,22 +160,10 @@ describe('Extractor parameter transformations & precedence', () => {
       const result = transformExtractorParams(input);
 
       expect(result.summary.enabled).toBe(false);
-      expect(result.enable_summary).toBe(0);
-      expect(result.metadata_config.enabled).toBe(false);
-      expect(result.enable_metadata).toBe(0);
-    });
-
-    it('preserves custom field_name when summary is disabled', () => {
-      const input: any = {
-        summary: {
-          enabled: false,
-          system_prompt: '',
-        },
-        field_name: 'custom_chunk_field',
-      };
-
-      const result = transformExtractorParams(input);
-      expect(result.field_name).toBe('custom_chunk_field');
+      expect(result.metadata.enabled).toBe(false);
+      expect(result).not.toHaveProperty('enable_summary');
+      expect(result).not.toHaveProperty('enable_metadata');
+      expect(result).not.toHaveProperty('built_in_metadata');
     });
   });
 
@@ -112,14 +187,35 @@ describe('Extractor parameter transformations & precedence', () => {
         enabled: true,
         system_prompt: 'Old summary prompt',
       });
-      expect(result.metadata_config).toEqual({
+      expect(result.metadata).toEqual({
         enabled: true,
         metadata: [{ key: 'author', type: 'string' }],
         built_in_metadata: [{ key: 'file_name', type: 'string' }],
       });
+      expect(result).not.toHaveProperty('metadata_config');
+      expect(result).not.toHaveProperty('enable_metadata');
+      expect(result).not.toHaveProperty('built_in_metadata');
       expect(result.keywords.top_n).toBe(4);
       expect(result.questions.top_n).toBe(2);
       expect(result.tags.top_n).toBe(1);
+    });
+
+    it('passes through the metadata group shape unchanged', () => {
+      const config = {
+        metadata: {
+          enabled: true,
+          metadata: [{ key: 'category', type: 'string', enum: ['科技'] }],
+          built_in_metadata: [{ key: 'doc_name', type: 'string' }],
+        },
+      };
+
+      const result = transformExtractorConfigToForm(config);
+
+      expect(result.metadata).toEqual({
+        enabled: true,
+        metadata: [{ key: 'category', type: 'string', enum: ['科技'] }],
+        built_in_metadata: [{ key: 'doc_name', type: 'string' }],
+      });
     });
   });
 

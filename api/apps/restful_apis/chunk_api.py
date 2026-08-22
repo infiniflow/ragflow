@@ -57,7 +57,7 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, meta_filter
+from common.metadata_utils import convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
@@ -364,8 +364,12 @@ async def retrieval_test(tenant_id):
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
-            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+            doc_ids = filter_doc_ids_by_metadata(
+                kb_ids,
+                convert_conditions(metadata_condition),
+                metadata_condition.get("logic", "and"),
+                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            )
             if not doc_ids and metadata_condition.get("conditions"):
                 return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
             if metadata_condition and not doc_ids:

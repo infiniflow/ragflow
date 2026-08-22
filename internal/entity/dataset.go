@@ -82,6 +82,7 @@ const (
 	PipelineTaskTypeGraphRAG PipelineTaskType = "GraphRAG"
 	PipelineTaskTypeMindmap  PipelineTaskType = "Mindmap"
 	PipelineTaskTypeMemory   PipelineTaskType = "Memory"
+	PipelineTaskTypeWiki     PipelineTaskType = "Wiki"
 )
 
 // FileSource represents the source of a file

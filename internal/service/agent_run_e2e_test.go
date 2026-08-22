@@ -373,8 +373,11 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	t.Cleanup(func() { dao.DB = orig })
 
 	dsl := map[string]any{
-		"globals": map[string]any{"sys.history": []any{}},
-		"history": []any{},
+		"globals": map[string]any{
+			"sys.history": []any{"user: stale replica turn"},
+			"env.topic":   "preserved",
+		},
+		"history": []any{[]any{"user", "stale replica turn"}},
 		"memory":  []any{},
 		"components": map[string]any{
 			"begin_0": map[string]any{
@@ -386,7 +389,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 				"upstream": []any{"begin_0"},
 			},
 		},
-		"path": []any{"begin_0", "message_0"},
+		"path": []any{"begin_0", "stale_fillup"},
 	}
 	makeCanvasWithDSL(t, "canvas-new-session", "user-1", "tenant-1", "v-new-session", dsl)
 
@@ -409,6 +412,16 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	}
 	if session.ID == "" {
 		t.Fatal("persisted session has an empty ID")
+	}
+	if history, ok := session.DSL["history"].([]any); !ok || len(history) != 2 {
+		t.Fatalf("new session inherited replica history: %#v", session.DSL["history"])
+	}
+	if path, ok := session.DSL["path"].([]any); !ok || len(path) != 0 {
+		t.Fatalf("new session inherited replica path: %#v", session.DSL["path"])
+	}
+	globals, _ := session.DSL["globals"].(map[string]any)
+	if globals["env.topic"] != "preserved" {
+		t.Fatalf("new session lost reusable env state: %#v", globals["env.topic"])
 	}
 
 	events, err = svc.RunAgent(context.Background(), "user-1", "canvas-new-session", session.ID, "", "1", nil)

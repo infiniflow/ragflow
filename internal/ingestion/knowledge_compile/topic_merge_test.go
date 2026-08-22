@@ -20,8 +20,8 @@ func TestMergeTopicProductsPreservesEvidenceAndStableTopicIdentity(t *testing.T)
 		{
 			ID: "doc-page-2", DocID: "doc-2", Variant: kccommon.VariantWiki, Content: "# History\n\nsecond",
 			Meta: map[string]any{
-				"kind": "page", "page_type": "topic", "topic": " history ", "title": "History",
-				"slug": "topic/history-b", "entity_names": []string{"Bob"},
+				"kind": "page", "page_type": "topic", "topic": " history ", "title": "History (updated)",
+				"slug": "topic/history-a", "entity_names": []string{"Bob"},
 				"source_doc_ids": []string{"doc-2"}, "source_chunk_ids": []string{"chunk-2"},
 			},
 		},
@@ -36,8 +36,11 @@ func TestMergeTopicProductsPreservesEvidenceAndStableTopicIdentity(t *testing.T)
 	if !strings.Contains(merged[0].Content, "first") || !strings.Contains(merged[0].Content, "second") {
 		t.Fatalf("merged content lost evidence: %q", merged[0].Content)
 	}
-	if got := metaString(merged[0].Meta, "slug"); got != "topic/"+hashStr("history") {
-		t.Fatalf("topic slug = %q, want deterministic topic slug", got)
+	if got := metaString(merged[0].Meta, "slug"); got != "topic/history-a" {
+		t.Fatalf("topic slug = %q, want existing slug", got)
+	}
+	if got := metaString(merged[0].Meta, "title"); got != "History" {
+		t.Fatalf("topic title = %q, want existing title", got)
 	}
 	if got := metaStringSlice(merged[0].Meta, "entity_names"); len(got) != 2 {
 		t.Fatalf("entity names = %v, want both entities", got)
@@ -65,7 +68,7 @@ func TestMergeTopicProductsRemovesSupersededDatasetPage(t *testing.T) {
 		}},
 	}
 	merged, stale := mergeTopicProducts("tenant", "kb", products)
-	if len(merged) != 1 || len(stale) != 1 || stale[0] != "new-page" {
-		t.Fatalf("merged=%#v stale=%#v, want one survivor and new-page stale", merged, stale)
+	if len(merged) != 2 || len(stale) != 0 {
+		t.Fatalf("merged=%#v stale=%#v, want two separate pages", merged, stale)
 	}
 }

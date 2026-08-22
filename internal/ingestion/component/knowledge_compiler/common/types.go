@@ -138,6 +138,9 @@ type Product struct {
 type Outputs struct {
 	Products          []Product
 	DuplicatesDropped int
+	AffectedPageSlugs []string
+	RemovedPageSlugs  []string
+	WikiActiveStates  []WikiMapActiveState
 }
 
 // ParseParam builds a Param from the DSL params map. The variant is NOT taken

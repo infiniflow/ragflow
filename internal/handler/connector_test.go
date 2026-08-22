@@ -241,9 +241,10 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name     string
-		err      error
-		wantCode common.ErrorCode
+		name        string
+		err         error
+		wantCode    common.ErrorCode
+		wantMessage string
 	}{
 		{
 			name:     "success",
@@ -263,7 +264,13 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 		{
 			name:     "unsupported source",
 			err:      service.ErrConnectorTestUnsupported,
-			wantCode: common.CodeArgumentError,
+			wantCode: common.CodeNotImplemented,
+		},
+		{
+			name:        "source not implemented",
+			err:         fmt.Errorf("%w: seafile", service.ErrConnectorSourceNotImplemented),
+			wantCode:    common.CodeNotImplemented,
+			wantMessage: "connector source is not implemented: seafile",
 		},
 		{
 			name:     "schema validation failure",
@@ -281,9 +288,10 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 			wantCode: common.CodeDataError,
 		},
 		{
-			name:     "unexpected failure",
-			err:      fmt.Errorf("boom"),
-			wantCode: common.CodeServerError,
+			name:        "unexpected failure",
+			err:         fmt.Errorf("boom"),
+			wantCode:    common.CodeServerError,
+			wantMessage: "boom",
 		},
 	}
 
@@ -309,6 +317,9 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 			}
 			if body["code"] != float64(tt.wantCode) {
 				t.Fatalf("code=%v want=%v body=%v", body["code"], tt.wantCode, body)
+			}
+			if tt.wantMessage != "" && body["message"] != tt.wantMessage {
+				t.Fatalf("message=%v want=%v body=%v", body["message"], tt.wantMessage, body)
 			}
 		})
 	}

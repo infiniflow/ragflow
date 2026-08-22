@@ -467,6 +467,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// runs), in which case TrackProgress is a no-op — progress is an
 	// observability concern, not a data dependency.
 	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
+	runCtx = runtime.WithProgressMessageCallback(runCtx, p.componentProgressMessageCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -710,5 +711,24 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			Message:    msg,
 			Phase:      int(ev.Phase),
 		})
+	}
+}
+
+type detailedProgressSink interface {
+	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime.ProgressMessageCallback {
+	sink, ok := p.sink.(detailedProgressSink)
+	if !ok {
+		return nil
+	}
+	return func(component, message string) {
+		common.Info("component progress detail",
+			zap.String("component", component),
+			zap.String("task_id", p.taskID),
+			zap.String("document_id", p.documentID),
+			zap.String("message", message))
+		sink.OnComponentMessage(ctx, p.taskID, p.documentID, component, message)
 	}
 }
