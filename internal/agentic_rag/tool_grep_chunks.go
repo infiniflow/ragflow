@@ -70,12 +70,18 @@ const grepChunksDefaultLimit = 30
 const snippetContextRunes = 80
 
 // GrepChunksTool regex-matches chunk content via GrepService. It is stateless:
-// no per-session seen-chunk tracking (memory is intentionally not ported).
-type GrepChunksTool struct{}
+// no per-session seen-chunk tracking (memory is intentionally not ported). The
+// tenant and dataset scope are injected at construction from the session, so the
+// tool never needs a canvas runtime.
+type GrepChunksTool struct {
+	tenantID   string
+	datasetIDs []string
+}
 
-// NewGrepChunksTool returns a GrepChunksTool implementing eino's runtime.InvokableTool.
-func NewGrepChunksTool() *GrepChunksTool {
-	return &GrepChunksTool{}
+// NewGrepChunksTool returns a GrepChunksTool scoped to the given tenant and
+// datasets, implementing eino's runtime.InvokableTool.
+func NewGrepChunksTool(tenantID string, datasetIDs []string) *GrepChunksTool {
+	return &GrepChunksTool{tenantID: tenantID, datasetIDs: datasetIDs}
 }
 
 // Info returns the tool's metadata for the chat model. The parameter schema is
@@ -136,8 +142,11 @@ func (g *GrepChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 
 	svc := runtime.GetGrepService()
-	tenantID := runtime.TenantID(ctx)
-	datasetIDs := runtime.DatasetIDs(ctx, args.DatasetIDs)
+	tenantID := g.tenantID
+	datasetIDs := args.DatasetIDs
+	if len(datasetIDs) == 0 {
+		datasetIDs = g.datasetIDs
+	}
 
 	chunks, err := svc.Grep(ctx, runtime.GrepRequest{
 		Pattern:      query,

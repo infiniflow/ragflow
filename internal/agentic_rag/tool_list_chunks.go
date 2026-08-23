@@ -70,13 +70,17 @@ type deepReadService interface {
 	ListByDocIDs(ctx context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error)
 }
 
-// ListChunksTool reads the full original chunks of one document.
-type ListChunksTool struct{}
+// ListChunksTool reads the full original chunks of one document. The tenant and
+// dataset scope are injected at construction from the session.
+type ListChunksTool struct {
+	tenantID   string
+	datasetIDs []string
+}
 
-// NewListChunksTool returns a ListChunksTool implementing eino's
-// runtime.InvokableTool.
-func NewListChunksTool() *ListChunksTool {
-	return &ListChunksTool{}
+// NewListChunksTool returns a ListChunksTool scoped to the given tenant and
+// datasets, implementing eino's runtime.InvokableTool.
+func NewListChunksTool(tenantID string, datasetIDs []string) *ListChunksTool {
+	return &ListChunksTool{tenantID: tenantID, datasetIDs: datasetIDs}
 }
 
 // Info returns the tool's metadata for the chat model. The parameter schema is
@@ -141,7 +145,7 @@ func (l *ListChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	offset := max(args.Offset, 0)
 
 	svc := runtime.GetGrepService()
-	tenantID := runtime.TenantID(ctx)
+	tenantID := l.tenantID
 	dr, ok := svc.(deepReadService)
 	if svc == nil || tenantID == "" {
 		return chunksXMLEmpty(), nil

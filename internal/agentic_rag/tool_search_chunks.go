@@ -73,12 +73,17 @@ const (
 
 // SearchChunksTool performs semantic retrieval over 1–5 queries, merging and
 // deduplicating the results. Backs onto GetRetrievalService() with hybrid
-// weighting (vector + keyword).
-type SearchChunksTool struct{}
+// weighting (vector + keyword). The tenant and dataset scope are injected at
+// construction from the session.
+type SearchChunksTool struct {
+	tenantID   string
+	datasetIDs []string
+}
 
-// NewSearchChunksTool returns a SearchChunksTool implementing eino's runtime.InvokableTool.
-func NewSearchChunksTool() *SearchChunksTool {
-	return &SearchChunksTool{}
+// NewSearchChunksTool returns a SearchChunksTool scoped to the given tenant and
+// datasets, implementing eino's runtime.InvokableTool.
+func NewSearchChunksTool(tenantID string, datasetIDs []string) *SearchChunksTool {
+	return &SearchChunksTool{tenantID: tenantID, datasetIDs: datasetIDs}
 }
 
 // Info returns the tool's metadata for the chat model. The parameter schema is
@@ -188,8 +193,11 @@ func (k *SearchChunksTool) InvokableRun(ctx context.Context, argumentsInJSON str
 	}
 
 	svc := runtime.GetRetrievalService()
-	tenantID := runtime.TenantID(ctx)
-	datasetIDs := runtime.DatasetIDs(ctx, args.DatasetIDs)
+	tenantID := k.tenantID
+	datasetIDs := args.DatasetIDs
+	if len(datasetIDs) == 0 {
+		datasetIDs = k.datasetIDs
+	}
 	if svc == nil || tenantID == "" || len(datasetIDs) == 0 {
 		return searchResultsXMLEmpty(), nil
 	}

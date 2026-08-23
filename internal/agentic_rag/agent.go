@@ -46,6 +46,13 @@ type Input struct {
 	MaxIterations int
 	// Stream controls whether model output is streamed into the event iterator.
 	Stream bool
+	// TenantID is the conversation's tenant (the chat's bound tenant, decided by
+	// the session created in the UI). It is injected into the retrieval tools so
+	// they search the right index without a canvas runtime.
+	TenantID string
+	// DatasetIDs is the conversation's bound dataset scope, decided by the
+	// session created in the UI. It is injected into the retrieval tools.
+	DatasetIDs []string
 	// Tools are the eino tools the agent may call. When empty, the default
 	// smart-reasoning tool set (think, todo_write, grep_chunks, search_chunks,
 	// run_javascript) is used.
@@ -63,13 +70,14 @@ var errNilModel = errors.New("agentic_rag: model is required")
 // DefaultTools builds the default smart-reasoning tool set (the four retrieval
 // and reasoning tools, plus the run_javascript sandbox). They are constructed
 // directly in this package rather than looked up from the canvas tool registry.
-func DefaultTools() []tool.BaseTool {
+// The retrieval tools are scoped to the given tenant and datasets.
+func DefaultTools(tenantID string, datasetIDs []string) []tool.BaseTool {
 	return []tool.BaseTool{
 		NewThinkTool(),
 		NewTodoWriteTool(),
-		NewGrepChunksTool(),
-		NewSearchChunksTool(),
-		NewListChunksTool(),
+		NewGrepChunksTool(tenantID, datasetIDs),
+		NewSearchChunksTool(tenantID, datasetIDs),
+		NewListChunksTool(tenantID, datasetIDs),
 		NewRunJavascriptTool(),
 	}
 }
@@ -88,7 +96,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	tools := in.Tools
 	if len(tools) == 0 {
-		tools = DefaultTools()
+		tools = DefaultTools(in.TenantID, in.DatasetIDs)
 	}
 
 	maxIter := in.MaxIterations

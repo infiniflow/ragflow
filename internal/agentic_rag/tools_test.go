@@ -118,14 +118,14 @@ func TestScoreGrepChunks_ScoreAndDedupe(t *testing.T) {
 }
 
 func TestGrepChunksTool_InvalidRegex(t *testing.T) {
-	_, err := NewGrepChunksTool().InvokableRun(context.Background(), `{"query":"("}`)
+	_, err := NewGrepChunksTool("", nil).InvokableRun(context.Background(), `{"query":"("}`)
 	if err == nil || !strings.Contains(err.Error(), "invalid regex") {
 		t.Fatalf("expected invalid regex error, got %v", err)
 	}
 }
 
 func TestGrepChunksTool_EmptyQuery(t *testing.T) {
-	_, err := NewGrepChunksTool().InvokableRun(context.Background(), `{"query":""}`)
+	_, err := NewGrepChunksTool("", nil).InvokableRun(context.Background(), `{"query":""}`)
 	if err == nil {
 		t.Fatal("expected error for empty query")
 	}
@@ -134,7 +134,7 @@ func TestGrepChunksTool_EmptyQuery(t *testing.T) {
 // === search_chunks ===
 
 func TestSearchChunksTool_TooManyQueries(t *testing.T) {
-	_, err := NewSearchChunksTool().InvokableRun(context.Background(),
+	_, err := NewSearchChunksTool("", nil).InvokableRun(context.Background(),
 		`{"queries":["a","b","c","d","e","f"]}`)
 	if err == nil || !strings.Contains(err.Error(), "at most 5") {
 		t.Fatalf("expected 'at most 5' error, got %v", err)
@@ -142,7 +142,7 @@ func TestSearchChunksTool_TooManyQueries(t *testing.T) {
 }
 
 func TestSearchChunksTool_EmptyQueries(t *testing.T) {
-	_, err := NewSearchChunksTool().InvokableRun(context.Background(), `{"queries":[]}`)
+	_, err := NewSearchChunksTool("", nil).InvokableRun(context.Background(), `{"queries":[]}`)
 	if err == nil {
 		t.Fatal("expected error for empty queries")
 	}
@@ -445,8 +445,7 @@ func TestListChunks_DeepRead(t *testing.T) {
 	runtime.SetGrepService(adapter)
 	defer runtime.SetGrepService(nil)
 
-	ctx := runtime.WithScope(context.Background(), "t", []string{"kb1"})
-	out, err := NewListChunksTool().InvokableRun(ctx,
+	out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
 		`{"doc_id":"d1"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -485,10 +484,8 @@ func TestListChunks_Pagination(t *testing.T) {
 	runtime.SetGrepService(adapter)
 	defer runtime.SetGrepService(nil)
 
-	ctx := runtime.WithScope(context.Background(), "t", []string{"kb1"})
-
 	// Page 1: offset 0, limit 2 → chunks A, B.
-	out, err := NewListChunksTool().InvokableRun(ctx,
+	out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
 		`{"doc_id":"d1","limit":2,"offset":0}`)
 	if err != nil {
 		t.Fatalf("InvokableRun page1: %v", err)
@@ -501,7 +498,7 @@ func TestListChunks_Pagination(t *testing.T) {
 	}
 
 	// Page 2: offset 2, limit 2 → chunk C only.
-	out, err = NewListChunksTool().InvokableRun(ctx,
+	out, err = NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
 		`{"doc_id":"d1","limit":2,"offset":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun page2: %v", err)
@@ -526,8 +523,7 @@ func TestListChunks_DocIDRequired(t *testing.T) {
 	runtime.SetGrepService(adapter)
 	defer runtime.SetGrepService(nil)
 
-	ctx := runtime.WithScope(context.Background(), "t", []string{"kb1"})
-	out, err := NewListChunksTool().InvokableRun(ctx, `{"doc_id":"d1"}`)
+	out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(), `{"doc_id":"d1"}`)
 	if err != nil {
 		t.Fatalf("doc_id alone should not error: %v", err)
 	}
@@ -535,7 +531,7 @@ func TestListChunks_DocIDRequired(t *testing.T) {
 		t.Fatalf("doc_id alone must return the document's chunks: %s", out)
 	}
 	// doc_id is mandatory.
-	if _, err := NewListChunksTool().InvokableRun(ctx, `{}`); err == nil {
+	if _, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(), `{}`); err == nil {
 		t.Fatal("expected error when doc_id is missing")
 	}
 }

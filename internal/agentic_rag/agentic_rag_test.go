@@ -33,7 +33,7 @@ func TestRun_NilModel(t *testing.T) {
 // TestDefaultTools: the default tool set contains the ported tools, the
 // list_chunks deep-read tool, and the run_javascript sandbox.
 func TestDefaultTools(t *testing.T) {
-	tools := DefaultTools()
+	tools := DefaultTools("", nil)
 	if len(tools) != 6 {
 		t.Fatalf("len=%d, want 6", len(tools))
 	}

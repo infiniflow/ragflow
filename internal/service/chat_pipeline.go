@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -2102,9 +2101,9 @@ func (s *ChatPipelineService) smartReasoningChat(
 		// by the caller; the agent injects its own instruction).
 		msgs := convertMessagesToEino(messages)
 
-		// Resolve the dataset scope from the chat's KBs and inject it into ctx
-		// so grep_chunks / search_chunks can resolve their search scope
-		// without a canvas state.
+		// Resolve the dataset scope from the chat's KBs. These are passed into
+		// the agent's Input and injected into its retrieval tools, so
+		// grep_chunks / search_chunks search the right datasets.
 		datasetIDs := make([]string, 0, len(chat.KBIDs))
 		for _, raw := range chat.KBIDs {
 			if id, ok := raw.(string); ok && id != "" {
@@ -2114,9 +2113,8 @@ func (s *ChatPipelineService) smartReasoningChat(
 		// The tenant scope is the chat's OWNING tenant (chat.TenantID), not the
 		// requesting user. In shared-tenant conversations a member user's ID
 		// differs from the KB owner's tenant, and index names are built from the
-		// tenant id — injecting userID would make grep/search_chunks query the
+		// tenant id — passing userID would make grep/search_chunks query the
 		// wrong index and return stable empty results.
-		ctx = agenttool.WithScope(ctx, chat.TenantID, datasetIDs)
 
 		// Give the whole agent run (model + every tool) a fixed total budget,
 		// because the HTTP entrypoints provide a deadline-less Request.Context().
@@ -2146,6 +2144,8 @@ func (s *ChatPipelineService) smartReasoningChat(
 		final, err = agentic_rag.Run(ctx, agentic_rag.Input{
 			Model:         einoModel,
 			Messages:      msgs,
+			TenantID:      chat.TenantID,
+			DatasetIDs:    datasetIDs,
 			MaxIterations: maxIterations,
 			Stream:        stream,
 			OnDelta: func(contentDelta, thinkingDelta string) {

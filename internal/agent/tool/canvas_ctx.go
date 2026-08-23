@@ -22,20 +22,38 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
-// CanvasTenantID is the historical name for the tenant scope resolver.
-// Re-exported from runtime (single owner).
-func CanvasTenantID(ctx context.Context) string { return runtime.TenantID(ctx) }
-
-// CanvasDatasetIDs is the historical name for the dataset scope resolver.
-// Re-exported from runtime (single owner).
-func CanvasDatasetIDs(ctx context.Context, explicit []string) []string {
-	return runtime.DatasetIDs(ctx, explicit)
+// canvasTenantID derives the tenant id from canvas state, falling back to
+// user_id. Shared by agentic search and dataset-navigation tools.
+func canvasTenantID(ctx context.Context) string {
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return ""
+	}
+	if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+		return tenantID
+	}
+	userID, _ := state.Sys["user_id"].(string)
+	return userID
 }
 
-// canvasTenantID is the package-internal form used by the canvas tools.
-func canvasTenantID(ctx context.Context) string { return runtime.TenantID(ctx) }
-
-// canvasDatasetIDs is the package-internal form used by the canvas tools.
+// canvasDatasetIDs returns the explicit dataset ids (all of them, preserving
+// multi-KB sessions), else the canvas sys dataset_id as a single-element list.
 func canvasDatasetIDs(ctx context.Context, explicit []string) []string {
-	return runtime.DatasetIDs(ctx, explicit)
+	if len(explicit) > 0 {
+		out := make([]string, 0, len(explicit))
+		for _, id := range explicit {
+			if id != "" {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return nil
+	}
+	if id, _ := state.Sys["dataset_id"].(string); id != "" {
+		return []string{id}
+	}
+	return nil
 }
