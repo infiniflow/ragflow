@@ -1333,6 +1333,10 @@ def list_thumbnails():
 
     try:
         docs = DocumentService.get_thumbnails(doc_ids)
+        # Only hand out thumbnails for datasets the caller can access;
+        # doc ids are enumerable, so an unfiltered list leaks existence
+        # and object keys across tenants.
+        docs = [d for d in docs if KnowledgebaseService.accessible(kb_id=d["kb_id"], user_id=current_user.id)]
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
@@ -1861,6 +1865,8 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
+        if not await thread_pool_exec(KnowledgebaseService.accessible, bkt, current_user.id):
+            return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")

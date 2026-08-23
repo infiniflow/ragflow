@@ -20,7 +20,9 @@ from quart import request
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.common.check_team_permission import check_file_team_permission
 from api.db.services.file_commit_service import FileCommitService
+from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,19 @@ def _resolve_dataset_folder(dataset_id):
     return dataset_id
 
 
+def _ensure_commit_scope_access(resolver_type, entity_id, folder_id):
+    """Commits carry full file contents: never serve or mutate a folder the
+    caller does not own or share. Mirrors the accessible()/team checks the
+    document and file endpoints already apply."""
+    if resolver_type == "datasets":
+        if not KnowledgebaseService.accessible(kb_id=entity_id, user_id=current_user.id):
+            raise PermissionError(f"No access to dataset {entity_id}")
+        return
+    ok, folder = FileService.get_by_id(folder_id)
+    if not ok or not check_file_team_permission(folder, current_user.id):
+        raise PermissionError(f"No access to folder {folder_id}")
+
+
 # ── Route registration helper ─────────────────────────────────────────────
 
 
@@ -98,10 +113,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 
     def _resolve(entity_id):
         if resolver_type is None:
-            return entity_id  # already a folder_id
-        folder_id = _resolve_folder_id(resolver_type, entity_id)
-        if folder_id is None:
-            raise ValueError(f"Could not resolve {resolver_type} '{entity_id}' to a folder")
+            folder_id = entity_id  # already a folder_id
+        else:
+            folder_id = _resolve_folder_id(resolver_type, entity_id)
+            if folder_id is None:
+                raise ValueError(f"Could not resolve {resolver_type} '{entity_id}' to a folder")
+        _ensure_commit_scope_access(resolver_type, entity_id, folder_id)
         return folder_id
 
     # ── Create commit ──────────────────────────────────────────────────────
@@ -371,6 +388,9 @@ _register_commit_routes("/workspaces/<entity_id>", "entity_id")
 @login_required
 async def get_file_version_history(file_id):
     try:
+        ok, file = FileService.get_by_id(file_id)
+        if not ok or not check_file_team_permission(file, current_user.id):
+            return get_data_error_result(message="File not found.")
         versions = FileCommitService.get_file_version_history(file_id)
         return get_json_result(data=versions)
     except Exception as e:
