@@ -167,7 +167,13 @@ func TestStopWaitWaitsForInFlightTask(t *testing.T) {
 		<-release
 		return in, nil
 	})
-	defer func() { close(release) }()
+	// release is closed inline once the worker is guaranteed blocked in the
+	// handler; the deferred close covers the early-return (failing) path so a
+	// worker is never left blocked forever. sync.Once keeps the two paths from
+	// double-closing the channel.
+	var closeReleaseOnce sync.Once
+	closeRelease := func() { closeReleaseOnce.Do(func() { close(release) }) }
+	defer closeRelease()
 
 	f, err := pool.Submit(context.Background(), 42)
 	if err != nil {
@@ -187,7 +193,7 @@ func TestStopWaitWaitsForInFlightTask(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	close(release)
+	closeRelease()
 	res, err := f.Wait(context.Background())
 	if err != nil {
 		t.Fatalf("Wait: %v", err)
@@ -232,5 +238,70 @@ func TestResizeAfterStopWaitIsNoop(t *testing.T) {
 	pool.Resize(8)
 	if got := pool.Stats().LiveWorkers; got != 0 {
 		t.Fatalf("Resize after StopWait revived workers: live=%d, want 0", got)
+	}
+}
+
+// TestStopWaitWithBlockedSubmitNoDeadlock verifies that a submit blocked on a
+// full workChan (all workers busy and the queue full) does not deadlock
+// StopWait. Previously SubmitTo held mu across the blocking channel send, so a
+// worker finishing its current job blocked in markDone on the same mu and could
+// never receive the next queued job: the queue never drained, the blocked
+// sender never made progress, and StopWait hung forever.
+func TestStopWaitWithBlockedSubmitNoDeadlock(t *testing.T) {
+	started := make(chan struct{})
+	released := make(chan struct{})
+	pool := NewWorkerPool[int, int](1, 1, func(_ context.Context, in int) (int, error) {
+		if in == 1 {
+			close(started)
+		}
+		<-released
+		return in, nil
+	})
+
+	ctx := context.Background()
+	if _, err := pool.Submit(ctx, 1); err != nil {
+		t.Fatalf("first Submit: %v", err)
+	}
+	<-started // the worker is now inside the handler, blocked on released
+
+	if _, err := pool.Submit(ctx, 2); err != nil {
+		t.Fatalf("second Submit: %v", err)
+	}
+	// Queue capacity is 1 and now holds task 2, so the next send must block.
+
+	blocked := make(chan error, 1)
+	go func() {
+		_, err := pool.Submit(ctx, 3)
+		blocked <- err
+	}()
+	time.Sleep(50 * time.Millisecond) // let the third submit reach the channel send
+
+	stopDone := make(chan struct{})
+	go func() {
+		pool.StopWait()
+		close(stopDone)
+	}()
+	close(released) // let the worker drain the queue so the blocked send can proceed
+
+	select {
+	case <-stopDone:
+		// No deadlock.
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopWait deadlocked with a submit blocked on a full queue")
+	}
+
+	select {
+	case err := <-blocked:
+		if err != nil {
+			t.Fatalf("blocked submit returned: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked submit never completed after StopWait")
+	}
+
+	st := pool.Stats()
+	if st.SubmittedTotal != 3 || st.CompletedTotal != 3 {
+		t.Fatalf("expected 3/3 tasks completed, got submitted=%d completed=%d",
+			st.SubmittedTotal, st.CompletedTotal)
 	}
 }
