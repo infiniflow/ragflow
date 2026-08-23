@@ -85,6 +85,14 @@ def base_module(monkeypatch):
     fake_pandas.DataFrame = type("DataFrame", (), {})
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
 
+    fake_connection_utils = ModuleType("common.connection_utils")
+    fake_connection_utils.timeout = lambda _seconds: lambda function: function
+    monkeypatch.setitem(sys.modules, "common.connection_utils", fake_connection_utils)
+
+    fake_misc_utils = ModuleType("common.misc_utils")
+    fake_misc_utils.thread_pool_exec = lambda function, *args, **kwargs: function(*args, **kwargs)
+    monkeypatch.setitem(sys.modules, "common.misc_utils", fake_misc_utils)
+
     spec = importlib.util.spec_from_file_location(
         "_base_for_regex_test", repo_root / "agent" / "component" / "base.py"
     )
@@ -259,3 +267,54 @@ def test_variable_ref_patt_does_not_match_bare_var_name(base_module):
         "Bare `{line}` should not match — only `cpn_id@var` / `sys.*` / "
         "`env.*` are valid template refs."
     )
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("pattern_name", "content", "values", "matched_text", "expected"),
+    [
+        (
+            "variable_ref_patt_re",
+            "Decision: {Agent:x@content} — done",
+            {"Agent:x@content": "VALUE"},
+            ["{Agent:x@content}"],
+            "Decision: VALUE — done",
+        ),
+        (
+            "variable_ref_patt_re",
+            "{A@x} {B@y}",
+            {"A@x": "ONE", "B@y": "TWO"},
+            ["{A@x}", "{B@y}"],
+            "ONE TWO",
+        ),
+        (
+            "variable_ref_patt_re",
+            "a {{X@y}} b",
+            {"X@y": "VALUE"},
+            ["{{X@y}}"],
+            "a VALUE b",
+        ),
+        (
+            "variable_ref_patt_re",
+            "a { {X@y} } b",
+            {"X@y": "VALUE"},
+            ["{ {X@y} }"],
+            "a VALUE b",
+        ),
+        (
+            "iteration_alias_patt_re",
+            "before {item} after",
+            {"item": "VALUE"},
+            ["{item}"],
+            "before VALUE after",
+        ),
+    ],
+)
+def test_reference_patterns_preserve_adjacent_literal_whitespace(
+    base_module, pattern_name, content, values, matched_text, expected
+):
+    pattern = getattr(base_module.ComponentBase, pattern_name)
+    matches = list(pattern.finditer(content))
+
+    assert [match.group(0) for match in matches] == matched_text
+    assert pattern.sub(lambda match: values[match.group(1)], content) == expected

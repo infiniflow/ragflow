@@ -360,9 +360,9 @@ class ComponentBase(ABC):
     # `cpn_id` allows underscores (frontend ids like `userfillup_abc`,
     # `retrieval_xyz`) and colons (legacy DSL ids like `UserFillUp:CateInput`,
     # `Retrieval:KBSearch`).
-    variable_ref_patt = r"\{* *\{([a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    variable_ref_patt = r"(?:\{+ *)?\{([a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\}(?: *\}+)?"
     variable_ref_patt_re = re.compile(variable_ref_patt, flags=re.IGNORECASE | re.DOTALL)
-    iteration_alias_patt = r"\{* *\{(item|index|result)\} *\}*"
+    iteration_alias_patt = r"(?:\{+ *)?\{(item|index|result)\}(?: *\}+)?"
     iteration_alias_patt_re = re.compile(iteration_alias_patt, flags=re.IGNORECASE | re.DOTALL)
 
     def __str__(self):
