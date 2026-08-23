@@ -1017,6 +1017,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelHighDescription: '深度推理',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: '尽力思考',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: '基于知识库的 ReAct 智能体',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',

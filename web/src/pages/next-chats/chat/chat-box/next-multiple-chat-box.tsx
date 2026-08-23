@@ -367,6 +367,7 @@ export function MultipleChatBox({
     async ({
       enableInternet,
       enableThinking,
+      agentMode,
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
 
@@ -374,6 +375,7 @@ export function MultipleChatBox({
         box?.({
           enableInternet,
           enableThinking,
+          agentMode,
         });
       });
     },

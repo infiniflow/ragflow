@@ -38,12 +38,11 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 		t.Skip("Skipping ES integration test; set ES_TEST=1 to run")
 	}
 
-	engine, err := NewEngine(getESTestConfig())
+	ctx := context.Background()
+	engine, err := NewEngine(ctx, getESTestConfig())
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
-
-	ctx := context.Background()
 	baseName := "ragflow_chunk_readback_test"
 	datasetID := "kb-1"
 	chunkID := "readback-chunk-1"
