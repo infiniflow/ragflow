@@ -1754,6 +1754,114 @@ def _add_context(cks, idx, context_size):
     cks[idx]["context_below"] = "".join(parts_below) if parts_below else ""
 
 
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+
+
+def _largest_fitting_cut(text, start, chunk_token_num, count, cuts):
+    """Return the furthest offset in ``cuts`` whose prefix still fits the budget.
+
+    ``cuts`` is an ascending sequence of absolute offsets into ``text``, all
+    greater than ``start``. The answer is always an offset that a probe
+    measured at ``<= chunk_token_num``, so the piece that gets emitted is
+    verified rather than inferred; ``start`` is returned when even the nearest
+    candidate overflows.
+
+    The scan gallops (1, 2, 4, ... candidates ahead) to bracket the first
+    overflow, then bisects inside that bracket, so a probe tokenizes about one
+    budget's worth of text rather than the whole remainder.
+    """
+    n = len(cuts)
+    if n == 0:
+        return start
+    best = -1
+    hi = n - 1
+    probe, step = 0, 1
+    while probe < n:
+        if count(text[start : cuts[probe]]) <= chunk_token_num:
+            best = probe
+            probe += step
+            step *= 2
+        else:
+            hi = probe - 1
+            break
+    lo = best + 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if count(text[start : cuts[mid]]) <= chunk_token_num:
+            best = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return cuts[best] if best >= 0 else start
+
+
+def _split_oversized_unit(text, chunk_token_num, token_count_fn=None):
+    """Split one over-budget unit into pieces that each fit ``chunk_token_num``.
+
+    Whitespace runs are the preferred break; a whitespace-free run that is over
+    budget on its own falls back to a character-window search inside that run.
+    Both tiers use the same token-count oracle on the assembled prefix, so the
+    budget is measured on the text that is emitted instead of on a sum of
+    per-atom counts -- the encoder is not additive, ``" "`` and ``"word"``
+    count one token each apart and one token joined. Concatenating the returned
+    pieces reproduces ``text``.
+
+    ``token_count_fn`` defaults to ``num_tokens_from_string``, resolved at call
+    time so tests can monkeypatch ``rag.nlp.num_tokens_from_string``.
+    """
+    count = token_count_fn or num_tokens_from_string
+    text = text or ""
+    if not text:
+        return []
+    if chunk_token_num <= 0 or count(text) <= chunk_token_num:
+        return [text]
+
+    end = len(text)
+    # Break at the end of every whitespace run so the run stays attached to the
+    # piece before it and no character is dropped.
+    ws_cuts = [m.end() for m in _WHITESPACE_RUN_RE.finditer(text)]
+    if not ws_cuts or ws_cuts[-1] != end:
+        ws_cuts.append(end)
+
+    pieces = []
+    start = 0
+    first = 0
+    while start < end:
+        while first < len(ws_cuts) and ws_cuts[first] <= start:
+            first += 1
+        cuts = ws_cuts[first:]
+        cut = _largest_fitting_cut(text, start, chunk_token_num, count, cuts)
+        if cut == start:
+            # A whitespace-free run larger than the budget: search inside it.
+            run_end = cuts[0] if cuts else end
+            cut = _largest_fitting_cut(text, start, chunk_token_num, count, range(start + 1, run_end + 1))
+            # A single character over the budget still has to advance.
+            cut = max(cut, start + 1)
+        pieces.append(text[start:cut])
+        start = cut
+    return pieces
+
+
+def _expand_oversized_text_ck(ck, chunk_token_num, has_custom):
+    """Return ``ck`` as one or more text units that each fit the budget.
+
+    A wrapped custom delimiter bypasses ``chunk_token_num`` by contract (one
+    segment per chunk), so those units pass through whole.
+    """
+    if has_custom or chunk_token_num <= 0 or ck.get("tk_nums", 0) <= chunk_token_num:
+        return [ck]
+    pieces = _split_oversized_unit(ck.get("text") or "", chunk_token_num)
+    if len(pieces) <= 1:
+        return [ck]
+    out = []
+    for piece in pieces:
+        sub = dict(ck)
+        sub["text"] = piece
+        sub["tk_nums"] = num_tokens_from_string(piece)
+        out.append(sub)
+    return out
+
+
 def _merge_cks(cks, chunk_token_num, has_custom):
     merged = []
     image_idxs = []
@@ -1773,14 +1881,17 @@ def _merge_cks(cks, chunk_token_num, has_custom):
         # parser_txt. The prior check only looked at the already-accumulated total,
         # so a chunk could grow past chunk_token_num by up to a full incoming unit
         # before the overflow was noticed on the *next* iteration.
-        incoming_tk = cks[i].get("tk_nums", 0)
-        if prev_text_ck < 0 or has_custom or merged[prev_text_ck]["tk_nums"] + incoming_tk > chunk_token_num:
-            merged.append(cks[i])
-            prev_text_ck = len(merged) - 1
-            continue
+        # A unit larger than the budget cannot be merged down to fit, so split
+        # it first; the merge below then only ever sees units that fit.
+        for unit in _expand_oversized_text_ck(cks[i], chunk_token_num, has_custom):
+            incoming_tk = unit.get("tk_nums", 0)
+            if prev_text_ck < 0 or has_custom or merged[prev_text_ck]["tk_nums"] + incoming_tk > chunk_token_num:
+                merged.append(unit)
+                prev_text_ck = len(merged) - 1
+                continue
 
-        merged[prev_text_ck]["text"] = (merged[prev_text_ck].get("text") or "") + (cks[i].get("text") or "")
-        merged[prev_text_ck]["tk_nums"] = merged[prev_text_ck].get("tk_nums", 0) + incoming_tk
+            merged[prev_text_ck]["text"] = (merged[prev_text_ck].get("text") or "") + (unit.get("text") or "")
+            merged[prev_text_ck]["tk_nums"] = merged[prev_text_ck].get("tk_nums", 0) + incoming_tk
 
     return merged, image_idxs
 

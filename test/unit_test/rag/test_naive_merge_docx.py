@@ -36,7 +36,7 @@ import re
 import pytest
 
 from rag import nlp
-from rag.nlp import _merge_cks, naive_merge_docx
+from rag.nlp import _merge_cks, _split_oversized_unit, naive_merge_docx
 
 DEFAULT_DELIMITER = "\n。；！？"
 
@@ -126,15 +126,78 @@ def test_naive_merge_docx_small_sections_are_still_packed():
 
 
 @pytest.mark.p2
-def test_naive_merge_docx_oversized_atomic_section_stays_isolated():
-    # A single section with no internal delimiter cannot be sub-split by
-    # _merge_cks (it only merges, never splits); it must remain its own
-    # chunk rather than being silently truncated or crashing.
+def test_naive_merge_docx_oversized_section_is_split_on_whitespace():
+    # A single section with no internal delimiter is larger than the budget on
+    # its own: it is split on whitespace so every emitted chunk fits.
     huge = " ".join(["word"] * 2000)
     chunks, _ = naive_merge_docx([_section(huge)], chunk_token_num=100)
     texts = _nonempty_chunks(chunks)
+    assert len(texts) == 20
+    assert all(c["tk_nums"] <= 100 for c in texts), [c["tk_nums"] for c in texts]
+    assert sum(c["tk_nums"] for c in texts) == 2000
+    assert "".join(c["text"] for c in texts) == huge
+
+
+@pytest.mark.p2
+def test_naive_merge_docx_custom_delimiter_section_is_not_split():
+    # A wrapped delimiter bypasses chunk_token_num by contract: one segment per
+    # chunk, whatever its size.
+    huge = " ".join(["word"] * 500)
+    chunks, _ = naive_merge_docx([_section(huge)], chunk_token_num=100, delimiter="`##`")
+    texts = _nonempty_chunks(chunks)
     assert len(texts) == 1
-    assert texts[0]["tk_nums"] == 2000
+    assert texts[0]["tk_nums"] == 500
+
+
+# --------------------------------------------------------------------------- #
+# _split_oversized_unit -- whitespace tier and character-window fallback
+# --------------------------------------------------------------------------- #
+
+
+def _char_count(s):
+    return len(s or "")
+
+
+@pytest.mark.p2
+def test_split_oversized_unit_breaks_on_whitespace():
+    text = " ".join(["alpha"] * 40)
+    pieces = _split_oversized_unit(text, 10, token_count_fn=lambda s: len((s or "").split()))
+    assert all(len(p.split()) <= 10 for p in pieces), [len(p.split()) for p in pieces]
+    assert "".join(pieces) == text
+
+
+@pytest.mark.p2
+def test_split_oversized_unit_character_window_fallback():
+    # One whitespace-free run larger than the budget: the character-window
+    # search inside the run keeps every piece within the cap.
+    text = "x" * 250
+    pieces = _split_oversized_unit(text, 32, token_count_fn=_char_count)
+    assert all(_char_count(p) <= 32 for p in pieces), [len(p) for p in pieces]
+    assert "".join(pieces) == text
+
+
+@pytest.mark.p2
+def test_split_oversized_unit_mixed_words_and_long_run():
+    text = "short words here " + "y" * 300 + " and more words"
+    pieces = _split_oversized_unit(text, 40, token_count_fn=_char_count)
+    assert all(_char_count(p) <= 40 for p in pieces), [len(p) for p in pieces]
+    assert "".join(pieces) == text
+
+
+@pytest.mark.p2
+def test_split_oversized_unit_single_atom_over_budget_still_advances():
+    # cap smaller than one character: the loop must terminate, one char per
+    # piece, with no text lost.
+    pieces = _split_oversized_unit("abcd", 0, token_count_fn=_char_count)
+    assert pieces == ["abcd"]
+    pieces = _split_oversized_unit("abcd", 1, token_count_fn=_char_count)
+    assert pieces == ["a", "b", "c", "d"]
+
+
+@pytest.mark.p2
+def test_split_oversized_unit_within_budget_is_returned_whole():
+    assert _split_oversized_unit("abc", 10, token_count_fn=_char_count) == ["abc"]
+    assert _split_oversized_unit("", 10, token_count_fn=_char_count) == []
 
 
 # --------------------------------------------------------------------------- #
