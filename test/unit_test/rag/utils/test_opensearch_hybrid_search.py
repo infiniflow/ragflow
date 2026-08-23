@@ -122,8 +122,11 @@ def _text_expr():
     return MatchTextExpr(fields=["content_ltks"], matching_text="what is kubernetes", topn=10, extra_options={})
 
 
-def _dense_expr(extra_options=None):
-    if extra_options is None:
+_DEFAULT_DENSE_OPTIONS = object()
+
+
+def _dense_expr(extra_options=_DEFAULT_DENSE_OPTIONS):
+    if extra_options is _DEFAULT_DENSE_OPTIONS:
         extra_options = {"similarity": 0.0}
     return MatchDenseExpr(
         vector_column_name="q_1024_vec",
@@ -233,6 +236,14 @@ class TestHybridSearchDSL:
         knn_clause = body["query"]["knn"]
         vec_params = next(iter(knn_clause.values()))
         assert vec_params.get("boost") == 0.25
+
+    def test_knn_accepts_none_extra_options(self):
+        conn = _make_os_connection()
+        body, _ = _call_search(conn, [_dense_expr(extra_options=None)])
+
+        knn_clause = body["query"]["knn"]
+        vec_params = next(iter(knn_clause.values()))
+        assert "boost" not in vec_params, "knn boost must be omitted when extra_options is None"
 
 
 class TestOpenSearchVectorScoreExtraction:

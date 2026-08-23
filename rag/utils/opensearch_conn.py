@@ -395,9 +395,6 @@ class OSConnection(DocStoreConnection):
             # Besides, Opensearch's DSL for KNN_search query syntax differs from that in Elasticsearch, I also made some adaptions for it
             elif isinstance(m, MatchDenseExpr):
                 assert bqry is not None
-                similarity = 0.0
-                if "similarity" in m.extra_options:
-                    similarity = m.extra_options["similarity"]
                 explicit_boost = None
                 if isinstance(m.extra_options, dict) and "boost" in m.extra_options:
                     explicit_boost = m.extra_options["boost"]
