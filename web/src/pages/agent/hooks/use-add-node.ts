@@ -1,5 +1,5 @@
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { t } from 'i18next';
@@ -188,12 +188,13 @@ export const useInitializeOperatorParams = () => {
         // sys_prompt/prompts belong to the Python extractor form. The Go
         // form seeds summary.system_prompt itself, and the Go extractor
         // falls back to a built-in prompt when it is empty.
-        ...(isGoBackend()
-          ? {}
-          : {
-              sys_prompt: t('flow.prompts.system.summary'),
-              prompts: t('flow.prompts.user.summary'),
-            }),
+        ...pickByBackend({
+          go: {},
+          python: {
+            sys_prompt: t('flow.prompts.system.summary'),
+            prompts: t('flow.prompts.user.summary'),
+          },
+        }),
       },
       [Operator.Compiler]: { ...initialCompilationValues, llm_id: llmId },
       [Operator.DataOperations]: initialDataOperationsValues,

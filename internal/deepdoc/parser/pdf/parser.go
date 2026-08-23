@@ -507,13 +507,22 @@ func (p *Parser) buildLayout(ctx context.Context,
 ) error {
 	result.Metrics.BoxesInitial = len(boxes)
 
+	// Assign columns BEFORE dedup so DedupSubstringOverlaps can tell a real
+	// OCR double-detection fragment (same column as its container) apart from
+	// an independent short line in a DIFFERENT column whose text merely
+	// happens to be a substring of a wide cross-gutter OCR box. Without the
+	// column tag, double-column pages (e.g. 1例3个月) lose left-column lines
+	// to the substring collapse. AssignColumn only reads box geometry, so it
+	// is safe before any text merge.
+	boxes = lyt.AssignColumn(boxes)
+
 	// Collapse OCR duplicates BEFORE any merge step: overlapping same-text /
 	// substring boxes must be dropped while still independent, otherwise
-	// TextMerge/NaiveVerticalMerge concatenate them into duplicated text.
+	// TextMerge/NaiveVerticalMerge concatenate them into duplicated text. The
+	// same-column guard above keeps cross-column lines intact.
 	boxes = lyt.DedupIdenticalText(boxes)
 	boxes = lyt.DedupSubstringOverlaps(boxes)
 
-	boxes = lyt.AssignColumn(boxes)
 	boxes = lyt.TextMerge(boxes, medianHeights)
 	result.Metrics.BoxesTextMerge = len(boxes)
 

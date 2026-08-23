@@ -7,11 +7,11 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
-import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
+import { useKnowledgeBaseContext } from '../../../contexts/knowledge-base-context';
 import { AutoMetadata } from './common-item';
 import { FormLayout } from '@/constants/form';
 
-export function LawsConfiguration() {
+export function ManualConfiguration() {
   const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
@@ -31,9 +31,7 @@ export function LawsConfiguration() {
         ></AutoQuestionsFormField>
       </ConfigurationFormContainer>
 
-      {/* <ConfigurationFormContainer>
-        <TagItems></TagItems>
-      </ConfigurationFormContainer> */}
+      {/* <TagItems></TagItems> */}
     </MainContainer>
   );
 }

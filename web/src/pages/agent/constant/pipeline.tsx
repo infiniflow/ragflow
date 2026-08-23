@@ -1,6 +1,6 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
 
 export enum FileType {
@@ -392,7 +392,12 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return isGoBackend() ? initialGoExtractorValues : initialExtractorValues;
+  return pickByBackend<
+    typeof initialGoExtractorValues | typeof initialExtractorValues
+  >({
+    go: initialGoExtractorValues,
+    python: initialExtractorValues,
+  });
 }
 
 export const initialCompilationValues = {

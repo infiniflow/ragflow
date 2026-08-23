@@ -30,7 +30,7 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -83,12 +83,9 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-/**
- * Converts Extractor config from API/DSL format to form format.
- * DSL:  { prompts: [{ content: "text", role: "user" }] }
- * Form: { prompts: "text" }
- */
-export function transformExtractorConfigToForm(
+// Python form: flatten the DSL prompts array into the form's single field;
+// the Python extractor form consumes the legacy flat fields as-is.
+function transformExtractorConfigToFormPython(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   if (!config) return {};
@@ -98,11 +95,16 @@ export function transformExtractorConfigToForm(
     result.prompts = config.prompts[0]?.content ?? '';
   }
 
-  // The nested per-feature configs are Go-only; the Python extractor form
-  // consumes the legacy flat fields as-is.
-  if (!isGoBackend()) {
-    return result;
-  }
+  return result;
+}
+
+// Go form: additionally normalize the nested per-feature groups the Go
+// extractor schema reads (schema.ExtractorParam).
+function transformExtractorConfigToFormGo(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  const result = transformExtractorConfigToFormPython(config);
+  if (!config) return result;
 
   const isSummaryEnabled =
     config.summary?.enabled !== undefined
@@ -167,6 +169,20 @@ export function transformExtractorConfigToForm(
   delete result.built_in_metadata;
 
   return result;
+}
+
+/**
+ * Converts Extractor config from API/DSL format to form format.
+ * DSL:  { prompts: [{ content: "text", role: "user" }] }
+ * Form: { prompts: "text" }
+ */
+export function transformExtractorConfigToForm(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  return pickByBackend({
+    go: transformExtractorConfigToFormGo,
+    python: transformExtractorConfigToFormPython,
+  })(config);
 }
 
 /**

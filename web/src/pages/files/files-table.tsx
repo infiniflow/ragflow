@@ -287,6 +287,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
+            setRowSelection={setRowSelection}
           />
         );
       },
