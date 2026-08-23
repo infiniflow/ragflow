@@ -14,13 +14,20 @@
 #  limitations under the License.
 #
 """
-MySQL Data Migration Script
+Model provider table migration script.
 
-This script provides a flexible MySQL data migration tool that supports:
-1. MySQL configuration via config file or command line arguments
-2. Direct peewee operations without importing api.db.services
-3. Configurable migration stages via command line
-4. Migration logging with table names, row counts, and duration
+Migrates legacy per-tenant model configuration (tenant_llm) into the model
+provider / instance / model tables, and rewrites the model identifiers that
+reference them.
+
+Supports:
+1. MySQL and PostgreSQL metadata databases, selected by DB_TYPE the same way
+   the application selects it (see common.settings.DATABASE_TYPE); dialect
+   differences live in tools/scripts/migration_dialects.py
+2. Connection settings from a config file or command line arguments
+3. Direct peewee operations without importing api.db.services
+4. Configurable migration stages via command line
+5. Migration logging with table names, row counts, and duration
 """
 
 import argparse
@@ -38,15 +45,23 @@ from peewee import (
     DateTimeField,
     IntegerField,
     Model,
-    MySQLDatabase,
     PrimaryKeyField,
     TextField,
 )
-from playhouse.migrate import MySQLMigrator
 
 # Add project root to path for imports
 PROJECT_BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_BASE)
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from migration_dialects import (
+    DEFAULT_PORTS,
+    Column,
+    Index,
+    TableSpec,
+    get_dialect,
+    normalize_db_type,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -57,39 +72,79 @@ MIGRATION_DB_VERSION_MARKER = "mysql_migration.database.version"
 
 
 class MigrationConfig:
-    """Configuration for MySQL connection"""
+    """Connection settings for the metadata database being migrated."""
 
-    def __init__(self, host: str = "localhost", port: int = 3306, user: str = "root", password: str = "", database: str = "rag_flow"):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int | None = None,
+        user: str = "root",
+        password: str = "",
+        database: str = "rag_flow",
+        db_type: str = "mysql",
+        schema: str = "public",
+    ):
+        self.db_type = normalize_db_type(db_type)
         self.host = host
-        self.port = port
+        self.port = port if port is not None else DEFAULT_PORTS[self.db_type]
         self.user = user
         self.password = password
         self.database = database
+        # PostgreSQL only: the namespace holding the tables. Ignored on MySQL,
+        # where information_schema.table_schema is the database instead.
+        self.schema = schema
 
     @classmethod
     def from_config_file(cls, config_path: str) -> "MigrationConfig":
-        """Load configuration from YAML config file"""
+        """Load connection settings from service_conf.yaml.
+
+        Resolves the config block the same way the application does: DB_TYPE
+        names the block (common.settings reads DB_TYPE, defaulting to mysql),
+        so a deployment with a `postgres:` block and DB_TYPE=postgres is read
+        without any migration-specific configuration.
+
+        Falls back to the legacy `database:`/`mysql:` block lookup so existing
+        MySQL deployments keep working unchanged.
+        """
+        raw_db_type = os.getenv("DB_TYPE", "mysql")
+        db_type = normalize_db_type(raw_db_type)
         try:
             from ruamel.yaml import YAML
 
             yaml = YAML(typ="safe", pure=True)
 
             with open(config_path, "r") as f:
-                config = yaml.load(f)
+                config = yaml.load(f) or {}
 
-            # Try to get database config
-            db_config = config.get("database", config.get("mysql", {}))
+            # Prefer the block named by DB_TYPE, then the raw DB_TYPE spelling
+            # (so `serenedb:` or `postgresql:` are found), then the legacy keys.
+            db_config = None
+            for key in (db_type, raw_db_type.strip().lower(), "database", "mysql"):
+                candidate = config.get(key)
+                if isinstance(candidate, dict) and candidate:
+                    db_config = candidate
+                    if key not in (db_type, raw_db_type.strip().lower()):
+                        logger.info("Using legacy '%s' config block for DB_TYPE=%s", key, raw_db_type)
+                    break
+
+            if db_config is None:
+                raise KeyError(f"no database config block found for DB_TYPE={raw_db_type} in {config_path}")
 
             return cls(
                 host=db_config.get("host", "localhost"),
-                port=db_config.get("port", 3306),
+                port=db_config.get("port", DEFAULT_PORTS[db_type]),
                 user=db_config.get("user", "root"),
                 password=db_config.get("password", ""),
                 database=db_config.get("name", db_config.get("database", "rag_flow")),
+                db_type=raw_db_type,
+                schema=db_config.get("schema", "public"),
             )
         except Exception as e:
-            logger.warning(f"Failed to load config file: {e}, using defaults")
-            return cls()
+            # Defaults are MySQL-shaped and almost certainly wrong for any other
+            # dialect, so say which dialect was expected rather than failing
+            # later with a connection refused to port 3306.
+            logger.warning("Failed to load config file %s: %s; falling back to %s defaults", config_path, e, db_type)
+            return cls(db_type=raw_db_type)
 
 
 class MigrationStats:
@@ -129,16 +184,22 @@ class MigrationStats:
 
 
 class MigrationDatabase:
-    """Database wrapper for migrations"""
+    """Database wrapper for migrations.
+
+    Every dialect-specific statement is delegated to self.dialect, so the stage
+    classes below stay portable and only this file's helpers need to know which
+    database they are talking to.
+    """
 
     def __init__(self, config: MigrationConfig):
         self.config = config
-        self.db = MySQLDatabase(config.database, host=config.host, port=config.port, user=config.user, password=config.password, charset="utf8mb4")
-        self.migrator = MySQLMigrator(self.db)
+        self.dialect = get_dialect(config.db_type)
+        self.db = self.dialect.make_database(config)
+        self.migrator = self.dialect.make_migrator(self.db)
 
     def connect(self):
         self.db.connect()
-        logger.info(f"Connected to MySQL database: {self.config.database}")
+        logger.info("Connected to %s database: %s", self.dialect.name, self.config.database)
 
     def close(self):
         if not self.db.is_closed():
@@ -148,17 +209,48 @@ class MigrationDatabase:
     def execute_sql(self, sql: str, params=None):
         return self.db.execute_sql(sql, params)
 
+    def q(self, identifier: str) -> str:
+        """Quote one identifier for the active dialect."""
+        return self.dialect.quote(identifier)
+
+    def epoch_to_timestamp(self, seconds_expr: str) -> str:
+        """Render an epoch-seconds expression as a timestamp for this dialect."""
+        return self.dialect.epoch_to_timestamp(seconds_expr)
+
+    def create_table(self, spec: TableSpec):
+        """Create a table and its indexes, idempotently."""
+        for statement in self.dialect.create_table_statements(spec):
+            self.execute_sql(statement)
+        logger.info("Created %s table", spec.name)
+
+    def add_surrogate_id(self, table_name: str, column_name: str = "id"):
+        for statement in self.dialect.add_surrogate_id_statements(table_name, column_name):
+            self.execute_sql(statement)
+
+    def relax_to_nullable_varchar(self, table_name: str, column_name: str, length: int):
+        for statement in self.dialect.relax_to_nullable_varchar_statements(table_name, column_name, length):
+            self.execute_sql(statement)
+
+    @property
+    def _catalog_scope(self) -> str:
+        return self.dialect.catalog_scope(self.config)
+
     def table_exists(self, table_name: str) -> bool:
-        cursor = self.execute_sql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s", (self.config.database, table_name))
+        cursor = self.execute_sql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s", (self._catalog_scope, table_name))
         return cursor.fetchone()[0] > 0
 
     def column_exists(self, table_name: str, column_name: str) -> bool:
-        cursor = self.execute_sql("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name = %s", (self.config.database, table_name, column_name))
+        cursor = self.execute_sql("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name = %s", (self._catalog_scope, table_name, column_name))
         return cursor.fetchone()[0] > 0
 
     def get_column_type(self, table_name: str, column_name: str) -> str | None:
-        """Get the DATA_TYPE of a column from information_schema, returns None if column does not exist"""
-        cursor = self.execute_sql("SELECT DATA_TYPE FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name = %s", (self.config.database, table_name, column_name))
+        """Get the data type of a column from information_schema, or None if it does not exist.
+
+        The column is spelled data_type in lower case: PostgreSQL folds unquoted
+        identifiers to lower case, so MySQL's conventional DATA_TYPE would not
+        resolve there.
+        """
+        cursor = self.execute_sql("SELECT data_type FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name = %s", (self._catalog_scope, table_name, column_name))
         row = cursor.fetchone()
         return row[0] if row else None
 
@@ -167,7 +259,7 @@ class MigrationDatabase:
             logger.info("Table 'system_settings' does not exist, migration marker is unavailable")
             return None
         cursor = self.execute_sql(
-            "SELECT `value` FROM `system_settings` WHERE `name` = %s",
+            f"SELECT {self.q('value')} FROM {self.q('system_settings')} WHERE {self.q('name')} = %s",
             (name,),
         )
         row = cursor.fetchone()
@@ -180,17 +272,7 @@ class MigrationDatabase:
 
         current_ts = int(time.time())
         self.execute_sql(
-            """
-            INSERT INTO `system_settings`
-            (`name`, `source`, `data_type`, `value`, `create_time`, `create_date`, `update_time`, `update_date`)
-            VALUES (%s, %s, %s, %s, %s, FROM_UNIXTIME(%s), %s, FROM_UNIXTIME(%s))
-            ON DUPLICATE KEY UPDATE
-              `source` = VALUES(`source`),
-              `data_type` = VALUES(`data_type`),
-              `value` = VALUES(`value`),
-              `update_time` = VALUES(`update_time`),
-              `update_date` = VALUES(`update_date`)
-            """,
+            self.dialect.upsert_system_setting_sql(),
             (
                 name,
                 source,
@@ -229,6 +311,77 @@ def should_skip_migration(current_db_version: str | None, target_version: str) -
     if current is None or target is None:
         return False
     return current >= target
+
+
+# --- Tables this migration creates ---------------------------------------
+#
+# Described once, rendered per dialect by migration_dialects. The audit columns
+# are identical everywhere, so they are shared rather than repeated five times.
+
+
+def _audit_columns() -> list:
+    return [
+        Column("create_time", "BIGINT"),
+        Column("create_date", "TIMESTAMP"),
+        Column("update_time", "BIGINT"),
+        Column("update_date", "TIMESTAMP"),
+    ]
+
+
+TENANT_MODEL_PROVIDER_TABLE = TableSpec(
+    name="tenant_model_provider",
+    columns=[
+        Column("id", "VARCHAR(32)", null=False, primary_key=True),
+        Column("provider_name", "VARCHAR(128)", null=False),
+        Column("tenant_id", "VARCHAR(32)", null=False),
+        *_audit_columns(),
+    ],
+    indexes=[
+        Index("idx_provider_name", ["provider_name"]),
+        Index("idx_tenant_id", ["tenant_id"]),
+        Index("idx_tenant_provider_unique", ["tenant_id", "provider_name"], unique=True),
+    ],
+)
+
+TENANT_MODEL_INSTANCE_TABLE = TableSpec(
+    name="tenant_model_instance",
+    columns=[
+        Column("id", "VARCHAR(32)", null=False, primary_key=True),
+        Column("instance_name", "VARCHAR(128)", null=False),
+        Column("provider_id", "VARCHAR(32)", null=False),
+        Column("api_key", "VARCHAR(512)", null=False),
+        Column("status", "VARCHAR(32)", default="'active'"),
+        Column("extra", "VARCHAR(512)", default="'{}'"),
+        *_audit_columns(),
+    ],
+    indexes=[Index("idx_provider_id", ["provider_id"])],
+)
+
+
+def _tenant_model_table(name: str, model_type: str) -> TableSpec:
+    """tenant_model and its merge scratch table differ only in model_type.
+
+    model_type is VARCHAR in tenant_model and INT in the scratch table, because
+    the merge stage is what converts the type to a bitmask.
+    """
+    return TableSpec(
+        name=name,
+        columns=[
+            Column("id", "VARCHAR(32)", null=False, primary_key=True),
+            Column("model_name", "VARCHAR(128)"),
+            Column("provider_id", "VARCHAR(32)", null=False),
+            Column("instance_id", "VARCHAR(32)", null=False),
+            Column("model_type", model_type, null=False),
+            Column("status", "VARCHAR(32)", default="'active'"),
+            Column("extra", "VARCHAR(1024)", default="'{}'"),
+            *_audit_columns(),
+        ],
+        indexes=[Index("idx_instance_id", ["instance_id"])],
+    )
+
+
+TENANT_MODEL_TABLE = _tenant_model_table("tenant_model", "VARCHAR(32)")
+TENANT_MODEL_MERGE_TMP_TABLE = _tenant_model_table("tenant_model_merge_tmp", "INT")
 
 
 # Define model classes for migration (not importing from api.db.db_models)
@@ -399,7 +552,8 @@ class TenantModelProviderStage(MigrationStage):
             params = []
             for tenant_id, llm_factory in batch:
                 record_id = self.generate_uuid()
-                placeholders.append("(%s, %s, %s, %s, FROM_UNIXTIME(%s), %s, FROM_UNIXTIME(%s))")
+                ts = self.db.epoch_to_timestamp("%s")
+                placeholders.append(f"(%s, %s, %s, %s, {ts}, %s, {ts})")
                 params.extend(
                     [
                         record_id,
@@ -424,22 +578,7 @@ class TenantModelProviderStage(MigrationStage):
 
     def create_target_table(self):
         """Create tenant_model_provider table"""
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS tenant_model_provider (
-            id VARCHAR(32) NOT NULL PRIMARY KEY,
-            provider_name VARCHAR(128) NOT NULL,
-            tenant_id VARCHAR(32) NOT NULL,
-            create_time BIGINT,
-            create_date DATETIME,
-            update_time BIGINT,
-            update_date DATETIME,
-            INDEX idx_provider_name (provider_name),
-            INDEX idx_tenant_id (tenant_id),
-            UNIQUE INDEX idx_tenant_provider_unique (tenant_id, provider_name)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """
-        self.db.execute_sql(create_sql)
-        logger.info("Created tenant_model_provider table")
+        self.db.create_table(TENANT_MODEL_PROVIDER_TABLE)
 
 
 class TenantModelInstanceStage(MigrationStage):
@@ -506,6 +645,7 @@ class TenantModelInstanceStage(MigrationStage):
     def execute(self) -> tuple[int, list]:
         """Execute migration"""
         current_ts = self.current_timestamp()
+        current_date_sql = self.db.epoch_to_timestamp(str(current_ts))
         rows_inserted = 0
 
         # Check if tenant_model_provider exists (dependency)
@@ -573,10 +713,7 @@ class TenantModelInstanceStage(MigrationStage):
                 api_key_escaped = api_key.replace("'", "''") if api_key else ""
                 status_val = "active" if status in ["1", "active", "enable"] else "inactive"
                 values.append(
-                    f"('{record_id}', '{instance_name}', '{provider_id}', "
-                    f"'{api_key_escaped}', '{status_val}', "
-                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
-                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))"
+                    f"('{record_id}', '{instance_name}', '{provider_id}', '{api_key_escaped}', '{status_val}', {current_ts * 1000}, {current_date_sql}, {current_ts * 1000}, {current_date_sql})"
                 )
 
             insert_sql = f"""
@@ -677,23 +814,7 @@ class TenantModelInstanceStage(MigrationStage):
 
     def create_target_table(self):
         """Create tenant_model_instance table"""
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS tenant_model_instance (
-            id VARCHAR(32) NOT NULL PRIMARY KEY,
-            instance_name VARCHAR(128) NOT NULL,
-            provider_id VARCHAR(32) NOT NULL,
-            api_key VARCHAR(512) NOT NULL,
-            status VARCHAR(32) DEFAULT 'active',
-            extra VARCHAR(512) DEFAULT '{}',
-            create_time BIGINT,
-            create_date DATETIME,
-            update_time BIGINT,
-            update_date DATETIME,
-            INDEX idx_provider_id (provider_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """
-        self.db.execute_sql(create_sql)
-        logger.info("Created tenant_model_instance table")
+        self.db.create_table(TENANT_MODEL_INSTANCE_TABLE)
 
 
 class TenantModelStage(MigrationStage):
@@ -795,6 +916,7 @@ class TenantModelStage(MigrationStage):
     def execute(self) -> tuple[int, list]:
         """Execute migration"""
         current_ts = self.current_timestamp()
+        current_date_sql = self.db.epoch_to_timestamp(str(current_ts))
         rows_inserted = 0
 
         # Check if tenant_model_provider exists (dependency)
@@ -890,8 +1012,8 @@ class TenantModelStage(MigrationStage):
                     f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
                     f"'{instance_id}', '{model_type_escaped}', '{status_val}', "
                     f"'{extra_escaped}', "
-                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
-                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))"
+                    f"{current_ts * 1000}, {current_date_sql}, "
+                    f"{current_ts * 1000}, {current_date_sql})"
                 )
 
             insert_sql = f"""
@@ -911,10 +1033,11 @@ class TenantModelStage(MigrationStage):
 
         Very old tenant_llm tables may predate the id column, while the migration
         SELECT relies on it (tl.id is carried as source_id for audit logging).
-        The id is only used as a unique audit key, so it is added as an
-        AUTO_INCREMENT UNIQUE column rather than PRIMARY KEY: old tables may
-        already have another primary key. MySQL back-fills existing rows with
-        sequential values when adding an AUTO_INCREMENT column.
+        The id is only used as a unique audit key, so it is added as a unique
+        auto-incrementing column rather than a PRIMARY KEY: old tables may
+        already have another primary key. Both supported dialects back-fill
+        existing rows with sequential values (MySQL via AUTO_INCREMENT,
+        PostgreSQL via the table rewrite that adding a BIGSERIAL triggers).
 
         Returns:
             True if the column exists (or was added successfully), False otherwise.
@@ -928,7 +1051,7 @@ class TenantModelStage(MigrationStage):
             return False
 
         try:
-            self.db.execute_sql("ALTER TABLE tenant_llm ADD COLUMN id BIGINT AUTO_INCREMENT UNIQUE")
+            self.db.add_surrogate_id("tenant_llm", "id")
         except Exception as e:
             logger.error(f"Failed to add auto-increment id column to tenant_llm: {e}")
             return False
@@ -1014,24 +1137,7 @@ class TenantModelStage(MigrationStage):
 
     def create_target_table(self):
         """Create tenant_model table"""
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS tenant_model (
-            id VARCHAR(32) NOT NULL PRIMARY KEY,
-            model_name VARCHAR(128),
-            provider_id VARCHAR(32) NOT NULL,
-            instance_id VARCHAR(32) NOT NULL,
-            model_type VARCHAR(32) NOT NULL,
-            status VARCHAR(32) DEFAULT 'active',
-            extra VARCHAR(1024) DEFAULT '{}',
-            create_time BIGINT,
-            create_date DATETIME,
-            update_time BIGINT,
-            update_date DATETIME,
-            INDEX idx_instance_id (instance_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """
-        self.db.execute_sql(create_sql)
-        logger.info("Created tenant_model table")
+        self.db.create_table(TENANT_MODEL_TABLE)
 
 
 class ModelIdConfigStage(MigrationStage):
@@ -1159,7 +1265,7 @@ class ModelIdConfigStage(MigrationStage):
     def iter_string_changes(self):
         for table_name, column_name in self.existing_columns(self.string_columns):
             cursor = self.db.execute_sql(
-                f"SELECT id, `{column_name}` FROM `{table_name}` WHERE `{column_name}` IS NOT NULL AND `{column_name}` != '' AND `{column_name}` LIKE %s",
+                f"SELECT id, {self.db.q(column_name)} FROM {self.db.q(table_name)} WHERE {self.db.q(column_name)} IS NOT NULL AND {self.db.q(column_name)} != '' AND {self.db.q(column_name)} LIKE %s",
                 ("%@%",),
             )
             while True:
@@ -1174,7 +1280,7 @@ class ModelIdConfigStage(MigrationStage):
     def iter_json_changes(self):
         for table_name, column_name in self.existing_columns(self.json_columns):
             cursor = self.db.execute_sql(
-                f"SELECT id, `{column_name}` FROM `{table_name}` WHERE `{column_name}` IS NOT NULL AND `{column_name}` != '' AND `{column_name}` LIKE %s",
+                f"SELECT id, {self.db.q(column_name)} FROM {self.db.q(table_name)} WHERE {self.db.q(column_name)} IS NOT NULL AND {self.db.q(column_name)} != '' AND {self.db.q(column_name)} LIKE %s",
                 ("%@%",),
             )
             while True:
@@ -1240,7 +1346,7 @@ class ModelIdConfigStage(MigrationStage):
                 )
             if not self.dry_run:
                 self.db.execute_sql(
-                    f"UPDATE `{table_name}` SET `{column_name}` = %s WHERE id = %s",
+                    f"UPDATE {self.db.q(table_name)} SET {self.db.q(column_name)} = %s WHERE id = %s",
                     (normalized, row_id),
                 )
 
@@ -1257,7 +1363,7 @@ class ModelIdConfigStage(MigrationStage):
                 )
             if not self.dry_run:
                 self.db.execute_sql(
-                    f"UPDATE `{table_name}` SET `{column_name}` = %s WHERE id = %s",
+                    f"UPDATE {self.db.q(table_name)} SET {self.db.q(column_name)} = %s WHERE id = %s",
                     (normalized_json, row_id),
                 )
 
@@ -1378,6 +1484,7 @@ class TenantModelSeedingStage(MigrationStage):
     def execute(self) -> tuple[int, list]:
         """Execute migration"""
         current_ts = self.current_timestamp()
+        current_date_sql = self.db.epoch_to_timestamp(str(current_ts))
         rows_inserted = 0
 
         if not self.db.table_exists("tenant_model_provider"):
@@ -1522,8 +1629,8 @@ class TenantModelSeedingStage(MigrationStage):
                     f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
                     f"'{instance_id}', '{mt_escaped}', '{status_escaped}', "
                     f"'{extra_escaped}', "
-                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
-                    f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))"
+                    f"{current_ts * 1000}, {current_date_sql}, "
+                    f"{current_ts * 1000}, {current_date_sql})"
                 )
 
             insert_sql = f"""
@@ -1540,24 +1647,7 @@ class TenantModelSeedingStage(MigrationStage):
 
     def create_target_table(self):
         """Create tenant_model table"""
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS tenant_model (
-            id VARCHAR(32) NOT NULL PRIMARY KEY,
-            model_name VARCHAR(128),
-            provider_id VARCHAR(32) NOT NULL,
-            instance_id VARCHAR(32) NOT NULL,
-            model_type VARCHAR(32) NOT NULL,
-            status VARCHAR(32) DEFAULT 'active',
-            extra VARCHAR(1024) DEFAULT '{}',
-            create_time BIGINT,
-            create_date DATETIME,
-            update_time BIGINT,
-            update_date DATETIME,
-            INDEX idx_instance_id (instance_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """
-        self.db.execute_sql(create_sql)
-        logger.info("Created tenant_model table")
+        self.db.create_table(TENANT_MODEL_TABLE)
 
 
 class ModelTypeMergeStage(MigrationStage):
@@ -1692,8 +1782,8 @@ class ModelTypeMergeStage(MigrationStage):
                 # Handle NULL date fields
                 create_time_val = create_time if create_time is not None else current_ts * 1000
                 update_time_val = update_time if update_time is not None else current_ts * 1000
-                create_date_sql = f"FROM_UNIXTIME({int(create_time_val / 1000)})" if create_time_val else "NULL"
-                update_date_sql = f"FROM_UNIXTIME({int(update_time_val / 1000)})" if update_time_val else "NULL"
+                create_date_sql = self.db.epoch_to_timestamp(str(int(create_time_val / 1000))) if create_time_val else "NULL"
+                update_date_sql = self.db.epoch_to_timestamp(str(int(update_time_val / 1000))) if update_time_val else "NULL"
                 values.append(
                     f"('{id_}', '{model_name_escaped}', '{provider_id}', "
                     f"'{instance_id}', {merged_type}, '{status_escaped}', "
@@ -1723,24 +1813,7 @@ class ModelTypeMergeStage(MigrationStage):
 
     def create_target_table(self):
         """Create temporary table tenant_model_merge_tmp with model_type as INTEGER"""
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS tenant_model_merge_tmp (
-            id VARCHAR(32) NOT NULL PRIMARY KEY,
-            model_name VARCHAR(128),
-            provider_id VARCHAR(32) NOT NULL,
-            instance_id VARCHAR(32) NOT NULL,
-            model_type INT NOT NULL,
-            status VARCHAR(32) DEFAULT 'active',
-            extra VARCHAR(1024) DEFAULT '{}',
-            create_time BIGINT,
-            create_date DATETIME,
-            update_time BIGINT,
-            update_date DATETIME,
-            INDEX idx_instance_id (instance_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """
-        self.db.execute_sql(create_sql)
-        logger.info("Created tenant_model_merge_tmp table")
+        self.db.create_table(TENANT_MODEL_MERGE_TMP_TABLE)
 
 
 class TenantModelIdMigrationStage(MigrationStage):
@@ -1820,7 +1893,9 @@ class TenantModelIdMigrationStage(MigrationStage):
                     has_work = True
                     break
                 # Check if there are NULL values that should be populated
-                cursor = self.db.execute_sql(f"SELECT COUNT(*) FROM `{table_name}` WHERE `{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32")
+                cursor = self.db.execute_sql(
+                    f"SELECT COUNT(*) FROM {self.db.q(table_name)} WHERE {self.db.q(tenant_id_col)} IS NULL OR {self.db.q(tenant_id_col)} = '' OR LENGTH({self.db.q(tenant_id_col)}) <> 32"
+                )
                 null_count = cursor.fetchone()[0]
                 if null_count > 0:
                     has_work = True
@@ -1853,14 +1928,14 @@ class TenantModelIdMigrationStage(MigrationStage):
                     # Column does not exist yet — add it as VARCHAR(32)
                     logger.info(f"Adding column {table_name}.{tenant_id_col} as VARCHAR(32) NULL")
                     if not self.dry_run:
-                        self.db.execute_sql(f"ALTER TABLE `{table_name}` ADD COLUMN `{tenant_id_col}` VARCHAR(32) NULL")
+                        self.db.execute_sql(f"ALTER TABLE {self.db.q(table_name)} ADD COLUMN {self.db.q(tenant_id_col)} VARCHAR(32) NULL")
                     tables_operated.add(table_name)
                     continue
                 col_type = self.db.get_column_type(table_name, tenant_id_col)
                 if col_type and col_type.lower() in ("int", "bigint", "integer"):
                     logger.info(f"Converting {table_name}.{tenant_id_col} from {col_type} to VARCHAR(32)")
                     if not self.dry_run:
-                        self.db.execute_sql(f"ALTER TABLE `{table_name}` MODIFY COLUMN `{tenant_id_col}` VARCHAR(32) NULL")
+                        self.db.relax_to_nullable_varchar(table_name, tenant_id_col, 32)
                     tables_operated.add(table_name)
 
         # Step 2: Build lookup cache from tenant_model joined with provider + instance
@@ -1885,7 +1960,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                 # For knowledgebase, dialog, memory we also need tenant_id
                 if table_name == "tenant":
                     cursor = self.db.execute_sql(
-                        f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32) AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, {self.db.q(legacy_col)} FROM {self.db.q(table_name)} WHERE ({self.db.q(tenant_id_col)} IS NULL OR {self.db.q(tenant_id_col)} = '' OR LENGTH({self.db.q(tenant_id_col)}) <> 32) AND {self.db.q(legacy_col)} IS NOT NULL AND {self.db.q(legacy_col)} != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)
@@ -1897,20 +1972,20 @@ class TenantModelIdMigrationStage(MigrationStage):
                             if resolved_id:
                                 if not self.dry_run:
                                     self.db.execute_sql(
-                                        f"UPDATE `{table_name}` SET `{tenant_id_col}` = %s WHERE id = %s",
+                                        f"UPDATE {self.db.q(table_name)} SET {self.db.q(tenant_id_col)} = %s WHERE id = %s",
                                         (resolved_id, row_id),
                                     )
                             else:
                                 if not self.dry_run:
                                     self.db.execute_sql(
-                                        f"UPDATE `{table_name}` SET `{tenant_id_col}` = '' WHERE id = %s",
+                                        f"UPDATE {self.db.q(table_name)} SET {self.db.q(tenant_id_col)} = '' WHERE id = %s",
                                         (row_id,),
                                     )
                             rows_updated += 1
                             tables_operated.add(table_name)
                 else:
                     cursor = self.db.execute_sql(
-                        f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32) AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, tenant_id, {self.db.q(legacy_col)} FROM {self.db.q(table_name)} WHERE ({self.db.q(tenant_id_col)} IS NULL OR {self.db.q(tenant_id_col)} = '' OR LENGTH({self.db.q(tenant_id_col)}) <> 32) AND {self.db.q(legacy_col)} IS NOT NULL AND {self.db.q(legacy_col)} != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)
@@ -1921,13 +1996,13 @@ class TenantModelIdMigrationStage(MigrationStage):
                             if resolved_id:
                                 if not self.dry_run:
                                     self.db.execute_sql(
-                                        f"UPDATE `{table_name}` SET `{tenant_id_col}` = %s WHERE id = %s",
+                                        f"UPDATE {self.db.q(table_name)} SET {self.db.q(tenant_id_col)} = %s WHERE id = %s",
                                         (resolved_id, row_id),
                                     )
                             else:
                                 if not self.dry_run:
                                     self.db.execute_sql(
-                                        f"UPDATE `{table_name}` SET `{tenant_id_col}` = '' WHERE id = %s",
+                                        f"UPDATE {self.db.q(table_name)} SET {self.db.q(tenant_id_col)} = '' WHERE id = %s",
                                         (row_id,),
                                     )
                             rows_updated += 1
@@ -2180,12 +2255,12 @@ Examples:
 """,
     )
 
-    # MySQL connection options
-    parser.add_argument("--host", type=str, default="localhost", help="MySQL host (default: localhost)")
-    parser.add_argument("--port", type=int, default=3306, help="MySQL port (default: 3306)")
-    parser.add_argument("--user", type=str, default="root", help="MySQL user (default: root)")
-    parser.add_argument("--password", type=str, default="", help="MySQL password (default: empty)")
-    parser.add_argument("--database", type=str, default="rag_flow", help="MySQL database name (default: rag_flow)")
+    # Database connection options
+    parser.add_argument("--host", type=str, default="localhost", help="Database host (default: localhost)")
+    parser.add_argument("--port", type=int, help="Database port (default: 3306 on MySQL, 5432 on PostgreSQL)")
+    parser.add_argument("--user", type=str, default="root", help="Database user (default: root)")
+    parser.add_argument("--password", type=str, default="", help="Database password (default: empty)")
+    parser.add_argument("--database", type=str, default="rag_flow", help="Database name (default: rag_flow)")
 
     # Configuration options
     parser.add_argument("--config", "-c", type=str, help="Path to YAML config file")
@@ -2213,7 +2288,7 @@ Examples:
         # Override with command line args if provided
         if args.host != "localhost":
             config.host = args.host
-        if args.port != 3306:
+        if args.port is not None:
             config.port = args.port
         if args.user != "root":
             config.user = args.user
@@ -2223,9 +2298,9 @@ Examples:
             config.database = args.database
     else:
         # Use command line args directly
-        config = MigrationConfig(host=args.host, port=args.port, user=args.user, password=args.password, database=args.database)
+        config = MigrationConfig(host=args.host, port=args.port, user=args.user, password=args.password, database=args.database, db_type=os.getenv("DB_TYPE", "mysql"))
 
-    logger.info(f"MySQL Configuration: host={config.host}, port={config.port}, user={config.user}, database={config.database}")
+    logger.info(f"Configuration: db_type={config.db_type}, host={config.host}, port={config.port}, user={config.user}, database={config.database}")
 
     if args.check_database_version and args.mark_database_version:
         logger.error("--check-database-version and --mark-database-version are mutually exclusive")

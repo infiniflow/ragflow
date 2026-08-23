@@ -217,9 +217,10 @@ run_mysql_migrations() {
     local db_type="${DB_TYPE:-mysql}"
     db_type="${db_type,,}"
     if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        # The migration supports MySQL and PostgreSQL. GaussDB needs its own
+        # dialect (empty string is NULL, among other differences) and is still
+        # excluded; see tools/scripts/migration_dialects.py.
+        echo "Skipping model provider table migrations: DB_TYPE=${DB_TYPE:-mysql} has no migration dialect yet."
         return 0
     fi
 

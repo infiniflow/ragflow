@@ -282,9 +282,10 @@ if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
     DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
     if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        # The migration supports MySQL and PostgreSQL. GaussDB needs its own
+        # dialect (empty string is NULL, among other differences) and is still
+        # excluded; see tools/scripts/migration_dialects.py.
+        echo "Skipping model provider table migrations: DB_TYPE=${DB_TYPE:-mysql} has no migration dialect yet."
     else
         tools/scripts/run_migrations.sh
     fi
