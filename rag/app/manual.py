@@ -283,7 +283,15 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
         return res
 
-    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        raise NotImplementedError(
+            "Manual parser does not support legacy Microsoft Word .doc files "
+            "(OLE/CFB compound documents). Convert the file to .docx or PDF and "
+            "re-upload -- .doc is the pre-2007 Office format and the Manual "
+            "parser is built on python-docx, which only handles Office Open "
+            "XML (.docx). See issue #18621."
+        )
+    elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(
