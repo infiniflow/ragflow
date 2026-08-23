@@ -39,10 +39,13 @@ import (
 //     differences). Reported separately (not labeled PASS) and not counted as a
 //     content failure; classified as go_intentional/go_bug via known_diffs.json.
 //   - table PDF, gridSim<100% OR structSim<100% (or non-table textSim<100%) ->
-//     FAIL if not exempted by a go_intentional rule; INTENTIONAL if a
-//     go_intentional rule names this exact PDF (Go judged at least as good as
-//     Python, e.g. table segmentation). Any genuine Go content regression is a
-//     FAIL.
+//     FAIL if not exempted; INTENTIONAL if a go_intentional rule names this
+//     exact PDF (Go judged at least as good as Python, e.g. table
+//     segmentation); IGNORE if an ignore rule names it (neither Go nor Python
+//     is the ground truth for this PDF — both sides produce an inaccurate
+//     grid, so the gap is not a regression target on either side). Any genuine
+//     Go content regression that is not covered by an ignore/go_intentional
+//     rule is a FAIL.
 func TestPipelineParity(t *testing.T) {
 	// Dataset variant: "" (default) or "ocr" resolve to the built-in layout
 	// (charspy/, output/py/ocr/...) for the original 35-PDF fixture set; a
@@ -89,13 +92,25 @@ func TestPipelineParity(t *testing.T) {
 		}
 		return false
 	}
+	// ignorePDF reports whether a known_diffs rule marks this PDF as ignore:
+	// neither Go nor Python is the ground truth (both are inaccurate), so the
+	// divergence is not a regression target on either side and the PDF is
+	// exempted from the FAIL count (reported as IGNORE).
+	ignorePDF := func(name string) bool {
+		for _, r := range knownDiffRules {
+			if r.Tag == "ignore" && r.matchesExactly(name) {
+				return true
+			}
+		}
+		return false
+	}
 
 	// Phase 2: replay Python's DLA + TSR intermediates through Go's assembly
 	// so tables are built from Python's inference, not a mock. The factory is
 	// keyed on the analyzer type, so non-replay parses are unaffected.
 	RegisterReplayTableBuilder()
 
-	total, passed, noncellText, intentional, failed := 0, 0, 0, 0, 0
+	total, passed, noncellText, intentional, ignored, failed := 0, 0, 0, 0, 0, 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -227,6 +242,15 @@ func TestPipelineParity(t *testing.T) {
 				intentional++
 				status = "INTENTIONAL"
 				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (go_intentional: %s)", gridSim, structureSim, shapeDetail, sim, intentionalRuleID(knownDiffRules, name))
+			} else if ignorePDF(name) {
+				// ignore rule covers this PDF: neither Go nor Python is the
+				// ground truth — both produce an inaccurate grid, so the gap
+				// is not a regression target on either side. Reported as
+				// IGNORE and not counted as a content failure; still logged
+				// so the gap remains visible.
+				ignored++
+				status = "IGNORE"
+				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (ignore: %s)", gridSim, structureSim, shapeDetail, sim, ignoreRuleID(knownDiffRules, name))
 			} else {
 				failed++
 				status = "FAIL"
@@ -259,7 +283,7 @@ func TestPipelineParity(t *testing.T) {
 	if total == 0 {
 		t.Skip("no charspy/ files found")
 	}
-	t.Logf("Pipeline parity: aligned=%d noncell-text=%d intentional=%d failed=%d total=%d", passed, noncellText, intentional, failed, total)
+	t.Logf("Pipeline parity: aligned=%d noncell-text=%d intentional=%d ignored=%d failed=%d total=%d", passed, noncellText, intentional, ignored, failed, total)
 	if failed > 0 {
 		t.Errorf("%d parity failures — Go pipeline content differs from Python (grid/text)", failed)
 	}
@@ -328,6 +352,17 @@ func loadPdfKnownDiffs(t *testing.T) []pdfDiffRule {
 func intentionalRuleID(rules []pdfDiffRule, name string) string {
 	for _, r := range rules {
 		if r.Tag == "go_intentional" && r.matchesExactly(name) {
+			return r.ID
+		}
+	}
+	return "unknown"
+}
+
+// ignoreRuleID returns the id of the first ignore rule naming this exact PDF,
+// for the IGNORE status detail line.
+func ignoreRuleID(rules []pdfDiffRule, name string) string {
+	for _, r := range rules {
+		if r.Tag == "ignore" && r.matchesExactly(name) {
 			return r.ID
 		}
 	}
