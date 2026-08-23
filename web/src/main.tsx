@@ -21,8 +21,12 @@ import '../tailwind.css';
 import App from './app';
 import './global.less';
 import { initLanguage } from './locales/config';
+// oxlint-disable-next-line no-restricted-imports -- bootstrap gate: resolve the backend variant before first render
+import { fetchBackendLanguage } from './utils/backend-runtime';
 
-initLanguage().then(() => {
+// Gate first render on the backend-language probe so every variant dispatch
+// below sees a concrete value (no python-flash-then-switch).
+Promise.all([initLanguage(), fetchBackendLanguage()]).then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <Inspector keys={['alt', 'c']} />

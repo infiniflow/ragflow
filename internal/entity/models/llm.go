@@ -38,6 +38,9 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // EinoChatModel adapts a RAGFlow *ChatModel to eino's chat model interfaces.
@@ -208,6 +211,18 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
+	// eino's ChatModelAgent binds tools via the per-call model.WithTools option
+	// (not by calling WithTools). Merge those into the config so the model
+	// actually emits tool_calls; otherwise the ReAct loop would have no tools.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	common.Debug("models: eino generate request",
+		zap.String("model", *m.inner.ModelName),
+		zap.Int("messages", len(internal)),
+		zap.Int("tools", toolCount(chatCfg)),
+	)
 	resp, err := m.inner.ModelDriver.ChatWithMessages(ctx, *m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
@@ -221,7 +236,57 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 		}
 		recordUsageFromResponse(ctx, m.inner)
 	}
+	// Guard the debug log against a nil resp: some drivers may return (nil, nil)
+	// on an aborted/empty completion, and len(resp.ToolCalls) would panic.
+	toolCalls := 0
+	if resp != nil {
+		toolCalls = len(resp.ToolCalls)
+	}
+	common.Debug("models: eino generate response",
+		zap.String("model", *m.inner.ModelName),
+		zap.String("answer_head", truncateForLog(answerHead(resp), 500)),
+		zap.Int("tool_calls", toolCalls),
+		zap.Int("completion_tokens", usageCompletion(resp)),
+	)
 	return fromInternalResponse(resp), nil
+}
+
+// answerHead returns a short preview of the response answer for log lines.
+func answerHead(resp *ChatResponse) string {
+	if resp == nil || resp.Answer == nil {
+		return ""
+	}
+	return *resp.Answer
+}
+
+func usageCompletion(resp *ChatResponse) int {
+	if resp == nil || resp.Usage == nil {
+		return 0
+	}
+	return resp.Usage.CompletionTokens
+}
+
+func truncateForLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
+// toolCount returns the number of tools on a config, tolerating the
+// interface{} storage type.
+func toolCount(cfg *ChatConfig) int {
+	if cfg == nil {
+		return 0
+	}
+	switch t := cfg.Tools.(type) {
+	case []map[string]any:
+		return len(t)
+	case nil:
+		return 0
+	default:
+		return 0
+	}
 }
 
 func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
@@ -236,6 +301,30 @@ func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
 	tools, err := openAIToolsFromEino(m.tools)
 	if err != nil {
 		return nil, err
+	}
+	cfg.Tools = tools
+	choice := "auto"
+	cfg.ToolChoice = &choice
+	return cfg, nil
+}
+
+// chatConfigWithOptsTools overlays tools supplied via the per-call
+// model.WithTools option onto base. eino's ChatModelAgent binds tools this way,
+// so Generate/Stream must honor opts or the model will never emit tool_calls.
+// When opts carries no tools, base is returned unchanged.
+func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.Option) (*ChatConfig, error) {
+	co := model.GetCommonOptions(nil, opts...)
+	if co == nil || len(co.Tools) == 0 {
+		return base, nil
+	}
+	tools, err := openAIToolsFromEino(co.Tools)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &ChatConfig{}
+	if base != nil {
+		cp := *base
+		cfg = &cp
 	}
 	cfg.Tools = tools
 	choice := "auto"
@@ -342,6 +431,17 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if err != nil {
 		return nil, err
 	}
+	// Same tool-binding fix as Generate: honor the per-call model.WithTools
+	// option so the ReAct loop's model requests actually carry tool definitions.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	common.Debug("models: eino stream request",
+		zap.String("model", *m.inner.ModelName),
+		zap.Int("messages", len(internalMessage)),
+		zap.Int("tools", toolCount(chatCfg)),
+	)
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
@@ -372,10 +472,15 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	go func() {
 		defer sw.Close()
 		if err := m.inner.ModelDriver.ChatStreamlyWithSender(ctx, *m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
+			common.Debug("models: eino stream response error",
+				zap.String("model", *m.inner.ModelName), zap.Error(err))
 			_ = sw.Send(nil, err)
 			return
 		}
 		if chatCfg != nil && chatCfg.ToolCallsResult != nil && len(*chatCfg.ToolCallsResult) > 0 {
+			common.Debug("models: eino stream tool calls",
+				zap.String("model", *m.inner.ModelName),
+				zap.Int("tool_calls", len(*chatCfg.ToolCallsResult)))
 			msg := &schema.Message{
 				Role:      schema.Assistant,
 				ToolCalls: toolCallsFromInternal(*chatCfg.ToolCallsResult),

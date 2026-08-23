@@ -49,6 +49,8 @@ export type NextMessageInputOnPressEnterParameter = {
   enableInternet?: boolean;
   storeHistoryMessages?: boolean;
   omitSessionId?: boolean;
+  /** When set, sends `agent_mode` to the backend (e.g. 'smart-reasoning'). */
+  agentMode?: string;
 };
 
 interface NextMessageInputProps {
@@ -64,6 +66,7 @@ interface NextMessageInputProps {
   onPressEnter({
     enableThinking,
     enableInternet,
+    agentMode,
   }: NextMessageInputOnPressEnterParameter): void;
   onInputChange: React.ChangeEventHandler<HTMLTextAreaElement>;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
@@ -174,6 +177,11 @@ export function NextMessageInput({
       description: t('chat.thinkingLevelLowDescription'),
     },
     { label: t('chat.thinkingLevelNone'), value: '0' },
+    {
+      label: t('chat.thinkingLevelAgentic'),
+      value: 'agentic',
+      description: t('chat.thinkingLevelAgenticDescription'),
+    },
   ];
 
   const handleThinkingChange = useCallback((value: string) => {
@@ -189,6 +197,9 @@ export function NextMessageInput({
     onPressEnter({
       enableThinking,
       enableInternet: showInternet ? enableInternet : false,
+      // 'agentic' selects the smart-reasoning ReAct path on the backend.
+      agentMode:
+        enableThinking === 'agentic' ? 'smart-reasoning' : undefined,
     });
   }, [onPressEnter, enableThinking, enableInternet, showInternet]);
 

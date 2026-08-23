@@ -201,5 +201,11 @@
   },
   "engines": {
     "node": ">=18.20.4"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.27.2": true,
+    "@swc/core@1.15.7": true,
+    "less@4.5.1": true
   }
 }

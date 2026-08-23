@@ -8,7 +8,7 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { getBackendLanguage, isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -210,14 +210,15 @@ export function transformParserParams(params: ParserFormSchemaType) {
   >((pre, cur, index) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
-        ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
+        Omit<ParserFormSchemaType['setups'][0], 'pages'> & {
+          suffix: string[];
+        } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
           pages: number[][];
         }
       > = {
         output_format: cur.output_format,
-        preprocess: cur.preprocess,
         suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
       };
 
@@ -232,11 +233,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
-            ...(isGoBackend()
-              ? {
-                  pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
-                }
-              : {}),
+            ...pickByBackend({
+              go: { pages: cur.pages?.map((x) => [x.from, x.to]) ?? [] },
+              python: {},
+            }),
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -336,11 +336,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
 
   // The Go backend expects the setups map flattened into top-level params,
   // while the Python backend reads them from the nested `setups` object.
-  // Default to the Python shape while the language probe is unresolved.
-  if (getBackendLanguage() === 'go') {
-    return { ...omit(params, ['setups']), ...setups };
-  }
-  return { ...params, setups };
+  return pickByBackend({
+    go: { ...omit(params, ['setups']), ...setups },
+    python: { ...params, setups },
+  });
 }
 
 export function transformTokenChunkerParams(
@@ -419,20 +418,23 @@ const ExtractorLlmSettingKeys = [
   'maxTokensEnabled',
 ];
 
-export function transformExtractorParams(
+// The Python extractor only reads the legacy flat fields.
+function transformExtractorParamsPython(
   params: ExtractorFormSchemaType,
-): Record<string, any> {  const raw = params as Record<string, any>;
-  // The Python extractor only reads the legacy flat fields; the nested
-  // per-feature configs below are Go-only.
-  if (!isGoBackend()) {
-    return { ...params, prompts: [{ content: raw.prompts, role: 'user' }] };
-  }
+): Record<string, any> {
+  const raw = params as Record<string, any>;
+  return { ...params, prompts: [{ content: raw.prompts, role: 'user' }] };
+}
 
-  // An unopened legacy node can still flow through here with flat keys
-  // (auto_keywords, keywords_sys_prompt, enable_metadata + metadata[],
-  // the transitional "metadata_config", ...). Accept them as read
-  // fallbacks — flat "metadata" is an array, which distinguishes it from
-  // the group object — but never re-emit them.
+// An unopened legacy node can still flow through here with flat keys
+// (auto_keywords, keywords_sys_prompt, enable_metadata + metadata[],
+// the transitional "metadata_config", ...). Accept them as read
+// fallbacks — flat "metadata" is an array, which distinguishes it from
+// the group object — but never re-emit them.
+function transformExtractorParamsGo(
+  params: ExtractorFormSchemaType,
+): Record<string, any> {
+  const raw = params as Record<string, any>;
   const metadataGroup =
     raw.metadata !== undefined && !Array.isArray(raw.metadata)
       ? raw.metadata
@@ -498,6 +500,15 @@ export function transformExtractorParams(
       built_in_metadata: builtInMetadataList,
     },
   };
+}
+
+export function transformExtractorParams(
+  params: ExtractorFormSchemaType,
+): Record<string, any> {
+  return pickByBackend({
+    go: transformExtractorParamsGo,
+    python: transformExtractorParamsPython,
+  })(params);
 }
 
 function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
@@ -740,7 +751,7 @@ export const buildNewPositionMap = (
   >((pre, cur) => {
     // take a coordinate
     const effectiveIdxes = CategorizeAnchorPointPositions.map(
-      (x, idx) => idx,
+      (_, idx) => idx,
     ).filter((x) => !indexesInUse.some((y) => y === x));
     const idx = sample(effectiveIdxes);
     if (idx !== undefined) {

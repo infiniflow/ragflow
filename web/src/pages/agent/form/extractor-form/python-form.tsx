@@ -42,7 +42,7 @@ type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
 
 const outputList = buildOutputList(initialExtractorValues.outputs);
 
-const LegacyExtractorForm = ({
+const PythonExtractorForm = ({
   node,
   onValuesChange,
   hideOutputs,
@@ -124,4 +124,4 @@ const LegacyExtractorForm = ({
   );
 };
 
-export default memo(LegacyExtractorForm);
+export default memo(PythonExtractorForm);
