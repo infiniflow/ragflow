@@ -27,7 +27,7 @@ import (
 	"github.com/eino-contrib/jsonschema"
 	"go.uber.org/zap"
 
-	"ragflow/internal/agent/tool"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 )
@@ -49,7 +49,7 @@ This tool uses embeddings to understand the query and find semantically similar 
 "queries" must contain 1–5 short, well-formed semantic questions or conceptual statements.
 
 ## Output (XML)
-Returns an XML <search_results> document. Each hit is a <chunk> element with attributes rank, chunk_id, doc_id (owning document id), page_num, chunk_index, dataset_id (owning dataset id), doc_title and score, and a <content> element carrying the FULL chunk text — rely on it for deep reading; there is no separate deep-read tool. Pass the returned doc_id to list_chunks to page through a document's full text.`
+Returns an XML <search_results> document. Each hit is a <chunk> element with attributes rank, chunk_id, doc_id (owning document id), page_num, chunk_index, dataset_id (owning dataset id), doc_title and score, and a <content> element carrying the FULL chunk text — rely on it for deep reading; there is no separate deep-read runtime. Pass the returned doc_id to list_chunks to page through a document's full text.`
 
 // searchChunksArgs is the JSON the model sends into InvokableRun.
 type searchChunksArgs struct {
@@ -76,7 +76,7 @@ const (
 // weighting (vector + keyword).
 type SearchChunksTool struct{}
 
-// NewSearchChunksTool returns a SearchChunksTool implementing eino's tool.InvokableTool.
+// NewSearchChunksTool returns a SearchChunksTool implementing eino's runtime.InvokableTool.
 func NewSearchChunksTool() *SearchChunksTool {
 	return &SearchChunksTool{}
 }
@@ -109,7 +109,7 @@ func (k *SearchChunksTool) Info(_ context.Context) (*schema.ToolInfo, error) {
       "maxItems": 10
     },
     "top_n": {
-      "type": "number",
+      "type": "integer",
       "description": "Number of chunks to return per query, 1-50 (default 12). Larger values give more coverage at higher token cost.",
       "minimum": 0,
       "maximum": 50
@@ -162,22 +162,34 @@ func (k *SearchChunksTool) InvokableRun(ctx context.Context, argumentsInJSON str
 		return "", fmt.Errorf("search_chunks: queries must contain at most 5 questions, got %d", len(queries))
 	}
 
+	// Enforce the declared input bounds before touching production retrieval: a
+	// hostile or confused model could otherwise ask for top_n in the millions and
+	// forward an unbounded TopK downstream.
 	topN := args.TopN
 	if topN <= 0 {
 		topN = searchChunksDefaultTopN
 	}
+	if topN > 50 {
+		topN = 50
+	}
 	similarityThreshold := searchChunksDefaultSimilarityThreshold
 	if args.SimilarityThreshold != nil {
-		similarityThreshold = *args.SimilarityThreshold
+		similarityThreshold = clampFloat01(*args.SimilarityThreshold)
 	}
 	weight := searchChunksDefaultKeywordsSimilarityWeight
 	if args.KeywordsSimilarityWeight != nil {
-		weight = *args.KeywordsSimilarityWeight
+		weight = clampFloat01(*args.KeywordsSimilarityWeight)
+	}
+	if len(args.DatasetIDs) > 10 {
+		args.DatasetIDs = args.DatasetIDs[:10]
+	}
+	if len(args.DocScope) > 10 {
+		args.DocScope = args.DocScope[:10]
 	}
 
-	svc := tool.GetRetrievalService()
-	tenantID := tool.CanvasTenantID(ctx)
-	datasetIDs := tool.CanvasDatasetIDs(ctx, args.DatasetIDs)
+	svc := runtime.GetRetrievalService()
+	tenantID := runtime.TenantID(ctx)
+	datasetIDs := runtime.DatasetIDs(ctx, args.DatasetIDs)
 	if svc == nil || tenantID == "" || len(datasetIDs) == 0 {
 		return searchResultsXMLEmpty(), nil
 	}
@@ -190,9 +202,9 @@ func (k *SearchChunksTool) InvokableRun(ctx context.Context, argumentsInJSON str
 	defer ecancel()
 
 	seen := map[string]struct{}{}
-	var merged []tool.RetrievalChunk
+	var merged []runtime.RetrievalChunk
 	for _, q := range queries {
-		chunks, err := svc.Search(ectx, dao.DB, tool.RetrievalRequest{
+		chunks, err := svc.Search(ectx, dao.DB, runtime.RetrievalRequest{
 			Query:                    q,
 			DatasetIDs:               datasetIDs,
 			TopN:                     topN,

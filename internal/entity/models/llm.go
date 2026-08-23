@@ -236,10 +236,16 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 		}
 		recordUsageFromResponse(ctx, m.inner)
 	}
+	// Guard the debug log against a nil resp: some drivers may return (nil, nil)
+	// on an aborted/empty completion, and len(resp.ToolCalls) would panic.
+	toolCalls := 0
+	if resp != nil {
+		toolCalls = len(resp.ToolCalls)
+	}
 	common.Debug("models: eino generate response",
 		zap.String("model", *m.inner.ModelName),
 		zap.String("answer_head", truncateForLog(answerHead(resp), 500)),
-		zap.Int("tool_calls", len(resp.ToolCalls)),
+		zap.Int("tool_calls", toolCalls),
 		zap.Int("completion_tokens", usageCompletion(resp)),
 	)
 	return fromInternalResponse(resp), nil

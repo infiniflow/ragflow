@@ -45,6 +45,9 @@ func TestSearchByRegexp_MatchAndMiss(t *testing.T) {
 	}
 
 	baseName := "ragflow_search_regexp_test"
+	// The engine maps the engine-agnostic tenant id to ragflow_<tenant>, which
+	// matches baseName above.
+	tenantID := "search_regexp_test"
 	datasetID := "kb-regexp-1"
 
 	chunks := []map[string]interface{}{
@@ -79,11 +82,11 @@ func TestSearchByRegexp_MatchAndMiss(t *testing.T) {
 
 	t.Run("match", func(t *testing.T) {
 		res, err := engine.SearchByRegexp(ctx, &types.RegexpSearchRequest{
-			IndexNames: []string{baseName},
-			KbIDs:      []string{datasetID},
-			Pattern:    "stardust",
-			Limit:      10,
-			Filter:     map[string]interface{}{"available_int": 1},
+			TenantID: tenantID,
+			KbIDs:    []string{datasetID},
+			Pattern:  "stardust",
+			Limit:    10,
+			Filter:   map[string]interface{}{"available_int": 1},
 		})
 		if err != nil {
 			t.Fatalf("SearchByRegexp: %v", err)
@@ -99,11 +102,11 @@ func TestSearchByRegexp_MatchAndMiss(t *testing.T) {
 
 	t.Run("miss", func(t *testing.T) {
 		res, err := engine.SearchByRegexp(ctx, &types.RegexpSearchRequest{
-			IndexNames: []string{baseName},
-			KbIDs:      []string{datasetID},
-			Pattern:    "definitely_not_present_term",
-			Limit:      10,
-			Filter:     map[string]interface{}{"available_int": 1},
+			TenantID: tenantID,
+			KbIDs:    []string{datasetID},
+			Pattern:  "definitely_not_present_term",
+			Limit:    10,
+			Filter:   map[string]interface{}{"available_int": 1},
 		})
 		if err != nil {
 			t.Fatalf("SearchByRegexp: %v", err)
@@ -115,11 +118,11 @@ func TestSearchByRegexp_MatchAndMiss(t *testing.T) {
 
 	t.Run("case_insensitive", func(t *testing.T) {
 		res, err := engine.SearchByRegexp(ctx, &types.RegexpSearchRequest{
-			IndexNames: []string{baseName},
-			KbIDs:      []string{datasetID},
-			Pattern:    "SKYVAULT", // uppercase pattern must still match lowercase content
-			Limit:      10,
-			Filter:     map[string]interface{}{"available_int": 1},
+			TenantID: tenantID,
+			KbIDs:    []string{datasetID},
+			Pattern:  "SKYVAULT", // uppercase pattern must still match lowercase content
+			Limit:    10,
+			Filter:   map[string]interface{}{"available_int": 1},
 		})
 		if err != nil {
 			t.Fatalf("SearchByRegexp: %v", err)
@@ -131,11 +134,11 @@ func TestSearchByRegexp_MatchAndMiss(t *testing.T) {
 
 	t.Run("alternation", func(t *testing.T) {
 		res, err := engine.SearchByRegexp(ctx, &types.RegexpSearchRequest{
-			IndexNames: []string{baseName},
-			KbIDs:      []string{datasetID},
-			Pattern:    "stardust|skyvault",
-			Limit:      10,
-			Filter:     map[string]interface{}{"available_int": 1},
+			TenantID: tenantID,
+			KbIDs:    []string{datasetID},
+			Pattern:  "stardust|skyvault",
+			Limit:    10,
+			Filter:   map[string]interface{}{"available_int": 1},
 		})
 		if err != nil {
 			t.Fatalf("SearchByRegexp: %v", err)

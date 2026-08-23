@@ -19,6 +19,7 @@ package agentic_rag
 import (
 	"context"
 	"errors"
+	"io"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
@@ -192,11 +193,18 @@ func consumeAgentEvents(
 			for {
 				chunk, recvErr := mo.MessageStream.Recv()
 				if recvErr != nil {
-					break
+					if !errors.Is(recvErr, io.EOF) {
+						// A real stream error: close the reader and surface it
+						// instead of returning silently-truncated content.
+						mo.MessageStream.Close()
+						return final, recvErr
+					}
+					break // io.EOF marks normal end of the stream.
 				}
 				emit(chunk.Content, chunk.ReasoningContent)
 				final += chunk.Content
 			}
+			mo.MessageStream.Close()
 			continue
 		}
 		if mo.Message != nil {

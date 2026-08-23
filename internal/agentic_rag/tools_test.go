@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"ragflow/internal/agent/tool"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 )
@@ -100,7 +100,7 @@ func TestTodoWriteTool_EmptySteps(t *testing.T) {
 
 func TestScoreGrepChunks_ScoreAndDedupe(t *testing.T) {
 	re := regexp.MustCompile("(?i)stardust")
-	chunks := []tool.RetrievalChunk{
+	chunks := []runtime.RetrievalChunk{
 		{ID: "a", Content: "stardust engine stardust engine"},
 		{ID: "b", Content: "nothing here"},
 		{ID: "a", Content: "duplicate id"},
@@ -169,11 +169,13 @@ func TestRunJavascriptTool_EmptyCode(t *testing.T) {
 }
 
 func TestRunJavascriptTool_RejectsES6(t *testing.T) {
-	// Arrow function is ES6+.
+	// import/export are module-system tokens the sandbox cannot honor; they are
+	// rejected up-front (the module-token denylist), and ES6-only syntax goja
+	// cannot parse surfaces as a compile-time syntax rejection.
 	_, err := NewRunJavascriptTool().InvokableRun(context.Background(),
-		`{"code":"var f = x => x + 1; console.log(f(1));"}`)
-	if err == nil || !strings.Contains(err.Error(), "ES6+") {
-		t.Fatalf("expected ES6 rejection, got %v", err)
+		`{"code":"import {x} from 'mod'; console.log(x);"}`)
+	if err == nil || !strings.Contains(err.Error(), "module") {
+		t.Fatalf("expected module-system rejection, got %v", err)
 	}
 }
 
@@ -309,7 +311,7 @@ func (e *grepFakeEngine) SearchByRegexp(_ context.Context, req *enginetypes.Rege
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
 		ordered := append([]map[string]interface{}(nil), chunks...)
 		sort.SliceStable(ordered, func(i, j int) bool {
-			return intFromMap(ordered[i], "chunk_order_int") < intFromMap(ordered[j], "chunk_order_int")
+			return runtime.IntFromMap(ordered[i], "chunk_order_int") < runtime.IntFromMap(ordered[j], "chunk_order_int")
 		})
 		chunks = ordered
 	}
@@ -338,7 +340,7 @@ func TestGrepAdapter_NoFallbackOnRegexpError(t *testing.T) {
 	}
 	adapter := NewGrepAdapter(fe)
 
-	_, err := adapter.Grep(context.Background(), tool.GrepRequest{
+	_, err := adapter.Grep(context.Background(), runtime.GrepRequest{
 		TenantID:   "t",
 		Pattern:    `\bbeta\b`,
 		DatasetIDs: []string{"kb1"},
@@ -362,7 +364,7 @@ func TestGrepAdapter_RegexpPushdownSucceeds(t *testing.T) {
 	}
 	adapter := NewGrepAdapter(fe)
 
-	chunks, err := adapter.Grep(context.Background(), tool.GrepRequest{
+	chunks, err := adapter.Grep(context.Background(), runtime.GrepRequest{
 		TenantID: "t", Pattern: "beta", DatasetIDs: []string{"kb1"}, Limit: 30,
 	})
 	if err != nil {
@@ -440,10 +442,10 @@ func TestListChunks_DeepRead(t *testing.T) {
 	}
 	adapter := NewGrepAdapter(fe)
 
-	tool.SetGrepService(adapter)
-	defer tool.SetGrepService(nil)
+	runtime.SetGrepService(adapter)
+	defer runtime.SetGrepService(nil)
 
-	ctx := tool.WithScope(context.Background(), "t", []string{"kb1"})
+	ctx := runtime.WithScope(context.Background(), "t", []string{"kb1"})
 	out, err := NewListChunksTool().InvokableRun(ctx,
 		`{"doc_id":"d1"}`)
 	if err != nil {
@@ -480,10 +482,10 @@ func TestListChunks_Pagination(t *testing.T) {
 		},
 	}
 	adapter := NewGrepAdapter(fe)
-	tool.SetGrepService(adapter)
-	defer tool.SetGrepService(nil)
+	runtime.SetGrepService(adapter)
+	defer runtime.SetGrepService(nil)
 
-	ctx := tool.WithScope(context.Background(), "t", []string{"kb1"})
+	ctx := runtime.WithScope(context.Background(), "t", []string{"kb1"})
 
 	// Page 1: offset 0, limit 2 → chunks A, B.
 	out, err := NewListChunksTool().InvokableRun(ctx,
@@ -521,10 +523,10 @@ func TestListChunks_DocIDRequired(t *testing.T) {
 		},
 	}
 	adapter := NewGrepAdapter(fe)
-	tool.SetGrepService(adapter)
-	defer tool.SetGrepService(nil)
+	runtime.SetGrepService(adapter)
+	defer runtime.SetGrepService(nil)
 
-	ctx := tool.WithScope(context.Background(), "t", []string{"kb1"})
+	ctx := runtime.WithScope(context.Background(), "t", []string{"kb1"})
 	out, err := NewListChunksTool().InvokableRun(ctx, `{"doc_id":"d1"}`)
 	if err != nil {
 		t.Fatalf("doc_id alone should not error: %v", err)
@@ -535,31 +537,5 @@ func TestListChunks_DocIDRequired(t *testing.T) {
 	// doc_id is mandatory.
 	if _, err := NewListChunksTool().InvokableRun(ctx, `{}`); err == nil {
 		t.Fatal("expected error when doc_id is missing")
-	}
-}
-
-// === marshalSearchResult shape ===
-
-// TestMarshalSearchResult_ChunksWrapper guards against the regression where the
-// non-empty output lost its {"chunks":[...]} wrapper and became a bare array,
-// diverging from jsonChunksEmpty's {"chunks":[]}.
-func TestMarshalSearchResult_ChunksWrapper(t *testing.T) {
-	nonEmpty := marshalSearchResult([]tool.RetrievalChunk{{ID: "c1", Content: "x"}})
-	var wrapper struct {
-		Chunks []json.RawMessage `json:"chunks"`
-	}
-	if err := json.Unmarshal([]byte(nonEmpty), &wrapper); err != nil {
-		t.Fatalf("non-empty output must be a {\"chunks\":[...]} object, got %q: %v", nonEmpty, err)
-	}
-	if len(wrapper.Chunks) != 1 {
-		t.Errorf("expected 1 chunk, got %d from %q", len(wrapper.Chunks), nonEmpty)
-	}
-
-	// Empty output and non-empty output must share the same top-level shape.
-	var emptyWrapper struct {
-		Chunks []json.RawMessage `json:"chunks"`
-	}
-	if err := json.Unmarshal([]byte(jsonChunksEmpty()), &emptyWrapper); err != nil {
-		t.Fatalf("jsonChunksEmpty must be a {\"chunks\":[...]} object: %v", err)
 	}
 }

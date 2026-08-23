@@ -87,6 +87,26 @@ func (t *TodoWriteTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			"steps": {
 				Type: schema.Array,
 				Desc: "Array of plan steps, each with id, description, and status (pending|in_progress|completed).",
+				ElemInfo: &schema.ParameterInfo{
+					Type: schema.Object,
+					SubParams: map[string]*schema.ParameterInfo{
+						"id": {
+							Type:     schema.String,
+							Required: true,
+							Desc:     "Unique step identifier.",
+						},
+						"description": {
+							Type:     schema.String,
+							Required: true,
+							Desc:     "What this step accomplishes.",
+						},
+						"status": {
+							Type: schema.String,
+							Desc: "Step state: pending, in_progress, or completed.",
+							Enum: []string{"pending", "in_progress", "completed"},
+						},
+					},
+				},
 			},
 		}),
 	}, nil

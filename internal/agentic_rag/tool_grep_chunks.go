@@ -17,9 +17,9 @@
 // Package agentic_rag centralises the smart-reasoning (ReAct) conversation
 // mode: the agent entrypoint, its system prompt, and the tools (think,
 // todo_write, grep_chunks, search_chunks, run_javascript) plus the GrepAdapter.
-// It is deliberately a separate package from internal/agent/tool
-// (which hosts canvas DSL tools) and imports tool only for the shared retrieval
-// plumbing (RetrievalChunk / GrepService / scope resolution).
+// It does not depend on internal/agent/tool (the canvas DSL tools); the shared
+// retrieval contract (RetrievalChunk / GrepService / scope resolution) lives in
+// internal/agent/runtime, which both agent layers depend on.
 package agentic_rag
 
 import (
@@ -35,7 +35,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 
-	"ragflow/internal/agent/tool"
+	"ragflow/internal/agent/runtime"
 )
 
 // grepChunksToolName regex-matches chunk content and returns a scored XML
@@ -73,7 +73,7 @@ const snippetContextRunes = 80
 // no per-session seen-chunk tracking (memory is intentionally not ported).
 type GrepChunksTool struct{}
 
-// NewGrepChunksTool returns a GrepChunksTool implementing eino's tool.InvokableTool.
+// NewGrepChunksTool returns a GrepChunksTool implementing eino's runtime.InvokableTool.
 func NewGrepChunksTool() *GrepChunksTool {
 	return &GrepChunksTool{}
 }
@@ -135,11 +135,11 @@ func (g *GrepChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		return "", fmt.Errorf("grep_chunks: invalid regex %q: %w", query, err)
 	}
 
-	svc := tool.GetGrepService()
-	tenantID := tool.CanvasTenantID(ctx)
-	datasetIDs := tool.CanvasDatasetIDs(ctx, args.DatasetIDs)
+	svc := runtime.GetGrepService()
+	tenantID := runtime.TenantID(ctx)
+	datasetIDs := runtime.DatasetIDs(ctx, args.DatasetIDs)
 
-	chunks, err := svc.Grep(ctx, tool.GrepRequest{
+	chunks, err := svc.Grep(ctx, runtime.GrepRequest{
 		Pattern:      query,
 		DatasetIDs:   datasetIDs,
 		DocScope:     args.DocScope,
@@ -167,13 +167,13 @@ func (g *GrepChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 
 // grepScoredChunk pairs a retrieval chunk with its regex match score.
 type grepScoredChunk struct {
-	chunk tool.RetrievalChunk
+	chunk runtime.RetrievalChunk
 	score float64
 }
 
 // scoreGrepChunks scores each chunk by match count + earliest-position bonus,
 // and dedupes by chunk ID.
-func scoreGrepChunks(chunks []tool.RetrievalChunk, re *regexp.Regexp) []grepScoredChunk {
+func scoreGrepChunks(chunks []runtime.RetrievalChunk, re *regexp.Regexp) []grepScoredChunk {
 	seen := map[string]struct{}{}
 	out := make([]grepScoredChunk, 0, len(chunks))
 	for _, c := range chunks {

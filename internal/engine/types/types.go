@@ -65,9 +65,13 @@ type SearchResult struct {
 // match expressions) because regex matching is a distinct retrieval mode with
 // no vector or text relevance scoring.
 type RegexpSearchRequest struct {
-	// Search target
-	IndexNames []string // For ES: index names
-	KbIDs      []string // Knowledge base IDs filter
+	// TenantID is the single tenant whose chunks are searched. It is
+	// engine-agnostic: callers name the tenant, and each engine maps it to its
+	// own physical index/table (ES: ragflow_<tenant>; Infinity: one table per
+	// tenant). Callers never name storage targets directly.
+	TenantID string
+	// KbIDs are the knowledge base IDs to filter the search to.
+	KbIDs []string // Knowledge base IDs filter
 
 	// Pagination
 	Offset int // Offset for pagination (0-based)

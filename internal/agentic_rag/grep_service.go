@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/agent/tool"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 )
@@ -57,13 +57,13 @@ type regexpSearchable interface {
 
 // ListByDocIDs reads the full original chunks belonging to the given document
 // ids, skipping graph (relation/entity/location) chunks so callers get the
-// actual document text. It backs the list_chunks deep-read tool.
+// actual document text. It backs the list_chunks deep-read runtime.
 // Because content_with_weight is now a searchable keyword field, it reads the
 // docs' chunks directly via the regexp pushdown (match-all "." scoped by
 // doc_id), no longer needing a content_ltks-based general recall.
-func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req tool.GrepRequest) ([]tool.RetrievalChunk, error) {
+func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error) {
 	if g == nil || g.docEngine == nil {
-		return nil, tool.ErrGrepServiceMissing
+		return nil, runtime.ErrGrepServiceMissing
 	}
 	docIDs := nonEmptyStrings(req.DocScope)
 	if len(docIDs) == 0 {
@@ -75,25 +75,20 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req tool.GrepRequest) ([
 	}
 	offset := max(req.Offset, 0)
 
-	indexNames := buildGrepIndexNames(req.TenantID)
-	if len(indexNames) == 0 {
-		return nil, nil
-	}
-
 	// Use a bounded engine context, same rationale as Grep.
 	ectx, ecancel := engineCallContext(ctx)
 	defer ecancel()
 
 	se, ok := g.docEngine.(regexpSearchable)
 	if !ok {
-		return nil, tool.ErrRegexpNotSupported
+		return nil, runtime.ErrRegexpNotSupported
 	}
 	// Match-all on the (now keyword) content_with_weight, scoped to the docs,
 	// restricted to ordinary text chunks (available_int=1, no compile_kwd). When
 	// the caller requests a sort (e.g. reading order), push it down so ES applies
 	// offset/limit over the deterministically-ordered set — no over-fetching.
 	res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
-		IndexNames:   indexNames,
+		TenantID:     req.TenantID,
 		KbIDs:        req.DatasetIDs,
 		Offset:       offset,
 		Limit:        limit,
@@ -110,20 +105,20 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req tool.GrepRequest) ([
 		return nil, fmt.Errorf("list_chunks: deep-read recall: %w", err)
 	}
 
-	out := make([]tool.RetrievalChunk, 0, limit)
+	out := make([]runtime.RetrievalChunk, 0, limit)
 	for _, raw := range res.Chunks {
 		content := contentWithWeightFromRaw(raw)
 		if content == "" || isGraphChunkContent(content) {
 			continue
 		}
-		out = append(out, tool.RetrievalChunk{
-			ID:           firstStringFromMap(raw, "id", "_id"),
+		out = append(out, runtime.RetrievalChunk{
+			ID:           runtime.FirstStringFromMap(raw, "id", "_id"),
 			Content:      content,
-			DocumentID:   stringFromMap(raw, "doc_id"),
-			DocumentName: stringFromMap(raw, "docnm_kwd"),
-			DatasetID:    stringFromMap(raw, "kb_id"),
-			ChunkIndex:   intFromMap(raw, "chunk_order_int"),
-			PageNum:      intFromMap(raw, "page_num_int"),
+			DocumentID:   runtime.StringFromMap(raw, "doc_id"),
+			DocumentName: runtime.StringFromMap(raw, "docnm_kwd"),
+			DatasetID:    runtime.StringFromMap(raw, "kb_id"),
+			ChunkIndex:   runtime.IntFromMap(raw, "chunk_order_int"),
+			PageNum:      runtime.IntFromMap(raw, "page_num_int"),
 		})
 		if len(out) >= limit {
 			break
@@ -133,9 +128,9 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req tool.GrepRequest) ([
 }
 
 // Grep regex-matches chunk content within the given scope.
-func (g *GrepAdapter) Grep(ctx context.Context, req tool.GrepRequest) ([]tool.RetrievalChunk, error) {
+func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error) {
 	if g == nil || g.docEngine == nil {
-		return nil, tool.ErrGrepServiceMissing
+		return nil, runtime.ErrGrepServiceMissing
 	}
 	if strings.TrimSpace(req.Pattern) == "" {
 		return nil, fmt.Errorf("grep: pattern cannot be empty")
@@ -148,11 +143,6 @@ func (g *GrepAdapter) Grep(ctx context.Context, req tool.GrepRequest) ([]tool.Re
 	limit := req.Limit
 	if limit <= 0 {
 		limit = grepChunksDefaultLimit
-	}
-
-	indexNames := buildGrepIndexNames(req.TenantID)
-	if len(indexNames) == 0 {
-		return nil, nil
 	}
 
 	// Only search ordinary document text chunks: available_int=1 and no
@@ -181,7 +171,7 @@ func (g *GrepAdapter) Grep(ctx context.Context, req tool.GrepRequest) ([]tool.Re
 	// real error the caller should surface, not silently "no matches").
 	if se, ok := g.docEngine.(regexpSearchable); ok {
 		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
-			IndexNames:   indexNames,
+			TenantID:     req.TenantID,
 			KbIDs:        req.DatasetIDs,
 			Limit:        limit,
 			Pattern:      req.Pattern,
@@ -197,7 +187,7 @@ func (g *GrepAdapter) Grep(ctx context.Context, req tool.GrepRequest) ([]tool.Re
 
 	// Non-ES engines do not implement regex matching on chunk content; surface
 	// an explicit error rather than returning (empty) regex "matches".
-	return nil, tool.ErrRegexpNotSupported
+	return nil, runtime.ErrRegexpNotSupported
 }
 
 // engineCallContext returns a bounded context for a single engine query. If the
@@ -213,17 +203,17 @@ func engineCallContext(ctx context.Context) (context.Context, context.CancelFunc
 }
 
 // translateGrepChunks converts ES regexp-search result maps into RetrievalChunk.
-func translateGrepChunks(chunks []map[string]interface{}) []tool.RetrievalChunk {
-	out := make([]tool.RetrievalChunk, 0, len(chunks))
+func translateGrepChunks(chunks []map[string]interface{}) []runtime.RetrievalChunk {
+	out := make([]runtime.RetrievalChunk, 0, len(chunks))
 	for _, raw := range chunks {
-		out = append(out, tool.RetrievalChunk{
-			ID:           firstStringFromMap(raw, "id", "_id"),
+		out = append(out, runtime.RetrievalChunk{
+			ID:           runtime.FirstStringFromMap(raw, "id", "_id"),
 			Content:      contentWithWeightFromRaw(raw),
-			DocumentID:   stringFromMap(raw, "doc_id"),
-			DocumentName: stringFromMap(raw, "docnm_kwd"),
-			DatasetID:    stringFromMap(raw, "kb_id"),
-			ChunkIndex:   intFromMap(raw, "chunk_order_int"),
-			PageNum:      intFromMap(raw, "page_num_int"),
+			DocumentID:   runtime.StringFromMap(raw, "doc_id"),
+			DocumentName: runtime.StringFromMap(raw, "docnm_kwd"),
+			DatasetID:    runtime.StringFromMap(raw, "kb_id"),
+			ChunkIndex:   runtime.IntFromMap(raw, "chunk_order_int"),
+			PageNum:      runtime.IntFromMap(raw, "page_num_int"),
 		})
 	}
 	return out
@@ -232,10 +222,10 @@ func translateGrepChunks(chunks []map[string]interface{}) []tool.RetrievalChunk 
 // contentWithWeightFromRaw returns the chunk's content string, preferring
 // content_with_weight and falling back to content.
 func contentWithWeightFromRaw(raw map[string]interface{}) string {
-	if v := stringFromMap(raw, "content_with_weight"); v != "" {
+	if v := runtime.StringFromMap(raw, "content_with_weight"); v != "" {
 		return v
 	}
-	return stringFromMap(raw, "content")
+	return runtime.StringFromMap(raw, "content")
 }
 
 // sortExprFromFields builds an ascending OrderByExpr from an ordered list of
@@ -250,21 +240,6 @@ func sortExprFromFields(fields []string) *enginetypes.OrderByExpr {
 		expr.Asc(field)
 	}
 	return expr
-}
-
-// buildGrepIndexNames derives ES index names from the tenant id. Mirrors
-// nlp.buildIndexNames (ragflow_<tenant>).
-func buildGrepIndexNames(tenantID string) []string {
-	if strings.TrimSpace(tenantID) == "" {
-		return nil
-	}
-	var names []string
-	for part := range strings.SplitSeq(tenantID, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			names = append(names, "ragflow_"+part)
-		}
-	}
-	return names
 }
 
 // nonEmptyStrings drops empty/whitespace-only strings, preserving order.

@@ -67,6 +67,7 @@ import (
 	"regexp"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -543,49 +544,31 @@ func (a *NLPRetrievalAdapter) resolveRerankModel(
 // can't break the whole result list.
 func translateChunk(raw map[string]any) RetrievalChunk {
 	return RetrievalChunk{
-		ID:               stringFromMap(raw, "chunk_id"),
+		ID:               StringFromMap(raw, "chunk_id"),
 		Content:          contentFromMap(raw),
-		DocumentID:       stringFromMap(raw, "doc_id"),
-		DocumentName:     stringFromMap(raw, "docnm_kwd"),
-		DatasetID:        stringFromMap(raw, "kb_id"),
-		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
-		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
+		DocumentID:       StringFromMap(raw, "doc_id"),
+		DocumentName:     StringFromMap(raw, "docnm_kwd"),
+		DatasetID:        StringFromMap(raw, "kb_id"),
+		ImageID:          FirstStringFromMap(raw, "image_id", "img_id"),
+		URL:              FirstStringFromMap(raw, "url", "document_url", "doc_url"),
 		Positions:        firstValueFromMap(raw, "positions", "position_int"),
-		ChunkIndex:       intFromMap(raw, "chunk_order_int"),
-		PageNum:          intFromMap(raw, "page_num_int"),
+		ChunkIndex:       IntFromMap(raw, "chunk_order_int"),
+		PageNum:          IntFromMap(raw, "page_num_int"),
 		Score:            scoreFromMap(raw),
 		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
 		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),
 	}
 }
 
-// intFromMap returns raw[key] as an int, tolerating the numeric types JSON
-// decoding and the doc engine produce (float64, float32, int, int64).
-func intFromMap(raw map[string]any, key string) int {
-	if f, ok := numberFromMap(raw, key); ok {
-		return int(f)
-	}
-	return 0
+// IntFromMap, StringFromMap, FirstStringFromMap and NumberFromMap are
+// re-exported from internal/agent/runtime (single owner) so the canvas tool
+// package keeps its helper names without owning a second copy.
+func IntFromMap(raw map[string]any, key string) int { return runtime.IntFromMap(raw, key) }
+func StringFromMap(raw map[string]any, key string) string {
+	return runtime.StringFromMap(raw, key)
 }
-
-// stringFromMap returns raw[key].(string) or "" if missing / wrong
-// type. Keeps the translator compact.
-func stringFromMap(raw map[string]any, key string) string {
-	if v, ok := raw[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
-}
-
-func firstStringFromMap(raw map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value := stringFromMap(raw, key); value != "" {
-			return value
-		}
-	}
-	return ""
+func FirstStringFromMap(raw map[string]any, keys ...string) string {
+	return runtime.FirstStringFromMap(raw, keys...)
 }
 
 func firstValueFromMap(raw map[string]any, keys ...string) any {
@@ -603,10 +586,10 @@ func firstValueFromMap(raw map[string]any, keys ...string) any {
 // the model sees in Python; we use it here too. Empty / missing →
 // fall back to content_ltks; both empty → empty string.
 func contentFromMap(raw map[string]any) string {
-	if v := stringFromMap(raw, "content_with_weight"); v != "" {
+	if v := StringFromMap(raw, "content_with_weight"); v != "" {
 		return v
 	}
-	return stringFromMap(raw, "content_ltks")
+	return StringFromMap(raw, "content_ltks")
 }
 
 // scoreFromMap returns the chunk's similarity score. nlp populates
@@ -615,11 +598,11 @@ func contentFromMap(raw map[string]any) string {
 // zero, average the two sub-scores. Wrong-type values → fall through
 // to sub-scores; missing sub-scores → 0.
 func scoreFromMap(raw map[string]any) float64 {
-	if f, ok := numberFromMap(raw, "similarity"); ok {
+	if f, ok := NumberFromMap(raw, "similarity"); ok {
 		return f
 	}
-	term, termOK := numberFromMap(raw, "term_similarity")
-	vec, vecOK := numberFromMap(raw, "vector_similarity")
+	term, termOK := NumberFromMap(raw, "term_similarity")
+	vec, vecOK := NumberFromMap(raw, "vector_similarity")
 	if termOK && vecOK {
 		return (term + vec) / 2
 	}
@@ -633,28 +616,12 @@ func scoreFromMap(raw map[string]any) float64 {
 }
 
 func scoreValueFromMap(raw map[string]any, key string) float64 {
-	value, _ := numberFromMap(raw, key)
+	value, _ := NumberFromMap(raw, key)
 	return value
 }
 
-// numberFromMap returns raw[key].(float64) with a tolerant path
-// for ints. JSON unmarshaling can produce either.
-func numberFromMap(raw map[string]any, key string) (float64, bool) {
-	v, ok := raw[key]
-	if !ok {
-		return 0, false
-	}
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	}
-	return 0, false
+func NumberFromMap(raw map[string]any, key string) (float64, bool) {
+	return runtime.NumberFromMap(raw, key)
 }
 
 func boolPtr(b bool) *bool { return &b }

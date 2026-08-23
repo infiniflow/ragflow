@@ -28,11 +28,11 @@ import (
 	"github.com/eino-contrib/jsonschema"
 	"go.uber.org/zap"
 
-	"ragflow/internal/agent/tool"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 )
 
-// listChunksToolName is the constrained deep-read tool. It pages through ALL
+// listChunksToolName is the constrained deep-read runtime. It pages through ALL
 // chunks of exactly ONE document in reading order (chunk_index) within an
 // offset/limit range. The document is scoped by doc_id (authoritative and
 // unique — it can only belong to one dataset), and each returned chunk carries
@@ -66,15 +66,15 @@ const (
 // deepReadService is the capability list_chunks needs on top of
 // GrepService. *GrepAdapter implements it.
 type deepReadService interface {
-	tool.GrepService
-	ListByDocIDs(ctx context.Context, req tool.GrepRequest) ([]tool.RetrievalChunk, error)
+	runtime.GrepService
+	ListByDocIDs(ctx context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error)
 }
 
 // ListChunksTool reads the full original chunks of one document.
 type ListChunksTool struct{}
 
 // NewListChunksTool returns a ListChunksTool implementing eino's
-// tool.InvokableTool.
+// runtime.InvokableTool.
 func NewListChunksTool() *ListChunksTool {
 	return &ListChunksTool{}
 }
@@ -140,8 +140,8 @@ func (l *ListChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 	offset := max(args.Offset, 0)
 
-	svc := tool.GetGrepService()
-	tenantID := tool.CanvasTenantID(ctx)
+	svc := runtime.GetGrepService()
+	tenantID := runtime.TenantID(ctx)
 	dr, ok := svc.(deepReadService)
 	if svc == nil || tenantID == "" {
 		return chunksXMLEmpty(), nil
@@ -150,14 +150,13 @@ func (l *ListChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		return "", fmt.Errorf("list_chunks: configured grep service does not support deep read")
 	}
 
-	// Push the document's reading order down to the engine so ES applies
-	// offset/limit over the deterministically-ordered chunks — no over-fetching
-	// of offset+limit just to re-sort in memory. A stable in-memory re-sort by
-	// reading order is kept as a defensive no-op (the engine already returns the
-	// page in reading order) so the output order never depends on engine choice.
-	chunks, err := dr.ListByDocIDs(ctx, tool.GrepRequest{
+	// Deep reads scope purely by doc_id. The doc_id comes from grep_chunks /
+	// search_chunks, which are already constrained to the conversation's dataset
+	// scope, so no extra dataset filter is needed here; DatasetIDs is left nil
+	// (optional) and the document is located by its unique doc_id alone.
+	chunks, err := dr.ListByDocIDs(ctx, runtime.GrepRequest{
 		DocScope:     []string{docID},
-		DatasetIDs:   nil, // a doc_id uniquely identifies the document across all datasets
+		DatasetIDs:   nil,
 		Limit:        limit,
 		Offset:       offset,
 		Sort:         grepChunksSortFields, // doc_id, page_num_int, chunk_order_int

@@ -2087,8 +2087,8 @@ func (s *ChatPipelineService) smartReasoningChat(
 		// Resolve the chat model as an eino BaseChatModel.
 		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 		if err != nil {
-			out <- AsyncChatResult{Answer: "", Final: true}
 			common.Error("smart_reasoning: resolve chat model", err)
+			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err.Error()), Final: true}
 			return
 		}
 		cm := modelModule.NewChatModel(driver, &modelName, apiConfig)
@@ -2170,12 +2170,27 @@ func (s *ChatPipelineService) smartReasoningChat(
 		})
 		if err != nil {
 			common.Error("smart_reasoning: run", err)
+			if final == "" {
+				final = fmt.Sprintf("**ERROR**: %s", err.Error())
+			}
+		}
+		// If the agent ended while still in the <think> block, close it with its
+		// own non-final marker first. The terminating result must stay free of
+		// think markers: the streaming consumer skips any result that carries
+		// EndToThink before it checks Final, which would drop the final
+		// OpenAIEventFinal event and its reference payload.
+		if thinking {
+			out <- AsyncChatResult{
+				Reference:  map[string]interface{}{},
+				Final:      false,
+				EndToThink: true,
+			}
+			thinking = false
 		}
 		out <- AsyncChatResult{
-			Answer:     final,
-			Reference:  map[string]interface{}{},
-			Final:      true,
-			EndToThink: true,
+			Answer:    final,
+			Reference: map[string]interface{}{},
+			Final:     true,
 		}
 	}()
 

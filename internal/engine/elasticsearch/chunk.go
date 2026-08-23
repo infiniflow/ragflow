@@ -1306,9 +1306,27 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 // The caller is responsible for translating a user regex into Lucene syntax;
 // patterns using unsupported constructs should be detected and handled by the
 // caller (fallback to broad recall + in-memory filtering).
+// esIndexNamesForTenant maps an engine-agnostic tenant id to this engine's
+// physical index names. ES stores one index per tenant (ragflow_<tenant>), and
+// a tenant id may carry comma-separated tenants (one index each). This is the
+// doc-engine-specific storage mapping — callers never compute index names.
+func esIndexNamesForTenant(tenantID string) []string {
+	var names []string
+	for part := range strings.SplitSeq(tenantID, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			names = append(names, "ragflow_"+part)
+		}
+	}
+	return names
+}
+
 func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
-	if len(req.IndexNames) == 0 {
-		return nil, fmt.Errorf("index names cannot be empty")
+	// Map the engine-agnostic tenant to this engine's physical index(es). ES
+	// stores one index per tenant (ragflow_<tenant>); the tenant id may carry
+	// comma-separated tenants, which map to one index each.
+	indexNames := esIndexNamesForTenant(req.TenantID)
+	if len(indexNames) == 0 {
+		return nil, fmt.Errorf("tenant id cannot be empty")
 	}
 	if strings.TrimSpace(req.Pattern) == "" {
 		return nil, fmt.Errorf("regexp pattern cannot be empty")
@@ -1359,6 +1377,10 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		}
 	}
 
+	// Offset/Limit are applied to each search target (IndexNames entry)
+	// independently — the request is engine-agnostic and makes no assumption
+	// about how many underlying indexes a target spans. The ES engine queries
+	// each index with the same from/size and merges the hits.
 	queryBody := map[string]interface{}{
 		"query": boolQuery,
 		"size":  limit,
@@ -1393,7 +1415,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		allResults []map[string]interface{}
 		firstErr   error
 	)
-	for _, indexName := range req.IndexNames {
+	for _, indexName := range indexNames {
 		res, err := e.client.Search(
 			e.client.Search.WithContext(ctx),
 			e.client.Search.WithIndex(indexName),
@@ -1444,13 +1466,22 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		return nil, firstErr
 	}
 
-	// With an explicit sort the caller wants a deterministic (e.g. reading)
-	// order; ES already returned each index's page in that order, so preserve it
-	// instead of re-sorting by score. Otherwise sort by _score descending
-	// (regexp scoring favours shorter patterns with more matches), capped to
-	// limit.
-	if req.Sort == nil || len(req.Sort.Fields) == 0 {
+	// Single index: ES already applied from/size exactly, so the collected rows
+	// are the requested page — only cap to limit (defensive). Multi index: every
+	// index fetched up to offset+limit from 0, so sort the merged set (per the
+	// requested fields, or by score) and apply the offset once, globally.
+	// Each index already applied from=offset/size=limit, so the merged hits are
+	// the requested page per target. With an explicit sort we re-order the merged
+	// set by the requested fields so cross-index output is deterministic; without
+	// one we cap to limit (the relevance order ES returned is preserved). No
+	// offset is skipped here — it was already applied per index.
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		allResults = sortByFields(allResults, req.Sort)
+	} else {
 		allResults = sortByScore(allResults, limit)
+	}
+	if len(allResults) > limit {
+		allResults = allResults[:limit]
 	}
 
 	return &types.SearchResult{
@@ -3211,6 +3242,53 @@ func toFloat64(v interface{}) (float64, bool) {
 		return float64(val), true
 	}
 	return 0, false
+}
+
+// sortByFields orders chunks by the given OrderByExpr fields ascending. It is
+// used after merging multi-index regexp results so the offset/limit window is
+// applied to a globally-sorted set (ES only sorts within each index). Numeric
+// fields sort numerically, string fields lexicographically.
+func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []map[string]interface{} {
+	if expr == nil || len(expr.Fields) == 0 {
+		return chunks
+	}
+	sort.SliceStable(chunks, func(i, j int) bool {
+		for _, field := range expr.Fields {
+			vi, oki := chunks[i][field.Field]
+			vj, okj := chunks[j][field.Field]
+			if !oki || !okj {
+				// Missing field sorts before a present one.
+				if !oki && !okj {
+					continue
+				}
+				return !oki
+			}
+			var less bool
+			if fi, ei := toFloat64(vi); ei {
+				if fj, ej := toFloat64(vj); ej {
+					less = fi < fj
+				} else {
+					less = false // numeric before non-numeric
+				}
+			} else {
+				si, siOk := vi.(string)
+				sj, sjOk := vj.(string)
+				if siOk && sjOk {
+					less = si < sj
+				} else {
+					less = fmt.Sprintf("%v", vi) < fmt.Sprintf("%v", vj)
+				}
+			}
+			if vi != vj {
+				if field.Type == types.SortDesc {
+					return !less
+				}
+				return less
+			}
+		}
+		return false
+	})
+	return chunks
 }
 
 // sortByScore sorts chunks by _score descending and limits

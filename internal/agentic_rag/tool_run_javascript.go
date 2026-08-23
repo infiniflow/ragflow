@@ -38,7 +38,7 @@ const runJavascriptToolName = "run_javascript"
 // no module system, no external package, stdout is the output.
 const runJavascriptToolDescription = "Execute a self-contained ECMAScript 5.1 (ES5.1) snippet and return its standard output.\n\n" +
 	"## Strict grammar & capability rules (VIOLATIONS ARE REJECTED)\n" +
-	"- **ECMAScript 5.1 ONLY.** Syntax from ES6+ is rejected: no let/const (use var), no arrow functions (=>), no template literals (`), no destructuring, no classes, no default/rest params, no for-of, no generators, no spread (...), no Promise/async/await, no Proxy, no Symbol, no Map/Set (use plain objects/arrays).\n" +
+	"- **ECMAScript 5.1 ONLY.** The sandbox parser implements ES5.1, so any ES6+ syntax fails to compile (no let/const — use var; no arrow functions =>; no template literals; no destructuring; no classes; no default/rest params; no for-of; no generators; no spread; no Promise/async/await; no Proxy; no Symbol; no Map/Set — use plain objects/arrays).\n" +
 	"- **NO module system.** Do not use import, require, module.exports, exports, or define. There is NO Node.js/CommonJS runtime: external packages cannot be loaded. Only ES5.1 built-ins (Math, JSON, Array, Date, RegExp, String, Number, Object, etc.) are available.\n" +
 	"- **Output is stdout.** Write results with console.log(...). The captured stdout (joined lines) is returned verbatim as the tool output. The snippet's return value is ignored unless you also console.log it.\n\n" +
 	"## Input\n" +
@@ -94,14 +94,14 @@ func (t *RunJavascriptTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
-// es51ForbiddenPatterns are substrings that indicate ES6+ syntax or a module
-// system, none of which the sandbox supports.
+// es51ForbiddenPatterns are unambiguous module-system markers the sandbox cannot
+// honor. Other ES6+ syntax is NOT listed here: goja only implements ES5.1, so
+// real ES6 constructs fail at parse time anyway, while a substring scan of broad
+// tokens (e.g. "=>", "let ", "of ", "class ", "...") would also reject those
+// words appearing inside string literals or comments of valid ES5.1 code.
 var es51ForbiddenPatterns = []string{
 	"import ", "import(", "export ", "require(", "require (",
-	"module.exports", "require ", "=>", "`",
-	"let ", "const ", "=> ", "class ",
-	"function*", "yield ", "async ", "await ",
-	"...", "of ", "Proxy", "Symbol",
+	"module.exports", "require ",
 }
 
 // InvokableRun validates the snippet against the ES5.1 contract, runs it in a
@@ -163,6 +163,14 @@ func (t *RunJavascriptTool) InvokableRun(ctx context.Context, argumentsInJSON st
 	}()
 
 	if _, err := vm.RunString(code); err != nil {
+		// A syntax rejection means the snippet used constructs goja's ES5.1
+		// parser does not implement (arrow functions, classes, template
+		// literals, etc.); surface it clearly instead of a raw parse error.
+		// goja reports these as "SyntaxError" even when wrapped in a runtime
+		// exception.
+		if strings.Contains(err.Error(), "SyntaxError") {
+			return "", fmt.Errorf("run_javascript: ES6+ or unsupported syntax: %w", err)
+		}
 		return "", fmt.Errorf("run_javascript: execution error: %w", err)
 	}
 

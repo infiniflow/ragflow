@@ -16,32 +16,14 @@
 
 package tool
 
-import "context"
+import (
+	"context"
 
-// scopeCtxKey carries a conversation-level scope (tenant + dataset ids) so
-// tools can resolve their search scope without a canvas state. This lets the
-// same tools serve both the canvas agent runtime and the conversation-level
-// smart-reasoning entrypoint.
-type scopeCtxKey struct{}
-
-type scopeValue struct {
-	tenantID   string
-	datasetIDs []string
-}
+	"ragflow/internal/agent/runtime"
+)
 
 // WithScope attaches an explicit tenant + dataset scope to ctx for tool calls.
-// It takes precedence over canvas state in canvasTenantID / canvasDatasetIDs.
+// Re-exported from runtime (single owner of the scope mechanism).
 func WithScope(ctx context.Context, tenantID string, datasetIDs []string) context.Context {
-	return context.WithValue(ctx, scopeCtxKey{}, scopeValue{
-		tenantID:   tenantID,
-		datasetIDs: datasetIDs,
-	})
-}
-
-// scopeFromContext returns the injected scope, or nil.
-func scopeFromContext(ctx context.Context) *scopeValue {
-	if v, ok := ctx.Value(scopeCtxKey{}).(scopeValue); ok {
-		return &v
-	}
-	return nil
+	return runtime.WithScope(ctx, tenantID, datasetIDs)
 }
