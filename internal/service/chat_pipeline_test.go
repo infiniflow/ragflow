@@ -100,6 +100,41 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	}
 }
 
+// TestSmartReasoning_GenerationConfigReachesEinoModel guards the smart-reasoning
+// config wiring: the dispatch path (smartReasoningChat) now builds the eino
+// model with BuildChatConfig(chat, kwargs) instead of a nil config, so the
+// dialog LLM setting and per-request overrides (temperature, top_p, max_tokens,
+// thinking, stop) actually reach the model driver. A nil config — the pre-fix
+// behaviour — would silently drop all of these when agent_mode=smart-reasoning.
+func TestSmartReasoning_GenerationConfigReachesEinoModel(t *testing.T) {
+	chat := dialForTest("llm-1")
+	chat.LLMSetting = entity.JSONMap{
+		"temperature": 0.7,
+		"top_p":       0.9,
+		"max_tokens":  512,
+		"thinking":    true,
+		"stop":        []interface{}{"\n", "END"},
+	}
+	// Request-level overrides win over dialog values.
+	cfg := BuildChatConfig(chat, map[string]interface{}{"temperature": 0.3})
+
+	if cfg.Temperature == nil || *cfg.Temperature != 0.3 {
+		t.Fatalf("Temperature: want request override 0.3, got %v", cfg.Temperature)
+	}
+	if cfg.TopP == nil || *cfg.TopP != 0.9 {
+		t.Fatalf("TopP: want dialog 0.9, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 512 {
+		t.Fatalf("MaxTokens: want 512, got %v", cfg.MaxTokens)
+	}
+	if cfg.Thinking == nil || !*cfg.Thinking {
+		t.Fatalf("Thinking: want true, got %v", cfg.Thinking)
+	}
+	if cfg.Stop == nil || len(*cfg.Stop) != 2 {
+		t.Fatalf("Stop: want [\"\\n\", \"END\"], got %v", cfg.Stop)
+	}
+}
+
 // --- P1 Timer + decorateAnswer tests (P0/P1/P7 surface) ---
 
 // TestDecorateAnswer_TimerFormatAlwaysEmitted pins the Markdown

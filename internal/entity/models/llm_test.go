@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
-	"ragflow/internal/common"
 	"testing"
 
+	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/common"
 )
 
 func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
@@ -95,6 +97,59 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 	}
 	if msg.ToolCalls[0].Function.Name != "search_my_dateset" || msg.ToolCalls[0].Function.Arguments != `{"query":"hello"}` {
 		t.Fatalf("tool call = %#v, want search_my_dateset query call", msg.ToolCalls[0])
+	}
+}
+
+// TestEinoChatModelGenerateHonorsOptsTools verifies the per-call
+// model.WithTools option (how eino's ChatModelAgent binds tools) reaches the
+// driver. Without this, the ReAct loop's model requests would carry no tool
+// definitions and the model would never emit tool_calls.
+func TestEinoChatModelGenerateHonorsOptsTools(t *testing.T) {
+	apiKey := "key"
+	modelName := "chat"
+	driver := &captureToolDriver{
+		resp: &ChatResponse{
+			ToolCalls: []map[string]interface{}{
+				{
+					"id": "call-1", "type": "function",
+					"function": map[string]interface{}{
+						"name": "search_my_dateset", "arguments": `{"query":"hello"}`,
+					},
+				},
+			},
+		},
+	}
+	base := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	// NOTE: no WithTools binding — tools arrive only via the call option.
+	m := NewEinoChatModel(base, nil)
+
+	toolInfo := &schema.ToolInfo{
+		Name: "search_my_dateset",
+		Desc: "Search datasets.",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"query": {Type: schema.String, Required: true},
+		}),
+	}
+	msg, err := m.Generate(context.Background(),
+		[]*schema.Message{schema.UserMessage("hello")},
+		einomodel.WithTools([]*schema.ToolInfo{toolInfo}),
+	)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if driver.lastConfig == nil || driver.lastConfig.Tools == nil {
+		t.Fatal("Generate did not send opts-provided tools to driver")
+	}
+	tools, ok := driver.lastConfig.Tools.([]map[string]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("driver tools = %#v, want one OpenAI-style tool", driver.lastConfig.Tools)
+	}
+	fn, _ := tools[0]["function"].(map[string]any)
+	if fn["name"] != "search_my_dateset" {
+		t.Fatalf("tool function name = %#v, want search_my_dateset", fn["name"])
+	}
+	if len(msg.ToolCalls) != 1 || msg.ToolCalls[0].Function.Name != "search_my_dateset" {
+		t.Fatalf("msg tool calls = %#v, want search_my_dateset", msg.ToolCalls)
 	}
 }
 
