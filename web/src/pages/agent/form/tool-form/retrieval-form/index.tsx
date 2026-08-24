@@ -4,6 +4,7 @@ import { FormContainer } from '@/components/form-container';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+import { PrefetchSizeFormField } from '@/components/prefetch-size-item';
 
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
@@ -68,6 +69,7 @@ const RetrievalForm = () => {
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
+            <PrefetchSizeFormField></PrefetchSizeFormField>
             {hideKnowledgeGraphField || (
               <>
                 <RerankFormFields

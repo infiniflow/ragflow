@@ -557,7 +557,7 @@ class Dealer:
         embd_mdl,
         tenant_ids,
         kb_ids,
-        page,
+        page,  # MUST be 1 when rerank_mdl is specified
         page_size,  # it is topn when rerank_mdl is specified
         similarity_threshold=0.2,
         vector_similarity_weight=0.3,
@@ -569,7 +569,7 @@ class Dealer:
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
         must_not: dict | None = None,
-        prefetch_size=100,
+        prefetch_size=64,
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
