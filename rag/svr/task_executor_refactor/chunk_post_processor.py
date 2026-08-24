@@ -52,9 +52,10 @@ _ES_KEYWORD_MAX_TERM_BYTES = 32766
 def _sanitize_keyword_term(term: str) -> list[str]:
     """Return keyword pieces that fit into an Elasticsearch keyword field.
 
-    If ``term`` is small enough it is returned as-is. If it is too large
-    and contains whitespace, it is split on whitespace and each piece is
-    truncated to the ES keyword limit. Empty pieces are dropped.
+    If ``term`` is small enough it is returned as-is. Otherwise it is
+    truncated at a character boundary so the UTF-8 encoding never exceeds
+    the ES keyword limit. This avoids corrupting multi-byte characters by
+    slicing raw bytes.
     """
     term = term.strip()
     if not term:
@@ -68,14 +69,20 @@ def _sanitize_keyword_term(term: str) -> list[str]:
         term_byte_length,
         _ES_KEYWORD_MAX_TERM_BYTES,
     )
-    pieces = []
-    for piece in term.split():
-        encoded = piece.encode("utf-8")
-        if len(encoded) > _ES_KEYWORD_MAX_TERM_BYTES:
-            piece = encoded[:_ES_KEYWORD_MAX_TERM_BYTES].decode("utf-8", errors="ignore")
-        if piece:
-            pieces.append(piece)
-    return pieces
+    length = 0
+    end = 0
+    for index, character in enumerate(term):
+        character_bytes = len(character.encode("utf-8"))
+        if length + character_bytes > _ES_KEYWORD_MAX_TERM_BYTES:
+            end = index
+            break
+        length += character_bytes
+    else:
+        end = len(term)
+    truncated = term[:end].rstrip()
+    if not truncated:
+        return []
+    return [truncated]
 
 
 async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:

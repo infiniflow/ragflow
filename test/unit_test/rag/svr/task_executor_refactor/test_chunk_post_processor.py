@@ -39,12 +39,12 @@ class TestSanitizeKeywordTerm:
     def test_drops_empty_term(self):
         assert _sanitize_keyword_term("   ") == []
 
-    def test_splits_oversized_term_by_whitespace(self):
+    def test_truncates_oversized_whitespace_term(self):
         oversized = "word " * 20000
         pieces = _sanitize_keyword_term(oversized)
-        assert len(pieces) == 20000
-        assert all(len(p.encode("utf-8")) <= _ES_KEYWORD_MAX_TERM_BYTES for p in pieces)
-        assert all(p == "word" for p in pieces)
+        assert len(pieces) == 1
+        assert len(pieces[0].encode("utf-8")) <= _ES_KEYWORD_MAX_TERM_BYTES
+        assert pieces[0].startswith("word")
 
     def test_truncates_oversized_single_word(self):
         oversized = "x" * 40000
@@ -57,6 +57,15 @@ class TestSanitizeKeywordTerm:
         pieces = _sanitize_keyword_term(oversized)
         assert len(pieces) == 1
         assert len(pieces[0].encode("utf-8")) == _ES_KEYWORD_MAX_TERM_BYTES
+
+    def test_truncation_stops_at_character_boundary(self):
+        # 32766 is divisible by 3, so forcing a boundary just before a
+        # multi-byte character proves we are not slicing raw bytes.
+        term = "a" * (_ES_KEYWORD_MAX_TERM_BYTES - 2) + "中"
+        pieces = _sanitize_keyword_term(term)
+        assert len(pieces) == 1
+        assert "中" not in pieces[0]
+        assert len(pieces[0].encode("utf-8")) < _ES_KEYWORD_MAX_TERM_BYTES
 
 
 class TestExtractKeywords:
