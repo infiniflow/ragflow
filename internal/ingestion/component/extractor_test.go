@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -2612,13 +2613,17 @@ func TestExtractor_Cache_EffectiveLLMIDResolution(t *testing.T) {
 	})
 	t.Cleanup(func() { SetExtractorChatTargetResolverOverride(nil) })
 
-	ctx := extractorStateCtx(t, "tenant-1")
-
 	stub := withStubChatInvoker(t,
+		// Phase 1 (CanvasState):
 		// Call 1 for default composite model summary
 		stubResponse{Content: "Summary from composite model"},
 		// Call 2 for pinned UUID model summary (after tenant default model change)
 		stubResponse{Content: "Summary from pinned model"},
+		// Phase 2 (inputs["tenant_id"] without CanvasState):
+		// Call 3 for plain tenant composite model summary
+		stubResponse{Content: "Summary from plain tenant composite model"},
+		// Call 4 for plain tenant pinned model summary (after tenant default model change)
+		stubResponse{Content: "Summary from plain tenant pinned model"},
 	)
 
 	comp, err := NewExtractorComponent(map[string]any{
@@ -2631,6 +2636,8 @@ func TestExtractor_Cache_EffectiveLLMIDResolution(t *testing.T) {
 		t.Fatalf("NewExtractorComponent: %v", err)
 	}
 
+	// ── Phase 1: Resolution via CanvasState Context ──
+	ctx := extractorStateCtx(t, "tenant-1")
 	in := map[string]any{
 		"chunks": []map[string]any{
 			{"text": "Text content for effective LLM ID test."},
@@ -2708,6 +2715,162 @@ func TestExtractor_Cache_EffectiveLLMIDResolution(t *testing.T) {
 	ck4 := out4["chunks"].([]map[string]any)[0]
 	if ck4["summary"] != "Summary from pinned model" {
 		t.Fatalf("expected cached summary 'Summary from pinned model', got %v", ck4["summary"])
+	}
+
+	// ── Phase 2: Resolution via inputs["tenant_id"] without CanvasState Context ──
+	status := "1"
+	tenantPlain := entity.Tenant{
+		ID:     "tenant-plain",
+		LLMID:  "qwen-plus@dashscope",
+		Status: &status,
+	}
+	if err := db.Create(&tenantPlain).Error; err != nil {
+		t.Fatalf("create tenant-plain: %v", err)
+	}
+
+	plainCtx := t.Context() // Pure context without CanvasState
+	inPlain1 := map[string]any{
+		"tenant_id": "tenant-plain",
+		"chunks": []map[string]any{
+			{"text": "Text for plain input tenant ID test."},
+		},
+	}
+
+	// 6. First plain run: resolves composite model "qwen-plus@dashscope" from inputs["tenant_id"], cache miss -> triggers LLM (call count = 3)
+	outPlain1, err := comp.Invoke(plainCtx, db, inPlain1)
+	if err != nil {
+		t.Fatalf("First Plain Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("expected 3 calls (first plain run), got %d", calls)
+	}
+	ckPlain1 := outPlain1["chunks"].([]map[string]any)[0]
+	if ckPlain1["summary"] != "Summary from plain tenant composite model" {
+		t.Fatalf("expected summary 'Summary from plain tenant composite model', got %v", ckPlain1["summary"])
+	}
+
+	// 7. Second plain run: cache hit -> 0 new LLM calls (call count = 3)
+	inPlain2 := map[string]any{
+		"tenant_id": "tenant-plain",
+		"chunks": []map[string]any{
+			{"text": "Text for plain input tenant ID test."},
+		},
+	}
+	outPlain2, err := comp.Invoke(plainCtx, db, inPlain2)
+	if err != nil {
+		t.Fatalf("Second Plain Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("expected 3 calls (cache hit for plain tenant), got %d", calls)
+	}
+	ckPlain2 := outPlain2["chunks"].([]map[string]any)[0]
+	if ckPlain2["summary"] != "Summary from plain tenant composite model" {
+		t.Fatalf("expected cached summary 'Summary from plain tenant composite model', got %v", ckPlain2["summary"])
+	}
+
+	// 8. Update tenant-plain default model in DB to pinned UUID model
+	plainPinnedUUID := "fedcba0123456789fedcba0123456789"
+	if err := db.Model(&entity.Tenant{}).Where("id = ?", "tenant-plain").Update("tenant_llm_id", plainPinnedUUID).Error; err != nil {
+		t.Fatalf("update tenant-plain default model: %v", err)
+	}
+
+	// 9. Third plain run: resolves pinned UUID model via inputs["tenant_id"] -> cache key differs -> cache miss -> triggers LLM (call count = 4)
+	inPlain3 := map[string]any{
+		"tenant_id": "tenant-plain",
+		"chunks": []map[string]any{
+			{"text": "Text for plain input tenant ID test."},
+		},
+	}
+	outPlain3, err := comp.Invoke(plainCtx, db, inPlain3)
+	if err != nil {
+		t.Fatalf("Third Plain Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 4 {
+		t.Fatalf("expected 4 calls (model changed for plain tenant, cache miss), got %d", calls)
+	}
+	ckPlain3 := outPlain3["chunks"].([]map[string]any)[0]
+	if ckPlain3["summary"] != "Summary from plain tenant pinned model" {
+		t.Fatalf("expected summary 'Summary from plain tenant pinned model', got %v", ckPlain3["summary"])
+	}
+
+	// 10. Fourth plain run: cache hit for new model (call count = 4)
+	inPlain4 := map[string]any{
+		"tenant_id": "tenant-plain",
+		"chunks": []map[string]any{
+			{"text": "Text for plain input tenant ID test."},
+		},
+	}
+	outPlain4, err := comp.Invoke(plainCtx, db, inPlain4)
+	if err != nil {
+		t.Fatalf("Fourth Plain Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 4 {
+		t.Fatalf("expected 4 calls (cache hit for pinned plain tenant), got %d", calls)
+	}
+	ckPlain4 := outPlain4["chunks"].([]map[string]any)[0]
+	if ckPlain4["summary"] != "Summary from plain tenant pinned model" {
+		t.Fatalf("expected cached summary 'Summary from plain tenant pinned model', got %v", ckPlain4["summary"])
+	}
+}
+
+func TestExtractor_ResolveEffectiveLLMID(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+
+	// 1. Explicit llmID returns itself immediately
+	if got := resolveEffectiveLLMID(t.Context(), db, "tenant-1", "custom-model"); got != "custom-model" {
+		t.Errorf("resolveEffectiveLLMID with explicit llmID = %q, want %q", got, "custom-model")
+	}
+
+	// 2. Empty llmID with tenantID passed directly (no canvas state)
+	if got := resolveEffectiveLLMID(t.Context(), db, "tenant-1", ""); got != "gpt-4o@openai" {
+		t.Errorf("resolveEffectiveLLMID with tenantID = %q, want %q", got, "gpt-4o@openai")
+	}
+
+	// 3. Empty llmID with tenantID in CanvasState
+	ctx := extractorStateCtx(t, "tenant-1")
+	if got := resolveEffectiveLLMID(ctx, db, "", ""); got != "gpt-4o@openai" {
+		t.Errorf("resolveEffectiveLLMID with CanvasState = %q, want %q", got, "gpt-4o@openai")
+	}
+
+	// 4. Empty llmID with no tenantID and no CanvasState -> returns ""
+	if got := resolveEffectiveLLMID(t.Context(), db, "", ""); got != "" {
+		t.Errorf("resolveEffectiveLLMID with empty tenantID = %q, want empty string", got)
+	}
+
+	// 5. Pinned tenant_llm_id returns the pinned UUID reference
+	pinnedUUID := "0123456789abcdef0123456789abcdef"
+	if err := db.Model(&entity.Tenant{}).Where("id = ?", "tenant-1").Update("tenant_llm_id", pinnedUUID).Error; err != nil {
+		t.Fatalf("update tenant: %v", err)
+	}
+	if got := resolveEffectiveLLMID(t.Context(), db, "tenant-1", ""); got != pinnedUUID {
+		t.Errorf("resolveEffectiveLLMID with pinned model = %q, want %q", got, pinnedUUID)
+	}
+
+	// 6. When resolveTenantModelByType succeeds with driver and modelName, returns modelName@driver
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return models.NewDummyModel(nil, models.URLSuffix{}), "deepseek-chat", nil, 0, nil
+	}
+	if got := resolveEffectiveLLMID(t.Context(), db, "tenant-1", ""); got != "deepseek-chat@dummy" {
+		t.Errorf("resolveEffectiveLLMID with resolved driver = %q, want %q", got, "deepseek-chat@dummy")
+	}
+
+	// 7. When resolveTenantModelByType returns a composite modelName that already contains @, returns modelName directly
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return models.NewDummyModel(nil, models.URLSuffix{}), "deepseek-chat@deepseek", nil, 0, nil
+	}
+	if got := resolveEffectiveLLMID(t.Context(), db, "tenant-1", ""); got != "deepseek-chat@deepseek" {
+		t.Errorf("resolveEffectiveLLMID with composite modelName = %q, want %q", got, "deepseek-chat@deepseek")
+	}
+
+	// 8. When resolveTenantModelByType returns error, falls back to defaultChatModelRef
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return nil, "", nil, 0, errors.New("model not configured")
+	}
+	if got := resolveEffectiveLLMID(t.Context(), db, "tenant-1", ""); got != pinnedUUID {
+		t.Errorf("resolveEffectiveLLMID fallback on error = %q, want %q", got, pinnedUUID)
 	}
 }
 

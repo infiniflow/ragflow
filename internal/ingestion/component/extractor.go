@@ -941,7 +941,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	}
 	schemaStr := string(schemaJSON)
 
-	effectiveLLMID := resolveEffectiveLLMID(ctx, db, in.llmID)
+	effectiveLLMID := resolveEffectiveLLMID(ctx, db, in.tenantID, in.llmID)
 	metaTemp := extractorTemperature
 	metaIn := extractorInputs{
 		tenantID:    in.tenantID,
@@ -1156,7 +1156,7 @@ func (c *ExtractorComponent) callTextCached(
 	systemPrompt string,
 	chunkText string,
 ) (string, error) {
-	effectiveLLMID := resolveEffectiveLLMID(ctx, db, in.llmID)
+	effectiveLLMID := resolveEffectiveLLMID(ctx, db, in.tenantID, in.llmID)
 	temp := extractorTemperature
 	taskIn := extractorInputs{
 		tenantID:    in.tenantID,
@@ -1421,22 +1421,40 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 
 // resolveEffectiveLLMID resolves the effective LLM ID for cache key construction.
 // When llmID is empty, it queries the tenant's default chat model reference
-// from canvas state / DB so cache keys change when the default model changes.
-func resolveEffectiveLLMID(ctx context.Context, db *gorm.DB, llmID string) string {
+// from tenantID / canvas state / DB so cache keys change when the default model changes.
+func resolveEffectiveLLMID(ctx context.Context, db *gorm.DB, tenantID, llmID string) string {
 	if strings.TrimSpace(llmID) != "" {
 		return llmID
 	}
 	if db == nil {
 		db = dao.DB
 	}
-	if ctx != nil {
+	if strings.TrimSpace(tenantID) == "" && ctx != nil {
 		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
 			if tidVal, ok := state.GetGlobal("tenant_id"); ok {
-				if tid, ok := tidVal.(string); ok && tid != "" {
-					return defaultChatModelRef(ctx, db, tid)
+				if tid, ok := tidVal.(string); ok && strings.TrimSpace(tid) != "" {
+					tenantID = strings.TrimSpace(tid)
 				}
 			}
 		}
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID != "" {
+		driver, modelName, _, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeChat)
+		if err == nil {
+			driverName := ""
+			if driver != nil {
+				driverName = strings.ToLower(strings.TrimSpace(driver.Name()))
+			}
+			if strings.TrimSpace(modelName) != "" {
+				modelName = strings.TrimSpace(modelName)
+				if driverName != "" && !strings.Contains(modelName, "@") {
+					return fmt.Sprintf("%s@%s", modelName, driverName)
+				}
+				return modelName
+			}
+		}
+		return defaultChatModelRef(ctx, db, tenantID)
 	}
 	return ""
 }

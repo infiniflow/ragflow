@@ -1656,3 +1656,106 @@ func TestTagger_Cache_ConcurrentSingleFlight(t *testing.T) {
 		}
 	}
 }
+
+func TestTagger_Cache_EffectiveModelResolution(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		// Call 1 for model-1 ("openai/gpt-4o")
+		stubResponse{Content: `{"ModelV1Tag": 9}`},
+		// Call 2 for model-2 ("openai/gpt-4o-mini") after default model change
+		stubResponse{Content: `{"ModelV2Tag": 8}`},
+		// Call 3 for driverless model ("custom-model")
+		stubResponse{Content: `{"CustomModelTag": 7}`},
+		// Call 4 for explicit pinned llmID ("pinned-model-123")
+		stubResponse{Content: `{"PinnedModelTag": 6}`},
+	)
+
+	allTags := map[string]float64{
+		"ModelV1Tag":     0.5,
+		"ModelV2Tag":     0.5,
+		"CustomModelTag": 0.5,
+		"PinnedModelTag": 0.5,
+	}
+	text := "Text content for tagger effective model resolution test."
+
+	// 1. First call with empty llm_id and default model "openai/gpt-4o": cache miss -> triggers LLM (1 call)
+	chunk1 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk1, allTags, nil, "tenant-eff-tag", "", "openai", "gpt-4o", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("first call expected 1 LLM call, got %d", calls)
+	}
+	if k := chunk1["tag_kwd"].([]string); len(k) != 1 || k[0] != "ModelV1Tag" {
+		t.Fatalf("chunk1 expected ['ModelV1Tag'], got %v", chunk1["tag_kwd"])
+	}
+
+	// 2. Second call with same empty llm_id and same default model: cache hit -> 0 new LLM calls (1 call total)
+	chunk2 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk2, allTags, nil, "tenant-eff-tag", "", "openai", "gpt-4o", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("second call expected 1 total call (cache hit), got %d", calls)
+	}
+	if k := chunk2["tag_kwd"].([]string); len(k) != 1 || k[0] != "ModelV1Tag" {
+		t.Fatalf("chunk2 expected cached ['ModelV1Tag'], got %v", chunk2["tag_kwd"])
+	}
+
+	// 3. Third call: underlying default model switched to "openai/gpt-4o-mini" with empty llm_id -> cache key differs -> triggers LLM (2 calls total)
+	chunk3 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk3, allTags, nil, "tenant-eff-tag", "", "openai", "gpt-4o-mini", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("third call expected 2 total calls (model switched, cache miss), got %d", calls)
+	}
+	if k := chunk3["tag_kwd"].([]string); len(k) != 1 || k[0] != "ModelV2Tag" {
+		t.Fatalf("chunk3 expected ['ModelV2Tag'], got %v", chunk3["tag_kwd"])
+	}
+
+	// 4. Fourth call with same switched default model: cache hit (2 calls total)
+	chunk4 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk4, allTags, nil, "tenant-eff-tag", "", "openai", "gpt-4o-mini", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("fourth call expected 2 total calls (cache hit), got %d", calls)
+	}
+	if k := chunk4["tag_kwd"].([]string); len(k) != 1 || k[0] != "ModelV2Tag" {
+		t.Fatalf("chunk4 expected cached ['ModelV2Tag'], got %v", chunk4["tag_kwd"])
+	}
+
+	// 5. Fifth call with driver="" (effectiveModel = "custom-model"): cache miss -> triggers LLM (3 calls total)
+	chunk5 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk5, allTags, nil, "tenant-eff-tag", "", "", "custom-model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("fifth call expected 3 total calls, got %d", calls)
+	}
+	if k := chunk5["tag_kwd"].([]string); len(k) != 1 || k[0] != "CustomModelTag" {
+		t.Fatalf("chunk5 expected ['CustomModelTag'], got %v", chunk5["tag_kwd"])
+	}
+
+	// 6. Sixth call with driver="" and same "custom-model": cache hit (3 calls total)
+	chunk6 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk6, allTags, nil, "tenant-eff-tag", "", "", "custom-model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("sixth call expected 3 total calls (cache hit), got %d", calls)
+	}
+	if k := chunk6["tag_kwd"].([]string); len(k) != 1 || k[0] != "CustomModelTag" {
+		t.Fatalf("chunk6 expected cached ['CustomModelTag'], got %v", chunk6["tag_kwd"])
+	}
+
+	// 7. Seventh call with explicit llm_id "pinned-model-123" taking precedence: cache miss -> triggers LLM (4 calls total)
+	chunk7 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk7, allTags, nil, "tenant-eff-tag", "pinned-model-123", "openai", "gpt-4o", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 4 {
+		t.Fatalf("seventh call expected 4 total calls (explicit llm_id), got %d", calls)
+	}
+	if k := chunk7["tag_kwd"].([]string); len(k) != 1 || k[0] != "PinnedModelTag" {
+		t.Fatalf("chunk7 expected ['PinnedModelTag'], got %v", chunk7["tag_kwd"])
+	}
+
+	// 8. Eighth call with same explicit llm_id "pinned-model-123": cache hit (4 calls total)
+	chunk8 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunk8, allTags, nil, "tenant-eff-tag", "pinned-model-123", "openai", "gpt-4o", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 4 {
+		t.Fatalf("eighth call expected 4 total calls (cache hit), got %d", calls)
+	}
+	if k := chunk8["tag_kwd"].([]string); len(k) != 1 || k[0] != "PinnedModelTag" {
+		t.Fatalf("chunk8 expected cached ['PinnedModelTag'], got %v", chunk8["tag_kwd"])
+	}
+}
+

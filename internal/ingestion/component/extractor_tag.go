@@ -1180,11 +1180,19 @@ func llmTagChunk(
 	tagSetStr := strings.Join(tagNames, ", ")
 	prompt := buildTaggerPrompt(topN, tagSetStr, picked, text)
 
+	effectiveModel := model
+	if driver != "" {
+		effectiveModel = fmt.Sprintf("%s/%s", driver, model)
+	}
+	if llmID != "" {
+		effectiveModel = llmID
+	}
+
 	result, err := getTaggerCache().GetOrCompute(
 		ctx,
 		tenantID,
 		"tagger",
-		[]string{llmID, prompt},
+		[]string{effectiveModel, prompt},
 		func(ctx context.Context) (map[string]int, error) {
 			msgs := []eschema.Message{
 				{Role: eschema.System, Content: prompt},
