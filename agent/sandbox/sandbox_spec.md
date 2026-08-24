@@ -1737,13 +1737,13 @@ def execute_code(
 
 **Provider implementations**:
 
-1. **Self-managed provider** ([self_managed.py:164](agent/sandbox/providers/self_managed.py:164)):
+1. **Self-managed provider** ([self_managed.py:164](providers/self_managed.py)):
    - Passes arguments via HTTP API: `"arguments": arguments or {}`
    - executor_manager writes `args.json` into the per-task workspace
    - Runner script loads arguments from `args.json`
    - Python runner calls `main(**args)` and JavaScript runner calls `main(args)`
 
-2. **Aliyun Code Interpreter** ([aliyun_codeinterpreter.py:260-275](agent/sandbox/providers/aliyun_codeinterpreter.py:260-275)):
+2. **Aliyun Code Interpreter** ([aliyun_codeinterpreter.py:260-275](providers/aliyun_codeinterpreter.py)):
    - Wraps user code to call `main(**arguments)` or `main()` if no arguments
    - Python example:
      ```python
@@ -1766,7 +1766,7 @@ def execute_code(
      '''
      ```
 
-**Client layer** ([client.py:138-190](agent/sandbox/client.py:138-190)):
+**Client layer** ([client.py:138-190](client.py)):
 ```python
 def execute_code(
     code: str,
@@ -1791,7 +1791,7 @@ def execute_code(
         provider.destroy_instance(instance.instance_id)
 ```
 
-**CodeExec tool integration** ([code_exec.py:136-165](agent/tools/code_exec.py:136-165)):
+**CodeExec tool integration** ([code_exec.py:136-165](../tools/code_exec.py)):
 ```python
 def _execute_code(self, language: str, code: str, arguments: dict):
     # ... collect arguments from component configuration

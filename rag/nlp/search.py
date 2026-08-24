@@ -16,20 +16,19 @@
 import json
 import logging
 import re
-import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
-from rag.nlp import rag_tokenizer, query
 import numpy as np
-from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
-from common.string_utils import remove_redundant_spaces
-from common.float_utils import get_float
-from common.constants import PAGERANK_FLD, TAG_FLD
-from common.tag_feature_utils import parse_tag_features
-from common import settings
 
+from common import settings
+from common.constants import PAGERANK_FLD, TAG_FLD
+from common.doc_store.doc_store_base import DocStoreConnection, FusionExpr, MatchDenseExpr, OrderByExpr
+from common.float_utils import get_float
 from common.misc_utils import thread_pool_exec
+from common.string_utils import remove_redundant_spaces
+from common.tag_feature_utils import parse_tag_features
+from rag.nlp import query, rag_tokenizer
 
 
 def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
@@ -192,7 +191,7 @@ class Dealer:
                 orderBy.desc("create_timestamp_flt")
             res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
             total = self.dataStore.get_total(res)
-            logging.debug("Dealer.search TOTAL: {}".format(total))
+            logging.debug(f"Dealer.search TOTAL: {total}")
         else:
             highlightFields = ["content_ltks", "title_tks"]
             if not highlight:
@@ -204,7 +203,7 @@ class Dealer:
                 matchExprs = [matchText] if matchText else []
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
-                logging.debug("Dealer.search TOTAL: {}".format(total))
+                logging.debug(f"Dealer.search TOTAL: {total}")
             else:
                 matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
@@ -234,7 +233,7 @@ class Dealer:
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
-                logging.debug("Dealer.search TOTAL: {}".format(total))
+                logging.debug(f"Dealer.search TOTAL: {total}")
 
                 # If result is empty, try again with lower min_match
                 if total == 0:
@@ -258,7 +257,7 @@ class Dealer:
                             rank_feature=rank_feature,
                         )
                         total = self.dataStore.get_total(res)
-                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
+                    logging.debug(f"Dealer.search 2 TOTAL: {total}")
 
             for k in keywords:
                 kwds.add(k)
@@ -316,7 +315,7 @@ class Dealer:
                 continue
             idx.append(i)
             pieces_.append(t)
-        logging.debug("{} => {}".format(answer, pieces_))
+        logging.debug(f"{answer} => {pieces_}")
         if not pieces_:
             return answer, set([])
 
@@ -324,18 +323,18 @@ class Dealer:
         for i in range(len(chunk_v)):
             if len(ans_v[0]) != len(chunk_v[i]):
                 chunk_v[i] = [0.0] * len(ans_v[0])
-                logging.warning("The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[i])))
+                logging.warning(f"The dimension of query and chunk do not match: {len(ans_v[0])} vs. {len(chunk_v[i])}")
 
-        assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[0]))
+        assert len(ans_v[0]) == len(chunk_v[0]), f"The dimension of query and chunk do not match: {len(ans_v[0])} vs. {len(chunk_v[0])}"
 
         chunks_tks = [rag_tokenizer.tokenize(self.qryr.rmWWW(ck)).split() for ck in chunks]
         cites = {}
         thr = 0.63
         while thr > 0.3 and len(cites.keys()) == 0 and pieces_ and chunks_tks:
             for i, a in enumerate(pieces_):
-                sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i], chunk_v, rag_tokenizer.tokenize(self.qryr.rmWWW(pieces_[i])).split(), chunks_tks, tkweight, vtweight)
+                sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i], chunk_v, rag_tokenizer.tokenize(self.qryr.rmWWW(a)).split(), chunks_tks, tkweight, vtweight)
                 mx = np.max(sim) * 0.99
-                logging.debug("{} SIM: {}".format(pieces_[i], mx))
+                logging.debug(f"{a} SIM: {mx}")
                 if mx < thr:
                     continue
                 cites[idx[i]] = list(set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]
@@ -552,42 +551,17 @@ class Dealer:
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd, ins_embd, rag_tokenizer.tokenize(ans).split(), rag_tokenizer.tokenize(inst).split())
 
-    @staticmethod
-    def _rerank_window(page_size: int, top: int = 0) -> int:
-        """Candidate-window size shared by retrieval's block fetch and slice.
-
-        ``retrieval`` reuses this value BOTH as the backend block size and as
-        the modulus for extracting a single page from a (re)ranked block::
-
-            req["page"] = global_offset // window   # which block to fetch
-            begin       = global_offset %  window   # where the page starts
-
-        For those two to agree the window MUST be an exact multiple of
-        ``page_size``; otherwise blocks and pages drift apart and deep
-        pagination silently drops results and returns short pages.
-
-        The window targets a provider-friendly pool of ~64 candidates, bounded
-        by ``top`` when given (i.e. when an external reranker is active), and is
-        always rounded UP to a whole number of pages to preserve the invariant.
-        """
-        if page_size <= 1:
-            return min(30, top) if top > 0 else 30
-        window = math.ceil(64 / page_size) * page_size
-        if top > 0:
-            window = min(window, math.ceil(top / page_size) * page_size)
-        return window
-
     async def retrieval(
         self,
         question,
         embd_mdl,
         tenant_ids,
         kb_ids,
-        page,
-        page_size,
+        page,  # MUST be 1 when rerank_mdl is specified
+        page_size,  # it is topn when rerank_mdl is specified
         similarity_threshold=0.2,
         vector_similarity_weight=0.3,
-        top=1024,
+        top=1024,  # for knn, no need to let user pass in.
         doc_ids=None,
         aggs=True,
         rerank_mdl=None,
@@ -595,24 +569,34 @@ class Dealer:
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
         must_not: dict | None = None,
+        prefetch_size=64,
     ):
+        """
+        Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
+          - Prefetch more records than the requested page_size.
+          - Rerank those records to calculate similarity scores.
+          - Filter out records below than the similarity threshold.
+        When requesting page 2, the system must still process all candidates needed for page 1,
+          resulting in a significant waste of time and computational resources. (without cache)
+        Moreover, when prefetch_size expands into the next retrieval window, new records are added to the candidate set and the entire set is reranked.
+          That meant the previous returned pages might not be the same as the current returned pages, which is not acceptable for pagination.
+        """
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
 
-        # Candidate window for block-based pagination. It MUST stay a multiple
-        # of page_size so the block fetched (global_offset // RERANK_LIMIT) and
-        # the in-block page slice (global_offset % RERANK_LIMIT) stay aligned;
-        # see _rerank_window. When an external reranker is active the pool is
-        # also bounded by top.
-        RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
         page = max(page, 1)
-        global_offset = (page - 1) * page_size
+        if page * page_size > prefetch_size:
+            raise Exception(f"prefetch_size({prefetch_size}) must be greater than page * page_size({page * page_size}) to ensure correct pagination.")
+        if rerank_mdl is not None and page != 1:
+            raise Exception(f"Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top {page_size} results.")
+
+        prefetch_page = 1
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": global_offset // RERANK_LIMIT + 1,
-            "size": RERANK_LIMIT,
+            "page": prefetch_page,
+            "size": prefetch_size,
             "question": question,
             "vector": True,
             "topk": top,
@@ -622,7 +606,7 @@ class Dealer:
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
-        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
+        logging.info(f"[Search] page={page}, page_size={page_size}, prefetch_size={prefetch_size}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -716,7 +700,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        begin = global_offset % RERANK_LIMIT
+        begin = (page - 1) * page_size
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 

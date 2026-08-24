@@ -1,11 +1,10 @@
 ---
 sidebar_position: 9
-title: Logs: Logs
-sidebar_label: Logs: Logs
+title: "Logs: Logs"
+sidebar_label: "Logs: Logs"
 slug: /dataset_logs
-sidebar_custom_props: {
+sidebar_custom_props:
   categoryIcon: LucideDatabaseZap
-}
 ---
 
 # Logs: Logs

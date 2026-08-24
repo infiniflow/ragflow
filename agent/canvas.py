@@ -25,7 +25,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
-from typing import Any, Tuple, Union
+from typing import Any
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
@@ -35,10 +35,10 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
 from common.constants import LLMType
-from common.llm_request_context import set_llm_request_context, reset_llm_request_context
 from common.exceptions import TaskCanceledException
+from common.llm_request_context import reset_llm_request_context, set_llm_request_context
 from common.misc_utils import get_uuid, hash_str2int
-from common.token_utils import token_usage_sink, langfuse_run_attrs
+from common.token_utils import langfuse_run_attrs, token_usage_sink
 from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.tts_cache import synthesize_with_cache
@@ -196,7 +196,7 @@ class Graph:
     def run(self, **kwargs):
         raise NotImplementedError()
 
-    def get_component(self, cpn_id) -> Union[None, dict[str, Any]]:
+    def get_component(self, cpn_id) -> None | dict[str, Any]:
         return self.components.get(cpn_id)
 
     def get_component_obj(self, cpn_id) -> ComponentBase:
@@ -403,14 +403,11 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
-        print(self.variables)
         for k in self.globals.keys():
             if k.startswith("sys."):
                 if isinstance(self.globals[k], str):
                     self.globals[k] = ""
-                elif isinstance(self.globals[k], int):
-                    self.globals[k] = 0
-                elif isinstance(self.globals[k], float):
+                elif isinstance(self.globals[k], int) or isinstance(self.globals[k], float):
                     self.globals[k] = 0
                 elif isinstance(self.globals[k], list):
                     self.globals[k] = []
@@ -518,7 +515,7 @@ class Canvas(Graph):
                 layout_recognize = getattr(cpn["obj"]._param, "layout_recognize", None)
                 break
 
-        for k in kwargs.keys():
+        for k in kwargs:
             if k in ["query", "user_id", "files", "chat_template_kwargs"] and kwargs[k]:
                 if k == "files":
                     self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k], layout_recognize)
@@ -990,7 +987,7 @@ class Canvas(Graph):
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
 
-    async def get_files_async(self, files: Union[None, list[dict]], layout_recognize: str = None) -> list[str]:
+    async def get_files_async(self, files: None | list[dict], layout_recognize: str = None) -> list[str]:
         if not files:
             return []
 
@@ -1010,7 +1007,7 @@ class Canvas(Graph):
             tasks.append(loop.run_in_executor(self._thread_pool, parse_file, file))
         return await asyncio.gather(*tasks)
 
-    def get_files(self, files: Union[None, list[dict]], layout_recognize: str = None) -> list[str]:
+    def get_files(self, files: None | list[dict], layout_recognize: str = None) -> list[str]:
         """
         Synchronous wrapper for get_files_async, used by sync component invoke paths.
         """
@@ -1093,7 +1090,7 @@ class Canvas(Graph):
     def add_memory(self, user: str, assist: str, summ: str):
         self.memory.append((user, assist, summ))
 
-    def get_memory(self) -> list[Tuple]:
+    def get_memory(self) -> list[tuple]:
         return self.memory
 
     def get_component_thoughts(self, cpn_id) -> str:

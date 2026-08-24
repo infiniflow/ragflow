@@ -15,53 +15,54 @@
 #
 
 import logging
-import re
 import os
+import re
 from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
+
 from docx import Document
-from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
+from docx.opc.oxml import parse_xml
+from docx.opc.pkgreader import _SerializedRelationship, _SerializedRelationships
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
-from docx.opc.oxml import parse_xml
 from markdown import markdown
 from PIL import Image
-from common.token_utils import num_tokens_from_string
 
-from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
-from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_composite_model_name_by_id,
     get_first_provider_model_name,
-    resolve_model_config,
     get_tenant_default_model_by_type,
+    resolve_model_config,
 )
-from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
-from deepdoc.parser.pdf_parser import PlainParser, VisionParser
-from deepdoc.parser.docling_parser import DoclingParser
-from deepdoc.parser.tcadp_parser import TCADPParser
+from api.db.services.llm_service import LLMBundle
+from common.constants import MAXIMUM_PAGE_NUMBER, LLMType
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
+from common.token_utils import num_tokens_from_string
+from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
+from deepdoc.parser.pdf_parser import PlainParser, VisionParser
+from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.nlp import (
+    append_context2table_image4pdf,
     concat_img,
+    doc_tokenize_chunks_with_images,
     find_codec,
     naive_merge,
-    naive_merge_with_images,
     naive_merge_docx,
+    naive_merge_with_images,
     rag_tokenizer,
     tokenize_chunks,
-    doc_tokenize_chunks_with_images,
-    tokenize_table,
-    append_context2table_image4pdf,
     tokenize_chunks_with_images,
-)  # noqa: F401
+    tokenize_table,
+)
+from rag.utils.file_utils import extract_embed_file, extract_html, extract_links_from_docx, extract_links_from_pdf
 
 
 def _is_short_header(text, max_tokens=50):
@@ -114,8 +115,6 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
-    callback = callback
-    binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
     sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
 
@@ -455,6 +454,7 @@ class Docx(DocxParser):
     def __get_nearest_title(self, table_index, filename):
         """Get the hierarchical title structure before the table"""
         import re
+
         from docx.text.paragraph import Paragraph
 
         titles = []
@@ -501,7 +501,7 @@ class Docx(DocxParser):
             if block_type != "p":
                 continue
 
-            if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
+            if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.IGNORECASE):
                 try:
                     level_match = re.search(r"(\d+)", block.style.name)
                     if level_match:
@@ -530,7 +530,7 @@ class Docx(DocxParser):
                     if block_type != "p":
                         continue
 
-                    if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
+                    if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.IGNORECASE):
                         try:
                             level_match = re.search(r"(\d+)", block.style.name)
                             if level_match:
@@ -725,25 +725,25 @@ class Pdf(PdfParser):
         first_start = start
         callback(msg="OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
-        logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
+        callback(msg=f"OCR finished ({timer() - start:.2f}s)")
+        logging.info(f"OCR({from_page}~{to_page}): {timer() - start:.2f}s")
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+        callback(0.63, f"Layout analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+        callback(0.65, f"Table analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._text_merge(zoomin=zoomin)
-        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
+        callback(0.67, f"Text merged ({timer() - start:.2f}s)")
 
         if separate_tables_figures:
             tbls, figures = self._extract_table_figure(True, zoomin, True, True, True)
             self._concat_downward()
-            logging.info("layouts cost: {}s".format(timer() - first_start))
+            logging.info(f"layouts cost: {timer() - first_start}s")
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
         else:
             tbls = self._extract_table_figure(True, zoomin, True, True)
@@ -751,7 +751,7 @@ class Pdf(PdfParser):
             self._concat_downward()
             # self._final_reading_order_merge()
             # self._filter_forpages()
-            logging.info("layouts cost: {}s".format(timer() - first_start))
+            logging.info(f"layouts cost: {timer() - first_start}s")
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
 
 
@@ -764,9 +764,9 @@ class Markdown(MarkdownParser):
     def md_to_html(self, sections):
         if not sections:
             return []
-        if isinstance(sections, type("")):
+        if isinstance(sections, str):
             text = sections
-        elif isinstance(sections[0], type("")):
+        elif isinstance(sections[0], str):
             text = sections[0]
         else:
             return []
@@ -823,15 +823,15 @@ class Markdown(MarkdownParser):
                     urls.append({"url": src, "line": line_no})
                     seen.add((src, line_no))
         except Exception as e:
-            logging.error("Failed to extract image urls: {}".format(e))
-            pass
+            logging.error(f"Failed to extract image urls: {e}")
 
         return urls
 
     def load_images_from_urls(self, urls, cache=None):
-        import requests
         from pathlib import Path
         from urllib.parse import urljoin
+
+        import requests
 
         from common.ssrf_guard import assert_url_is_safe, pin_dns
 
@@ -1041,7 +1041,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         st = timer()
 
         res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli, language=lang))
-        logging.info("naive_merge({}): {}".format(filename, timer() - st))
+        logging.info(f"naive_merge({filename}): {timer() - st}")
         res.extend(embed_res)
         res.extend(url_res)
         return res
@@ -1320,7 +1320,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             url_res.extend(sub_url_res)
 
-    logging.info("naive_merge({}): {}".format(filename, timer() - st))
+    logging.info(f"naive_merge({filename}): {timer() - st}")
 
     if embed_res:
         res.extend(embed_res)

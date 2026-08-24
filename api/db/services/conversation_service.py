@@ -14,20 +14,20 @@
 #  limitations under the License.
 #
 import hashlib
-import time
+import json
 import logging
+import time
 from uuid import uuid4
+
 from peewee import IntegrityError
-from common.constants import StatusEnum
-from api.db.db_models import Conversation, DB
+
+from api.db.db_models import DB, Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService, async_chat, rag_agent
+from common.constants import StatusEnum
 from common.misc_utils import get_uuid
-import json
-
 from rag.prompts.generator import chunks_format
-
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class ConversationService(CommonService):
         # are still found on the first read after deploy — without
         # that fallback the writer would create a duplicate
         # conversation (splitting the channel's history).
-        sha256_id = hashlib.sha256(f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")).hexdigest()[:32]
+        sha256_id = hashlib.sha256(f"{dialog_id}:{channel_id}:{chat_id}".encode()).hexdigest()[:32]
         # codeql[py/weak-sensitive-data-hashing] Intentional: the
         # MD5 here is a backward-compatibility lookup for rows
         # created under the previous hashing scheme. The
@@ -87,7 +87,7 @@ class ConversationService(CommonService):
         # MD5 is read-only and only used to find-and-migrate
         # existing rows on first access. It is not used for
         # authentication or any other security-sensitive purpose.
-        legacy_id = hashlib.md5(f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")).hexdigest()[:32]
+        legacy_id = hashlib.md5(f"{dialog_id}:{channel_id}:{chat_id}".encode()).hexdigest()[:32]
         conv = cls.model.get_or_none(cls.model.id == sha256_id)
         if conv is not None:
             # SHA row already present. A previous call may have
@@ -333,7 +333,6 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
         return
     else:
-        session_id = session_id
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
         assert conv.dialog_id == dialog_id, "Session does not belong to this dialog"

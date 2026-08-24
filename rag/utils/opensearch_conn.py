@@ -14,22 +14,21 @@
 #  limitations under the License.
 #
 
-import logging
-import re
-import json
-import time
-import os
-
 import copy
-from opensearchpy import OpenSearch, NotFoundError
-from opensearchpy import UpdateByQuery, Q, Search, Index
-from opensearchpy import ConnectionTimeout
-from common.decorator import singleton
-from common.file_utils import get_project_base_directory
-from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
-from rag.nlp import is_english, rag_tokenizer
-from common.constants import PAGERANK_FLD, TAG_FLD
+import json
+import logging
+import os
+import re
+import time
+
+from opensearchpy import ConnectionTimeout, Index, NotFoundError, OpenSearch, Q, Search, UpdateByQuery
+
 from common import settings
+from common.constants import PAGERANK_FLD, TAG_FLD
+from common.decorator import singleton
+from common.doc_store.doc_store_base import DocStoreConnection, FusionExpr, MatchDenseExpr, MatchExpr, MatchTextExpr, OrderByExpr
+from common.file_utils import get_project_base_directory
+from rag.nlp import is_english, rag_tokenizer
 
 ATTEMPT_TIME = 2
 
@@ -77,7 +76,7 @@ class OSConnection(DocStoreConnection):
                     self.info = self.os.info()
                     break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting OpenSearch {settings.OS['hosts']} to be healthy.")
+                logger.warning(f"{e!s}. Waiting OpenSearch {settings.OS['hosts']} to be healthy.")
                 time.sleep(5)
         if not self.os.ping():
             msg = f"OpenSearch {settings.OS['hosts']} is unhealthy in 120s."
@@ -365,7 +364,7 @@ class OSConnection(DocStoreConnection):
             elif isinstance(v, str) or isinstance(v, int):
                 bqry.filter.append(Q("term", **{k: v}))
             else:
-                raise Exception(f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                raise Exception(f"Condition `{k!s}={v!s}` value type is {type(v)!s}, expected to be int, str or list.")
 
         s = Search()
         vector_similarity_weight = 0.5
@@ -395,9 +394,9 @@ class OSConnection(DocStoreConnection):
             # Besides, Opensearch's DSL for KNN_search query syntax differs from that in Elasticsearch, I also made some adaptions for it
             elif isinstance(m, MatchDenseExpr):
                 assert bqry is not None
-                similarity = 0.0
-                if "similarity" in m.extra_options:
-                    similarity = m.extra_options["similarity"]
+                explicit_boost = None
+                if isinstance(m.extra_options, dict) and "boost" in m.extra_options:
+                    explicit_boost = m.extra_options["boost"]
                 use_knn = True
                 vector_column_name = m.vector_column_name
                 knn_query[vector_column_name] = {}
@@ -410,7 +409,8 @@ class OSConnection(DocStoreConnection):
                 bool_inner = bqry.to_dict().get("bool", {})
                 if bool_inner.get("filter"):
                     knn_query[vector_column_name]["filter"] = {"bool": {"filter": bool_inner["filter"]}}
-                knn_query[vector_column_name]["boost"] = similarity
+                if explicit_boost is not None:
+                    knn_query[vector_column_name]["boost"] = explicit_boost
 
         if bqry and rank_feature:
             for fld, sc in rank_feature.items():
@@ -442,7 +442,7 @@ class OSConnection(DocStoreConnection):
         if limit > 0:
             s = s[offset : offset + limit]
         q = s.to_dict()
-        logger.debug(f"OSConnection.search {str(index_names)} query: " + json.dumps(q))
+        logger.debug(f"OSConnection.search {index_names!s} query: " + json.dumps(q))
 
         hybrid_search = use_knn and use_text and getattr(self, "hybrid_search_enabled", False)
         if use_knn:
@@ -474,10 +474,10 @@ class OSConnection(DocStoreConnection):
                 )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("OpenSearch Timeout.")
-                logger.debug(f"OSConnection.search {str(index_names)} res: " + str(res))
+                logger.debug(f"OSConnection.search {index_names!s} res: " + str(res))
                 return res
             except Exception as e:
-                logger.exception(f"OSConnection.search {str(index_names)} query: " + str(q))
+                logger.exception(f"OSConnection.search {index_names!s} query: " + str(q))
                 if str(e).find("Timeout") > 0:
                     continue
                 raise e
@@ -600,7 +600,7 @@ class OSConnection(DocStoreConnection):
             elif isinstance(v, str) or isinstance(v, int):
                 bqry.filter.append(Q("term", **{k: v}))
             else:
-                raise Exception(f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                raise Exception(f"Condition `{k!s}={v!s}` value type is {type(v)!s}, expected to be int, str or list.")
         scripts = []
         params = {}
         for k, v in newValue.items():
@@ -630,7 +630,7 @@ class OSConnection(DocStoreConnection):
                 scripts.append(f"ctx._source.{k}=params.pp_{k};")
                 params[f"pp_{k}"] = json.dumps(v, ensure_ascii=False)
             else:
-                raise Exception(f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
+                raise Exception(f"newValue `{k!s}={v!s}` value type is {type(v)!s}, expected to be int, str.")
         ubq = UpdateByQuery(index=indexName).using(self.os).query(bqry)
         ubq = ubq.script(source="".join(scripts), params=params)
         ubq = ubq.params(refresh=True)
@@ -847,8 +847,8 @@ class OSConnection(DocStoreConnection):
         replaces = []
         for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
             fld, v = r.group(1), r.group(3)
-            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(fld, rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(v)))
-            replaces.append(("{}{}'{}'".format(r.group(1), r.group(2), r.group(3)), match))
+            match = f" MATCH({fld}, '{rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(v))}', 'operator=OR;minimum_should_match=30%') "
+            replaces.append((f"{r.group(1)}{r.group(2)}'{r.group(3)}'", match))
 
         for p, r in replaces:
             sql = sql.replace(p, r, 1)

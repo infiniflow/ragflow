@@ -20,41 +20,44 @@ import re
 import time
 import uuid
 from copy import deepcopy
+
 from rag.advanced_rag.agentic_rag import RAGTools
 
 logger = logging.getLogger(__name__)
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial
 from timeit import default_timer as timer
+
 from langfuse import Langfuse, propagate_attributes
 from peewee import fn
-from api.db.services.file_service import FileService
-from common.constants import LLMType, ParserType, StatusEnum
+
 from api.db.db_models import DB, Dialog
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, resolve_model_config, resolve_model_type
 from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle, resolve_llm_setting
-from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, resolve_model_type, get_model_config_by_id
-from common.time_utils import current_timestamp, datetime_format
+from common import settings
+from common.constants import LLMType, ParserType, StatusEnum
+from common.metadata_utils import apply_meta_data_filter
+from common.string_utils import remove_redundant_spaces
 from common.text_utils import normalize_arabic_digits
-from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
+from common.time_utils import current_timestamp, datetime_format
+from common.token_utils import num_tokens_from_string
 from rag.advanced_rag import DeepResearcher
+from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
-from common.token_utils import num_tokens_from_string
-from rag.utils.web_search_conn import create_web_search_provider, has_web_search_provider
-from rag.utils.tts_cache import synthesize_with_cache
-from common.string_utils import remove_redundant_spaces
-from common import settings
+from rag.prompts.generator import ASK_SUMMARY, PROMPT_JINJA_ENV, chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in
 from rag.utils import gaussdb_text_to_sql
+from rag.utils.tts_cache import synthesize_with_cache
+from rag.utils.web_search_conn import create_web_search_provider, has_web_search_provider
 
 
 def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
@@ -222,6 +225,7 @@ class DialogService(CommonService):
             cls.model.similarity_threshold,
             cls.model.vector_similarity_weight,
             cls.model.top_n,
+            cls.model.prefetch_size,
             cls.model.top_k,
             cls.model.do_refer,
             cls.model.rerank_id,
@@ -329,7 +333,7 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         msg[-1]["content"] += text_attachments_content
     if model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
-    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    sys_date = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     system_prompt = prompt_config.get("system", "").replace("{date}", sys_date)
     if stream:
         if model_config["model_type"] == "chat":
@@ -348,7 +352,7 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         else:
             answer = await chat_mdl.async_chat(system_prompt, msg, dialog.llm_setting, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
-        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        logging.debug(f"User: {user_content}|Assistant: {answer}")
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
@@ -664,12 +668,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], llm_model_config["model_type"])
 
     prompt_config = dialog.prompt_config
+    prefetch_size = getattr(dialog, "prefetch_size", 64)
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
     if field_map:
-        logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
+        logging.debug(f"Use SQL to retrieval:{questions[-1]}")
         ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=scoped_doc_ids)
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
@@ -692,7 +697,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         param_keys.append("knowledge")
     logging.debug(f"scoped_doc_ids={scoped_doc_ids}, param_keys={param_keys}, embd_mdl={embd_mdl}")
 
-    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    sys_date = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     kwargs["date"] = sys_date
     for p in prompt_config.get("parameters", []):
         if p["key"] == "knowledge":
@@ -737,6 +742,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     similarity_threshold=0.2,
                     vector_similarity_weight=0.3,
                     doc_ids=scoped_doc_ids,
+                    prefetch_size=prefetch_size,
                 ),
                 internet_enabled=use_web_search,
             )
@@ -776,6 +782,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
+                    prefetch_size=prefetch_size,
                 )
                 if prompt_config.get("toc_enhance"):
                     cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -984,7 +991,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         else:
             answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
-        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        logging.debug(f"User: {user_content}|Assistant: {answer}")
         res = await decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
@@ -1078,7 +1085,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         Removes ``<think>`` reasoning blocks, Chinese reasoning markers, markdown
         code fences, and trailing semicolons that some engines reject.
         """
-        logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
+        logging.debug(f"use_sql: Raw SQL from LLM: {sql[:500]!r}")
         # Remove think blocks if present (format: </think>...)
         sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
         sql = re.sub(r"思考\n.*?\n", "", sql, flags=re.DOTALL)
@@ -1824,6 +1831,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
+        prefetch_size=search_config.get("prefetch_size", 100),
     )
     if include_reference_metadata:
         logging.debug(
@@ -1925,6 +1933,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         aggs=False,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        prefetch_size=search_config.get("prefetch_size", 100),
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
@@ -2058,7 +2067,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         # Surface the outer model's reasoning, agent progress logs, and the
         # final-answer model's reasoning as one continuous think block. The
         # final answer itself is emitted from the inner graph's own deltas.
-        from rag.advanced_rag.think_log import install_think_log_handler, set_think_log_sink, reset_think_log_sink
+        from rag.advanced_rag.think_log import install_think_log_handler, reset_think_log_sink, set_think_log_sink
 
         install_think_log_handler()
         event_queue: asyncio.Queue = asyncio.Queue()
@@ -2202,7 +2211,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         else:
             answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), agent_messages, gen_conf, images=image_files)
         user_content = agent_messages[-1].get("content", "[content not available]")
-        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        logging.debug(f"User: {user_content}|Assistant: {answer}")
         res = await decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res

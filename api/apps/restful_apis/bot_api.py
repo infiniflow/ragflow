@@ -15,14 +15,14 @@
 #
 import copy
 import json
-import re
-
 import logging
+import re
 
 from quart import Response, request
 
 from agent.canvas import Canvas
 from api.apps import AUTH_BETA, login_required
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
@@ -30,26 +30,23 @@ from api.db.services.conversation_service import async_iframe_completion as ifra
 from api.db.services.dialog_service import DialogService, async_ask, gen_mindmap
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import TenantService
-from common.metadata_utils import apply_meta_data_filter
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from api.db.services.search_service import SearchService
-from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
-from api.db.services.llm_service import resolve_llm_setting
-from common.misc_utils import thread_pool_exec
-from api.utils.api_utils import get_error_data_result, get_json_result, add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
-from rag.app.tag import label_question
-from rag.prompts.template import load_prompt
-from rag.prompts.generator import cross_languages, keyword_extraction
-from common.constants import RetCode, LLMType, StatusEnum
-from common import settings
-from rag.utils.web_search_conn import has_web_search_provider
+from api.db.services.user_service import TenantService, UserTenantService
+from api.utils.api_utils import add_tenant_id_to_kwargs, get_error_data_result, get_json_result, get_request_json, get_result, server_error_response, validate_request
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from common import settings
+from common.constants import LLMType, RetCode, StatusEnum
+from common.metadata_utils import apply_meta_data_filter
+from common.misc_utils import thread_pool_exec
+from rag.app.tag import label_question
+from rag.prompts.generator import cross_languages, keyword_extraction
+from rag.prompts.template import load_prompt
+from rag.utils.web_search_conn import has_web_search_provider
 
 logger = logging.getLogger(__name__)
 
@@ -349,6 +346,7 @@ async def retrieval_test_embedded(tenant_id=None):
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
+    prefetch_size = int(req.get("prefetch_size", 64))
     if top <= 0:
         return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
@@ -358,7 +356,7 @@ async def retrieval_test_embedded(tenant_id=None):
     search_config = {}
 
     async def _retrieval():
-        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
+        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id, prefetch_size
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
@@ -387,6 +385,8 @@ async def retrieval_test_embedded(tenant_id=None):
                 top = int(search_config.get("top_k", top))
             if not req.get("rerank_id"):
                 rerank_id = search_config.get("rerank_id", "")
+            if not req.get("prefetch_size"):
+                prefetch_size = int(search_config.get("prefetch_size", 100))
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
@@ -447,6 +447,7 @@ async def retrieval_test_embedded(tenant_id=None):
             rerank_mdl=rerank_mdl,
             highlight=req.get("highlight"),
             rank_feature=labels,
+            prefetch_size=prefetch_size,
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)

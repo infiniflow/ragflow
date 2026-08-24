@@ -20,19 +20,12 @@ import operator
 import os
 import sys
 import time
-import typing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from functools import wraps
 
-from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-from psycopg2 import sql as psycopg2_sql
 from peewee import (
-    fn,
-    InterfaceError,
-    OperationalError,
-    ProgrammingError,
     BigIntegerField,
     BooleanField,
     CharField,
@@ -41,13 +34,19 @@ from peewee import (
     Field,
     FloatField,
     IntegerField,
+    InterfaceError,
     Metadata,
     Model,
     ModelInsert,
+    OperationalError,
+    ProgrammingError,
     TextField,
+    fn,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
+from psycopg2 import sql as psycopg2_sql
+from quart_auth import AuthUser
 
 from api import utils
 from api.db import SerializedType
@@ -58,14 +57,12 @@ from api.db.gaussdb_error_utils import (
     is_undefined_object_error,
     sqlstate_from_exception,
 )
-from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
-
-from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
-from common.decorator import singleton
-from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
+from api.utils.json_encode import json_dumps, json_loads
 from common import settings
-
+from common.constants import MAXIMUM_TASK_PAGE_NUMBER, ParserType
+from common.decorator import singleton
+from common.time_utils import current_timestamp, date_string_to_timestamp, timestamp_to_date
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
 AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_access", "write_access"}
@@ -210,7 +207,7 @@ class SerializedField(LongTextField):
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
 
-def is_continuous_field(cls: typing.Type) -> bool:
+def is_continuous_field(cls: type) -> bool:
     if cls in CONTINUOUS_FIELD_TYPE:
         return True
     for p in cls.__bases__:
@@ -219,8 +216,7 @@ def is_continuous_field(cls: typing.Type) -> bool:
         elif p is not Field and p is not object:
             if is_continuous_field(p):
                 return True
-    else:
-        return False
+    return False
 
 
 def auto_date_timestamp_field():
@@ -232,7 +228,7 @@ def auto_date_timestamp_db_field():
 
 
 def remove_field_name_prefix(field_name):
-    return field_name[2:] if field_name.startswith("f_") else field_name
+    return field_name.removeprefix("f_")
 
 
 class BaseModel(Model):
@@ -340,7 +336,7 @@ class BaseModel(Model):
 
 class JsonSerializedField(SerializedField):
     def __init__(self, object_hook=utils.from_dict_hook, object_pairs_hook=None, **kwargs):
-        super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
+        super().__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
 class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
@@ -866,10 +862,10 @@ def with_retry(max_retries=3, retry_delay=1.0):
 
                     if retry < max_retries - 1:
                         current_delay = retry_delay * (2**retry)
-                        logging.warning(f"{func_name} {lock_name} failed: {str(e)}, retrying ({retry + 1}/{max_retries})")
+                        logging.warning(f"{func_name} {lock_name} failed: {e!s}, retrying ({retry + 1}/{max_retries})")
                         time.sleep(current_delay)
                     else:
-                        logging.error(f"{func_name} {lock_name} failed after all attempts: {str(e)}")
+                        logging.error(f"{func_name} {lock_name} failed after all attempts: {e!s}")
 
             if last_exception:
                 raise last_exception
@@ -1475,6 +1471,7 @@ class Dialog(DataBaseModel):
     vector_similarity_weight = FloatField(default=0.3)
 
     top_n = IntegerField(default=6)
+    prefetch_size = IntegerField(default=64)
 
     top_k = IntegerField(default=1024)
 
@@ -1755,7 +1752,7 @@ class DateTimeTzField(CharField):
             if value.tzinfo is not None:
                 return value.isoformat()
             else:
-                return value.replace(tzinfo=timezone.utc).isoformat()
+                return value.replace(tzinfo=UTC).isoformat()
         return value
 
     def python_value(self, value: str | datetime | None) -> datetime | None:
@@ -1765,7 +1762,7 @@ class DateTimeTzField(CharField):
             # The column is declared VARCHAR, but deployments upgraded from
             # older schemas may hold it as native DATETIME, in which case the
             # driver returns datetime objects instead of ISO strings.
-            return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+            return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
         try:
             dt = datetime.fromisoformat(value)
         except ValueError:
@@ -1775,7 +1772,7 @@ class DateTimeTzField(CharField):
             # IndexError: list index out of range.
             logging.warning("DateTimeTzField: unparseable value %r, falling back to None", value)
             return None
-        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 class SyncLogs(DataBaseModel):
@@ -1972,7 +1969,6 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
 
     except Exception as ex:
         logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
-        pass
 
 
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
@@ -1980,7 +1976,6 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
         migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
-        pass
 
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
@@ -2412,6 +2407,7 @@ def migrate_db():
     alter_db_add_column(migrator, "document", "suffix", EmptyStringCharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
     alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
+    alter_db_add_column(migrator, "dialog", "prefetch_size", IntegerField(default=64))
     alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
@@ -2542,7 +2538,7 @@ def migrate_model_type_names():
         for old_name, new_name in RENAME_MAP.items():
             try:
                 cursor = DB.execute_sql(
-                    "UPDATE {} SET model_type = %s WHERE model_type = %s".format(table),
+                    f"UPDATE {table} SET model_type = %s WHERE model_type = %s",
                     (new_name, old_name),
                 )
                 if cursor.rowcount:

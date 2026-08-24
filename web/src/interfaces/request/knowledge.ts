@@ -1,5 +1,7 @@
 export interface ITestRetrievalRequestBody {
   question: string;
+  size: number;
+  prefetch_size: number;
   similarity_threshold: number;
   vector_similarity_weight: number;
   rerank_id?: string;

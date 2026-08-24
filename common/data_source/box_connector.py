@@ -2,11 +2,13 @@
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Generator
+from collections.abc import Generator
+from datetime import UTC, datetime
+from typing import Any
 
 from box_sdk_gen import AccessToken, BoxClient, BoxOAuth, OAuthConfig
-from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE
+
+from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -48,7 +50,6 @@ class BoxConnector(LoadConnector, PollConnector):
 
     def load_credentials(self, auth: Any):
         self.box_client = BoxClient(auth=auth)
-        return None
 
     def validate_connector_settings(self):
         if self.box_client is None:
@@ -64,7 +65,7 @@ class BoxConnector(LoadConnector, PollConnector):
         self,
         folder_id: str,
         relative_folder_path: str = "",
-    ) -> Generator[tuple[Any, str], None, None]:
+    ) -> Generator[tuple[Any, str]]:
         if self.box_client is None:
             raise ConnectorMissingCredentialError("Box")
 
@@ -150,9 +151,9 @@ class BoxConnector(LoadConnector, PollConnector):
             raise TypeError(f"box_datetime_to_epoch_seconds expects datetime, got {type(dt)}")
 
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         else:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(UTC)
 
         return SecondsSinceUnixEpoch(int(dt.timestamp()))
 
@@ -186,7 +187,7 @@ class BoxConnector(LoadConnector, PollConnector):
 # app = Flask(__name__)
 
 # AUTH = BoxOAuth(
-#     OAuthConfig(client_id="8suvn9ik7qezsq2dub0ye6ubox61081z", client_secret="QScvhLgBcZrb2ck1QP1ovkutpRhI2QcN")
+#     OAuthConfig(client_id="<your-client-id>", client_secret="<your-client-secret>")
 # )
 
 

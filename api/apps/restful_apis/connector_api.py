@@ -21,21 +21,20 @@ import uuid
 from html import escape
 from typing import Any
 
-from quart import request, make_response
+from box_sdk_gen import BoxOAuth, GetAuthorizeUrlOptions, OAuthConfig
 from google_auth_oauthlib.flow import Flow
+from quart import make_response, request
 
+from api.apps import current_user, login_required
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from common.constants import FileSource, RetCode, TaskStatus
-from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
-from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
+from common.data_source.config import BOX_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, DocumentSource
+from common.data_source.google_util.constant import GOOGLE_SCOPES, WEB_OAUTH_POPUP_TEMPLATE
 from common.misc_utils import get_uuid
 from rag.utils.redis_conn import REDIS_CONN
-from api.apps import login_required, current_user
-from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -338,7 +337,6 @@ async def start_google_web_oauth():
 
     try:
         credentials = _load_credentials(raw_credentials)
-        print(credentials)
     except ValueError as exc:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
 

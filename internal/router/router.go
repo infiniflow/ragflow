@@ -362,8 +362,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/artifacts/topics", r.datasetArtifactHandler.ListArtifactTopics)
 				datasets.GET("/:dataset_id/artifacts/alteration", r.datasetArtifactHandler.GetArtifactAlteration)
 				datasets.GET("/:dataset_id/artifacts/graph", r.datasetArtifactHandler.GetArtifactGraph)
-				datasets.GET("/:dataset_id/artifacts/:page_type/:slug", r.datasetArtifactHandler.GetArtifact)
-				datasets.PUT("/:dataset_id/artifacts/:page_type/:slug", r.datasetArtifactHandler.UpdateArtifact)
+				datasets.GET("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.GetArtifact)
+				datasets.PUT("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.UpdateArtifact)
 				datasets.GET("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.ListStructures)
 				datasets.DELETE("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.DeleteStructures)
 
