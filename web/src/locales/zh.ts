@@ -1017,6 +1017,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelHighDescription: '深度推理',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: '尽力思考',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: '基于知识库的 ReAct 智能体',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -2939,7 +2941,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 从给定的文本内容中提取最重要的关键词/短语。
 
 要求
-- 总结文本内容，并给出最重要的5个关键词/短语。
+- 总结文本内容，并给出最重要的{{ topn }}个关键词/短语。
 - 关键词必须与给定的文本内容使用相同的语言。
 - 关键词之间用英文逗号分隔。
 - 仅输出关键词。`,
@@ -2947,10 +2949,10 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 你是一名文本分析员。
 
 任务
-针对给定的文本内容提出3个问题。
+针对给定的文本内容提出{{ topn }}个问题。
 
 要求
-- 理解并总结文本内容，并提出最重要的3个问题。
+- 理解并总结文本内容，并提出最重要的{{ topn }}个问题。
 - 问题的含义不应重叠。
 - 问题应尽可能涵盖文本的主要内容。
 - 问题必须与给定的文本内容使用相同的语言。

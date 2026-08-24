@@ -126,6 +126,18 @@ func SetExtractorConcurrency(n int) {
 	}
 }
 
+// extractorTopNPattern matches the {{ topn }} placeholder accepted in
+// keyword/question system prompts (same convention as rag/prompts/*.md).
+// It is replaced with the configured top_n so the count slider stays
+// authoritative even when a prompt was pre-filled by the frontend.
+var extractorTopNPattern = regexp.MustCompile(`\{\{\s*topn\s*\}\}`)
+
+// renderExtractorPrompt substitutes every {{ topn }} placeholder in the
+// system prompt with the configured extraction count.
+func renderExtractorPrompt(prompt string, topN int) string {
+	return extractorTopNPattern.ReplaceAllString(prompt, strconv.Itoa(topN))
+}
+
 const (
 	autoKeywordPrompt = `## Role
 You are a text analyzer.
@@ -134,7 +146,7 @@ You are a text analyzer.
 Extract the most important keywords/phrases of a given piece of text content.
 
 ## Requirements
-- Summarize the text content, and give the top %d important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`
@@ -146,7 +158,7 @@ You are a text analyzer.
 Propose questions about a given piece of text content.
 
 ## Requirements
-- Understand and summarize the text content, and propose the top %d important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.
@@ -629,10 +641,11 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if topN <= 0 {
 		return nil
 	}
-	systemPrompt := c.Param.Keywords.SystemPrompt
-	if strings.TrimSpace(systemPrompt) == "" {
-		systemPrompt = fmt.Sprintf(autoKeywordPrompt, topN)
+	systemPrompt := strings.TrimSpace(c.Param.Keywords.SystemPrompt)
+	if systemPrompt == "" {
+		systemPrompt = autoKeywordPrompt
 	}
+	systemPrompt = renderExtractorPrompt(systemPrompt, topN)
 	kwTemp := extractorTemperature
 	kwIn := extractorInputs{
 		llmID:       in.llmID,
@@ -669,10 +682,11 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if topN <= 0 {
 		return nil
 	}
-	systemPrompt := c.Param.Questions.SystemPrompt
-	if strings.TrimSpace(systemPrompt) == "" {
-		systemPrompt = fmt.Sprintf(autoQuestionPrompt, topN)
+	systemPrompt := strings.TrimSpace(c.Param.Questions.SystemPrompt)
+	if systemPrompt == "" {
+		systemPrompt = autoQuestionPrompt
 	}
+	systemPrompt = renderExtractorPrompt(systemPrompt, topN)
 	qTemp := extractorTemperature
 	qIn := extractorInputs{
 		llmID:       in.llmID,
