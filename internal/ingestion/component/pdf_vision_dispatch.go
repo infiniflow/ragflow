@@ -293,6 +293,9 @@ func dispatchPaddleOCRPdf(
 	if resp == nil || resp.Text == nil {
 		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
 	}
+	if strings.TrimSpace(*resp.Text) == "" {
+		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
+	}
 
 	// PaddleOCR backends always return rendered markdown text
 	// (OCRFile.Text), regardless of the requested output_format. The

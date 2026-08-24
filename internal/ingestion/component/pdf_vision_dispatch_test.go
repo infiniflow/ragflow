@@ -85,6 +85,29 @@ func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
 	}
 }
 
+// TestDispatchPaddleOCRPdfEmptyTextFails guards against the silent-empty
+// result: OCRFileResponse.Text is a *string that stays non-nil even when the
+// backend produced zero text, so the old nil-only guard let an empty payload
+// through and the pipeline emitted a "completed with 0 chunks" document.
+// Empty text must surface as an explicit error instead.
+func TestDispatchPaddleOCRPdfEmptyTextFails(t *testing.T) {
+	orig := resolvePaddleOCRModelForDispatch
+	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = orig })
+
+	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		baseURL := "http://localhost:9380"
+		return &paddleOCRFakeDriver{text: ""}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
+	}
+
+	res, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
+	if err == nil {
+		t.Fatalf("dispatchPaddleOCRPdf with empty text: expected error, got result %+v", res)
+	}
+	if res.OutputFormat != "" || res.Markdown != "" {
+		t.Errorf("expected zero-value result on error, got %+v", res)
+	}
+}
+
 func TestMaybeDispatchPDFVisionEnhancementForwardsDatasetLanguage(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker

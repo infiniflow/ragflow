@@ -456,6 +456,8 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 			zap.Int("skipped_lines", skippedLines),
 			zap.Int("empty_result_lines", emptyResultLines),
 			zap.Int("content_lines", contentLines))
+		return nil, fmt.Errorf("paddleocr.net result: parsed empty text (scanned_lines=%d, skipped_lines=%d, empty_result_lines=%d, content_lines=%d)",
+			scannedLines, skippedLines, emptyResultLines, contentLines)
 	} else {
 		preview := extractedText
 		if len(preview) > 200 {
