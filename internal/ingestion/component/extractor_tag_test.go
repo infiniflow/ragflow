@@ -619,3 +619,34 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 		})
 	}
 }
+
+func TestOrderedTagWeights_MarshalJSON(t *testing.T) {
+	weights := OrderedTagWeights{
+		"价格咨询": 1,
+		"活动咨询": 3,
+		"物流查询": 2,
+	}
+	data, err := json.Marshal(weights)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	got := string(data)
+	want := `{"活动咨询":3,"物流查询":2,"价格咨询":1}`
+	if got != want {
+		t.Fatalf("OrderedTagWeights JSON order mismatch: got %s, want %s", got, want)
+	}
+
+	// Test embedding inside a chunk map (mimicking Elasticsearch doc serialization)
+	doc := map[string]any{
+		"doc_id":   "doc-1",
+		"tag_feas": weights,
+	}
+	docData, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("json.Marshal doc failed: %v", err)
+	}
+	docStr := string(docData)
+	if !strings.Contains(docStr, `"tag_feas":{"活动咨询":3,"物流查询":2,"价格咨询":1}`) {
+		t.Fatalf("doc JSON tag_feas order mismatch: got %s", docStr)
+	}
+}

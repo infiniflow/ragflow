@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -201,6 +202,44 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 	}
 }
 
+// OrderedTagWeights represents a tag-to-weight mapping that preserves
+// score-descending order when marshaled to JSON for Elasticsearch storage.
+type OrderedTagWeights map[string]int
+
+func (m OrderedTagWeights) MarshalJSON() ([]byte, error) {
+	if m == nil {
+		return []byte("null"), nil
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	kvs := make([]kv, 0, len(m))
+	for k, v := range m {
+		kvs = append(kvs, kv{k, v})
+	}
+	sort.Slice(kvs, func(i, j int) bool {
+		if kvs[i].v != kvs[j].v {
+			return kvs[i].v > kvs[j].v
+		}
+		return kvs[i].k < kvs[j].k
+	})
+
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, item := range kvs {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		keyBytes, _ := json.Marshal(item.k)
+		buf.Write(keyBytes)
+		buf.WriteByte(':')
+		buf.WriteString(strconv.Itoa(item.v))
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
 // ----------------------------------------------------------------------
 // Phase 1 local matching
 // ----------------------------------------------------------------------
@@ -241,12 +280,12 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	// 2. Asymmetric coverage computation (threshold 0.45).
+	// 2. Compute asymmetric coverage (Coverage(E) = InterIDF / ExTotalIDF >= 0.45).
 	type candidateScore struct {
 		docID    int
 		coverage float64
 	}
-	var passed []candidateScore
+	passed := make([]candidateScore, 0, len(candidateInterIDF))
 	for docID, interIDF := range candidateInterIDF {
 		exTotal := idx.exTotalIDF[docID]
 		if exTotal <= 0 {
@@ -320,7 +359,7 @@ func matchAndTagChunk(
 		scored = scored[:topN]
 	}
 
-	tagWeights := make(map[string]int, len(scored))
+	tagWeights := make(OrderedTagWeights, len(scored))
 	matchedTags := make([]string, 0, len(scored))
 	for _, ts := range scored {
 		tagWeights[ts.name] = ts.score
@@ -884,7 +923,7 @@ func llmTagChunk(
 	msgs = fitted
 
 	temperature := 0.5
-	var result map[string]int
+	var result OrderedTagWeights
 	timeoutErr := runtime.WithTimeout(ctx, taggerTimeout, func(timeoutCtx context.Context) error {
 		resp, err := inv.Chat(timeoutCtx, extractorChatRequest{
 			Driver:      driver,
@@ -920,7 +959,7 @@ func buildTaggerPrompt(topN int, tagSetStr string, examples []schema.TaggedChunk
 	return fmt.Sprintf(taggerPromptTmpl, topN, tagSetStr, examplesBlock.String(), text)
 }
 
-func parseTaggerResponse(raw string, topN int) map[string]int {
+func parseTaggerResponse(raw string, topN int) OrderedTagWeights {
 	raw = strings.TrimSpace(common.StripThinkTrailing(raw))
 	if strings.Contains(raw, "**ERROR**") {
 		common.Warn("extractor tags: LLM returned **ERROR**")
@@ -935,7 +974,7 @@ func parseTaggerResponse(raw string, topN int) map[string]int {
 		}
 	}
 
-	result := make(map[string]int, len(obj))
+	result := make(OrderedTagWeights, len(obj))
 	for k, v := range obj {
 		score := 0
 		switch n := v.(type) {
@@ -967,7 +1006,7 @@ func parseTaggerResponse(raw string, topN int) map[string]int {
 			}
 			return sorted[i].k < sorted[j].k
 		})
-		result = make(map[string]int, topN)
+		result = make(OrderedTagWeights, topN)
 		for i := 0; i < topN && i < len(sorted); i++ {
 			result[sorted[i].k] = sorted[i].v
 		}
