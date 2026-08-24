@@ -499,6 +499,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             limit = per_page
 
         cursor: Optional[str] = self.pagination_config.get("initial_cursor")
+        seen_cursors = {cursor} if cursor else set()
 
         while True:
             if page_count >= self.max_pages:
@@ -547,6 +548,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 next_cursor = self._extract_next_cursor(response_json)
                 if not next_cursor:
                     break
+                if next_cursor in seen_cursors:
+                    logging.warning("REST API connector received a repeated pagination cursor; stopping.")
+                    break
+                seen_cursors.add(next_cursor)
                 cursor = next_cursor
 
     def _page_iter_for_validation(self) -> Iterable[Mapping[str, Any]]:

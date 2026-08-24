@@ -65,6 +65,7 @@ from .sharepoint_connector import SharePointConnector
 from .slack_connector import SlackConnector
 from .teams_connector import TeamsConnector
 from .webdav_connector import WebDAVConnector
+from .xquik_connector import XquikConnector
 from .zendesk_connector import ZendeskConnector
 
 CONNECTOR_BY_SOURCE: dict[str, type] = {
@@ -98,6 +99,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.MYSQL: RDBMSConnector,
     FileSource.POSTGRESQL: RDBMSConnector,
     FileSource.REST_API: RestAPIConnector,
+    FileSource.XQUIK: XquikConnector,
     FileSource.BIGQUERY: BigQueryConnector,
     FileSource.ONEDRIVE: OneDriveConnector,
     FileSource.OUTLOOK: OutlookConnector,
@@ -160,6 +162,7 @@ __all__ = [
     "WebDAVConnector",
     "DingTalkAITableConnector",
     "RestAPIConnector",
+    "XquikConnector",
     "CONNECTOR_BY_SOURCE",
     "build_connector_for_source",
 ]
