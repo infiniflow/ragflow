@@ -220,6 +220,17 @@ class TestEmptyChunkBranchShape:
     branch in ``rag.svr.task_executor``. The fix removes the
     ``1.0`` argument from the ``progress_callback`` call so the
     parser's earlier ``-1`` is preserved.
+
+    Intentional source-shape pin (per xugangqiang review on #18263):
+    the regression is "the call site invokes progress_callback with
+    1.0 in the empty-chunk branch", which a behavioral test on
+    set_progress cannot observe directly because the call goes
+    through a free function. A behavioral mock would either need
+    to mock module-level set_progress (already covered by
+    ``TestSetProgressDoesNotOverwriteFailure`` above) or parse the
+    AST, which is what this test already does. Keep the pin and
+    update the assert messages if the call site is refactored
+    rather than dropped.
     """
 
     def test_orchestrator_does_not_pass_prog_1_0_on_empty_chunks(self):
