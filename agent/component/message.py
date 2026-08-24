@@ -190,7 +190,8 @@ class Message(ComponentBase):
         all_content = ""
         cache = {}
         downloads = []
-        for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
+        pattern = re.compile(self.variable_ref_patt, flags=re.DOTALL)
+        for r in self._iter_template_matches(pattern, rand_cnt):
             if self.check_if_canceled("Message streaming"):
                 return
 
