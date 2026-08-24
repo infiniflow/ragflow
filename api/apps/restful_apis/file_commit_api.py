@@ -19,6 +19,7 @@ from functools import wraps
 from quart import request
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
+from common.constants import RetCode
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.common.check_team_permission import check_file_team_permission
 from api.db.services.file_commit_service import FileCommitService
@@ -89,10 +90,12 @@ def _ensure_commit_scope_access(resolver_type, entity_id, folder_id):
     document and file endpoints already apply."""
     if resolver_type == "datasets":
         if not KnowledgebaseService.accessible(kb_id=entity_id, user_id=current_user.id):
+            logging.warning("Commit scope denied: user=%s dataset=%s", current_user.id, entity_id)
             raise PermissionError(f"No access to dataset {entity_id}")
         return
     ok, folder = FileService.get_by_id(folder_id)
     if not ok or not check_file_team_permission(folder, current_user.id):
+        logging.warning("Commit scope denied: user=%s folder=%s", current_user.id, folder_id)
         raise PermissionError(f"No access to folder {folder_id}")
 
 
@@ -126,7 +129,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @login_required
     @validate_request("message", "files")
     async def create_commit(entity_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         req = await get_request_json()
         try:
             commit = FileCommitService.create_commit(
@@ -158,7 +166,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f"{prefix}/commits", methods=["GET"], endpoint=f"list_commits_{_n}")  # noqa: F821
     @login_required
     async def list_commits(entity_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
             page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
             page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
@@ -217,7 +230,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f"{prefix}/commits/<commit_id>", methods=["GET"], endpoint=f"get_commit_{_n}")  # noqa: F821
     @login_required
     async def get_commit(entity_id, commit_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
@@ -267,7 +285,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f"{prefix}/commits/<commit_id>/files", methods=["GET"], endpoint=f"list_commit_files_{_n}")  # noqa: F821
     @login_required
     async def list_commit_files(entity_id, commit_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
@@ -298,7 +321,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f"{prefix}/commits/diff", methods=["GET"], endpoint=f"diff_commits_{_n}")  # noqa: F821
     @login_required
     async def diff_commits(entity_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         from_id = request.args.get("from")
         to_id = request.args.get("to")
         if not from_id or not to_id:
@@ -319,7 +347,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f"{prefix}/changes", methods=["GET"], endpoint=f"get_uncommitted_changes_{_n}")  # noqa: F821
     @login_required
     async def get_uncommitted_changes(entity_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
             changes = FileCommitService.get_uncommitted_changes(folder_id)
             return get_json_result(data=changes)
@@ -330,7 +363,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f"{prefix}/commits/<commit_id>/tree", methods=["GET"], endpoint=f"get_commit_tree_{_n}")  # noqa: F821
     @login_required
     async def get_commit_tree(entity_id, commit_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
@@ -346,7 +384,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f"{prefix}/commits/<commit_id>/files/<file_id>/content", methods=["GET"], endpoint=f"get_commit_file_content_{_n}")  # noqa: F821
     @login_required
     async def get_commit_file_content(entity_id, commit_id, file_id):
-        folder_id = _resolve(entity_id)
+        try:
+            folder_id = _resolve(entity_id)
+        except PermissionError as e:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except ValueError as e:
+            return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:

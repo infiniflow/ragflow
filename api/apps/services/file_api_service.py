@@ -48,6 +48,7 @@ async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
     if not e:
         return False, "Can't find this folder!"
     if not check_file_team_permission(pf_folder, tenant_id):
+        logging.warning("Upload denied: user=%s folder=%s", tenant_id, pf_id)
         return False, "no authorization"
 
     file_res = []
@@ -124,6 +125,7 @@ async def create_folder(tenant_id: str, name: str, pf_id: str | None = None, fil
         return False, "Parent Folder Doesn't Exist!"
     e, parent_folder = FileService.get_by_id(pf_id)
     if not e or not check_file_team_permission(parent_folder, tenant_id):
+        logging.warning("Folder creation denied: user=%s parent=%s", tenant_id, pf_id)
         return False, "no authorization"
     if FileService.query(name=name, parent_id=pf_id):
         return False, "Duplicated folder name in the same folder."
@@ -501,6 +503,7 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str | None = No
         if not ok or not dest_folder:
             return False, "Parent folder not found!"
         if not check_file_team_permission(dest_folder, uid):
+            logging.warning("File move denied: user=%s dest_folder=%s", uid, dest_file_id)
             return False, "no authorization"
 
     if new_name:

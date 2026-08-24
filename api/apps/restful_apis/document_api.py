@@ -46,6 +46,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.user_service import TenantService
 from api.db.services.canvas_service import UserCanvasService
 from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
@@ -1335,8 +1336,18 @@ def list_thumbnails():
         docs = DocumentService.get_thumbnails(doc_ids)
         # Only hand out thumbnails for datasets the caller can access;
         # doc ids are enumerable, so an unfiltered list leaks existence
-        # and object keys across tenants.
-        docs = [d for d in docs if KnowledgebaseService.accessible(kb_id=d["kb_id"], user_id=current_user.id)]
+        # and object keys across tenants. One batched lookup instead of a
+        # per-document accessible() query.
+        kb_ids = {d["kb_id"] for d in docs}
+        if kb_ids:
+            joined_tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+            accessible_ids = KnowledgebaseService.get_accessible_ids(
+                [m["tenant_id"] for m in joined_tenants], current_user.id, list(kb_ids)
+            )
+            denied = kb_ids - accessible_ids
+            if denied:
+                logging.warning("Thumbnails denied: user=%s on %d dataset(s)", current_user.id, len(denied))
+            docs = [d for d in docs if d["kb_id"] in accessible_ids]
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
@@ -1866,6 +1877,7 @@ async def get_document_image(image_id):
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
         if not await thread_pool_exec(KnowledgebaseService.accessible, bkt, current_user.id):
+            logging.warning("Document image denied: user=%s dataset=%s", current_user.id, bkt)
             return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:

@@ -66,9 +66,10 @@ async def _cancel_task(task_id):
         from api.db.services.document_service import DocumentService
 
         if not DocumentService.accessible(task.doc_id, current_user.id):
+            logging.warning("Task %s cancel denied: user %s lacks dataset access", task_id, current_user.id)
             return get_json_result(
                 code=RetCode.PERMISSION_ERROR,
-                message="Only the dataset owner can stop this task.",
+                message="You do not have access to the dataset this task belongs to.",
             )
 
     try:
