@@ -246,6 +246,40 @@ class TestSelfManagedProvider:
         assert result.metadata["result_type"] == "json"
 
     @patch("requests.post")
+    def test_execute_code_sends_bearer_token_when_configured(self, mock_post):
+        """Test that the shared-secret token is sent to the executor manager."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "success", "stdout": "", "stderr": "", "exit_code": 0}
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+        provider.api_token = "shared-secret"
+
+        provider.execute_code(instance_id="test-123", code="def main(): return 1", language="python", timeout=10)
+
+        _, kwargs = mock_post.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer shared-secret"
+
+    @patch("requests.post")
+    def test_execute_code_omits_auth_header_without_token(self, mock_post):
+        """Test that no Authorization header is sent when no token is set."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "success", "stdout": "", "stderr": "", "exit_code": 0}
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+        provider.api_token = ""
+
+        provider.execute_code(instance_id="test-123", code="def main(): return 1", language="python", timeout=10)
+
+        _, kwargs = mock_post.call_args
+        assert "Authorization" not in kwargs["headers"]
+
+    @patch("requests.post")
     def test_execute_code_timeout(self, mock_post):
         """Test code execution timeout."""
         mock_post.side_effect = requests.Timeout()

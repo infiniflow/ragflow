@@ -207,6 +207,56 @@ func TestSelfManaged_ExecuteCode(t *testing.T) {
 	}
 }
 
+func TestSelfManaged_ExecuteCode_SendsBearerToken(t *testing.T) {
+	t.Parallel()
+	var capturedAuth string
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth, authSeen = r.Header.Get("Authorization"), true
+		handleRun(t, w, r, "ok", "")
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	p := newSelfManagedForTest(srv.URL)
+	p.apiToken = "unit-test-shared-secret"
+	p.initialized = true
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if !authSeen || capturedAuth != "Bearer unit-test-shared-secret" {
+		t.Errorf("Authorization header = %q (seen=%v), want %q", capturedAuth, authSeen, "Bearer unit-test-shared-secret")
+	}
+}
+
+func TestSelfManaged_ExecuteCode_OmitsAuthHeaderWithoutToken(t *testing.T) {
+	t.Parallel()
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, authSeen = r.Header["Authorization"]
+		handleRun(t, w, r, "ok", "")
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	p := newSelfManagedForTest(srv.URL)
+	p.initialized = true
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if authSeen {
+		t.Errorf("Authorization header unexpectedly present")
+	}
+}
+
 func TestSelfManaged_ExecuteCode_JSWrapped(t *testing.T) {
 	t.Parallel()
 	var capturedBody []byte

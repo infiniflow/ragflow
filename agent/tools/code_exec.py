@@ -404,7 +404,14 @@ class CodeExec(ToolBase, ABC):
                 self.set_output("_ERROR", "Task has been canceled")
                 return self.output()
 
-            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=timeout_seconds)
+            # Shared-secret authentication towards the executor manager;
+            # no header when no token is configured (backwards compatibility).
+            headers = {"Content-Type": "application/json"}
+            api_token = (os.getenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN") or "").strip()
+            if api_token:
+                headers["Authorization"] = f"Bearer {api_token}"
+
+            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, headers=headers, timeout=timeout_seconds)
             logging.info(f"http://{settings.SANDBOX_HOST}:9385/run,  code_req: {code_req}, resp.status_code {resp.status_code}:")
 
             if self.check_if_canceled("CodeExec execution"):

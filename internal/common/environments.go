@@ -104,6 +104,7 @@ const (
 	EnvSandboxExecutorManagerTimeout     = "SANDBOX_EXECUTOR_MANAGER_TIMEOUT"
 	EnvSandboxExecutorManagerPoolSize    = "SANDBOX_EXECUTOR_MANAGER_POOL_SIZE"
 	EnvSandboxExecutorManagerMaxRetries  = "SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES"
+	EnvSandboxExecutorManagerAPIToken    = "SANDBOX_EXECUTOR_MANAGER_API_TOKEN"
 	EnvSandboxBasePythonImage            = "SANDBOX_BASE_PYTHON_IMAGE"
 	EnvSandboxBaseNodeJSImage            = "SANDBOX_BASE_NODEJS_IMAGE"
 	EnvSandboxArtifactBucket             = "SANDBOX_ARTIFACT_BUCKET"

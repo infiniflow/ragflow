@@ -101,6 +101,11 @@ type SelfManagedProvider struct {
 	// language's image get a per-language override path that the
 	// executor_manager can then route at container-create time.
 	baseImages map[string]string
+	// apiToken is the shared secret authenticating this RAGFlow
+	// instance towards the executor_manager's /run endpoint
+	// (Authorization: Bearer). Empty means the executor_manager runs
+	// without authentication (backwards compatibility).
+	apiToken string
 }
 
 // newSelfManagedProviderFromEnv reads SANDBOX_EXECUTOR_MANAGER_URL
@@ -122,6 +127,7 @@ func selfManagedConfigFromEnv() map[string]any {
 		"EXECUTOR_MANAGER_TIMEOUT":     common.GetEnv(common.EnvSandboxExecutorManagerTimeout),
 		"EXECUTOR_MANAGER_POOL_SIZE":   common.GetEnv(common.EnvSandboxExecutorManagerPoolSize),
 		"EXECUTOR_MANAGER_MAX_RETRIES": common.GetEnv(common.EnvSandboxExecutorManagerMaxRetries),
+		"EXECUTOR_MANAGER_API_TOKEN":   common.GetEnv(common.EnvSandboxExecutorManagerAPIToken),
 		"BASE_PYTHON_IMAGE":            common.GetEnv(common.EnvSandboxBasePythonImage),
 		"BASE_NODEJS_IMAGE":            common.GetEnv(common.EnvSandboxBaseNodeJSImage),
 	}
@@ -155,11 +161,14 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 		"nodejs": configString(cfg, "BASE_NODEJS_IMAGE"),
 	}
 
+	apiToken := strings.TrimSpace(configString(cfg, "EXECUTOR_MANAGER_API_TOKEN"))
+
 	return &SelfManagedProvider{
 		endpoint:   endpoint,
 		timeout:    timeout,
 		poolSize:   poolSize,
 		baseImages: baseImages,
+		apiToken:   apiToken,
 		helper: NewHTTPClient(HTTPConfig{
 			Timeout: timeout,
 		}),
@@ -264,7 +273,13 @@ func (p *SelfManagedProvider) ExecuteCode(
 	}
 
 	start := time.Now()
-	resp, err := p.helper.Do(ctx, http.MethodPost, p.endpoint+"/run", string(body), "application/json", nil)
+	// Shared-secret authentication towards the executor_manager; empty
+	// token keeps the request unauthenticated (backwards compatibility).
+	var reqHeaders map[string]string
+	if p.apiToken != "" {
+		reqHeaders = map[string]string{"Authorization": "Bearer " + p.apiToken}
+	}
+	resp, err := p.helper.Do(ctx, http.MethodPost, p.endpoint+"/run", string(body), "application/json", reqHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("self_managed: POST /run: %w", err)
 	}

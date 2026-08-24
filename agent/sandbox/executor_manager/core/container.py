@@ -98,6 +98,11 @@ async def create_container(name: str, language: SupportLanguage) -> bool:
         "--workdir",
         "/workspace",
     ]
+    # Network isolation by default: sandboxed code gets no external network
+    # access unless a deployment explicitly opts in (e.g. needing pip/npm
+    # installs or outbound requests) via SANDBOX_CONTAINER_NETWORK.
+    container_network = (os.getenv("SANDBOX_CONTAINER_NETWORK") or "").strip() or "none"
+    create_args.extend(["--network", container_network])
     if os.getenv("SANDBOX_MAX_MEMORY"):
         memory_limit = os.getenv("SANDBOX_MAX_MEMORY") or "256m"
         if is_valid_memory_limit(memory_limit):

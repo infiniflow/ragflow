@@ -45,6 +45,7 @@ class SelfManagedProvider(SandboxProvider):
         self.timeout: int = 30
         self.max_retries: int = 3
         self.pool_size: int = 3
+        self.api_token: str = ""
         self._initialized: bool = False
 
     def initialize(self, config: Dict[str, Any]) -> bool:
@@ -57,6 +58,8 @@ class SelfManagedProvider(SandboxProvider):
                 - timeout: Request timeout in seconds (default: 30)
                 - max_retries: Maximum retry attempts (default: 3)
                 - pool_size: Container pool size for info (default: 10)
+                - api_token: Shared secret for the executor manager API
+                  (falls back to SANDBOX_EXECUTOR_MANAGER_API_TOKEN env var)
 
         Returns:
             True if initialization successful, False otherwise
@@ -65,6 +68,9 @@ class SelfManagedProvider(SandboxProvider):
         self.timeout = config.get("timeout", 30)
         self.max_retries = config.get("max_retries", 3)
         self.pool_size = config.get("executor_manager_pool_size", config.get("pool_size", 3))
+        # Shared-secret token authenticating RAGFlow towards the executor
+        # manager. Explicit config wins over the environment variable.
+        self.api_token = str(config.get("api_token") or os.getenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "") or "").strip()
 
         # Validate endpoint is accessible
         if not self.health_check():
@@ -142,10 +148,14 @@ class SelfManagedProvider(SandboxProvider):
         url = f"{self.endpoint}/run"
         exec_timeout = timeout or self.timeout
 
+        headers = {"Content-Type": "application/json"}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+
         start_time = time.time()
 
         try:
-            response = requests.post(url, json=payload, timeout=exec_timeout, headers={"Content-Type": "application/json"})
+            response = requests.post(url, json=payload, timeout=exec_timeout, headers=headers)
 
             execution_time = time.time() - start_time
 
@@ -240,6 +250,17 @@ class SelfManagedProvider(SandboxProvider):
                 "scope": "runtime",
                 "readonly": False,
             },
+            "api_token": {
+                "type": "string",
+                "required": False,
+                "label": "Executor Manager API Token",
+                "secret": True,
+                "placeholder": "Optional; defaults to SANDBOX_EXECUTOR_MANAGER_API_TOKEN",
+                "default": "",
+                "description": "Shared secret authenticating RAGFlow to sandbox-executor-manager. Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on the executor-manager side.",
+                "scope": "runtime",
+                "readonly": False,
+            },
             "timeout": {
                 "type": "integer",
                 "required": False,
@@ -315,6 +336,15 @@ class SelfManagedProvider(SandboxProvider):
                 "label": "Max Memory",
                 "default": os.getenv("SANDBOX_MAX_MEMORY", "256m"),
                 "description": "Memory limit applied to each sandbox container. Common format: 256m or 1g.",
+                "scope": "deployment",
+                "readonly": True,
+            },
+            "container_network": {
+                "type": "string",
+                "required": False,
+                "label": "Container Network",
+                "default": os.getenv("SANDBOX_CONTAINER_NETWORK", "none"),
+                "description": "Docker network attached to sandbox containers. Defaults to 'none' (no external network access); set to 'bridge' only if sandboxed code needs outbound network.",
                 "scope": "deployment",
                 "readonly": True,
             },

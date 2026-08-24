@@ -139,6 +139,13 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
 - `pool_size`: Container pool size (default: 10)
+- `api_token`: Shared secret for the executor manager API (falls back to the `SANDBOX_EXECUTOR_MANAGER_API_TOKEN` environment variable)
+
+**Executor manager environment variables**:
+
+- `SANDBOX_EXECUTOR_MANAGER_API_TOKEN`: Shared secret required on the `/run` endpoint (sent as `Authorization: Bearer <token>` or `X-Sandbox-Token: <token>`, compared with `secrets.compare_digest`). When unset, requests are still accepted for backwards compatibility but a prominent warning is logged. The RAGFlow side must be configured with the same value.
+- `SANDBOX_CONTAINER_NETWORK`: Docker network attached to sandbox runner containers (default: `none`, i.e. no external network access). Set to `bridge` (or a custom network) only when sandboxed code genuinely needs outbound network access; prefer baking dependencies into the base images instead.
+- `SANDBOX_RUN_RATE_LIMIT`: Rate limit for `POST /run`, keyed by client address (default: `120/minute`).
 
 **Languages**:
 - Python
@@ -150,6 +157,8 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - seccomp
 - read-only filesystem
 - memory limits
+- network isolation (`--network none` by default)
+- shared-secret authentication on the executor API
 
 **Advantages**:
 - Low latency (&lt;90ms), data privacy, full control
@@ -1150,6 +1159,9 @@ class CodeExecutorComponent:
 
 ### Network security
 - Self-managed: Network isolation by default, no external access
+  - Sandbox runner containers are started with `--network none` (opt out via `SANDBOX_CONTAINER_NETWORK`, e.g. `bridge`, when sandboxed code needs outbound network such as runtime `pip`/`npm` installs; prefer baking dependencies into the base images instead)
+  - The executor manager API itself requires a shared secret (`SANDBOX_EXECUTOR_MANAGER_API_TOKEN`) on execution endpoints when configured; requests are authenticated with a constant-time comparison of the `Authorization: Bearer` or `X-Sandbox-Token` header
+  - The executor manager port is published to loopback (`127.0.0.1`) only; RAGFlow reaches it over the internal compose network
 - SaaS: HTTPS only, certificate pinning
 - IP whitelisting for self-managed endpoint access
 
