@@ -26,7 +26,8 @@ from api.db.joint_services.tenant_model_service import resolve_model_config, del
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
-from api.utils.model_utils import calculate_model_type, get_model_type_human, normalize_model_types
+from api.utils import model_utils
+from api.utils.model_utils import calculate_model_type, get_model_type_human
 from rag.llm import ChatModel, CvModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel, Seq2txtModel, TTSModel
 
 
@@ -39,7 +40,7 @@ def _to_int(v, default=500):
 
 def _factory_model_types(llm: dict) -> list[str]:
     model_type = llm.get("model_type")
-    return normalize_model_types(model_type) if model_type else []
+    return model_utils.normalize_model_types(model_type) if model_type else []
 
 
 def _normalize_provider_base_url(provider_name: str, base_url: str | None):
