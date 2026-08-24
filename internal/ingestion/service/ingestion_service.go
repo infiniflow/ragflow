@@ -618,7 +618,12 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	}
 	resumeCheckpoint, checkpointErr := canvas.RedisCheckpointExists(ctx, task.ID)
 	if checkpointErr != nil {
-		common.Warn(fmt.Sprintf("Failed to check checkpoint for task %s; treating it as a fresh run: %v", task.ID, checkpointErr))
+		common.Error(fmt.Sprintf("Failed to check checkpoint for task %s", task.ID), checkpointErr)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
 	if !resumeCheckpoint {
 		if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {

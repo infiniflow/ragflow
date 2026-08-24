@@ -118,16 +118,14 @@ func buildPageProducts(tenantID, docID, page string, sourceChunkIDs []string) []
 }
 
 // entityPageSlug returns the stable page identity for an extracted entity.
-// The extracted type is part of the identity so same-named entities with
-// different types remain separate pages while the existing page_type/slug
-// routing format stays intact.
+// Type and name use separate path segments so the identity is unambiguous.
 func entityPageSlug(name, entityType string) string {
-	nameSlug := slugify(name)
-	typeSlug := strings.TrimSpace(entityType)
-	if typeSlug == "" {
+	nameSlug := slugify(strings.Join(strings.Fields(name), " "))
+	entityType = strings.Join(strings.Fields(entityType), " ")
+	if entityType == "" {
 		return "entity/" + nameSlug
 	}
-	return "entity/" + normalizeWikiSlugHyphens(slugify(typeSlug)+"-"+nameSlug)
+	return "entity/" + slugify(entityType) + "/" + nameSlug
 }
 
 // buildWikiPageProducts turns multiple wiki page drafts into page + section

@@ -70,9 +70,12 @@ func NewRedisCheckPointStoreWithClient(client *redis.Client, ttl time.Duration) 
 // from a resume: resumed nodes may not emit lifecycle events again, so their
 // previous completed progress rows must be retained.
 func RedisCheckpointExists(ctx context.Context, id string) (bool, error) {
-	store := NewRedisCheckPointStore(0)
-	_, found, err := store.Get(ctx, id)
-	return found, err
+	rc := redis2.Get()
+	if rc == nil || rc.GetClient() == nil {
+		return false, nil
+	}
+	found, err := rc.GetClient().Exists(ctx, checkpointKeyPrefix+id).Result()
+	return found > 0, err
 }
 
 // Get implements eino's CheckPointStore.Get. Returns (nil, false, nil) when

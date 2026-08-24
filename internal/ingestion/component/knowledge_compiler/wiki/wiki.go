@@ -1506,7 +1506,10 @@ func wikiMarkdownContentBlock(block string) bool {
 
 func reduceExtracts(extracts []wikiExtract) wikiExtract {
 	out := wikiExtract{}
-	type entityKey string
+	type entityKey struct {
+		Name string
+		Type string
+	}
 	type conceptKey struct {
 		Term string
 	}
@@ -1517,9 +1520,9 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 
 	for _, ex := range extracts {
 		for _, e := range ex.Entities {
-			e.Name = strings.TrimSpace(e.Name)
-			e.Type = strings.TrimSpace(e.Type)
-			key := entityKey(entityPageSlug(e.Name, e.Type))
+			e.Name = strings.Join(strings.Fields(e.Name), " ")
+			e.Type = strings.Join(strings.Fields(e.Type), " ")
+			key := entityKey{Name: normKey(e.Name), Type: normKey(e.Type)}
 			if cur, ok := entities[key]; ok {
 				cur.Aliases = mergeStrings(cur.Aliases, e.Aliases)
 				cur.SourceChunkIDs = mergeStrings(cur.SourceChunkIDs, e.SourceChunkIDs)
@@ -1582,7 +1585,10 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool {
-		return keys[i] < keys[j]
+		if keys[i].Type == keys[j].Type {
+			return keys[i].Name < keys[j].Name
+		}
+		return keys[i].Type < keys[j].Type
 	})
 	for _, k := range keys {
 		out.Entities = append(out.Entities, *entities[k])
@@ -1690,44 +1696,14 @@ func normalizeWikiPlan(plan wikiPlan, docID string, reduced wikiExtract) wikiPla
 
 func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPlanPage {
 	// existing maps a plan slug to its index in out (exact-slug dedup); byTitle
-	// additionally collapses pages that share the same page_type + normalized
-	// title, so a single batch never yields two "吕布" pages whose slugs only
-	// differ in transliteration (lu-bu vs lv-bu). Scheme A (§5 of the duplicates
-	// research): page identity is page_type/slug, so the key is page-type-scoped
-	// (a same-title concept and topic may legitimately coexist) and the first
-	// page seen (LLM emission order) is kept, folding the duplicate's RelatedKB
-	// into the survivor so its outlinks are not silently dropped.
+	// additionally collapses non-canonical pages that share the same page_type +
+	// normalized title. Single-entity pages use their canonical slug instead so
+	// same-named entities of different types remain distinct.
 	existing := map[string]int{}
 	byTitle := map[string]int{}
-	canonicalSlugs := map[string]string{}
-	for _, rawPage := range pages {
-		page := normalizeWikiPlanPage(rawPage)
-		if page.PageType != "entity" || len(page.EntityNames) != 1 {
-			continue
-		}
-		for _, entity := range reduced.Entities {
-			if normKey(entity.Name) == normKey(page.EntityNames[0]) {
-				legacySlug := "entity/" + normalizeWikiSlugHyphens(slugify(entity.Name))
-				canonicalSlug := entityPageSlug(entity.Name, entity.Type)
-				if page.Slug == legacySlug || page.Slug == canonicalSlug {
-					canonicalSlugs[page.Slug] = canonicalSlug
-				}
-				break
-			}
-		}
-	}
 	out := make([]wikiPlanPage, 0, len(pages))
 	for _, page := range pages {
 		page = normalizeWikiPlanPage(page)
-		oldSlug := page.Slug
-		if canonical, ok := canonicalSlugs[oldSlug]; ok {
-			page.Slug = canonical
-			for i, related := range page.RelatedKB {
-				if canonicalRelated, ok := canonicalSlugs[related]; ok {
-					page.RelatedKB[i] = canonicalRelated
-				}
-			}
-		}
 		if page.Slug == "" {
 			continue
 		}
@@ -1736,6 +1712,9 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			continue
 		}
 		key := wikiTitleKey(page.PageType, page.Title)
+		if page.PageType == "entity" && len(page.EntityNames) == 1 {
+			key = page.PageType + "\x00" + page.Slug
+		}
 		if idx, ok := byTitle[key]; ok {
 			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
 			continue
@@ -1753,7 +1732,11 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			}
 			page = normalizeWikiPlanPage(page)
 			idx := len(out)
-			byTitle[wikiTitleKey(page.PageType, page.Title)] = idx
+			key := wikiTitleKey(page.PageType, page.Title)
+			if page.PageType == "entity" && len(page.EntityNames) == 1 {
+				key = page.PageType + "\x00" + page.Slug
+			}
+			byTitle[key] = idx
 			existing[page.Slug] = idx
 			out = append(out, page)
 		}
@@ -3096,13 +3079,16 @@ func l2Norm32(v []float32) float64 {
 }
 
 func cosine32(a, b []float32) float64 {
+	if len(a) != len(b) {
+		return 0
+	}
 	na := l2Norm32(a)
 	nb := l2Norm32(b)
 	if na == 0 || nb == 0 {
 		return 0
 	}
 	var dot float64
-	for i := 0; i < len(a) && i < len(b); i++ {
+	for i := range a {
 		dot += float64(a[i]) * float64(b[i])
 	}
 	return dot / (na * nb)
