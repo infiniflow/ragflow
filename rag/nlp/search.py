@@ -558,10 +558,10 @@ class Dealer:
         tenant_ids,
         kb_ids,
         page,
-        page_size,
+        page_size,  # it is topn when rerank_mdl is specified
         similarity_threshold=0.2,
         vector_similarity_weight=0.3,
-        top=1024,
+        top=1024,  # for knn, no need to let user pass in.
         doc_ids=None,
         aggs=True,
         rerank_mdl=None,
@@ -569,29 +569,34 @@ class Dealer:
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
         must_not: dict | None = None,
-        rerank_top_k=64,
+        prefetch_size=100,
     ):
+        """
+        Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
+          - Prefetch more records than the requested page_size.
+          - Rerank those records to calculate similarity scores.
+          - Filter out records below than the similarity threshold.
+        When requesting page 2, the system must still process all candidates needed for page 1,
+          resulting in a significant waste of time and computational resources. (without cache)
+        Moreover, when prefetch_size expands into the next retrieval window, new records are added to the candidate set and the entire set is reranked.
+          That meant the previous returned pages might not be the same as the current returned pages, which is not acceptable for pagination.
+        """
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
 
         page = max(page, 1)
-        offset = (page - 1) * page_size
+        if page * page_size > prefetch_size:
+            raise Exception(f"prefetch_size({prefetch_size}) must be greater than page * page_size({page * page_size}) to ensure correct pagination.")
+        if rerank_mdl is not None and page != 1:
+            raise Exception(f"Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top {page_size} results.")
 
-        retrieval_page = page
-        retrieval_page_size = page_size
-        # When rerank_mdl enabled, the offset should be within the top-k candidates, or else no result will return
-        if rerank_mdl:
-            if offset >= rerank_top_k:
-                raise Exception(f"Retrieval: offset {offset} exceeds rerank top-k {rerank_top_k} when rerank model is enabled.")
-            retrieval_page = 1
-            retrieval_page_size = rerank_top_k
-
+        prefetch_page = 1
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": retrieval_page,
-            "size": retrieval_page_size,
+            "page": prefetch_page,
+            "size": prefetch_size,
             "question": question,
             "vector": True,
             "topk": top,
@@ -601,7 +606,7 @@ class Dealer:
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
-        logging.info(f"[Search] page={page}, page_size={page_size}, retrieval_page={retrieval_page}, retrieval_page_size={retrieval_page_size}, rerank_top_k={rerank_top_k}")
+        logging.info(f"[Search] page={page}, page_size={page_size}, prefetch_size={prefetch_size}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -695,7 +700,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        begin = offset
+        begin = (page - 1) * page_size
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
