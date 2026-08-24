@@ -613,6 +613,7 @@ func (s *ChatPipelineService) AsyncChat(
 			"doc_aggs": []interface{}{},
 		}
 		var knowledges []string
+		prefetchSize := int(chat.PrefetchSize)
 
 		// When hasKnowledgeParam is true, runs (mutually exclusive):
 		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.
@@ -642,6 +643,7 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:         docIDs,
 							Page:           1,
 							PageSize:       int(chat.TopN),
+							PrefetchSize:   &prefetchSize,
 							EmbeddingModel: embModel,
 						})
 					}
@@ -697,6 +699,7 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:                 docIDs,
 							Page:                   1,
 							PageSize:               topN,
+							PrefetchSize:           &prefetchSize,
 							Top:                    &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,
