@@ -43,6 +43,12 @@ from common import settings
 from api.db.joint_services.memory_message_service import queue_save_to_memory_task
 
 
+def _valid_message_content(content: Any) -> list[str]:
+    if not isinstance(content, list):
+        return []
+    return [item for item in content if isinstance(item, str) and item.strip()]
+
+
 class MessageParam(ComponentParamBase):
     """
     Define the Message component parameters.
@@ -57,7 +63,8 @@ class MessageParam(ComponentParamBase):
         self.outputs = {"content": {"type": "str"}, "downloads": {"type": "list"}}
 
     def check(self):
-        self.check_empty(self.content, "[Message] Content")
+        if not _valid_message_content(self.content):
+            raise ValueError("[Message] Content does not support empty value.")
         self.check_boolean(self.stream, "[Message] stream")
         return True
 
@@ -256,7 +263,7 @@ class Message(ComponentBase):
         if self.check_if_canceled("Message processing"):
             return
 
-        rand_cnt = random.choice(self._param.content)
+        rand_cnt = random.choice(_valid_message_content(self._param.content))
         if self._param.stream and not self._is_jinjia2(rand_cnt):
             self.set_output("content", partial(self._stream, rand_cnt))
             return
