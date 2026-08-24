@@ -263,6 +263,22 @@ export const useSendAgentMessage = ({
   // Session that owns the in-flight stream; every SSE frame carries the
   // session_id it belongs to.
   const streamSessionId = firstAnswer?.session_id;
+  // Session the pending request was sent to. It is known before the first
+  // SSE frame arrives, so the stream can already be attributed to its
+  // session during connection setup.
+  const [requestedSessionId, setRequestedSessionId] = useState<
+    string | null | undefined
+  >();
+  // Bumped when derivedMessages is replaced externally (Explore hydrates
+  // persisted messages when a session is re-selected) while a stream
+  // owned by the displayed session is in flight, so the streamed answer
+  // is re-applied on top of the hydrated history — the effect below
+  // otherwise only re-runs when a new frame arrives.
+  const [streamReplayToken, setStreamReplayToken] = useState(0);
+  const reapplyStreamedAnswer = useCallback(
+    () => setStreamReplayToken((token) => token + 1),
+    [],
+  );
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
   }, [firstAnswer]);
@@ -337,6 +353,10 @@ export const useSendAgentMessage = ({
         // The hook keeps its own session cache for streamed replies, but that cache
         // can lag behind when the user switches sessions in Explore.
         params.session_id = exploreSessionId || sessionId;
+        // Remember the owner before the first frame arrives so
+        // connection-setup loading states are attributed to the right
+        // session.
+        setRequestedSessionId((exploreSessionId || sessionId) ?? null);
         if (releaseMode) {
           params.release = releaseMode;
         }
@@ -388,6 +408,7 @@ export const useSendAgentMessage = ({
           .join('<br/>'),
         role: MessageType.User,
       });
+      setRequestedSessionId(sessionId ?? null);
       await send({
         ...body,
         ...(isShared ? {} : { agent_id: agentId }),
@@ -514,7 +535,13 @@ export const useSendAgentMessage = ({
         });
       }
     }
-  }, [activeSessionId, answerList, addNewestOneAnswer, streamSessionId]);
+  }, [
+    activeSessionId,
+    answerList,
+    addNewestOneAnswer,
+    streamSessionId,
+    streamReplayToken,
+  ]);
 
   useEffect(() => {
     if (isTaskMode) {
@@ -568,5 +595,7 @@ export const useSendAgentMessage = ({
     setDerivedMessages,
     addPrologue,
     streamSessionId,
+    requestedSessionId,
+    reapplyStreamedAnswer,
   };
 };
