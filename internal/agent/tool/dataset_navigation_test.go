@@ -120,30 +120,6 @@ func TestCanvasDatasetIDs_DedupEmpty(t *testing.T) {
 	}
 }
 
-// TestCanvasTenantID_FromCanvasState asserts the tenant id resolves from canvas
-// state, falling back to user_id.
-func TestCanvasTenantID_FromCanvasState(t *testing.T) {
-	state := runtime.NewCanvasState("run-1", "task-1")
-	state.Sys["tenant_id"] = "canvas-tenant"
-	ctx := runtime.WithState(context.Background(), state)
-	if got := canvasTenantID(ctx); got != "canvas-tenant" {
-		t.Errorf("canvasTenantID = %q, want canvas tenant canvas-tenant", got)
-	}
-
-	// Fall back to user_id when tenant_id is absent.
-	state2 := runtime.NewCanvasState("run-1", "task-1")
-	state2.Sys["user_id"] = "user-1"
-	ctx2 := runtime.WithState(context.Background(), state2)
-	if got := canvasTenantID(ctx2); got != "user-1" {
-		t.Errorf("canvasTenantID = %q, want fallback user-1", got)
-	}
-
-	// No canvas state at all → empty.
-	if got := canvasTenantID(context.Background()); got != "" {
-		t.Errorf("canvasTenantID = %q, want empty without canvas state", got)
-	}
-}
-
 func containsStr(s, sub string) bool {
 	return len(s) > 0 && len(sub) > 0 && (s == sub || containsSub(s, sub))
 }

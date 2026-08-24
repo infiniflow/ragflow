@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -37,7 +36,6 @@ import (
 
 	"ragflow/internal/dao"
 
-	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 )
 
@@ -172,12 +170,6 @@ func (s *ChatPipelineService) AsyncChat(
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
-	}
-
-	// smart-reasoning mode: route to the eino ADK ReAct agent instead of the
-	// classic retrieval→generation pipeline.
-	if mode, _ := kwargs["agent_mode"].(string); mode == "smart-reasoning" {
-		return s.smartReasoningChat(ctx, userID, chat, messages, stream, kwargs)
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -621,6 +613,7 @@ func (s *ChatPipelineService) AsyncChat(
 			"doc_aggs": []interface{}{},
 		}
 		var knowledges []string
+		prefetchSize := int(chat.PrefetchSize)
 
 		// When hasKnowledgeParam is true, runs (mutually exclusive):
 		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.
@@ -650,6 +643,7 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:         docIDs,
 							Page:           1,
 							PageSize:       int(chat.TopN),
+							PrefetchSize:   &prefetchSize,
 							EmbeddingModel: embModel,
 						})
 					}
@@ -705,6 +699,7 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:                 docIDs,
 							Page:                   1,
 							PageSize:               topN,
+							PrefetchSize:           &prefetchSize,
 							Top:                    &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,
@@ -2054,168 +2049,6 @@ func factoryFromLLMID(llmID string) string {
 		return "openai"
 	}
 	return provider
-}
-
-// smartReasoningChat drives the smart-reasoning (ReAct) conversation mode via
-// eino ADK's adk.ChatModelAgent. It mirrors AsyncChat's channel contract:
-// yields AsyncChatResult deltas (answer / reasoning / final) over a buffered
-// channel consumed by the same callers (ChatCompletions / OpenAIChatCompletions).
-
-// smartReasoningTimeout is the total wall-clock budget for one smart-reasoning
-// agent run, shared by the model and every tool. The two HTTP entrypoints pass
-// Request.Context(), which carries no deadline (http.Server.WriteTimeout does
-// not become a handler context deadline), so without an explicit budget here a
-// client that keeps the connection open could let the agent (or a runaway tool
-// like run_javascript) burn CPU indefinitely. Tools may additionally enforce
-// their own shorter per-call limits (e.g. run_javascript's internal timeout).
-var smartReasoningTimeout = 5 * time.Minute
-
-func (s *ChatPipelineService) smartReasoningChat(
-	ctx context.Context,
-	userID string,
-	chat *entity.Chat,
-	messages []map[string]interface{},
-	stream bool,
-	kwargs map[string]interface{},
-) (<-chan AsyncChatResult, error) {
-	out := make(chan AsyncChatResult, 16)
-
-	go func() {
-		defer close(out)
-
-		// Resolve the chat model as an eino BaseChatModel.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
-		if err != nil {
-			common.Error("smart_reasoning: resolve chat model", err)
-			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err.Error()), Final: true}
-			return
-		}
-		cm := modelModule.NewChatModel(driver, &modelName, apiConfig)
-		// Apply the dialog's LLM setting with per-request overrides (temperature,
-		// top_p, max_tokens, thinking, stop, etc.) exactly like the regular
-		// AsyncChat path does — otherwise those parameters silently no-op when
-		// agent_mode=smart-reasoning.
-		einoModel := modelModule.NewEinoChatModel(cm, BuildChatConfig(chat, kwargs))
-
-		// Convert messages to eino schema messages (system is already stripped
-		// by the caller; the agent injects its own instruction).
-		msgs := convertMessagesToEino(messages)
-
-		// Resolve the dataset scope from the chat's KBs. These are passed into
-		// the agent's Input and injected into its retrieval tools, so
-		// grep_chunks / search_chunks search the right datasets.
-		datasetIDs := make([]string, 0, len(chat.KBIDs))
-		for _, raw := range chat.KBIDs {
-			if id, ok := raw.(string); ok && id != "" {
-				datasetIDs = append(datasetIDs, id)
-			}
-		}
-		// The tenant scope is the chat's OWNING tenant (chat.TenantID), not the
-		// requesting user. In shared-tenant conversations a member user's ID
-		// differs from the KB owner's tenant, and index names are built from the
-		// tenant id — passing userID would make grep/search_chunks query the
-		// wrong index and return stable empty results.
-
-		// Give the whole agent run (model + every tool) a fixed total budget,
-		// because the HTTP entrypoints provide a deadline-less Request.Context().
-		// Tool-level limits (e.g. run_javascript's internal timeout) still apply
-		// on top of this shared budget.
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, smartReasoningTimeout)
-		defer cancel()
-
-		maxIterations := 0
-		if v, ok := kwargs["max_iterations"]; ok {
-			switch n := v.(type) {
-			case int:
-				maxIterations = n
-			case float64:
-				maxIterations = int(n)
-			}
-		}
-
-		// thinking tracks whether we are inside the <think> block so the
-		// StartToThink marker is emitted once (not on every reasoning delta) and
-		// EndToThink fires on the first non-thinking delta after it.
-		thinking := false
-		// final holds the agent's accumulated final answer so the terminating
-		// AsyncChatResult carries the real content instead of an empty string.
-		var final string
-		final, err = agentic_rag.Run(ctx, agentic_rag.Input{
-			Model:         einoModel,
-			Messages:      msgs,
-			TenantID:      chat.TenantID,
-			DatasetIDs:    datasetIDs,
-			MaxIterations: maxIterations,
-			Stream:        stream,
-			OnDelta: func(contentDelta, thinkingDelta string) {
-				startToThink, endToThink := false, false
-				if thinkingDelta != "" {
-					if !thinking {
-						startToThink = true
-						thinking = true
-					}
-				} else if thinking {
-					endToThink = true
-					thinking = false
-				}
-				out <- AsyncChatResult{
-					Answer:       contentDelta,
-					Reasoning:    thinkingDelta,
-					Final:        false,
-					StartToThink: startToThink,
-					EndToThink:   endToThink,
-				}
-			},
-		})
-		if err != nil {
-			common.Error("smart_reasoning: run", err)
-			if final == "" {
-				final = fmt.Sprintf("**ERROR**: %s", err.Error())
-			}
-		}
-		// If the agent ended while still in the <think> block, close it with its
-		// own non-final marker first. The terminating result must stay free of
-		// think markers: the streaming consumer skips any result that carries
-		// EndToThink before it checks Final, which would drop the final
-		// OpenAIEventFinal event and its reference payload.
-		if thinking {
-			out <- AsyncChatResult{
-				Reference:  map[string]interface{}{},
-				Final:      false,
-				EndToThink: true,
-			}
-			thinking = false
-		}
-		out <- AsyncChatResult{
-			Answer:    final,
-			Reference: map[string]interface{}{},
-			Final:     true,
-		}
-	}()
-
-	return out, nil
-}
-
-// convertMessagesToEino converts pre-filtered user/assistant messages into
-// eino schema messages. Only string content is supported; multimodal parts are
-// not carried into the ReAct loop.
-func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message {
-	out := make([]*schema.Message, 0, len(messages))
-	for _, m := range messages {
-		role, _ := m["role"].(string)
-		content, _ := m["content"].(string)
-		switch role {
-		case "user":
-			out = append(out, schema.UserMessage(content))
-		case "assistant":
-			out = append(out, schema.AssistantMessage(content, nil))
-		default:
-			// system messages are stripped upstream; skip anything else.
-			continue
-		}
-	}
-	return out
 }
 
 // The handler in openai_chat.go has already rejected requests
