@@ -208,10 +208,10 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
           similarityName={prefixName(prefix, 'similarity_threshold')}
           similarityWeightName={prefixName(prefix, 'vector_similarity_weight')}
         ></SimilaritySliderFormField>
-        <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
         <PrefetchSizeFormField
           name={prefixName(prefix, 'prefetch_size')}
         ></PrefetchSizeFormField>
+        <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
 
         <SwitchFormField
           name={prefixName(prefix, 'prompt_config.refine_multiturn')}

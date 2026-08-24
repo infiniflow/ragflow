@@ -56,7 +56,7 @@ export function TopSelectFormItem() {
   return (
     <SliderInputFormField
       name="size"
-      label={t('knowledgeConfiguration.top')}
+      label={t('chat.topN')}
       min={1}
       max={100}
       layout={FormLayout.Vertical}

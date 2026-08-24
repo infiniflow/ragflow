@@ -190,8 +190,8 @@ function RetrievalForm({ node }: INextOperatorForm) {
               similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
-            <TopNFormField></TopNFormField>
             <PrefetchSizeFormField></PrefetchSizeFormField>
+            <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
                 <RerankFormFields

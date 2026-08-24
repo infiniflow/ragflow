@@ -120,8 +120,8 @@ export default function TestingForm({
               name={'cross_languages'}
             ></CrossLanguageFormField>
             <MetadataFilter prefix=""></MetadataFilter>
-            <TopSelectFormItem></TopSelectFormItem>
             <PrefetchSizeFormField></PrefetchSizeFormField>
+            <TopSelectFormItem></TopSelectFormItem>
           </FormContainer>
         </div>
 
