@@ -285,7 +285,8 @@ func (e *Engine[T]) GetOrCompute(
 		if v, ok := e.get(getCtx, key); ok && (e.validate == nil || e.validate(v)) {
 			return v, nil
 		}
-		v, cerr := computeFn(ctx)
+		computeCtx := context.WithoutCancel(ctx)
+		v, cerr := computeFn(computeCtx)
 		if cerr != nil {
 			return zero, cerr
 		}

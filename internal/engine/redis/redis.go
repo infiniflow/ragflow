@@ -34,10 +34,11 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/server"
+	"sync/atomic"
 )
 
 var (
-	globalClient *Client
+	globalClient atomic.Pointer[Client]
 	once         sync.Once
 )
 
@@ -133,12 +134,12 @@ func Init(ctx context.Context) error {
 			return
 		}
 
-		globalClient = &Client{
+		globalClient.Store(&Client{
 			client:           client,
 			config:           redisConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
-		}
+		})
 
 		common.Info("Redis client initialized",
 			zap.String("host", redisConfig.Host),
@@ -151,16 +152,15 @@ func Init(ctx context.Context) error {
 
 // Get gets global Redis client instance
 func Get() *Client {
-	return globalClient
+	return globalClient.Load()
 }
 
 // SetGlobalClient sets the global Redis client instance (primarily for testing and custom wiring).
 // It returns a restore function.
 func SetGlobalClient(c *Client) func() {
-	prev := globalClient
-	globalClient = c
+	prev := globalClient.Swap(c)
 	return func() {
-		globalClient = prev
+		globalClient.Store(prev)
 	}
 }
 
@@ -175,15 +175,17 @@ func NewTestClient(rdb *redis.Client) *Client {
 
 // Close closes Redis client
 func Close() error {
-	if globalClient != nil && globalClient.client != nil {
-		return globalClient.client.Close()
+	c := globalClient.Load()
+	if c != nil && c.client != nil {
+		return c.client.Close()
 	}
 	return nil
 }
 
 // IsEnabled checks if Redis is enabled (configured and initialized)
 func IsEnabled() bool {
-	return globalClient != nil && globalClient.client != nil
+	c := globalClient.Load()
+	return c != nil && c.client != nil
 }
 
 // Health checks if Redis is healthy
@@ -886,14 +888,15 @@ type DistributedLock struct {
 
 // NewDistributedLock creates a new distributed lock
 func NewDistributedLock(lockKey string, lockValue string, timeout time.Duration, blockingTimeout time.Duration) *DistributedLock {
-	if globalClient == nil {
+	client := Get()
+	if client == nil {
 		return nil
 	}
 	if lockValue == "" {
 		lockValue = uuid.New().String()
 	}
 	return &DistributedLock{
-		client:          globalClient,
+		client:          client,
 		lockKey:         lockKey,
 		lockValue:       lockValue,
 		timeout:         timeout,
@@ -945,11 +948,12 @@ type TokenBucket struct {
 
 // NewTokenBucket creates a new token bucket
 func NewTokenBucket(key string, capacity, rate float64) *TokenBucket {
-	if globalClient == nil {
+	client := Get()
+	if client == nil {
 		return nil
 	}
 	return &TokenBucket{
-		client:   globalClient,
+		client:   client,
 		key:      key,
 		capacity: capacity,
 		rate:     rate,

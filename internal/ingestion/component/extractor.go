@@ -893,31 +893,14 @@ func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gor
 
 func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractorJob, struct{}]) error {
 	var firstErr error
-	var emu sync.Mutex
-	var wg sync.WaitGroup
 	for _, f := range futs {
-		wg.Add(1)
-		go func(f utility.WorkerPoolFuture[extractorJob, struct{}]) {
-			defer wg.Done()
-			res, werr := f.Wait(ctx)
-			if werr != nil {
-				emu.Lock()
-				if firstErr == nil {
-					firstErr = werr
-				}
-				emu.Unlock()
-				return
-			}
-			if res.Err != nil {
-				emu.Lock()
-				if firstErr == nil {
-					firstErr = res.Err
-				}
-				emu.Unlock()
-			}
-		}(f)
+		res, werr := f.Wait(ctx)
+		if werr != nil && firstErr == nil {
+			firstErr = werr
+		} else if res.Err != nil && firstErr == nil {
+			firstErr = res.Err
+		}
 	}
-	wg.Wait()
 	return firstErr
 }
 
