@@ -154,8 +154,8 @@ func (c *TeamsConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 		windowEnd:   request.WindowEnd,
 	}
 	if request.FromBeginning {
-+		session.windowStart = nil
-+	}
+		session.windowStart = nil
+	}
 	session.applyResume(request.Resume)
 	return session, nil
 }
