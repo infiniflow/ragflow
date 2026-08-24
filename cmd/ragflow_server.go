@@ -28,7 +28,6 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/retrievalbridge"
 	agenttool "ragflow/internal/agent/tool"
-	"ragflow/internal/agentic_rag"
 	"ragflow/internal/channels"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -751,7 +750,6 @@ func startServer(ctx context.Context) {
 		modelProviderService,
 		retrievalEnhancer,
 	))
-	agenttool.SetGrepService(agentic_rag.NewGrepAdapter(docEngine))
 	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
 

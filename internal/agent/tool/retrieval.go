@@ -38,6 +38,14 @@ import (
 // the Python Canvas.
 var ErrGraphRAGNotSupported = errors.New("GraphRAG 检索暂不支持，请使用 Python Canvas 或关闭 use_kg")
 
+// ErrRetrievalServiceMissing is returned when the
+// internal/service/nlp RetrievalService is not registered. Wire a
+// real implementation via SetRetrievalService at boot to resolve.
+var ErrRetrievalServiceMissing = errors.New(
+	"Retrieval service not yet implemented (service not registered) — " +
+		"use Python Canvas or implement internal/service/nlp/retrieval.go",
+)
+
 // retrievalToolName preserves the Python typo ("dateset") for backward
 // compatibility with existing Canvas DSLs that reference the tool by name.
 const retrievalToolName = "search_my_dateset"

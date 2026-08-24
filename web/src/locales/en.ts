@@ -1120,8 +1120,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelHighDescription: 'Deep reasoning',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
-      thinkingLevelAgentic: 'Agentic',
-      thinkingLevelAgenticDescription: 'ReAct agent over your knowledge base',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show quote',
