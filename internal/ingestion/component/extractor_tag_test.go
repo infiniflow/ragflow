@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/xuri/excelize/v2"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/cache/llmcache"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -279,7 +282,7 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
 	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "tenant-test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -302,7 +305,7 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1}
 	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "tenant-test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -324,7 +327,7 @@ func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
 	}
 
 	chunk := map[string]any{"content_with_weight": "some content"}
-	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
+	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, "tenant-test", "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -721,7 +724,7 @@ func TestPopulateTagKwd_LLMTagChunk(t *testing.T) {
 	chunk := map[string]any{"content_with_weight": "some content"}
 	allTags := map[string]float64{"RAG": 0.5, "vector database": 0.5}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, "tenant-test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	tagKwd, ok := chunk["tag_kwd"].([]string)
 	if !ok {
@@ -1156,6 +1159,7 @@ func TestSampleWithoutReplacement(t *testing.T) {
 
 func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 	allTags := map[string]float64{"TagA": 0.5, "TagB": 0.5}
+	tagSetStr := strings.Join(sortedTagNames(allTags), ", ")
 	ex1 := []schema.TaggedChunk{
 		{Content: "sample one", TagWeights: map[string]int{"TagA": 8}},
 	}
@@ -1166,10 +1170,15 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 		{Content: "sample one", TagWeights: map[string]int{"TagA": 5}},
 	}
 
-	k1 := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
-	k2 := taggerCacheKey("llm-1", "test text", allTags, ex2, 3)
-	k3 := taggerCacheKey("llm-1", "test text", allTags, ex3, 3)
-	kEmpty := taggerCacheKey("llm-1", "test text", allTags, nil, 3)
+	p1 := buildTaggerPrompt(3, tagSetStr, ex1, "test text")
+	p2 := buildTaggerPrompt(3, tagSetStr, ex2, "test text")
+	p3 := buildTaggerPrompt(3, tagSetStr, ex3, "test text")
+	pEmpty := buildTaggerPrompt(3, tagSetStr, nil, "test text")
+
+	k1 := llmcache.BuildKey("tenant-1", "tagger", "llm-1", p1)
+	k2 := llmcache.BuildKey("tenant-1", "tagger", "llm-1", p2)
+	k3 := llmcache.BuildKey("tenant-1", "tagger", "llm-1", p3)
+	kEmpty := llmcache.BuildKey("tenant-1", "tagger", "llm-1", pEmpty)
 
 	if k1 == k2 {
 		t.Fatalf("expected different cache keys for different few-shot examples: %s vs %s", k1, k2)
@@ -1182,7 +1191,8 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 	}
 
 	// Identical few-shot examples produce identical key
-	k1Dup := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
+	p1Dup := buildTaggerPrompt(3, tagSetStr, ex1, "test text")
+	k1Dup := llmcache.BuildKey("tenant-1", "tagger", "llm-1", p1Dup)
 	if k1 != k1Dup {
 		t.Fatalf("expected identical cache keys for same few-shot examples: %s vs %s", k1, k1Dup)
 	}
@@ -1468,5 +1478,181 @@ func TestMatchAndTagChunk_RankDecayGradientScores(t *testing.T) {
 	}
 	if dbScore <= cloudScore {
 		t.Errorf("expected secondary Database (%d) > peripheral CloudInfra (%d)", dbScore, cloudScore)
+	}
+}
+
+func TestTagger_Cache_FirstCallTriggersLLM_SecondHitsRedis(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: `{"Go": 9, "Distributed": 7}`},
+	)
+
+	allTags := map[string]float64{"Go": 0.5, "Distributed": 0.5}
+	chunk1 := map[string]any{"content_with_weight": "Go distributed systems design."}
+
+	// 1. First call: Cache miss -> triggers LLM call (1 call)
+	llmTagChunk(t.Context(), nil, stub, chunk1, allTags, nil, "tenant-tag-cache", "test@model", "driver", "model", "key", "", 3, nil)
+
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("first call expected 1 LLM call, got %d", calls)
+	}
+	tagKwd1, ok := chunk1["tag_kwd"].([]string)
+	if !ok || len(tagKwd1) != 2 || tagKwd1[0] != "Go" || tagKwd1[1] != "Distributed" {
+		t.Fatalf("expected tag_kwd ['Go', 'Distributed'], got %v", chunk1["tag_kwd"])
+	}
+
+	// 2. Second call: Cache hit -> served from Redis (0 additional calls)
+	chunk2 := map[string]any{"content_with_weight": "Go distributed systems design."}
+	llmTagChunk(t.Context(), nil, stub, chunk2, allTags, nil, "tenant-tag-cache", "test@model", "driver", "model", "key", "", 3, nil)
+
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("second call expected 1 LLM call (cache hit), got %d", calls)
+	}
+	tagKwd2, ok := chunk2["tag_kwd"].([]string)
+	if !ok || len(tagKwd2) != 2 || tagKwd2[0] != "Go" || tagKwd2[1] != "Distributed" {
+		t.Fatalf("expected cached tag_kwd ['Go', 'Distributed'], got %v", chunk2["tag_kwd"])
+	}
+}
+
+func TestTagger_Cache_MultiTenantIsolation(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: `{"TenantA_Tag": 8}`},
+		stubResponse{Content: `{"TenantB_Tag": 6}`},
+	)
+
+	allTags := map[string]float64{"TenantA_Tag": 0.5, "TenantB_Tag": 0.5}
+	text := "Shared text for multi-tenant tagging."
+
+	// 1. TenantA first run -> triggers LLM (1 call)
+	chunkA := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunkA, allTags, nil, "TenantA", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("TenantA expected 1 call, got %d", calls)
+	}
+	if k := chunkA["tag_kwd"].([]string); len(k) != 1 || k[0] != "TenantA_Tag" {
+		t.Fatalf("got TenantA tags %v", chunkA["tag_kwd"])
+	}
+
+	// 2. TenantB first run (same text) -> cache miss -> triggers LLM independently (2 calls total)
+	chunkB := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunkB, allTags, nil, "TenantB", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("TenantB expected 2 total calls (no cross-tenant hit), got %d", calls)
+	}
+	if k := chunkB["tag_kwd"].([]string); len(k) != 1 || k[0] != "TenantB_Tag" {
+		t.Fatalf("got TenantB tags %v", chunkB["tag_kwd"])
+	}
+
+	// 3. TenantA repeat -> cache hit (2 calls total)
+	chunkA2 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunkA2, allTags, nil, "TenantA", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("TenantA repeat expected 2 total calls (cache hit), got %d", calls)
+	}
+	if k := chunkA2["tag_kwd"].([]string); len(k) != 1 || k[0] != "TenantA_Tag" {
+		t.Fatalf("got TenantA repeat tags %v", chunkA2["tag_kwd"])
+	}
+
+	// 4. TenantB repeat -> cache hit (2 calls total)
+	chunkB2 := map[string]any{"content_with_weight": text}
+	llmTagChunk(t.Context(), nil, stub, chunkB2, allTags, nil, "TenantB", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("TenantB repeat expected 2 total calls (cache hit), got %d", calls)
+	}
+	if k := chunkB2["tag_kwd"].([]string); len(k) != 1 || k[0] != "TenantB_Tag" {
+		t.Fatalf("got TenantB repeat tags %v", chunkB2["tag_kwd"])
+	}
+}
+
+func TestTagger_Cache_ErrorResponseNeverCached(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		// First call returns error marker
+		stubResponse{Content: "**ERROR**: Tag inference failed"},
+		// Second call returns valid tags
+		stubResponse{Content: `{"RecoveredTag": 9}`},
+	)
+
+	allTags := map[string]float64{"RecoveredTag": 0.5}
+	chunk1 := map[string]any{"content_with_weight": "Text for error test."}
+
+	// 1. First call: LLM returns **ERROR**, validator rejects and does NOT cache
+	llmTagChunk(t.Context(), nil, stub, chunk1, allTags, nil, "tenant-err", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("expected 1 call, got %d", calls)
+	}
+	if chunk1[common.TAG_FLD] != nil {
+		t.Fatalf("error response should not set TAG_FLD, got %v", chunk1[common.TAG_FLD])
+	}
+
+	// 2. Second call: LLM must be re-invoked because error was NOT cached
+	chunk2 := map[string]any{"content_with_weight": "Text for error test."}
+	llmTagChunk(t.Context(), nil, stub, chunk2, allTags, nil, "tenant-err", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("second call expected 2 calls (error was not cached), got %d", calls)
+	}
+	if k := chunk2["tag_kwd"].([]string); len(k) != 1 || k[0] != "RecoveredTag" {
+		t.Fatalf("expected recovered tag ['RecoveredTag'], got %v", chunk2["tag_kwd"])
+	}
+}
+
+func TestTagger_Cache_LegitimateEmptyDictCached(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		// LLM returns valid JSON empty object
+		stubResponse{Content: "{}"},
+	)
+
+	allTags := map[string]float64{"SomeTag": 0.5}
+	chunk1 := map[string]any{"content_with_weight": "Text with no matching tags."}
+
+	// 1. First call: LLM returns {} -> cached as legitimate empty result
+	llmTagChunk(t.Context(), nil, stub, chunk1, allTags, nil, "tenant-empty", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("expected 1 call, got %d", calls)
+	}
+
+	// 2. Second call: Cache hit -> does NOT re-trigger LLM call
+	chunk2 := map[string]any{"content_with_weight": "Text with no matching tags."}
+	llmTagChunk(t.Context(), nil, stub, chunk2, allTags, nil, "tenant-empty", "test@model", "driver", "model", "key", "", 3, nil)
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("second call expected 1 call (cache hit for empty dict), got %d", calls)
+	}
+}
+
+func TestTagger_Cache_ConcurrentSingleFlight(t *testing.T) {
+	setupTestRedis(t)
+	// Stub LLM with 50ms simulated latency
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: `{"SingleFlightTag": 9}`, Delay: 50 * time.Millisecond},
+	)
+
+	allTags := map[string]float64{"SingleFlightTag": 1.0}
+	const concurrency = 10
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+	chunks := make([]map[string]any, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		chunks[i] = map[string]any{"content_with_weight": "Concurrent tagger chunk content."}
+		go func(idx int) {
+			defer wg.Done()
+			llmTagChunk(t.Context(), nil, stub, chunks[idx], allTags, nil, "tenant-sf-tag", "test@model", "driver", "model", "key", "", 3, nil)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify LLM was called exactly ONCE due to SingleFlight collapsing
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("SingleFlight expected 1 LLM call across %d concurrent requests, got %d", concurrency, calls)
+	}
+
+	for i, ck := range chunks {
+		k, ok := ck["tag_kwd"].([]string)
+		if !ok || len(k) != 1 || k[0] != "SingleFlightTag" {
+			t.Errorf("chunk %d got tag_kwd %v, want ['SingleFlightTag']", i, ck["tag_kwd"])
+		}
 	}
 }

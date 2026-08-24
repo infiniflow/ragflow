@@ -24,14 +24,18 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/cache/llmcache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
+
+var taggerCache = llmcache.New[map[string]int](llmcache.WithValidator(func(m map[string]int) bool {
+	return m != nil
+}))
 
 const (
 	// defaultMatchCoverageThreshold is the asymmetric coverage threshold for Phase 1 (55%).
@@ -611,7 +615,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 					case <-ctx.Done():
 						return
 					}
-					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN, indexed)
+					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.tenantID, in.llmID, driver, model, apiKey, baseURL, topN, indexed)
 				}(i)
 			}
 			wg.Wait()
@@ -1112,7 +1116,7 @@ func llmTagChunk(
 	chunk map[string]any,
 	allTags map[string]float64,
 	examples []schema.TaggedChunk,
-	llmID, driver, model, apiKey, baseURL string,
+	tenantID, llmID, driver, model, apiKey, baseURL string,
 	topN int,
 	idx *MemoryTagIndex,
 ) {
@@ -1147,58 +1151,64 @@ func llmTagChunk(
 		}
 	}
 
-	if cached := getTaggerLLMCache(ctx, llmID, text, allTags, picked, topN); cached != nil {
-		chunk[common.TAG_FLD] = cached
-		chunk["tag_kwd"] = sortedTagWeightsKeys(cached)
-		return
-	}
-
 	tagNames := sortedTagNames(allTags)
 	tagSetStr := strings.Join(tagNames, ", ")
 	prompt := buildTaggerPrompt(topN, tagSetStr, picked, text)
 
-	msgs := []eschema.Message{
-		{Role: eschema.System, Content: prompt},
-		{Role: eschema.User, Content: "Output:"},
-	}
-	// Trim the prompt to the model's context window before sending. The
-	// system prompt embeds the full chunk text, the entire tag set and up
-	// to two full examples, so oversized chunks or tag files would
-	// otherwise be rejected by the provider (context length exceeded).
-	// Mirrors Python's message_fit_in in content_tagging (generator.py:331).
-	fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
-	if fitErr != nil {
-		common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))
-		return
-	}
-	msgs = fitted
+	result, err := taggerCache.GetOrCompute(
+		ctx,
+		tenantID,
+		"tagger",
+		[]string{llmID, prompt},
+		func(ctx context.Context) (map[string]int, error) {
+			msgs := []eschema.Message{
+				{Role: eschema.System, Content: prompt},
+				{Role: eschema.User, Content: "Output:"},
+			}
+			// Trim the prompt to the model's context window before sending. The
+			// system prompt embeds the full chunk text, the entire tag set and up
+			// to two full examples, so oversized chunks or tag files would
+			// otherwise be rejected by the provider (context length exceeded).
+			// Mirrors Python's message_fit_in in content_tagging (generator.py:331).
+			fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
+			if fitErr != nil {
+				common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))
+				return nil, nil
+			}
+			msgs = fitted
 
-	temperature := 0.5
-	var result OrderedTagWeights
-	timeoutErr := runtime.WithTimeout(ctx, taggerTimeout, func(timeoutCtx context.Context) error {
-		resp, err := inv.Chat(timeoutCtx, extractorChatRequest{
-			Driver:      driver,
-			ModelName:   model,
-			APIKey:      apiKey,
-			BaseURL:     baseURL,
-			Messages:    msgs,
-			Temperature: &temperature,
-		})
-		if err != nil {
-			common.Error("extractor tags: LLM call failed", err)
-			return nil
-		}
-		result = parseTaggerResponse(resp.Content, topN)
-		return nil
-	})
-	if timeoutErr != nil {
-		common.Error("extractor tags: LLM timeout", timeoutErr)
+			temperature := 0.5
+			var res OrderedTagWeights
+			timeoutErr := runtime.WithTimeout(ctx, taggerTimeout, func(timeoutCtx context.Context) error {
+				resp, err := inv.Chat(timeoutCtx, extractorChatRequest{
+					Driver:      driver,
+					ModelName:   model,
+					APIKey:      apiKey,
+					BaseURL:     baseURL,
+					Messages:    msgs,
+					Temperature: &temperature,
+				})
+				if err != nil {
+					common.Error("extractor tags: LLM call failed", err)
+					return nil
+				}
+				res = parseTaggerResponse(resp.Content, topN)
+				return nil
+			})
+			if timeoutErr != nil {
+				common.Error("extractor tags: LLM timeout", timeoutErr)
+			}
+			return map[string]int(res), nil
+		},
+	)
+	if err != nil {
+		common.Error("extractor tags: cache get or compute failed", err)
+		return
 	}
 
 	if len(result) > 0 {
 		chunk[common.TAG_FLD] = result
 		chunk["tag_kwd"] = sortedTagWeightsKeys(result)
-		setTaggerLLMCache(ctx, llmID, text, allTags, picked, topN, result)
 	}
 }
 
@@ -1222,6 +1232,19 @@ func parseTaggerResponse(raw string, topN int) OrderedTagWeights {
 	if !ok {
 		obj = jsonRepairExtract(raw)
 		if obj == nil {
+			trimmed := strings.TrimSpace(raw)
+			if strings.HasPrefix(trimmed, "```") {
+				if i := strings.IndexByte(trimmed, '\n'); i >= 0 {
+					trimmed = trimmed[i+1:]
+				}
+				if i := strings.LastIndex(trimmed, "```"); i >= 0 {
+					trimmed = trimmed[:i]
+				}
+				trimmed = strings.TrimSpace(trimmed)
+			}
+			if trimmed == "{}" {
+				return make(OrderedTagWeights, 0)
+			}
 			return nil
 		}
 	}
@@ -1278,59 +1301,6 @@ func jsonRepairExtract(raw string) map[string]any {
 		return nil
 	}
 	return obj
-}
-
-func taggerCacheKey(llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) string {
-	hasher := xxhash.New()
-	hasher.Write([]byte(llmID))
-	hasher.Write([]byte("\x00"))
-	hasher.Write([]byte(text))
-	hasher.Write([]byte("\x00"))
-	tagNames := sortedTagNames(allTags)
-	hasher.Write([]byte(strings.Join(tagNames, ",")))
-	hasher.Write([]byte("\x00"))
-	for _, ex := range examples {
-		hasher.Write([]byte(ex.Content))
-		hasher.Write([]byte("\x00"))
-		tagsJSON, _ := json.Marshal(ex.TagWeights)
-		hasher.Write(tagsJSON)
-		hasher.Write([]byte("\x00"))
-	}
-	hasher.Write([]byte(fmt.Sprintf("%d", topN)))
-	return fmt.Sprintf("tagger:%x", hasher.Sum64())
-}
-
-func getTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) map[string]int {
-	client := redis.Get()
-	if client == nil {
-		return nil
-	}
-	key := taggerCacheKey(llmID, text, allTags, examples, topN)
-	data, err := client.Get(ctx, key)
-	if err != nil || data == "" {
-		return nil
-	}
-	var result map[string]int
-	if err := json.Unmarshal([]byte(data), &result); err != nil {
-		return nil
-	}
-	return result
-}
-
-func setTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int, result map[string]int) {
-	if result == nil {
-		return
-	}
-	client := redis.Get()
-	if client == nil {
-		return
-	}
-	key := taggerCacheKey(llmID, text, allTags, examples, topN)
-	data, err := json.Marshal(result)
-	if err != nil {
-		return
-	}
-	client.Set(ctx, key, string(data), 24*time.Hour)
 }
 
 func sortedTagNames(allTags map[string]float64) []string {

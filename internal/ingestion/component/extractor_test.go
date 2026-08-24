@@ -26,18 +26,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	eschema "github.com/cloudwego/eino/schema"
 	"github.com/glebarez/sqlite"
+	goredis "github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
+
+func setupTestRedis(t *testing.T) (*miniredis.Miniredis, *goredis.Client) {
+	t.Helper()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	restore := redis.SetGlobalClient(redis.NewTestClient(rdb))
+	t.Cleanup(restore)
+	return mr, rdb
+}
 
 // stubExtractorChatInvoker is the test seam for the package-level
 // extractorChatInvoker. It records every call (for assertions) and
@@ -55,11 +72,11 @@ type stubExtractorChatInvoker struct {
 	calls    atomic.Int32
 }
 
-// stubResponse couples a Content value and an Err. tests populate
-// either field — Err takes precedence over Content when non-nil.
+// stubResponse couples a Content value, an Err, and an optional Delay.
 type stubResponse struct {
 	Content string
 	Err     error
+	Delay   time.Duration
 }
 
 func (s *stubExtractorChatInvoker) Chat(_ context.Context, req extractorChatRequest) (*extractorChatResponse, error) {
@@ -72,6 +89,9 @@ func (s *stubExtractorChatInvoker) Chat(_ context.Context, req extractorChatRequ
 		s.responses = s.responses[1:]
 	}
 	s.mu.Unlock()
+	if resp.Delay > 0 {
+		time.Sleep(resp.Delay)
+	}
 	if resp.Err != nil {
 		return nil, resp.Err
 	}
@@ -2076,3 +2096,471 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 		t.Fatalf("expected chunk text to NOT contain title when content is present, got %q", chunkText)
 	}
 }
+
+func TestExtractor_IsValidLLMCachePayload(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"empty", "", false},
+		{"whitespace", "   \n\t  ", false},
+		{"error marker", "**ERROR**: something failed", false},
+		{"error marker mid text", "result **ERROR** output", false},
+		{"truncated marker upper", "summary content [TRUNCATED]", false},
+		{"truncated marker lower", "summary content [truncated]", false},
+		{"unclosed think tag", "<think> unfinished thinking...", false},
+		{"valid keywords", "apple, banana, orange", true},
+		{"valid questions", "What is ragflow?\nHow does it work?", true},
+		{"valid summary", "This document describes the caching mechanism.", true},
+		{"valid closed think tag", "<think>thoughts</think>final answer", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isValidLLMCachePayload(tt.input); got != tt.expected {
+				t.Errorf("isValidLLMCachePayload(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractor_ResolveInputs_TenantID(t *testing.T) {
+	comp := &ExtractorComponent{}
+
+	// 1. From inputs map directly
+	in1 := comp.resolveInputs(context.Background(), map[string]any{
+		"tenant_id": "tenant-direct-123",
+	})
+	if in1.tenantID != "tenant-direct-123" {
+		t.Errorf("tenantID = %q, want 'tenant-direct-123'", in1.tenantID)
+	}
+
+	// 2. From CanvasState in context
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SetGlobal("tenant_id", "tenant-from-state-456")
+	ctx := runtime.WithState(context.Background(), state)
+	in2 := comp.resolveInputs(ctx, map[string]any{})
+	if in2.tenantID != "tenant-from-state-456" {
+		t.Errorf("tenantID = %q, want 'tenant-from-state-456'", in2.tenantID)
+	}
+
+	// 3. Inputs map overrides CanvasState if provided
+	in3 := comp.resolveInputs(ctx, map[string]any{
+		"tenant_id": "tenant-override-789",
+	})
+	if in3.tenantID != "tenant-override-789" {
+		t.Errorf("tenantID = %q, want 'tenant-override-789'", in3.tenantID)
+	}
+}
+
+func TestExtractor_AllExtractions_GetOrCompute(t *testing.T) {
+	// Provide mock responses for Keywords, Questions, Summary, Metadata
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "Go, Cache, Extraction"},
+		stubResponse{Content: "What is caching?\nHow does extractor work?"},
+		stubResponse{Content: "A summary of the chunk content."},
+		stubResponse{Content: `{"author": "DeepMind", "category": "AI"}`},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test",
+		"keywords": map[string]any{
+			"top_n": 3,
+		},
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+				map[string]any{"key": "category", "type": "string"},
+			},
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"tenant_id": "tenant-100",
+		"chunks": []map[string]any{
+			{"text": "Go is a statically typed, compiled high-level programming language."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+
+	ck := chunks[0]
+	// Verify keywords
+	kwds, ok := ck["important_kwd"].([]string)
+	if !ok || len(kwds) != 3 {
+		t.Errorf("important_kwd = %v, want 3 items", ck["important_kwd"])
+	}
+
+	// Verify questions
+	qs, ok := ck["question_kwd"].([]string)
+	if !ok || len(qs) != 2 {
+		t.Errorf("question_kwd = %v, want 2 items", ck["question_kwd"])
+	}
+
+	// Verify summary
+	sum, ok := ck["summary"].(string)
+	if !ok || sum != "A summary of the chunk content." {
+		t.Errorf("summary = %v", ck["summary"])
+	}
+
+	// Verify metadata
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok || meta["author"] != "DeepMind" || meta["category"] != "AI" {
+		t.Errorf("metadata = %v", ck["metadata"])
+	}
+
+	if calls := stub.Calls(); calls != 4 {
+		t.Errorf("calls = %d, want 4", calls)
+	}
+}
+
+func TestExtractor_Cache_KeywordsQuestionsSummary_FirstTriggersLLM_SecondHitsRedis(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "Go, Cache, Extraction"},
+		stubResponse{Content: "What is caching?\nHow does it work?"},
+		stubResponse{Content: "A concise summary of chunk text."},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test",
+		"keywords": map[string]any{
+			"top_n": 3,
+		},
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"tenant_id": "tenant-cache-test",
+		"chunks": []map[string]any{
+			{"text": "Go is a statically typed, compiled high-level programming language."},
+		},
+	}
+
+	// 1. First invocation: Cache miss -> triggers LLM (3 calls: keywords, questions, summary)
+	out1, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("First Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("first invoke expected 3 LLM calls, got %d", calls)
+	}
+	chunks1 := out1["chunks"].([]map[string]any)
+	if len(chunks1) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out1)
+	}
+	if kwds, ok := chunks1[0]["important_kwd"].([]string); !ok || len(kwds) != 3 {
+		t.Fatalf("expected 3 keywords, got %v", chunks1[0]["important_kwd"])
+	}
+	if qs, ok := chunks1[0]["question_kwd"].([]string); !ok || len(qs) != 2 {
+		t.Fatalf("expected 2 questions, got %v", chunks1[0]["question_kwd"])
+	}
+	if sum, ok := chunks1[0]["summary"].(string); !ok || sum != "A concise summary of chunk text." {
+		t.Fatalf("expected summary, got %v", chunks1[0]["summary"])
+	}
+
+	// 2. Second invocation: Cache hit -> directly served from Redis (0 new LLM calls)
+	in2 := map[string]any{
+		"tenant_id": "tenant-cache-test",
+		"chunks": []map[string]any{
+			{"text": "Go is a statically typed, compiled high-level programming language."},
+		},
+	}
+	out2, err := comp.Invoke(t.Context(), nil, in2)
+	if err != nil {
+		t.Fatalf("Second Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("second invoke expected 3 LLM calls (0 additional), got %d", calls)
+	}
+	chunks2 := out2["chunks"].([]map[string]any)
+	if len(chunks2) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out2)
+	}
+	if kwds, ok := chunks2[0]["important_kwd"].([]string); !ok || len(kwds) != 3 {
+		t.Fatalf("expected cached 3 keywords, got %v", chunks2[0]["important_kwd"])
+	}
+	if qs, ok := chunks2[0]["question_kwd"].([]string); !ok || len(qs) != 2 {
+		t.Fatalf("expected cached 2 questions, got %v", chunks2[0]["question_kwd"])
+	}
+	if sum, ok := chunks2[0]["summary"].(string); !ok || sum != "A concise summary of chunk text." {
+		t.Fatalf("expected cached summary, got %v", chunks2[0]["summary"])
+	}
+}
+
+func TestExtractor_Cache_MultiTenantIsolation(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		// TenantA first run
+		stubResponse{Content: "TenantA_Kw1, TenantA_Kw2"},
+		stubResponse{Content: "TenantA_Q1?\nTenantA_Q2?"},
+		stubResponse{Content: "TenantA summary."},
+		// TenantB first run (same text, different tenant)
+		stubResponse{Content: "TenantB_Kw1, TenantB_Kw2"},
+		stubResponse{Content: "TenantB_Q1?\nTenantB_Q2?"},
+		stubResponse{Content: "TenantB summary."},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	sameText := "Identical text content across tenants."
+
+	// 1. Run TenantA -> triggers LLM (3 calls)
+	inA := map[string]any{
+		"tenant_id": "TenantA",
+		"chunks":    []map[string]any{{"text": sameText}},
+	}
+	outA, err := comp.Invoke(t.Context(), nil, inA)
+	if err != nil {
+		t.Fatalf("TenantA Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("TenantA expected 3 calls, got %d", calls)
+	}
+	ckA := outA["chunks"].([]map[string]any)[0]
+	if sumA := ckA["summary"].(string); sumA != "TenantA summary." {
+		t.Fatalf("got TenantA summary %q", sumA)
+	}
+
+	// 2. Run TenantB with same text -> cache miss -> triggers LLM independently (3 calls -> 6 total)
+	inB := map[string]any{
+		"tenant_id": "TenantB",
+		"chunks":    []map[string]any{{"text": sameText}},
+	}
+	outB, err := comp.Invoke(t.Context(), nil, inB)
+	if err != nil {
+		t.Fatalf("TenantB Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 6 {
+		t.Fatalf("TenantB expected 6 total calls (no cross-tenant hit), got %d", calls)
+	}
+	ckB := outB["chunks"].([]map[string]any)[0]
+	if sumB := ckB["summary"].(string); sumB != "TenantB summary." {
+		t.Fatalf("got TenantB summary %q", sumB)
+	}
+
+	// 3. Re-run TenantA -> hits TenantA Redis cache (0 additional calls)
+	outA2, err := comp.Invoke(t.Context(), nil, inA)
+	if err != nil {
+		t.Fatalf("TenantA repeat Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 6 {
+		t.Fatalf("TenantA repeat expected 6 total calls (cache hit), got %d", calls)
+	}
+	ckA2 := outA2["chunks"].([]map[string]any)[0]
+	if sumA2 := ckA2["summary"].(string); sumA2 != "TenantA summary." {
+		t.Fatalf("got TenantA summary %q", sumA2)
+	}
+
+	// 4. Re-run TenantB -> hits TenantB Redis cache (0 additional calls)
+	outB2, err := comp.Invoke(t.Context(), nil, inB)
+	if err != nil {
+		t.Fatalf("TenantB repeat Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 6 {
+		t.Fatalf("TenantB repeat expected 6 total calls (cache hit), got %d", calls)
+	}
+	ckB2 := outB2["chunks"].([]map[string]any)[0]
+	if sumB2 := ckB2["summary"].(string); sumB2 != "TenantB summary." {
+		t.Fatalf("got TenantB summary %q", sumB2)
+	}
+}
+
+func TestExtractor_Cache_ErrorResponseNeverCached(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		// First run: LLM returns error marker
+		stubResponse{Content: "**ERROR**: LLM inference crashed"},
+		// Second run: LLM succeeds with valid result
+		stubResponse{Content: "Valid summary after recovery."},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test",
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"tenant_id": "tenant-err-test",
+		"chunks":    []map[string]any{{"text": "Sample text for error test."}},
+	}
+
+	// 1. First run: LLM returns **ERROR**, validator rejects and does NOT cache
+	out1, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("first invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("expected 1 call, got %d", calls)
+	}
+	ck1 := out1["chunks"].([]map[string]any)[0]
+	if _, hasSummary := ck1["summary"]; hasSummary {
+		t.Fatalf("error response should not be set on chunk, got %v", ck1["summary"])
+	}
+
+	// 2. Second run: LLM must be called again because error was NOT cached
+	in2 := map[string]any{
+		"tenant_id": "tenant-err-test",
+		"chunks":    []map[string]any{{"text": "Sample text for error test."}},
+	}
+	out2, err := comp.Invoke(t.Context(), nil, in2)
+	if err != nil {
+		t.Fatalf("second invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("second invoke expected 2 calls (error was not cached), got %d", calls)
+	}
+	ck2 := out2["chunks"].([]map[string]any)[0]
+	if sum, ok := ck2["summary"].(string); !ok || sum != "Valid summary after recovery." {
+		t.Fatalf("expected recovered summary, got %v", ck2["summary"])
+	}
+}
+
+func TestExtractor_Cache_LegitimateEmptyValues(t *testing.T) {
+	setupTestRedis(t)
+	stub := withStubChatInvoker(t,
+		// First run: LLM returns empty/whitespace
+		stubResponse{Content: "   \n\t   "},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test",
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"tenant_id": "tenant-empty-test",
+		"chunks":    []map[string]any{{"text": "Empty output test."}},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("expected 1 call, got %d", calls)
+	}
+	ck := out["chunks"].([]map[string]any)[0]
+	if _, hasSum := ck["summary"]; hasSum {
+		t.Fatalf("empty summary should not be set, got %v", ck["summary"])
+	}
+}
+
+func TestExtractor_Cache_ConcurrentSingleFlight(t *testing.T) {
+	setupTestRedis(t)
+	// Stub LLM with 50ms simulated latency
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "SingleFlight Summary Result", Delay: 50 * time.Millisecond},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-sf-test",
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	const concurrency = 10
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+	errCh := make(chan error, concurrency)
+	results := make([]string, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			in := map[string]any{
+				"tenant_id": "tenant-sf-1",
+				"chunks":    []map[string]any{{"text": "Concurrent SingleFlight test chunk."}},
+			}
+			out, err := comp.Invoke(t.Context(), nil, in)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			ck := out["chunks"].([]map[string]any)[0]
+			if sum, ok := ck["summary"].(string); ok {
+				results[idx] = sum
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("concurrent invoke failed: %v", err)
+	}
+
+	// Verify LLM was called exactly ONCE due to SingleFlight collapsing
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("SingleFlight expected 1 LLM call across %d concurrent requests, got %d", concurrency, calls)
+	}
+
+	for i, res := range results {
+		if res != "SingleFlight Summary Result" {
+			t.Errorf("goroutine %d got summary %q, want 'SingleFlight Summary Result'", i, res)
+		}
+	}
+}
+
+

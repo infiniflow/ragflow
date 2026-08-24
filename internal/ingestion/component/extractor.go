@@ -43,16 +43,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	eschema "github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/cache/llmcache"
 	"ragflow/internal/common"
 	"ragflow/internal/component/messagefit"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -125,6 +124,34 @@ func SetExtractorConcurrency(n int) {
 		extractorPool.Resize(n)
 	}
 }
+
+// isValidLLMCachePayload validates whether an LLM extraction output is suitable for caching.
+// It rejects empty strings, responses containing error markers ("**ERROR**"),
+// and obvious truncated outputs (e.g. unclosed reasoning tags or truncation markers).
+func isValidLLMCachePayload(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "**ERROR**") {
+		return false
+	}
+	if strings.Contains(trimmed, "[TRUNCATED]") || strings.Contains(trimmed, "[truncated]") {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "<think>") && !strings.Contains(trimmed, "</think>") {
+		return false
+	}
+	return true
+}
+
+// Global generic cache engine singletons for Extractor operator tasks.
+var (
+	textExtractCache = llmcache.New[string](llmcache.WithValidator(isValidLLMCachePayload))
+	metadataCache    = llmcache.New[map[string]any](llmcache.WithValidator(func(m map[string]any) bool {
+		return m != nil
+	}))
+)
 
 // extractorTopNPattern matches the {{ topn }} placeholder accepted in
 // keyword/question system prompts (same convention as rag/prompts/*.md).
@@ -502,9 +529,10 @@ func toExtractorEinoMessages(msgs []eschema.Message) []*eschema.Message {
 // input map. Computed once at the top of Invoke so the rest of
 // the function reads as straight-line code.
 type extractorInputs struct {
-	llmID  string
-	lang   string
-	chunks []map[string]any
+	tenantID string
+	llmID    string
+	lang     string
+	chunks   []map[string]any
 	// temperature overrides the LLM temperature for this call. A
 	// nil value leaves the request's Temperature unset so the model
 	// (or the chat-model default) decides. The keyword/question helpers set it to
@@ -516,12 +544,24 @@ type extractorInputs struct {
 // component's static Param. Missing keys fall back to the
 // Param-level values; per-call values win on conflict (so a
 // canvas can override LLM_ID at runtime).
-func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInputs {
+func (c *ExtractorComponent) resolveInputs(ctx context.Context, inputs map[string]any) extractorInputs {
 	out := extractorInputs{
 		llmID: c.Param.LLMID,
 	}
+	if ctx != nil {
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			if tidVal, ok := state.GetGlobal("tenant_id"); ok {
+				if tid, ok := tidVal.(string); ok && tid != "" {
+					out.tenantID = tid
+				}
+			}
+		}
+	}
 	if inputs == nil {
 		return out
+	}
+	if v, ok := inputs["tenant_id"].(string); ok && v != "" {
+		out.tenantID = v
 	}
 	if v, ok := inputs["llm_id"].(string); ok && v != "" {
 		out.llmID = v
@@ -594,7 +634,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	if err := c.Param.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
-	in := c.resolveInputs(inputs)
+	in := c.resolveInputs(ctx, inputs)
 	common.Debug("extractor stage",
 		zap.String("component", "Extractor"),
 		zap.Int("input_chunks", len(in.chunks)),
@@ -654,12 +694,8 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 		systemPrompt = autoKeywordPrompt
 	}
 	systemPrompt = renderExtractorPrompt(systemPrompt, topN)
-	kwTemp := extractorTemperature
-	kwIn := extractorInputs{
-		llmID:       in.llmID,
-		temperature: &kwTemp,
-	}
-	resultStr, err := c.callText(ctx, db, kwIn, systemPrompt, chunkText)
+
+	resultStr, err := c.callTextCached(ctx, db, in, "keywords", systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
@@ -695,12 +731,8 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 		systemPrompt = autoQuestionPrompt
 	}
 	systemPrompt = renderExtractorPrompt(systemPrompt, topN)
-	qTemp := extractorTemperature
-	qIn := extractorInputs{
-		llmID:       in.llmID,
-		temperature: &qTemp,
-	}
-	resultStr, err := c.callText(ctx, db, qIn, systemPrompt, chunkText)
+
+	resultStr, err := c.callTextCached(ctx, db, in, "questions", systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
@@ -742,12 +774,8 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	if strings.TrimSpace(systemPrompt) == "" {
 		systemPrompt = autoSummaryPrompt
 	}
-	sumTemp := extractorTemperature
-	sumIn := extractorInputs{
-		llmID:       in.llmID,
-		temperature: &sumTemp,
-	}
-	resultStr, err := c.callText(ctx, db, sumIn, systemPrompt, chunkText)
+
+	resultStr, err := c.callTextCached(ctx, db, in, "summary", systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
@@ -881,31 +909,28 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	}
 	schemaStr := string(schemaJSON)
 
-	// LLM cache (mirrors Python get_llm_cache/set_llm_cache in
-	// task_executor.py:543/550 gen_metadata_task): identical (model + chunk
-	// text + schema) extractions are served from Redis within a 24h window so
-	// repeated runs / identical chunks don't re-pay the LLM call.
-	// Best-effort: a missing Redis client or any cache error falls through to
-	// a live call instead of failing the extraction.
-	var parsed map[string]any
-	if cached, hit := getMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText); hit {
-		parsed = cached
-	} else {
-		metaTemp := extractorTemperature
-		metaIn := extractorInputs{
-			llmID:       in.llmID,
-			temperature: &metaTemp,
-		}
-		systemPrompt := fmt.Sprintf(autoMetadataPrompt, schemaStr)
-		parsed, err = c.callStructured(ctx, db, metaIn, systemPrompt, chunkText)
-		if err != nil {
-			return err
-		}
-		if parsed == nil {
-			// Non-JSON or empty response — nothing to extract, not an error.
-			return nil
-		}
-		setMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText, parsed)
+	metaTemp := extractorTemperature
+	metaIn := extractorInputs{
+		tenantID:    in.tenantID,
+		llmID:       in.llmID,
+		temperature: &metaTemp,
+	}
+	systemPrompt := fmt.Sprintf(autoMetadataPrompt, schemaStr)
+	parsed, err := metadataCache.GetOrCompute(
+		ctx,
+		in.tenantID,
+		"metadata",
+		[]string{in.llmID, schemaStr, chunkText},
+		func(ctx context.Context) (map[string]any, error) {
+			return c.callStructured(ctx, db, metaIn, systemPrompt, chunkText)
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if parsed == nil {
+		// Non-JSON or empty response — nothing to extract, not an error.
+		return nil
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
 	var meta map[string]any
@@ -927,55 +952,6 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	return nil
 }
 
-// metadataLLMCacheTTL mirrors Python get_llm_cache/set_llm_cache 24h TTL.
-const metadataLLMCacheTTL = 24 * time.Hour
-
-// metadataLLMCacheKey builds a Redis key from (llm id, chunk text, "metadata",
-// schema), mirroring Python get_llm_cache's xxh64(llmnm + txt + history + genconf).
-func metadataLLMCacheKey(llmID, schemaJSON, chunkText string) string {
-	h := xxhash.New()
-	h.WriteString(llmID)
-	h.WriteString("\x00")
-	h.WriteString(chunkText)
-	h.WriteString("\x00")
-	h.WriteString("metadata")
-	h.WriteString("\x00")
-	h.WriteString(schemaJSON)
-	return fmt.Sprintf("kc:meta:%x", h.Sum64())
-}
-
-// getMetadataLLMCache returns a cached extraction for the given chunk, or
-// (nil, false) on miss / Redis unavailable / decode error. Best-effort.
-func getMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string) (map[string]any, bool) {
-	client := redis.Get()
-	if client == nil {
-		return nil, false
-	}
-	data, err := client.Get(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText))
-	if err != nil || data == "" {
-		return nil, false
-	}
-	var parsed map[string]any
-	if err = json.Unmarshal([]byte(data), &parsed); err != nil {
-		return nil, false
-	}
-	return parsed, true
-}
-
-// setMetadataLLMCache stores an extraction result for 24h. Best-effort: a
-// missing Redis client or marshal error is silently ignored.
-func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string, parsed map[string]any) {
-	client := redis.Get()
-	if client == nil {
-		return
-	}
-	data, err := json.Marshal(parsed)
-	if err != nil {
-		return
-	}
-	client.Set(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText), string(data), metadataLLMCacheTTL)
-}
-
 // callRaw runs one chat call against the LLM (per chunk in the normal path)
 // and returns the raw response. It holds the shared plumbing — driver/target
 // resolution, message assembly, temperature override, retry — but deliberately
@@ -983,6 +959,7 @@ func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText strin
 //
 //   - callText wraps callRaw with the LLM-layer two-step cleanup (think +
 //     tool_call) and returns a plain string.
+//   - callTextCached wraps callText with LLM caching and singleflight deduplication.
 //   - callStructured wraps callRaw with cleanup + explicit JSON parsing and
 //     returns a map — the metadata path, matching Python gen_metadata.
 func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (*extractorChatResponse, error) {
@@ -1133,6 +1110,38 @@ func (c *ExtractorComponent) callText(ctx context.Context, db *gorm.DB, in extra
 		return "", err
 	}
 	return cleanLLMText(resp.Content), nil
+}
+
+// callTextCached encapsulates the common pattern for text-based extraction operators:
+// applying the standard temperature (0.2), checking the cache / singleflight deduplication,
+// delegating to callText on cache miss, and cleaning the extraction result before caching.
+func (c *ExtractorComponent) callTextCached(
+	ctx context.Context,
+	db *gorm.DB,
+	in extractorInputs,
+	taskType string,
+	systemPrompt string,
+	chunkText string,
+) (string, error) {
+	temp := extractorTemperature
+	taskIn := extractorInputs{
+		tenantID:    in.tenantID,
+		llmID:       in.llmID,
+		temperature: &temp,
+	}
+	return textExtractCache.GetOrCompute(
+		ctx,
+		in.tenantID,
+		taskType,
+		[]string{in.llmID, systemPrompt, chunkText},
+		func(ctx context.Context) (string, error) {
+			raw, err := c.callText(ctx, db, taskIn, systemPrompt, chunkText)
+			if err != nil {
+				return "", err
+			}
+			return cleanExtractionResult(raw), nil
+		},
+	)
 }
 
 // callStructured runs one chat call, cleans the response, and explicitly

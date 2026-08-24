@@ -154,6 +154,25 @@ func Get() *Client {
 	return globalClient
 }
 
+// SetGlobalClient sets the global Redis client instance (primarily for testing and custom wiring).
+// It returns a restore function.
+func SetGlobalClient(c *Client) func() {
+	prev := globalClient
+	globalClient = c
+	return func() {
+		globalClient = prev
+	}
+}
+
+// NewTestClient wraps a go-redis Client into *Client for testing.
+func NewTestClient(rdb *redis.Client) *Client {
+	return &Client{
+		client:           rdb,
+		luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
+		luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
+	}
+}
+
 // Close closes Redis client
 func Close() error {
 	if globalClient != nil && globalClient.client != nil {
