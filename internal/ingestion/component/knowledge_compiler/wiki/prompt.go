@@ -9,11 +9,7 @@ import (
 
 const wikiMapSystem = `You are a knowledge extraction engine. Extract structured knowledge from the provided document sections. Return ONLY valid JSON matching the schema exactly. Never include text outside the JSON object. Keep the source language of the document.`
 
-const wikiReduceSystem = `You are a knowledge synthesis engine. Normalize and deduplicate the structured extracts while preserving source_chunk_ids provenance. Claims, relations, and topics are pass-through facts; do not invent new ones. Return ONLY valid JSON matching the same schema.`
-
 const wikiPlanSystem = `You are a knowledge compilation planner. Given structured knowledge, produce a wiki page plan. Return ONLY valid JSON.`
-
-const wikiRefineSystem = `You are a technical writer. Write a complete wiki page from the plan, evidence checklist, and source text. Preserve factual density, keep the source language, and return only markdown.`
 
 const wikiReduceEntityDisambiguateSystem = `You are a knowledge canonicalization engine. Decide whether two named entities refer to the same real-world concept. Return ONLY valid JSON.`
 
@@ -155,8 +151,19 @@ Return a JSON compilation plan with one or more page entries:
 
 Rules:
 - Return at most {max_pages} page entries for this batch.
-- Prefer one page per high-signal entity or concept when the batch supports it.
-- Merge minor or weakly-supported facts into broader topic pages instead of emitting tiny standalone pages.
+- Entity/concept identity is one-to-one with pages: every extracted entity and
+  concept must be represented by exactly one canonical page and may appear in
+  only that page's entity_names. Never split one identity across multiple
+  pages, page types, thematic sections, aliases, language transliterations, or
+  alternate slug spellings. Put all supported sections for that identity on
+  its single canonical page.
+- A page may represent several closely related low-signal entities/concepts,
+  but list every represented identity in entity_names and do not repeat any of
+  them on another page. Merge minor or weakly-supported facts into such a page
+  instead of emitting tiny standalone pages.
+- Identity ownership does not limit linking: related_kb_pages should include
+  every directly related canonical page supported by the input (up to the
+  available-page budget), and links must target canonical slugs only.
 - Use page_type=entity for entity pages, page_type=concept for concept pages, and page_type=topic for cross-cutting themes.
 - entity_names must name the entities and concepts that justify the page.
 - related_kb_pages should list other slugs from the same plan that the page should cross-link to.
@@ -176,6 +183,8 @@ Return JSON:
 {
   "action": "UPDATE | CREATE",
   "slug": "string",
+  "topic": "string",
+  "entity_names": ["string"],
   "reason": "string"
 }
 
@@ -183,6 +192,11 @@ Rules:
 - Choose UPDATE only when the planned page and candidate refer to the same underlying entity, concept, or topic.
 - Prefer CREATE when the overlap is weak, ambiguous, or just generally related.
 - If action is UPDATE, slug must be exactly one candidate slug.
+- If action is UPDATE, entity_names must contain the complete membership set
+  for the target page. Remove members that no longer belong and include newly
+  routed members. If membership is unchanged, repeat the candidate members.
+- topic must be the final topic label for the page. If action is CREATE, use a
+  concise topic label grounded in the planned page and candidates.
 - Return only JSON.`
 
 const wikiRefineWriterExample = `Each page must be a proper encyclopedic article, not a flat bullet list:
@@ -215,6 +229,9 @@ const wikiRefineWriterUserTemplate = `## Task
 
 ## Available pages (ONLY use these slugs for [[wikilinks]])
 {all_plan_slugs}
+
+## Related KB pages (cross-link only those that are also in the available pages list above)
+{related_kb_pages}
 
 {existing_section}
 

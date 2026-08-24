@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the
@@ -96,6 +97,41 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
+	}
+}
+
+// TestSmartReasoning_GenerationConfigReachesEinoModel guards the smart-reasoning
+// config wiring: the dispatch path (smartReasoningChat) now builds the eino
+// model with BuildChatConfig(chat, kwargs) instead of a nil config, so the
+// dialog LLM setting and per-request overrides (temperature, top_p, max_tokens,
+// thinking, stop) actually reach the model driver. A nil config — the pre-fix
+// behaviour — would silently drop all of these when agent_mode=smart-reasoning.
+func TestSmartReasoning_GenerationConfigReachesEinoModel(t *testing.T) {
+	chat := dialForTest("llm-1")
+	chat.LLMSetting = entity.JSONMap{
+		"temperature": 0.7,
+		"top_p":       0.9,
+		"max_tokens":  512,
+		"thinking":    true,
+		"stop":        []interface{}{"\n", "END"},
+	}
+	// Request-level overrides win over dialog values.
+	cfg := BuildChatConfig(chat, map[string]interface{}{"temperature": 0.3})
+
+	if cfg.Temperature == nil || *cfg.Temperature != 0.3 {
+		t.Fatalf("Temperature: want request override 0.3, got %v", cfg.Temperature)
+	}
+	if cfg.TopP == nil || *cfg.TopP != 0.9 {
+		t.Fatalf("TopP: want dialog 0.9, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 512 {
+		t.Fatalf("MaxTokens: want 512, got %v", cfg.MaxTokens)
+	}
+	if cfg.Thinking == nil || !*cfg.Thinking {
+		t.Fatalf("Thinking: want true, got %v", cfg.Thinking)
+	}
+	if cfg.Stop == nil || len(*cfg.Stop) != 2 {
+		t.Fatalf("Stop: want [\"\\n\", \"END\"], got %v", cfg.Stop)
 	}
 }
 
@@ -830,7 +866,7 @@ func TestStripISOTimestamps(t *testing.T) {
 		{"multiple", "x T01:02:03|y T04:05:06|z", "x |y |z"},
 		{"no space before T", "abcT13:24:55|def", "abc|def"},
 		{"empty", "", ""},
-		// Realistic markdown cell: |2024-01-15T13:24:55| → |2024-01-15|
+		// Realistic Markdown cell: |2024-01-15T13:24:55| → |2024-01-15|
 		{"realistic cell", "|2024-01-15T13:24:55|", "|2024-01-15|"},
 	}
 	for _, tc := range cases {
@@ -1111,6 +1147,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	}
 	if got := expectedDocNameColumn("oceanbase"); got != "docnm_kwd" {
 		t.Errorf("oceanbase = %q, want docnm_kwd", got)
+	}
+	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
+		t.Errorf("seekdb = %q, want docnm_kwd", got)
 	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
@@ -1439,15 +1478,22 @@ func TestBuildChatConfig_RequestOverrides(t *testing.T) {
 		LLMSetting: entity.JSONMap{
 			"temperature": 0.5,
 			"top_p":       0.9,
+			"max_tokens":  float64(512),
 		},
 	}
-	req := map[string]interface{}{"temperature": temp}
+	req := map[string]interface{}{
+		"temperature": temp,
+		"max_tokens":  128,
+	}
 	cfg := BuildChatConfig(dialog, req)
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected request temperature %v, got %v", temp, cfg.Temperature)
 	}
 	if cfg.TopP == nil || *cfg.TopP != 0.9 {
 		t.Fatalf("expected dialog top_p 0.9 to be preserved, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 128 {
+		t.Fatalf("expected request max_tokens 128, got %v", cfg.MaxTokens)
 	}
 }
 
@@ -1460,5 +1506,72 @@ func TestBuildChatConfig_FromEmptyDialog(t *testing.T) {
 	cfg := BuildChatConfig(dialog, req)
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected temperature %v, got %v", temp, cfg.Temperature)
+	}
+}
+
+func TestClampChatConfigMaxTokensUsesRemainingBudget(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(1024)},
+	}
+	cfg := BuildChatConfig(dialog, map[string]interface{}{"max_tokens": 700})
+
+	adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 450)
+	if err != nil {
+		t.Fatalf("clampChatConfigMaxTokens returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected max_tokens to be clamped")
+	}
+	if adjusted != 550 {
+		t.Fatalf("adjusted max_tokens = %d, want 550", adjusted)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 550 {
+		t.Fatalf("config max_tokens = %v, want 550", cfg.MaxTokens)
+	}
+	if dialog.LLMSetting["max_tokens"] != float64(1024) {
+		t.Fatalf("dialog max_tokens was mutated: %v", dialog.LLMSetting["max_tokens"])
+	}
+}
+
+func TestBuildChatConfigIgnoresNonPositiveMaxTokens(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(0)},
+	}
+	cfg := BuildChatConfig(dialog, nil)
+	if cfg.MaxTokens != nil {
+		t.Fatalf("persisted max_tokens=0 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+
+	cfg = BuildChatConfig(&entity.Chat{}, map[string]interface{}{"max_tokens": -1})
+	if cfg.MaxTokens != nil {
+		t.Fatalf("request max_tokens=-1 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsNonPositive(t *testing.T) {
+	for _, value := range []int{0, -1} {
+		cfg := &modelModule.ChatConfig{MaxTokens: &value}
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 100); err != nil {
+			t.Fatalf("max_tokens=%d returned unexpected error: %v", value, err)
+		} else if ok {
+			t.Fatalf("max_tokens=%d unexpectedly clamped to %d", value, adjusted)
+		}
+		if cfg.MaxTokens != nil {
+			t.Fatalf("max_tokens=%d should be cleared before provider request, got %v", value, *cfg.MaxTokens)
+		}
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
+	for _, usedTokenCount := range []int{1000, 1001} {
+		maxTokens := 700
+		cfg := &modelModule.ChatConfig{MaxTokens: &maxTokens}
+
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, usedTokenCount); err == nil {
+			t.Fatalf("usedTokenCount=%d expected capacity error, got adjusted=%d ok=%t", usedTokenCount, adjusted, ok)
+		}
+		if cfg.MaxTokens == nil || *cfg.MaxTokens != maxTokens {
+			t.Fatalf("capacity error should not set max_tokens to zero, got %v", cfg.MaxTokens)
+		}
 	}
 }

@@ -64,7 +64,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
@@ -681,11 +681,27 @@ _COMPILATION_TEMPLATE_GROUP_CATEGORY = "compilation_template_group"
 @login_required
 @add_tenant_id_to_kwargs
 def list_agents(tenant_id):
+    if request.args.get("type") == "filter":
+        tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        joined_tenant_ids = list({member["tenant_id"] for member in tenants} | {tenant_id})
+        owners = UserCanvasService.get_owner_filter(joined_tenant_ids, tenant_id)
+        categories = UserCanvasService.get_category_filter(joined_tenant_ids, tenant_id)
+        return get_json_result(
+            data={
+                "filter": {"owner": owners, "canvas_category": categories},
+                "total": sum(owner["count"] for owner in owners),
+            }
+        )
+
     keywords = request.args.get("keywords", "")
     canvas_category_list = [item for item in request.args.get("canvas_category", "").strip().split(",") if item]
     canvas_type = request.args.get("canvas_type")
     owner_ids = [item for item in request.args.get("owner_ids", "").strip().split(",") if item]
     tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as e:
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
 
     page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
     items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
@@ -707,6 +723,7 @@ def list_agents(tenant_id):
         effective_owner_ids = list(requested_owner_ids)
     else:
         effective_owner_ids = list(authorized_owner_ids)
+    include_template_groups = tenant_id in effective_owner_ids
 
     # Groups-only: when ``compilation_template_group`` is the only selected
     # category, return just the caller's template groups (no agents) via
@@ -715,11 +732,12 @@ def list_agents(tenant_id):
     if canvas_category_list == [_COMPILATION_TEMPLATE_GROUP_CATEGORY]:
         from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 
-        try:
-            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
-        except Exception:
-            logging.exception("list_agents: compilation template group list failed for tenant=%s", tenant_id)
-            groups = []
+        groups = []
+        if include_template_groups:
+            try:
+                groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+            except Exception:
+                logging.exception("list_agents: compilation template group list failed for tenant=%s", tenant_id)
         for group in groups:
             group["type"] = _COMPILATION_TEMPLATE_GROUP_CATEGORY
         total = len(groups)
@@ -758,11 +776,12 @@ def list_agents(tenant_id):
         )
         # Groups are owner-only (no team sharing), so they're scoped to the
         # caller. Keyword filters the group name; scope is left unfiltered.
-        try:
-            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
-        except Exception:
-            logging.exception("list_agents: compilation template group merge failed for tenant=%s", tenant_id)
-            groups = []
+        groups = []
+        if include_template_groups:
+            try:
+                groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+            except Exception:
+                logging.exception("list_agents: compilation template group merge failed for tenant=%s", tenant_id)
 
         items: list[dict] = []
         for agent in agents:
@@ -802,11 +821,12 @@ def list_agents(tenant_id):
             tags,
             canvas_type,
         )
-        try:
-            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
-        except Exception:
-            logging.exception("list_agents: compilation template group mixed failed for tenant=%s", tenant_id)
-            groups = []
+        groups = []
+        if include_template_groups:
+            try:
+                groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+            except Exception:
+                logging.exception("list_agents: compilation template group mixed failed for tenant=%s", tenant_id)
 
         items = []
         for agent in agents:
@@ -1161,7 +1181,10 @@ async def update_agent(agent_id, tenant_id):
 
     if req.get("dsl") is not None:
         try:
+            from agent.canvas import Canvas
+
             req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+            Canvas.validate_component_parameters(req["dsl"])
         except ValueError as exc:
             return get_json_result(
                 data=False,
@@ -1576,8 +1599,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 code=RetCode.OPERATING_ERROR,
             )
 
-        # Keep the original workflow execution path, but assign a session_id so the
-        # response shape stays closer to the older agent completion contract.
+        # Load the caller's runtime replica as the workflow template. Session-owned
+        # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
@@ -1668,7 +1691,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             from agent.canvas import Canvas
 
             canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
-            canvas.clear_history()
+            canvas.start_new_session()
         except Exception as exc:
             return server_error_response(exc)
         turn_id = get_uuid()

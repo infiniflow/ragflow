@@ -963,8 +963,8 @@ type bedrockCohereEmbeddingResponse struct {
 // InvokeModel. Titan's embedding API accepts one inputText per call,
 // while Cohere accepts a texts batch and returns vectors in input
 // order.
-func (b *BedrockModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
+func (b *BedrockModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if apiConfig == nil || apiConfig.ApiKey == nil {
@@ -993,10 +993,10 @@ func (b *BedrockModel) Embed(ctx context.Context, modelName *string, texts []str
 	}
 
 	if strings.HasPrefix(modelID, "amazon.titan-embed-text-") {
-		return b.embedTitan(ctx, modelID, texts, region, creds, embeddingConfig, modelUsage)
+		return b.embedTitan(ctx, modelID, request.Texts, region, creds, embeddingConfig, modelUsage)
 	}
 	if strings.HasPrefix(modelID, "cohere.embed-") {
-		return b.embedCohere(ctx, modelID, texts, region, creds, embeddingConfig, modelUsage)
+		return b.embedCohere(ctx, modelID, request.Texts, region, creds, embeddingConfig, modelUsage)
 	}
 	return nil, fmt.Errorf("bedrock: unsupported embedding model %q", modelID)
 }
@@ -1125,7 +1125,7 @@ func decodeCohereEmbeddingVectors(raw json.RawMessage) ([][]float64, error) {
 }
 
 // Rerank is not exposed by Bedrock.
-func (b *BedrockModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (b *BedrockModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 

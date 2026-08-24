@@ -626,6 +626,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connectors.GET("", r.connectorHandler.ListConnectors)
 				connectors.POST("", r.connectorHandler.CreateConnector)
+				connectors.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
@@ -635,6 +636,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
 				connectors.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connectors.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
+				connectors.POST("/:connector_id/resume-failed-sync", r.connectorHandler.ResumeFailedSync)
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 

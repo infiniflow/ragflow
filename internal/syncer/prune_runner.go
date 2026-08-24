@@ -20,61 +20,74 @@ import (
 	"context"
 	"errors"
 	"io"
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
+
+	"go.uber.org/zap"
 )
 
 // PruneRunner executes one PRUNE task after collecting a full slim snapshot.
 type PruneRunner struct {
+	taskDAO      *dao.SyncTaskDAO
 	taskService  *service.SyncTaskService
 	pruneService *service.SyncPruneService
 }
 
 // NewPruneRunner creates a PRUNE runner.
-func NewPruneRunner(taskService *service.SyncTaskService, pruneService *service.SyncPruneService) *PruneRunner {
-	return &PruneRunner{taskService: taskService, pruneService: pruneService}
+func NewPruneRunner(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, pruneService *service.SyncPruneService) *PruneRunner {
+	return &PruneRunner{taskDAO: taskDAO, taskService: taskService, pruneService: pruneService}
 }
 
 // Run collects the full prune snapshot before deleting stale documents.
-func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskContext, connector syncerconnector.Connector) error {
+func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, connector syncerconnector.Connector) (string, error) {
 	if r.pruneService == nil {
-		return errors.New("prune service is not configured")
+		return "", errors.New("prune service is not configured")
 	}
+	// Get the run session
 	session, err := connector.OpenPrune(ctx, syncerconnector.PruneRequest{
 		TaskID:      taskContext.Task.ID,
 		ConnectorID: taskContext.Connector.ID,
 		KBID:        taskContext.Knowledgebase.ID,
 	})
 	if err != nil {
-		return err
+		if errors.Is(err, syncerconnector.ErrPruneUnsupported) {
+			// Connectors without a slim snapshot interface (e.g. REST API)
+			// complete PRUNE as a no-op without deleting anything.
+			if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
+				return "", err
+			}
+			common.Warn("prune unsupported by connector, completing as no-op", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
+			return r.taskService.CompletePrune(ctx, taskContext, 0)
+		}
+		return "", err
 	}
 	defer session.Close()
 
-	if err = r.pruneService.ClearSnapshot(ctx, taskContext.Task.ID); err != nil {
-		return err
-	}
-	clearSnapshot := func() {
-		_ = r.pruneService.ClearSnapshot(context.WithoutCancel(ctx), taskContext.Task.ID)
-	}
+	retain := map[string]struct{}{}
 	for {
+		if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
+			return "", err
+		}
 		batch, nextErr := session.NextBatch(ctx)
 		if errors.Is(nextErr, io.EOF) {
 			break
 		}
 		if nextErr != nil {
-			clearSnapshot()
-			return nextErr
+			return "", nextErr
 		}
-		if err = r.pruneService.AddSnapshotBatch(ctx, taskContext.Task.ID, batch.Documents); err != nil {
-			clearSnapshot()
-			return err
+		for _, doc := range batch.Documents {
+			service.AddRetainDocumentID(retain, taskContext.Knowledgebase.ID, taskContext.Connector.ID, doc.SourceID)
 		}
 	}
 
-	removed, err := r.pruneService.DeleteStale(ctx, taskContext)
+	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
+		return "", err
+	}
+	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain)
 	if err != nil {
-		clearSnapshot()
-		return err
+		return "", err
 	}
 	return r.taskService.CompletePrune(ctx, taskContext, removed)
 }

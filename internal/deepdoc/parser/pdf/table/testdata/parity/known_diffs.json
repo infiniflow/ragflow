@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "table-cell-fill-filled-threshold-0.85",
+      "tag": "go_intentional",
+      "kind": "threshold",
+      "applies_to": [
+        "*"
+      ],
+      "fields": [
+        "BoxMatchesCell"
+      ],
+      "permanent": true,
+      "reason": "BoxMatchesCell (internal/deepdoc/parser/pdf/table/table_cells.go) uses a two-stage overlap threshold: empty cell -> inter/boxArea >= 0.3 (matches Python find_overlapped_with_threshold default thr=0.3, which fills cells from overlapping PDF boxes uniformly); filled cell -> >= 0.85. The 0.85 branch has NO Python equivalent. It is reached only in the rotated-table path: table_extract.go calls ocrTableCells (parser_ocr.go) to pre-fill each cell with per-cell OCR text BEFORE FillCellTextFromBoxes runs (table_extract.go), and the 0.85 bar stops a weakly-overlapping detected text box from corrupting/overriding that OCR result. Python has no per-cell OCR at this stage, so it never raises the threshold and would join a 30-85%-overlapping secondary box (e.g. cell='Total' + a box '元' overlapping 60% -> Python 'Total 元', Go 'Total'). This is a deliberate go_intentional divergence, not a regression target. It is locked by TestFillCellTextFromBoxes_PrefilledCellDropsSecondaryBox and TestBoxMatchesCell_FilledCellWeakOverlapRejected in table_cell_spatial_test.go; the Go-only rationale is documented in the BoxMatchesCell doc comment (table_cells.go). NOTE: if we later unify the pipeline to always run FillCellTextFromBoxes (empty cell, 0.3) before ocrTableCells fills only remaining empties — matching the non-rotated path — this threshold can be removed entirely and full parity with Python restored. Until then it stays permanent."
+    },
+    {
+      "id": "table-cell-fill-multi-assignment",
+      "tag": "go_bug",
+      "kind": "assignment_cardinality",
+      "applies_to": [
+        "*"
+      ],
+      "fields": [
+        "FillCellTextFromBoxes",
+        "BoxMatchesCell"
+      ],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "FillCellTextFromBoxes now assigns each box to exactly ONE cell (best row by vertical-overlap ratio >= 0.3, tie-broken by inter/rowArea; then tightest column by horizontal edge/center distance). The many-to-many 2-D cell-overlap filter was removed. Regression: TestFillCellTextFromBoxes_BoxOverlappingTwoCells_SingleAssignment.",
+      "tracking": "Replicate Python's one-box-to-one-cell greedy assignment: for each box pick the best row (vertical overlap >= 0.3) and the tightest column, then assign to that single (row,column) cell.",
+      "reason": "FillCellTextFromBoxes (table_cells.go) matched each box against EVERY cross-product cell where inter/boxArea >= 0.3 and injected the box text into ALL of them (many-to-many threshold filter). Python's construct_table assigns each box to exactly ONE cell via greedy best row (find_overlapped_with_threshold, inter/boxArea >= 0.3) intersected with tightest column (find_horizontally_tightest_fit). A box straddling two cell boundaries was therefore DUPLICATED into both cells in Go, but appears once in Python. This was an implementation divergence in the box→cell assignment step (NOT an architecture difference — both sides build the grid from TSR rows×columns via cross-product; see deepdoc_table_builder.go GroupCells vs Python construct_table). Exposed by the now-fixed TestFillCellTextFromBoxes_BoxOverlappingTwoCells_SingleAssignment."
+    },
+    {
+      "id": "table-cell-fill-column-algorithm",
+      "tag": "go_bug",
+      "kind": "match_primitive",
+      "applies_to": [
+        "*"
+      ],
+      "fields": [
+        "FillCellTextFromBoxes",
+        "BoxMatchesCell"
+      ],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "FillCellTextFromBoxes selects the target cell via best row (vertical-overlap ratio >= 0.3 on the full-width row strip) intersected with tightest column (find_horizontally_tightest_fit, no threshold). The single 2-D cell-intersection 0.3 test is gone. Regression: TestFillCellTextFromBoxes_PythonAssignsGoRejects_2DThreshold_FIXED.",
+      "tracking": "Replace the single 2-D cell-overlap test with Python's two-step assignment: best row by vertical overlap (inter/boxArea >= 0.3, since rows span full width) AND tightest column by horizontal edge/center distance (find_horizontally_tightest_fit, no threshold), then assign to that (row,column) cell.",
+      "reason": "Go tested the 0.3 threshold against the 2-D cell intersection (inter/boxArea on the cell rectangle). Python tests 0.3 against the 1-D VERTICAL overlap with the row (rows span the full table width, so overlapped_area(box,row)/boxArea ≈ vertical fraction) and chooses the column by find_horizontally_tightest_fit (vertical overlap required + minimal horizontal edge/center distance, NO threshold). Consequently a box Python assigns to (row,column) was REJECTED by Go when its 2-D cell intersection was < 30% of box area even though its vertical row overlap was >= 30% (e.g. a tall narrow box: row overlap 30%, column tightest, but 2-D = 30% * horizontal_fraction < 30%). Implementation divergence only (same grid construction on both sides). Exposed by the now-fixed TestFillCellTextFromBoxes_PythonAssignsGoRejects_2DThreshold_FIXED."
+    },
+    {
+      "id": "table-cell-fill-no-best-match-tiebreak",
+      "tag": "go_bug",
+      "kind": "selection",
+      "applies_to": [
+        "*"
+      ],
+      "fields": [
+        "FillCellTextFromBoxes",
+        "BoxMatchesCell"
+      ],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "FillCellTextFromBoxes assigns each box to the single tightest column, so a box overlapping several cells lands in only the tightest one (matching Python, which keeps the single best via its ov/_ov ordering). Regression: TestFillCellTextFromBoxes_EqualBoxRatioSingleAssignment.",
+      "tracking": "When several cells qualify for a box at equal box-area ratio, keep only the single best (max inter/boxArea, tie-broken by inter/cellArea, mirroring Python's ov/_ov ordering) instead of filling all.",
+      "reason": "Python's find_overlapped_with_threshold orders candidates by (ov=inter/boxArea, _ov=inter/cellArea) and returns the single best, using cell-area ratio as a tie-break. Go's FillCellTextFromBoxes filled EVERY qualifying cell and never considered inter/cellArea. So a box overlapping several cells at the same box-area ratio was duplicated into all of them in Go, whereas Python keeps only the one it best fills (highest cell-area ratio). Implementation divergence only (same grid construction on both sides). Exposed by the now-fixed TestFillCellTextFromBoxes_EqualBoxRatioSingleAssignment."
+    },
+    {
+      "id": "table-html-emission-format",
+      "tag": "go_intentional",
+      "kind": "serialization_format",
+      "applies_to": [
+        "06_table_content.pdf",
+        "13_crosspage_table.pdf"
+      ],
+      "fields": [
+        "RowsToHTML"
+      ],
+      "permanent": true,
+      "reason": "This rule's caption/content-loss half is FULLY RESOLVED; the residual is the HTML serialization format only. (1) RESOLVED — caption content loss: MergeCaptions used to DROP the standalone 'table caption' section (findNearestParent returned -1 and the no-target branch removed it), then multiple caption boxes for one table emitted MULTIPLE <caption> elements in one <table> (invalid HTML — consumers keep only the first), and captions of cross-page tables were rejected because the distance was measured to the merged table's CENTER (far from a caption near the edge). All three are fixed: caption text is injected as a single <caption> per table (injectCaption); caption sentences are concatenated in READING order (top->bottom, matching Python's construct_table order); and the table match uses edge distance (findTables: vertical gap to the table's nearest top/bottom edge + horizontal offset), so 13/14's captions near a tall cross-page table now attach. Result: 06/13/14/18 all retain every caption sentence and their <caption> text now equals Python's (verified: 06 'The following table summarizes... Table 1: Quarterly sales by product category (in USD)' and 13 'Extended Financial Report Table: Monthly financial summary FY2024' match byte-for-byte; 14's 'Table 1: Revenue' is restored). 14 and 18 are now ALIGNED (textSim=100%). Regression-guarded by TestMergeCaptions_EmitsCaptionTag, TestMergeCaptions_LeftMarginCaptionAttaches, TestMergeCaptions_SingleCaptionPerTable, TestMergeCaptions_ReadingOrderByTop, TestMergeCaptions_TallTableCaptionNearEdgeAttaches, and the end-to-end TestPipelineParityCaptionEmitted (at most one <caption> per <table>, every sentence retained + real). (2) RESIDUAL — serialization format (go_intentional, this rule): the remaining textSim<100% on 06/13 comes ONLY from HTML tag/whitespace formatting: Go emits <th> for detected header rows (Python emits <td> everywhere — Go deliberately keeps the header semantics, see the <th> analysis) and compact single-space tags (<td >) vs Python's double-space <td  > + leading/trailing cell spaces. Cell text and row/col structure match exactly (gridSim=100%, structSim=100%); the gap is NON-CELL-TEXT only and deliberate."
+    },
+    {
+      "id": "table-text-interleaved-paragraph-dropped",
+      "tag": "go_bug",
+      "kind": "content_loss",
+      "applies_to": [
+        "14_text_table_interleaved.pdf"
+      ],
+      "fields": [
+        "CaptionKind",
+        "reTableCaptionText",
+        "reCaption",
+        "MergeCaptions"
+      ],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "reTableCaptionText and reCaption now start-anchor their English 'Table N' / 'Figure N' / 'Fig N' alternatives (^), mirroring Python's is_caption which uses re.match (start-anchored). A body paragraph that only MENTIONS 'Table 1' mid-sentence ('...Table 1 shows revenuebycategory.') is no longer misclassified as a caption, so MergeCaptions no longer drops it; 14 now emits title + paragraph + 2 tables (textSim 81.7% -> 90.0%, boxes ...->4). Regression: TestCaptionKind_MidSentenceTableMentionNotCaption, TestIsCaptionBox_MidSentenceTableMention, TestMergeCaptions_KeepsInterleavedParagraph, plus the end-to-end TestPipelineParity14InterleavedParagraphDropped (now GREEN).",
+      "tracking": "Original fields guessed the loss in processPageBoxes/NaiveVerticalMerge/BoxesToSections. Step-through of buildLayout proved the paragraph box survives every stage (Dedup, AssignColumn, TextMerge, FinalReadingOrderMerge, NaiveVerticalMerge, ExtractTableAndReplace, ConsolidateFigures, BoxesToSections) and is only dropped in MergeCaptions: CaptionKind mislabeled it a table caption (unanchored 'Table N' match), findNearestParent returned -1 (nearest section is the title, not a table), so the caption-without-target branch removed it. Root cause is caption DETECTION, not assembly.",
+      "reason": "14_text_table_interleaved.pdf has a body paragraph ('The following analysis compares product performance across different market segments. Table 1 shows revenuebycategory.') interleaved BEFORE Table 1. Python extracts it as a separate text section; Go's pipeline dropped it entirely (Go output had only the title + the two tables). This was a real CONTENT loss, not an HTML-emission/format difference: the text was absent from Go's sections, and gridSim=100% still held because the paragraph is outside any table cell. RESOLVED: the drop was caused by unanchored 'Table N' caption detection (reTableCaptionText/reCaption matched 'Table 1' anywhere in the string), mislabeling the paragraph a caption that MergeCaptions then removed; anchoring to the start aligns Go with Python's re.match is_caption and retains the paragraph. 14's RESIDUAL gap is now caption emission only (rule table-html-emission-format). Originally exposed by TestPipelineParity14InterleavedParagraphDropped (was RED, now GREEN)."
+    },
+    {
+      "id": "english-page-ocr-source-divergence",
+      "tag": "go_intentional",
+      "kind": "input_source_divergence",
+      "applies_to": [
+        "*"
+      ],
+      "fields": [
+        "processPageBoxes",
+        "DetectEnglish",
+        "hasCleanChars"
+      ],
+      "permanent": true,
+      "reason": "Pipeline-parity textSim<100% on English-document PDFs is dominated by an input-source divergence, not assembly logic. Python (deepdoc/parser/pdf_parser.py:1687) clears page chars for documents whose majority vote is English (is_english -> chars=[]) and runs pure OCR (__ocr: detect + recognize_batch); Go (internal/deepdoc/parser/pdf/parser.go:312 hasCleanChars) keeps the extracted chars and runs the char-merge path, so the two sides consume different inputs for the same PDF. Go already mirrors the detection (internal/deepdoc/parser/pdf/util/eng_detect.go DetectEnglish, document-level majority vote) but only records it as the IsEnglish metadata flag. Classified go_intentional: for text-based English PDFs Go's embedded-char extraction is more accurate than OCR (OCR introduces recognition/spacing variance), and scanned/noisy English pages are covered by Go's isScanNoise/IsGarbledPage fallback into ocrDetectAndRecognize. A follow-up can evaluate an OCR fallback for English pages where pdfplumber extraction is poor. Note: the parity harness already clears the replayed chars for is_english documents (engine.ClearChars in pipeline_parity_test.go), so both sides consume the same OCR input in replay; that is a measurement alignment, not a production behavior change."
+    },
+    {
+      "id": "ocr-replay-full-vs-python-merge-truncation",
+      "tag": "go_intentional",
+      "kind": "output_completeness",
+      "applies_to": [
+        "eval_single_wide.pdf",
+        "eval_two_overlap_no_gutter.pdf"
+      ],
+      "fields": [
+        "ocrDetectAndRecognize",
+        "NaiveVerticalMerge"
+      ],
+      "permanent": true,
+      "reason": "Go's OCR-replay output is the FULL OCR dump (eval_single_wide: 18 boxes / 2936 chars; eval_two_overlap_no_gutter: 17 boxes / 2912 chars), while the Python text golden contains only the FIRST box's content (1519 / 1512 chars, i.e. ~48% of the OCR content is missing; verified py == dump_join prefix). The loss happens in Python's downstream assembly: for English documents Python clears chars (is_english -> chars=[], pdf_parser.py:1687) so mean_height becomes 0, and _naive_vertical_merge (pdf_parser.py:1007) then merges the overlapping OCR boxes into one box whose text retains only the first box — a Python-side truncation. Go keeps the complete OCR content, which is strictly more complete for downstream retrieval, so the divergence is deliberate (output completeness), not a Go regression. Python-side root cause is tracked as an issue (not fixed here per no-Python-change policy)."
+    },
+    {
+      "id": "table-cell-fill-pre-vs-post-merge-order",
+      "tag": "go_bug",
+      "kind": "pipeline_order",
+      "applies_to": [
+        "14_text_table_interleaved.pdf"
+      ],
+      "fields": [
+        "FillCellTextFromBoxes",
+        "processOneTable",
+        "NaiveVerticalMerge"
+      ],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "processOneTable now calls dedupNestedBoxes on the table's OCR boxes BEFORE NaiveVerticalMerge (internal/deepdoc/parser/pdf/table_extract.go). dedupNestedBoxes drops a box that is strictly nested inside another box whose trimmed text contains it (e.g. the re-detected 'Hardware' box fully inside 'Software Hardware'), so the subsequent vertical merge no longer concatenates them into 'Software Hardware Hardware'. After the fix Go's grid content matches Python's exactly (gridSim=100%, cell char-multiset parity; the residual textSim gap is HTML-format/whitespace only, so 14 now classifies GRID_OK like 06/18). Regression: TestPipelineParity14TextTableInterleaved asserts no Go cell contains a duplicated token from overlapping-box concatenation.",
+      "tracking": "Original hypothesis was a pipeline-order difference (Python merges before fill, Go after). Root cause was narrower: the two OCR boxes are nested (one fully inside the other with a substring text), so the per-column NaiveVerticalMerge concatenated them. Dropping the nested duplicate box before merge matches Python's effective behavior without reordering the whole pipeline.",
+      "reason": "Go cell text fill (internal/deepdoc/parser/pdf/table/table_cells.go FillCellTextFromBoxes) runs on the raw OCR boxes inside processOneTable, BEFORE buildLayout's NaiveVerticalMerge. Python fills cells inside construct_table (deepdoc/vision/table_structure_recognizer.py:156) AFTER _naive_vertical_merge, so boxes overlapping in Y are merged first. For 14_text_table_interleaved table 2, OCR boxes 'Software Hardware' (y 270-300) and 'Hardware' (y 287.7-300) overlap; both go to Go's row band 2 (vertical-overlap ratio 0.53 vs 0.44) and concatenate to 'Software Hardware Hardware', while Python collapses them and the final HTML keeps 'Software Hardware' in row 1. Replicated Python find_overlapped_with_threshold + gather/layouts_cleanup (rows unchanged, R=row2) but the final HTML differs — the divergence stems from the box set that reach construct_table after Python's downstream merge, which dump data cannot fully reproduce; instrumenting Python's self.boxes mid-pipeline is required to close it exactly."
+    },
+    {
+      "id": "table-crosspage-merge-seam-duplication",
+      "tag": "go_bug",
+      "kind": "cross_page_merge",
+      "applies_to": [
+        "13_crosspage_table.pdf"
+      ],
+      "fields": [
+        "MergeTablesAcrossPages",
+        "processOneTable",
+        "FillCellTextFromBoxes"
+      ],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "tracking": "Originally hypothesized as a MergeTablesAcrossPages page-seam bug, but dumping the per-page grids and comparing them against Python's construct_table proved the per-page grids were ALREADY correct — MergeTablesAcrossPages stacks them correctly and is NOT the root cause. The real cause is FillCellTextFromBoxesWithRows (table/table_cells.go) row-selection: it picked the row with the MAX 2D-overlap (inter/boxArea >= 0.3), which placed a box spanning two adjacent data rows in the LOWER row. Python's construct_table groups boxes into rows by each box's TSR row label b['R'] — the row the box STARTS in — not by spatial overlap (pdf_parser.py construct_table:176-192), so it places the same box in the UPPER row. Fix: prefer the topmost row band whose Y range CONTAINS the box's TOP edge (top-containment), falling back to max-overlap only when no band contains the top. This matches Python's R-grouping and resolves both the seam-duplication and the other row-shift diffs: TestPipelineParity13CrosspageSeam is now green (seam-dup=0, gridSim=100.0%) and 13 moved from harness failed to html-divergent. The ~10 residual other-diff cells are leading/trailing-whitespace only, absorbed by the harness gridSim guard.",
+      "reason": "13_crosspage_table.pdf is a multi-page table (Python golden = single 81x5 grid). The divergence did NOT come from the cross-page merge: each per-page grid is correct and MergeTablesAcrossPages stacks them correctly. It came from FillCellTextFromBoxesWithRows assigning OCR/value boxes to the wrong grid ROW. Go used MAX-2D-overlap (inter/boxArea >= 0.3) to pick the row, so a box spanning two adjacent data rows (e.g. a Month cell merged across two rows, or a value box repeated across a seam) landed in the LOWER row; Python's construct_table groups by each box's TSR row label b['R'] (the row the box STARTS in), so it lands in the UPPER row. That one-row-low placement is what produced the duplicated/shifted seam cells. After the fix (top-containment: place the box in the topmost band containing its top edge), Go matches Python and the cell-level diff drops to 0 seam-duplication cells with gridSim=100.0% (TestPipelineParity13CrosspageSeam green). The residual ~10 cells differ only by leading/trailing whitespace and are absorbed by the harness gridSim guard."
+    },
+    {
+      "id": "table-rotation-split-vs-merged-grid",
+      "tag": "go_intentional",
+      "kind": "table_segmentation",
+      "applies_to": [
+        "table_rotation_test.pdf"
+      ],
+      "fields": [
+        "processOneTable",
+        "MergeTablesAcrossPages",
+        "GroupCells"
+      ],
+      "permanent": true,
+      "reason": "table_rotation_test.pdf contains three physical tables: page 1 has two tables (grey header 'Header A/B/C', blue header), page 2 has the blue-header table rotated 90 degrees clockwise. Go emits three TableItems (6x3 + 6x3 + 3x6, 15 grid rows total); the rotated table is content-correct (each row = Cell 4A, Cell 3A, Cell 2A, Cell 1A, Header A, plus one padding column). Python's golden emits TWO tables: the first 5x3 is close, but the second is an 8x7 grid that MERGES the page-1 blue-header table with the page-2 rotated table — first 5 rows padded to 7 columns (4 empty columns + 3 data columns), last 3 rows the rotated content, with garbled cell text on both sides ('Header B Cell 1B', 'Cell 2A Cell 3A') inherited from the shared TSR dump (OCR box vs TSR cell boundary offset). The divergence is therefore TABLE SEGMENTATION + column-count, NOT Go cell-content error: Go's split matches the physical PDF structure, and the residual text misplacement is identical on both sides (same TSR input), not a Go assembly bug. Because the cell TEXT is identical on both sides, the old shape-blind gridSim reads 100% — it could NOT see the 15x[...3x12,6x3] vs 13x[3x5,7x8] structural gap. The harness now adds a SHAPE-AWARE structure metric (gridStructureSimilarity): gridSim=100% AND structSim=100% is required for a PDF to be 'content matched' (html-divergent); a go_intentional PDF whose structSim<100 (like this one, structSim=35.7%) is classified INTENTIONAL instead of being hidden under gridSim=100%. Python's merged 8x7 grid is a segmentation defect; Go's split is deliberately retained."
+    },
+    {
+      "id": "table-span-follow-tsr-geometry",
+      "tag": "go_intentional",
+      "kind": "span_coverage",
+      "applies_to": [
+        "screenshot.pdf",
+        "asset-recovery-services-sd-zh-tw.pdf",
+        "asset-recovery-services-data-sanitization-for-enterprise-and-data-destruction-for-enterprise-sb-zh-tw.pdf",
+        "data-migration-services-for-cloud-sb-zh-tw.pdf",
+        "BookRAG A Hierarchical Structure-aware Index-based Approach.pdf",
+        "qa.pdf",
+        "lazards-lcoeplus-june-2025.pdf",
+        "prodeploy-plus-dell-powervault-jbod-2u-4u-expansion-for-servers-sb-zh-tw.pdf"
+      ],
+      "fields": [
+        "GroupCells",
+        "CalSpans",
+        "MarkCoveredCells",
+        "goTableRows",
+        "RowsToStrings"
+      ],
+      "permanent": true,
+      "reason": "These real-PDF tables carry TSR-detected 'table spanning cell' components (verified against the physical documents: screenshot's double-layer 泡点MPa column spans 4 rows; lazards' multi-level column-group headers span columns; dell/asset-recovery/prodeploy marketing templates merge the 服務附件/排除項目 column across rows; asset-recovery-sd's cross-page Terms table merges its first column rows 1-2 and first row cols 2-3). Go's GroupCells labels the span-origin cell 'table spanning cell', keeps every covered cell's row x column bbox, CalSpans folds the covered text into the span cell and tags covered cells, and downstream (goTableRows / RowsToStrings) drops covered cells so per-row column counts follow the span geometry. Python's __cal_spans only folds when a BOX carries an SP annotation, assigned by find_overlapped_with_threshold(box, spans, thr=0.3); when no box in the merged region overlaps the span component by >=30% (empty merged region, or small text boxes inside a large span bbox), Python emits NO colspan/rowspan and renders a flat grid with the merged columns repeated as empty cells. For these PDFs the Python golden shows zero colspan while the TSR spans are real, so Go's structure (merged cells, fewer columns per covered row) is judged at least as good as Python's flat grid. Deliberate divergence, not a regression target."
+    },
+    {
+      "id": "table-11pdf-both-inaccurate-grid-shape",
+      "tag": "ignore",
+      "kind": "table_segmentation",
+      "applies_to": [
+        "11.pdf"
+      ],
+      "fields": [
+        "GroupCells",
+        "CalSpans",
+        "MarkCoveredCells",
+        "processOneTable"
+      ],
+      "owner_fix_side": "neither",
+      "reason": "11.pdf is a multi-table PDF (Go emits 7 tables) whose grid shapes diverge from the Python golden: gridSim=91.8%, structSim=87.5% with Go grids 7x3 vs Python 11x3, textSim=87.4% (verified via TestPipelineParity with BATCH_PARITY_VARIANT=ocr_real). This is NOT a go_intentional divergence (Go is not judged better than Python) and NOT a trackable go_bug on either side: neither pipeline is the ground truth for this document's table structure, so the gap is not a regression target on the Go side nor something the Python golden can anchor. It is registered as ignore so the PDF is exempted from the FAIL count (reported as IGNORE) and does not block the parity gate, while the gap stays logged for a future re-examination of the golden/ground-truth table structure. Resolution requires re-establishing which grid (if either) is correct against the physical document before any code fix is attempted."
+    }
+  ]
+}

@@ -38,6 +38,9 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // EinoChatModel adapts a RAGFlow *ChatModel to eino's chat model interfaces.
@@ -91,6 +94,11 @@ func toInternalMessages(msgs []*schema.Message) []Message {
 			role = "user"
 		}
 		msg := Message{Role: role, Content: mm.Content}
+		if len(mm.UserInputMultiContent) > 0 {
+			if blocks := openAIContentBlocksFromEino(mm.UserInputMultiContent); len(blocks) > 0 {
+				msg.Content = blocks
+			}
+		}
 		if len(mm.ToolCalls) > 0 {
 			msg.ToolCalls = toolCallsToInternal(mm.ToolCalls)
 		}
@@ -100,6 +108,62 @@ func toInternalMessages(msgs []*schema.Message) []Message {
 		out = append(out, msg)
 	}
 	return out
+}
+
+// openAIContentBlocksFromEino converts eino multi-modal input parts into
+// OpenAI-style content blocks ("text" / "image_url"). Message.Content is
+// interface{} and every driver already understands this block shape: the
+// generic OpenAI-compatible request builder marshals it verbatim
+// (buildChatMessages in base_model.go), while the native anthropic /
+// google converters type-switch on []interface{} (anthropicContent /
+// googleMessageParts). The slice MUST therefore be []interface{}, not
+// []map[string]interface{}, or googleMessageParts misses it. Unsupported
+// part types are skipped; a nil return tells the caller to fall back to
+// the plain string Content.
+func openAIContentBlocksFromEino(parts []schema.MessageInputPart) []interface{} {
+	blocks := make([]interface{}, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			if part.Text == "" {
+				continue
+			}
+			blocks = append(blocks, map[string]interface{}{"type": "text", "text": part.Text})
+		case schema.ChatMessagePartTypeImageURL:
+			url := einoImagePartURL(part.Image)
+			if url == "" {
+				continue
+			}
+			blocks = append(blocks, map[string]interface{}{
+				"type":      "image_url",
+				"image_url": map[string]interface{}{"url": url},
+			})
+		}
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	return blocks
+}
+
+// einoImagePartURL resolves an image part to a single URL string: either
+// the direct URL (the agent component carries data URIs this way) or a
+// reassembled data URI from Base64Data + MIMEType.
+func einoImagePartURL(img *schema.MessageInputImage) string {
+	if img == nil {
+		return ""
+	}
+	if img.URL != nil && *img.URL != "" {
+		return *img.URL
+	}
+	if img.Base64Data != nil && *img.Base64Data != "" {
+		mime := img.MIMEType
+		if mime == "" {
+			mime = "image/png"
+		}
+		return "data:" + mime + ";base64," + *img.Base64Data
+	}
+	return ""
 }
 
 // fromInternalResponse converts a *ChatResponse to *schema.Message. The
@@ -147,6 +211,18 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
+	// eino's ChatModelAgent binds tools via the per-call model.WithTools option
+	// (not by calling WithTools). Merge those into the config so the model
+	// actually emits tool_calls; otherwise the ReAct loop would have no tools.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	common.Debug("models: eino generate request",
+		zap.String("model", *m.inner.ModelName),
+		zap.Int("messages", len(internal)),
+		zap.Int("tools", toolCount(chatCfg)),
+	)
 	resp, err := m.inner.ModelDriver.ChatWithMessages(ctx, *m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
@@ -160,7 +236,57 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 		}
 		recordUsageFromResponse(ctx, m.inner)
 	}
+	// Guard the debug log against a nil resp: some drivers may return (nil, nil)
+	// on an aborted/empty completion, and len(resp.ToolCalls) would panic.
+	toolCalls := 0
+	if resp != nil {
+		toolCalls = len(resp.ToolCalls)
+	}
+	common.Debug("models: eino generate response",
+		zap.String("model", *m.inner.ModelName),
+		zap.String("answer_head", truncateForLog(answerHead(resp), 500)),
+		zap.Int("tool_calls", toolCalls),
+		zap.Int("completion_tokens", usageCompletion(resp)),
+	)
 	return fromInternalResponse(resp), nil
+}
+
+// answerHead returns a short preview of the response answer for log lines.
+func answerHead(resp *ChatResponse) string {
+	if resp == nil || resp.Answer == nil {
+		return ""
+	}
+	return *resp.Answer
+}
+
+func usageCompletion(resp *ChatResponse) int {
+	if resp == nil || resp.Usage == nil {
+		return 0
+	}
+	return resp.Usage.CompletionTokens
+}
+
+func truncateForLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
+// toolCount returns the number of tools on a config, tolerating the
+// interface{} storage type.
+func toolCount(cfg *ChatConfig) int {
+	if cfg == nil {
+		return 0
+	}
+	switch t := cfg.Tools.(type) {
+	case []map[string]any:
+		return len(t)
+	case nil:
+		return 0
+	default:
+		return 0
+	}
 }
 
 func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
@@ -175,6 +301,30 @@ func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
 	tools, err := openAIToolsFromEino(m.tools)
 	if err != nil {
 		return nil, err
+	}
+	cfg.Tools = tools
+	choice := "auto"
+	cfg.ToolChoice = &choice
+	return cfg, nil
+}
+
+// chatConfigWithOptsTools overlays tools supplied via the per-call
+// model.WithTools option onto base. eino's ChatModelAgent binds tools this way,
+// so Generate/Stream must honor opts or the model will never emit tool_calls.
+// When opts carries no tools, base is returned unchanged.
+func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.Option) (*ChatConfig, error) {
+	co := model.GetCommonOptions(nil, opts...)
+	if co == nil || len(co.Tools) == 0 {
+		return base, nil
+	}
+	tools, err := openAIToolsFromEino(co.Tools)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &ChatConfig{}
+	if base != nil {
+		cp := *base
+		cfg = &cp
 	}
 	cfg.Tools = tools
 	choice := "auto"
@@ -281,6 +431,17 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if err != nil {
 		return nil, err
 	}
+	// Same tool-binding fix as Generate: honor the per-call model.WithTools
+	// option so the ReAct loop's model requests actually carry tool definitions.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	common.Debug("models: eino stream request",
+		zap.String("model", *m.inner.ModelName),
+		zap.Int("messages", len(internalMessage)),
+		zap.Int("tools", toolCount(chatCfg)),
+	)
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
@@ -311,10 +472,15 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	go func() {
 		defer sw.Close()
 		if err := m.inner.ModelDriver.ChatStreamlyWithSender(ctx, *m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
+			common.Debug("models: eino stream response error",
+				zap.String("model", *m.inner.ModelName), zap.Error(err))
 			_ = sw.Send(nil, err)
 			return
 		}
 		if chatCfg != nil && chatCfg.ToolCallsResult != nil && len(*chatCfg.ToolCallsResult) > 0 {
+			common.Debug("models: eino stream tool calls",
+				zap.String("model", *m.inner.ModelName),
+				zap.Int("tool_calls", len(*chatCfg.ToolCallsResult)))
 			msg := &schema.Message{
 				Role:      schema.Assistant,
 				ToolCalls: toolCallsFromInternal(*chatCfg.ToolCallsResult),

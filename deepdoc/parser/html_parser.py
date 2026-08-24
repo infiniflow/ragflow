@@ -36,7 +36,7 @@ TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "
 
 class RAGFlowHtmlParser:
     def __call__(self, fnm, binary=None, chunk_token_num=512):
-        if binary:
+        if binary is not None:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
@@ -233,6 +233,13 @@ class RAGFlowHtmlParser:
     def _token_count(cls, text):
         if not text:
             return 0
+        # FIXME: The identity of the tokenizer behind `rag_tokenizer.tokenize`
+        # (used here to size HTML chunks) is NOT confirmed. The earlier assumption
+        # that it resolves to `infinity.rag_tokenizer.RagTokenizer` is incorrect.
+        # Verify what `rag_tokenizer.tokenize` actually resolves to before claiming
+        # Parser and TokenChunker use different tokenizers. For reference,
+        # TokenChunker uses `num_tokens_from_string` (common/token_utils.py) which
+        # is tiktoken cl100k_base. See PARSER_ALIGNMENT_HANDOFF.md §3.2.
         tks_str = rag_tokenizer.tokenize(text)
         return len(tks_str.split(" ")) if tks_str else 0
 

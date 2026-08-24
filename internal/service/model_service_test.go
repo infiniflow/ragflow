@@ -25,7 +25,7 @@ func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APICon
 	return d.remoteModels, nil
 }
 
-func (d *remoteModelProbeDriver) Embed(context.Context, *string, []string, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.EmbedRequest, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	d.embedCalls++
 	return nil, nil
 }
@@ -370,6 +370,49 @@ func TestModelProviderServiceResolveModelContextLengthUnknownModel(t *testing.T)
 	}
 	if got != 0 {
 		t.Fatalf("unknown model content_length = %d, want 0", got)
+	}
+}
+
+// TestModelProviderServiceResolveModelContextLengthOverride verifies that the
+// tenant-configured "max_tokens" override in tenant_model.extra wins over the
+// catalog content_length through the service delegation. UUID resolution is
+// unscoped (globally unique); the composite path needs the real tenant id to
+// locate the tenant's provider/instance/model rows.
+func TestModelProviderServiceResolveModelContextLengthOverride(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
+		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"max_tokens": 4096}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	ctx := t.Context()
+
+	// UUID path: the 4096 override wins over catalog content_length 1000000.
+	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
+	if err != nil {
+		t.Fatalf("ResolveModelContextLength(override uuid) error = %v", err)
+	}
+	if got != 4096 {
+		t.Fatalf("uuid override content_length = %d, want 4096 (custom override, not catalog 1000000)", got)
+	}
+
+	// Composite path with the real tenant id honors the same override.
+	got2, err := svc.ResolveModelContextLength(ctx, "tenant-cl", "claude-opus-4-8@default@Anthropic")
+	if err != nil {
+		t.Fatalf("ResolveModelContextLength(override composite) error = %v", err)
+	}
+	if got2 != 4096 {
+		t.Fatalf("composite override content_length = %d, want 4096", got2)
 	}
 }
 

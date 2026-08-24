@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 4
 title: Search
 sidebar_label: Search
 slug: /ai_search

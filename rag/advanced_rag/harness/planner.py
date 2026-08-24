@@ -4,15 +4,17 @@ import json
 import logging
 import re
 
+from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _snip
-from rag.advanced_rag.harness.types import ClaimTarget, WorkflowPlan, RouteDecision
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.prompts.decompose_prompts import (
-    DECOMPOSE_FACTUAL,
     DECOMPOSE_COMPARATIVE,
-    DECOMPOSE_PROCEDURAL,
     DECOMPOSE_EXPLORATORY,
+    DECOMPOSE_FACTUAL,
+    DECOMPOSE_PROCEDURAL,
 )
+from rag.advanced_rag.harness.stats import in_phase
+from rag.advanced_rag.harness.types import ClaimTarget, RouteDecision, WorkflowPlan
 
 _LOG = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ def _extract_json(text: str) -> dict:
             return {}
 
 
+@in_phase("planner")
 async def planner_node(state: dict, tools) -> dict:
     """Planner node — decompose question into claims based on question type."""
     route: RouteDecision = state.get("route")
@@ -123,13 +126,21 @@ async def planner_node(state: dict, tools) -> dict:
 def _format_seed_chunks(seed_chunks, tools) -> str:
     """Render preliminary-search chunks as grounding context for the planner."""
     if not seed_chunks:
+        _LOG.info("[Planner] No preliminary passages — grounding the plan without seed chunks.")
         return "(no preliminary results)"
     try:
         from rag.prompts.generator import kb_prompt
 
         blocks = kb_prompt({"chunks": seed_chunks, "doc_aggs": []}, tools.chat_mdl.max_length)
         text = "\n".join(blocks).strip()
-        return text or "(no preliminary results)"
+        if not text:
+            return "(no preliminary results)"
+        _LOG.info(
+            "[Planner] Grounding the plan with %d preliminary passage(s) (~%d tokens of grounding context).",
+            len(seed_chunks),
+            num_tokens_from_string(text),
+        )
+        return text
     except Exception:
         _LOG.exception("planner: failed to format seed chunks")
         return "(no preliminary results)"

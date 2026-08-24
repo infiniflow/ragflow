@@ -818,6 +818,16 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 					"terms": map[string]interface{}{"id": ids},
 				})
 			}
+		case []string:
+			// A typed []string must be handled here; the generic loop below
+			// skips the "id" key, so without this branch a caller passing
+			// map[string]interface{}{"id": []string{...}} would build a query
+			// with no id filter and DeleteChunks could match every document.
+			if len(v) > 0 {
+				mustClauses = append(mustClauses, map[string]interface{}{
+					"terms": map[string]interface{}{"id": v},
+				})
+			}
 		case string:
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"term": map[string]interface{}{"id": v},
@@ -856,6 +866,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 				mustClauses = append(mustClauses, map[string]interface{}{
 					"terms": map[string]interface{}{k: listVal},
 				})
+			} else if listVal, ok := v.([]string); ok {
+				mustClauses = append(mustClauses, map[string]interface{}{
+					"terms": map[string]interface{}{k: listVal},
+				})
 			} else if _, ok := v.(string); ok {
 				mustClauses = append(mustClauses, map[string]interface{}{
 					"term": map[string]interface{}{k: v},
@@ -871,6 +885,9 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// Build the query
 	var qry map[string]interface{}
 	if len(filterClauses) == 0 && len(mustClauses) == 0 && len(mustNotClauses) == 0 {
+		if len(condition) > 0 {
+			return 0, fmt.Errorf("ES delete aborted: non-empty condition yielded match_all query on index %s", fullIndexName)
+		}
 		qry = map[string]interface{}{"match_all": map[string]interface{}{}}
 	} else {
 		boolMap := map[string]interface{}{}
@@ -1275,7 +1292,197 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		allResults = sortByScore(allResults, limit)
 	}
 
-	common.Info("ES Search completed", zap.Int("returnedRows", len(allResults)), zap.Int64("totalHits", totalHits))
+	return &types.SearchResult{
+		Chunks: allResults,
+		Total:  totalHits,
+	}, nil
+}
+
+// SearchByRegexp executes a regex-match-only search over chunk content. It
+// reuses the same scope-filter builder and response converter as Search but
+// emits a Lucene `regexp` query on the chunk content field instead of text /
+// dense match expressions. This backs the agent's grep_chunks tool.
+//
+// The caller is responsible for translating a user regex into Lucene syntax;
+// patterns using unsupported constructs should be detected and handled by the
+// caller (fallback to broad recall + in-memory filtering).
+// esIndexNamesForTenant maps an engine-agnostic tenant id to this engine's
+// physical index names. ES stores one index per tenant (ragflow_<tenant>), and
+// a tenant id may carry comma-separated tenants (one index each). This is the
+// doc-engine-specific storage mapping — callers never compute index names.
+func esIndexNamesForTenant(tenantID string) []string {
+	var names []string
+	for part := range strings.SplitSeq(tenantID, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			names = append(names, "ragflow_"+part)
+		}
+	}
+	return names
+}
+
+func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
+	// Map the engine-agnostic tenant to this engine's physical index(es). ES
+	// stores one index per tenant (ragflow_<tenant>); the tenant id may carry
+	// comma-separated tenants, which map to one index each.
+	indexNames := esIndexNamesForTenant(req.TenantID)
+	if len(indexNames) == 0 {
+		return nil, fmt.Errorf("tenant id cannot be empty")
+	}
+	if strings.TrimSpace(req.Pattern) == "" {
+		return nil, fmt.Errorf("regexp pattern cannot be empty")
+	}
+
+	offset := max(req.Offset, 0)
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 30
+	}
+
+	// Build the scope filter (kb_id terms + available_int + explicit filters).
+	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, false, false)
+
+	// Attach the regexp query as a must clause on the chunk content field.
+	// Two critical ES keyword-regexp behaviours:
+	//  1. ES regexp matches the WHOLE field value, not a substring. To emulate
+	//     "contains" (what grep_chunks and the old in-memory RE2 did), wrap the
+	//     pattern as ".*(pattern).*" — a bare "何进" would only match a chunk
+	//     whose content is exactly "何进" (yielding 0 hits).
+	//  2. case_insensitive is intentionally NOT set: on a keyword field ES's
+	//     case-insensitive regexp cannot match CJK text (empirically 0 for
+	//     patterns like "马元义"). CJK keywords have no case; English
+	//     case-sensitivity is acceptable.
+	regexpPattern := ".*(" + req.Pattern + ").*"
+	regexpClause := map[string]interface{}{
+		"regexp": map[string]interface{}{
+			"content_with_weight": map[string]interface{}{
+				"value": regexpPattern,
+			},
+		},
+	}
+
+	if boolQuery == nil {
+		boolQuery = map[string]interface{}{}
+	}
+	if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
+		if must, ok := boolMap["must"].([]interface{}); ok {
+			boolMap["must"] = append(must, regexpClause)
+		} else {
+			boolMap["must"] = []interface{}{regexpClause}
+		}
+	} else {
+		boolQuery = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []interface{}{regexpClause},
+			},
+		}
+	}
+
+	// Offset/Limit are applied to each search target (IndexNames entry)
+	// independently — the request is engine-agnostic and makes no assumption
+	// about how many underlying indexes a target spans. The ES engine queries
+	// each index with the same from/size and merges the hits.
+	queryBody := map[string]interface{}{
+		"query": boolQuery,
+		"size":  limit,
+		"from":  offset,
+	}
+
+	// When an explicit sort is requested (e.g. a document's reading order), push
+	// it down so ES applies offset/limit over the deterministically-ordered
+	// result set. This is what lets list_chunks page through a document in
+	// reading order without over-fetching.
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
+			queryBody["sort"] = sortClause
+		}
+	}
+
+	// Narrow the returned _source to the requested fields when given. The regexp
+	// matches content_with_weight, so callers must keep it in SelectFields or the
+	// hits will carry no content.
+	if len(req.SelectFields) > 0 {
+		queryBody["_source"] = req.SelectFields
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
+		return nil, fmt.Errorf("error encoding regexp query: %w", err)
+	}
+
+	payload := append([]byte(nil), buf.Bytes()...)
+	var (
+		totalHits  int64
+		allResults []map[string]interface{}
+		firstErr   error
+	)
+	for _, indexName := range indexNames {
+		res, err := e.client.Search(
+			e.client.Search.WithContext(ctx),
+			e.client.Search.WithIndex(indexName),
+			e.client.Search.WithBody(bytes.NewReader(payload)),
+			e.client.Search.WithTrackTotalHits(true),
+		)
+		if err != nil {
+			common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		if res.IsError() {
+			bodyBytes, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+			// A 4xx here is typically a Lucene-incompatible pattern (e.g. \b,
+			// lookahead) being rejected. Surface it so the caller's RE2 in-memory
+			// fallback can take over instead of silently returning empty.
+			if firstErr == nil {
+				firstErr = fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
+			}
+			continue
+		}
+
+		var esResp SearchResponse
+		decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
+		res.Body.Close()
+		if decodeErr != nil {
+			common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
+			if firstErr == nil {
+				firstErr = fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
+			}
+			continue
+		}
+
+		searchChunks := convertESResponse(&esResp, "")
+		totalHits += esResp.Hits.Total.Value
+		allResults = append(allResults, searchChunks...)
+	}
+
+	// If every requested index failed (no results at all), propagate the error
+	// so the caller can fall back (e.g. GrepAdapter's in-memory RE2 filter).
+	// Partial success (some indexes returned results) is returned as-is.
+	if len(allResults) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+
+	// Single index: ES already applied from/size exactly, so the collected rows
+	// are the requested page — only cap to limit (defensive). Multi index: every
+	// index fetched up to offset+limit from 0, so sort the merged set (per the
+	// requested fields, or by score) and apply the offset once, globally.
+	// Each index already applied from=offset/size=limit, so the merged hits are
+	// the requested page per target. With an explicit sort we re-order the merged
+	// set by the requested fields so cross-index output is deterministic; without
+	// one we cap to limit (the relevance order ES returned is preserved). No
+	// offset is skipped here — it was already applied per index.
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		allResults = sortByFields(allResults, req.Sort)
+	} else {
+		allResults = sortByScore(allResults, limit)
+	}
+	if len(allResults) > limit {
+		allResults = allResults[:limit]
+	}
 
 	return &types.SearchResult{
 		Chunks: allResults,
@@ -1664,6 +1871,7 @@ func memoryMessageStatusBool(value interface{}) bool {
 // message indexes use memory_id plus message-specific storage fields.
 func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
+	var mustNotClauses []interface{}
 	var filterClauses []interface{}
 	var shouldClauses []interface{}
 
@@ -1738,6 +1946,14 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			}
 			continue
 		}
+		if k == "must_not" {
+			if condition, ok := v.(map[string]interface{}); ok {
+				if field, ok := condition["exists"].(string); ok && field != "" {
+					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
+				}
+			}
+			continue
+		}
 		if k == "id" {
 			if v == nil || v == "" {
 				continue
@@ -1802,6 +2018,9 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	boolQuery := make(map[string]interface{})
 	if len(mustClauses) > 0 {
 		boolQuery["must"] = mustClauses
+	}
+	if len(mustNotClauses) > 0 {
+		boolQuery["must_not"] = mustNotClauses
 	}
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses
@@ -2136,7 +2355,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
 				separator = "###"
 			}
-			for _, tag := range strings.Split(valueStr, separator) {
+			for tag := range strings.SplitSeq(valueStr, separator) {
 				countElasticsearchAggregationTag(tagCounts, tag)
 			}
 			continue
@@ -3023,6 +3242,53 @@ func toFloat64(v interface{}) (float64, bool) {
 		return float64(val), true
 	}
 	return 0, false
+}
+
+// sortByFields orders chunks by the given OrderByExpr fields ascending. It is
+// used after merging multi-index regexp results so the offset/limit window is
+// applied to a globally-sorted set (ES only sorts within each index). Numeric
+// fields sort numerically, string fields lexicographically.
+func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []map[string]interface{} {
+	if expr == nil || len(expr.Fields) == 0 {
+		return chunks
+	}
+	sort.SliceStable(chunks, func(i, j int) bool {
+		for _, field := range expr.Fields {
+			vi, oki := chunks[i][field.Field]
+			vj, okj := chunks[j][field.Field]
+			if !oki || !okj {
+				// Missing field sorts before a present one.
+				if !oki && !okj {
+					continue
+				}
+				return !oki
+			}
+			var less bool
+			if fi, ei := toFloat64(vi); ei {
+				if fj, ej := toFloat64(vj); ej {
+					less = fi < fj
+				} else {
+					less = false // numeric before non-numeric
+				}
+			} else {
+				si, siOk := vi.(string)
+				sj, sjOk := vj.(string)
+				if siOk && sjOk {
+					less = si < sj
+				} else {
+					less = fmt.Sprintf("%v", vi) < fmt.Sprintf("%v", vj)
+				}
+			}
+			if vi != vj {
+				if field.Type == types.SortDesc {
+					return !less
+				}
+				return less
+			}
+		}
+		return false
+	})
+	return chunks
 }
 
 // sortByScore sorts chunks by _score descending and limits

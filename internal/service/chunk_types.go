@@ -299,12 +299,13 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 		indexName := IndexName(kb.TenantID)
 
-		exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, datasetID)
+		var exists bool
+		exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
 		}
 		if exists {
-			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
 				return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
 			}
 		} else {

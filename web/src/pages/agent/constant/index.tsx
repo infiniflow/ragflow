@@ -592,6 +592,26 @@ export const initialQueritValues = {
   },
 };
 
+export enum QueritContentFormat {
+  Text = 'text',
+  Markdown = 'markdown',
+  Html = 'html',
+}
+
+export const initialQueritContentsValues = {
+  api_key: '',
+  urls: '',
+  format: QueritContentFormat.Markdown,
+  crawl_timeout: 10,
+  extras_meta: false,
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
 export enum TavilyExtractDepth {
   Basic = 'basic',
   Advanced = 'advanced',
@@ -742,6 +762,7 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.QueritContents]: [Operator.Begin],
   [Operator.QueritSearch]: [Operator.Begin],
   [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
@@ -798,6 +819,7 @@ export const NodeMap = {
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.QueritContents]: 'ragNode',
   [Operator.QueritSearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',

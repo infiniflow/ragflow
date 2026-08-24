@@ -109,10 +109,11 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 
 	svc := GetRetrievalService()
 	tenantID := canvasTenantID(ctx)
-	datasetIDs := args.KbIDs
-	if len(datasetIDs) == 0 {
-		datasetIDs = canvasDatasetIDs(ctx, nil)
-	}
+	// Route through canvasDatasetIDs so a trusted WithScope injection (when
+	// present) intersects the model-supplied kb_ids, preventing escalation
+	// outside the conversation's KBs. In the canvas runtime (no injection)
+	// explicit kb_ids remain authoritative, preserving prior behavior.
+	datasetIDs := canvasDatasetIDs(ctx, args.KbIDs)
 	if svc == nil || tenantID == "" || len(datasetIDs) == 0 {
 		return jsonChunksEmpty(), nil
 	}
@@ -173,14 +174,14 @@ func splitKeywords(keywords string) []string {
 		return nil
 	}
 	kwds := make([]string, 0, 8)
-	for _, k := range strings.Split(keywords, ",") {
+	for k := range strings.SplitSeq(keywords, ",") {
 		if k = strings.TrimSpace(k); k != "" {
 			kwds = append(kwds, strings.ToLower(k))
 		}
 	}
 	if len(kwds) < 3 {
 		words := make([]string, 0, 8)
-		for _, w := range strings.Split(keywords, " ") {
+		for w := range strings.SplitSeq(keywords, " ") {
 			if w = strings.TrimSpace(w); w != "" {
 				words = append(words, strings.ToLower(w))
 			}

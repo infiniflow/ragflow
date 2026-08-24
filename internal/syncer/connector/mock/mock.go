@@ -24,14 +24,16 @@ import (
 
 // Connector is a programmable connector for syncer tests.
 type Connector struct {
-	ValidateErr  error
-	SyncBatches  []syncerconnector.SyncBatch
-	SyncErrAt    int
-	PruneBatches []syncerconnector.PruneBatch
-	PruneErrAt   int
-	FetchBlobs   map[string][]byte
-	OnSyncBatch  func(index int)
-	OnPruneBatch func(index int)
+	ValidateErr                 error
+	ValidateConnectorSettingErr error
+	SyncBatches                 []syncerconnector.SyncBatch
+	SyncErrAt                   int
+	PruneBatches                []syncerconnector.PruneBatch
+	PruneErrAt                  int
+	FetchBlobs                  map[string][]byte
+	OnSyncBatch                 func(index int)
+	OnPruneBatch                func(index int)
+	SyncRequests                []syncerconnector.SyncRequest
 }
 
 // Validate returns the configured validation error.
@@ -39,8 +41,14 @@ func (c *Connector) Validate(ctx context.Context) error {
 	return c.ValidateErr
 }
 
+// ValidateConnectorSetting returns the configured settings validation error.
+func (c *Connector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	return c.ValidateConnectorSettingErr
+}
+
 // OpenSync opens a mock sync session.
 func (c *Connector) OpenSync(ctx context.Context, request syncerconnector.SyncRequest) (syncerconnector.SyncSession, error) {
+	c.SyncRequests = append(c.SyncRequests, request)
 	return &SyncSession{connector: c}, nil
 }
 

@@ -5,6 +5,10 @@ import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
@@ -27,8 +31,13 @@ import { getWebSearchProvider } from '../web-search-api-key';
 type ChatSettingsProps = { hasSingleChatBox: boolean };
 
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
-  const formSchema = useChatSettingSchema();
   const { data } = useFetchChat();
+
+  const chatSettingSchema = useChatSettingSchema();
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    chatSettingSchema,
+    data?.dataset_ids,
+  );
   const { updateChat, loading } = useUpdateChat();
   const findLlmByUuid = useFindLlmByUuid();
   const { id } = useParams();
@@ -42,6 +51,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     shouldUnregister: false,
+    mode: 'onChange',
     defaultValues: {
       name: '',
       icon: '',
@@ -88,10 +98,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
     // Add model_type to llm_setting based on the selected llm_id
     if (nextValues.llm_id) {
-      // The model selector returns the tenant model ID. Keep the legacy
-      // llm_id and the tenant-scoped ID synchronized; the backend gives
-      // tenant_llm_id precedence when resolving the chat model.
-      nextValues.tenant_llm_id = nextValues.llm_id;
       nextValues.llm_setting = {
         ...nextValues.llm_setting,
         model_type: findLlmByUuid(nextValues.llm_id)?.model_type || 'chat',
@@ -104,6 +110,8 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...omit(data, [
           'operator_permission',
           'tenant_id',
+          'tenant_llm_id',
+          'tenant_rerank_id',
           'created_by',
           'create_time',
           'create_date',
@@ -146,6 +154,8 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       form.reset(nextData as FormSchemaType);
     }
   }, [data, form]);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <>

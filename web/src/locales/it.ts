@@ -668,9 +668,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       linkSourceSetTip:
         'Gestisci il collegamento della fonte dati con questo dataset',
       linkDataSource: 'Collega fonte dati',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        " Per i chunk esistenti, genera un indice gerarchico (una directory per file). Durante le query, quando il Miglioramento Directory è attivato, il sistema userà un modello grande per determinare quali elementi della directory sono rilevanti per la domanda dell'utente, identificando così i chunk rilevanti.",
       deleteGenerateModalContent: `
         <p>Eliminando i risultati <strong class='text-text-primary'>{{type}}</strong> generati
         rimuoverai tutte le entità e relazioni derivate da questo dataset.
@@ -769,6 +766,12 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dialogueExamplesTitle: 'visualizza',
       methodEmpty:
         'Questo mostrerà una spiegazione visiva delle categorie del dataset',
+      audio: `<p>I formati file supportati sono <b>WAV, MP3, AAC, FLAC, OGG</b> e altri formati audio comuni.</p>
+<p>Questo metodo trascrive i file audio in testo utilizzando un modello speech-to-text.</p>`,
+      email: `<p>I formati file supportati sono <b>EML</b> e <b>MSG</b>.</p>
+<p>Questo metodo analizza i file email, estraendo i campi di intestazione (come Da, A, CC, Oggetto e Data), il corpo del messaggio e gli allegati.</p>`,
+      knowledgeCompiler: `<p>Questa pipeline analizza e suddivide i file in chunk, quindi compila i chunk in unità di conoscenza strutturate (knowledge graph, wiki, RAPTOR, mappa mentale o navigazione del dataset) tramite il componente Knowledge Compiler.</p>
+<p>Le unità di conoscenza compilate vengono emesse come chunk uniti nel flusso di chunk, l'ideale per costruire un livello di conoscenza recuperabile sopra i documenti suddivisi.</p>`,
       book: `<p>I formati file supportati sono <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Per ogni libro in PDF, imposta gli <i>intervalli di pagine</i> per rimuovere informazioni indesiderate e ridurre il tempo di analisi.</p>`,
       laws: `<p>I formati file supportati sono <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -1761,7 +1764,7 @@ Esempio: Virtual Hosted Style`,
         chat: 'Chat',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',

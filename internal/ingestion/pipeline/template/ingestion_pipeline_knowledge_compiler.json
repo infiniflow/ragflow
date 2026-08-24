@@ -157,7 +157,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
@@ -187,9 +187,9 @@
                 "obj": {
                     "component_name": "Compiler",
                     "params": {
+                        "compilation_template_group_id": "",
                         "llm_id": "",
-                        "variant": "structure",
-                        "language": "English"
+                        "plan": false
                     }
                 },
                 "upstream": [

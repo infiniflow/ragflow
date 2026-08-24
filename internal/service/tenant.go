@@ -320,9 +320,9 @@ func (s *TenantService) GetTenantList(ctx context.Context, userID string) ([]*Te
 }
 
 // CreateMetadataStore creates the metadata store for a tenant
-func (s *TenantService) CreateMetadataStore(tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) CreateMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
 	// Call document engine to create doc meta table
-	err := s.docEngine.CreateMetadataStore(context.Background(), tenantID)
+	err := s.docEngine.CreateMetadataStore(ctx, tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to create metadata table: %w", err)
 	}
@@ -331,9 +331,9 @@ func (s *TenantService) CreateMetadataStore(tenantID string) (common.ErrorCode, 
 }
 
 // DeleteMetadataStore deletes the metadata store for a tenant
-func (s *TenantService) DeleteMetadataStore(tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) DeleteMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
 	// Call document engine to delete doc meta table
-	err := s.docEngine.DropMetadataStore(context.Background(), tenantID)
+	err := s.docEngine.DropMetadataStore(ctx, tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete doc meta table: %w", err)
 	}
@@ -449,17 +449,6 @@ func ptrStringValue(s *string) string {
 	return *s
 }
 
-func factoryModelTypeName(modelType string) string {
-	switch modelType {
-	case "image2text":
-		return "vision"
-	case "speech2text":
-		return "asr"
-	default:
-		return modelType
-	}
-}
-
 // GetDefaultModelName returns the full default model ID for a tenant and model type
 // Format: modelName@instanceName@providerName or modelName@providerName
 // Returns empty string if no default model is set
@@ -537,17 +526,9 @@ func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defau
 		return nil, nil, nil, false, err
 	}
 
-	// Validate that the factory model supports this model type.
-	modelSchema, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	if err != nil {
-		return nil, nil, nil, false, err
-	}
-	factoryModelType := factoryModelTypeName(modelType)
-	if !modelSchema.ModelTypeMap[factoryModelType] {
-		return nil, nil, nil, false, fmt.Errorf("model %s isn't a %s model", modelName, modelType)
-	}
-
-	// Check if the model exists and is active.
+	// Check if the model exists and is active. Model type validity is
+	// enforced on the save path against the tenant_model record, so models
+	// added online that are absent from the static catalog still resolve.
 	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {

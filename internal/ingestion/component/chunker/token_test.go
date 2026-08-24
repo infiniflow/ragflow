@@ -145,7 +145,7 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 // token-size merge and emit >=1 chunk.
 func TestTokenChunker_InvokeTokenSize_FallbackToMerge(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": 50,
 		"delimiters":       []string{"`\n\n`"},
 	})
@@ -365,9 +365,9 @@ func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
 	}{
 		{"bad delimiter_mode", map[string]any{"delimiter_mode": "nope"}},
 		{"one delimiter_mode (use OneChunker)", map[string]any{"delimiter_mode": "one"}},
-		{"zero chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 0}},
-		{"negative chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": -5}},
-		{"negative table_context_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 50, "table_context_size": -1}},
+		{"zero chunk_token_size", map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 0}},
+		{"negative chunk_token_size", map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": -5}},
+		{"negative table_context_size", map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 50, "table_context_size": -1}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -380,14 +380,14 @@ func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
 
 // TestTokenChunker_NewAcceptsDefaults ensures the no-config
 // constructor returns a usable component with a working default
-// delimiter_mode = "token_size".
+// delimiter_mode = "delimiter".
 func TestTokenChunker_NewAcceptsDefaults(t *testing.T) {
 	c, err := NewTokenChunker(nil)
 	if err != nil {
 		t.Fatalf("NewTokenChunker(nil): %v", err)
 	}
-	if got := c.(*TokenChunkerComponent).param.DelimiterMode; got != "token_size" {
-		t.Errorf("default delimiter_mode = %q, want token_size", got)
+	if got := c.(*TokenChunkerComponent).param.DelimiterMode; got != "delimiter" {
+		t.Errorf("default delimiter_mode = %q, want delimiter", got)
 	}
 }
 
@@ -439,7 +439,7 @@ func TestTokenChunker_NewAcceptsPythonOverlappedRange(t *testing.T) {
 	// percentages, including out-of-range inputs that Python clamps).
 	for _, pct := range []float64{0, 0.1, 0.5, 15, 30, 50, 90, 95, -5} {
 		conf := map[string]any{
-			"delimiter_mode":     "token_size",
+			"delimiter_mode":     "delimiter",
 			"chunk_token_size":   100,
 			"overlapped_percent": pct,
 		}
@@ -535,7 +535,7 @@ func TestTokenChunker_NormalizesOverlappedPercent(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := NewTokenChunker(map[string]any{
-				"delimiter_mode":     "token_size",
+				"delimiter_mode":     "delimiter",
 				"chunk_token_size":   100,
 				"overlapped_percent": tc.in,
 			})
@@ -575,7 +575,7 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := schema.TokenChunkerParam{
-				DelimiterMode:     "token_size",
+				DelimiterMode:     "delimiter",
 				ChunkTokenSize:    100,
 				OverlappedPercent: tc.in,
 			}
@@ -607,7 +607,7 @@ func TestMergeByTokenSize_CRLFNormalization(t *testing.T) {
 		c := &TokenChunkerComponent{}
 		c.param.ChunkTokenSize = 128
 		c.param.OverlappedPercent = 0
-		out := c.mergeByTokenSize(text, nil)
+		out := c.mergeByTokenSize(text, nil, nil)
 		raw, ok := out["chunks"].([]map[string]any)
 		if !ok {
 			t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -652,7 +652,7 @@ func TestMergeByTokenSize_PreservesBlankLines(t *testing.T) {
 	c := &TokenChunkerComponent{}
 	c.param.ChunkTokenSize = 128
 	c.param.OverlappedPercent = 0
-	out := c.mergeByTokenSize("A\n\n\nB", nil)
+	out := c.mergeByTokenSize("A\n\n\nB", nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -681,7 +681,7 @@ func TestMergeByTokenSize_OversizeDropsDelimiters(t *testing.T) {
 	c.param.ChunkTokenSize = 5
 	c.param.OverlappedPercent = 0
 	text := "第一句。第二句。第三句。第四句。第五句。"
-	out := c.mergeByTokenSize(text, nil)
+	out := c.mergeByTokenSize(text, nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -712,7 +712,7 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	// dropped, mirroring Python, so the blank line must not survive.
 	block := strings.Repeat("知识库检索增强生成技术", 7) // 70 chars
 	text := block + "\n\n" + block
-	out := c.mergeByTokenSize(text, nil)
+	out := c.mergeByTokenSize(text, nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)

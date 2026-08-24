@@ -146,8 +146,8 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "ingestion", data, wantNames)
@@ -172,8 +172,8 @@ func TestComponentsHandler_FilterMultiple(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "ingestion,shared", data, wantNames)
@@ -273,8 +273,8 @@ func TestComponentsHandler_CaseInsensitive(t *testing.T) {
 	}
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 	wantNames := []string{
-		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "INGESTION (case-folded)", data, wantNames)

@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cloudwego/eino/compose"
+	"go.uber.org/zap"
 )
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
@@ -151,6 +152,9 @@ func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pip
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: decode canvas DSL: %w", err)
 	}
+	if err := ValidatePipeline(cnv); err != nil {
+		return nil, err
+	}
 	// Capture the canonical canvas DSL bytes for the resume-time DSL
 	// fingerprint. json.Marshal sorts map keys, so this is stable across
 	// re-decodes of the same logical DSL (formatting-independent).
@@ -167,6 +171,24 @@ func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pip
 		o(p)
 	}
 	return p, nil
+}
+
+// ValidatePipeline enforces ingestion pipeline constraints.
+// Specifically, at most one Extractor component is permitted in the graph.
+func ValidatePipeline(cnv *canvas.Canvas) error {
+	if cnv == nil {
+		return nil
+	}
+	extractorCount := 0
+	for id, comp := range cnv.Components {
+		if isExtractorComponent(id, comp.Obj.ComponentName) {
+			extractorCount++
+		}
+	}
+	if extractorCount > 1 {
+		return fmt.Errorf("pipeline validation error: at most 1 Extractor component is allowed, found %d", extractorCount)
+	}
+	return nil
 }
 
 // WithComponentFactory installs an instance-scoped factory override for this
@@ -445,6 +467,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// runs), in which case TrackProgress is a no-op — progress is an
 	// observability concern, not a data dependency.
 	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
+	runCtx = runtime.WithProgressMessageCallback(runCtx, p.componentProgressMessageCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -653,6 +676,34 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 				msg = ev.Component + " Error"
 			}
 		}
+		// Surface every component lifecycle event as a structured log line so
+		// a component failure (e.g. an LLM/client error) is captured in
+		// ingestor_server.log even if the wrapped error never reaches the
+		// higher-level "Task ... failed" branch.
+		switch ev.Phase {
+		case runtime.PhaseError:
+			if ev.Err != nil {
+				common.Error("component progress: error", ev.Err,
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			} else {
+				common.Info("component progress: error",
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			}
+		default:
+			// Keep the message constant: msg may carry component names or
+			// error-derived text, and a newline in it could forge a log record
+			// (CWE-117). Pass msg and the phase as structured fields instead.
+			common.Info("component progress",
+				zap.String("message", msg),
+				zap.Int("phase", int(ev.Phase)),
+				zap.String("component", ev.Component),
+				zap.String("task_id", p.taskID),
+				zap.String("document_id", p.documentID))
+		}
 		p.sink.OnComponentProgress(ctx, ProgressEvent{
 			TaskID:     p.taskID,
 			DocumentID: p.documentID,
@@ -660,5 +711,24 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			Message:    msg,
 			Phase:      int(ev.Phase),
 		})
+	}
+}
+
+type detailedProgressSink interface {
+	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime.ProgressMessageCallback {
+	sink, ok := p.sink.(detailedProgressSink)
+	if !ok {
+		return nil
+	}
+	return func(component, message string) {
+		common.Info("component progress detail",
+			zap.String("component", component),
+			zap.String("task_id", p.taskID),
+			zap.String("document_id", p.documentID),
+			zap.String("message", message))
+		sink.OnComponentMessage(ctx, p.taskID, p.documentID, component, message)
 	}
 }

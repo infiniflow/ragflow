@@ -9,19 +9,30 @@ cat /ragflow/VERSION
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--disable-datasync] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [OPTIONS]"
     echo
-    echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
-    echo "  --disable-taskexecutor          Disables task executor workers."
-    echo "  --disable-datasync              Disables synchronization of datasource workers."
-    echo "  --enable-mcpserver              Enables the MCP server."
-    echo "  --enable-adminserver            Enables the Admin server."
-    echo "  --init-model-provider-tables  Run model provider table migrations and exit."
-    echo "  --init-superuser                Initializes the superuser."
-    echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
-    echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
-    echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
-    echo "  --host-id=<string>              Unique ID for the host (defaults to \`hostname\`)."
+    echo "  --disable-webserver                     Disables the web server (nginx + ragflow_server)."
+    echo "  --disable-taskexecutor                  Disables task executor workers."
+    echo "  --disable-datasync                      Disables synchronization of datasource workers."
+    echo "  --enable-mcpserver                      Enables the MCP server."
+    echo "  --enable-adminserver                    Enables the Admin server."
+    echo "  --init-model-provider-tables            Run model provider table migrations and exit."
+    echo "  --init-superuser                        Initializes the superuser."
+    echo "  --consumer-no-beg=<num>                 Start range for consumers (if using range-based)."
+    echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
+    echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
+    echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
+    echo "  --mcp-host=<string>                     Address the MCP server binds to (default: 127.0.0.1)."
+    echo "  --mcp-port=<num>                        Port the MCP server listens on (default: 9382)."
+    echo "  --mcp-base-url=<string>                 RAGFlow base URL the MCP server calls (default: http://127.0.0.1:9380)."
+    echo "  --mcp-script-path=<path>                MCP server entry script (default: /ragflow/mcp/server/server.py)."
+    echo "  --mcp-mode=<self-host|host>             MCP server mode (default: self-host)."
+    echo "  --mcp-host-api-key=<string>             API key required when --mcp-mode=self-host."
+    echo "  --no-transport-sse-enabled              Disables the MCP SSE transport."
+    echo "  --no-transport-streamable-http-enabled  Disables the MCP streamable HTTP transport. Disabling"
+    echo "                                          both transports re-enables this one, since the server"
+    echo "                                          requires at least one."
+    echo "  --no-json-response                      Disables JSON responses from the MCP server."
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
@@ -255,7 +266,15 @@ ensure_docling
 ensure_db_init
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    tools/scripts/run_migrations.sh
+    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
+    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
+    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
+        # This migration script contains MySQL-only SQL and cannot run against
+        # a GaussDB metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+    else
+        tools/scripts/run_migrations.sh
+    fi
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then

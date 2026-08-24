@@ -682,9 +682,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 }
 
 func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+
 	ownerTenantID := ""
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -840,9 +838,7 @@ func (s *ChatSessionService) applyChunkFeedback(ctx context.Context, tenantID st
 			"disabled":      true,
 		}, nil
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
+
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, chunkFeedbackTimeout)
@@ -1452,9 +1448,6 @@ func (s *ChatSessionService) ChatCompletions(
 	passAllHistory bool, storeHistory bool, legacy bool,
 	stream bool, streamChan chan<- string,
 ) (map[string]interface{}, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	fail := func(err error) (map[string]interface{}, error) {
 		if stream && streamChan != nil {

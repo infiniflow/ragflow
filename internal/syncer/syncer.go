@@ -22,20 +22,25 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	documentservice "ragflow/internal/service/document"
 	syncerconnector "ragflow/internal/syncer/connector"
 	"ragflow/internal/utility"
+
+	"go.uber.org/zap"
 )
 
-// Syncer owns the scheduler, task queue, and bounded worker pool.
+// Syncer owns NATS/DB scheduling, task workers, and the shared batch job executor.
 type Syncer struct {
 	id          string
 	config      Config
 	queue       chan TaskEnvelope
 	scheduler   *Scheduler
 	worker      *TaskWorker
+	executor    *SyncJobExecutor
 	cancel      context.CancelFunc
 	workerGroup sync.WaitGroup
 	stopOnce    sync.Once
@@ -43,19 +48,18 @@ type Syncer struct {
 }
 
 // NewSyncer creates a server-compatible syncer with default dependencies.
-func NewSyncer(maxConcurrency int, pollInterval time.Duration) *Syncer {
+func NewSyncer(taskWorkerCount int) *Syncer {
 	// init the config
 	config := DefaultConfig()
-	config.TaskConcurrency = maxConcurrency
-	config.PollInterval = pollInterval
+	config.TaskWorkerCount = taskWorkerCount
 
 	taskDAO := dao.NewSyncTaskDAO(nil)
 	registry := syncerconnector.NewRegistry()
 
-	registerBuiltInConnectors(registry)
+	syncerconnector.RegisterBuiltIns(registry)
 
 	documentService := documentservice.NewDocumentService()
-	pruneService := service.NewSyncPruneService(dao.NewSyncPruneSnapshotDAO(taskDAO.DB()), documentService, nil)
+	pruneService := service.NewSyncPruneService(documentService, nil)
 
 	return New(config, taskDAO, registry, documentService, pruneService)
 }
@@ -66,22 +70,35 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 	queue := make(chan TaskEnvelope, config.TaskQueueSize)
 	locker := NewConnectorLock()
 
-	globalItems := make(chan struct{}, config.GlobalItemConcurrency)
+	executor := NewSyncJobExecutor(SyncJobExecutorConfig{
+		WorkerCount:  config.JobWorkerCount,
+		JobQueueSize: config.JobQueueSize,
+	})
 	taskService := service.NewSyncTaskService(taskDAO)
 	idResolver := service.NewDocumentIDResolver(service.NewGormDocumentStore())
+	checkpoints := SyncCheckpointStore(newMemorySyncCheckpointStore())
+	messageQueue := engine.GetMessageQueueEngine()
+	if store, ok := messageQueue.(SyncCheckpointStore); ok {
+		checkpoints = store
+	}
 
-	coordinator := NewTaskCoordinator(TaskCoordinatorConfig{
-		PerTaskItemConcurrency: config.PerTaskItemConcurrency,
-		ItemRetryCount:         config.ItemRetryCount,
-		ItemRetryBaseDelay:     config.ItemRetryBaseDelay,
-	}, taskService, registry, sink, pruneService, idResolver, globalItems)
+	coordinator := NewTaskCoordinator(SyncRunnerConfig{
+		ItemRetryCount:     config.ItemRetryCount,
+		ItemRetryBaseDelay: config.ItemRetryBaseDelay,
+	}, taskDAO, taskService, registry, sink, pruneService, idResolver, executor, checkpoints)
+
+	scheduler := NewScheduler(queue, taskDAO)
+	if broker, ok := messageQueue.(SyncTaskBroker); ok {
+		scheduler = NewNATSScheduler(queue, taskDAO, broker)
+	}
 
 	return &Syncer{
 		id:         utility.GenerateUUID(),
 		config:     config,
 		queue:      queue,
-		scheduler:  NewScheduler(config.PollInterval, queue, taskService),
-		worker:     NewTaskWorker(queue, taskService, coordinator, locker),
+		scheduler:  scheduler,
+		worker:     NewTaskWorker(queue, taskDAO, taskService, coordinator, locker).WithScheduler(scheduler),
+		executor:   executor,
 		ShutdownCh: make(chan struct{}),
 	}
 }
@@ -94,11 +111,6 @@ func (s *Syncer) ID() string {
 	return s.id
 }
 
-// Start launches the scheduler and task workers with a background context.
-func (s *Syncer) Start() error {
-	return s.StartContext(context.Background())
-}
-
 // StartContext launches the scheduler and task workers.
 func (s *Syncer) StartContext(ctx context.Context) error {
 	if s == nil {
@@ -109,13 +121,18 @@ func (s *Syncer) StartContext(ctx context.Context) error {
 	s.cancel = cancel
 	s.workerGroup.Add(2)
 
+	// run scheduler
 	go func() {
 		defer s.workerGroup.Done()
-		_ = s.scheduler.Run(runCtx)
+		if err := s.scheduler.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
+			common.Error("syncer scheduler stopped", err)
+		}
 	}()
+
+	// run worker poll
 	go func() {
 		defer s.workerGroup.Done()
-		s.worker.Run(runCtx, s.config.TaskConcurrency)
+		s.worker.Run(runCtx, s.config.TaskWorkerCount)
 	}()
 	return nil
 }
@@ -130,24 +147,22 @@ func (s *Syncer) Stop() {
 			s.cancel()
 		}
 		s.workerGroup.Wait()
+		s.executor.Close()
 		close(s.ShutdownCh)
 	})
 }
 
-// registerBuiltInConnectors registers datasource connectors available in the server binary.
-func registerBuiltInConnectors(registry *syncerconnector.Registry) {
-	registry.Register("rss", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
-		row, ok := taskContext.(dao.SyncTaskContext)
-		if !ok {
-			return nil, errors.New("rss connector received an invalid task context")
-		}
-		return syncerconnector.NewRSSConnector(map[string]any(row.Connector.Config))
-	})
-	registry.Register("github", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
-		row, ok := taskContext.(dao.SyncTaskContext)
-		if !ok {
-			return nil, errors.New("github connector received an invalid task context")
-		}
-		return syncerconnector.NewGitHubConnector(map[string]any(row.Connector.Config))
-	})
+// logSyncTaskDuration get job run time
+func logSyncTaskDuration(taskContext dao.SyncTaskContext, startedAt time.Time) {
+	if taskContext.Task.TaskType != dao.TaskTypeSync {
+		return
+	}
+	common.Info(
+		"sync task duration",
+		zap.String("task_id", taskContext.Task.ID),
+		zap.String("connector_id", taskContext.Connector.ID),
+		zap.String("kb_id", taskContext.Knowledgebase.ID),
+		zap.String("source", taskContext.Connector.Source),
+		zap.Duration("elapsed", time.Since(startedAt)),
+	)
 }
