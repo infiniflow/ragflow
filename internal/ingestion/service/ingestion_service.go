@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -106,6 +107,10 @@ type Ingestor struct {
 	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
 	// override this to simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
+
+	// checkpointExists distinguishes a fresh run from a checkpoint resume.
+	// Tests inject this dependency so unit tests do not require Redis.
+	checkpointExists func(ctx context.Context, taskID string) (bool, error)
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
@@ -131,6 +136,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
+	ingestor.checkpointExists = canvas.RedisCheckpointExists
 	ingestor.kcConcurrency = maxConcurrency // parallel dataset-level compile workers default to the task width
 	return ingestor
 }
@@ -615,13 +621,30 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		}
 		return ok
 	}
-	if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
-		common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
+	checkpointExists := e.checkpointExists
+	if checkpointExists == nil {
+		checkpointExists = canvas.RedisCheckpointExists
+	}
+	resumeCheckpoint, checkpointErr := checkpointExists(ctx, task.ID)
+	if checkpointErr != nil {
+		common.Error(fmt.Sprintf("Failed to check checkpoint for task %s", task.ID), checkpointErr)
 		ok := e.markFailed(ctx, task.ID)
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
 		}
 		return ok
+	}
+	if !resumeCheckpoint {
+		if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
+			common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
+			ok := e.markFailed(ctx, task.ID)
+			if ok {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			}
+			return ok
+		}
+	} else {
+		common.Info(fmt.Sprintf("Preserving component progress for checkpoint resume of task %s", task.ID))
 	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag

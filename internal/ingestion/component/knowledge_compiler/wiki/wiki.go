@@ -391,19 +391,6 @@ func (p *wikiPipeline) run() error {
 		zap.Strings("concepts", conceptsDebug(reduced.Concepts)),
 		zap.Int("claims", len(reduced.Claims)),
 		zap.Strings("relations", relationsDebug(reduced.Relations)))
-	// Layer embedding + LLM disambiguation onto the exact-merged entities
-	// (REDUCE enhancement; concepts keep exact dedup). Degrades to a no-op when
-	// the embedder/chat seams are unavailable.
-	preDedup := reduced.Entities
-	p.reduced.Entities = p.dedupeEntities(preDedup)
-	appcommon.Debug("wiki: REDUCE embedding+LLM dedup done",
-		zap.String("dataset_id", p.datasetID),
-		zap.String("doc_id", p.runKey()),
-		zap.Int("pre_dedup_entities", len(preDedup)),
-		zap.Int("post_dedup_entities", len(p.reduced.Entities)),
-		zap.Strings("pre_dedup_names", entityNamesDebug(preDedup)),
-		zap.Strings("post_dedup_names", entityNamesDebug(p.reduced.Entities)),
-		zap.Strings("post_dedup_entities", entitiesDebug(p.reduced.Entities)))
 	appcommon.Info("wiki: REDUCE done",
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
@@ -1528,11 +1515,13 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 	}
 	entities := map[entityKey]*wikiEntity{}
 	concepts := map[conceptKey]*wikiConcept{}
-	seenRelations := map[string]bool{}
+	relationIndexes := map[string]int{}
 	seenTopics := map[string]bool{}
 
 	for _, ex := range extracts {
 		for _, e := range ex.Entities {
+			e.Name = strings.Join(strings.Fields(e.Name), " ")
+			e.Type = strings.Join(strings.Fields(e.Type), " ")
 			key := entityKey{Name: normKey(e.Name), Type: normKey(e.Type)}
 			if cur, ok := entities[key]; ok {
 				cur.Aliases = mergeStrings(cur.Aliases, e.Aliases)
@@ -1543,8 +1532,6 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 				continue
 			}
 			item := e
-			item.Name = strings.TrimSpace(item.Name)
-			item.Type = strings.TrimSpace(item.Type)
 			item.Aliases = uniqueStrings(item.Aliases)
 			item.SourceChunkIDs = uniqueStrings(item.SourceChunkIDs)
 			entities[key] = &item
@@ -1570,11 +1557,12 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 		}
 		for _, r := range ex.Relations {
 			key := normKey(r.From) + "\x00" + normKey(r.Type) + "\x00" + normKey(r.To)
-			if seenRelations[key] {
+			if cur, ok := relationIndexes[key]; ok {
+				out.Relations[cur].SourceChunkIDs = mergeStrings(out.Relations[cur].SourceChunkIDs, r.SourceChunkIDs)
 				continue
 			}
 			r.SourceChunkIDs = uniqueStrings(r.SourceChunkIDs)
-			seenRelations[key] = true
+			relationIndexes[key] = len(out.Relations)
 			out.Relations = append(out.Relations, r)
 		}
 		for _, t := range ex.Topics {
@@ -1597,10 +1585,10 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Name == keys[j].Name {
-			return keys[i].Type < keys[j].Type
+		if keys[i].Type == keys[j].Type {
+			return keys[i].Name < keys[j].Name
 		}
-		return keys[i].Name < keys[j].Name
+		return keys[i].Type < keys[j].Type
 	})
 	for _, k := range keys {
 		out.Entities = append(out.Entities, *entities[k])
@@ -1708,13 +1696,9 @@ func normalizeWikiPlan(plan wikiPlan, docID string, reduced wikiExtract) wikiPla
 
 func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPlanPage {
 	// existing maps a plan slug to its index in out (exact-slug dedup); byTitle
-	// additionally collapses pages that share the same page_type + normalized
-	// title, so a single batch never yields two "吕布" pages whose slugs only
-	// differ in transliteration (lu-bu vs lv-bu). Scheme A (§5 of the duplicates
-	// research): page identity is page_type/slug, so the key is page-type-scoped
-	// (a same-title concept and topic may legitimately coexist) and the first
-	// page seen (LLM emission order) is kept, folding the duplicate's RelatedKB
-	// into the survivor so its outlinks are not silently dropped.
+	// additionally collapses non-canonical pages that share the same page_type +
+	// normalized title. Single-entity pages use their canonical slug instead so
+	// same-named entities of different types remain distinct.
 	existing := map[string]int{}
 	byTitle := map[string]int{}
 	out := make([]wikiPlanPage, 0, len(pages))
@@ -1728,6 +1712,9 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			continue
 		}
 		key := wikiTitleKey(page.PageType, page.Title)
+		if page.PageType == "entity" && len(page.EntityNames) == 1 {
+			key = page.PageType + "\x00" + page.Slug
+		}
 		if idx, ok := byTitle[key]; ok {
 			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
 			continue
@@ -1745,7 +1732,11 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			}
 			page = normalizeWikiPlanPage(page)
 			idx := len(out)
-			byTitle[wikiTitleKey(page.PageType, page.Title)] = idx
+			key := wikiTitleKey(page.PageType, page.Title)
+			if page.PageType == "entity" && len(page.EntityNames) == 1 {
+				key = page.PageType + "\x00" + page.Slug
+			}
+			byTitle[key] = idx
 			existing[page.Slug] = idx
 			out = append(out, page)
 		}
@@ -1868,6 +1859,8 @@ func (p *wikiPipeline) buildModeAPlan() wikiPlan {
 	fullSlugFor := func(name, pageType string) string {
 		return pageType + "/" + normalizeWikiSlugHyphens(slugify(name))
 	}
+	entitySlugFor := func(e wikiEntity) string { return entityPageSlug(e.Name, e.Type) }
+	entitySlugsByName := map[string][]string{}
 	slugToIndex := map[string]int{}
 	var pages []wikiPlanPage
 	addPage := func(slug, title, pageType string, entityNames []string) {
@@ -1891,7 +1884,8 @@ func (p *wikiPipeline) buildModeAPlan() wikiPlan {
 		if name == "" {
 			continue
 		}
-		slug := fullSlugFor(name, "entity")
+		slug := entitySlugFor(e)
+		entitySlugsByName[normKey(name)] = append(entitySlugsByName[normKey(name)], slug)
 		addPage(slug, name, "entity", []string{name})
 	}
 	for _, c := range reduced.Concepts {
@@ -1909,8 +1903,13 @@ func (p *wikiPipeline) buildModeAPlan() wikiPlan {
 		if from == "" || to == "" {
 			continue
 		}
-		fromSlug := fullSlugFor(from, "entity")
-		toSlug := fullSlugFor(to, "entity")
+		fromSlugs := uniqueStrings(entitySlugsByName[normKey(from)])
+		toSlugs := uniqueStrings(entitySlugsByName[normKey(to)])
+		if len(fromSlugs) != 1 || len(toSlugs) != 1 {
+			continue
+		}
+		fromSlug := fromSlugs[0]
+		toSlug := toSlugs[0]
 		if fromSlug == toSlug {
 			continue
 		}
@@ -1943,7 +1942,7 @@ func buildWikiFallbackPages(reduced wikiExtract) []wikiPlanPage {
 	for _, e := range reduced.Entities {
 		appendPage(wikiPlanPage{
 			Action:      "CREATE",
-			Slug:        "entity/" + slugify(e.Name),
+			Slug:        entityPageSlug(e.Name, e.Type),
 			Title:       e.Name,
 			PageType:    "entity",
 			Topic:       e.Name,
@@ -3077,6 +3076,22 @@ func l2Norm32(v []float32) float64 {
 		s += float64(x) * float64(x)
 	}
 	return math.Sqrt(s)
+}
+
+func cosine32(a, b []float32) float64 {
+	if len(a) != len(b) {
+		return 0
+	}
+	na := l2Norm32(a)
+	nb := l2Norm32(b)
+	if na == 0 || nb == 0 {
+		return 0
+	}
+	var dot float64
+	for i := range a {
+		dot += float64(a[i]) * float64(b[i])
+	}
+	return dot / (na * nb)
 }
 
 func maxInt(a, b int) int {

@@ -122,7 +122,7 @@ class Invoke(ComponentBase, ABC):
             self.set_input_value(variable_name, value)
         return "" if value is None else value
 
-    def _render_template(self, content: str, pattern: str, kwargs: dict | None = None, *, flags: int = 0) -> str:
+    def _render_template(self, content: str, pattern: str, kwargs: dict | None = None, *, flags: int = 0, complete_matches: bool = False) -> str:
         content = content or ""
         if not content:
             return content
@@ -130,10 +130,13 @@ class Invoke(ComponentBase, ABC):
         def replace_variable(match_obj):
             return str(self._resolve_variable_value(match_obj.group(1), kwargs))
 
-        return re.sub(pattern, replace_variable, content, flags=flags)
+        compiled_pattern = re.compile(pattern, flags=flags)
+        if complete_matches:
+            return self._replace_template_matches(compiled_pattern, content, replace_variable)
+        return compiled_pattern.sub(replace_variable, content)
 
     def _resolve_template_text(self, content: str, kwargs: dict | None = None) -> str:
-        return self._render_template(content, self.variable_ref_patt, kwargs, flags=re.DOTALL)
+        return self._render_template(content, self.variable_ref_patt, kwargs, flags=re.DOTALL, complete_matches=True)
 
     def _resolve_header_text(self, content: str, kwargs: dict | None = None) -> str:
         # Headers support plain {token} placeholders, so they cannot reuse the canvas variable regex.
@@ -210,7 +213,7 @@ class Invoke(ComponentBase, ABC):
         proxy_url = self._normalize_proxy_url()
         if not proxy_url:
             return None
-        return {"http": self._param.proxy, "https": self._param.proxy}
+        return {"http": proxy_url, "https": proxy_url}
 
     def _send_request(self, url: str, args: dict, headers: dict, proxies: dict | None):
         method = self._param.method.lower()
@@ -254,6 +257,7 @@ class Invoke(ComponentBase, ABC):
             proxy_url = self._normalize_proxy_url()
             try:
                 proxy_hostname, proxy_ip = assert_url_is_safe(proxy_url)
+                logging.debug("Invoke proxy in use: %s", self._ssrf_log_target(proxy_url))
             except ValueError as exc:
                 logging.warning(
                     "Invoke SSRF guard blocked proxy=%s: %s",
