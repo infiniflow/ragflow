@@ -569,7 +569,11 @@ func TestEngine_GetOrCompute_WriteBack_ContextCancelled(t *testing.T) {
 }
 
 func TestEngine_GetOrCompute_Cancellation_SingleForgetNoRace(t *testing.T) {
-	engine, _, _ := newTestEngineWithRedis[string](t)
+	engine, _, _ := newTestEngineWithRedis[string](t,
+		WithValidator[string](func(s string) bool {
+			return s != "resultA" // Prevent cancelled A from populating Redis so C strictly tests SingleFlight joining B
+		}),
+	)
 
 	// 1. Caller A starts a slow flight
 	ctxA, cancelA := context.WithCancel(context.Background())
