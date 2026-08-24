@@ -265,7 +265,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     make_colon_as_title(sections)
     bull = bullets_category(sections)
-    res = tree_merge(bull, sections, 2)
+    # chunk_token_num == 0 marks sections a parser already chunked (tcadp/docling/
+    # mineru/paddleocr, set above), so tree_merge is told to keep its historical
+    # unbounded-leaf behaviour for those; otherwise a single heading with a long,
+    # sub-heading-free body no longer comes out as one oversized chunk.
+    chunk_token_num = int(parser_config.get("chunk_token_num", 512) or 0)
+    res = tree_merge(bull, sections, 2, chunk_token_num)
 
     if not res:
         callback(0.99, "No chunk parsed out.")
