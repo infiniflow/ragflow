@@ -33,9 +33,9 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/cache/llmcache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -51,8 +51,23 @@ func setupTestRedis(t *testing.T) (*miniredis.Miniredis, *goredis.Client) {
 	t.Cleanup(mr.Close)
 	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
-	restore := redis.SetGlobalClient(redis.NewTestClient(rdb))
-	t.Cleanup(restore)
+
+	testTextCache := llmcache.New[string](
+		llmcache.WithValidator(isValidLLMCachePayload),
+		llmcache.WithUniversalClient[string](rdb),
+	)
+	testMetaCache := llmcache.New[map[string]any](
+		llmcache.WithValidator(func(m map[string]any) bool { return m != nil }),
+		llmcache.WithUniversalClient[map[string]any](rdb),
+	)
+	testTagCache := llmcache.New[map[string]int](
+		llmcache.WithValidator(func(m map[string]int) bool { return m != nil }),
+		llmcache.WithUniversalClient[map[string]int](rdb),
+	)
+	restoreExtractor := SetExtractorCachesForTest(testTextCache, testMetaCache)
+	t.Cleanup(restoreExtractor)
+	restoreTag := SetTaggerCacheForTest(testTagCache)
+	t.Cleanup(restoreTag)
 	return mr, rdb
 }
 
@@ -2562,5 +2577,200 @@ func TestExtractor_Cache_ConcurrentSingleFlight(t *testing.T) {
 		}
 	}
 }
+
+func TestSetExtractorCachesForTest_Restore(t *testing.T) {
+	origText := getTextExtractCache()
+	origMeta := getMetadataCache()
+
+	customText := llmcache.New[string]()
+	customMeta := llmcache.New[map[string]any]()
+
+	restore := SetExtractorCachesForTest(customText, customMeta)
+	if getTextExtractCache() != customText {
+		t.Errorf("getTextExtractCache() did not return customText")
+	}
+	if getMetadataCache() != customMeta {
+		t.Errorf("getMetadataCache() did not return customMeta")
+	}
+
+	restore()
+	if getTextExtractCache() != origText {
+		t.Errorf("getTextExtractCache() did not restore origText")
+	}
+	if getMetadataCache() != origMeta {
+		t.Errorf("getMetadataCache() did not restore origMeta")
+	}
+}
+
+func TestExtractor_Cache_EffectiveLLMIDResolution(t *testing.T) {
+	setupTestRedis(t)
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+
+	SetExtractorChatTargetResolverOverride(func(llmID string) (string, string, string, string, bool) {
+		return "mock_driver", llmID, "", "", true
+	})
+	t.Cleanup(func() { SetExtractorChatTargetResolverOverride(nil) })
+
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	stub := withStubChatInvoker(t,
+		// Call 1 for default composite model summary
+		stubResponse{Content: "Summary from composite model"},
+		// Call 2 for pinned UUID model summary (after tenant default model change)
+		stubResponse{Content: "Summary from pinned model"},
+	)
+
+	comp, err := NewExtractorComponent(map[string]any{
+		// llm_id omitted to test default model resolution
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Text content for effective LLM ID test."},
+		},
+	}
+
+	// 1. First run: resolves composite model "gpt-4o@openai", cache miss -> triggers LLM (call count = 1)
+	out1, err := comp.Invoke(ctx, db, in)
+	if err != nil {
+		t.Fatalf("First Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("expected 1 call on first run, got %d", calls)
+	}
+	ck1 := out1["chunks"].([]map[string]any)[0]
+	if ck1["summary"] != "Summary from composite model" {
+		t.Fatalf("expected summary 'Summary from composite model', got %v", ck1["summary"])
+	}
+
+	// 2. Second run: resolves composite model, cache hit -> 0 new LLM calls (call count = 1)
+	in2 := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Text content for effective LLM ID test."},
+		},
+	}
+	out2, err := comp.Invoke(ctx, db, in2)
+	if err != nil {
+		t.Fatalf("Second Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("expected 1 call (cache hit), got %d", calls)
+	}
+	ck2 := out2["chunks"].([]map[string]any)[0]
+	if ck2["summary"] != "Summary from composite model" {
+		t.Fatalf("expected cached summary 'Summary from composite model', got %v", ck2["summary"])
+	}
+
+	// 3. Update tenant default model in DB to pinned UUID model "0123456789abcdef0123456789abcdef"
+	pinnedUUID := "0123456789abcdef0123456789abcdef"
+	if err := db.Model(&entity.Tenant{}).Where("id = ?", "tenant-1").Update("tenant_llm_id", pinnedUUID).Error; err != nil {
+		t.Fatalf("update tenant default model: %v", err)
+	}
+
+	// 4. Third run: resolves pinned UUID model -> cache key differs -> cache miss -> triggers LLM (call count = 2)
+	in3 := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Text content for effective LLM ID test."},
+		},
+	}
+	out3, err := comp.Invoke(ctx, db, in3)
+	if err != nil {
+		t.Fatalf("Third Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("expected 2 calls (model changed, cache miss), got %d", calls)
+	}
+	ck3 := out3["chunks"].([]map[string]any)[0]
+	if ck3["summary"] != "Summary from pinned model" {
+		t.Fatalf("expected summary 'Summary from pinned model', got %v", ck3["summary"])
+	}
+
+	// 5. Fourth run with pinned UUID model: cache hit (call count = 2)
+	in4 := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Text content for effective LLM ID test."},
+		},
+	}
+	out4, err := comp.Invoke(ctx, db, in4)
+	if err != nil {
+		t.Fatalf("Fourth Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 2 {
+		t.Fatalf("expected 2 calls (cache hit for pinned model), got %d", calls)
+	}
+	ck4 := out4["chunks"].([]map[string]any)[0]
+	if ck4["summary"] != "Summary from pinned model" {
+		t.Fatalf("expected cached summary 'Summary from pinned model', got %v", ck4["summary"])
+	}
+}
+
+func TestExtractor_DoubleCleanElimination(t *testing.T) {
+	withStubChatInvoker(t,
+		// Keywords with think tag and surrounding whitespace
+		stubResponse{Content: "<think>deep reasoning</think>\n  golang, testing, cache  \n"},
+		// Questions with think tag
+		stubResponse{Content: "<think>thinking questions</think>\nWhat is Go?\nHow to test?"},
+		// Summary with think tag
+		stubResponse{Content: "<think>thinking summary</think>A concise summary."},
+	)
+
+	params := map[string]any{
+		"llm_id": "test-llm",
+		"keywords": map[string]any{
+			"top_n": 3,
+		},
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Sample text for extraction."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks := out["chunks"].([]map[string]any)
+	ck := chunks[0]
+
+	// Verify keywords cleaned
+	kwds, ok := ck["important_kwd"].([]string)
+	if !ok || len(kwds) != 3 || kwds[0] != "golang" || kwds[1] != "testing" || kwds[2] != "cache" {
+		t.Errorf("important_kwd = %v, want ['golang', 'testing', 'cache']", ck["important_kwd"])
+	}
+
+	// Verify questions cleaned
+	qs, ok := ck["question_kwd"].([]string)
+	if !ok || len(qs) != 2 || qs[0] != "What is Go?" || qs[1] != "How to test?" {
+		t.Errorf("question_kwd = %v, want ['What is Go?', 'How to test?']", ck["question_kwd"])
+	}
+
+	// Verify summary cleaned
+	sum, ok := ck["summary"].(string)
+	if !ok || sum != "A concise summary." {
+		t.Errorf("summary = %v, want 'A concise summary.'", ck["summary"])
+	}
+}
+
 
 

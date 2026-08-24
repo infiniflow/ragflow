@@ -33,9 +33,34 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-var taggerCache = llmcache.New[map[string]int](llmcache.WithValidator(func(m map[string]int) bool {
-	return m != nil
-}))
+var (
+	taggerCacheMu sync.RWMutex
+	taggerCache   = llmcache.New[map[string]int](llmcache.WithValidator(func(m map[string]int) bool {
+		return m != nil
+	}))
+)
+
+func getTaggerCache() *llmcache.Engine[map[string]int] {
+	taggerCacheMu.RLock()
+	defer taggerCacheMu.RUnlock()
+	return taggerCache
+}
+
+// SetTaggerCacheForTest swaps the tagger cache engine for tests.
+// It returns a restore closure that resets the cache to its previous value.
+func SetTaggerCacheForTest(c *llmcache.Engine[map[string]int]) func() {
+	taggerCacheMu.Lock()
+	prev := taggerCache
+	if c != nil {
+		taggerCache = c
+	}
+	taggerCacheMu.Unlock()
+	return func() {
+		taggerCacheMu.Lock()
+		taggerCache = prev
+		taggerCacheMu.Unlock()
+	}
+}
 
 const (
 	// defaultMatchCoverageThreshold is the asymmetric coverage threshold for Phase 1 (55%).
@@ -1155,7 +1180,7 @@ func llmTagChunk(
 	tagSetStr := strings.Join(tagNames, ", ")
 	prompt := buildTaggerPrompt(topN, tagSetStr, picked, text)
 
-	result, err := taggerCache.GetOrCompute(
+	result, err := getTaggerCache().GetOrCompute(
 		ctx,
 		tenantID,
 		"tagger",

@@ -73,15 +73,6 @@ func TestBuildKey(t *testing.T) {
 }
 
 func TestSentinelErrors(t *testing.T) {
-	if ErrNoTenantID == nil {
-		t.Error("ErrNoTenantID must not be nil")
-	}
-	if ErrCacheMiss == nil {
-		t.Error("ErrCacheMiss must not be nil")
-	}
-	if ErrRejected == nil {
-		t.Error("ErrRejected must not be nil")
-	}
 	if ErrTypeAssertion == nil {
 		t.Error("ErrTypeAssertion must not be nil")
 	}
@@ -295,8 +286,11 @@ func TestEngine_FailClosed_EmptyTenantID(t *testing.T) {
 		t.Errorf("expected 0 keys written to Redis for empty tenantID, found %d: %v", len(keys), keys)
 	}
 
-	// 2. Calling FlushTenant with tenantID == "" should return 0
-	deleted := engine.FlushTenant(ctx, "")
+	// 2. Calling FlushTenant with tenantID == "" should return 0, nil
+	deleted, err := engine.FlushTenant(ctx, "")
+	if err != nil {
+		t.Fatalf("FlushTenant(\"\") returned error: %v", err)
+	}
 	if deleted != 0 {
 		t.Errorf("FlushTenant(\"\") = %d, want 0", deleted)
 	}
@@ -335,7 +329,10 @@ func TestEngine_FlushTenant_ScanPipeline(t *testing.T) {
 		}
 
 		// Flush tenantA
-		deleted := engine.FlushTenant(ctx, "tenantA")
+		deleted, err := engine.FlushTenant(ctx, "tenantA")
+		if err != nil {
+			t.Fatalf("FlushTenant(tenantA) error: %v", err)
+		}
 		if deleted != 10 {
 			t.Errorf("FlushTenant(tenantA) deleted %d keys, want 10", deleted)
 		}
@@ -371,7 +368,10 @@ func TestEngine_FlushTenant_ScanPipeline(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // immediately cancel
 
-		deleted := engine.FlushTenant(ctx, "tenantA")
+		deleted, err := engine.FlushTenant(ctx, "tenantA")
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled error, got %v", err)
+		}
 		if deleted != 0 {
 			t.Errorf("FlushTenant with cancelled context returned %d, want 0", deleted)
 		}
@@ -401,7 +401,10 @@ func TestEngine_FlushTenant_ScanPipeline(t *testing.T) {
 		}
 
 		// Flush tenant_large
-		deleted := engine.FlushTenant(ctx, "tenant_large")
+		deleted, err := engine.FlushTenant(ctx, "tenant_large")
+		if err != nil {
+			t.Fatalf("FlushTenant(tenant_large) error: %v", err)
+		}
 		if deleted != totalKeys {
 			t.Errorf("FlushTenant deleted %d keys, want %d", deleted, totalKeys)
 		}
@@ -440,3 +443,144 @@ func TestEngine_MetricsHook(t *testing.T) {
 		t.Errorf("expected metrics events to be emitted, got none")
 	}
 }
+
+func TestEngine_GetOrCompute_ContextCancellation_AllowsImmediateRetry(t *testing.T) {
+	engine := New[string]()
+
+	// 1. Slow flight with quick timeout
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel1()
+
+	computeStarted := make(chan struct{})
+	computeFinish := make(chan struct{})
+
+	go func() {
+		_, _ = engine.GetOrCompute(ctx1, "tenant1", "summary", []string{"retry_key"}, func(ctx context.Context) (string, error) {
+			close(computeStarted)
+			<-computeFinish // Hold until we allow it to finish
+			return "slow_result", nil
+		})
+	}()
+
+	<-computeStarted
+	// Wait for ctx1 to time out
+	time.Sleep(35 * time.Millisecond)
+
+	// 2. Immediate retry by a new caller should not hang or fail due to the slow first request
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel2()
+
+	res2, err2 := engine.GetOrCompute(ctx2, "tenant1", "summary", []string{"retry_key"}, func(ctx context.Context) (string, error) {
+		return "fast_result", nil
+	})
+	close(computeFinish)
+
+	if err2 != nil {
+		t.Fatalf("retry GetOrCompute failed: %v", err2)
+	}
+	if res2 != "fast_result" {
+		t.Errorf("got %q, want 'fast_result'", res2)
+	}
+}
+
+func TestEngine_FlushTenant_ScanError(t *testing.T) {
+	engine, mr, _ := newTestEngineWithRedis[string](t)
+	ctx := context.Background()
+
+	// Close miniredis immediately so SCAN / pipeline fails
+	mr.Close()
+
+	deleted, err := engine.FlushTenant(ctx, "tenant_err")
+	if err == nil {
+		t.Errorf("expected error when redis server is closed, got nil")
+	}
+	if deleted != 0 {
+		t.Errorf("deleted = %d, want 0", deleted)
+	}
+}
+
+func TestEngine_GetOrCompute_ComplexTypes_NoReflect(t *testing.T) {
+	engine, _, _ := newTestEngineWithRedis[map[string]int](t)
+	ctx := context.Background()
+
+	// Verify map types serialize and deserialize properly without reflect overhead
+	val, err := engine.GetOrCompute(ctx, "tenant1", "tags", []string{"doc1"}, func(ctx context.Context) (map[string]int, error) {
+		return map[string]int{"tagA": 10, "tagB": 20}, nil
+	})
+	if err != nil {
+		t.Fatalf("first GetOrCompute failed: %v", err)
+	}
+	if val["tagA"] != 10 || val["tagB"] != 20 {
+		t.Errorf("unexpected map content: %v", val)
+	}
+
+	// Read from cache
+	var computeCalled bool
+	cachedVal, err := engine.GetOrCompute(ctx, "tenant1", "tags", []string{"doc1"}, func(ctx context.Context) (map[string]int, error) {
+		computeCalled = true
+		return nil, errors.New("should not compute")
+	})
+	if err != nil {
+		t.Fatalf("cached GetOrCompute failed: %v", err)
+	}
+	if computeCalled {
+		t.Errorf("computeFn should not have been called on cache hit")
+	}
+	if cachedVal["tagA"] != 10 || cachedVal["tagB"] != 20 {
+		t.Errorf("unexpected cached map content: %v", cachedVal)
+	}
+}
+
+func TestEngine_GetOrCompute_WriteBack_ContextCancelled(t *testing.T) {
+	engine, _, _ := newTestEngineWithRedis[string](t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	computeDone := make(chan struct{})
+
+	go func() {
+		_, _ = engine.GetOrCompute(ctx, "tenant1", "summary", []string{"slow_key"}, func(c context.Context) (string, error) {
+			cancel() // Cancel caller context while computing
+			time.Sleep(20 * time.Millisecond)
+			return "computed_despite_cancel", nil
+		})
+		close(computeDone)
+	}()
+
+	<-computeDone
+	// Allow a moment for background singleflight goroutine to finish set
+	time.Sleep(30 * time.Millisecond)
+
+	// Now check if a new request hits the cache
+	newCtx := context.Background()
+	var computeCalled bool
+	val, err := engine.GetOrCompute(newCtx, "tenant1", "summary", []string{"slow_key"}, func(c context.Context) (string, error) {
+		computeCalled = true
+		return "should_not_recompute", nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error on cache read: %v", err)
+	}
+	if computeCalled {
+		t.Errorf("expected cache hit after previous cancelled request wrote back, but computeFn was called")
+	}
+	if val != "computed_despite_cancel" {
+		t.Errorf("got %q, want 'computed_despite_cancel'", val)
+	}
+}
+
+func BenchmarkBuildKey(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = BuildKey("tenant1", "task", "part1", "part2", "part3")
+	}
+}
+
+func BenchmarkEngine_ApplyJitter(b *testing.B) {
+	base := 24 * time.Hour
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = ApplyJitter(base)
+		}
+	})
+}
+

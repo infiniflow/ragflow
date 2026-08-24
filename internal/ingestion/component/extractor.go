@@ -147,11 +147,46 @@ func isValidLLMCachePayload(s string) bool {
 
 // Global generic cache engine singletons for Extractor operator tasks.
 var (
-	textExtractCache = llmcache.New[string](llmcache.WithValidator(isValidLLMCachePayload))
-	metadataCache    = llmcache.New[map[string]any](llmcache.WithValidator(func(m map[string]any) bool {
+	extractorCachesMu sync.RWMutex
+	textExtractCache  = llmcache.New[string](llmcache.WithValidator(isValidLLMCachePayload))
+	metadataCache     = llmcache.New[map[string]any](llmcache.WithValidator(func(m map[string]any) bool {
 		return m != nil
 	}))
 )
+
+func getTextExtractCache() *llmcache.Engine[string] {
+	extractorCachesMu.RLock()
+	defer extractorCachesMu.RUnlock()
+	return textExtractCache
+}
+
+func getMetadataCache() *llmcache.Engine[map[string]any] {
+	extractorCachesMu.RLock()
+	defer extractorCachesMu.RUnlock()
+	return metadataCache
+}
+
+// SetExtractorCachesForTest swaps the package-level cache engines for tests.
+// It returns a restore closure that resets the caches to their previous values.
+func SetExtractorCachesForTest(text *llmcache.Engine[string], meta *llmcache.Engine[map[string]any]) func() {
+	extractorCachesMu.Lock()
+	prevText := textExtractCache
+	prevMeta := metadataCache
+	if text != nil {
+		textExtractCache = text
+	}
+	if meta != nil {
+		metadataCache = meta
+	}
+	extractorCachesMu.Unlock()
+
+	return func() {
+		extractorCachesMu.Lock()
+		textExtractCache = prevText
+		metadataCache = prevMeta
+		extractorCachesMu.Unlock()
+	}
+}
 
 // extractorTopNPattern matches the {{ topn }} placeholder accepted in
 // keyword/question system prompts (same convention as rag/prompts/*.md).
@@ -699,7 +734,6 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if err != nil {
 		return err
 	}
-	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
 	}
@@ -736,7 +770,6 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if err != nil {
 		return err
 	}
-	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
 	}
@@ -779,7 +812,6 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	if err != nil {
 		return err
 	}
-	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
 	}
@@ -909,6 +941,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	}
 	schemaStr := string(schemaJSON)
 
+	effectiveLLMID := resolveEffectiveLLMID(ctx, db, in.llmID)
 	metaTemp := extractorTemperature
 	metaIn := extractorInputs{
 		tenantID:    in.tenantID,
@@ -916,11 +949,11 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 		temperature: &metaTemp,
 	}
 	systemPrompt := fmt.Sprintf(autoMetadataPrompt, schemaStr)
-	parsed, err := metadataCache.GetOrCompute(
+	parsed, err := getMetadataCache().GetOrCompute(
 		ctx,
 		in.tenantID,
 		"metadata",
-		[]string{in.llmID, schemaStr, chunkText},
+		[]string{effectiveLLMID, schemaStr, chunkText},
 		func(ctx context.Context) (map[string]any, error) {
 			return c.callStructured(ctx, db, metaIn, systemPrompt, chunkText)
 		},
@@ -1123,17 +1156,18 @@ func (c *ExtractorComponent) callTextCached(
 	systemPrompt string,
 	chunkText string,
 ) (string, error) {
+	effectiveLLMID := resolveEffectiveLLMID(ctx, db, in.llmID)
 	temp := extractorTemperature
 	taskIn := extractorInputs{
 		tenantID:    in.tenantID,
 		llmID:       in.llmID,
 		temperature: &temp,
 	}
-	return textExtractCache.GetOrCompute(
+	return getTextExtractCache().GetOrCompute(
 		ctx,
 		in.tenantID,
 		taskType,
-		[]string{in.llmID, systemPrompt, chunkText},
+		[]string{effectiveLLMID, systemPrompt, chunkText},
 		func(ctx context.Context) (string, error) {
 			raw, err := c.callText(ctx, db, taskIn, systemPrompt, chunkText)
 			if err != nil {
@@ -1383,6 +1417,28 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 		return 0
 	}
 	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
+}
+
+// resolveEffectiveLLMID resolves the effective LLM ID for cache key construction.
+// When llmID is empty, it queries the tenant's default chat model reference
+// from canvas state / DB so cache keys change when the default model changes.
+func resolveEffectiveLLMID(ctx context.Context, db *gorm.DB, llmID string) string {
+	if strings.TrimSpace(llmID) != "" {
+		return llmID
+	}
+	if db == nil {
+		db = dao.DB
+	}
+	if ctx != nil {
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			if tidVal, ok := state.GetGlobal("tenant_id"); ok {
+				if tid, ok := tidVal.(string); ok && tid != "" {
+					return defaultChatModelRef(ctx, db, tid)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // defaultChatModelRef returns the tenant's default chat model reference —

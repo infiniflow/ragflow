@@ -39,8 +39,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
-	"reflect"
+	randv2 "math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -54,15 +54,15 @@ import (
 
 // Standard sentinel errors.
 var (
-	// ErrNoTenantID is returned or used when tenantID is empty in operations requiring it.
-	ErrNoTenantID = errors.New("llmcache: tenantID is required")
-	// ErrCacheMiss indicates that the requested key was not found in the cache.
-	ErrCacheMiss = errors.New("llmcache: cache miss")
-	// ErrRejected indicates that the computed value failed the validator gate.
-	ErrRejected = errors.New("llmcache: value rejected by validator")
 	// ErrTypeAssertion indicates an internal type assertion failure.
 	ErrTypeAssertion = errors.New("llmcache: internal type assertion failed")
 )
+
+var xxhashPool = sync.Pool{
+	New: func() any {
+		return xxhash.New()
+	},
+}
 
 // KeyPrefix is the Redis namespace for all entries managed by this engine.
 const KeyPrefix = "kc:llm"
@@ -143,12 +143,15 @@ func New[T any](opts ...Option[T]) *Engine[T] {
 // (e.g. ("ab","c") vs ("a","bc")). The engine never assumes anything about the
 // business meaning of keyParts — that is the caller's responsibility.
 func BuildKey(tenantID, taskType string, keyParts ...string) string {
-	h := xxhash.New()
+	h := xxhashPool.Get().(*xxhash.Digest)
 	for _, p := range keyParts {
 		h.WriteString(p)
 		h.WriteString("\x00")
 	}
-	return fmt.Sprintf("%s:%s:%s:%x", KeyPrefix, tenantID, taskType, h.Sum64())
+	key := fmt.Sprintf("%s:%s:%s:%x", KeyPrefix, tenantID, taskType, h.Sum64())
+	h.Reset()
+	xxhashPool.Put(h)
+	return key
 }
 
 // ApplyJitter returns the base duration with ±10% random jitter applied.
@@ -163,7 +166,7 @@ func applyJitter(base time.Duration) time.Duration {
 	}
 	// ±10% jitter: range is [base * 0.90, base * 1.10]
 	delta := float64(base) * 0.10
-	factor := (rand.Float64() * 2.0) - 1.0
+	factor := (randv2.Float64() * 2.0) - 1.0
 	jitter := time.Duration(delta * factor)
 	return base + jitter
 }
@@ -196,12 +199,6 @@ func (e *Engine[T]) emit(ev Event) {
 
 func (e *Engine[T]) get(ctx context.Context, key string) (T, bool) {
 	var zero, dest T
-	val := reflect.ValueOf(&dest).Elem()
-	if val.Kind() == reflect.Map && val.IsNil() {
-		val.Set(reflect.MakeMap(val.Type()))
-	} else if val.Kind() == reflect.Slice && val.IsNil() {
-		val.Set(reflect.MakeSlice(val.Type(), 0, 0))
-	}
 
 	if e.rawClient != nil {
 		data, err := e.rawClient.Get(ctx, key).Result()
@@ -227,20 +224,26 @@ func (e *Engine[T]) set(ctx context.Context, tenantID, key string, v T) {
 	if tenantID == "" {
 		return
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	setCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+
 	ttl := applyJitter(e.ttl)
 	if e.rawClient != nil {
 		data, err := json.Marshal(v)
 		if err != nil {
 			return
 		}
-		e.rawClient.Set(ctx, key, data, ttl)
+		e.rawClient.Set(setCtx, key, data, ttl)
 		return
 	}
 	client := e.getRedis()
 	if client == nil {
 		return
 	}
-	client.SetObj(ctx, key, v, ttl)
+	client.SetObj(setCtx, key, v, ttl)
 }
 
 // GetOrCompute returns the cached value for (tenantID, taskType, keyParts), or
@@ -251,8 +254,7 @@ func (e *Engine[T]) set(ctx context.Context, tenantID, key string, v T) {
 // A double-check re-reads Redis inside the merged call in case a peer already wrote
 // the value back. The winning result is written back only after passing the Validator.
 //
-// Fail-Closed: if tenantID is empty, it bypasses caching completely, directly executing
-// computeFn without writing to Redis.
+// Fail-Open (bypass): execute computeFn directly without caching when tenantID is empty to ensure business continuity without polluting global namespace.
 func (e *Engine[T]) GetOrCompute(
 	ctx context.Context,
 	tenantID, taskType string,
@@ -261,7 +263,7 @@ func (e *Engine[T]) GetOrCompute(
 ) (T, error) {
 	var zero T
 	if tenantID == "" {
-		// Fail-closed: empty tenantID bypasses cache and strictly avoids Redis write.
+		// Fail-Open (bypass): execute computeFn directly without caching when tenantID is empty to ensure business continuity without polluting global namespace
 		return computeFn(ctx)
 	}
 
@@ -278,7 +280,9 @@ func (e *Engine[T]) GetOrCompute(
 	ch := e.group.DoChan(key, func() (any, error) {
 		// Double-check: a concurrent writer may have populated Redis while we
 		// were queued.
-		if v, ok := e.get(ctx, key); ok && (e.validate == nil || e.validate(v)) {
+		getCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 500*time.Millisecond)
+		defer cancel()
+		if v, ok := e.get(getCtx, key); ok && (e.validate == nil || e.validate(v)) {
 			return v, nil
 		}
 		v, cerr := computeFn(ctx)
@@ -298,6 +302,11 @@ func (e *Engine[T]) GetOrCompute(
 
 	select {
 	case <-ctx.Done():
+		e.group.Forget(key)
+		go func() {
+			<-ch
+			e.group.Forget(key)
+		}()
 		return zero, ctx.Err()
 	case res := <-ch:
 		if res.Err != nil {
@@ -314,26 +323,29 @@ func (e *Engine[T]) GetOrCompute(
 // FlushTenant purges every cache entry for a tenant (GDPR erasure / tenant teardown).
 // It scans for keys matching "kc:llm:{tenant_id}:*" using Redis SCAN cursor COUNT 1000,
 // deletes them in pipeline batches, sleeps 10ms between batches, and responds promptly to ctx.Done().
-// Returns the number of entries deleted.
-func (e *Engine[T]) FlushTenant(ctx context.Context, tenantID string) int {
+// Returns the number of entries deleted and any error encountered.
+func (e *Engine[T]) FlushTenant(ctx context.Context, tenantID string) (int, error) {
 	if tenantID == "" {
-		return 0
+		return 0, nil
 	}
 	rdb := e.getUniversalClient()
 	if rdb == nil {
-		return 0
+		return 0, nil
 	}
 
 	var cursor uint64
 	var deletedCount int
 	matchPattern := fmt.Sprintf("%s:%s:*", KeyPrefix, tenantID)
 
+	timer := time.NewTimer(10 * time.Millisecond)
+	defer timer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			common.Warn("llmcache: FlushTenant cancelled by context",
 				zap.String("tenant_id", tenantID), zap.Error(ctx.Err()))
-			return deletedCount
+			return deletedCount, ctx.Err()
 		default:
 		}
 
@@ -341,7 +353,7 @@ func (e *Engine[T]) FlushTenant(ctx context.Context, tenantID string) int {
 		if err != nil {
 			common.Warn("llmcache: FlushTenant SCAN failed",
 				zap.String("tenant_id", tenantID), zap.Error(err))
-			break
+			return deletedCount, err
 		}
 
 		if len(keys) > 0 {
@@ -350,14 +362,15 @@ func (e *Engine[T]) FlushTenant(ctx context.Context, tenantID string) int {
 				pipe.Del(ctx, k)
 			}
 			cmders, err := pipe.Exec(ctx)
-			if err != nil && !errors.Is(err, goredis.Nil) {
-				common.Warn("llmcache: FlushTenant pipeline Del failed",
-					zap.String("tenant_id", tenantID), zap.Error(err))
-			}
 			for _, cmder := range cmders {
 				if intCmd, ok := cmder.(*goredis.IntCmd); ok {
 					deletedCount += int(intCmd.Val())
 				}
+			}
+			if err != nil && !errors.Is(err, goredis.Nil) {
+				common.Warn("llmcache: FlushTenant pipeline Del failed",
+					zap.String("tenant_id", tenantID), zap.Error(err))
+				return deletedCount, err
 			}
 		}
 
@@ -366,15 +379,23 @@ func (e *Engine[T]) FlushTenant(ctx context.Context, tenantID string) int {
 			break
 		}
 
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(10 * time.Millisecond)
+
 		select {
 		case <-ctx.Done():
 			common.Warn("llmcache: FlushTenant cancelled by context",
 				zap.String("tenant_id", tenantID), zap.Error(ctx.Err()))
-			return deletedCount
-		case <-time.After(10 * time.Millisecond):
+			return deletedCount, ctx.Err()
+		case <-timer.C:
 		}
 	}
 
 	e.emit(Event{Kind: "purge", TenantID: tenantID, Key: matchPattern})
-	return deletedCount
+	return deletedCount, nil
 }
