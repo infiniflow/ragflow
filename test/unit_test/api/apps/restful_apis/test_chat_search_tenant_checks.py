@@ -628,6 +628,9 @@ class TestSearchServiceAccessible:
         query = state["last_query"]
         join_model, join_on = query.joins[0]
         assert join_model.__name__ == "UserTenant"
+        # membership must be scoped to VALID rows, else invalid memberships pass
+        # (peewee renders the join condition as tuples of bare column names)
+        assert "status" in str(join_on)
         # the join must scope the search app to a tenant the user belongs to
         assert "tenant_id" in repr(join_on) and "user_id" in repr(join_on), repr(join_on)
         # the search app itself must be valid
