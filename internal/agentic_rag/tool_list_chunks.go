@@ -34,9 +34,9 @@ import (
 
 // listChunksToolName is the constrained deep-read runtime. It pages through ALL
 // chunks of exactly ONE document in reading order (chunk_index) within an
-// offset/limit range. The document is scoped by doc_id (authoritative and
-// unique — it can only belong to one dataset), and each returned chunk carries
-// its owning dataset_id in the output.
+// offset/limit range. The document id is resolved within the conversation's
+// server-bound dataset scope, and each returned chunk carries its owning
+// dataset_id in the output.
 const listChunksToolName = "list_chunks"
 
 const listChunksToolDescription = `Read the FULL original text of ONE dataset document in reading order (Deep Read).
@@ -144,23 +144,23 @@ func (l *ListChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 	offset := max(args.Offset, 0)
 
-	svc := runtime.GetGrepService()
 	tenantID := l.tenantID
+	if tenantID == "" || len(l.datasetIDs) == 0 {
+		return chunksXMLEmpty(), nil
+	}
+
+	svc := runtime.GetGrepService()
 	dr, ok := svc.(deepReadService)
-	if svc == nil || tenantID == "" {
+	if svc == nil {
 		return chunksXMLEmpty(), nil
 	}
 	if !ok {
 		return "", fmt.Errorf("list_chunks: configured grep service does not support deep read")
 	}
 
-	// Deep reads scope purely by doc_id. The doc_id comes from grep_chunks /
-	// search_chunks, which are already constrained to the conversation's dataset
-	// scope, so no extra dataset filter is needed here; DatasetIDs is left nil
-	// (optional) and the document is located by its unique doc_id alone.
 	chunks, err := dr.ListByDocIDs(ctx, runtime.GrepRequest{
 		DocScope:     []string{docID},
-		DatasetIDs:   nil,
+		DatasetIDs:   l.datasetIDs,
 		Limit:        limit,
 		Offset:       offset,
 		Sort:         grepChunksSortFields, // doc_id, page_num_int, chunk_order_int

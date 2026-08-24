@@ -21,15 +21,77 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 )
+
+type scopeRecordingGrepService struct {
+	grepRequests []runtime.GrepRequest
+	listRequests []runtime.GrepRequest
+}
+
+func (s *scopeRecordingGrepService) Grep(_ context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error) {
+	s.grepRequests = append(s.grepRequests, req)
+	return nil, nil
+}
+
+func (s *scopeRecordingGrepService) ListByDocIDs(_ context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error) {
+	s.listRequests = append(s.listRequests, req)
+	return nil, nil
+}
+
+type scopeRecordingRetrievalService struct {
+	requests []runtime.RetrievalRequest
+}
+
+func (s *scopeRecordingRetrievalService) Search(_ context.Context, _ *gorm.DB, req runtime.RetrievalRequest) ([]runtime.RetrievalChunk, error) {
+	s.requests = append(s.requests, req)
+	return nil, nil
+}
+
+func TestResolveDatasetScope(t *testing.T) {
+	tests := []struct {
+		name      string
+		bound     []string
+		requested []string
+		want      []string
+		wantErr   string
+	}{
+		{name: "omitted uses bound scope", bound: []string{"kb-1", "kb-2"}, want: []string{"kb-1", "kb-2"}},
+		{name: "bound subset", bound: []string{"kb-1", "kb-2"}, requested: []string{"kb-2"}, want: []string{"kb-2"}},
+		{name: "outside scope", bound: []string{"kb-1"}, requested: []string{"kb-2"}, wantErr: "kb-2"},
+		{name: "mixed scope", bound: []string{"kb-1"}, requested: []string{"kb-1", "kb-2"}, wantErr: "kb-2"},
+		{name: "empty bound rejects request", requested: []string{"kb-1"}, wantErr: "kb-1"},
+		{name: "empty bound and request", want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveDatasetScope(tt.bound, tt.requested)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("resolveDatasetScope error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveDatasetScope: %v", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("resolveDatasetScope = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 // mustJSONString marshals v to a compact JSON string, failing the test on error.
 func mustJSONString(t *testing.T, v interface{}) string {
@@ -145,6 +207,137 @@ func TestSearchChunksTool_EmptyQueries(t *testing.T) {
 	_, err := NewSearchChunksTool("", nil).InvokableRun(context.Background(), `{"queries":[]}`)
 	if err == nil {
 		t.Fatal("expected error for empty queries")
+	}
+}
+
+func TestRetrievalTools_RejectDatasetScopeExpansion(t *testing.T) {
+	t.Run("grep_chunks", func(t *testing.T) {
+		svc := &scopeRecordingGrepService{}
+		previous := runtime.GetGrepService()
+		runtime.SetGrepService(svc)
+		t.Cleanup(func() { runtime.SetGrepService(previous) })
+
+		_, err := NewGrepChunksTool("tenant", []string{"kb-allowed"}).InvokableRun(
+			context.Background(), `{"query":"term","dataset_ids":["kb-outside"]}`,
+		)
+		if err == nil || !strings.Contains(err.Error(), "kb-outside") {
+			t.Fatalf("expected an error naming the out-of-scope dataset, got %v", err)
+		}
+		if len(svc.grepRequests) != 0 {
+			t.Fatalf("out-of-scope grep reached the backend %d times", len(svc.grepRequests))
+		}
+	})
+
+	t.Run("search_chunks", func(t *testing.T) {
+		svc := &scopeRecordingRetrievalService{}
+		previous := runtime.GetRetrievalService()
+		runtime.SetRetrievalService(svc)
+		t.Cleanup(func() { runtime.SetRetrievalService(previous) })
+
+		_, err := NewSearchChunksTool("tenant", []string{"kb-allowed"}).InvokableRun(
+			context.Background(), `{"queries":["question"],"dataset_ids":["kb-outside"]}`,
+		)
+		if err == nil || !strings.Contains(err.Error(), "kb-outside") {
+			t.Fatalf("expected an error naming the out-of-scope dataset, got %v", err)
+		}
+		if len(svc.requests) != 0 {
+			t.Fatalf("out-of-scope search reached the backend %d times", len(svc.requests))
+		}
+
+		overLimit := make([]string, 10)
+		for i := range overLimit {
+			overLimit[i] = "kb-allowed"
+		}
+		overLimit = append(overLimit, "kb-outside")
+		arguments := mustJSONString(t, searchChunksArgs{Queries: []string{"question"}, DatasetIDs: overLimit})
+		_, err = NewSearchChunksTool("tenant", []string{"kb-allowed"}).InvokableRun(context.Background(), arguments)
+		if err == nil || !strings.Contains(err.Error(), "kb-outside") {
+			t.Fatalf("expected validation before the input cap, got %v", err)
+		}
+		if len(svc.requests) != 0 {
+			t.Fatalf("out-of-scope search reached the backend %d times", len(svc.requests))
+		}
+	})
+}
+
+func TestRetrievalTools_ApplyResolvedDatasetScope(t *testing.T) {
+	grepSvc := &scopeRecordingGrepService{}
+	previousGrep := runtime.GetGrepService()
+	runtime.SetGrepService(grepSvc)
+	t.Cleanup(func() { runtime.SetGrepService(previousGrep) })
+
+	_, err := NewGrepChunksTool("tenant", []string{"kb-1", "kb-2"}).InvokableRun(
+		context.Background(), `{"query":"term"}`,
+	)
+	if err != nil {
+		t.Fatalf("grep_chunks: %v", err)
+	}
+	if len(grepSvc.grepRequests) != 1 || !slices.Equal(grepSvc.grepRequests[0].DatasetIDs, []string{"kb-1", "kb-2"}) {
+		t.Fatalf("grep scope = %v, want [kb-1 kb-2]", grepSvc.grepRequests)
+	}
+
+	searchSvc := &scopeRecordingRetrievalService{}
+	previousRetrieval := runtime.GetRetrievalService()
+	runtime.SetRetrievalService(searchSvc)
+	t.Cleanup(func() { runtime.SetRetrievalService(previousRetrieval) })
+
+	_, err = NewSearchChunksTool("tenant", []string{"kb-1", "kb-2"}).InvokableRun(
+		context.Background(), `{"queries":["question"],"dataset_ids":["kb-2"]}`,
+	)
+	if err != nil {
+		t.Fatalf("search_chunks: %v", err)
+	}
+	if len(searchSvc.requests) != 1 || !slices.Equal(searchSvc.requests[0].DatasetIDs, []string{"kb-2"}) {
+		t.Fatalf("search scope = %v, want [kb-2]", searchSvc.requests)
+	}
+}
+
+func TestListChunksTool_ForwardsBoundDatasetScope(t *testing.T) {
+	svc := &scopeRecordingGrepService{}
+	previous := runtime.GetGrepService()
+	runtime.SetGrepService(svc)
+	t.Cleanup(func() { runtime.SetGrepService(previous) })
+
+	_, err := NewListChunksTool("tenant", []string{"kb-1", "kb-2"}).InvokableRun(
+		context.Background(), `{"doc_id":"doc-1"}`,
+	)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if len(svc.listRequests) != 1 {
+		t.Fatalf("deep-read backend calls = %d, want 1", len(svc.listRequests))
+	}
+	if got := strings.Join(svc.listRequests[0].DatasetIDs, ","); got != "kb-1,kb-2" {
+		t.Fatalf("deep-read dataset scope = %q, want %q", got, "kb-1,kb-2")
+	}
+}
+
+func TestRetrievalTools_EmptyBoundScopeSkipsBackends(t *testing.T) {
+	grepSvc := &scopeRecordingGrepService{}
+	previousGrep := runtime.GetGrepService()
+	runtime.SetGrepService(grepSvc)
+	t.Cleanup(func() { runtime.SetGrepService(previousGrep) })
+
+	searchSvc := &scopeRecordingRetrievalService{}
+	previousRetrieval := runtime.GetRetrievalService()
+	runtime.SetRetrievalService(searchSvc)
+	t.Cleanup(func() { runtime.SetRetrievalService(previousRetrieval) })
+
+	if _, err := NewGrepChunksTool("tenant", nil).InvokableRun(context.Background(), `{"query":"term"}`); err != nil {
+		t.Fatalf("grep_chunks empty scope: %v", err)
+	}
+	if _, err := NewSearchChunksTool("tenant", nil).InvokableRun(context.Background(), `{"queries":["question"]}`); err != nil {
+		t.Fatalf("search_chunks empty scope: %v", err)
+	}
+	if _, err := NewListChunksTool("tenant", nil).InvokableRun(context.Background(), `{"doc_id":"doc-1"}`); err != nil {
+		t.Fatalf("list_chunks empty scope: %v", err)
+	}
+
+	if len(grepSvc.grepRequests) != 0 || len(grepSvc.listRequests) != 0 {
+		t.Fatalf("empty bound scope reached grep backend: grep=%d deep-read=%d", len(grepSvc.grepRequests), len(grepSvc.listRequests))
+	}
+	if len(searchSvc.requests) != 0 {
+		t.Fatalf("empty bound scope reached search backend %d times", len(searchSvc.requests))
 	}
 }
 

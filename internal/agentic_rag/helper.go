@@ -23,6 +23,26 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
+// resolveDatasetScope keeps model-provided dataset ids within the
+// conversation's server-bound scope. An omitted request uses the full bound
+// scope; an explicit request must be a subset of it.
+func resolveDatasetScope(bound, requested []string) ([]string, error) {
+	if len(requested) == 0 {
+		return bound, nil
+	}
+
+	allowed := make(map[string]struct{}, len(bound))
+	for _, id := range bound {
+		allowed[id] = struct{}{}
+	}
+	for _, id := range requested {
+		if _, ok := allowed[id]; !ok {
+			return nil, fmt.Errorf("dataset_id %q is outside the conversation's bound scope", id)
+		}
+	}
+	return requested, nil
+}
+
 // clampFloat01 clamps a float into [0, 1], used for similarity weights the model
 // may supply out of range.
 func clampFloat01(v float64) float64 {

@@ -185,8 +185,12 @@ func (k *SearchChunksTool) InvokableRun(ctx context.Context, argumentsInJSON str
 	if args.KeywordsSimilarityWeight != nil {
 		weight = clampFloat01(*args.KeywordsSimilarityWeight)
 	}
+	datasetIDs, err := resolveDatasetScope(k.datasetIDs, args.DatasetIDs)
+	if err != nil {
+		return "", fmt.Errorf("search_chunks: %w", err)
+	}
 	if len(args.DatasetIDs) > 10 {
-		args.DatasetIDs = args.DatasetIDs[:10]
+		datasetIDs = datasetIDs[:10]
 	}
 	if len(args.DocScope) > 10 {
 		args.DocScope = args.DocScope[:10]
@@ -194,10 +198,6 @@ func (k *SearchChunksTool) InvokableRun(ctx context.Context, argumentsInJSON str
 
 	svc := runtime.GetRetrievalService()
 	tenantID := k.tenantID
-	datasetIDs := args.DatasetIDs
-	if len(datasetIDs) == 0 {
-		datasetIDs = k.datasetIDs
-	}
 	if svc == nil || tenantID == "" || len(datasetIDs) == 0 {
 		return searchResultsXMLEmpty(), nil
 	}

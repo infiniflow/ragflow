@@ -141,13 +141,16 @@ func (g *GrepChunksTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		return "", fmt.Errorf("grep_chunks: invalid regex %q: %w", query, err)
 	}
 
-	svc := runtime.GetGrepService()
-	tenantID := g.tenantID
-	datasetIDs := args.DatasetIDs
+	datasetIDs, err := resolveDatasetScope(g.datasetIDs, args.DatasetIDs)
+	if err != nil {
+		return "", fmt.Errorf("grep_chunks: %w", err)
+	}
 	if len(datasetIDs) == 0 {
-		datasetIDs = g.datasetIDs
+		return formatGrepResults(query, nil, re), nil
 	}
 
+	svc := runtime.GetGrepService()
+	tenantID := g.tenantID
 	chunks, err := svc.Grep(ctx, runtime.GrepRequest{
 		Pattern:      query,
 		DatasetIDs:   datasetIDs,
