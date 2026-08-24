@@ -100,6 +100,13 @@ func SetModelConfig(llmID, embedding string) {
 	defaultEmbedding = embedding
 }
 
+// NewPublisher creates a process-local publisher backed by the shared dataset
+// scheduling row. It does not start a consumer; API processes use it to append
+// document events for the ingestor-owned workers to consume.
+func NewPublisher(db *gorm.DB, mq engine.MessageQueue) Publisher {
+	return newScheduler(db, mq, generateHolder(), 2*time.Minute)
+}
+
 // defaultDeduperFactory resolves the per-tenant LLM deps and builds the
 // KB-scoped deduper. On any failure it returns an error so the caller falls
 // back to the noop deduper (merged products are still written, just without
