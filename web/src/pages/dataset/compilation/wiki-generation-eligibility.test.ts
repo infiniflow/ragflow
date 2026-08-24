@@ -56,6 +56,19 @@ describe('canGenerateWiki', () => {
     ).toBe(true);
   });
 
+  it('checks plural and singular template group fields independently', () => {
+    expect(
+      canGenerateWiki(
+        dataset({
+          parser_config: parserConfig({
+            compilation_template_group_ids: [],
+            compilation_template_group_id: ['group-id'],
+          }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it('ignores blank pipeline and template group values', () => {
     expect(
       canGenerateWiki(
