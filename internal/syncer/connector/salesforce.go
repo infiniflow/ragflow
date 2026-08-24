@@ -89,7 +89,6 @@ type SalesforceConnector struct {
 	clientMu    sync.Mutex
 	accessToken string
 	tokenExpiry time.Time
-	httpClient  *http.Client
 	now         func() time.Time
 
 	acquireAccessToken func(ctx context.Context) (salesforceToken, error)
@@ -108,7 +107,6 @@ func NewSalesforceConnector(config map[string]any) (*SalesforceConnector, error)
 		objects:      objects,
 		apiVersion:   firstNonEmpty(stringConfig(config["api_version"]), defaultSalesforceAPIVersion),
 		batchSize:    salesforceBatchSize(config["batch_size"]),
-		httpClient:   http.DefaultClient,
 		now:          time.Now,
 	}, nil
 }
@@ -178,7 +176,7 @@ func (c *SalesforceConnector) Validate(ctx context.Context) error {
 	}
 
 	var payload salesforceSObjectsResponse
-	if err := c.getJSON(ctx, c.base()+"/sobjects", &payload); err != nil {
+	if err := c.getJSON(ctx, "/sobjects", &payload); err != nil {
 		var httpErr *salesforceHTTPError
 		if errors.As(err, &httpErr) {
 			switch httpErr.status {
@@ -231,7 +229,15 @@ func (c *SalesforceConnector) Validate(ctx context.Context) error {
 func (c *SalesforceConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return c.Validate(ctx)
+	tmp, err := NewSalesforceConnector(request)
+	if err != nil {
+		return err
+	}
+	// Carry the receiver's transport/acquire stubs so tests can validate an
+	// unsaved request without touching the network; production leaves them unset.
+	tmp.acquireAccessToken = c.acquireAccessToken
+	tmp.doJSON = c.doJSON
+	return tmp.Validate(ctx)
 }
 
 // OpenSync opens one Salesforce sync session.
@@ -242,7 +248,7 @@ func (c *SalesforceConnector) OpenSync(ctx context.Context, request SyncRequest)
 		batchSize:   c.effectiveBatchSize(),
 		windowStart: request.WindowStart,
 		windowEnd:   request.WindowEnd,
-		cursors:     map[string]string{},
+		cursors:     map[string]salesforceObjectCursor{},
 	}
 	session.applyResume(request.Resume)
 	return session, nil
@@ -264,19 +270,30 @@ func (c *SalesforceConnector) effectiveBatchSize() int {
 	return defaultSalesforceBatchSize
 }
 
-// base returns the Salesforce REST API base URL.
-func (c *SalesforceConnector) base() string {
-	return c.instanceURL + "/services/data/" + c.apiVersion
+// instanceBaseURL returns the current canonical instance URL under the auth
+// lock. It is only safe to read through this accessor once requests share the
+// auth lock with token acquisition.
+func (c *SalesforceConnector) instanceBaseURL() string {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+	return c.instanceURL
 }
 
-// token returns a cached or freshly acquired access token, preferring the
-// canonical instance URL returned by the token endpoint.
-func (c *SalesforceConnector) token(ctx context.Context) (string, error) {
+// token returns a synchronized authentication snapshot: the access token, its
+// expiry, and the canonical instance URL to build request targets from. The
+// snapshot is captured atomically so callers never read or write instanceURL
+// without the auth lock, and API URLs can be constructed from a single
+// consistent view of the token exchange.
+func (c *SalesforceConnector) token(ctx context.Context) (salesforceToken, error) {
 	c.clientMu.Lock()
 	if c.accessToken != "" && !c.cachedTokenExpiredLocked() {
-		token := c.accessToken
+		snap := salesforceToken{
+			AccessToken: c.accessToken,
+			InstanceURL: c.instanceURL,
+			ExpiresAt:   c.tokenExpiry,
+		}
 		c.clientMu.Unlock()
-		return token, nil
+		return snap, nil
 	}
 	c.clientMu.Unlock()
 
@@ -288,19 +305,24 @@ func (c *SalesforceConnector) token(ctx context.Context) (string, error) {
 		cached, err = c.requestAccessToken(ctx)
 	}
 	if err != nil {
-		return "", err
+		return salesforceToken{}, err
 	}
 	if cached.AccessToken == "" {
-		return "", &ConnectorMissingCredentialError{Message: "Salesforce token response did not contain access_token"}
-	}
-	if cached.InstanceURL != "" {
-		c.instanceURL = strings.TrimRight(cached.InstanceURL, "/")
+		return salesforceToken{}, &ConnectorMissingCredentialError{Message: "Salesforce token response did not contain access_token"}
 	}
 	c.clientMu.Lock()
 	c.accessToken = cached.AccessToken
 	c.tokenExpiry = cached.ExpiresAt
+	if cached.InstanceURL != "" {
+		c.instanceURL = strings.TrimRight(cached.InstanceURL, "/")
+	}
+	snap := salesforceToken{
+		AccessToken: cached.AccessToken,
+		InstanceURL: c.instanceURL,
+		ExpiresAt:   cached.ExpiresAt,
+	}
 	c.clientMu.Unlock()
-	return cached.AccessToken, nil
+	return snap, nil
 }
 
 func (c *SalesforceConnector) cachedTokenExpiredLocked() bool {
@@ -323,8 +345,39 @@ func (c *SalesforceConnector) currentTime() time.Time {
 	return time.Now()
 }
 
-// requestAccessToken performs the OAuth2 client-credentials exchange.
+// salesforceHostAllowed reports whether a host is an approved Salesforce
+// instance host. The configured and token-returned instance URLs must stay on
+// Salesforce-owned domains so credentials are only ever transmitted to the
+// intended provider.
+func salesforceHostAllowed(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	return host == "salesforce.com" ||
+		host == "force.com" ||
+		strings.HasSuffix(host, ".salesforce.com") ||
+		strings.HasSuffix(host, ".my.salesforce.com") ||
+		strings.HasSuffix(host, ".force.com") ||
+		strings.HasSuffix(host, ".lightning.force.com")
+}
+
+// requestAccessToken performs the OAuth2 client-credentials exchange, validating
+// the token endpoint for SSRF, HTTPS, and the approved Salesforce host policy
+// before any credentials are transmitted.
 func (c *SalesforceConnector) requestAccessToken(ctx context.Context) (salesforceToken, error) {
+	tokenURL := c.instanceBaseURL() + "/services/oauth2/token"
+	hostname, resolvedIP, err := utility.AssertURLSafe(tokenURL)
+	if err != nil {
+		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
+	}
+	if !salesforceHostAllowed(hostname) {
+		return salesforceToken{}, &ConnectorMissingCredentialError{Message: "Salesforce instance_url is not an approved Salesforce host"}
+	}
+	parsedURL, err := url.Parse(tokenURL)
+	if err != nil || !strings.EqualFold(parsedURL.Scheme, "https") {
+		return salesforceToken{}, &ConnectorMissingCredentialError{Message: "Salesforce OAuth token endpoint must use HTTPS"}
+	}
 	form := url.Values{
 		"grant_type":    {"client_credentials"},
 		"client_id":     {c.clientID},
@@ -332,12 +385,13 @@ func (c *SalesforceConnector) requestAccessToken(ctx context.Context) (salesforc
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, salesforceRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, c.instanceURL+"/services/oauth2/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.httpClient.Do(req)
+	client := utility.PinnedHTTPClient(hostname, resolvedIP, salesforceRequestTimeout)
+	resp, err := client.Do(req)
 	if err != nil {
 		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
 	}
@@ -386,26 +440,45 @@ func salesforceTokenErrorDetail(body []byte) string {
 	return text
 }
 
-// getJSON GETs a Salesforce REST endpoint and decodes JSON into out.
-func (c *SalesforceConnector) getJSON(ctx context.Context, apiURL string, out any) error {
-	if c.doJSON != nil {
-		return c.doJSON(ctx, apiURL, out)
+// apiURL builds the full Salesforce REST URL for a service-relative path from
+// the canonical instance URL captured in the authentication snapshot. The
+// token exchange may publish a different canonical instance than the one the
+// operator configured, so every request target is derived from the snapshot
+// instead of stale connector state.
+func (c *SalesforceConnector) apiURL(snap salesforceToken, path string) string {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return path
 	}
-	token, err := c.token(ctx)
+	if strings.HasPrefix(path, "/services/data/") {
+		return snap.InstanceURL + path
+	}
+	return snap.InstanceURL + "/services/data/" + c.apiVersion + path
+}
+
+// getJSON GETs a Salesforce REST endpoint and decodes JSON into out. The apiURL
+// is built only after token acquisition, from the canonical instance URL in the
+// returned snapshot, and a 401 retry rebuilds it from the refreshed snapshot.
+func (c *SalesforceConnector) getJSON(ctx context.Context, path string, out any) error {
+	snap, err := c.token(ctx)
 	if err != nil {
 		return err
 	}
+	apiURL := c.apiURL(snap, path)
+	if c.doJSON != nil {
+		return c.doJSON(ctx, apiURL, out)
+	}
 	for attempt := 0; ; attempt++ {
-		status, body, err := c.doGet(ctx, apiURL, token)
+		status, body, err := c.doGet(ctx, apiURL, snap.AccessToken)
 		if err != nil {
 			return err
 		}
 		if status == http.StatusUnauthorized && attempt == 0 {
-			c.invalidateToken(token)
-			token, err = c.token(ctx)
+			c.invalidateToken(snap.AccessToken)
+			snap, err = c.token(ctx)
 			if err != nil {
 				return err
 			}
+			apiURL = c.apiURL(snap, path)
 			continue
 		}
 		if salesforceObjectUnavailable(status, body) {
@@ -446,15 +519,46 @@ func (c *SalesforceConnector) doGet(ctx context.Context, apiURL, token string) (
 }
 
 // salesforceObjectUnavailable reports whether a response indicates a genuinely
-// absent SObject (404, or 400 INVALID_TYPE) as opposed to a transient or
-// permission failure.
+// absent SObject as opposed to a transient, permission, routing, or API-version
+// failure. A 404 is only treated as object-not-found when the response carries
+// the structured Salesforce NOT_FOUND error; a bare 404 (e.g. a bad pagination
+// URL or unknown route) must propagate as a normal HTTP error.
 func salesforceObjectUnavailable(status int, body []byte) bool {
 	if status == http.StatusNotFound {
-		return true
+		return salesforceNotFoundError(body)
 	}
 	if status != http.StatusBadRequest {
 		return false
 	}
+	return salesforceInvalidTypeError(body)
+}
+
+// salesforceNotFoundError reports whether a response body carries the
+// structured Salesforce "object not found" error code.
+func salesforceNotFoundError(body []byte) bool {
+	var entries []struct {
+		ErrorCode string `json:"errorCode"`
+	}
+	if err := json.Unmarshal(body, &entries); err == nil {
+		for _, entry := range entries {
+			if entry.ErrorCode == "NOT_FOUND" {
+				return true
+			}
+		}
+		return false
+	}
+	var single struct {
+		ErrorCode string `json:"errorCode"`
+	}
+	if err := json.Unmarshal(body, &single); err == nil {
+		return single.ErrorCode == "NOT_FOUND"
+	}
+	return false
+}
+
+// salesforceInvalidTypeError reports whether a 400 response body carries the
+// Salesforce INVALID_TYPE error, which describes an unknowable SOQL object.
+func salesforceInvalidTypeError(body []byte) bool {
 	var entries []struct {
 		ErrorCode string `json:"errorCode"`
 	}
@@ -484,7 +588,7 @@ func (c *SalesforceConnector) describeFields(ctx context.Context, obj string) ([
 			Type string `json:"type"`
 		} `json:"fields"`
 	}
-	if err := c.getJSON(ctx, c.base()+"/sobjects/"+url.PathEscape(obj)+"/describe", &payload); err != nil {
+	if err := c.getJSON(ctx, "/sobjects/"+url.PathEscape(obj)+"/describe", &payload); err != nil {
 		return nil, err
 	}
 	fields := []string{}
@@ -509,12 +613,23 @@ func (c *SalesforceConnector) describeFields(ctx context.Context, obj string) ([
 	return fields, nil
 }
 
-// queryURL builds the SOQL query URL for one SObject page.
-func (c *SalesforceConnector) queryURL(obj string, fields []string, since *time.Time, until *time.Time) string {
+// queryURL builds the SOQL query URL path for one SObject page. When a resume
+// cursor is present, the WHERE clause re-fetches records strictly newer than the
+// checkpoint plus same-instant records whose Id sorts after the checkpoint, so
+// later records sharing the checkpoint timestamp are not skipped.
+func (c *SalesforceConnector) queryURL(obj string, fields []string, cursor *salesforceObjectCursor, until *time.Time) string {
 	fieldList := strings.Join(fields, ",")
 	filters := []string{}
-	if since != nil {
-		filters = append(filters, "SystemModstamp > "+salesforceSOQLTime(*since))
+	if cursor != nil && cursor.SystemModstamp != "" {
+		since := cursor.SystemModstamp
+		if parsed, err := parseSalesforceTime(cursor.SystemModstamp); err == nil {
+			since = salesforceSOQLTime(parsed)
+		}
+		clause := "SystemModstamp > " + since
+		if cursor.Id != "" {
+			clause = "(" + clause + " OR (SystemModstamp = " + since + " AND Id > '" + cursor.Id + "'))"
+		}
+		filters = append(filters, clause)
 	}
 	if until != nil {
 		filters = append(filters, "SystemModstamp <= "+salesforceSOQLTime(*until))
@@ -523,8 +638,8 @@ func (c *SalesforceConnector) queryURL(obj string, fields []string, since *time.
 	if len(filters) > 0 {
 		where = " WHERE " + strings.Join(filters, " AND ")
 	}
-	soql := fmt.Sprintf("SELECT %s FROM %s%s ORDER BY SystemModstamp ASC", fieldList, obj, where)
-	return c.base() + "/query?q=" + url.QueryEscape(soql)
+	soql := fmt.Sprintf("SELECT %s FROM %s%s ORDER BY SystemModstamp ASC, Id ASC", fieldList, obj, where)
+	return "/query?q=" + url.QueryEscape(soql)
 }
 
 // salesforceSOQLTime formats a timestamp for a SOQL literal.
@@ -563,9 +678,18 @@ func parseSalesforceTime(value string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("parse Salesforce timestamp %q", value)
 }
 
-// salesforceSyncCursor is the per-object SystemModstamp cursor map.
+// salesforceObjectCursor is a per-object resume position keyed by the last
+// ingested record. Storing both SystemModstamp and Id lets a resume re-fetch
+// records that share the checkpoint timestamp but sort after it, so same-instant
+// inserts are not lost across checkpoint boundaries.
+type salesforceObjectCursor struct {
+	SystemModstamp string `json:"system_modstamp,omitempty"`
+	Id             string `json:"id,omitempty"`
+}
+
+// salesforceSyncCursor is the per-object composite cursor map.
 type salesforceSyncCursor struct {
-	Cursors map[string]string `json:"cursors,omitempty"`
+	Cursors map[string]salesforceObjectCursor `json:"cursors,omitempty"`
 }
 
 // salesforceSyncSession streams Salesforce documents for one fixed sync window.
@@ -575,11 +699,12 @@ type salesforceSyncSession struct {
 	batchSize   int
 	windowStart *time.Time
 	windowEnd   time.Time
-	cursors     map[string]string
+	cursors     map[string]salesforceObjectCursor
 
 	objectIndex int
 	pageURL     string
 	latestISO   string
+	latestID    string
 	buffer      []salesforceBufferedDocument
 }
 
@@ -665,9 +790,9 @@ func (s *salesforceSyncSession) nextDocumentPage(ctx context.Context) ([]salesfo
 				}
 				return nil, err
 			}
-			since := s.objSince(obj)
+			cursor := s.objCursor(obj)
 			until := salesforceWindowEnd(s.windowEnd)
-			s.pageURL = s.connector.queryURL(obj, fields, since, until)
+			s.pageURL = s.connector.queryURL(obj, fields, cursor, until)
 		}
 		var page salesforceQueryPage
 		if err := s.connector.getJSON(ctx, s.pageURL, &page); err != nil {
@@ -690,6 +815,7 @@ func (s *salesforceSyncSession) nextDocumentPage(ctx context.Context) ([]salesfo
 			modifiedStr := stringRecordValue(record, "SystemModstamp")
 			if modifiedStr != "" {
 				s.latestISO = modifiedStr
+				s.latestID = recID
 			}
 			raw = append(raw, s.connector.recordToDocument(obj, record, recID, modifiedStr))
 		}
@@ -700,17 +826,19 @@ func (s *salesforceSyncSession) nextDocumentPage(ctx context.Context) ([]salesfo
 		// keep the old cursor so a crash between them re-fetches the object
 		// instead of skipping records that were never ingested.
 		finalISO := s.latestISO
+		finalID := s.latestID
 		if page.NextRecordsURL != "" {
-			s.pageURL = s.connector.instanceURL + page.NextRecordsURL
+			s.pageURL = page.NextRecordsURL
 		} else {
 			s.objectIndex++
 			s.pageURL = ""
 			s.latestISO = ""
+			s.latestID = ""
 		}
 		documents := make([]salesforceBufferedDocument, 0, len(raw))
 		for index, doc := range raw {
 			if done && index == len(raw)-1 && finalISO != "" {
-				s.cursors[obj] = finalISO
+				s.cursors[obj] = salesforceObjectCursor{SystemModstamp: finalISO, Id: finalID}
 			}
 			documents = append(documents, salesforceBufferedDocument{
 				document:   doc,
@@ -720,7 +848,7 @@ func (s *salesforceSyncSession) nextDocumentPage(ctx context.Context) ([]salesfo
 		if done && len(raw) == 0 && finalISO != "" {
 			// Empty final page: still commit the drained object's cursor so
 			// the next object's batches skip it on resume.
-			s.cursors[obj] = finalISO
+			s.cursors[obj] = salesforceObjectCursor{SystemModstamp: finalISO, Id: finalID}
 		}
 		if len(documents) > 0 {
 			return documents, nil
@@ -729,28 +857,36 @@ func (s *salesforceSyncSession) nextDocumentPage(ctx context.Context) ([]salesfo
 	return nil, nil
 }
 
-// objSince computes the per-object lower bound: the caller window or the
-// persisted cursor, whichever is later.
-func (s *salesforceSyncSession) objSince(obj string) *time.Time {
-	var since *time.Time
-	if s.windowStart != nil {
-		since = s.windowStart
-	}
-	if iso := s.cursors[obj]; iso != "" {
-		if t, err := parseSalesforceTime(iso); err == nil {
-			if since == nil || t.After(*since) {
-				since = &t
-			}
+// objCursor computes the per-object resume cursor: the caller window or the
+// persisted cursor, whichever is later. A window bound that falls after the
+// persisted cursor drops the cursor's Id so same-instant records from the
+// window are not skipped; otherwise the composite timestamp+Id cursor is kept.
+func (s *salesforceSyncSession) objCursor(obj string) *salesforceObjectCursor {
+	cur, ok := s.cursors[obj]
+	if !ok || cur.SystemModstamp == "" {
+		if s.windowStart != nil {
+			return &salesforceObjectCursor{SystemModstamp: salesforceSOQLTime(*s.windowStart)}
 		}
+		return nil
 	}
-	return since
+	cursorTime, err := parseSalesforceTime(cur.SystemModstamp)
+	if err != nil {
+		if s.windowStart != nil {
+			return &salesforceObjectCursor{SystemModstamp: salesforceSOQLTime(*s.windowStart)}
+		}
+		return &cur
+	}
+	if s.windowStart != nil && cursorTime.Before(*s.windowStart) {
+		return &salesforceObjectCursor{SystemModstamp: salesforceSOQLTime(*s.windowStart)}
+	}
+	return &cur
 }
 
 // syncCheckpoint serializes the current per-object cursor map.
 func (s *salesforceSyncSession) syncCheckpoint(doc SourceDocument) *SyncCheckpoint {
-	cursors := make(map[string]string, len(s.cursors))
-	for obj, iso := range s.cursors {
-		cursors[obj] = iso
+	cursors := make(map[string]salesforceObjectCursor, len(s.cursors))
+	for obj, cur := range s.cursors {
+		cursors[obj] = cur
 	}
 	data, err := json.Marshal(salesforceSyncCursor{Cursors: cursors})
 	if err != nil {
@@ -790,7 +926,7 @@ func (c *SalesforceConnector) recordToDocument(obj string, record map[string]any
 		Metadata: map[string]any{
 			"object":    obj,
 			"record_id": recID,
-			"web_url":   fmt.Sprintf("%s/%s", c.instanceURL, recID),
+			"web_url":   fmt.Sprintf("%s/%s", c.instanceBaseURL(), recID),
 		},
 		Fingerprint: contentFingerprint(blob),
 	}
@@ -927,7 +1063,7 @@ func (s *salesforcePruneSession) nextSlimPage(ctx context.Context) ([]SlimDocume
 			documents = append(documents, SlimDocument{SourceID: fmt.Sprintf("%s/%s", obj, recID)})
 		}
 		if page.NextRecordsURL != "" {
-			s.pageURL = s.connector.instanceURL + page.NextRecordsURL
+			s.pageURL = page.NextRecordsURL
 		} else {
 			s.objectIndex++
 			s.pageURL = ""

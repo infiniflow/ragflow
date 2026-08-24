@@ -26,6 +26,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/utility"
 )
 
 func TestNewSalesforceConnectorDefaults(t *testing.T) {
@@ -430,8 +432,9 @@ func TestSalesforceConnectorOpenSyncPaginatedResume(t *testing.T) {
 	if err := json.Unmarshal([]byte(second.Checkpoint.Cursor), &finalCursor); err != nil {
 		t.Fatalf("parse final checkpoint cursor: %v", err)
 	}
-	if finalCursor.Cursors["Account"] != "2026-01-03T02:00:00.000+0000" {
-		t.Fatalf("final checkpoint cursor = %+v, want Account advanced", finalCursor.Cursors)
+	finalAccount := finalCursor.Cursors["Account"]
+	if finalAccount.SystemModstamp != "2026-01-03T02:00:00.000+0000" || finalAccount.Id != "0015g00000Example3" {
+		t.Fatalf("final checkpoint cursor = %+v, want Account advanced with composite cursor", finalCursor.Cursors)
 	}
 
 	// Resume from the second batch: the object is fully ingested, so the next
@@ -619,8 +622,47 @@ func TestSalesforceConnectorValidateConnectorSetting(t *testing.T) {
 		data, _ := json.Marshal(payload)
 		return json.Unmarshal(data, out)
 	}
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
-		t.Fatalf("ValidateConnectorSetting failed: %v", err)
+	// The receiver is a valid fixture; the unsaved request is what must be
+	// validated. Use a request whose credential set is incomplete so the
+	// temporary connector fails fast regardless of the receiver's state.
+	request := map[string]any{
+		"credentials": map[string]any{
+			"instance_url": "https://acme.my.salesforce.com",
+			"client_id":    "client",
+			// client_secret intentionally omitted.
+		},
+	}
+	var credErr *ConnectorMissingCredentialError
+	if err := connector.ValidateConnectorSetting(context.Background(), request); !errors.As(err, &credErr) {
+		t.Fatalf("ValidateConnectorSetting err = %v, want ConnectorMissingCredentialError for the request", err)
+	}
+}
+
+func TestSalesforceConnectorValidateConnectorSettingUsesRequest(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	// Receiver itself would pass with only Account; the request lists Bogus, so
+	// a successful validation must be derived from the request, not the receiver.
+	connector.objects = []string{"Account"}
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		payload := map[string]any{
+			"sobjects": []any{
+				map[string]any{"name": "Account", "queryable": true},
+			},
+		}
+		data, _ := json.Marshal(payload)
+		return json.Unmarshal(data, out)
+	}
+	request := map[string]any{
+		"objects": "Account, Bogus",
+		"credentials": map[string]any{
+			"instance_url":  "https://acme.my.salesforce.com",
+			"client_id":     "client",
+			"client_secret": "secret",
+		},
+	}
+	var valErr *ConnectorValidationError
+	if err := connector.ValidateConnectorSetting(context.Background(), request); !errors.As(err, &valErr) {
+		t.Fatalf("ValidateConnectorSetting err = %v, want ConnectorValidationError for the unsaved request", err)
 	}
 }
 
@@ -642,6 +684,208 @@ func TestRegisterBuiltInsOpensSalesforce(t *testing.T) {
 	}
 }
 
+func TestSalesforceConnectorOpenSyncSameTimestampResume(t *testing.T) {
+	ts := "2026-01-03T00:00:00.000+0000"
+	records := []map[string]any{
+		{"Id": "0015g00000Example1", "Name": "Acme Corp", "SystemModstamp": ts},
+		{"Id": "0015g00000Example2", "Name": "Globex", "SystemModstamp": ts},
+	}
+
+	// First run with batchSize 1: each record becomes one batch and the object
+	// only drains on the last one, so the persisted cursor advances to the
+	// composite position (ts, Example2) of the final same-instant record.
+	connector := newSalesforceFixtureConnector()
+	connector.batchSize = 1
+	connector.doJSON = salesforceFixtureRecordsDoJSON(t, records)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	var checkpoint *SyncCheckpoint
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch failed: %v", err)
+		}
+		if batch.Checkpoint != nil {
+			checkpoint = batch.Checkpoint
+		}
+	}
+	var curs salesforceSyncCursor
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &curs); err != nil {
+		t.Fatalf("parse cursor: %v", err)
+	}
+	acct := curs.Cursors["Account"]
+	if acct.SystemModstamp != ts || acct.Id != "0015g00000Example2" {
+		t.Fatalf("cursor = %+v, want (ts, Example2)", acct)
+	}
+
+	// A third record created in the same instant but sorting after the
+	// checkpoint by Id must be delivered on resume. The resumed fixture still
+	// carries all records; the composite WHERE clause must select only the
+	// same-instant record whose Id sorts after the cursor.
+	resumedRecords := append(append([]map[string]any{}, records...), map[string]any{
+		"Id": "0015g00000Example3", "Name": "Initech", "SystemModstamp": ts,
+	})
+	resumed := newSalesforceFixtureConnector()
+	resumed.batchSize = 1
+	var resumedSOQL string
+	resumed.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		if strings.Contains(apiURL, "/query?") {
+			parsed, err := url.Parse(apiURL)
+			if err != nil {
+				t.Fatalf("parse query url: %v", err)
+			}
+			resumedSOQL, _ = url.QueryUnescape(parsed.Query().Get("q"))
+		}
+		return salesforceFixtureRecordsDoJSON(t, resumedRecords)(ctx, apiURL, out)
+	}
+	resumedSession, err := resumed.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: checkpoint})
+	if err != nil {
+		t.Fatalf("resumed OpenSync failed: %v", err)
+	}
+	var gotIDs []string
+	for {
+		batch, err := resumedSession.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("resumed NextBatch failed: %v", err)
+		}
+		for _, doc := range batch.Documents {
+			gotIDs = append(gotIDs, doc.SourceID)
+		}
+	}
+	if !strings.Contains(resumedSOQL, "AND Id > '0015g00000Example2'") {
+		t.Fatalf("resumed SOQL missing same-instant Id boundary: %q", resumedSOQL)
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != "Account/0015g00000Example3" {
+		t.Fatalf("resumed documents = %v, want only the same-instant record after the cursor", gotIDs)
+	}
+}
+
+func TestSalesforceObjectUnavailable404(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "structured NOT_FOUND",
+			body: `[{"message":"sObject type 'Bogus' is not supported. If you intend to use a custom object, make sure it is enabled in \"Setup > Object Manager\" and \"API\" is enabled in the Object's Detail Page.","errorCode":"NOT_FOUND"}]`,
+			want: true,
+		},
+		{
+			name: "object level permissions NOT_FOUND",
+			body: `[{"message":"Object type 'Case' is not supported. If you intend to use a custom object...","errorCode":"NOT_FOUND"}]`,
+			want: true,
+		},
+		{
+			name: "generic not found route",
+			body: `404 page not found`,
+			want: false,
+		},
+		{
+			name: "empty body",
+			body: ``,
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := salesforceObjectUnavailable(http.StatusNotFound, []byte(tc.body)); got != tc.want {
+				t.Fatalf("salesforceObjectUnavailable(404, %q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSalesforceObjectUnavailable400InvalidType(t *testing.T) {
+	body := `[{"message":"\nSELECT Account__c FROM Bogus\n                                 ^\nERROR at Row:1:Column:18\nsObject type 'Bogus' is not supported.","errorCode":"INVALID_TYPE"}]`
+	if !salesforceObjectUnavailable(http.StatusBadRequest, []byte(body)) {
+		t.Fatalf("expected 400 INVALID_TYPE to be unavailable")
+	}
+	if salesforceObjectUnavailable(http.StatusBadRequest, []byte(`bad request`)) {
+		t.Fatalf("did not expect generic 400 to be unavailable")
+	}
+	if salesforceObjectUnavailable(http.StatusForbidden, []byte(`forbidden`)) {
+		t.Fatalf("did not expect 403 to be unavailable")
+	}
+}
+
+func TestSalesforceHostAllowed(t *testing.T) {
+	allowed := []string{
+		"acme.my.salesforce.com",
+		"login.salesforce.com",
+		"ACME.MY.SALESFORCE.COM",
+		"instance.salesforce.com",
+		"custom.force.com",
+		"org.lightning.force.com",
+		"salesforce.com",
+		"force.com",
+	}
+	for _, host := range allowed {
+		if !salesforceHostAllowed(host) {
+			t.Fatalf("salesforceHostAllowed(%q) = false, want true", host)
+		}
+	}
+	blocked := []string{
+		"",
+		"acme.my.salesforce.com.evil.com",
+		"evil.example.com",
+		"salesforce.com.evil.com",
+		"force.com.attacker.io",
+		"127.0.0.1",
+	}
+	for _, host := range blocked {
+		if salesforceHostAllowed(host) {
+			t.Fatalf("salesforceHostAllowed(%q) = true, want false", host)
+		}
+	}
+}
+
+func TestRequestAccessTokenRejectsNonSalesforceHost(t *testing.T) {
+	origLookup := utility.LookupHost
+	utility.LookupHost = func(host string) ([]string, error) {
+		return []string{"93.184.216.34"}, nil
+	}
+	t.Cleanup(func() { utility.LookupHost = origLookup })
+
+	connector := &SalesforceConnector{
+		instanceURL:  "https://evil.example.com",
+		clientID:     "client",
+		clientSecret: "secret",
+		now:          time.Now,
+	}
+	var credErr *ConnectorMissingCredentialError
+	if _, err := connector.requestAccessToken(context.Background()); !errors.As(err, &credErr) {
+		t.Fatalf("requestAccessToken err = %v, want ConnectorMissingCredentialError for non-Salesforce host", err)
+	}
+}
+
+func TestRequestAccessTokenRequiresHTTPS(t *testing.T) {
+	origLookup := utility.LookupHost
+	utility.LookupHost = func(host string) ([]string, error) {
+		return []string{"93.184.216.34"}, nil
+	}
+	t.Cleanup(func() { utility.LookupHost = origLookup })
+
+	connector := &SalesforceConnector{
+		instanceURL:  "http://acme.my.salesforce.com",
+		clientID:     "client",
+		clientSecret: "secret",
+		now:          time.Now,
+	}
+	var credErr *ConnectorMissingCredentialError
+	if _, err := connector.requestAccessToken(context.Background()); !errors.As(err, &credErr) {
+		t.Fatalf("requestAccessToken err = %v, want ConnectorMissingCredentialError for non-HTTPS token endpoint", err)
+	}
+}
+
 // newSalesforceFixtureConnector builds a connector with token acquisition
 // short-circuited so unit tests never touch the network.
 func newSalesforceFixtureConnector() *SalesforceConnector {
@@ -652,7 +896,6 @@ func newSalesforceFixtureConnector() *SalesforceConnector {
 		objects:      []string{"Account"},
 		apiVersion:   defaultSalesforceAPIVersion,
 		batchSize:    defaultSalesforceBatchSize,
-		httpClient:   http.DefaultClient,
 		now:          time.Now,
 	}
 	connector.acquireAccessToken = func(ctx context.Context) (salesforceToken, error) {
@@ -707,11 +950,7 @@ func salesforceFixtureDoJSON(t *testing.T) func(ctx context.Context, apiURL stri
 			}
 			filtered := []map[string]any{}
 			for _, record := range records {
-				modified, err := parseSalesforceTime(record["SystemModstamp"].(string))
-				if err != nil {
-					t.Fatalf("parse fixture timestamp: %v", err)
-				}
-				if salesforceFixtureMatchesSOQL(t, soql, modified) {
+				if salesforceFixtureMatchesSOQL(t, soql, record) {
 					filtered = append(filtered, record)
 				}
 			}
@@ -725,12 +964,56 @@ func salesforceFixtureDoJSON(t *testing.T) func(ctx context.Context, apiURL stri
 	}
 }
 
-// salesforceFixtureMatchesSOQL applies the fixture's SystemModstamp predicates.
-func salesforceFixtureMatchesSOQL(t *testing.T, soql string, modified time.Time) bool {
+// salesforceFixtureRecordsDoJSON serves describe + query responses for an
+// arbitrary record set, emulating server-side SOQL filtering on SystemModstamp
+// (including the composite resume predicate).
+func salesforceFixtureRecordsDoJSON(t *testing.T, records []map[string]any) func(ctx context.Context, apiURL string, out any) error {
+	t.Helper()
+	return func(ctx context.Context, apiURL string, out any) error {
+		switch {
+		case strings.Contains(apiURL, "/sobjects/Account/describe"):
+			body := `{"fields":[
+				{"name":"Id","type":"id"},
+				{"name":"Name","type":"string"},
+				{"name":"SystemModstamp","type":"datetime"}
+			]}`
+			return json.Unmarshal([]byte(body), out)
+		case strings.Contains(apiURL, "/query?"):
+			parsed, err := url.Parse(apiURL)
+			if err != nil {
+				t.Fatalf("parse query url: %v", err)
+			}
+			soql, err := url.QueryUnescape(parsed.Query().Get("q"))
+			if err != nil {
+				t.Fatalf("unescape soql: %v", err)
+			}
+			filtered := []map[string]any{}
+			for _, record := range records {
+				if salesforceFixtureMatchesSOQL(t, soql, record) {
+					filtered = append(filtered, record)
+				}
+			}
+			payload := map[string]any{"totalSize": len(filtered), "done": true, "records": filtered}
+			data, _ := json.Marshal(payload)
+			return json.Unmarshal(data, out)
+		default:
+			t.Fatalf("unexpected api url %s", apiURL)
+		}
+		return nil
+	}
+}
+
+// salesforceFixtureMatchesSOQL applies the fixture's SystemModstamp predicates,
+// including the composite resume clause `(SystemModstamp > X OR (SystemModstamp
+// = X AND Id > 'Y'))` so same-instant records that sort after the checkpoint by
+// Id are kept.
+func salesforceFixtureMatchesSOQL(t *testing.T, soql string, record map[string]any) bool {
 	t.Helper()
 	lower := strings.ToLower(soql)
 	since := time.Time{}
 	until := time.Time{}
+	equalSince := false
+	minID := ""
 	if idx := strings.Index(lower, "systemmodstamp >"); idx >= 0 {
 		rest := soql[idx+len("SystemModstamp > "):]
 		value := strings.TrimSpace(strings.Split(rest, " ")[0])
@@ -739,6 +1022,20 @@ func salesforceFixtureMatchesSOQL(t *testing.T, soql string, modified time.Time)
 			t.Fatalf("parse soql since %q: %v", value, err)
 		}
 		since = parsed
+	}
+	if idx := strings.Index(lower, "systemmodstamp ="); idx >= 0 {
+		rest := soql[idx+len("SystemModstamp = "):]
+		value := strings.TrimSpace(strings.Split(rest, " ")[0])
+		parsed, err := parseSalesforceTime(strings.Trim(value, "'"))
+		if err != nil {
+			t.Fatalf("parse soql equal timestamp %q: %v", value, err)
+		}
+		equalSince = true
+		since = parsed
+	}
+	if idx := strings.Index(lower, "and id >"); idx >= 0 {
+		value := soql[idx+len("AND Id > "):]
+		minID = strings.Trim(strings.TrimSpace(value), "'")
 	}
 	if idx := strings.Index(lower, "systemmodstamp <= "); idx >= 0 {
 		rest := soql[idx+len("SystemModstamp <= "):]
@@ -749,10 +1046,26 @@ func salesforceFixtureMatchesSOQL(t *testing.T, soql string, modified time.Time)
 		}
 		until = parsed
 	}
-	if !since.IsZero() && !modified.After(since) {
-		return false
+	modified, err := parseSalesforceTime(record["SystemModstamp"].(string))
+	if err != nil {
+		t.Fatalf("parse fixture timestamp: %v", err)
 	}
 	if !until.IsZero() && modified.After(until) {
+		return false
+	}
+	if !since.IsZero() {
+		if modified.After(since) {
+			return true
+		}
+		if modified.Before(since) {
+			return false
+		}
+		// Same instant as the checkpoint: keep records that sort after it by Id
+		// only when a same-instant Id boundary is present.
+		if equalSince && minID != "" {
+			id, _ := record["Id"].(string)
+			return id > minID
+		}
 		return false
 	}
 	return true
