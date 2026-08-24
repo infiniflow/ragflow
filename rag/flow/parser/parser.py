@@ -42,11 +42,6 @@ from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
-from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
-from deepdoc.parser.docling_parser import DoclingParser
-from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
-from deepdoc.parser.tcadp_parser import TCADPParser
-from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.pdf_chunk_metadata import (
     extract_pdf_positions,
@@ -66,6 +61,42 @@ from rag.flow.parser.utils import (
 )
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
+
+# Heavy parser backends (deepdoc.*, rag.app.naive.Docx) are imported lazily
+# inside the methods that instantiate them. The eager import chain was
+# causing ``test/unit_test/rag/conftest.py``'s lightweight ``deepdoc.parser.pdf_parser``
+# stub (which only exposes ``RAGFlowPdfParser``) to break the
+# ``import rag.flow.parser.parser`` flow at module load: the stub had no
+# ``PlainParser`` / ``VisionParser`` attribute, so the from-import failed
+# before any test collection could run. Each ``_lazy_<name>`` import
+# mirrors the previous eager name; the runtime behaviour is unchanged.
+_lazy_deepdoc_imports = {
+    "ExcelParser": ("deepdoc.parser", "ExcelParser"),
+    "HtmlParser": ("deepdoc.parser", "HtmlParser"),
+    "TxtParser": ("deepdoc.parser", "TxtParser"),
+    "DoclingParser": ("deepdoc.parser.docling_parser", "DoclingParser"),
+    "PlainParser": ("deepdoc.parser.pdf_parser", "PlainParser"),
+    "RAGFlowPdfParser": ("deepdoc.parser.pdf_parser", "RAGFlowPdfParser"),
+    "VisionParser": ("deepdoc.parser.pdf_parser", "VisionParser"),
+    "TCADPParser": ("deepdoc.parser.tcadp_parser", "TCADPParser"),
+    "Docx": ("rag.app.naive", "Docx"),
+}
+
+
+def _lazy(name: str):
+    """Resolve a parser backend by name from the lazy-import map.
+
+    Mirrors the previous eager ``from ... import NAME`` semantics: the
+    call site uses the name like a module-level binding, but the
+    actual import is deferred until the first invocation of the method
+    that needs it. The dict at module load time is the single source of
+    truth, so adding a new parser backend is a one-line edit in the map.
+    """
+    mod_name, attr = _lazy_deepdoc_imports[name]
+    import importlib
+
+    module = importlib.import_module(mod_name)
+    return getattr(module, attr)
 
 
 class ParserParam(ProcessParamBase):
@@ -376,14 +407,14 @@ class Parser(ProcessBase):
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":
-            pdf_parser = RAGFlowPdfParser()
+            pdf_parser = _lazy("RAGFlowPdfParser")()
             bboxes = pdf_parser.parse_into_bboxes(blob, callback=self.callback)
             if conf.get("enable_multi_column"):
                 bboxes = reorder_multi_column_bboxes(pdf_parser, bboxes)
 
         # Plain text only keeps extracted text lines.
         elif parse_method.lower() == "plain_text":
-            pdf_parser = PlainParser()
+            pdf_parser = _lazy("PlainParser")()
             lines, _ = pdf_parser(blob)
             bboxes = [{"text": t, "layout_type": "text"} for t, _ in lines]
 
@@ -437,7 +468,7 @@ class Parser(ProcessBase):
                 bboxes.append(box)
 
         elif parse_method.lower() == "docling":
-            pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
+            pdf_parser = _lazy("DoclingParser")(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
@@ -619,7 +650,7 @@ class Parser(ProcessBase):
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
-            pdf_parser = TCADPParser(
+            pdf_parser = _lazy("TCADPParser")(
                 table_result_type=table_result_type,
                 markdown_image_response_type=markdown_image_response_type,
             )
@@ -705,11 +736,11 @@ class Parser(ProcessBase):
             else:
                 vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.VISION)
             vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"))
-            pdf_parser = VisionParser(vision_model=vision_model)
+            pdf_parser = _lazy("VisionParser")(vision_model=vision_model)
             lines, _ = pdf_parser(blob, callback=self.callback)
             bboxes = []
             for t, poss in lines:
-                for pn, x0, x1, top, bott in RAGFlowPdfParser.extract_positions(poss):
+                for pn, x0, x1, top, bott in _lazy("RAGFlowPdfParser").extract_positions(poss):
                     bboxes.append(
                         {
                             "page_number": int(pn[0]) + 1,
@@ -807,7 +838,7 @@ class Parser(ProcessBase):
         if parse_method.lower() == "tcadp parser":
             table_result_type = conf.get("table_result_type", "1")
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
-            tcadp_parser = TCADPParser(
+            tcadp_parser = _lazy("TCADPParser")(
                 table_result_type=table_result_type,
                 markdown_image_response_type=markdown_image_response_type,
             )
@@ -877,7 +908,7 @@ class Parser(ProcessBase):
                 self.set_output("markdown", md_content)
         else:
             # Default DeepDOC parser
-            spreadsheet_parser = ExcelParser()
+            spreadsheet_parser = _lazy("ExcelParser")()
             if conf.get("output_format") == "html":
                 htmls = spreadsheet_parser.html(blob, 1000000000)
                 self.set_output("html", htmls[0])
@@ -944,7 +975,7 @@ class Parser(ProcessBase):
             self.callback(0.8, "Finish parsing.")
             return
 
-        docx_parser = Docx()
+        docx_parser = _lazy("Docx")()
 
         # Extract heading-based outlines for metadata and TOC removal.
         outlines = extract_word_outlines(name, blob)
@@ -1010,7 +1041,7 @@ class Parser(ProcessBase):
         if parse_method.lower() == "tcadp parser":
             table_result_type = conf.get("table_result_type", "1")
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
-            tcadp_parser = TCADPParser(
+            tcadp_parser = _lazy("TCADPParser")(
                 table_result_type=table_result_type,
                 markdown_image_response_type=markdown_image_response_type,
             )
@@ -1131,7 +1162,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["text&code"]
         self.set_output("output_format", conf["output_format"])
 
-        sections = TxtParser()(
+        sections = _lazy("TxtParser")()(
             name,
             blob,
             conf.get("chunk_token_num", 128),
@@ -1153,7 +1184,7 @@ class Parser(ProcessBase):
         if conf.get("remove_header_footer"):
             blob = remove_header_footer_html_blob(blob)
 
-        sections = HtmlParser()(name, blob, int(conf.get("chunk_token_num", 512)))
+        sections = _lazy("HtmlParser")()(name, blob, int(conf.get("chunk_token_num", 512)))
         if conf.get("remove_toc"):
             sections, _ = remove_toc(sections)
         if conf.get("output_format") == "json":
