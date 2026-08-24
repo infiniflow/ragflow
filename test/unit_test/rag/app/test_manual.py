@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import sys
 from importlib import import_module
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -73,21 +73,25 @@ def test_legacy_doc_is_rejected_with_conversion_message(manual_module):
         )
 
 
-def test_docx_does_not_hit_doc_rejection(manual_module, monkeypatch):
-    docx_parser = MagicMock()
-    docx_parser.return_value = ((), [])
-    monkeypatch.setattr(manual_module, "Docx", docx_parser)
-    monkeypatch.setattr(manual_module, "vision_figure_parser_docx_wrapper", lambda *a, **k: None)
-    monkeypatch.setattr(manual_module, "tokenize_table", lambda *a, **k: [])
-    monkeypatch.setattr(manual_module, "tokenize_chunks", lambda *a, **k: [])
-    monkeypatch.setattr(manual_module, "tokenize", lambda *a, **k: [])
-
-    result = manual_module.chunk(
-        "x.docx",
-        binary=b"",
-        from_page=0,
-        to_page=MAXIMUM_PAGE_NUMBER,
-        callback=dummy,
-    )
+def test_docx_does_not_hit_doc_rejection(manual_module):
+    with (
+        patch.object(manual_module, "Docx", return_value=((), [])),
+        patch.object(
+            manual_module,
+            "vision_figure_parser_docx_wrapper",
+            return_value=[],
+        ),
+        patch.object(manual_module, "tokenize_table", return_value=[]),
+        patch.object(manual_module, "tokenize", return_value=None),
+        patch.object(manual_module, "copy"),
+        patch.object(manual_module, "attach_media_context"),
+    ):
+        result = manual_module.chunk(
+            "x.docx",
+            binary=b"",
+            from_page=0,
+            to_page=MAXIMUM_PAGE_NUMBER,
+            callback=dummy,
+        )
 
     assert result == []
