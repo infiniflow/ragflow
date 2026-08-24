@@ -1909,16 +1909,26 @@ class AzureDevOps(SyncBase):
 
         def document_batches():
             checkpoint = self.connector.build_dummy_checkpoint()
+            iterations = 0
+            iteration_limit = 100_000
 
             while checkpoint.has_more:
+                iterations += 1
+                if iterations > iteration_limit:
+                    logging.error("Azure DevOps sync exceeded %d iterations; aborting to avoid an endless loop.", iteration_limit)
+                    break
+
                 gen = self.connector.load_from_checkpoint(start=start_time.timestamp(), end=end_time.timestamp(), checkpoint=checkpoint)
 
                 while True:
                     try:
                         item = next(gen)
                         if isinstance(item, ConnectorFailure):
-                            logging.exception("Azure DevOps connector failure: %s", item.failure_message)
-                            break
+                            # A failed document must not cost the checkpoint: keep consuming
+                            # so the generator returns its updated resume position, otherwise
+                            # a deterministic failure replays the same offset forever.
+                            logging.error("Azure DevOps connector failure: %s", item.failure_message)
+                            continue
                         yield [item]
                     except StopIteration as e:
                         checkpoint = e.value

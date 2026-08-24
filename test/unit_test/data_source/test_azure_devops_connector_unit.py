@@ -171,6 +171,7 @@ azure_utils, azure_connector = _load_azure_devops_modules()
 
 AzureDevOpsConnector = azure_connector.AzureDevOpsConnector
 INDEX_MODE_ORGANIZATION = azure_connector.INDEX_MODE_ORGANIZATION
+INDEX_MODE_PROJECTS = azure_connector.INDEX_MODE_PROJECTS
 INDEX_MODE_REPOSITORIES = azure_connector.INDEX_MODE_REPOSITORIES
 
 
@@ -306,6 +307,52 @@ def test_default_branch_strips_ref_prefix():
 
 
 @pytest.mark.p2
+def test_cleartext_collection_url_is_rejected():
+    """The PAT travels in the Authorization header, so HTTP is refused."""
+    with pytest.raises(Exception) as excinfo:
+        azure_utils.organization_url("http://tfs.contoso.com/DefaultCollection")
+    assert "HTTPS" in str(excinfo.value)
+
+
+@pytest.mark.p2
+def test_html_body_is_not_an_auth_failure_for_raw_content():
+    """A repository may legitimately contain .html files."""
+    response = _FakeResponse(status_code=200, content_type="text/html", text="<html>page</html>")
+    assert azure_utils.raise_for_auth(response, expect_json=False) is None
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"index_mode": "everything"},
+        {"content_types": "everything"},
+        {"index_mode": INDEX_MODE_REPOSITORIES},
+    ],
+)
+def test_unusable_settings_are_rejected_before_any_request(overrides):
+    connector = _build_connector(**overrides)
+    with pytest.raises(Exception):
+        connector._validate_settings()
+
+
+@pytest.mark.p2
+def test_active_pull_request_is_always_reindexed():
+    """Azure DevOps has no dependable "updated" timestamp for pull requests."""
+    window_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    window_end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+    active = {"status": "active", "creationDate": "2024-05-01T00:00:00Z"}
+    assert azure_utils.pull_request_in_window(active, window_start, window_end) is True
+
+    closed_before = {"status": "completed", "closedDate": "2024-05-01T00:00:00Z"}
+    assert azure_utils.pull_request_in_window(closed_before, window_start, window_end) is False
+
+    closed_inside = {"status": "completed", "closedDate": "2026-01-15T00:00:00Z"}
+    assert azure_utils.pull_request_in_window(closed_inside, window_start, window_end) is True
+
+
+@pytest.mark.p2
 def test_load_credentials_requires_personal_access_token():
     connector = AzureDevOpsConnector(organization="contoso")
     with pytest.raises(Exception):
@@ -430,6 +477,47 @@ def test_map_pull_request_to_document_summarises_review_metadata():
     body = document.blob.decode("utf-8")
     assert "Grace Hopper" in body
     assert "Backend tarafina tasindi." in body
+
+
+@pytest.mark.p2
+def test_short_pull_request_description_needs_no_detail_fetch():
+    assert azure_utils.pull_request_may_be_truncated({"description": "kisa aciklama"}) is False
+    assert azure_utils.pull_request_may_be_truncated({}) is False
+
+
+@pytest.mark.p2
+def test_long_pull_request_description_is_refetched_in_full(monkeypatch):
+    """The list endpoint truncates descriptions at 400 characters."""
+    truncated = "x" * azure_utils.PULL_REQUEST_DESCRIPTION_LIMIT
+    full = truncated + " ...and the rest of the description"
+
+    assert azure_utils.pull_request_may_be_truncated({"description": truncated}) is True
+
+    client = _FakeClient(
+        {
+            "/items": {"value": []},
+            "/pullrequests/77": {"pullRequestId": 77, "title": "long", "description": full, "status": "completed"},
+            "/pullrequests": {"value": [{"pullRequestId": 77, "title": "long", "description": truncated, "status": "completed"}]},
+            "_apis/git/repositories": {"value": [{"name": "repo-a", "project": {"name": "iddaa"}, "defaultBranch": "refs/heads/master"}]},
+        }
+    )
+    connector = _build_connector(content_types="pull_requests")
+    monkeypatch.setattr(connector, "_client", lambda: client)
+
+    checkpoint = connector.build_dummy_checkpoint()
+    documents = []
+    while checkpoint.has_more:
+        generator = connector.load_from_checkpoint(start=0.0, end=datetime.now(timezone.utc).timestamp(), checkpoint=checkpoint)
+        while True:
+            try:
+                documents.append(next(generator))
+            except StopIteration as stop:
+                checkpoint = stop.value
+                break
+
+    assert len(documents) == 1
+    assert full in documents[0].blob.decode("utf-8")
+    assert any("/pullrequests/77" in request for request in client.requests)
 
 
 @pytest.mark.p2

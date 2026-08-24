@@ -44,6 +44,10 @@ SKIPPED_FILENAMES: frozenset[str] = frozenset(
 
 MAX_FILE_BYTES = 1_000_000
 
+# The pull request *list* endpoint truncates descriptions at 400 characters;
+# only the single pull request endpoint returns the full text.
+PULL_REQUEST_DESCRIPTION_LIMIT = 400
+
 
 def build_auth_client(personal_access_token: str) -> httpx.Client:
     """Create an authenticated client for the Azure DevOps REST API.
@@ -61,21 +65,31 @@ def organization_url(organization: str) -> str:
     full base URL such as ``https://tfs.contoso.com/DefaultCollection`` for
     Azure DevOps Server.
     """
-    if organization.startswith(("http://", "https://")):
+    if organization.startswith("http://"):
+        raise UnexpectedValidationError(
+            "Azure DevOps collection URLs must use HTTPS; the personal access token is sent in the Authorization header."
+        )
+    if organization.startswith("https://"):
         return organization.rstrip("/")
     return f"https://dev.azure.com/{quote(organization, safe='')}"
 
 
-def raise_for_auth(response: httpx.Response) -> None:
+def raise_for_auth(response: httpx.Response, expect_json: bool = True) -> None:
     """Translate Azure DevOps auth failures into connector errors.
 
     Azure DevOps does not answer an invalid or unauthorized PAT with 401. It
     answers **203 Non-Authoritative Information** and returns the HTML sign-in
     page, so a naive ``raise_for_status`` succeeds and the JSON parse fails
     later with an unrelated error. Detect it here instead.
+
+    The HTML heuristic only applies to endpoints that return JSON: a repository
+    can legitimately contain ``.html`` files, and those must not be mistaken for
+    a sign-in page.
     """
-    if response.status_code == 203 or "text/html" in response.headers.get("content-type", ""):
+    if response.status_code == 203:
         raise CredentialExpiredError("Invalid or expired Azure DevOps personal access token (HTTP 203 sign-in page).")
+    if expect_json and "text/html" in response.headers.get("content-type", ""):
+        raise CredentialExpiredError("Azure DevOps returned a sign-in page; the personal access token is invalid or unauthorized.")
     if response.status_code == 401:
         raise CredentialExpiredError("Invalid or expired Azure DevOps personal access token (HTTP 401).")
     if response.status_code == 403:
@@ -98,7 +112,12 @@ class AzureDevOpsNonRetriableError(Exception):
     exceptions=(AzureDevOpsRetriableError, httpx.RequestError),
 )
 @rate_limit_builder(max_calls=120, period=60)
-def azure_devops_get(client: httpx.Client, url: str, params: dict[str, Any] | None = None) -> httpx.Response:
+def azure_devops_get(
+    client: httpx.Client,
+    url: str,
+    params: dict[str, Any] | None = None,
+    expect_json: bool = True,
+) -> httpx.Response:
     """Perform a GET against Azure DevOps with retry and rate limiting.
 
     Azure DevOps throttles on consumed throughput units and answers with 429
@@ -107,7 +126,7 @@ def azure_devops_get(client: httpx.Client, url: str, params: dict[str, Any] | No
     first and deliberately left non-retriable.
     """
     response = client.get(url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
-    raise_for_auth(response)
+    raise_for_auth(response, expect_json=expect_json)
 
     status = response.status_code
     if status == 429:
@@ -223,12 +242,28 @@ def fetch_file_content(client: httpx.Client, repo_api_url: str, path: str, branc
             "versionDescriptor.versionType": "branch",
             "versionDescriptor.version": branch,
         },
+        expect_json=False,
     )
     if response.status_code < 200 or response.status_code >= 300:
         raise UnexpectedValidationError(f"Failed to read {path} (status={response.status_code}).")
 
     content = response.content
     return None if len(content) > MAX_FILE_BYTES else content
+
+
+def pull_request_may_be_truncated(pull_request: dict[str, Any]) -> bool:
+    """Report whether a listed pull request needs a detail fetch.
+
+    Descriptions shorter than the limit came back whole, so the extra request is
+    only paid for the few pull requests that could have been cut off.
+    """
+    description = pull_request.get("description") or ""
+    return len(description) >= PULL_REQUEST_DESCRIPTION_LIMIT
+
+
+def fetch_pull_request(client: httpx.Client, repo_api_url: str, pull_request_id: Any) -> dict[str, Any]:
+    """Fetch one pull request with its untruncated description."""
+    return get_json(client, f"{repo_api_url}/pullrequests/{pull_request_id}")
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -347,5 +382,28 @@ def map_pull_request_to_document(
 
 
 def pull_request_updated_at(pull_request: dict[str, Any]) -> datetime | None:
-    """Best available "last activity" timestamp for time-window filtering."""
+    """Best available "last activity" timestamp for a pull request."""
     return _parse_timestamp(pull_request.get("closedDate")) or _parse_timestamp(pull_request.get("creationDate"))
+
+
+def pull_request_in_window(
+    pull_request: dict[str, Any],
+    window_start: datetime,
+    window_end: datetime,
+) -> bool:
+    """Decide whether a pull request belongs to the polling window.
+
+    Azure DevOps exposes no dependable "last updated" timestamp for pull
+    requests. ``closedDate`` is reliable, so completed and abandoned ones are
+    filtered on it. An active pull request can have its description, reviewers
+    or branches changed long after it was created, and filtering those on
+    ``creationDate`` would leave the indexed document stale — so they are always
+    re-indexed.
+    """
+    if (pull_request.get("status") or "").lower() not in ("completed", "abandoned"):
+        return True
+
+    closed_at = _parse_timestamp(pull_request.get("closedDate"))
+    if closed_at is None:
+        return True
+    return window_start <= closed_at <= window_end

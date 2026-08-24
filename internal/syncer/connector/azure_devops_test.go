@@ -33,7 +33,7 @@ func newTestAzureDevOpsConnector(t *testing.T, serverURL string, overrides map[s
 	t.Helper()
 
 	config := map[string]any{
-		"organization": serverURL,
+		"organization": "contoso",
 		"credentials":  map[string]any{"azure_devops_pat": "token"},
 	}
 	for key, value := range overrides {
@@ -44,6 +44,9 @@ func newTestAzureDevOpsConnector(t *testing.T, serverURL string, overrides map[s
 	if err != nil {
 		t.Fatalf("NewAzureDevOpsConnector returned error: %v", err)
 	}
+	// httptest serves over http, which the connector refuses for real
+	// configuration, so the stub endpoint is injected directly.
+	connector.baseURL = serverURL
 	return connector
 }
 
@@ -390,7 +393,7 @@ func TestAzureDevOpsOpenSyncWalksFilesThenPullRequests(t *testing.T) {
 	if len(batch.Documents) != 1 {
 		t.Fatalf("expected the noise file to be skipped, got %d documents", len(batch.Documents))
 	}
-	if batch.Documents[0].SourceID != "azure_devops:"+server.URL+":iddaa:repo-a:file:src/App.cs" {
+	if batch.Documents[0].SourceID != "azure_devops:contoso:iddaa:repo-a:file:src/App.cs" {
 		t.Fatalf("unexpected source id: %s", batch.Documents[0].SourceID)
 	}
 	if batch.Checkpoint == nil || batch.Checkpoint.Cursor == "" {
@@ -508,5 +511,105 @@ func writeAzureDevOpsJSON(t *testing.T, w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		t.Fatalf("failed to encode stub payload: %v", err)
+	}
+}
+
+func TestAzureDevOpsShortPullRequestDescriptionNeedsNoDetailFetch(t *testing.T) {
+	if azureDevOpsPullRequestMayBeTruncated(azureDevOpsPullRequest{Description: "kisa aciklama"}) {
+		t.Fatal("a short description must not trigger a detail fetch")
+	}
+	if azureDevOpsPullRequestMayBeTruncated(azureDevOpsPullRequest{}) {
+		t.Fatal("an empty description must not trigger a detail fetch")
+	}
+}
+
+// The pull request list endpoint truncates descriptions at 400 characters.
+func TestAzureDevOpsLongPullRequestDescriptionIsRefetchedInFull(t *testing.T) {
+	truncated := strings.Repeat("x", azureDevOpsPRDescriptionLimit)
+	full := truncated + " ...and the rest of the description"
+	detailRequests := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/pullrequests/77"):
+			detailRequests++
+			writeAzureDevOpsJSON(t, w, map[string]any{
+				"pullRequestId": 77, "title": "long", "description": full, "status": "completed",
+			})
+		case strings.Contains(r.URL.Path, "/pullrequests"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"pullRequestId": 77, "title": "long", "description": truncated, "status": "completed"},
+			}})
+		case strings.Contains(r.URL.Path, "/items"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{}})
+		default:
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"name": "repo-a", "defaultBranch": "refs/heads/master", "project": map[string]any{"name": "iddaa"}},
+			}})
+		}
+	}))
+	defer server.Close()
+
+	connector := newTestAzureDevOpsConnector(t, server.URL, map[string]any{"content_types": azureDevOpsContentPullRequests})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("OpenSync returned error: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch returned error: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("expected one pull request document, got %d", len(batch.Documents))
+	}
+	if !strings.Contains(string(batch.Documents[0].Blob), full) {
+		t.Fatal("the document must carry the untruncated description")
+	}
+	if detailRequests != 1 {
+		t.Fatalf("expected exactly one detail fetch, got %d", detailRequests)
+	}
+}
+
+func TestAzureDevOpsRejectsCleartextCollectionURL(t *testing.T) {
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"organization": "http://tfs.contoso.com/DefaultCollection",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connector.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "HTTPS") {
+		t.Fatalf("cleartext collection URLs must be rejected, got %v", err)
+	}
+}
+
+func TestAzureDevOpsRejectsUnknownSelectorValues(t *testing.T) {
+	for field, value := range map[string]string{"index_mode": "everything", "content_types": "everything"} {
+		connector, _ := NewAzureDevOpsConnector(map[string]any{
+			"organization": "contoso",
+			field:          value,
+			"credentials":  map[string]any{"azure_devops_pat": "token"},
+		})
+		if err := connector.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("%s=%q must be rejected, got %v", field, value, err)
+		}
+	}
+}
+
+func TestAzureDevOpsActivePullRequestIsAlwaysReindexed(t *testing.T) {
+	windowStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	created := time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)
+	request := SyncRequest{WindowStart: &windowStart, WindowEnd: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)}
+
+	active := azureDevOpsPullRequest{PullRequestID: 1, Status: "active", CreationDate: &created}
+	if !includeAzureDevOpsPullRequest(request, "id", active) {
+		t.Fatal("an old but still active pull request must be re-indexed; its description can change at any time")
+	}
+
+	closed := azureDevOpsPullRequest{PullRequestID: 2, Status: "completed", CreationDate: &created, ClosedDate: &created}
+	if includeAzureDevOpsPullRequest(request, "id", closed) {
+		t.Fatal("a pull request closed before the window must be skipped")
 	}
 }

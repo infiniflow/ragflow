@@ -2301,9 +2301,9 @@ export const DataSourceFormDefaultValues = {
       projects: '',
       repositories: '',
       content_types: 'both',
-    },
-    credentials: {
-      azure_devops_pat: '',
+      credentials: {
+        azure_devops_pat: '',
+      },
     },
   },
   [DataSourceKey.BITBUCKET]: {

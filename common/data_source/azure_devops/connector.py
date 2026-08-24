@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
@@ -12,6 +13,7 @@ from common.data_source.azure_devops.utils import (
     code_document_id,
     default_branch_of,
     fetch_file_content,
+    fetch_pull_request,
     get_json,
     list_items,
     list_projects,
@@ -20,7 +22,8 @@ from common.data_source.azure_devops.utils import (
     map_pull_request_to_document,
     organization_url,
     pull_request_document_id,
-    pull_request_updated_at,
+    pull_request_in_window,
+    pull_request_may_be_truncated,
     raise_for_auth,
     API_VERSION,
 )
@@ -225,6 +228,10 @@ class AzureDevOpsConnector(
         with self._client() as client:
             if not new_checkpoint.repos_queue:
                 new_checkpoint.repos_queue = self._discover_repositories(client)
+                logging.info(
+                    "[AzureDevOps] discovered %d repositories (organization=%s, index_mode=%s, content_types=%s)",
+                    len(new_checkpoint.repos_queue), self.organization, self.index_mode, self.content_types,
+                )
                 new_checkpoint.current_repo_index = 0
                 new_checkpoint.stage = STAGE_CODE
                 new_checkpoint.file_offset = 0
@@ -237,6 +244,11 @@ class AzureDevOpsConnector(
 
             repo = repos[new_checkpoint.current_repo_index]
             project, repo_name, branch = repo["project"], repo["name"], repo["branch"]
+            logging.info(
+                "[AzureDevOps] %s/%s stage=%s file_offset=%d pr_skip=%d (repo %d/%d)",
+                project, repo_name, new_checkpoint.stage, new_checkpoint.file_offset,
+                new_checkpoint.pr_skip, new_checkpoint.current_repo_index + 1, len(repos),
+            )
 
             if new_checkpoint.stage == STAGE_CODE:
                 if self._indexes_code():
@@ -295,6 +307,10 @@ class AzureDevOpsConnector(
                 )
 
         checkpoint.file_offset += len(window)
+        logging.info(
+            "[AzureDevOps] %s/%s indexed files %d/%d",
+            project, repo_name, checkpoint.file_offset, len(items),
+        )
         if checkpoint.file_offset >= len(items):
             checkpoint.file_offset = 0
             if self._indexes_pull_requests():
@@ -321,9 +337,10 @@ class AzureDevOpsConnector(
         for pull_request in pull_requests:
             pr_id = pull_request.get("pullRequestId")
             try:
-                updated_at = pull_request_updated_at(pull_request)
-                if updated_at and not (window_start <= updated_at <= window_end):
+                if not pull_request_in_window(pull_request, window_start, window_end):
                     continue
+                if pull_request_may_be_truncated(pull_request):
+                    pull_request = fetch_pull_request(client, self._repo_api_url(project, repo_name), pr_id)
                 yield map_pull_request_to_document(pull_request, self.organization, self._org_url, project, repo_name)
             except Exception as e:
                 yield ConnectorFailure(
@@ -375,11 +392,12 @@ class AzureDevOpsConnector(
                         batch.append(SlimDocument(id=code_document_id(self.organization, project, repo_name, path)))
                         if len(batch) >= self.batch_size:
                             yield batch
+                            emitted = len(batch)
                             batch = []
                             if callback:
                                 if callback.should_stop():
                                     raise RuntimeError("azure_devops_sync: Stop signal detected")
-                                callback.progress("azure_devops_sync", len(batch))
+                                callback.progress("azure_devops_sync", emitted)
 
                 if self._indexes_pull_requests():
                     skip = 0
@@ -393,12 +411,35 @@ class AzureDevOpsConnector(
                                     )
                                 )
                             )
+                            if len(batch) >= self.batch_size:
+                                yield batch
+                                emitted = len(batch)
+                                batch = []
+                                if callback:
+                                    if callback.should_stop():
+                                        raise RuntimeError("azure_devops_sync: Stop signal detected")
+                                    callback.progress("azure_devops_sync", emitted)
                         if len(pull_requests) < PR_PAGE_SIZE:
                             break
                         skip += PR_PAGE_SIZE
 
         if batch:
             yield batch
+
+    def _validate_settings(self) -> None:
+        """Reject unusable configuration before any request is made.
+
+        An unknown selector would otherwise pass silently and the sync would
+        complete without producing a single document.
+        """
+        if self.index_mode not in (INDEX_MODE_ORGANIZATION, INDEX_MODE_PROJECTS, INDEX_MODE_REPOSITORIES):
+            raise UnexpectedValidationError(f"Unsupported index mode: {self.index_mode}")
+        if self.content_types not in (CONTENT_CODE, CONTENT_PULL_REQUESTS, CONTENT_BOTH):
+            raise UnexpectedValidationError(f"Unsupported content types: {self.content_types}")
+        if self.index_mode == INDEX_MODE_PROJECTS and not self._projects:
+            raise UnexpectedValidationError("At least one team project is required when indexing by project.")
+        if self.index_mode == INDEX_MODE_REPOSITORIES and not self._repositories:
+            raise UnexpectedValidationError("At least one repository is required when indexing by repository.")
 
     def validate_connector_settings(self) -> None:
         """Probe a lightweight endpoint to verify credentials and organization access.
@@ -409,6 +450,10 @@ class AzureDevOpsConnector(
             InsufficientPermissionsError: on HTTP 403.
             UnexpectedValidationError: on any other failure.
         """
+        # Settings are checked before the remote probe: an unusable configuration
+        # should fail immediately rather than after a network round trip.
+        self._validate_settings()
+
         try:
             with self._client() as client:
                 response = client.get(
@@ -420,11 +465,6 @@ class AzureDevOpsConnector(
                     raise UnexpectedValidationError(f"Azure DevOps organization not found: {self.organization}")
                 if response.status_code < 200 or response.status_code >= 300:
                     raise UnexpectedValidationError(f"Unexpected Azure DevOps error (status={response.status_code}).")
-
-                if self.index_mode == INDEX_MODE_PROJECTS and not self._projects:
-                    raise UnexpectedValidationError("At least one team project is required when indexing by project.")
-                if self.index_mode == INDEX_MODE_REPOSITORIES and not self._repositories:
-                    raise UnexpectedValidationError("At least one repository is required when indexing by repository.")
 
                 if self._projects:
                     known = set(list_projects(client, self._org_url))

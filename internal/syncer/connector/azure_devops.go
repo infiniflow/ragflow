@@ -29,14 +29,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
-	azureDevOpsAPIVersion       = "7.1"
-	azureDevOpsHostedBaseURL    = "https://dev.azure.com"
-	azureDevOpsPRPageSize       = 100
-	azureDevOpsMaxFileBytes     = 1_000_000
-	defaultAzureDevOpsBatchSize = 50
+	azureDevOpsAPIVersion    = "7.1"
+	azureDevOpsHostedBaseURL = "https://dev.azure.com"
+	azureDevOpsPRPageSize    = 100
+	// The pull request list endpoint truncates descriptions at 400 characters;
+	// only the single pull request endpoint returns the full text.
+	azureDevOpsPRDescriptionLimit = 400
+	azureDevOpsMaxFileBytes       = 1_000_000
+	defaultAzureDevOpsBatchSize   = 50
 
 	azureDevOpsIndexModeOrganization = "organization"
 	azureDevOpsIndexModeProjects     = "projects"
@@ -175,7 +179,12 @@ func azureDevOpsOrganizationURL(organization string) string {
 	if organization == "" {
 		return ""
 	}
-	if strings.HasPrefix(organization, "http://") || strings.HasPrefix(organization, "https://") {
+	if strings.HasPrefix(organization, "http://") {
+		// Rejected in checkSettings; never build a client that would send the
+		// personal access token in cleartext.
+		return ""
+	}
+	if strings.HasPrefix(organization, "https://") {
 		return strings.TrimRight(organization, "/")
 	}
 	return azureDevOpsHostedBaseURL + "/" + url.PathEscape(organization)
@@ -209,6 +218,19 @@ func (c *AzureDevOpsConnector) checkSettings() error {
 	}
 	if c.pat == "" {
 		return fmt.Errorf("Missing azure_devops_pat in credentials")
+	}
+	if strings.HasPrefix(c.organization, "http://") {
+		return fmt.Errorf("Invalid connector settings: Azure DevOps collection URLs must use HTTPS, the personal access token is sent in the Authorization header")
+	}
+	switch c.indexMode {
+	case azureDevOpsIndexModeOrganization, azureDevOpsIndexModeProjects, azureDevOpsIndexModeRepositories:
+	default:
+		return fmt.Errorf("Invalid connector settings: unsupported index mode %q", c.indexMode)
+	}
+	switch c.contentTypes {
+	case azureDevOpsContentCode, azureDevOpsContentPullRequests, azureDevOpsContentBoth:
+	default:
+		return fmt.Errorf("Invalid connector settings: unsupported content types %q", c.contentTypes)
 	}
 	if c.indexMode == azureDevOpsIndexModeProjects && len(c.projects) == 0 {
 		return fmt.Errorf("Invalid connector settings: at least one project is required when indexing by project")
@@ -324,7 +346,7 @@ func (c *AzureDevOpsConnector) repoAPIURL(repo azureDevOpsRepository) string {
 // HTTP 203 and an HTML sign-in page rather than 401, so a naive status check
 // treats the sign-in page as a successful response and fails later while
 // decoding JSON. That case is detected here and surfaced as an auth error.
-func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string) ([]byte, error) {
+func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string, expectJSON bool) ([]byte, error) {
 	delay := azureDevOpsRetryBaseDelay
 	var lastErr error
 
@@ -353,7 +375,9 @@ func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string) ([]byte, 
 		}
 
 		contentType := response.Header.Get("Content-Type")
-		if response.StatusCode == http.StatusNonAuthoritativeInfo || strings.Contains(contentType, "text/html") {
+		// A repository can legitimately contain .html files, so the sign-in page
+		// heuristic only applies to endpoints that return JSON.
+		if response.StatusCode == http.StatusNonAuthoritativeInfo || (expectJSON && strings.Contains(contentType, "text/html")) {
 			return nil, &azureDevOpsHTTPError{Status: http.StatusNonAuthoritativeInfo, Body: "sign-in page returned; the personal access token is invalid or unauthorized"}
 		}
 
@@ -385,7 +409,7 @@ func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string) ([]byte, 
 }
 
 func (c *AzureDevOpsConnector) getJSON(ctx context.Context, apiURL string, out any) error {
-	body, err := c.get(ctx, apiURL)
+	body, err := c.get(ctx, apiURL, true)
 	if err != nil {
 		return err
 	}
@@ -569,7 +593,7 @@ func (c *AzureDevOpsConnector) fetchFile(ctx context.Context, repo azureDevOpsRe
 		"versionDescriptor.versionType": {"branch"},
 		"versionDescriptor.version":     {repo.Branch},
 	}
-	body, err := c.get(ctx, c.apiURL(c.repoAPIURL(repo)+"/items", query))
+	body, err := c.get(ctx, c.apiURL(c.repoAPIURL(repo)+"/items", query), false)
 	if err != nil {
 		return nil, err
 	}
@@ -593,6 +617,25 @@ func (c *AzureDevOpsConnector) listPullRequests(ctx context.Context, repo azureD
 		return nil, err
 	}
 	return payload.Value, nil
+}
+
+// fetchPullRequest fetches one pull request with its untruncated description.
+func (c *AzureDevOpsConnector) fetchPullRequest(ctx context.Context, repo azureDevOpsRepository, pullRequestID int) (azureDevOpsPullRequest, error) {
+	var pullRequest azureDevOpsPullRequest
+	apiPath := fmt.Sprintf("%s/pullrequests/%d", c.repoAPIURL(repo), pullRequestID)
+	if err := c.getJSON(ctx, c.apiURL(apiPath, nil), &pullRequest); err != nil {
+		return azureDevOpsPullRequest{}, err
+	}
+	return pullRequest, nil
+}
+
+// azureDevOpsPullRequestMayBeTruncated reports whether a listed pull request
+// needs a detail fetch.
+//
+// Descriptions shorter than the limit came back whole, so the extra request is
+// only paid for the few pull requests that could have been cut off.
+func azureDevOpsPullRequestMayBeTruncated(pullRequest azureDevOpsPullRequest) bool {
+	return utf8.RuneCountInString(pullRequest.Description) >= azureDevOpsPRDescriptionLimit
 }
 
 // shouldSkipAzureDevOpsPath drops build output, vendored code, version-control
@@ -683,12 +726,21 @@ func includeAzureDevOpsPullRequest(request SyncRequest, sourceID string, pullReq
 	if request.FromBeginning {
 		return true
 	}
-	updatedAt := azureDevOpsPullRequestUpdatedAt(pullRequest)
 	if len(request.Fingerprints) > 0 {
 		fingerprint := azureDevOpsPullRequestFingerprint(pullRequest)
 		stored, ok := request.Fingerprints[sourceID]
 		return fingerprint == "" || !ok || stored == "" || stored != fingerprint
 	}
+
+	// Azure DevOps exposes no dependable "last updated" timestamp for pull
+	// requests. closedDate is reliable, so completed and abandoned ones are
+	// filtered on it; an active pull request can change at any time, and
+	// filtering it on creationDate would leave the indexed document stale.
+	status := strings.ToLower(pullRequest.Status)
+	if status != "completed" && status != "abandoned" {
+		return true
+	}
+	updatedAt := azureDevOpsPullRequestUpdatedAt(pullRequest)
 	if updatedAt.IsZero() {
 		return true
 	}
@@ -930,6 +982,13 @@ func (s *azureDevOpsSyncSession) nextPullRequestDocuments(ctx context.Context, r
 		sourceID := azureDevOpsPullRequestSourceID(s.connector.organization, repo, pullRequest.PullRequestID)
 		if !includeAzureDevOpsPullRequest(s.request, sourceID, pullRequest) {
 			continue
+		}
+		if azureDevOpsPullRequestMayBeTruncated(pullRequest) {
+			detailed, err := s.connector.fetchPullRequest(ctx, repo, pullRequest.PullRequestID)
+			if err != nil {
+				return nil, err
+			}
+			pullRequest = detailed
 		}
 		documents = append(documents, s.connector.buildAzureDevOpsPullRequestDocument(repo, pullRequest))
 	}

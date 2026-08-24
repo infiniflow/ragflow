@@ -54,7 +54,7 @@ export const azureDevOpsConstant = (t: TFunction) => [
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
-      if (!val && index_mode === 'projects') {
+      if (!val?.trim() && index_mode === 'projects') {
         return t('setting.dataSourceValidationFieldRequired', {
           label: t('setting.dataSourceFieldProjects'),
         });
@@ -71,7 +71,7 @@ export const azureDevOpsConstant = (t: TFunction) => [
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
-      if (!val && index_mode === 'repositories') {
+      if (!val?.trim() && index_mode === 'repositories') {
         return t('setting.dataSourceValidationFieldRequired', {
           label: t('setting.dataSourceFieldAzureDevOpsRepositories'),
         });
