@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -59,6 +60,11 @@ func (s *stubEmbedder) MaxTokens() int {
 }
 
 func (s *stubEmbedder) BatchSize() int {
+	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
 	return 16
 }
 

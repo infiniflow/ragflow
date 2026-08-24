@@ -325,6 +325,9 @@ func nlpRequestFromRetrieval(
 		Aggs:           boolPtr(false),
 		Highlight:      boolPtr(false),
 	}
+	if req.PrefetchSize != 0 {
+		nlpReq.PrefetchSize = &req.PrefetchSize
+	}
 	if req.TopK > 0 {
 		nlpReq.Top = &req.TopK
 	} else if topN > 0 {

@@ -53,6 +53,7 @@ type RetrievalRequest struct {
 	DocIDs                 []string
 	Page                   int
 	PageSize               int
+	PrefetchSize           *int
 	Top                    *int
 	SimilarityThreshold    *float64
 	VectorSimilarityWeight *float64
@@ -72,7 +73,7 @@ type RetrievalResult struct {
 }
 
 // Retrieval performs hybrid search + reranking + pagination
-// - Calculate rerank limit and call Search() to fetch rerankLimit candidates for reranking
+// - Prefetch candidates for reranking
 // - Perform reranking via Rerank()
 // - Sort indices by score descending and filter by threshold
 // - Calculate pagination to extract actual page returned from reranked results
@@ -107,33 +108,23 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if req.PageSize <= 0 {
 		req.PageSize = 1
 	}
+	if req.PrefetchSize == nil {
+		req.PrefetchSize = func() *int { v := 64; return &v }()
+	}
 
-	// Calculate rerank limit to ensure we get enough results for proper pagination
 	pageSize := req.PageSize
-	rerankLimit := pageSize
-	if pageSize > 1 {
-		rerankLimit = int(math.Ceil(64.0/float64(pageSize))) * pageSize
-	} else {
-		rerankLimit = 1
-	}
-	if rerankLimit < 30 {
-		rerankLimit = 30
-	}
-	// Cap rerank limit when external rerank model is used
-	if req.RerankModel != nil && *req.Top > 0 {
-		if rerankLimit > *req.Top {
-			rerankLimit = *req.Top
+	prefetchSize := *req.PrefetchSize
+	if prefetchSize <= 0 || req.Page > prefetchSize/pageSize {
+		requiredSize := "overflow"
+		if req.Page <= int(^uint(0)>>1)/pageSize {
+			requiredSize = strconv.Itoa(req.Page * pageSize)
 		}
-		if rerankLimit > 64 {
-			rerankLimit = 64
-		}
+		return nil, fmt.Errorf("prefetch_size(%d) must be greater than page * page_size(%s) to ensure correct pagination", prefetchSize, requiredSize)
 	}
-
-	page := req.Page
-	globalOffset := (page - 1) * pageSize
-	searchPage := globalOffset/rerankLimit + 1
-	common.Debug("Retrieval rerank params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize),
-		zap.Int("searchPage", searchPage), zap.Int("rerankLimit", rerankLimit), zap.Int("globalOffset", globalOffset))
+	if req.RerankModel != nil && req.Page != 1 {
+		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
+	}
+	common.Info("Retrieval prefetch params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("prefetchSize", prefetchSize))
 
 	// Execute search via Search()
 	searchReq := &RetrievalSearchRequest{
@@ -141,8 +132,8 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		Question:               req.Question,
 		KbIDs:                  req.KbIDs,
 		DocIDs:                 req.DocIDs,
-		Page:                   searchPage,
-		PageSize:               rerankLimit,
+		Page:                   1,
+		PageSize:               prefetchSize,
 		Top:                    *req.Top,
 		RankFeature:            *req.RankFeature,
 		EmbeddingModel:         req.EmbeddingModel,
@@ -153,8 +144,6 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
-	searchTotal := searchResult.Total
-
 	// Prune deleted chunks
 	searchResult, err = s.PruneDeletedChunks(ctx, searchResult)
 	if err != nil {
@@ -203,7 +192,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 
 	// Calculate pagination
 	// begin and end define which of validIdx to return as the page
-	begin := globalOffset % rerankLimit
+	begin := (req.Page - 1) * pageSize
 	end := begin + pageSize
 
 	// Get page indices
@@ -217,17 +206,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	common.Info("Pagination result info", zap.Int("totalValid", len(validIdx)), zap.Int("begin", begin),
 		zap.Int("end", end), zap.Int("chunkCount", len(pageIdx)), zap.Float64("postThreshold", postThreshold))
 
-	//searchTotal > len(searchResult.IDs): The total number reported by the engine exceeds the number actually retrieved this time,
-	//indicating that there are still unretrieved chunks in the candidate set; the current count may be an underestimate
-	//*req.Top > rerankLimit: The Top value requested by the caller exceeds the re-ranking limit, indicating that we have indeed
-	//‘only examined a portion’ rather than having covered all target results
 	total := int64(len(validIdx))
-	if searchTotal > int64(len(searchResult.IDs)) && *req.Top > rerankLimit {
-		total, err = s.countThresholdValidMatches(ctx, req, *req.Top, postThreshold)
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	// Build chunks for pageIdx, transforms raw search results into the API response format
 	var filteredChunks []map[string]interface{}
@@ -424,41 +403,6 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		DocAggs: docAggs,
 		Total:   total,
 	}, nil
-}
-
-func (s *RetrievalService) countThresholdValidMatches(ctx context.Context, req *RetrievalRequest, limit int, postThreshold float64) (int64, error) {
-	searchReq := &RetrievalSearchRequest{
-		TenantIDs:      req.TenantIDs,
-		Question:       req.Question,
-		KbIDs:          req.KbIDs,
-		DocIDs:         req.DocIDs,
-		Page:           1,
-		PageSize:       limit,
-		Top:            *req.Top,
-		RankFeature:    *req.RankFeature,
-		EmbeddingModel: req.EmbeddingModel,
-		Filter:         req.Filter,
-	}
-	searchResult, err := s.Search(ctx, searchReq)
-	if err != nil {
-		return 0, fmt.Errorf("search count failed: %w", err)
-	}
-	searchResult, err = s.PruneDeletedChunks(ctx, searchResult)
-	if err != nil {
-		return 0, fmt.Errorf("PruneDeletedChunks count failed: %w", err)
-	}
-	if searchResult.Total == 0 {
-		return 0, nil
-	}
-
-	sim, _, _ := s.scoreSearchResult(ctx, req, searchResult)
-	var total int64
-	for _, score := range sim {
-		if score >= postThreshold {
-			total++
-		}
-	}
-	return total, nil
 }
 
 func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64) {

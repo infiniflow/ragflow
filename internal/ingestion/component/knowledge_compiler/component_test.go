@@ -673,7 +673,7 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 			TenantID: tenantID,
 			WikiPages: wikiStoreTestStub{page: &common.WikiPageCandidate{
 				ID:           "existing-1",
-				Slug:         "entity/alpha",
+				Slug:         "entity/person/alpha",
 				Title:        "Alpha",
 				PageType:     "entity",
 				Topic:        "Alpha",
@@ -714,7 +714,7 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if cm["compile_kwd"] == "wiki_page" && cm["kc_kind"] == "page" && cm["slug_kwd"] == "entity/alpha" {
+		if cm["compile_kwd"] == "wiki_page" && cm["kc_kind"] == "page" && cm["slug_kwd"] == "entity/person/alpha" {
 			page = cm
 			break
 		}
@@ -840,7 +840,7 @@ func (wikiUpdateChat) Chat(_ context.Context, req common.ChatRequest) (*common.C
 }`}, nil
 	case req.JSONMode && strings.Contains(req.UserPrompt, "Return a JSON compilation plan"):
 		return &common.ChatResponse{Content: `{
-  "pages":[{"action":"CREATE","slug":"entity/alpha","title":"Alpha","page_type":"entity","topic":"Alpha","entity_names":["Alpha"],"related_kb_pages":[],"priority":1,"lead":"Alpha overview","sections":[{"heading":"Overview","points":["Alpha overview"]}]}],
+  "pages":[{"action":"CREATE","slug":"entity/person/alpha","title":"Alpha","page_type":"entity","topic":"Alpha","entity_names":["Alpha"],"related_kb_pages":[],"priority":1,"lead":"Alpha overview","sections":[{"heading":"Overview","points":["Alpha overview"]}]}],
   "estimated_page_count":1,
   "compilation_notes":"ok"
 }`}, nil
@@ -849,7 +849,7 @@ func (wikiUpdateChat) Chat(_ context.Context, req common.ChatRequest) (*common.C
 	case strings.Contains(req.UserPrompt, "Existing page content"):
 		return &common.ChatResponse{Content: "# Alpha\n\nAlpha launched a new process in 2026.\n\n## See also\n\n[[concept/alpha-protocol|Alpha Protocol]]"}, nil
 	default:
-		return &common.ChatResponse{Content: `{"action":"UPDATE","slug":"entity/alpha","reason":"same entity"}`}, nil
+		return &common.ChatResponse{Content: `{"action":"UPDATE","slug":"entity/person/alpha","reason":"same entity"}`}, nil
 	}
 }
 

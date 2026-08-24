@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,8 +25,8 @@ func TestReduceExtracts_MergesProvenance(t *testing.T) {
 	if len(reduced.Entities) != 1 {
 		t.Fatalf("entities=%d, want 1", len(reduced.Entities))
 	}
-	if ids := reduced.Entities[0].SourceChunkIDs; len(ids) != 2 {
-		t.Fatalf("entity provenance = %#v, want 2 chunk ids", ids)
+	if ids := reduced.Entities[0].SourceChunkIDs; !slices.Equal(ids, []string{"c1", "c2"}) {
+		t.Fatalf("entity provenance = %#v, want [c1 c2]", ids)
 	}
 	if len(reduced.Claims) != 2 {
 		t.Fatalf("claims=%d, want 2", len(reduced.Claims))
@@ -206,6 +207,20 @@ func TestNormalizeWikiPlanPages_DoesNotMergeAcrossTypes(t *testing.T) {
 	got := normalizeWikiPlanPages(pages, wikiExtract{})
 	if len(got) != 2 {
 		t.Fatalf("normalizeWikiPlanPages = %d pages, want 2 (concept + entity)", len(got))
+	}
+}
+
+func TestNormalizeWikiPlanPages_DoesNotMergeTypedEntitiesWithSameTitle(t *testing.T) {
+	pages := []wikiPlanPage{
+		{Slug: "entity/fruit/苹果", Title: "苹果", PageType: "entity", EntityNames: []string{"苹果"}},
+		{Slug: "entity/company/苹果", Title: "苹果", PageType: "entity", EntityNames: []string{"苹果"}},
+	}
+	got := normalizeWikiPlanPages(pages, wikiExtract{Entities: []wikiEntity{
+		{Name: "苹果", Type: "fruit"},
+		{Name: "苹果", Type: "company"},
+	}})
+	if len(got) != 2 {
+		t.Fatalf("normalizeWikiPlanPages = %#v, want both typed entity pages", got)
 	}
 }
 
@@ -416,5 +431,94 @@ func TestMergeWikiPageContent_PreservesShortExistingPage(t *testing.T) {
 	}
 	if !strings.Contains(merged, "Alpha launched a new process in 2026.") {
 		t.Fatalf("merged page dropped incoming content: %q", merged)
+	}
+}
+
+func TestReduceExtracts_MergesDuplicateEntitySlug(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Entities: []wikiEntity{{Name: "曹操", Type: "person", Aliases: []string{"孟德"}, SourceChunkIDs: []string{"c1"}}}},
+		{Entities: []wikiEntity{{Name: "曹操", Type: "person", SourceChunkIDs: []string{"c2"}}}},
+	})
+	if len(reduced.Entities) != 1 {
+		t.Fatalf("entities = %d, want 1", len(reduced.Entities))
+	}
+	if got := reduced.Entities[0].SourceChunkIDs; !slices.Equal(got, []string{"c1", "c2"}) {
+		t.Fatalf("source chunk ids = %#v, want [c1 c2]", got)
+	}
+	if got := reduced.Entities[0].Aliases; len(got) != 1 || got[0] != "孟德" {
+		t.Fatalf("aliases = %#v, want [孟德]", got)
+	}
+}
+
+func TestReduceExtracts_DifferentEntityTypesKeepDifferentSlugs(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Entities: []wikiEntity{{Name: "苹果", Type: "fruit"}}},
+		{Entities: []wikiEntity{{Name: "苹果", Type: "company"}}},
+	})
+	if len(reduced.Entities) != 2 {
+		t.Fatalf("entities = %d, want 2", len(reduced.Entities))
+	}
+	if got := entityPageSlug(reduced.Entities[0].Name, reduced.Entities[0].Type); got == entityPageSlug(reduced.Entities[1].Name, reduced.Entities[1].Type) {
+		t.Fatalf("different entity types have the same slug %q", got)
+	}
+}
+
+func TestReduceExtracts_EntityIdentityDoesNotCollideAtHyphenBoundary(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{{Entities: []wikiEntity{
+		{Name: "bar-baz", Type: "foo"},
+		{Name: "baz", Type: "foo-bar"},
+	}}})
+	if len(reduced.Entities) != 2 {
+		t.Fatalf("entities = %#v, want two distinct identities", reduced.Entities)
+	}
+	first := entityPageSlug("bar-baz", "foo")
+	second := entityPageSlug("baz", "foo-bar")
+	if first == second {
+		t.Fatalf("entity slugs collide: %q", first)
+	}
+}
+
+func TestReduceExtracts_NormalizesEntityWhitespace(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{{Entities: []wikiEntity{
+		{Name: "John  Smith", Type: "person"},
+		{Name: "John Smith", Type: "person"},
+	}}})
+	if len(reduced.Entities) != 1 {
+		t.Fatalf("entities = %#v, want whitespace-equivalent names merged", reduced.Entities)
+	}
+}
+
+func TestReduceExtracts_DoesNotMergeSimilarNames(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Entities: []wikiEntity{{Name: "Alpha", Type: "org"}}},
+		{Entities: []wikiEntity{{Name: "Alpha Incorporated", Type: "org"}}},
+	})
+	if len(reduced.Entities) != 2 {
+		t.Fatalf("entities = %d, want 2; REDUCE must not perform semantic merging", len(reduced.Entities))
+	}
+}
+
+func TestReduceExtracts_MergesDuplicateRelationProvenance(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Relations: []wikiRelation{{From: "A", To: "B", Type: "knows", SourceChunkIDs: []string{"c1"}}}},
+		{Relations: []wikiRelation{{From: "A", To: "B", Type: "knows", SourceChunkIDs: []string{"c2"}}}},
+	})
+	if len(reduced.Relations) != 1 || !slices.Equal(reduced.Relations[0].SourceChunkIDs, []string{"c1", "c2"}) {
+		t.Fatalf("relations = %#v, want one relation with both source chunks", reduced.Relations)
+	}
+}
+
+func TestEntityPageSlugIncludesType(t *testing.T) {
+	if got, want := entityPageSlug("曹操", "person"), "entity/person/曹操"; got != want {
+		t.Fatalf("entityPageSlug = %q, want %q", got, want)
+	}
+	if got, want := entityPageSlug("曹操", ""), "entity/曹操"; got != want {
+		t.Fatalf("entityPageSlug without type = %q, want %q", got, want)
+	}
+}
+
+func TestCosine32RejectsDifferentDimensions(t *testing.T) {
+	if got := cosine32([]float32{1}, []float32{1, 1}); got != 0 {
+		t.Fatalf("cosine32 unequal dimensions = %v, want 0", got)
 	}
 }
