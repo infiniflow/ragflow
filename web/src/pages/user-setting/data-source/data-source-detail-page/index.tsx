@@ -163,6 +163,7 @@ const SourceDetailPage = () => {
   const { loading: testLoading, handleTest } = useTestDataSource(
     formRef,
     connectorId,
+    fields,
   );
 
   const onSubmit = useCallback(() => {

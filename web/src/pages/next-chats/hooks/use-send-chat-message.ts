@@ -4,7 +4,7 @@ import {
   useHandleMessageInputChange,
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
-import { useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
 import notification from '@/utils/notification';
@@ -72,6 +72,7 @@ export const useSendMessage = () => {
     useUploadFile();
 
   const { id: chatId } = useParams();
+  const { data: currentDialog } = useFetchChat();
   const { messages, isStreaming, scrollRef, messageContainerRef } =
     useCurrentChatSession();
 
@@ -101,6 +102,7 @@ export const useSendMessage = () => {
       messages: explicitMessages,
       enableInternet,
       enableThinking,
+      agentMode,
     }: {
       message: IMessage;
       currentConversationId?: string;
@@ -108,7 +110,7 @@ export const useSendMessage = () => {
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
 
-      lastSendOptionsRef.current = { enableInternet, enableThinking };
+      lastSendOptionsRef.current = { enableInternet, enableThinking, agentMode };
 
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
@@ -121,6 +123,8 @@ export const useSendMessage = () => {
         ],
         enableThinking,
         enableInternet,
+        agentMode,
+        llmSetting: currentDialog?.llm_setting,
       });
 
       if (!ok && !aborted) {
@@ -132,7 +136,14 @@ export const useSendMessage = () => {
         notification.error({ message: t('message.requestError') });
       }
     },
-    [conversationId, chatId, messages, failStream, t],
+    [
+      conversationId,
+      chatId,
+      messages,
+      failStream,
+      t,
+      currentDialog?.llm_setting,
+    ],
   );
 
   // Hand a failed question back to the input box, but only once the box is
@@ -180,6 +191,7 @@ export const useSendMessage = () => {
     async ({
       enableThinking,
       enableInternet,
+      agentMode,
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '' || isStreaming) return;
 
@@ -252,6 +264,7 @@ export const useSendMessage = () => {
         },
         enableInternet,
         enableThinking,
+        agentMode,
       });
 
       clearFiles();

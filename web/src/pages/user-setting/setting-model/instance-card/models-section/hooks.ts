@@ -442,11 +442,7 @@ export function useModelsDerived({
   // after the instance details. Draft models remain local and must still
   // be included in the first save.
   useEffect(() => {
-    if (
-      !isDraftInstance &&
-      !instanceModelsLoading &&
-      instanceModelsSucceeded
-    ) {
+    if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
       onEditedRef.current?.();
     }
   }, [

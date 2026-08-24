@@ -272,6 +272,7 @@ describe('saved instance model baseline', () => {
           submit: jest.fn(),
           isDirty: () => false,
           getValues: () => formValues,
+          getFilteredValues: () => formValues,
           reset: jest.fn(),
           trigger: jest.fn(),
           watch: jest.fn(),

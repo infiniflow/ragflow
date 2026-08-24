@@ -422,16 +422,8 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     return template_ids
 
 
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order: template ``llm_id`` → doc ``parser_config.llm_id``
-    → ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
+def _resolve_ingestion_chat_llm_id(ctx) -> str:
+    """Pick the ingestion model id for a knowledge-compilation template."""
     doc_cfg = getattr(ctx, "parser_config", None) or {}
     if isinstance(doc_cfg, dict):
         did = doc_cfg.get("llm_id")
@@ -1058,36 +1050,14 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     if not active_templates:
         return
 
-    llm_bundle_cache: dict[str, LLMBundle] = {}
-    chat_mdl_by_tid: dict[str, LLMBundle] = {}
-    filtered_templates: list[tuple[str, dict]] = []
-    for template_id, parser_cfg in active_templates:
-        chat_llm_id = _resolve_template_chat_llm_id(parser_cfg, ctx)
-        if chat_llm_id not in llm_bundle_cache:
-            try:
-                cfg = resolve_model_config(
-                    ctx.tenant_id,
-                    LLMType.CHAT,
-                    chat_llm_id,
-                )
-                llm_bundle_cache[chat_llm_id] = LLMBundle(
-                    ctx.tenant_id,
-                    cfg,
-                    lang=ctx.language,
-                )
-            except Exception:
-                logging.exception(
-                    "document_structure_compile: cannot resolve chat model %s for template %s; skipping",
-                    chat_llm_id,
-                    template_id,
-                )
-                continue
-        chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
-        filtered_templates.append((template_id, parser_cfg))
-
-    if not filtered_templates:
+    chat_llm_id = _resolve_ingestion_chat_llm_id(ctx)
+    try:
+        cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, chat_llm_id)
+        chat_mdl = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
+    except Exception:
+        logging.exception("document_structure_compile: cannot resolve ingestion chat model %s", chat_llm_id)
         return
-    active_templates = filtered_templates
+    chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
 
     tree_templates: list[tuple[str, dict]] = []
     non_tree_templates: list[tuple[str, dict]] = []

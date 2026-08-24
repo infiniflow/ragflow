@@ -186,7 +186,12 @@ def _load_dataset_module(monkeypatch):
 def test_tc_wrt_206_check_embedding_ignores_gaussdb_invalid_placeholder_vectors(monkeypatch):
     module = _load_dataset_module(monkeypatch)
 
-    _install_module(monkeypatch, "api.db.services.llm_service", LLMBundle=FailIfCalledBundle)
+    _install_module(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=FailIfCalledBundle,
+        resolve_llm_setting=lambda *_args, **_kwargs: {},
+    )
 
     ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": 1})
 
@@ -198,7 +203,12 @@ def test_tc_wrt_207_check_embedding_compares_gaussdb_valid_vectors_once(monkeypa
     module = _load_dataset_module(monkeypatch)
     module.settings.docStoreConn = ValidVectorGaussDBStore()
     CompatibleEmbeddingBundle.encode_calls.clear()
-    _install_module(monkeypatch, "api.db.services.llm_service", LLMBundle=CompatibleEmbeddingBundle)
+    _install_module(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=CompatibleEmbeddingBundle,
+        resolve_llm_setting=lambda *_args, **_kwargs: {},
+    )
 
     ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": 1})
 

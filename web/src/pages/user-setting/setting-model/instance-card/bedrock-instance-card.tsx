@@ -482,9 +482,10 @@ export const BedrockInstanceCard = forwardRef<
   const markModelsEdited = useCallback(() => {
     if (isDraft || !baselinePayloadRef.current) return;
     try {
-      const baseline = JSON.parse(
-        baselinePayloadRef.current,
-      ) as Record<string, any>;
+      const baseline = JSON.parse(baselinePayloadRef.current) as Record<
+        string,
+        any
+      >;
       baseline.model_info = modelInfoRef.current;
       baselinePayloadRef.current = JSON.stringify(baseline);
     } catch {

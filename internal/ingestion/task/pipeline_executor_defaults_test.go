@@ -47,7 +47,7 @@ var builtinComponentParamsGolden = map[string]string{
 	"one":                "{\"File\": {}, \"Parser:HipSignsRhyme\": {\"doc\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"doc\"]}, \"docx\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"docx\"], \"vlm\": {}}, \"html\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"htm\", \"html\"]}, \"markdown\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"md\", \"markdown\", \"mdx\"], \"vlm\": {}}, \"pdf\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pdf\"], \"vlm\": {}}, \"spreadsheet\": {\"flatten_media_to_text\": false, \"output_format\": \"html\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"xls\", \"xlsx\"], \"vlm\": {}}, \"text&code\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"txt\"]}}, \"OneChunker:DryDrinksVisit\": {}, \"Tokenizer:FrankWeeksListen\": {\"fields\": \"text\", \"filename_embd_weight\": 0.1, \"search_method\": [\"embedding\", \"full_text\"]}, \"Extractor:AutoExtractDefault\": {\"llm_id\": \"\", \"keywords\": {\"top_n\": 0}, \"questions\": {\"top_n\": 0}, \"tags\": {\"top_n\": 0, \"tag_file_id\": \"\"}, \"summary\": {\"enabled\": false}, \"metadata\": {\"enabled\": false, \"metadata\": [], \"built_in_metadata\": []}}}",
 	"paper":              "{\"File\": {}, \"Parser:HipSignsRhyme\": {\"pdf\": {\"enable_multi_column\": true, \"flatten_media_to_text\": false, \"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pdf\"], \"vlm\": {}}}, \"TitleChunker:SparklySchoolsTravel\": {\"hierarchy\": 0, \"include_heading_content\": false, \"levels\": [[\"^#[^#]\", \"^##[^#]\", \"^###[^#]\", \"^####[^#]\"], [\"第[零一二三四五六七八九十百0-9]+(分?编|部分)\", \"第[零一二三四五六七八九十百0-9]+章\", \"第[零一二三四五六七八九十百0-9]+节\", \"第[零一二三四五六七八九十百0-9]+条\", \"[\\\\(（][零一二三四五六七八九十百]+[\\\\)）]\"], [\"第[0-9]+章\", \"第[0-9]+节\", \"[0-9]{1,2}[\\\\. 、]\", \"[0-9]{1,2}\\\\.[0-9]{1,2}($|[^a-zA-Z/%~.-])\", \"[0-9]{1,2}\\\\.[0-9]{1,2}\\\\.[0-9]{1,2}\"], [\"第[零一二三四五六七八九十百0-9]+章\", \"第[零一二三四五六七八九十百0-9]+节\", \"[零一二三四五六七八九十百]+[ 、]\", \"[\\\\(（][零一二三四五六七八九十百]+[\\\\)）]\", \"[\\\\(（][0-9]{,2}[\\\\)）]\"], [\"PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\", \"Chapter (I+V?|VI*|XI|IX|X)\", \"Section [0-9]+\", \"Article [0-9]+\"]], \"method\": \"group\"}, \"Tokenizer:GreatCarsWash\": {\"fields\": \"text\", \"filename_embd_weight\": 0.1, \"search_method\": [\"embedding\", \"full_text\"]}, \"Extractor:AutoExtractDefault\": {\"llm_id\": \"\", \"keywords\": {\"top_n\": 0}, \"questions\": {\"top_n\": 0}, \"tags\": {\"top_n\": 0, \"tag_file_id\": \"\"}, \"summary\": {\"enabled\": false}, \"metadata\": {\"enabled\": false, \"metadata\": [], \"built_in_metadata\": []}}}",
 	"picture":            "{\"File\": {}, \"Parser:ViewsCaptureLight\": {\"image\": {\"output_format\": \"json\", \"parse_method\": \"ocr\", \"preprocess\": [\"main_content\"], \"suffix\": [\"bmp\", \"gif\", \"jpeg\", \"jpg\", \"png\", \"svg\", \"tif\", \"tiff\", \"webp\"]}, \"video\": {\"output_format\": \"text\", \"preprocess\": [\"main_content\"], \"suffix\": [\"3gp\", \"3gpp\", \"avi\", \"flv\", \"mkv\", \"mov\", \"mp4\", \"mpeg\", \"mpg\", \"webm\", \"wmv\"]}}, \"TokenChunker:BrightColorsGlow\": {}, \"Tokenizer:SharpLensFocus\": {\"fields\": \"text\", \"filename_embd_weight\": 0.1, \"search_method\": [\"embedding\", \"full_text\"]}, \"Extractor:AutoExtractDefault\": {\"llm_id\": \"\", \"keywords\": {\"top_n\": 0}, \"questions\": {\"top_n\": 0}, \"tags\": {\"top_n\": 0, \"tag_file_id\": \"\"}, \"summary\": {\"enabled\": false}, \"metadata\": {\"enabled\": false, \"metadata\": [], \"built_in_metadata\": []}}}",
-	"presentation":       "{\"File\": {}, \"Parser:HipSignsRhyme\": {\"pdf\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pdf\"], \"vlm\": {}}, \"slides\": {\"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pptx\", \"ppt\"]}}, \"Tokenizer:TallTreesDance\": {\"fields\": \"text\", \"filename_embd_weight\": 0.1, \"search_method\": [\"embedding\", \"full_text\"]}, \"PresentationChunker:HappyHillsGlow\": {}, \"Extractor:AutoExtractDefault\": {\"llm_id\": \"\", \"keywords\": {\"top_n\": 0}, \"questions\": {\"top_n\": 0}, \"tags\": {\"top_n\": 0, \"tag_file_id\": \"\"}, \"summary\": {\"enabled\": false}, \"metadata\": {\"enabled\": false, \"metadata\": [], \"built_in_metadata\": []}}}",
+	"presentation":       "{\"File\": {}, \"Parser:HipSignsRhyme\": {\"pdf\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pdf\"], \"vlm\": {}}, \"slides\": {\"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pptx\", \"ppt\"]}}, \"Tokenizer:TallTreesDance\": {\"fields\": \"text\", \"filename_embd_weight\": 0.1, \"search_method\": [\"embedding\", \"full_text\"]}, \"PageChunker:HappyHillsGlow\": {}, \"Extractor:AutoExtractDefault\": {\"llm_id\": \"\", \"keywords\": {\"top_n\": 0}, \"questions\": {\"top_n\": 0}, \"tags\": {\"top_n\": 0, \"tag_file_id\": \"\"}, \"summary\": {\"enabled\": false}, \"metadata\": {\"enabled\": false, \"metadata\": [], \"built_in_metadata\": []}}}",
 	"qa":                 "{\"File\": {}, \"Parser:HipSignsRhyme\": {\"docx\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"docx\"], \"vlm\": {}}, \"markdown\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"md\", \"markdown\", \"mdx\"], \"vlm\": {}}, \"pdf\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pdf\"], \"vlm\": {}}, \"spreadsheet\": {\"flatten_media_to_text\": false, \"output_format\": \"html\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"xls\", \"xlsx\", \"csv\"], \"vlm\": {}}, \"text&code\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"txt\"]}}, \"Tokenizer:ColdCloudsDream\": {\"fields\": \"text\", \"filename_embd_weight\": 0.1, \"search_method\": [\"embedding\", \"full_text\"]}, \"QAChunker:TidyCloudsThink\": {}}",
 	"table":              "{\"File\": {}, \"Parser:HipSignsRhyme\": {\"spreadsheet\": {\"flatten_media_to_text\": false, \"output_format\": \"html\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"xls\", \"xlsx\", \"csv\"], \"vlm\": {}, \"column_mode\": \"auto\", \"column_roles\": {}, \"column_names\": []}, \"text&code\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"txt\"]}}, \"TableChunker:FastFoxesJump\": {}, \"Tokenizer:DeepLakesShine\": {\"fields\": \"text\", \"filename_embd_weight\": 0.1, \"search_method\": [\"embedding\", \"full_text\"]}}",
 	"knowledge_compiler": "{\"File\": {}, \"Compiler:KnownSwiftLions\": {\"compilation_template_group_id\": \"\", \"llm_id\": \"\", \"plan\": false}, \"Parser:HipSignsRhyme\": {\"setups\": {\"doc\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"doc\"]}, \"docx\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"docx\"], \"vlm\": {}}, \"html\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"htm\", \"html\"]}, \"markdown\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"md\", \"markdown\", \"mdx\"], \"vlm\": {}}, \"pdf\": {\"flatten_media_to_text\": false, \"output_format\": \"json\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"pdf\"], \"vlm\": {}}, \"spreadsheet\": {\"flatten_media_to_text\": false, \"output_format\": \"html\", \"parse_method\": \"DeepDOC\", \"preprocess\": [\"main_content\"], \"suffix\": [\"xls\", \"xlsx\", \"csv\"], \"vlm\": {}}, \"text&code\": {\"output_format\": \"json\", \"preprocess\": [\"main_content\"], \"suffix\": [\"txt\", \"py\", \"js\", \"java\", \"c\", \"cpp\", \"h\", \"php\", \"go\", \"ts\", \"sh\", \"cs\", \"kt\", \"sql\"]}}}, \"TokenChunker:SixApplesFall\": {\"children_delimiters\": [], \"chunk_token_size\": 512, \"delimiter_mode\": \"delimiter\", \"delimiters\": [\"\\n\", \"!\", \"?\", \"。\", \"；\", \"！\", \"？\"], \"image_context_size\": 0, \"overlapped_percent\": 0, \"table_context_size\": 0}}",
@@ -186,35 +186,21 @@ func TestBuildComponentParams_GoldenCoversAllTemplates(t *testing.T) {
 func TestBuiltInMetadataFromParserConfig_ExtractorNodeParams(t *testing.T) {
 	pc := entity.JSONMap{
 		"Extractor:AutoExtractDefault": map[string]any{
-			"enable_metadata": 1,
-			"built_in_metadata": []any{
-				map[string]any{"key": "update_time", "type": "time"},
-				map[string]any{"key": "file_name", "type": "string"},
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "update_time", "type": "time"},
+					map[string]any{"key": "file_name", "type": "string"},
+				},
 			},
 		},
 	}
 	cfg, enabled := builtInMetadataFromParserConfig(pc)
 	if !enabled {
-		t.Fatal("auto metadata should be enabled from extractor node params")
+		t.Fatal("auto metadata should be enabled from extractor node modular config")
 	}
 	if len(cfg) != 2 {
 		t.Fatalf("built-in config len = %d, want 2", len(cfg))
-	}
-}
-
-func TestBuiltInMetadataFromParserConfig_TopLevelFallback(t *testing.T) {
-	pc := entity.JSONMap{
-		"enable_metadata": true,
-		"built_in_metadata": []any{
-			map[string]any{"key": "file_name", "type": "string"},
-		},
-	}
-	cfg, enabled := builtInMetadataFromParserConfig(pc)
-	if !enabled {
-		t.Fatal("auto metadata should be enabled from top-level config")
-	}
-	if len(cfg) != 1 {
-		t.Fatalf("built-in config len = %d, want 1", len(cfg))
 	}
 }
 
@@ -241,13 +227,15 @@ func TestBuiltInMetadataFromParserConfig_MultiExtractorDeterministic(t *testing.
 	// Extractor:A must deterministically win regardless of Go map iteration order.
 	pc := entity.JSONMap{
 		"Extractor:B": map[string]any{
-			"enable_metadata": 1,
-			"built_in_metadata": []any{
-				map[string]any{"key": "file_name", "type": "string"},
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "file_name", "type": "string"},
+				},
 			},
 		},
 		"Extractor:A": map[string]any{
-			"metadata_config": map[string]any{
+			"metadata": map[string]any{
 				"enabled": true,
 				"built_in_metadata": []any{
 					map[string]any{"key": "update_time", "type": "time"},
@@ -268,5 +256,59 @@ func TestBuiltInMetadataFromParserConfig_MultiExtractorDeterministic(t *testing.
 		if !ok || item["key"] != "update_time" {
 			t.Fatalf("iteration %d: expected Extractor:A item update_time, got %v", i, cfg[0])
 		}
+	}
+}
+
+func TestBuiltInMetadataFromParserConfig_FirstMetadataNodeWins(t *testing.T) {
+	// The alphabetically-first Extractor node that declares metadata is the
+	// authoritative source, even when its built_in_metadata is empty.
+	pc := entity.JSONMap{
+		"Extractor:A": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"built_in_metadata": []any{},
+			},
+		},
+		"Extractor:B": map[string]any{
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "file_name", "type": "string"},
+				},
+			},
+		},
+	}
+
+	cfg, enabled := builtInMetadataFromParserConfig(pc)
+	if !enabled {
+		t.Fatalf("expected enabled=true from first metadata node, got false")
+	}
+	if len(cfg) != 0 {
+		t.Fatalf("expected empty built-in config from first metadata node, got %#v", cfg)
+	}
+}
+
+func TestBuiltInMetadataFromParserConfig_MapSliceBuiltIn(t *testing.T) {
+	pc := entity.JSONMap{
+		"Extractor:A": map[string]any{
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []map[string]any{
+					{"key": "update_time", "type": "time"},
+				},
+			},
+		},
+	}
+
+	cfg, enabled := builtInMetadataFromParserConfig(pc)
+	if !enabled {
+		t.Fatalf("expected enabled=true, got false")
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("expected 1 built-in item from []map[string]any, got %d", len(cfg))
+	}
+	item, ok := cfg[0].(map[string]any)
+	if !ok || item["key"] != "update_time" {
+		t.Fatalf("expected update_time item, got %#v", cfg[0])
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"strings"
 	"testing"
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
@@ -281,18 +282,38 @@ func TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill(t *testing.T) {
 	}
 
 	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
-	if len(item.Grid) != 2 || len(item.Grid[0]) != 1 || len(item.Grid[1]) != 1 {
-		t.Fatalf("grid shape = %v, want 2x1", item.Grid)
+	// Python's construct_table groups boxes by their R/C labels, producing a
+	// row only for an R that carries a box. Both boxes land in the SAME row
+	// (they overlap vertically), so the grid is 1x1 — not 2x1.
+	if len(item.Grid) != 1 || len(item.Grid[0]) != 1 {
+		t.Fatalf("grid shape = %v, want 1x1 (R/C grouping emits a row only for the R that carries the box)", item.Grid)
 	}
 
-	row0, row1 := item.Grid[0][0].Text, item.Grid[1][0].Text
-	nonEmpty := 0
-	for _, text := range []string{row0, row1} {
-		if text != "" {
-			nonEmpty++
-		}
+	row0 := item.Grid[0][0].Text
+	if row0 == "" {
+		t.Fatalf("row0 = %q, want non-empty: overlapping boxes must merge into a single cell assignment instead of spreading duplicated text across rows", row0)
 	}
-	if nonEmpty != 1 {
-		t.Fatalf("nonEmpty cells = %d (row0=%q row1=%q), want exactly 1: overlapping boxes must merge into a single cell assignment instead of spreading duplicated text across rows", nonEmpty, row0, row1)
+}
+
+// TestDedupNestedBoxes_IdenticalBBoxKeepsContent locks that two boxes with
+// IDENTICAL bbox AND identical text are not BOTH dropped. The containment
+// check drops the inner box when its bbox lies fully inside the outer's and
+// the outer text contains the inner's — but for identical bboxes each box is
+// "inside" the other, so both get marked for removal and the cell content
+// vanishes. Only STRICT containment may drop; identical-bbox boxes must keep
+// at least one copy.
+func TestDedupNestedBoxes_IdenticalBBoxKeepsContent(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+	}
+	got := dedupNestedBoxes(boxes)
+	if len(got) == 0 {
+		t.Fatal("identical bbox+text boxes were BOTH dropped — content loss; at least one copy must survive")
+	}
+	for _, b := range got {
+		if strings.TrimSpace(b.Text) != "Revenue" {
+			t.Errorf("surviving box text = %q, want %q", b.Text, "Revenue")
+		}
 	}
 }

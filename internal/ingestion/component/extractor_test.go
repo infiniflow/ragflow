@@ -1491,6 +1491,9 @@ func TestExtractorModularMetadataConfig(t *testing.T) {
 	if ext.Param.Metadata.Metadata[0].Key != "author" || ext.Param.Metadata.Metadata[0].Description != "The author name" || len(ext.Param.Metadata.Metadata[0].Enum) != 2 {
 		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata.Metadata[0])
 	}
+	if ext.Param.Metadata.Metadata[1].Key != "year" {
+		t.Errorf("Metadata field 1 mismatch: %+v", ext.Param.Metadata.Metadata[1])
+	}
 	if len(ext.Param.Metadata.BuiltInMetadata) != 1 || ext.Param.Metadata.BuiltInMetadata[0].Key != "file_name" {
 		t.Errorf("BuiltInMetadata mismatch: %+v", ext.Param.Metadata.BuiltInMetadata)
 	}
@@ -1709,6 +1712,103 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestExtractorTopNPlaceholderSubstitution verifies the {{ topn }} placeholder
+// in custom keyword/question system prompts is replaced with the configured
+// top_n, so the count slider stays authoritative when the frontend pre-fills
+// a prompt.
+func TestExtractorTopNPlaceholderSubstitution(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "alpha, beta"},
+		stubResponse{Content: "q1?\nq2?"},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n":         9,
+			"system_prompt": "Give the top {{ topn }} keywords.",
+		},
+		"questions": map[string]any{
+			"top_n":         7,
+			"system_prompt": "Propose {{topn}} questions.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	if got := reqs[0].Messages[0].Content; got != "Give the top 9 keywords." {
+		t.Errorf("expected keywords prompt with top_n=9 substituted, got: %q", got)
+	}
+	if got := reqs[1].Messages[0].Content; got != "Propose 7 questions." {
+		t.Errorf("expected questions prompt with top_n=7 substituted, got: %q", got)
+	}
+}
+
+// TestExtractorDefaultPromptsRenderTopN verifies the built-in keyword/question
+// prompts interpolate the configured top_n when no custom prompt is set.
+func TestExtractorDefaultPromptsRenderTopN(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "k1, k2"},
+		stubResponse{Content: "q1?"},
+	)
+
+	params := map[string]any{
+		"llm_id":    "llm-1",
+		"keywords":  map[string]any{"top_n": 4},
+		"questions": map[string]any{"top_n": 6},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	kwPrompt := reqs[0].Messages[0].Content
+	if !strings.Contains(kwPrompt, "top 4 important keywords/phrases") {
+		t.Errorf("expected built-in keywords prompt with top_n=4, got: %q", kwPrompt)
+	}
+	qPrompt := reqs[1].Messages[0].Content
+	if !strings.Contains(qPrompt, "top 6 important questions") {
+		t.Errorf("expected built-in questions prompt with top_n=6, got: %q", qPrompt)
+	}
+	if strings.Contains(kwPrompt, "{{") || strings.Contains(qPrompt, "{{") {
+		t.Errorf("expected no leftover placeholders, got keywords=%q questions=%q", kwPrompt, qPrompt)
+	}
+}
+
 func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 	stub := withStubChatInvoker(t, stubResponse{Content: "Not expected"})
 
@@ -1857,5 +1957,74 @@ func TestExtractor_ParseMetadataFieldDefs_MapSlice(t *testing.T) {
 	directDefs := parseMetadataFieldDefs(inputDefs)
 	if len(directDefs) != 1 || directDefs[0].Key != "tag" {
 		t.Errorf("parseMetadataFieldDefs failed for []common.MetadataFieldDef: %#v", directDefs)
+	}
+}
+
+func TestExtractorBuiltInDoesNotCallLLM(t *testing.T) {
+	// 1b39355c regressed by making runEnableMetadata fire when only built_in_metadata was configured.
+	// With the modular shape, BuiltInMetadata must never trigger an LLM call; it is applied by the finalizer.
+	stub := withStubChatInvoker(t)
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": true,
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+				map[string]any{"key": "update_time", "type": "time"},
+			},
+			"metadata": []any{},
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	in := map[string]any{
+		"chunks": []map[string]any{{"text": "hello world"}},
+	}
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.calls.Load() != 0 {
+		t.Fatalf("built_in-only must not call LLM, got %d calls, requests=%v", stub.calls.Load(), stub.requests)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+	if _, ok := chunks[0]["metadata"]; ok {
+		t.Fatalf("built_in must not produce chunk metadata, got %v", chunks[0]["metadata"])
+	}
+}
+
+func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
+	stub := withStubChatInvoker(t)
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": false,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	in := map[string]any{"chunks": []map[string]any{{"text": "hello"}}}
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.calls.Load() != 0 {
+		t.Fatalf("enabled=false must not call LLM, got %d", stub.calls.Load())
+	}
+	if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
 	}
 }

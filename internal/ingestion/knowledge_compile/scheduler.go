@@ -123,6 +123,9 @@ type Claimer interface {
 	// live, so a stale worker whose lease was reclaimed cannot overwrite the
 	// status of the worker that took over.
 	SetError(ctx context.Context, datasetID, token, errMsg string) error
+	// UpdateProgress records the current batch phase and progress while the
+	// claim is live. Updates from a stale worker are ignored by token.
+	UpdateProgress(ctx context.Context, datasetID, token string, progress float64, phase, message string) error
 
 	// CancelInflight drops the live claim for a dataset back into the backlog so
 	// a rewrite can start from a clean index. The token is intentionally NOT
@@ -214,7 +217,7 @@ func (s *mysqlScheduler) Provision(ctx context.Context) error {
 // each other's backlog), and the notify is always paired with the append so a
 // producer never needs a separate Notify call.
 func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
-	return s.publish(ctx, tenantID, datasetID, docID, eventType, variants)
+	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
 }
 
 // loadRow fetches the dataset scheduling row (no lock). Returns nil (no error)
@@ -231,10 +234,13 @@ func (s *mysqlScheduler) loadRow(ctx context.Context, datasetID string) (*entity
 }
 
 func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
+	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
+}
+
+func (s *mysqlScheduler) publishEntry(ctx context.Context, tenantID, datasetID string, entry BacklogEntry) error {
 	if s.db == nil {
 		return nil
 	}
-	entry := BacklogEntry{DocID: docID, EventType: eventType, Variants: variants}
 	// KnowledgeCompileDataset.dataset_id is the PRIMARY KEY, so the SELECT ... FOR
 	// UPDATE below also takes an InnoDB gap lock for a not-yet-existing dataset;
 	// concurrent publishers for the same dataset serialize on that lock and the
@@ -277,8 +283,8 @@ func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID
 	common.Info("knowledge_compile: published backlog entry",
 		zap.String("dataset_id", datasetID),
 		zap.String("tenant_id", tenantID),
-		zap.String("doc_id", docID),
-		zap.String("event_type", eventType))
+		zap.String("doc_id", entry.DocID),
+		zap.String("event_type", entry.EventType))
 	return s.notify(ctx, datasetID)
 }
 
@@ -350,6 +356,9 @@ func (s *mysqlScheduler) claimRow(ctx context.Context, tx *gorm.DB, datasetID st
 	row.ClaimExpiresAt = &exp
 	row.State = DatasetStateRunning
 	row.ErrorMsg = ""
+	row.Progress = 0
+	row.CurrentPhase = "claiming"
+	row.ProgressMsg = ""
 	if err := tx.Save(&row).Error; err != nil {
 		return ClaimResult{}, false, err
 	}
@@ -459,6 +468,62 @@ func (s *mysqlScheduler) SetError(ctx context.Context, datasetID, token, errMsg 
 			zap.String("dataset_id", datasetID))
 	}
 	return nil
+}
+
+const progressMessageMaxLength = 3000
+
+func timestampProgressMessage(message string) string {
+	if message == "" {
+		return ""
+	}
+	return time.Now().Format("15:04:05") + " " + message
+}
+
+func appendProgressMessage(previous, message string) string {
+	if message == "" {
+		return previous
+	}
+	if previous == "" {
+		if len([]rune(message)) > progressMessageMaxLength {
+			return string([]rune(message)[len([]rune(message))-progressMessageMaxLength:])
+		}
+		return message
+	}
+	joined := previous + "\n" + message
+	if len([]rune(joined)) > progressMessageMaxLength {
+		runes := []rune(joined)
+		return string(runes[len(runes)-progressMessageMaxLength:])
+	}
+	return joined
+}
+
+// UpdateProgress records a best-effort phase update for the active claim. The
+// token check prevents a worker whose lease was reclaimed from overwriting the
+// progress of the new owner.
+func (s *mysqlScheduler) UpdateProgress(ctx context.Context, datasetID, token string, progress float64, phase, message string) error {
+	if s.db == nil {
+		return nil
+	}
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 1 {
+		progress = 1
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row entity.KnowledgeCompileDataset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
+			return err
+		}
+		if row.ClaimToken != token {
+			return nil
+		}
+		row.Progress = progress
+		row.CurrentPhase = phase
+		row.ProgressMsg = appendProgressMessage(row.ProgressMsg, message)
+		return tx.Save(&row).Error
+	})
 }
 
 // CancelInflight drops the live claim for a dataset back into the backlog so a
@@ -679,14 +744,17 @@ func removeEntries(inflight, batch []BacklogEntry) []BacklogEntry {
 // ---- in-memory scheduler for tests ----
 
 type fakeRow struct {
-	tenant   string
-	backlog  []BacklogEntry
-	inflight []BacklogEntry
-	owner    string
-	token    string
-	expires  *time.Time
-	state    string
-	errorMsg string
+	tenant       string
+	backlog      []BacklogEntry
+	inflight     []BacklogEntry
+	owner        string
+	token        string
+	expires      *time.Time
+	state        string
+	errorMsg     string
+	progress     float64
+	currentPhase string
+	progressMsg  string
 	// writeMu serializes per-dataset writer side effects and rebuilds, mirroring
 	// the MySQL scheduler's WithDatasetLock row lock.
 	writeMu sync.Mutex
@@ -716,10 +784,10 @@ func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 
 // Publish appends one doc event and pushes a notify (same contract as MySQL).
 func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
-	return f.publish(tenantID, datasetID, docID, eventType, variants)
+	return f.publishEntry(tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
 }
 
-func (f *FakeScheduler) publish(tenantID, datasetID, docID, eventType string, variants []string) error {
+func (f *FakeScheduler) publishEntry(tenantID, datasetID string, entry BacklogEntry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.rows[datasetID]
@@ -730,7 +798,7 @@ func (f *FakeScheduler) publish(tenantID, datasetID, docID, eventType string, va
 	if r.tenant == "" {
 		r.tenant = tenantID
 	}
-	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
+	r.backlog = append(r.backlog, entry)
 	// Mirror the MySQL scheduler: surface pending unless a worker is running.
 	if r.state != DatasetStateRunning {
 		r.state = DatasetStatePending
@@ -767,6 +835,9 @@ func (f *FakeScheduler) Claim(_ context.Context, datasetID string) (ClaimResult,
 	r.expires = &exp
 	r.state = DatasetStateRunning
 	r.errorMsg = ""
+	r.progress = 0
+	r.currentPhase = "claiming"
+	r.progressMsg = ""
 	return ClaimResult{DatasetID: datasetID, TenantID: r.tenant, Entries: batch, Token: r.token}, true, nil
 }
 
@@ -813,6 +884,25 @@ func (f *FakeScheduler) SetError(_ context.Context, datasetID, token, errMsg str
 		return nil
 	}
 	r.errorMsg = errMsg
+	return nil
+}
+
+func (f *FakeScheduler) UpdateProgress(_ context.Context, datasetID, token string, progress float64, phase, message string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.rows[datasetID]
+	if !ok || r.token != token {
+		return nil
+	}
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 1 {
+		progress = 1
+	}
+	r.progress = progress
+	r.currentPhase = phase
+	r.progressMsg = appendProgressMessage(r.progressMsg, message)
 	return nil
 }
 

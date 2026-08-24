@@ -310,9 +310,7 @@ describe('BedrockInstanceCard', () => {
     );
     const { rerender } = render(card);
 
-    await waitFor(async () =>
-      expect(await ref.current?.validate()).toBe(true),
-    );
+    await waitFor(async () => expect(await ref.current?.validate()).toBe(true));
 
     mockInstanceModelsLoaded = false;
     rerender(card);

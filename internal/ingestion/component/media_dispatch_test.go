@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -362,9 +363,13 @@ func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchAudio_DefaultOutputFormatJson covers Parser 2.11:
-// the default audio output_format must be "json" (matching Python
-// parser.py:232 and AllowedOutputFormat["audio"]={"json"}).
+// TestMaybeDispatchAudio_DefaultOutputFormatJson covers the
+// maybeDispatchAudio fallback: when an audio setup omits
+// output_format entirely, the dispatch defaults to "json" and wraps
+// the transcription as a JSON item. (The defaultSetups value is
+// "text" to mirror the Python audio setup in parser.py; this test
+// deliberately supplies an empty setup to exercise the fallback
+// inside the dispatch itself.)
 func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	const want = "hello world"
 	drv := &audioTranscribeDriver{transcription: want}
@@ -373,8 +378,9 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
 	}
-	setups := defaultSetups()
-	// Do NOT set output_format — exercise the default path.
+	// No output_format key — exercise the default path inside
+	// maybeDispatchAudio.
+	setups := map[string]schema.ParserSetup{"audio": {}}
 	res, dispatched, err := maybeDispatchAudio(
 		context.Background(),
 		nil,

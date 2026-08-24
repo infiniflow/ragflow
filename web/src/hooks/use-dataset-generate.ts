@@ -72,6 +72,7 @@ export interface ITraceInfo {
   // are the MySQL scheduling-entry counts, and error is the batch diagnostic
   // (NOT a peer state). Only populated by the Go/hybrid branch of useTraceQuery.
   compilationState?: string;
+  currentPhase?: string;
   inflight?: number;
   backlog?: number;
   compilationError?: string;
@@ -126,9 +127,10 @@ const useTraceQuery = (
         const state: string = st.state ?? 'idle';
         const error: string = st.error ?? '';
         return {
-          progress: state === 'completed' ? 1 : state === 'idle' ? 0 : 0,
-          progress_msg: error || state,
+          progress: state === 'completed' ? 1 : (st.progress ?? 0),
+          progress_msg: st.progress_msg || error || state,
           compilationState: state,
+          currentPhase: st.current_phase ?? '',
           inflight: st.inflight ?? 0,
           backlog: st.backlog ?? 0,
           compilationError: error,
@@ -283,11 +285,9 @@ export function useGenerateStatus(data?: ITraceInfo) {
 
   const percent = useMemo(() => {
     if (isGoDatasetBackend()) {
-      // No stable terminal state and no DocTotal/DocProcessed, so there is no
-      // meaningful percentage. Failures render as a full error marker; active
-      // runs show the inflight/backlog counts instead of a percent (see the
-      // UpdateRunProgress / EmptyState components).
-      return status === GenerateStatus.Failed ? 100 : 0;
+      return status === GenerateStatus.Failed
+        ? 100
+        : (data?.progress ?? 0) * 100;
     }
     if (status === GenerateStatus.Failed) {
       return 100;
