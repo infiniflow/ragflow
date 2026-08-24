@@ -173,7 +173,7 @@ def _load_set_progress_signature():
                 defaults[arg.arg] = ast.literal_eval(default_node)
             except (ValueError, SyntaxError):
                 defaults[arg.arg] = ast.unparse(default_node)
-    for arg, default_node in zip(args.kwonlyargs, args.kw_defaults or ()):
+    for arg, default_node in zip(args.kwonlyargs, args.kw_defaults or (), strict=True):
         if default_node is None:
             defaults[arg.arg] = inspect.Parameter.empty
         else:
