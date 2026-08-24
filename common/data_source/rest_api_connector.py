@@ -498,8 +498,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
         if limit <= 0:
             limit = per_page
 
-        cursor: Optional[str] = self.pagination_config.get("initial_cursor")
-        seen_cursors = {cursor} if cursor else set()
+        initial_cursor = self.pagination_config.get("initial_cursor")
+        cursor: Optional[str] = None if initial_cursor in (None, "") else str(initial_cursor)
+        seen_cursors = {cursor} if cursor is not None else set()
 
         while True:
             if page_count >= self.max_pages:

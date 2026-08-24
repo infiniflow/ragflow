@@ -132,3 +132,25 @@ def test_rest_api_cursor_stops_when_provider_repeats_cursor(_dns):
 
     assert len(items) == 2
     assert requests == [{}, {"cursor": "same-cursor"}]
+
+
+@patch("common.data_source.rest_api_connector.socket.getaddrinfo", return_value=_MOCK_DNS)
+def test_rest_api_normalizes_numeric_initial_cursor_before_cycle_check(_dns):
+    connector = RestAPIConnector(
+        url="https://api.example.com/items",
+        content_fields=["title"],
+        pagination_type=PaginationType.CURSOR,
+        pagination_config={"initial_cursor": 123, "next_cursor_field": "next_cursor"},
+        max_pages=20,
+        request_delay=0,
+    )
+    requests = []
+
+    def fetch_page(params):
+        requests.append(dict(params))
+        return {"items": [{"title": "Page"}], "next_cursor": 123}
+
+    connector._fetch_page = fetch_page
+
+    assert len(list(connector._iter_items())) == 1
+    assert requests == [{"cursor": "123"}]
