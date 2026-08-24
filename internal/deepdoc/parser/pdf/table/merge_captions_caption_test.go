@@ -151,11 +151,16 @@ func TestMergeCaptions_ReadingOrderByTop(t *testing.T) {
 func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 	table := pdf.Section{
 		Text: "<table><tr><th >Month</th><th >Revenue</th></tr></table>", LayoutType: pdf.LayoutTypeTable,
-		// Cross-page merged table: Positions[0] keeps ONLY the first page's
-		// geometry (pages=[0], the page-0 band), exactly like 13's real merged
-		// table. A caption on a LATER page of the same table lands inside this
-		// band in page-local coordinates (gapY=0) and must still attach.
-		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777}},
+		// Cross-page merged table: table_merge.go appends one Position entry
+		// PER spanned page, so a real merged table carries MULTIPLE Position
+		// entries (here pages 0 and 2), each with that page's local geometry.
+		// A caption on a LATER page of the same table lands inside that page's
+		// band in page-local coordinates (gapY=0) and must still attach — this
+		// is the 13/14 cross-page caption continuation case.
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777},
+			{PageNumbers: []int{2}, Left: 82, Right: 513, Top: 98, Bottom: 777},
+		},
 	}
 	for _, c := range []struct {
 		name    string
