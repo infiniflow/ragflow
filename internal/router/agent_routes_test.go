@@ -17,12 +17,14 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/handler"
 )
 
@@ -88,4 +90,71 @@ func TestAgentSessionCancelRouteRegistered(t *testing.T) {
 	if w.Code == http.StatusNotFound {
 		t.Fatal("POST /api/v1/tasks/:session_id/cancel was not registered")
 	}
+}
+
+// TestAgentUploadAndAttachmentDownloadOnBetaAuth pins the wiring of the
+// two agent endpoints that python declares with
+// @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+// (api/apps/restful_apis/agent_api.py upload_agent_file / download_attachment).
+// They serve the embedded/shared agent page, whose only credential is the
+// share (beta) APIToken, so Router.Setup must register them on the
+// beta-auth group — NOT on the JWT-only authorized group. With no
+// Authorization header the beta middleware answers HTTP 200 + code 102
+// ("Authorization is not valid!"), while the JWT-only AuthMiddleware
+// answers a bare HTTP 401 — which is exactly what makes the embedded
+// page redirect to /login after an upload attempt (reported issue).
+func TestAgentUploadAndAttachmentDownloadOnBetaAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:  handler.NewAuthHandler(),
+		agentHandler: &handler.AgentHandler{},
+	}
+	r.Setup(engine)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"agent file upload", http.MethodPost, "/api/v1/agents/canvas-1/upload"},
+		{"agent attachment download", http.MethodGet, "/api/v1/agents/attachments/att-1/download"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			engine.ServeHTTP(resp, req)
+
+			if resp.Code == http.StatusNotFound {
+				t.Fatalf("%s %s returned 404; route is not registered", tt.method, tt.path)
+			}
+			var body struct {
+				Code common.ErrorCode `json:"code"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode response body: %v", err)
+			}
+			if resp.Code != http.StatusOK || body.Code != common.CodeDataError {
+				t.Fatalf("status=%d body=%s; want beta auth middleware to handle the route (HTTP 200 + code %d)", resp.Code, resp.Body.String(), common.CodeDataError)
+			}
+		})
+	}
+
+	// Parity pin: attachments preview stays JWT-only in python
+	// (plain @login_required, agent_api.py:2656), so it must keep
+	// answering 401 from the authorized group when unauthenticated.
+	t.Run("agent attachment preview stays JWT-only", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/attachments/att-1/preview", nil)
+		engine.ServeHTTP(resp, req)
+
+		if resp.Code == http.StatusNotFound {
+			t.Fatal("GET /api/v1/agents/attachments/:attachment_id/preview was not registered")
+		}
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("status=%d body=%s; want the JWT-only AuthMiddleware to keep guarding the preview route", resp.Code, resp.Body.String())
+		}
+	})
 }
