@@ -284,10 +284,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         return res
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
-        raise NotImplementedError(
-            "Legacy .doc files are not supported by the Manual parser. "
-            "Please convert the file to .docx or PDF and try again."
-        )
+        raise NotImplementedError("Legacy .doc files are not supported by the Manual parser. Please convert the file to .docx or PDF and try again.")
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
