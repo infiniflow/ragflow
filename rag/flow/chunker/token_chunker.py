@@ -373,7 +373,7 @@ def _split_chunk_docs_by_children(chunks, pattern):
 
         split_texts = _split_text_by_pattern(chunk.get("text", ""), pattern)
 
-        mom = chunk.get("text", "")
+        mom = chunk.get("text", "").removeprefix("\n")
         for text in split_texts:
             if not text.strip():
                 continue
@@ -428,7 +428,7 @@ class TokenChunker(ProcessBase):
                     for text in _split_text_by_pattern(c, custom_pattern):
                         if not text.strip():
                             continue
-                        docs.append({"text": text, "mom": c})
+                        docs.append({"text": text, "mom": c.removeprefix("\n")})
                 self.set_output("chunks", docs)
             else:
                 self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])

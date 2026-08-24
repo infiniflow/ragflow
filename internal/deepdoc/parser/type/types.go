@@ -99,6 +99,11 @@ type TextBox struct {
 	LayoutNo    string
 	ColID       int
 	R           int
+	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
+	// ocrMergeChars), as opposed to one built from embedded PDF chars
+	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
+	// so char-path digital PDFs are never silently de-duplicated.
+	IsOCR bool
 	// Post-TSR table annotation fields (Python: R/H/C/SP tags)
 	RTop, RBott   float64
 	HTop, HBott   float64
@@ -165,6 +170,10 @@ type TableItem struct {
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// Page is the 0-based page index this table was detected on. It is set
+	// by the pipeline and used by parity/replay harnesses to map replay
+	// intermediates (which are keyed by page) back onto the correct table.
+	Page int
 }
 
 // TSRCell represents one table cell from TSR.
@@ -172,6 +181,11 @@ type TSRCell struct {
 	X0, Y0, X1, Y1 float64
 	Text           string
 	Label          string
+	// Score is the TSR detection confidence. Python's layouts_cleanup keeps
+	// the higher-score line when two structure lines overlap (recognizer.py:141),
+	// so the production table assembly needs it to de-duplicate rows/columns
+	// the same way Python does.
+	Score float64
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {

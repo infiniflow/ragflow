@@ -175,9 +175,7 @@ class Graph:
             obj = cpn.get("obj")
             if obj and hasattr(obj, "tools"):
                 for tool in obj.tools.values():
-                    session = tool if isinstance(tool, MCPToolCallSession) else (
-                        tool.session if isinstance(tool, MCPToolBinding) else None
-                    )
+                    session = tool if isinstance(tool, MCPToolCallSession) else (tool.session if isinstance(tool, MCPToolBinding) else None)
                     if isinstance(session, MCPToolCallSession) and id(session) not in seen:
                         seen.add(id(session))
                         try:
@@ -349,7 +347,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": [],
             "sys.history": [],
-            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.variables = {}
         # Aggregated provider token usage (prompt/completion/total) across every LLM
@@ -368,7 +366,7 @@ class Canvas(Graph):
             if "sys.history" not in self.globals:
                 self.globals["sys.history"] = []
             if "sys.date" not in self.globals:
-                self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
                 "sys.query": "",
@@ -376,7 +374,7 @@ class Canvas(Graph):
                 "sys.conversation_turns": 0,
                 "sys.files": [],
                 "sys.history": [],
-                "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -392,10 +390,12 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
-    def clear_history(self):
+    def start_new_session(self):
+        """Discard replica state that must not leak into a fresh session."""
         self.history = []
-        if isinstance(self.globals.get("sys.history"), list):
-            self.globals["sys.history"] = []
+        self.globals["sys.history"] = []
+        self.path = []
+        _logger.debug("Canvas conversation history and execution path reset for a new session")
 
     def reset(self, mem=False):
         super().reset()
@@ -403,7 +403,6 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
-        print(self.variables)
         for k in self.globals.keys():
             if k.startswith("sys."):
                 if isinstance(self.globals[k], str):
@@ -482,7 +481,7 @@ class Canvas(Graph):
             reset_llm_request_context(_req_ctx_token)
 
     async def _run_impl(self, **kwargs):
-        self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()

@@ -217,7 +217,11 @@ def _install_settings_import_stubs(monkeypatch):
         validate_dataset_embedding_models=lambda _kbs: None,
     )
     install_module("api.db.services.langfuse_service", TenantLangfuseService=_Dummy)
-    install_module("api.db.services.llm_service", LLMBundle=_Dummy)
+    install_module(
+        "api.db.services.llm_service",
+        LLMBundle=_Dummy,
+        resolve_llm_setting=lambda *_args, **_kwargs: {},
+    )
     install_module(
         "api.db.joint_services.tenant_model_service",
         get_tenant_default_model_by_type=lambda *_args, **_kwargs: {"model_type": "chat", "max_tokens": 8192},

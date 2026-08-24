@@ -111,7 +111,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if !exists {
 		return nil
 	}
-	if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
 	}
 	return nil
@@ -405,7 +405,7 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", tenantID)
 			s.deleteChunkImages(ctx, doc, indexName)
-			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+			if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 				return err
 			}
 		}
@@ -517,16 +517,11 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 		return errors.New("database error (Document update)")
 	}
 
-	if s.docEngine == nil {
-		return nil
+	if s.docEngine != nil {
+		if err := s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+			return err
+		}
 	}
-
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	return s.docEngine.UpdateChunks(
-		ctx,
-		map[string]interface{}{"doc_id": doc.ID},
-		map[string]interface{}{"available_int": status},
-		indexName,
-		doc.KbID,
-	)
+	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	return nil
 }

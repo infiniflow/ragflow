@@ -212,7 +212,7 @@ const GenericProviderInstanceCard = forwardRef<
 
   return (
     <div
-      className="border-b border-border-button mb-5 pb-5"
+      className="mb-5 pb-5"
       data-testid={`instance-card-${instance.instance_name || 'draft'}`}
     >
       {isDraft ? (

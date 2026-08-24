@@ -2343,3 +2343,22 @@ func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
 		t.Fatalf("rendered assistant history = %q, want %q", assistant, want)
 	}
 }
+
+func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
+	messages := []map[string]interface{}{
+		{"role": "system", "content": "Be concise."},
+		{"role": "user", "content": "What is 1+1?"},
+		{"role": "assistant", "content": "2"},
+		{"role": "user", "content": "What is 2+2?"},
+	}
+
+	history := openAICompatPriorHistory(messages)
+	want := []map[string]any{
+		{"role": "system", "content": "Be concise."},
+		{"role": "user", "content": "What is 1+1?"},
+		{"role": "assistant", "content": "2"},
+	}
+	if !reflect.DeepEqual(history, want) {
+		t.Fatalf("prior history = %#v, want %#v", history, want)
+	}
+}

@@ -25,6 +25,7 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -276,7 +277,12 @@ const MarkdownContent = ({
       className="[&>section.think]:pl-[10px] [&>section.think]:text-[#8b8b8b] [&>section.think]:border-l-2 [&>section.think]:border-l-[#d5d3d3] [&>section.think]:mb-[10px] [&>section.think]:text-xs [&>blockquote]:pl-[10px] [&>blockquote]:border-l-4 [&>blockquote]:border-l-[#ccc] text-sm"
     >
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         components={
           {

@@ -210,7 +210,7 @@ class Invoke(ComponentBase, ABC):
         proxy_url = self._normalize_proxy_url()
         if not proxy_url:
             return None
-        return {"http": self._param.proxy, "https": self._param.proxy}
+        return {"http": proxy_url, "https": proxy_url}
 
     def _send_request(self, url: str, args: dict, headers: dict, proxies: dict | None):
         method = self._param.method.lower()
@@ -254,6 +254,7 @@ class Invoke(ComponentBase, ABC):
             proxy_url = self._normalize_proxy_url()
             try:
                 proxy_hostname, proxy_ip = assert_url_is_safe(proxy_url)
+                logging.debug("Invoke proxy in use: %s", self._ssrf_log_target(proxy_url))
             except ValueError as exc:
                 logging.warning(
                     "Invoke SSRF guard blocked proxy=%s: %s",

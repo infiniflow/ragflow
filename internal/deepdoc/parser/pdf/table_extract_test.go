@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"strings"
 	"testing"
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
@@ -223,5 +224,96 @@ func TestProcessOneTable_NoPerCellOCR(t *testing.T) {
 				t.Errorf("empty cell filled by per-cell OCR: %q; Go must align with Python, which skips per-cell OCR", item.Cells[0].Text)
 			}
 		})
+	}
+}
+
+// twoRowTableBuilder groups DetectCells' output into one row per cell
+// (single column), so a test can control exactly which TSR row band each
+// cell occupies.
+type twoRowTableBuilder struct {
+	cells []pdf.TSRCell
+}
+
+func (b *twoRowTableBuilder) Name() string { return "tworow" }
+
+func (b *twoRowTableBuilder) DetectCells(_ context.Context, _ image.Image) ([]pdf.TSRCell, error) {
+	return append([]pdf.TSRCell(nil), b.cells...), nil
+}
+
+func (b *twoRowTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
+	rows := make([][]pdf.TSRCell, len(cells))
+	for i, c := range cells {
+		rows[i] = []pdf.TSRCell{c}
+	}
+	return rows
+}
+
+// TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill verifies that
+// two overlapping OCR boxes over the same table region (one text box and a
+// nested duplicate detection covering part of the same text, e.g. "Alpha
+// Beta" and "Beta") are collapsed before cell assignment, matching Python's
+// pipeline order (_naive_vertical_merge runs before construct_table).
+// Without the collapse, the two boxes independently pick their own
+// best-matching row, spreading the duplicated word across two different
+// cells instead of landing once in a single row.
+func TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill(t *testing.T) {
+	cfg := pdf.DefaultParserConfig()
+	p := NewParser(cfg)
+
+	pageImg := image.NewRGBA(image.Rect(0, 0, 600, 600))
+	// PDF-point space. Box2 ("Beta") is a nested duplicate OCR detection
+	// overlapping the tail of box1 ("Alpha Beta"): by itself it best-matches
+	// the second TSR row, while box1 alone best-matches the first.
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta"},
+		{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta"},
+	}
+	match := tbl.TableMatch{
+		Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 600, Y1: 600, Label: pdf.LayoutTypeTable},
+		BoxIdx: []int{0, 1},
+	}
+	// TSR cells in crop-pixel space (scale = DlaScale = 3): row0 y=[0,60],
+	// row1 y=[60,120], single column x=[0,150].
+	builder := &twoRowTableBuilder{
+		cells: []pdf.TSRCell{
+			{X0: 0, Y0: 0, X1: 150, Y1: 60, Label: "table row"},
+			{X0: 0, Y0: 60, X1: 150, Y1: 120, Label: "table row"},
+		},
+	}
+
+	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	// Python's construct_table groups boxes by their R/C labels, producing a
+	// row only for an R that carries a box. Both boxes land in the SAME row
+	// (they overlap vertically), so the grid is 1x1 — not 2x1.
+	if len(item.Grid) != 1 || len(item.Grid[0]) != 1 {
+		t.Fatalf("grid shape = %v, want 1x1 (R/C grouping emits a row only for the R that carries the box)", item.Grid)
+	}
+
+	row0 := item.Grid[0][0].Text
+	if row0 == "" {
+		t.Fatalf("row0 = %q, want non-empty: overlapping boxes must merge into a single cell assignment instead of spreading duplicated text across rows", row0)
+	}
+}
+
+// TestDedupNestedBoxes_IdenticalBBoxKeepsContent locks that two boxes with
+// IDENTICAL bbox AND identical text are not BOTH dropped. The containment
+// check drops the inner box when its bbox lies fully inside the outer's and
+// the outer text contains the inner's — but for identical bboxes each box is
+// "inside" the other, so both get marked for removal and the cell content
+// vanishes. Only STRICT containment may drop; identical-bbox boxes must keep
+// at least one copy.
+func TestDedupNestedBoxes_IdenticalBBoxKeepsContent(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+	}
+	got := dedupNestedBoxes(boxes)
+	if len(got) == 0 {
+		t.Fatal("identical bbox+text boxes were BOTH dropped — content loss; at least one copy must survive")
+	}
+	for _, b := range got {
+		if strings.TrimSpace(b.Text) != "Revenue" {
+			t.Errorf("surviving box text = %q, want %q", b.Text, "Revenue")
+		}
 	}
 }

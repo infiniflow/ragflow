@@ -190,7 +190,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, userID, chat, messages, stream)
+		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -316,10 +316,12 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Parse file attachments from the last message.
 		// Split text-file URLs (joined with "\n\n") and image URLs.
-		// Chat model: images → imageAttachments (multimodal conversion).
-		// Image2text model: images → imageFiles (raw URLs).
+		// Vision (image2text) model: images → imageFiles for the multimodal
+		// conversion below. Text-only chat model: images are dropped —
+		// sending image content blocks makes such providers reject the
+		// request (e.g. Zhipu GLM error 1210: messages.content.type only
+		// allows 'text').
 		var textAttachmentsList []string
-		var imageAttachments []string
 		var imageFiles []string
 		// Joined text attachments (appended to system prompt).
 		var attachments string
@@ -332,15 +334,20 @@ func (s *ChatPipelineService) AsyncChat(
 					modelType = mt
 				}
 			}
-			if modelType == "chat" {
-				textAttachmentsList, imageAttachments = splitFileAttachments(ctx, userID, files, false)
-			} else {
+			if modelType == "image2text" {
 				textAttachmentsList, imageFiles = splitFileAttachments(ctx, userID, files, true)
+			} else {
+				var droppedImages []string
+				textAttachmentsList, droppedImages = splitFileAttachments(ctx, userID, files, false)
+				if len(droppedImages) > 0 {
+					common.Warn("AsyncChat: dropping image attachments for text-only chat model",
+						zap.String("llm_id", chat.LLMID),
+						zap.Int("dropped_images", len(droppedImages)))
+				}
 			}
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			common.Debug("Resolved attachments",
 				zap.Strings("text_attachments_list", textAttachmentsList),
-				zap.Strings("image_attachments", imageAttachments),
 				zap.Strings("image_files", imageFiles),
 				zap.String("attachments", attachments))
 		}
@@ -651,31 +658,7 @@ func (s *ChatPipelineService) AsyncChat(
 					)
 					question := strings.Join(questions, " ")
 
-					drErr := dr.Research(ctx, kbinfos, question, question, func(msg string) {
-						switch {
-						case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "<retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "</retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						default:
-							out <- AsyncChatResult{
-								Answer:      msg,
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						}
-					})
+					drErr := dr.Research(ctx, kbinfos, question, question, s.deepResearchProgressCallback(ctx, out))
 					if drErr != nil {
 						common.Warn("DeepResearcher failed", zap.Error(drErr))
 					} else {
@@ -956,16 +939,15 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Int("used_token_count", usedTokenCount),
 			zap.Int("msg_count", len(llmMessages)))
 
-		// Multimodal conversion
-		allImages := make([]string, 0, len(imageAttachments)+len(imageFiles))
-		allImages = append(allImages, imageAttachments...)
-		allImages = append(allImages, imageFiles...)
-		if len(llmMessages) >= 2 && len(allImages) > 0 {
+		// Multimodal conversion. imageFiles is only populated for
+		// vision-capable (image2text) models; text-only chat models never
+		// reach this with images.
+		if len(llmMessages) >= 2 && len(imageFiles) > 0 {
 			lastIdx := len(llmMessages) - 1
 			if role, _ := llmMessages[lastIdx]["role"].(string); role == "user" {
 				if converted, err := common.ConvertLastUserMsgToMultimodal(
 					llmMessages[lastIdx],
-					allImages,
+					imageFiles,
 					factoryName,
 				); err == nil {
 					llmMessages[lastIdx] = converted
@@ -988,17 +970,15 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		// Adjust max_tokens so the LLM has room within the total budget.
-		if chat.LLMSetting != nil {
-			if mt, ok := chat.LLMSetting["max_tokens"].(float64); ok {
-				original := int(mt)
-				adjusted := original
-				if adjusted > modelMaxTokens-usedTokenCount {
-					adjusted = modelMaxTokens - usedTokenCount
-				}
-				chat.LLMSetting["max_tokens"] = float64(adjusted)
-				common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
+		chatCfg := BuildChatConfig(chat, kwargs)
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
 			}
+			return
+		} else if ok {
+			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
 		}
 
 		// === Phase 11: Drive LLM + Decorate Answer ===
@@ -1060,8 +1040,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
-
-			chatCfg := BuildChatConfig(chat, nil)
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1257,8 +1235,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Non-streaming: get the answer synchronously.
 			var answer string
 			var err error
-			chatCfg := BuildChatConfig(chat, nil)
-
 			// Tool routing: use tool-loop when tools are bound.
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
@@ -1302,6 +1278,32 @@ func (s *ChatPipelineService) AsyncChat(
 	return out, nil
 }
 
+// deepResearchProgressCallback builds the progress callback handed to
+// DeepResearcher.Research. Progress deltas are non-essential: once the
+// consumer is gone (ctx canceled) they are dropped instead of blocking, so
+// parallel sub-research goroutines can drain before Research returns and
+// the pipeline goroutine closes the channel.
+func (s *ChatPipelineService) deepResearchProgressCallback(ctx context.Context, out chan<- AsyncChatResult) func(string) {
+	return func(msg string) {
+		answer := msg
+		switch {
+		case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
+			answer = "<retrieving>"
+		case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
+			answer = "</retrieving>"
+		}
+		select {
+		case out <- AsyncChatResult{
+			Answer:      answer,
+			Reference:   map[string]interface{}{},
+			AudioBinary: nil,
+			Final:       false,
+		}:
+		case <-ctx.Done():
+		}
+	}
+}
+
 // AsyncChatSolo is the LLM-only chat path (no KBs, no web search).
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
@@ -1310,6 +1312,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
+	config map[string]interface{},
 ) (<-chan AsyncChatResult, error) {
 
 	out := make(chan AsyncChatResult, 16)
@@ -1338,7 +1341,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
 
-		// 2. Process file attachments (chat → data URIs, image2text → raw URLs).
+		// 2. Process file attachments. Only vision-capable (image2text)
+		// models receive image content; text-only chat models reject image
+		// blocks at the provider (e.g. Zhipu GLM error 1210:
+		// messages.content.type only allows 'text'), so their image
+		// attachments are dropped here.
 		attachmentsStr := ""
 		var imageFiles []string
 		modelType := "chat"
@@ -1354,7 +1361,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				if isImage2Text {
 					imageFiles = s.extractRawImageURLs(files)
 				} else {
-					imageFiles = s.extractImageFiles(ctx, userID, files)
+					common.Debug("AsyncChatSolo: dropping image attachments for text-only chat model",
+						zap.String("llm_id", chat.LLMID))
 				}
 			}
 		}
@@ -1441,7 +1449,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if stream {
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
-			chatCfg := BuildChatConfig(chat, nil)
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
@@ -1568,7 +1576,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		} else {
 			// Non-streaming: one-shot call.
-			chatCfg := BuildChatConfig(chat, nil)
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 			resp, err := chatModel.ModelDriver.ChatWithMessages(
 				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
@@ -1606,43 +1614,6 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	}()
 
 	return out, nil
-}
-
-// extractImageFiles extracts data-URI image attachments from the files list.
-// Mirrors Python split_file_attachments raw mode.
-func (s *ChatPipelineService) extractImageFiles(ctx context.Context, userID string, files interface{}) []string {
-	// ── File-dict mode ──
-	if fileDicts, ok := parseFileDicts(files); ok {
-		// Only used for GetFileContents (read-only); nil DocRemover means
-		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		// Use raw=false to get base64 data URIs for images.
-		_, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts, false)
-		if err != nil {
-			common.Warn("GetFileContents failed in extractImageFiles",
-				zap.Error(err))
-			return nil
-		}
-		return images
-	}
-
-	// ── String fallback ──
-	var images []string
-	switch v := files.(type) {
-	case []string:
-		for _, f := range v {
-			if strings.HasPrefix(f, "data:") {
-				images = append(images, f)
-			}
-		}
-	case []interface{}:
-		for _, f := range v {
-			if s, ok := f.(string); ok && strings.HasPrefix(s, "data:") {
-				images = append(images, s)
-			}
-		}
-	}
-	return images
 }
 
 // extractRawImageURLs extracts image references as raw URLs/data-URIs from
@@ -1865,36 +1836,44 @@ func tokenizeText(text string) string {
 }
 
 // getLLMModelConfig resolves the LLM model configuration for the chat.
-// Mirrors Python's three-branch resolver at dialog_service.py:552-561:
+// Mirrors Python's three-branch resolver at dialog_service.py:552-561,
+// extended so the tenant-default branch also probes vision capability:
 //
 //	if chat.llm_id:
 //	    if "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
 //	    else:                                            → CHAT
-//	else:                                                → tenant default CHAT
+//	else:                                                → tenant default
+//	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
-// The returned `cfg` map's "model_type" field carries the chosen type
-// so downstream code (e.g. the multimodal-conversion guard in AsyncChat
-// at async_chat.go:632) can skip chat-only logic for image2text dialogs.
+// The returned `cfg` map's "model_type" field carries the chosen type.
+// Downstream code gates image attachments on it: only image2text
+// (vision-capable) models receive image content blocks; text-only chat
+// models reject them at the provider (e.g. Zhipu GLM error 1210:
+// messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
-		return s.buildLLMModelConfig(
+		cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
 			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
 		)
+		if err != nil {
+			return nil, "", "", "", err
+		}
+		// Probe the default model's enrolled types so a vision-capable
+		// default dispatches as image2text (same rule as the explicit-LLM
+		// branches below).
+		if ref, refErr := s.ModelProviderSvc.GetTenantDefaultModelRef(ctx, chat.TenantID, entity.ModelTypeChat); refErr == nil {
+			cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, ref)
+		}
+		return cfg, modelName, factoryName, baseURL, nil
 	}
 
 	// Branches 1/2: explicit LLM. Probe model types and pick IMAGE2TEXT
 	// when the LLM is registered as such, otherwise CHAT.
+	modelTypeStr := s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
 	modelType := entity.ModelTypeChat
-	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(ctx, chat.TenantID, chat.LLMID); mtErr == nil {
-		for _, mt := range modelTypes {
-			if mt == entity.ModelTypeImage2Text {
-				modelType = entity.ModelTypeImage2Text
-				modelTypeStr = "image2text"
-				break
-			}
-		}
+	if modelTypeStr == "image2text" {
+		modelType = entity.ModelTypeImage2Text
 	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
 		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
@@ -1904,6 +1883,26 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	}
 	cfg["model_type"] = modelTypeStr
 	return cfg, modelName, factoryName, baseURL, nil
+}
+
+// resolveChatModelType probes the enrolled model types for llmRef and
+// returns "image2text" when the model is vision-capable (enrolled with an
+// image2text / "vision" type), "chat" otherwise. Probe failures are
+// conservative: they yield "chat", which drops image attachments instead
+// of risking a provider-side rejection.
+func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
+	modelTypes, err := s.ModelProviderSvc.ResolveModelType(ctx, tenantID, llmRef)
+	if err != nil {
+		return "chat"
+	}
+	for _, mt := range modelTypes {
+		// ModelType is a bitmask: a model enrolled as chat+image2text
+		// reports a combined value, so test membership, not equality.
+		if mt.Has(entity.ModelTypeImage2Text) {
+			return "image2text"
+		}
+	}
+	return "chat"
 }
 
 // buildLLMModelConfig collapses the (driver, modelName, apiConfig,
@@ -4203,14 +4202,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := dialog.LLMSetting["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
@@ -4243,14 +4242,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := config["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := config["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(config["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := config["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(config["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := config["do_sample"].(bool); ok {
@@ -4277,6 +4276,64 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	}
 
 	return cfg
+}
+
+func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
+	if usedTokenCount >= modelMaxTokens {
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+	}
+	if cfg == nil || cfg.MaxTokens == nil {
+		return 0, false, nil
+	}
+	adjusted := *cfg.MaxTokens
+	if adjusted <= 0 {
+		cfg.MaxTokens = nil
+		return 0, false, nil
+	}
+	remainingTokens := modelMaxTokens - usedTokenCount
+	if adjusted > remainingTokens {
+		adjusted = remainingTokens
+	}
+	cfg.MaxTokens = &adjusted
+	return adjusted, true, nil
+}
+
+func chatConfigPositiveInt(value interface{}) (int, bool) {
+	v, ok := chatConfigInt(value)
+	if !ok || v <= 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+func chatConfigInt(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+func chatConfigFloat(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }
 
 func kbIDStrings(kbs []*entity.Knowledgebase) []string {

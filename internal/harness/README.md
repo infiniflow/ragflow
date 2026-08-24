@@ -87,7 +87,7 @@ package main
 
 import (
     "context"
-    "ragflow/internal/harness/core"
+    agentcore "ragflow/internal/harness/core"
     "ragflow/internal/harness/core/schema"
 )
 
@@ -897,7 +897,7 @@ Automated metrics collection covers: tool success rate, approval latency, retry 
 
 A production trace can be automatically converted into a **regression dataset**. The `RunReplayEval` function replays each case with multiple model/strategy combinations, comparing results and raising regression alerts.
 
-> **Detailed design, type definitions, and source-level examples** are documented in [harness.md](harness.md).
+> **Detailed design, type definitions, and source-level examples** are documented in [the Event Sourcing &amp; Replay section](#event-sourcing--replay).
 
 ---
 
@@ -1068,7 +1068,7 @@ builder.AddNodeWithOptions("risky_node", nodeFunc, harness.NodeOptions{
 
 ```go
 import (
-    "ragflow/internal/harness/core"
+    agentcore "ragflow/internal/harness/core"
     "ragflow/internal/harness/core/middlewares/filesystem"
     "ragflow/internal/harness/core/middlewares/summarization"
     "ragflow/internal/harness/core/middlewares/subagent"
@@ -1118,8 +1118,6 @@ agent := agentcore.NewReActAgent(cfg)
 
 ### Full loop example
 
-See [examples/workflow/loop/](examples/workflow/loop/).
-
 ```go
 wf, err := agentcore.NewLoop(ctx, &agentcore.LoopConfig{
     Name:          "reflection_agent",
@@ -1158,7 +1156,7 @@ func (m *LoggingMiddleware) AfterModelRewrite(
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [docs/develop/contributing.md](../../docs/develop/contributing.md) for guidelines.
 
 ## License
 

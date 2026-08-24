@@ -96,7 +96,7 @@ type WikiPreset struct {
 	ID          string `json:"id"`
 	Topic       string `json:"topic"`
 	Instruction string `json:"instruction"`
-	PageExample string `json:"page_example"`
+	Example     string `json:"example"`
 }
 
 // CompilationTemplateService implements the read-side compilation template
@@ -175,7 +175,7 @@ func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
 			ID:          strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())),
 			Topic:       strings.TrimSpace(yamlStr(doc["topic"])),
 			Instruction: yamlStr(doc["instruction"]),
-			PageExample: yamlStr(doc["page_example"]),
+			Example:     yamlStr(doc["example"]),
 		})
 	}
 	return presets, nil

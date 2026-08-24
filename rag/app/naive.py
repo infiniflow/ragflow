@@ -114,8 +114,6 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
-    callback = callback
-    binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
     sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
 
@@ -894,7 +892,7 @@ class Markdown(MarkdownParser):
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
-        if binary:
+        if binary is not None:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:

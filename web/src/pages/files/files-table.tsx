@@ -287,6 +287,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
+            setRowSelection={setRowSelection}
           />
         );
       },
@@ -414,6 +415,7 @@ export function FilesTable({
           onOk={onFileRenameOk}
           initialName={initialFileName}
           loading={fileRenameLoading}
+          forbidSlash
         ></RenameDialog>
       )}
     </>

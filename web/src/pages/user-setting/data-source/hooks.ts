@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { DynamicFormRef } from '@/components/dynamic-form';
+import { DynamicFormRef, FormFieldConfig } from '@/components/dynamic-form';
 import message from '@/components/ui/message';
 import { RunningStatus } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
@@ -292,6 +292,7 @@ export const useDataSourceRebuild = () => {
 export const useTestDataSource = (
   formRef: RefObject<DynamicFormRef | null>,
   connectorId?: string,
+  fields: FormFieldConfig[] = [],
 ) => {
   const [currentQueryParameters] = useSearchParams();
   const id = currentQueryParameters.get('id');
@@ -303,7 +304,17 @@ export const useTestDataSource = (
     const connectorID = id || values?.id || connectorId || source;
     if (!connectorID || !source) return;
 
-    const isValid = await formRef.current?.trigger();
+    const fieldNames = fields
+      .filter((field) => {
+        if (field.name === 'id' || field.name === 'name') {
+          return false;
+        }
+        return !field.shouldRender || field.shouldRender(values);
+      })
+      .map((field) => field.name);
+    const isValid = await formRef.current?.trigger(
+      fields.length > 0 ? fieldNames : undefined,
+    );
     if (!isValid) return;
 
     setLoading(true);
@@ -318,15 +329,13 @@ export const useTestDataSource = (
       });
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
-      } else {
-        message.error(data.message || t('setting.dataSourceTestFailed'));
       }
     } catch {
-      message.error(t('setting.dataSourceTestFailed'));
+      // The request interceptor owns error notifications for failed requests.
     } finally {
       setLoading(false);
     }
-  }, [connectorId, formRef, id]);
+  }, [connectorId, fields, formRef, id]);
 
   return { loading, handleTest };
 };

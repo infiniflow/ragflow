@@ -59,4 +59,14 @@ export enum DatasetMetadata {
 export enum WebSearchProvider {
   Tavily = 'tavily',
   Querit = 'querit',
+  Serply = 'serply',
+  YouCom = 'youcom',
 }
+
+/**
+ * Providers usable with no credentials at all. You.com serves a rate-limited
+ * keyless endpoint; every other provider requires a key before it can be used.
+ */
+export const KEYLESS_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = [
+  WebSearchProvider.YouCom,
+];

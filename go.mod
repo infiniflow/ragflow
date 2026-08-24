@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/storage v1.63.0
 	github.com/AkmalOt/gomsg v0.0.0-20260407083308-985c3a1a76b7
 	github.com/DATA-DOG/go-sqlmock v1.5.2
+	github.com/JohannesKaufmann/html-to-markdown v1.6.0
 	github.com/LuxorLabs/tenki-sdk-go/sandbox v0.7.0
 	github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.1
@@ -24,6 +25,8 @@ require (
 	github.com/cloudwego/eino v0.9.14
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-message v0.18.2
 	github.com/eric642/e2b-go-sdk v0.1.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -56,7 +59,7 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yfedoseev/office_oxide/go v0.1.8
 	github.com/yfedoseev/pdf_oxide/go v0.3.67
-	github.com/yuin/goldmark v1.4.13
+	github.com/yuin/goldmark v1.7.1
 	github.com/zeebo/xxh3 v1.0.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
@@ -76,6 +79,12 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/gorm v1.25.7
+)
+
+require (
+	github.com/PuerkitoBio/goquery v1.9.2 // indirect
+	github.com/andybalholm/cascadia v1.3.2 // indirect
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 )
 
 require (

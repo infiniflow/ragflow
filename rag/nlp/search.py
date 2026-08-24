@@ -32,6 +32,16 @@ from common import settings
 from common.misc_utils import thread_pool_exec
 
 
+def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
+    """Build the Infinity weighted-sum expression from the vector weight."""
+    term_similarity_weight = 1 - vector_similarity_weight
+    return FusionExpr(
+        "weighted_sum",
+        topn,
+        {"weights": f"{term_similarity_weight:g},{vector_similarity_weight:g}"},
+    )
+
+
 def index_name(uid):
     return f"ragflow_{uid}"
 
@@ -207,7 +217,15 @@ class Dealer:
                 if settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                     src.append(f"q_{len(q_vec)}_vec")
 
-                if settings.DOC_ENGINE_GAUSSDB:
+                if settings.DOC_ENGINE_INFINITY:
+                    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+                    logging.debug(
+                        "Dealer.search fusion: topk=%s vector_similarity_weight=%s",
+                        topk,
+                        vector_similarity_weight,
+                    )
+                    fusionExpr = build_fusion_expr(topk, vector_similarity_weight)
+                elif settings.DOC_ENGINE_GAUSSDB:
                     vector_weight = req.get("vector_similarity_weight", 0.3)
                     fusionExpr = FusionExpr("weighted_sum", topk, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
                 else:

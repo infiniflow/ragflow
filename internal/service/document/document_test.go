@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -227,12 +228,37 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
+func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return &types.SearchResult{Chunks: []map[string]interface{}{
+		{"id": "source-1"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page"},
+	}, Total: 2}, nil
+}
+
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	e.deleteCalls++
 	e.condition = condition
 	e.indexName = indexName
 	e.datasetID = datasetID
 	return 3, nil
+}
+
+type sourceAvailabilityDocEngine struct {
+	fakeChatDocEngine
+	updateConditions []map[string]interface{}
+}
+
+func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return &types.SearchResult{Chunks: []map[string]interface{}{
+		{"id": "source-1"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page"},
+		{"id": "map-1", "compile_kwd": []interface{}{"wiki_map_active"}},
+	}, Total: 3}, nil
+}
+
+func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, _ map[string]interface{}, _, _ string) error {
+	e.updateConditions = append(e.updateConditions, condition)
+	return nil
 }
 
 type metadataDocEngine struct {
@@ -1951,8 +1977,25 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 1 {
 		t.Fatalf("deleteCalls = %d, want 1", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || engine.condition["doc_id"] != "doc-1" {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+}
+
+func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
+	docEngine := &sourceAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	if err := svc.updateSourceChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 1); err != nil {
+		t.Fatalf("updateSourceChunkAvailability failed: %v", err)
+	}
+	if len(docEngine.updateConditions) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(docEngine.updateConditions))
+	}
+	ids, ok := docEngine.updateConditions[0]["id"].([]string)
+	if !ok || len(ids) != 1 || ids[0] != "source-1" {
+		t.Fatalf("updated ids = %#v, want only source-1", docEngine.updateConditions[0]["id"])
 	}
 }
 
