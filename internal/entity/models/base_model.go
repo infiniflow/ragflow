@@ -423,10 +423,9 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		if len(modelResponse.ModelTypes) == 0 {
 			modelResponse.ModelTypes = InferModelTypes(modelName)
 		}
-
 		models = append(models, modelResponse)
 	}
-	return models
+	return FillMissingModelTypes(models)
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool

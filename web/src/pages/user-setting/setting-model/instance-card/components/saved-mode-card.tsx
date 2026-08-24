@@ -37,6 +37,7 @@ import { useTranslation } from 'react-i18next';
 import { DRAFT_INSTANCE_SENTINEL, SavedModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
 import VerifyButton from '../verify-button';
+import { cn } from '@/lib/utils';
 
 /**
  * The saved (non-draft) variant of the provider instance card.
@@ -128,11 +129,17 @@ export function SavedModeCard({
   const displayName = editedInstanceName || instanceName;
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="bg-bg-card px-5 py-3 rounded-xl"
+    >
       <CollapsibleTrigger asChild>
-        <div className="flex items-center gap-1 w-full mb-5">
+        <div
+          className={cn('flex items-center gap-1 w-full ', open ? 'mb-5' : '')}
+        >
           <div
-            className="group w-[calc(100%-40px)] flex items-center flex-1 gap-2 px-2 py-1 cursor-pointer bg-bg-card rounded-md"
+            className="group w-[calc(100%-40px)] flex items-center flex-1 gap-2 cursor-pointer rounded-md"
             data-testid="instance-name-row"
           >
             <Button
@@ -163,7 +170,10 @@ export function SavedModeCard({
               />
             ) : (
               <div
-                className="text-sm font-medium truncate overflow-hidden flex-1 cursor-text"
+                className={cn(
+                  'text-sm font-medium truncate overflow-hidden flex-1 cursor-text hover:text-text-primary',
+                  open ? 'text-text-primary' : 'text-text-secondary',
+                )}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   // startRename();

@@ -198,7 +198,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "")
 	}
 
 	return result, nil
@@ -628,22 +628,65 @@ func wikiActiveStates(output map[string]any) ([]kccommon.WikiMapActiveState, err
 	}
 }
 
-func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+// PipelineLogInput contains the identifiers and optional snapshots needed to
+// persist a pipeline operation log without constructing a PipelineExecutor.
+type PipelineLogInput struct {
+	TenantID   string
+	KbID       string
+	DocumentID string
+	PipelineID string
+	DSL        string
+	Status     string
+	Document   entity.Document
+}
+
+// RecordPipelineLog persists a pipeline operation log without requiring
+// executor setup. Callers that already know a terminal state should pass it in
+// Status; otherwise the writer falls back to the latest document.run value.
+func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
+	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
+}
+
+func recordPipelineLog(
+	ctx context.Context,
+	db *gorm.DB,
+	input PipelineLogInput,
+	createFunc func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error,
+) error {
 	var dslMap entity.JSONMap
-	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
-		dslMap = entity.JSONMap{"raw": dsl}
+	if strings.TrimSpace(input.DSL) == "" {
+		dslMap = entity.JSONMap{}
+	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
+		dslMap = entity.JSONMap{"raw": input.DSL}
 	}
 
 	// The task context contains the document snapshot loaded when the task
 	// started. Reload it here so the operation log reflects the final progress
 	// state written by the progress sink, matching the Python operation-log
 	// creation path.
-	doc := s.taskCtx.Doc
+	doc := input.Document
+	if doc.ID == "" {
+		doc.ID = input.DocumentID
+		doc.KbID = input.KbID
+	}
 	if db != nil {
-		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, docID); err == nil && persisted != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, input.DocumentID); err == nil && persisted != nil {
 			doc = *persisted
 		} else if err != nil {
-			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", docID, err))
+			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", input.DocumentID, err))
+		}
+	}
+	if input.KbID == "" {
+		input.KbID = doc.KbID
+	}
+	if input.PipelineID == "" && doc.PipelineID != nil {
+		input.PipelineID = strings.TrimSpace(*doc.PipelineID)
+	}
+	if input.TenantID == "" && db != nil && input.KbID != "" {
+		if kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, input.KbID); err == nil && kb != nil {
+			input.TenantID = kb.TenantID
+		} else if err != nil {
+			return fmt.Errorf("load knowledgebase %s for pipeline log: %w", input.KbID, err)
 		}
 	}
 
@@ -655,22 +698,22 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
-	if s.taskCtx.PipelineID != "" {
-		pipelineID = &s.canvasID
-		if db != nil {
-			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+	if input.PipelineID != "" {
+		pipelineID = &input.PipelineID
+		if db != nil && strings.TrimSpace(input.DSL) != "" {
+			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil {
 					pipelineTitle = *canvas.Title
 				}
 				pipelineAvatar = canvas.Avatar
 			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
-				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
+				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", input.PipelineID, err))
 			}
 		}
 	}
 
-	operationStatus := status
-	if doc.Run != nil && *doc.Run != "" {
+	operationStatus := input.Status
+	if operationStatus == "" && doc.Run != nil && *doc.Run != "" {
 		operationStatus = *doc.Run
 	}
 	statusValue := "1"
@@ -687,9 +730,9 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
-		TenantID:        s.Tenant().ID,
-		KbID:            s.KB().ID,
-		DocumentID:      docID,
+		TenantID:        input.TenantID,
+		KbID:            input.KbID,
+		DocumentID:      input.DocumentID,
 		PipelineID:      pipelineID,
 		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
@@ -707,7 +750,23 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		Avatar:          pipelineAvatar,
 		Status:          &statusValue,
 	}
-	if err := s.logCreateFunc(ctx, db, log); err != nil {
+	return createFunc(ctx, db, log)
+}
+
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+	pipelineID := ""
+	if s.taskCtx.PipelineID != "" {
+		pipelineID = s.canvasID
+	}
+	if err := recordPipelineLog(ctx, db, PipelineLogInput{
+		TenantID:   s.Tenant().ID,
+		KbID:       s.KB().ID,
+		DocumentID: docID,
+		PipelineID: pipelineID,
+		DSL:        dsl,
+		Status:     status,
+		Document:   s.taskCtx.Doc,
+	}, s.logCreateFunc); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
 }

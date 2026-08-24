@@ -183,7 +183,7 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
 
 ## 🐋 Service configuration
 
-[service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, this file is automatically created based on the [service_conf.yaml.template](./service_conf.yaml.template) file (replacing all environment variables by their values).
+[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.

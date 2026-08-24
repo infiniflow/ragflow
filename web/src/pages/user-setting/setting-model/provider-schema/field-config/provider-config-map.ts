@@ -340,47 +340,25 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'yiyan_ak',
-        label: 'addyiyanAK',
-        type: FormFieldType.Text,
+        name: 'api_key',
+        label: 'apiKey',
+        type: FormFieldType.Password,
         required: true,
-        placeholder: 'yiyanAKMessage',
+        placeholder: 'apiKeyMessage',
         shouldRender: 'hideWhenInstanceExists',
-        validation: { message: 'yiyanAKMessage' },
-      },
-      {
-        name: 'yiyan_sk',
-        label: 'addyiyanSK',
-        type: FormFieldType.Text,
-        required: true,
-        placeholder: 'yiyanSKMessage',
-        shouldRender: 'hideWhenInstanceExists',
-        validation: { message: 'yiyanSKMessage' },
+        validation: { message: 'apiKeyMessage' },
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: {
-        yiyan_ak: values.yiyan_ak,
-        yiyan_sk: values.yiyan_sk,
-      },
+      apiKey: values.api_key,
       modelInfo: [],
     }),
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.BaiduYiYan,
-      api_key: {
-        yiyan_ak: values.yiyan_ak,
-        yiyan_sk: values.yiyan_sk,
-      },
+      api_key: values.api_key,
       model_info: [],
     }),
-    echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
-      return {
-        yiyan_ak: obj.yiyan_ak ?? '',
-        yiyan_sk: obj.yiyan_sk ?? '',
-      };
-    },
   },
 
   // ============ Fish Audio ============

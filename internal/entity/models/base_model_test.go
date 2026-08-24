@@ -23,8 +23,8 @@ import (
 
 // ParseListModel feeds the provider-model list endpoint whose merge treats
 // remote entries as authoritative: every returned entry must carry non-empty
-// model types. Catalog hits keep the catalog types; catalog misses fall back
-// to name-based inference (defaulting to chat), mirroring Python's
+// model types. Catalog hits are normalized; catalog misses fall back to
+// name-based inference (defaulting to chat), mirroring Python's
 // OpenAIAPICompatible._format_model_list.
 func TestParseListModelAssignsModelTypes(t *testing.T) {
 	dir, restore := setupProviderTestDir(t, "aliyun.json")
@@ -35,7 +35,7 @@ func TestParseListModelAssignsModelTypes(t *testing.T) {
 	}
 
 	got := ParseListModel(ModelList{Models: []ModelListItem{
-		{ID: "qwen3-vl-plus"},             // catalog hit: chat+vision+ocr
+		{ID: "qwen3-vl-plus"},             // catalog hit: chat+vision+ocr -> chat+vision
 		{ID: "qwen-vl-plus"},              // catalog hit: chat+vision
 		{ID: "qwen3-vl-flash-2099-01-01"}, // miss: future dated variant -> inferred
 		{ID: "gpt-4o-2099-01-01"},         // miss -> inferred
@@ -47,7 +47,7 @@ func TestParseListModelAssignsModelTypes(t *testing.T) {
 	}})
 
 	want := map[string][]string{
-		"qwen3-vl-plus":             {"chat", "vision", "ocr"}, // catalog wins over inference
+		"qwen3-vl-plus":             {"chat", "vision"},
 		"qwen-vl-plus":              {"chat", "vision"},
 		"qwen3-vl-flash-2099-01-01": {"chat", "vision"},
 		"gpt-4o-2099-01-01":         {"chat", "vision"},

@@ -28,7 +28,9 @@ import (
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
+	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
+	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
 	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
@@ -45,6 +47,8 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "moodle", NewMoodleConnector)
 	registerBuiltIn(registry, "mysql", NewMySQLConnector)
 	registerBuiltIn(registry, "postgresql", NewPostgreSQLConnector)
+	registerBuiltIn(registry, "slack", NewSlackConnector)
+	registerBuiltIn(registry, "sharepoint", NewSharePointConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
 }
