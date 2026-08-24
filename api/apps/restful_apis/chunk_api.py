@@ -13,11 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import base64
 import binascii
 import datetime
 import json
 import logging
+import os
 import re
 
 import xxhash
@@ -67,6 +69,15 @@ from rag.prompts.generator import cross_languages, keyword_extraction
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+# Per-operation timeout for blocking work inside the async add_chunk route
+# (#18174). One stalled embed/insert must not freeze the Quart event loop
+# or the entire RAGFlow API. The bound is intentionally generous — a
+# well-behaved OpenAI-compatible embedding call returns in a few seconds,
+# and a healthy docStore insert in well under one. 30s is the operational
+# ceiling before the request is considered stuck and a clear error is
+# returned to the caller.
+ADD_CHUNK_OPERATION_TIMEOUT = int(os.environ.get("ADD_CHUNK_OPERATION_TIMEOUT", "30"))
 
 
 def _decode_chunk_image_base64(image_base64):
@@ -1037,10 +1048,36 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
-    v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+    # Offload the blocking LLM call to a worker thread and bound it with
+    # a timeout so a stuck provider does not freeze the Quart event loop
+    # (#18174). ``thread_pool_exec`` already wraps the call in
+    # ``loop.run_in_executor`` with a fresh ``ThreadPoolExecutor``; the
+    # outer ``asyncio.wait_for`` enforces the time bound.
+    encode_inputs = [doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])]
+    try:
+        v, c = await asyncio.wait_for(
+            thread_pool_exec(embd_mdl.encode, encode_inputs),
+            timeout=ADD_CHUNK_OPERATION_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        return get_error_data_result(message=f"Embedding model timed out after {ADD_CHUNK_OPERATION_TIMEOUT}s.")
+    except Exception as e:
+        return get_error_data_result(message=f"Embedding model failed: {e}")
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
+    # Same treatment for the docStore insert — Infinity's
+    # ``table_instance.insert(docs)`` has been observed to hang on
+    # pooled connections (#18174), so the worker thread + timeout
+    # is the only thing keeping the rest of the API alive.
+    try:
+        await asyncio.wait_for(
+            thread_pool_exec(settings.docStoreConn.insert, [d], search.index_name(dataset_tenant_id), dataset_id),
+            timeout=ADD_CHUNK_OPERATION_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        return get_error_data_result(message=f"Document store insert timed out after {ADD_CHUNK_OPERATION_TIMEOUT}s.")
+    except Exception as e:
+        return get_error_data_result(message=f"Document store insert failed: {e}")
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
     key_mapping = {
