@@ -305,8 +305,17 @@ async def ask_about_embedded(tenant_id=None):
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
+        if not await thread_pool_exec(SearchService.accessible, search_id, uid):
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
+
+    # `async_ask` lets `search_config["kb_ids"]` override the request kb_ids,
+    # so validate the effective set rather than `req["kb_ids"]` alone.
+    kb_ids = search_config.get("kb_ids", req["kb_ids"])
+    for kb_id in kb_ids:
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=uid):
+            return get_error_data_result(message=f"You don't own the dataset {kb_id}")
 
     chat_llm_name = ""
     if not search_config or not search_config.get("chat_id"):
@@ -357,11 +366,13 @@ async def retrieval_test_embedded(tenant_id=None):
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
     search_config = {}
+    if req.get("search_id", ""):
+        if not await thread_pool_exec(SearchService.accessible, req["search_id"], tenant_id):
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
 
     async def _retrieval():
         nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id, prefetch_size
         local_doc_ids = list(doc_ids) if doc_ids else []
-        tenant_ids = []
         _question = question
 
         meta_data_filter = {}
@@ -407,14 +418,11 @@ async def retrieval_test_embedded(tenant_id=None):
                 metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
             )
 
-        tenants = await thread_pool_exec(UserTenantService.query, user_id=tenant_id)
         for kb_id in kb_ids:
-            for tenant in tenants:
-                if await thread_pool_exec(KnowledgebaseService.query, tenant_id=tenant.tenant_id, id=kb_id):
-                    tenant_ids.append(tenant.tenant_id)
-                    break
-            else:
+            if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=tenant_id):
                 return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        kbs = await thread_pool_exec(KnowledgebaseService.get_by_ids, kb_ids)
+        tenant_ids = list({kb.tenant_id for kb in kbs})
 
         e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
         if not e:
@@ -490,6 +498,8 @@ async def related_questions_embedded(tenant_id=None):
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
+        if not await thread_pool_exec(SearchService.accessible, search_id, tenant_id):
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
@@ -551,7 +561,16 @@ async def mindmap(tenant_id=None):
     req = await get_request_json()
 
     search_id = req.get("search_id", "")
-    search_app = await thread_pool_exec(SearchService.get_detail, search_id) if search_id else {}
+    search_app = {}
+    if search_id:
+        if not await thread_pool_exec(SearchService.accessible, search_id, tenant_id):
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
+        search_app = await thread_pool_exec(SearchService.get_detail, search_id)
+
+    # check if the kb_ids is accessible for this user
+    for kb_id in req["kb_ids"]:
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=tenant_id):
+            return get_error_data_result(message=f"You don't own the dataset {kb_id}")
 
     mind_map = await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:

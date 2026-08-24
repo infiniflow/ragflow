@@ -793,6 +793,8 @@ async def bulk_delete_chats():
             chat_id = req.get("chat_id")
             if chat_id:
                 try:
+                    if not await _ensure_owned_chat(chat_id):
+                        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
                     if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
                         return get_data_error_result(message=f"Failed to delete chat {chat_id}")
                     return get_json_result(data=True)
@@ -1180,11 +1182,20 @@ async def transcription():
 async def mindmap():
     req = await get_request_json()
     search_id = req.get("search_id", "")
-    search_app = SearchService.get_detail(search_id) if search_id else {}
+    search_app = {}
+    if search_id:
+        if not await thread_pool_exec(SearchService.accessible, search_id, current_user.id):
+            return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
+        search_app = await thread_pool_exec(SearchService.get_detail, search_id)
     search_config = search_app.get("search_config", {}) if search_app else {}
     kb_ids = search_config.get("kb_ids", [])
     kb_ids.extend(req["kb_ids"])
     kb_ids = list(set(kb_ids))
+
+    # check if the kb_ids is accessible for this user
+    for kb_id in kb_ids:
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=current_user.id):
+            return get_data_error_result(message=f"You don't own the dataset {kb_id}")
 
     mind_map = await gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
     if "error" in mind_map:
@@ -1201,7 +1212,9 @@ async def recommendation():
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
-        if search_app := SearchService.get_detail(search_id):
+        if not await thread_pool_exec(SearchService.accessible, search_id, current_user.id):
+            return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
+        if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
     question = req["question"]

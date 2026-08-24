@@ -645,6 +645,11 @@ async def set_tenant_info():
     req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
+        # `get_info_by` only returns tenants the current user owns (OWNER role);
+        # reject tenant ids from the body that belong to someone else.
+        tenants = TenantService.get_info_by(current_user.id)
+        if not any(tenant["tenant_id"] == tid for tenant in tenants):
+            return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
         TenantService.update_by_id(tid, req)
         return get_json_result(data=True)
     except Exception as e:
