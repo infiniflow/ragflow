@@ -1970,9 +1970,12 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 		t.Fatalf("expected important_kwd populated with 2 keywords, got %v", chunks[0]["important_kwd"])
 	}
 
-	// Verify getChunkText on the resulting chunk merges title, extracted keywords, and content
+	// Verify getChunkText on the resulting chunk merges extracted keywords and content without title pollution
 	chunkText := getChunkText(chunks[0])
-	if !strings.Contains(chunkText, "Tender_Notice") || !strings.Contains(chunkText, "Bidding") || !strings.Contains(chunkText, "Procurement") {
-		t.Fatalf("expected chunk text to contain title and extracted keywords, got %q", chunkText)
+	if !strings.Contains(chunkText, "Bidding") || !strings.Contains(chunkText, "Procurement") || !strings.Contains(chunkText, "General bidding notice content.") {
+		t.Fatalf("expected chunk text to contain content and extracted keywords, got %q", chunkText)
+	}
+	if strings.Contains(chunkText, "Tender_Notice") {
+		t.Fatalf("expected chunk text to NOT contain title when content is present, got %q", chunkText)
 	}
 }

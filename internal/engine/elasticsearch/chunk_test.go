@@ -17,7 +17,9 @@
 package elasticsearch
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -526,5 +528,40 @@ func TestCalculatePaginationReportedRegression(t *testing.T) {
 		if surfaced[i] != i {
 			t.Errorf("page 7: surfaced[%d] = %d, want %d", i, surfaced[i], i)
 		}
+	}
+}
+
+func TestFormatOrderedTagFeas(t *testing.T) {
+	tagFeas := map[string]any{
+		"价格咨询": 4,
+		"活动咨询": 9,
+		"正面评价": 3,
+		"服务投诉": 6,
+		"质量投诉": 3,
+	}
+
+	raw, ok := formatOrderedTagFeas(tagFeas)
+	if !ok {
+		t.Fatal("expected formatOrderedTagFeas to succeed")
+	}
+
+	expectedJSON := `{"活动咨询":9,"服务投诉":6,"价格咨询":4,"正面评价":3,"质量投诉":3}`
+	if string(raw) != expectedJSON {
+		t.Fatalf("formatOrderedTagFeas output mismatch:\ngot:  %s\nwant: %s", string(raw), expectedJSON)
+	}
+
+	// Verify that jsonIterator preserves the raw byte order inside docCopy
+	docCopy := map[string]any{
+		"doc_id":   "doc-1",
+		"tag_feas": raw,
+	}
+	var buf bytes.Buffer
+	if err := jsonIterator.NewEncoder(&buf).Encode(docCopy); err != nil {
+		t.Fatalf("jsonIterator Encode failed: %v", err)
+	}
+
+	encodedStr := buf.String()
+	if !strings.Contains(encodedStr, `"tag_feas":{"活动咨询":9,"服务投诉":6,"价格咨询":4,"正面评价":3,"质量投诉":3}`) {
+		t.Fatalf("encoded JSON does not preserve score-descending order:\n%s", encodedStr)
 	}
 }

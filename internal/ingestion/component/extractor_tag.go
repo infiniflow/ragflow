@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	// defaultMatchCoverageThreshold is the asymmetric coverage threshold for Phase 1 (45%).
-	defaultMatchCoverageThreshold = 0.45
+	// defaultMatchCoverageThreshold is the asymmetric coverage threshold for Phase 1 (55%).
+	defaultMatchCoverageThreshold = 0.55
 
 	// defaultTopK is the maximum number of matched example candidates to aggregate in Phase 1.
 	defaultTopK = 5
@@ -86,11 +86,12 @@ Output:
 
 // MemoryTagIndex is an in-memory inverted index of tag examples (immutable after construction, safe for concurrent use).
 type MemoryTagIndex struct {
-	examples   []schema.TagLabel
-	postings   map[string][]int   // word -> doc_ids (compact slice without per-doc map overhead)
-	idfs       map[string]float64 // word -> idf
-	exTotalIDF []float64          // doc_id -> sum(IDF(w))
-	allTags    map[string]float64 // tag -> background prob (S=10)
+	examples     []schema.TagLabel
+	postings     map[string][]int   // word -> doc_ids (compact slice without per-doc map overhead)
+	idfs         map[string]float64 // word -> idf
+	exTotalIDF   []float64          // doc_id -> sum(IDF(w))
+	exTokenCount []int              // doc_id -> number of unique tokens
+	allTags      map[string]float64 // tag -> background prob (S=10)
 }
 
 func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer) *MemoryTagIndex {
@@ -176,14 +177,16 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 		idfs[w] = math.Log(1.0 + (N-float64(df)+0.5)/(float64(df)+0.5))
 	}
 
-	// 3. Precompute total IDF per valid example (short-text TF=1, avoiding per-example TF maps).
+	// 3. Precompute total IDF and token count per valid example (short-text TF=1, avoiding per-example TF maps).
 	exTotalIDF := make([]float64, len(cleanExamples))
+	exTokenCount := make([]int, len(cleanExamples))
 	for i, wordSet := range exWordSets {
 		var sum float64
 		for w := range wordSet {
 			sum += idfs[w]
 		}
 		exTotalIDF[i] = sum
+		exTokenCount[i] = len(wordSet)
 	}
 
 	// 4. Background prior probability distribution (smoothed Dirichlet prior).
@@ -194,11 +197,12 @@ func buildMemoryTagIndex(rawExamples []schema.TagLabel, tok tokenizer.Tokenizer)
 	}
 
 	return &MemoryTagIndex{
-		examples:   cleanExamples,
-		postings:   postings,
-		idfs:       idfs,
-		exTotalIDF: exTotalIDF,
-		allTags:    bgProportions,
+		examples:     cleanExamples,
+		postings:     postings,
+		idfs:         idfs,
+		exTotalIDF:   exTotalIDF,
+		exTokenCount: exTokenCount,
+		allTags:      bgProportions,
 	}
 }
 
@@ -260,20 +264,25 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	chunkWordSet := make(map[string]struct{})
+	chunkWordFreq := make(map[string]int)
 	for _, w := range strings.Fields(tokens) {
-		chunkWordSet[w] = struct{}{}
+		if w = strings.TrimSpace(w); w != "" {
+			chunkWordFreq[w]++
+		}
 	}
 
 	// 1. Inverted index lookup (skips irrelevant samples).
 	candidateInterIDF := make(map[int]float64)
-	for w := range chunkWordSet {
+	candidateMatchedTokens := make(map[int]int)
+	for w, freq := range chunkWordFreq {
 		idf, exists := idx.idfs[w]
 		if !exists || idf <= 0 {
 			continue
 		}
+		tfBoost := 1.0 + 0.3*math.Log(1.0+float64(freq))
 		for _, docID := range idx.postings[w] {
-			candidateInterIDF[docID] += idf
+			candidateInterIDF[docID] += idf * tfBoost
+			candidateMatchedTokens[docID]++
 		}
 	}
 	if len(candidateInterIDF) == 0 {
@@ -291,10 +300,34 @@ func matchAndTagChunk(
 		if exTotal <= 0 {
 			continue
 		}
-		cov := interIDF / exTotal
-		if cov >= defaultMatchCoverageThreshold {
-			passed = append(passed, candidateScore{docID: docID, coverage: cov})
+		matchedTokens := candidateMatchedTokens[docID]
+		exTokens := 0
+		if docID < len(idx.exTokenCount) {
+			exTokens = idx.exTokenCount[docID]
 		}
+
+		if exTokens >= 2 {
+			if matchedTokens < 2 {
+				continue
+			}
+		} else {
+			// For 1-token examples, require high IDF (exTotal >= 1.5)
+			if exTotal < 1.5 {
+				continue
+			}
+		}
+
+		cov := interIDF / exTotal
+		if exTokens < 2 {
+			if cov < 0.999 {
+				continue
+			}
+		} else {
+			if cov < defaultMatchCoverageThreshold {
+				continue
+			}
+		}
+		passed = append(passed, candidateScore{docID: docID, coverage: cov})
 	}
 	if len(passed) == 0 {
 		return nil
@@ -310,14 +343,15 @@ func matchAndTagChunk(
 	topK := min(defaultTopK, len(passed))
 
 	tagWeightedCounts := make(map[string]float64)
-	var totalWeightSum float64 // W = sum(Coverage_i)
+	var totalWeightSum float64
 
 	for i := 0; i < topK; i++ {
 		cov := passed[i].coverage
 		ex := idx.examples[passed[i].docID]
-		totalWeightSum += cov // Accumulate total weight once per matched candidate document.
+		totalWeightSum += cov
+		tagCount := float64(max(1, len(ex.Tags)))
 		for _, t := range ex.Tags {
-			tagWeightedCounts[t] += cov // Weighted tag accumulation.
+			tagWeightedCounts[t] += cov / tagCount
 		}
 	}
 
@@ -325,24 +359,67 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	// 4. Score calculation: pure Lift with average coverage floor.
+	// 4. Score calculation: Rank-decay gradient model ensuring healthy [8/9, 7, 6, 5, 4] distribution.
 	avgCov := totalWeightSum / float64(topK)
-
-	type tagScore struct {
-		name  string
-		score int
+	type tagCandidate struct {
+		name      string
+		weightedC float64
+		lift      float64
+		combined  float64
 	}
-	var scored []tagScore
+	var candidates []tagCandidate
+	var maxWeightedC float64
 	for t, weightedC := range tagWeightedCounts {
+		if weightedC > maxWeightedC {
+			maxWeightedC = weightedC
+		}
 		bg := idx.allTags[t]
 		if bg <= 0 {
 			bg = 0.0001
 		}
 		pMatch := weightedC / totalWeightSum
 		lift := pMatch / bg
-		raw := max(lift, 5.0*avgCov)
+		combined := weightedC * math.Sqrt(max(0.1, lift))
+		candidates = append(candidates, tagCandidate{
+			name:      t,
+			weightedC: weightedC,
+			lift:      lift,
+			combined:  combined,
+		})
+	}
+	if maxWeightedC <= 0 {
+		maxWeightedC = 1.0
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].combined != candidates[j].combined {
+			return candidates[i].combined > candidates[j].combined
+		}
+		if candidates[i].weightedC != candidates[j].weightedC {
+			return candidates[i].weightedC > candidates[j].weightedC
+		}
+		return candidates[i].name < candidates[j].name
+	})
+
+	type tagScore struct {
+		name  string
+		score int
+	}
+	var scored []tagScore
+	effectiveRank := 0
+	covFactor := min(1.0, math.Sqrt(max(0.0, avgCov)))
+	for i, c := range candidates {
+		if i > 0 {
+			prev := candidates[i-1].combined
+			if prev > 0 && (prev-c.combined)/prev > 0.05 {
+				effectiveRank++
+			}
+		}
+		rankBase := max(3.0, 8.5-2.0*float64(effectiveRank))
+		relWeight := c.weightedC / maxWeightedC
+		raw := rankBase * covFactor * math.Pow(relWeight, 0.4)
 		s := min(10, max(1, roundInt(raw)))
-		scored = append(scored, tagScore{name: t, score: s})
+		scored = append(scored, tagScore{name: c.name, score: s})
 	}
 
 	if len(scored) == 0 {
@@ -367,6 +444,7 @@ func matchAndTagChunk(
 	}
 
 	chunk[common.TAG_FLD] = tagWeights
+	chunk["tag_kwd"] = matchedTags
 
 	return &schema.TaggedChunk{
 		Content:    text,
@@ -434,8 +512,25 @@ func (c *boundedTagCache) markRecentLocked(key string) {
 
 var tagSourceFileIndexCache = newBoundedTagCache(tagSourceCacheMax)
 
+func isHighConfidenceMatch(matched *schema.TaggedChunk) bool {
+	if matched == nil {
+		return false
+	}
+	for _, score := range matched.TagWeights {
+		if score >= 6 {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in extractorInputs) ([]map[string]any, error) {
-	indexed, ok := c.resolveTagSource(ctx, in.lang)
+	lang := in.lang
+	if lang == "" {
+		lang = detectTextLanguage(in.chunks)
+	}
+
+	indexed, ok := c.resolveTagSource(ctx, lang)
 	if !ok || len(in.chunks) == 0 {
 		common.Info("extractor tags: skipped",
 			zap.Int("chunk_count", len(in.chunks)),
@@ -446,7 +541,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 	}
 
 	topN := c.Param.Tags.TopN
-	tok := tokenizer.New(in.lang)
+	tok := tokenizer.New(lang)
 
 	var examples []schema.TaggedChunk
 	var docsToTag []map[string]any
@@ -456,7 +551,9 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 		}
 		matched := matchAndTagChunk(d, indexed, tok, topN)
 		if matched != nil {
-			examples = append(examples, *matched)
+			if isHighConfidenceMatch(matched) {
+				examples = append(examples, *matched)
+			}
 		} else {
 			docsToTag = append(docsToTag, d)
 		}
@@ -685,7 +782,9 @@ func parseCSVQuoteAwareReader(r io.Reader) []schema.TagLabel {
 
 // parseXLSXTagSource mirrors rag/app/tag.py's .xlsx path: every sheet is read
 // with no header, and each row contributes a (content, tags) pair from its
-// first and second non-empty cells. The second cell holds comma-separated tags.
+// first and second non-empty cells. Single-cell rows are accumulated as body text
+// and prepended to the next tagged row, matching CSV parsing behavior.
+// The second cell holds comma-separated tags.
 func parseXLSXTagSource(data []byte) []schema.TagLabel {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
@@ -701,6 +800,14 @@ func parseXLSXTagSource(data []byte) []schema.TagLabel {
 			common.Warn(fmt.Sprintf("extractor tags: read xlsx sheet %q: %v", sheet, err))
 			continue
 		}
+		content := ""
+		appendLine := func(s string) {
+			if content == "" {
+				content = s
+			} else {
+				content += "\n" + s
+			}
+		}
 		for _, row := range rows {
 			var cells []string
 			for _, c := range row {
@@ -708,11 +815,17 @@ func parseXLSXTagSource(data []byte) []schema.TagLabel {
 					cells = append(cells, c)
 				}
 			}
-			if len(cells) < 2 {
+			if len(cells) == 0 {
 				continue
 			}
+			if len(cells) == 1 {
+				appendLine(cells[0])
+				continue
+			}
+			appendLine(cells[0])
 			tags := splitAndTrim(cells[1], ",")
-			result = append(result, schema.TagLabel{Content: cells[0], Tags: tags})
+			result = append(result, schema.TagLabel{Content: content, Tags: tags})
+			content = ""
 		}
 	}
 	return result
@@ -735,17 +848,35 @@ func detectCSVDelimiterBytes(data []byte) string {
 	scanner := newTagSourceScanner(bytes.NewReader(data), len(data))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if len(strings.Split(line, ",")) == 2 {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		// Try quote-aware parse for comma
+		rComma := csv.NewReader(strings.NewReader(line))
+		rComma.Comma = ','
+		if rec, err := rComma.Read(); err == nil {
+			if len(rec) == 2 {
+				comma++
+			}
+		} else if len(strings.Split(line, ",")) == 2 {
 			comma++
 		}
-		if len(strings.Split(line, "\t")) == 2 {
+
+		// Try quote-aware parse for tab
+		rTab := csv.NewReader(strings.NewReader(line))
+		rTab.Comma = '\t'
+		if rec, err := rTab.Read(); err == nil {
+			if len(rec) == 2 {
+				tab++
+			}
+		} else if len(strings.Split(line, "\t")) == 2 {
 			tab++
 		}
 	}
 	if scanner.Err() != nil {
 		common.Warn(fmt.Sprintf("extractor tags: delimiter scan: %v", scanner.Err()))
 	}
-	if tab >= comma {
+	if tab > 0 && tab >= comma {
 		return "\t"
 	}
 	return ","
@@ -799,14 +930,11 @@ func getChunkText(chunk map[string]any) string {
 
 	var parts []string
 
-	// 1. Extract document title / name with extension stripping and fallback chain
-	for _, titleKey := range []string{"docnm_kwd", "title_tks", "title"} {
-		if v, ok := chunk[titleKey].(string); ok && strings.TrimSpace(v) != "" {
-			if cleaned := cleanTitle(v); cleaned != "" {
-				parts = append(parts, cleaned)
-				break
-			}
-		}
+	// 1. Extract main chunk content (prioritize content_with_weight, then text)
+	if v, ok := chunk["content_with_weight"].(string); ok && strings.TrimSpace(v) != "" {
+		parts = append(parts, strings.TrimSpace(v))
+	} else if v, ok := chunk["text"].(string); ok && strings.TrimSpace(v) != "" {
+		parts = append(parts, strings.TrimSpace(v))
 	}
 
 	// 2. Extract important keywords if present (supports []string, []any, string)
@@ -833,17 +961,75 @@ func getChunkText(chunk map[string]any) string {
 		}
 	}
 
-	// 3. Extract main chunk content
-	if v, ok := chunk["content_with_weight"].(string); ok && strings.TrimSpace(v) != "" {
-		parts = append(parts, strings.TrimSpace(v))
-	} else if v, ok := chunk["text"].(string); ok && strings.TrimSpace(v) != "" {
-		parts = append(parts, strings.TrimSpace(v))
+	// 3. Fallback: only extract title/name if chunk has NO text content or keywords
+	if len(parts) == 0 {
+		for _, titleKey := range []string{"docnm_kwd", "title_tks", "title"} {
+			if v, ok := chunk[titleKey].(string); ok && strings.TrimSpace(v) != "" {
+				if cleaned := cleanTitle(v); cleaned != "" {
+					parts = append(parts, cleaned)
+					break
+				}
+			}
+		}
 	}
 
 	if len(parts) == 0 {
 		return ""
 	}
 	return strings.Join(parts, " ")
+}
+
+func detectTextLanguage(chunks []map[string]any) string {
+	sampleCount := min(3, len(chunks))
+	hasKana := false
+	hasHangul := false
+	hasCJK := false
+
+	for i := 0; i < sampleCount; i++ {
+		txt := getChunkText(chunks[i])
+		if txt == "" {
+			continue
+		}
+		runes := []rune(txt)
+		if len(runes) > 300 {
+			runes = runes[:300]
+		}
+		for _, r := range runes {
+			if (r >= 0x3040 && r <= 0x309F) || (r >= 0x30A0 && r <= 0x30FF) {
+				hasKana = true
+				break
+			}
+			if (r >= 0xAC00 && r <= 0xD7AF) || (r >= 0x1100 && r <= 0x11FF) {
+				hasHangul = true
+			}
+			if (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF) {
+				hasCJK = true
+			}
+		}
+		if hasKana {
+			return "Japanese"
+		}
+	}
+
+	if hasKana {
+		return "Japanese"
+	}
+	if hasHangul {
+		return "Korean"
+	}
+	if hasCJK {
+		return "Chinese"
+	}
+	return "English"
+}
+
+func containsCJK(s string) bool {
+	for _, r := range s {
+		if (r >= 0x4e00 && r <= 0x9fff) || (r >= 0x3400 && r <= 0x4dbf) {
+			return true
+		}
+	}
+	return false
 }
 
 func roundInt(f float64) int {
@@ -873,26 +1059,23 @@ func llmTagChunk(
 		return
 	}
 
-	if cached := getTaggerLLMCache(ctx, llmID, text, allTags, topN); cached != nil {
-		chunk[common.TAG_FLD] = cached
-		return
-	}
-
+	textHash := int64(xxhash.Sum64String(text))
 	var picked []schema.TaggedChunk
 	if len(examples) > 2 {
-		picked = randomChoices(examples, 2)
+		picked = sampleWithoutReplacement(examples, 2, textHash)
 	} else if len(examples) > 0 {
 		picked = examples
 	} else if idx != nil && len(idx.examples) > 0 {
-		// Cold-start fallback: sample real examples from index, avoiding fake mock tags.
+		// Cold-start fallback: sample real examples deterministically using text hash seed
 		sampleCount := min(2, len(idx.examples))
-		for i := 0; i < sampleCount; i++ {
-			ex := idx.examples[i]
-			weights := make(map[string]int, len(ex.Tags))
-			p := 1.0 / float64(max(1, len(ex.Tags)))
-			for _, t := range ex.Tags {
-				lift := p / max(1e-6, idx.allTags[t])
-				weights[t] = min(10, max(1, roundInt(lift)))
+		r := rand.New(rand.NewSource(textHash))
+		perm := r.Perm(len(idx.examples))[:sampleCount]
+		for _, idxDoc := range perm {
+			ex := idx.examples[idxDoc]
+			weights := make(OrderedTagWeights, len(ex.Tags))
+			for tagRank, t := range ex.Tags {
+				score := max(3, 9-tagRank*3)
+				weights[t] = score
 			}
 			picked = append(picked, schema.TaggedChunk{
 				Content:    ex.Content,
@@ -900,6 +1083,16 @@ func llmTagChunk(
 				TagWeights: weights,
 			})
 		}
+	}
+
+	if cached := getTaggerLLMCache(ctx, llmID, text, allTags, picked, topN); cached != nil {
+		chunk[common.TAG_FLD] = cached
+		tagKwdList := make([]string, 0, len(cached))
+		for k := range cached {
+			tagKwdList = append(tagKwdList, k)
+		}
+		chunk["tag_kwd"] = tagKwdList
+		return
 	}
 
 	tagNames := sortedTagNames(allTags)
@@ -946,7 +1139,12 @@ func llmTagChunk(
 
 	if len(result) > 0 {
 		chunk[common.TAG_FLD] = result
-		setTaggerLLMCache(ctx, llmID, text, allTags, topN, result)
+		tagKwdList := make([]string, 0, len(result))
+		for k := range result {
+			tagKwdList = append(tagKwdList, k)
+		}
+		chunk["tag_kwd"] = tagKwdList
+		setTaggerLLMCache(ctx, llmID, text, allTags, picked, topN, result)
 	}
 }
 
@@ -1028,7 +1226,7 @@ func jsonRepairExtract(raw string) map[string]any {
 	return obj
 }
 
-func taggerCacheKey(llmID, text string, allTags map[string]float64, topN int) string {
+func taggerCacheKey(llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) string {
 	hasher := xxhash.New()
 	hasher.Write([]byte(llmID))
 	hasher.Write([]byte("\x00"))
@@ -1037,16 +1235,23 @@ func taggerCacheKey(llmID, text string, allTags map[string]float64, topN int) st
 	tagNames := sortedTagNames(allTags)
 	hasher.Write([]byte(strings.Join(tagNames, ",")))
 	hasher.Write([]byte("\x00"))
+	for _, ex := range examples {
+		hasher.Write([]byte(ex.Content))
+		hasher.Write([]byte("\x00"))
+		tagsJSON, _ := json.Marshal(ex.TagWeights)
+		hasher.Write(tagsJSON)
+		hasher.Write([]byte("\x00"))
+	}
 	hasher.Write([]byte(fmt.Sprintf("%d", topN)))
 	return fmt.Sprintf("tagger:%x", hasher.Sum64())
 }
 
-func getTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, topN int) map[string]int {
+func getTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) map[string]int {
 	client := redis.Get()
 	if client == nil {
 		return nil
 	}
-	key := taggerCacheKey(llmID, text, allTags, topN)
+	key := taggerCacheKey(llmID, text, allTags, examples, topN)
 	data, err := client.Get(ctx, key)
 	if err != nil || data == "" {
 		return nil
@@ -1058,7 +1263,7 @@ func getTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[stri
 	return result
 }
 
-func setTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, topN int, result map[string]int) {
+func setTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int, result map[string]int) {
 	if result == nil {
 		return
 	}
@@ -1066,7 +1271,7 @@ func setTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[stri
 	if client == nil {
 		return
 	}
-	key := taggerCacheKey(llmID, text, allTags, topN)
+	key := taggerCacheKey(llmID, text, allTags, examples, topN)
 	data, err := json.Marshal(result)
 	if err != nil {
 		return
@@ -1083,13 +1288,20 @@ func sortedTagNames(allTags map[string]float64) []string {
 	return out
 }
 
-func randomChoices(slice []schema.TaggedChunk, k int) []schema.TaggedChunk {
-	if len(slice) == 0 {
+func sampleWithoutReplacement(slice []schema.TaggedChunk, k int, seed int64) []schema.TaggedChunk {
+	if len(slice) == 0 || k <= 0 {
 		return nil
 	}
+	if len(slice) <= k {
+		out := make([]schema.TaggedChunk, len(slice))
+		copy(out, slice)
+		return out
+	}
+	r := rand.New(rand.NewSource(seed))
+	perm := r.Perm(len(slice))
 	out := make([]schema.TaggedChunk, k)
-	for i := range k {
-		out[i] = slice[rand.IntN(len(slice))]
+	for i := 0; i < k; i++ {
+		out[i] = slice[perm[i]]
 	}
 	return out
 }
