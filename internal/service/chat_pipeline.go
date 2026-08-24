@@ -614,6 +614,9 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		var knowledges []string
 		prefetchSize := int(chat.PrefetchSize)
+		if prefetchSize <= 0 {
+			prefetchSize = 64
+		}
 
 		// When hasKnowledgeParam is true, runs (mutually exclusive):
 		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.

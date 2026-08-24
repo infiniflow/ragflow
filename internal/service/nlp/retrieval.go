@@ -76,6 +76,8 @@ type RetrievalResult struct {
 // - Prefetch candidates for reranking
 // - Perform reranking via Rerank()
 // - Sort indices by score descending and filter by threshold
+// - Require Page * PageSize to fit within PrefetchSize
+// - Support only the first page when a rerank model is configured
 // - Calculate pagination to extract actual page returned from reranked results
 // - Build chunks
 // - Build document aggregation if specified
@@ -115,11 +117,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	pageSize := req.PageSize
 	prefetchSize := *req.PrefetchSize
 	if prefetchSize <= 0 || req.Page > prefetchSize/pageSize {
-		requiredSize := "overflow"
-		if req.Page <= int(^uint(0)>>1)/pageSize {
-			requiredSize = strconv.Itoa(req.Page * pageSize)
-		}
-		return nil, fmt.Errorf("prefetch_size(%d) must be greater than page * page_size(%s) to ensure correct pagination", prefetchSize, requiredSize)
+		return nil, fmt.Errorf("prefetch_size(%d) must be greater than or equal to page(%d) * page_size(%d)", prefetchSize, req.Page, pageSize)
 	}
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
