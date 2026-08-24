@@ -537,7 +537,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	}
 
 	if len(result.Tables) > 0 {
-		result.Tables = tbl.MergeTablesAcrossPages(result.Tables, nil)
+		result.Tables = tbl.MergeTablesAcrossPages(result.Tables, medianHeights, result.PageHeight)
 	}
 
 	boxes = tbl.ExtractTableAndReplace(boxes, result.Tables)

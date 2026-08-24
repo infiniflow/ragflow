@@ -287,7 +287,7 @@ func ExtractTableAndReplace(boxes []pdf.TextBox, tables []pdf.TableItem) []pdf.T
 	}
 
 	MarkNoMergeTables(boxes, tables)
-	tables = MergeTablesAcrossPages(tables, nil)
+	tables = MergeTablesAcrossPages(tables, nil, nil)
 
 	// Build replacements AFTER merge so tableIdx refers to the merged slice.
 	replacements := buildReplacementsAfterMerge(boxes, tables, removeSet)
