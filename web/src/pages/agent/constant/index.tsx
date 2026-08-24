@@ -87,6 +87,7 @@ export enum RetrievalFrom {
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
+  prefetch_size: 64,
   top_k: 1024,
   kb_ids: [],
   rerank_id: '',
