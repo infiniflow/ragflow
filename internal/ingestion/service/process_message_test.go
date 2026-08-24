@@ -28,7 +28,7 @@ func TestProcessMessage_MemoryTaskDispatches(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Memory extractor must be enabled for the memory branch to enqueue.
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
 
@@ -77,7 +77,7 @@ func TestProcessMessage_MemoryTaskDisabledAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"}) // memorySvc nil by default
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"}) // memorySvc nil by default
 	handle := newFakeHandle("mem-task-2", common.TaskTypeMemory)
 
 	ingestor.processMessage(handle)
@@ -108,7 +108,7 @@ func TestExecuteMemoryTaskAlreadyFailedAcks(t *testing.T) {
 		t.Fatalf("insert already-failed task: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Real memory service (non-nil memories) so HandleSaveToMemoryTask gets past
 	// the nil-guard and reaches the progress==-1 "already failed" branch.
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
@@ -145,7 +145,7 @@ func TestExecuteMemoryTaskTransientFailureNacks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-task-x", TaskType: common.TaskTypeMemory}}
@@ -177,7 +177,7 @@ func TestProcessMessage_NonIngestionTaskAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle("task-1", "not-ingestion")
 
 	ingestor.processMessage(handle)
@@ -196,7 +196,7 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// No task seeded in DB — StartRunning returns ErrTaskNotFound.
 	handle := newFakeHandle("no-such-task", common.TaskTypeIngestionTask)
 
@@ -234,7 +234,7 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 		t.Fatalf("set COMPLETED: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
@@ -267,7 +267,7 @@ func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Pre-claim the task so processMessage sees a claim conflict.
 	ingestor.claimTask(taskID)
 
@@ -291,7 +291,7 @@ func TestProcessMessage_ClaimSucceedsEnqueues(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
@@ -322,7 +322,7 @@ func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	// maxConcurrency=2 → channel cap=4. Fill it completely.
-	ingestor := NewIngestor("test", 2, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 2, []string{"pdf"})
 	for i := 0; i < cap(ingestor.taskChan); i++ {
 		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
 	}
@@ -387,7 +387,7 @@ func TestProcessMessage_StartRunningErrorNacks(t *testing.T) {
 		t.Fatalf("drop table: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
