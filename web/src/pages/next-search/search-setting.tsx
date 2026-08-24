@@ -20,6 +20,7 @@ import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
+import { PrefetchSizeFormField } from '@/components/prefetch-size-item';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
 import {
@@ -110,6 +111,7 @@ function SearchSetting({
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,
         top_k: search_config?.top_k || 1024,
+        prefetch_size: search_config?.prefetch_size ?? 100,
         summary: search_config?.summary || false,
         chat_id: search_config?.chat_id || '',
         llm_setting: {
@@ -399,6 +401,10 @@ function SearchSetting({
               similarityWeightName="search_config.vector_similarity_weight"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
+            <PrefetchSizeFormField
+              name="search_config.prefetch_size"
+              defaultValue={100}
+            ></PrefetchSizeFormField>
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}
