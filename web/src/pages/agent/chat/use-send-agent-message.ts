@@ -236,6 +236,7 @@ export const useSendAgentMessage = ({
   refetch,
   isTaskMode: isTask,
   releaseMode,
+  activeSessionId,
 }: {
   url?: string;
   addEventList?: (data: IEventList, messageId: string) => void;
@@ -244,6 +245,13 @@ export const useSendAgentMessage = ({
   refetch?: () => void;
   isTaskMode?: boolean;
   releaseMode?: string | null;
+  /**
+   * Session the page is currently displaying. When provided, streamed
+   * frames that belong to another session are not written into the
+   * displayed message list (the user may switch sessions in Explore
+   * while an answer is still streaming).
+   */
+  activeSessionId?: string;
 }) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -252,6 +260,9 @@ export const useSendAgentMessage = ({
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
     useSendMessageBySSE(url || api.agentChatCompletion);
   const firstAnswer = answerList[0];
+  // Session that owns the in-flight stream; every SSE frame carries the
+  // session_id it belongs to.
+  const streamSessionId = firstAnswer?.session_id;
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
   }, [firstAnswer]);
@@ -461,6 +472,16 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
+    // The stream belongs to the session it was started in. If the user has
+    // switched to a different session while the answer is streaming, do not
+    // write the incoming frames into the message list being displayed.
+    if (
+      activeSessionId !== undefined &&
+      streamSessionId !== undefined &&
+      streamSessionId !== activeSessionId
+    ) {
+      return;
+    }
     const { content, id, attachment, audio_binary, downloads } =
       findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
@@ -493,7 +514,7 @@ export const useSendAgentMessage = ({
         });
       }
     }
-  }, [answerList, addNewestOneAnswer]);
+  }, [activeSessionId, answerList, addNewestOneAnswer, streamSessionId]);
 
   useEffect(() => {
     if (isTaskMode) {
@@ -546,5 +567,6 @@ export const useSendAgentMessage = ({
     removeFile,
     setDerivedMessages,
     addPrologue,
+    streamSessionId,
   };
 };

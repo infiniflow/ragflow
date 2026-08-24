@@ -50,12 +50,17 @@ export function SessionChat({ session }: SessionChatProps) {
     beginInputs,
     shouldShowParameterDialog,
     setDerivedMessages,
+    streamSessionId,
   } = useSendSessionMessage();
 
   const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
   });
+  // An in-flight stream only renders a loading state on the session it
+  // belongs to, not on whichever session the user switched to.
+  const isStreamingActiveSession =
+    sendLoading && (streamSessionId ? streamSessionId === sessionId : true);
   const hasActiveSession = Boolean(
     sessionId || isNew || hasLocalMessageRef.current,
   );
@@ -141,7 +146,7 @@ export function SessionChat({ session }: SessionChatProps) {
                     <MessageItem
                       loading={
                         message.role === MessageType.Assistant &&
-                        sendLoading &&
+                        isStreamingActiveSession &&
                         derivedMessages.length - 1 === i
                       }
                       key={buildMessageUuidWithRole(message)}
@@ -159,7 +164,7 @@ export function SessionChat({ session }: SessionChatProps) {
                       clickDocumentButton={clickDocumentButton}
                       index={i}
                       showLikeButton={false}
-                      sendLoading={sendLoading}
+                      sendLoading={isStreamingActiveSession}
                       showLog={false}
                     >
                       {hasUserFillUpInputs &&
