@@ -48,7 +48,7 @@ const sampleArrayResult = `[
 func TestParseOCRResultBodyArray(t *testing.T) {
 	p := &PaddleOCRModel{}
 	var md strings.Builder
-	arrayParsed, scanned, skipped, emptyRes, content, err := p.parseOCRResultBody([]byte(sampleArrayResult), &md)
+	arrayParsed, scanned, skipped, emptyRes, content, errored, err := p.parseOCRResultBody([]byte(sampleArrayResult), &md)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,6 +67,9 @@ func TestParseOCRResultBodyArray(t *testing.T) {
 	if content != 2 {
 		t.Errorf("contentLines = %d, want 2", content)
 	}
+	if errored != 0 {
+		t.Errorf("erroredLines = %d, want 0", errored)
+	}
 	out := md.String()
 	if !strings.Contains(out, "道可道，非常道") {
 		t.Errorf("markdown missing first page text: %q", out)
@@ -83,7 +86,7 @@ func TestParseOCRResultBodyJSONL(t *testing.T) {
 {"logId":"b","result":{"layoutParsingResults":[{"markdown":{"text":"line two"}}]},"errorCode":0}`
 	p := &PaddleOCRModel{}
 	var md strings.Builder
-	arrayParsed, scanned, skipped, emptyRes, content, err := p.parseOCRResultBody([]byte(jsonl), &md)
+	arrayParsed, scanned, skipped, emptyRes, content, errored, err := p.parseOCRResultBody([]byte(jsonl), &md)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,6 +104,9 @@ func TestParseOCRResultBodyJSONL(t *testing.T) {
 	}
 	if content != 2 {
 		t.Errorf("contentLines = %d, want 2", content)
+	}
+	if errored != 0 {
+		t.Errorf("erroredLines = %d, want 0", errored)
 	}
 	out := md.String()
 	if !strings.Contains(out, "line one") || !strings.Contains(out, "line two") {
@@ -123,9 +129,12 @@ func TestParseOCRResultBodyEmpty(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &PaddleOCRModel{}
 			var md strings.Builder
-			arrayParsed, _, _, emptyRes, content, err := p.parseOCRResultBody([]byte(tt.body), &md)
+			arrayParsed, _, _, emptyRes, content, errored, err := p.parseOCRResultBody([]byte(tt.body), &md)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if errored != 0 {
+				t.Errorf("erroredLines = %d, want 0", errored)
 			}
 			if arrayParsed != tt.wantArr {
 				t.Errorf("arrayParsed = %v, want %v", arrayParsed, tt.wantArr)
@@ -140,6 +149,47 @@ func TestParseOCRResultBodyEmpty(t *testing.T) {
 			}
 			if strings.TrimSpace(md.String()) != "" {
 				t.Errorf("expected empty markdown, got %q", md.String())
+			}
+		})
+	}
+}
+
+// TestParseOCRResultBodyErrored verifies that entries with a non-zero
+// errorCode are counted as errored (not silently counted as empty), produce no
+// text, and are handled identically on the array and jsonl paths.
+func TestParseOCRResultBodyErrored(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"array path", `[{"logId":"l1","result":{"layoutParsingResults":[{"markdown":{"text":"should not surface"}}]},"errorCode":1001,"errorMsg":"page failed"}]`},
+		{"jsonl path", `{"logId":"l1","result":{"layoutParsingResults":[{"markdown":{"text":"should not surface"}}]},"errorCode":1001,"errorMsg":"page failed"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PaddleOCRModel{}
+			var md strings.Builder
+			_, scanned, skipped, emptyRes, content, errored, err := p.parseOCRResultBody([]byte(tt.body), &md)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if scanned != 1 {
+				t.Errorf("scannedLines = %d, want 1", scanned)
+			}
+			if skipped != 0 {
+				t.Errorf("skippedLines = %d, want 0", skipped)
+			}
+			if emptyRes != 0 {
+				t.Errorf("emptyResultLines = %d, want 0 (errored entry must not masquerade as empty)", emptyRes)
+			}
+			if content != 0 {
+				t.Errorf("contentLines = %d, want 0", content)
+			}
+			if errored != 1 {
+				t.Errorf("erroredLines = %d, want 1", errored)
+			}
+			if strings.TrimSpace(md.String()) != "" {
+				t.Errorf("errored entry must not contribute text, got %q", md.String())
 			}
 		})
 	}

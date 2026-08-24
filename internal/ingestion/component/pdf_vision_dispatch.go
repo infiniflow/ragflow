@@ -219,6 +219,14 @@ func dispatchMinerUPDF(
 // spelling ("PaddleOCR" or "PaddleOCR.Net"); a composite name or empty value
 // falls back to the tenant's first PaddleOCR OCR model, mirroring Python's
 // by_paddleocr which uses get_first_provider_model_name(tenant, "PaddleOCR").
+//
+// Known limitation: composite names such as "some-model@instance@PaddleOCR.Net"
+// (an explicit cloud selection) are not recognized here. Any value containing
+// "@" falls through to resolveTenantOCRModelByProvider("PaddleOCR"), which
+// returns the tenant's first active PaddleOCR OCR model — potentially the
+// local one — when both the local and the cloud (".Net") providers are
+// configured. The Python path behaves the same way; if exact cloud selection
+// is required, pass the model's tenant-model UUID instead.
 var resolvePaddleOCRModelForDispatch = defaultResolvePaddleOCRModelForDispatch
 
 func defaultResolvePaddleOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {

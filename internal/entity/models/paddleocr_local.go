@@ -170,19 +170,20 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
 	if resp.StatusCode != http.StatusOK {
+		errBody := readErrorBody(resp.Body)
 		common.Error("paddleocr local submit: non-200",
 			fmt.Errorf("status %d", resp.StatusCode),
 			zap.String("driver", p.Name()),
 			zap.String("url", url),
 			zap.Int("status", resp.StatusCode),
-			zap.String("body", string(respBody)))
-		return nil, fmt.Errorf("local PaddleOCR failed with status %d: %s", resp.StatusCode, string(respBody))
+			zap.String("body", errBody))
+		return nil, fmt.Errorf("local PaddleOCR failed with status %d: %s", resp.StatusCode, errBody)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var ocrResp paddleLocalOCRResponse
@@ -191,8 +192,8 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 			err,
 			zap.String("driver", p.Name()),
 			zap.String("url", url),
-			zap.String("body", string(respBody)))
-		return nil, fmt.Errorf("failed to parse local PaddleOCR response: %w, raw: %s", err, string(respBody))
+			zap.String("body", logBody(respBody)))
+		return nil, fmt.Errorf("failed to parse local PaddleOCR response: %w, raw: %s", err, logBody(respBody))
 	}
 
 	if ocrResp.ErrorCode != 0 {

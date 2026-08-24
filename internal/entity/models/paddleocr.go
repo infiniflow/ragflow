@@ -122,9 +122,35 @@ type paddleJsonlLine struct {
 	} `json:"result"`
 }
 
+// maxErrorBodyBytes caps how much of a failed HTTP response body is read and
+// logged so an oversized or erroneous payload cannot consume unbounded memory
+// or produce unbounded log lines / error strings.
+const maxErrorBodyBytes = 64 * 1024
+
+// readErrorBody drains at most maxErrorBodyBytes of an error response body for
+// logging. It must be called before the body is otherwise consumed.
+func readErrorBody(body io.Reader) string {
+	data, _ := io.ReadAll(io.LimitReader(body, maxErrorBodyBytes))
+	return string(data)
+}
+
+// logBody truncates an already-buffered response payload to maxErrorBodyBytes
+// so it is safe for log fields and error strings.
+func logBody(body []byte) string {
+	if len(body) > maxErrorBodyBytes {
+		return string(body[:maxErrorBodyBytes]) + "…(truncated)"
+	}
+	return string(body)
+}
+
 // appendOCRText appends the markdown or OCR text fragments carried by one
 // result entry to fullMarkdown and reports whether any text was added.
-func (p *PaddleOCRModel) appendOCRText(fullMarkdown *strings.Builder, entry paddleJsonlLine) bool {
+// Entries whose errorCode != 0 are treated as errored rather than silently
+// empty so a partial/errored page is not invisible to the caller.
+func (p *PaddleOCRModel) appendOCRText(fullMarkdown *strings.Builder, entry paddleJsonlLine) (added, errored bool) {
+	if entry.ErrorCode != 0 {
+		return false, true
+	}
 	before := fullMarkdown.Len()
 	for _, layoutRes := range entry.Result.LayoutParsingResults {
 		fullMarkdown.WriteString(layoutRes.Markdown.Text)
@@ -143,7 +169,7 @@ func (p *PaddleOCRModel) appendOCRText(fullMarkdown *strings.Builder, entry padd
 			}
 		}
 	}
-	return fullMarkdown.Len() > before
+	return fullMarkdown.Len() > before, false
 }
 
 // parseOCRResultBody extracts markdown/OCR text from the downloaded result
@@ -152,18 +178,23 @@ func (p *PaddleOCRModel) appendOCRText(fullMarkdown *strings.Builder, entry padd
 // both forms are accepted. It reports how the payload was interpreted
 // (arrayParsed) together with parse accounting counters so callers can log
 // why the result was empty: entries dropped by json.Unmarshal (skippedLines),
-// decoded entries carrying no text fragment (emptyResultLines), and entries
-// that yielded text (contentLines).
-func (p *PaddleOCRModel) parseOCRResultBody(rawBody []byte, fullMarkdown *strings.Builder) (arrayParsed bool, scannedLines, skippedLines, emptyResultLines, contentLines int, err error) {
+// decoded entries carrying no text fragment (emptyResultLines), entries whose
+// errorCode != 0 (erroredLines), and entries that yielded text (contentLines).
+func (p *PaddleOCRModel) parseOCRResultBody(rawBody []byte, fullMarkdown *strings.Builder) (arrayParsed bool, scannedLines, skippedLines, emptyResultLines, contentLines, erroredLines int, err error) {
 	var entries []paddleJsonlLine
 	err = json.Unmarshal(rawBody, &entries)
 	if err == nil {
 		arrayParsed = true
 		scannedLines = len(entries)
 		for _, entry := range entries {
-			if p.appendOCRText(fullMarkdown, entry) {
+			added, errored := p.appendOCRText(fullMarkdown, entry)
+			switch {
+			case errored:
+				erroredLines++
+				p.logErroredEntry(entry)
+			case added:
 				contentLines++
-			} else {
+			default:
 				emptyResultLines++
 			}
 		}
@@ -184,18 +215,32 @@ func (p *PaddleOCRModel) parseOCRResultBody(rawBody []byte, fullMarkdown *string
 			skippedLines++
 			continue
 		}
-		if p.appendOCRText(fullMarkdown, lineData) {
+		added, errored := p.appendOCRText(fullMarkdown, lineData)
+		switch {
+		case errored:
+			erroredLines++
+			p.logErroredEntry(lineData)
+		case added:
 			contentLines++
-		} else {
+		default:
 			emptyResultLines++
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return false, 0, 0, 0, 0, fmt.Errorf("error reading jsonl: %w", err)
+		return false, 0, 0, 0, 0, 0, fmt.Errorf("error reading jsonl: %w", err)
 	}
 	// The array-parse error stored in err is expected on this path; the jsonl
 	// fallback succeeded, so clear it before the bare return.
-	return false, scannedLines, skippedLines, emptyResultLines, contentLines, nil
+	return false, scannedLines, skippedLines, emptyResultLines, contentLines, erroredLines, nil
+}
+
+// logErroredEntry makes an entry with a non-zero errorCode visible instead of
+// silently dropping the page as empty.
+func (p *PaddleOCRModel) logErroredEntry(entry paddleJsonlLine) {
+	common.Warn("paddleocr.net result: entry errored",
+		zap.String("log_id", entry.LogId),
+		zap.Int("error_code", entry.ErrorCode),
+		zap.String("error_msg", entry.ErrorMsg))
 }
 
 func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
@@ -279,16 +324,17 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		errBody := readErrorBody(resp.Body)
 		common.Error("paddleocr.net submit: non-200",
 			fmt.Errorf("status %d", resp.StatusCode),
 			zap.String("driver", p.Name()),
 			zap.String("url", url),
 			zap.Int("status", resp.StatusCode),
-			zap.String("body", string(respBody)))
-		return nil, fmt.Errorf("submit job failed: %s", string(respBody))
+			zap.String("body", errBody))
+		return nil, fmt.Errorf("submit job failed: %s", errBody)
 	}
+	respBody, _ := io.ReadAll(resp.Body)
 
 	var submitResp paddleSubmitResponse
 	if err := json.Unmarshal(respBody, &submitResp); err != nil {
@@ -337,18 +383,19 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 			return nil, fmt.Errorf("failed to poll job status: %w", err)
 		}
 
-		pollBody, _ := io.ReadAll(pollResp.Body)
-		pollResp.Body.Close()
-
 		if pollResp.StatusCode != http.StatusOK {
+			errBody := readErrorBody(pollResp.Body)
+			pollResp.Body.Close()
 			common.Error("paddleocr.net poll: non-200",
 				fmt.Errorf("status %d", pollResp.StatusCode),
 				zap.String("job_id", jobId),
 				zap.Int("attempt", attempt),
 				zap.Int("status", pollResp.StatusCode),
-				zap.String("body", string(pollBody)))
-			return nil, fmt.Errorf("poll job failed: %s", string(pollBody))
+				zap.String("body", errBody))
+			return nil, fmt.Errorf("poll job failed: %s", errBody)
 		}
+		pollBody, _ := io.ReadAll(pollResp.Body)
+		pollResp.Body.Close()
 
 		var pollData paddlePollResponse
 		if err = json.Unmarshal(pollBody, &pollData); err != nil {
@@ -441,7 +488,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 	}
 
 	var fullMarkdown strings.Builder
-	arrayParsed, scannedLines, skippedLines, emptyResultLines, contentLines, err := p.parseOCRResultBody(rawBody, &fullMarkdown)
+	arrayParsed, scannedLines, skippedLines, emptyResultLines, contentLines, erroredLines, err := p.parseOCRResultBody(rawBody, &fullMarkdown)
 	if err != nil {
 		return nil, err
 	}
@@ -454,26 +501,31 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 			zap.Int("body_bytes", len(rawBody)),
 			zap.Int("scanned_lines", scannedLines),
 			zap.Int("skipped_lines", skippedLines),
+			zap.Int("errored_lines", erroredLines),
 			zap.Int("empty_result_lines", emptyResultLines),
 			zap.Int("content_lines", contentLines))
-		return nil, fmt.Errorf("paddleocr.net result: parsed empty text (scanned_lines=%d, skipped_lines=%d, empty_result_lines=%d, content_lines=%d)",
-			scannedLines, skippedLines, emptyResultLines, contentLines)
-	} else {
-		preview := extractedText
-		if len(preview) > 200 {
-			preview = preview[:200]
-		}
-		common.Info("paddleocr.net result: parsed",
-			zap.String("job_id", jobId),
-			zap.Bool("array_parsed", arrayParsed),
-			zap.Int("body_bytes", len(rawBody)),
-			zap.Int("text_len", len(extractedText)),
-			zap.Int("scanned_lines", scannedLines),
-			zap.Int("skipped_lines", skippedLines),
-			zap.Int("empty_result_lines", emptyResultLines),
-			zap.Int("content_lines", contentLines),
-			zap.String("text_preview", preview))
+		return nil, fmt.Errorf("paddleocr.net result: parsed empty text (scanned_lines=%d, skipped_lines=%d, errored_lines=%d, empty_result_lines=%d, content_lines=%d)",
+			scannedLines, skippedLines, erroredLines, emptyResultLines, contentLines)
 	}
+	common.Info("paddleocr.net result: parsed",
+		zap.String("job_id", jobId),
+		zap.Bool("array_parsed", arrayParsed),
+		zap.Int("body_bytes", len(rawBody)),
+		zap.Int("text_len", len(extractedText)),
+		zap.Int("scanned_lines", scannedLines),
+		zap.Int("skipped_lines", skippedLines),
+		zap.Int("errored_lines", erroredLines),
+		zap.Int("empty_result_lines", emptyResultLines),
+		zap.Int("content_lines", contentLines))
+	// OCR text can contain sensitive document content; keep any preview out of
+	// default (Info) logs and only surface it when debug logging is enabled.
+	preview := extractedText
+	if len(preview) > 200 {
+		preview = preview[:200]
+	}
+	common.Debug("paddleocr.net result: text preview",
+		zap.String("job_id", jobId),
+		zap.String("text_preview", preview))
 
 	return &OCRFileResponse{Text: &extractedText}, nil
 }
