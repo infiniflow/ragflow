@@ -569,9 +569,15 @@ func TestEngine_GetOrCompute_WriteBack_ContextCancelled(t *testing.T) {
 }
 
 func TestEngine_GetOrCompute_Cancellation_SingleForgetNoRace(t *testing.T) {
+	missC := make(chan struct{}, 10)
 	engine, _, _ := newTestEngineWithRedis[string](t,
 		WithValidator[string](func(s string) bool {
-			return s != "resultA" // Prevent cancelled A from populating Redis so C strictly tests SingleFlight joining B
+			return s != "resultA" && s != "resultB" // Never cache so C strictly tests SingleFlight deduplication with B
+		}),
+		WithMetrics[string](func(ev Event) {
+			if ev.Kind == "miss" {
+				missC <- struct{}{}
+			}
 		}),
 	)
 
@@ -579,19 +585,25 @@ func TestEngine_GetOrCompute_Cancellation_SingleForgetNoRace(t *testing.T) {
 	ctxA, cancelA := context.WithCancel(context.Background())
 	startedA := make(chan struct{})
 	finishA := make(chan struct{})
+	completedFnA := make(chan struct{})
+	doneA := make(chan struct{})
 
 	go func() {
+		defer close(doneA)
 		_, _ = engine.GetOrCompute(ctxA, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
 			close(startedA)
 			<-finishA
+			close(completedFnA)
 			return "resultA", nil
 		})
 	}()
 
 	<-startedA
-	// Cancel Caller A's context, triggering Forget(key)
+	<-missC // Drain A's cache miss event
+
+	// Cancel Caller A's context, triggering Forget(key) and waiting for GetOrCompute to return
 	cancelA()
-	time.Sleep(10 * time.Millisecond)
+	<-doneA
 
 	// 2. Caller B starts a new flight for the same key while A is still running in background
 	ctxB := context.Background()
@@ -603,21 +615,22 @@ func TestEngine_GetOrCompute_Cancellation_SingleForgetNoRace(t *testing.T) {
 	var errB error
 	doneB := make(chan struct{})
 	go func() {
+		defer close(doneB)
 		resB, errB = engine.GetOrCompute(ctxB, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
 			computeCountB.Add(1)
 			close(startedB)
 			<-finishB
 			return "resultB", nil
 		})
-		close(doneB)
 	}()
 
 	<-startedB
+	<-missC // Drain B's cache miss event
 
-	// 3. Now let Caller A's original background task finish.
-	// If there was a double-forget, A completing would evict B's flight from singleflight map!
+	// 3. Now let Caller A's original background compute finish and wait for it to complete.
+	// If there was a double-forget bug, A completing would evict B's flight from singleflight map!
 	close(finishA)
-	time.Sleep(20 * time.Millisecond)
+	<-completedFnA
 
 	// 4. Caller C arrives while Caller B is still computing.
 	// Caller C MUST merge into Caller B's existing flight and NOT start a new computation.
@@ -626,12 +639,15 @@ func TestEngine_GetOrCompute_Cancellation_SingleForgetNoRace(t *testing.T) {
 	var errC error
 	doneC := make(chan struct{})
 	go func() {
+		defer close(doneC)
 		resC, errC = engine.GetOrCompute(ctxC, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
 			computeCountB.Add(1) // Should NOT be called
 			return "resultC_unwanted", nil
 		})
-		close(doneC)
 	}()
+
+	// Wait for Caller C to reach DoChan before releasing B
+	<-missC
 
 	// 5. Allow Caller B's computation to finish
 	close(finishB)
