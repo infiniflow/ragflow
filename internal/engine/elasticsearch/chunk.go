@@ -209,6 +209,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		// Document line: work with a copy to avoid mutating the original
 		docCopy := copyFields(doc)
 		docCopy["kb_id"] = datasetID
+		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
+			docCopy["tag_feas"] = raw
+		}
 		if err := jsonIterator.NewEncoder(&buf).Encode(docCopy); err != nil {
 			return nil, fmt.Errorf("failed to encode document: %w", err)
 		}
@@ -608,6 +611,9 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 
 	// Update document fields if any remain
 	if len(doc) > 0 {
+		if raw, ok := formatOrderedTagFeas(doc["tag_feas"]); ok {
+			doc["tag_feas"] = raw
+		}
 		updateBody := map[string]interface{}{"doc": doc}
 		body, _ := json.Marshal(updateBody)
 		req := esapi.UpdateRequest{
@@ -780,6 +786,90 @@ func copyFields(m map[string]interface{}) map[string]interface{} {
 		result[k] = v
 	}
 	return result
+}
+
+// formatOrderedTagFeas formats tag_feas as json.RawMessage with keys ordered
+// strictly descending by score, preventing jsoniter map-key randomized output.
+func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
+	if v == nil {
+		return nil, false
+	}
+	if raw, ok := v.(json.RawMessage); ok {
+		return raw, true
+	}
+	if marshaler, ok := v.(json.Marshaler); ok {
+		b, err := marshaler.MarshalJSON()
+		if err == nil {
+			return json.RawMessage(b), true
+		}
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	var kvs []kv
+	roundScore := func(f float64) int {
+		if f < 0 {
+			return int(f - 0.5)
+		}
+		return int(f + 0.5)
+	}
+
+	switch m := v.(type) {
+	case map[string]int:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, val})
+		}
+	case map[string]float64:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, roundScore(val)})
+		}
+	case map[string]any:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			switch score := val.(type) {
+			case int:
+				kvs = append(kvs, kv{k, score})
+			case float64:
+				kvs = append(kvs, kv{k, roundScore(score)})
+			case int64:
+				kvs = append(kvs, kv{k, int(score)})
+			case json.Number:
+				if f, err := score.Float64(); err == nil {
+					kvs = append(kvs, kv{k, roundScore(f)})
+				}
+			}
+		}
+	default:
+		return nil, false
+	}
+
+	if len(kvs) == 0 {
+		return json.RawMessage("{}"), true
+	}
+
+	sort.Slice(kvs, func(i, j int) bool {
+		if kvs[i].v != kvs[j].v {
+			return kvs[i].v > kvs[j].v
+		}
+		return kvs[i].k < kvs[j].k
+	})
+
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, item := range kvs {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		kb, _ := json.Marshal(item.k)
+		buf.Write(kb)
+		buf.WriteByte(':')
+		buf.WriteString(strconv.Itoa(item.v))
+	}
+	buf.WriteByte('}')
+	return json.RawMessage(buf.Bytes()), true
 }
 
 // DeleteChunks deletes chunks from a dataset index by condition
@@ -1290,198 +1380,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 		allResults = calculateScores(allResults, scoreColumn, pagerankField)
 		allResults = sortByScore(allResults, limit)
-	}
-
-	return &types.SearchResult{
-		Chunks: allResults,
-		Total:  totalHits,
-	}, nil
-}
-
-// SearchByRegexp executes a regex-match-only search over chunk content. It
-// reuses the same scope-filter builder and response converter as Search but
-// emits a Lucene `regexp` query on the chunk content field instead of text /
-// dense match expressions. This backs the agent's grep_chunks tool.
-//
-// The caller is responsible for translating a user regex into Lucene syntax;
-// patterns using unsupported constructs should be detected and handled by the
-// caller (fallback to broad recall + in-memory filtering).
-// esIndexNamesForTenant maps an engine-agnostic tenant id to this engine's
-// physical index names. ES stores one index per tenant (ragflow_<tenant>), and
-// a tenant id may carry comma-separated tenants (one index each). This is the
-// doc-engine-specific storage mapping — callers never compute index names.
-func esIndexNamesForTenant(tenantID string) []string {
-	var names []string
-	for part := range strings.SplitSeq(tenantID, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			names = append(names, "ragflow_"+part)
-		}
-	}
-	return names
-}
-
-func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
-	// Map the engine-agnostic tenant to this engine's physical index(es). ES
-	// stores one index per tenant (ragflow_<tenant>); the tenant id may carry
-	// comma-separated tenants, which map to one index each.
-	indexNames := esIndexNamesForTenant(req.TenantID)
-	if len(indexNames) == 0 {
-		return nil, fmt.Errorf("tenant id cannot be empty")
-	}
-	if strings.TrimSpace(req.Pattern) == "" {
-		return nil, fmt.Errorf("regexp pattern cannot be empty")
-	}
-
-	offset := max(req.Offset, 0)
-	limit := req.Limit
-	if limit <= 0 {
-		limit = 30
-	}
-
-	// Build the scope filter (kb_id terms + available_int + explicit filters).
-	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, false, false)
-
-	// Attach the regexp query as a must clause on the chunk content field.
-	// Two critical ES keyword-regexp behaviours:
-	//  1. ES regexp matches the WHOLE field value, not a substring. To emulate
-	//     "contains" (what grep_chunks and the old in-memory RE2 did), wrap the
-	//     pattern as ".*(pattern).*" — a bare "何进" would only match a chunk
-	//     whose content is exactly "何进" (yielding 0 hits).
-	//  2. case_insensitive is intentionally NOT set: on a keyword field ES's
-	//     case-insensitive regexp cannot match CJK text (empirically 0 for
-	//     patterns like "马元义"). CJK keywords have no case; English
-	//     case-sensitivity is acceptable.
-	regexpPattern := ".*(" + req.Pattern + ").*"
-	regexpClause := map[string]interface{}{
-		"regexp": map[string]interface{}{
-			"content_with_weight": map[string]interface{}{
-				"value": regexpPattern,
-			},
-		},
-	}
-
-	if boolQuery == nil {
-		boolQuery = map[string]interface{}{}
-	}
-	if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
-		if must, ok := boolMap["must"].([]interface{}); ok {
-			boolMap["must"] = append(must, regexpClause)
-		} else {
-			boolMap["must"] = []interface{}{regexpClause}
-		}
-	} else {
-		boolQuery = map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []interface{}{regexpClause},
-			},
-		}
-	}
-
-	// Offset/Limit are applied to each search target (IndexNames entry)
-	// independently — the request is engine-agnostic and makes no assumption
-	// about how many underlying indexes a target spans. The ES engine queries
-	// each index with the same from/size and merges the hits.
-	queryBody := map[string]interface{}{
-		"query": boolQuery,
-		"size":  limit,
-		"from":  offset,
-	}
-
-	// When an explicit sort is requested (e.g. a document's reading order), push
-	// it down so ES applies offset/limit over the deterministically-ordered
-	// result set. This is what lets list_chunks page through a document in
-	// reading order without over-fetching.
-	if req.Sort != nil && len(req.Sort.Fields) > 0 {
-		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
-			queryBody["sort"] = sortClause
-		}
-	}
-
-	// Narrow the returned _source to the requested fields when given. The regexp
-	// matches content_with_weight, so callers must keep it in SelectFields or the
-	// hits will carry no content.
-	if len(req.SelectFields) > 0 {
-		queryBody["_source"] = req.SelectFields
-	}
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
-		return nil, fmt.Errorf("error encoding regexp query: %w", err)
-	}
-
-	payload := append([]byte(nil), buf.Bytes()...)
-	var (
-		totalHits  int64
-		allResults []map[string]interface{}
-		firstErr   error
-	)
-	for _, indexName := range indexNames {
-		res, err := e.client.Search(
-			e.client.Search.WithContext(ctx),
-			e.client.Search.WithIndex(indexName),
-			e.client.Search.WithBody(bytes.NewReader(payload)),
-			e.client.Search.WithTrackTotalHits(true),
-		)
-		if err != nil {
-			common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-
-		if res.IsError() {
-			bodyBytes, _ := io.ReadAll(res.Body)
-			res.Body.Close()
-			common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
-			// A 4xx here is typically a Lucene-incompatible pattern (e.g. \b,
-			// lookahead) being rejected. Surface it so the caller's RE2 in-memory
-			// fallback can take over instead of silently returning empty.
-			if firstErr == nil {
-				firstErr = fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
-			}
-			continue
-		}
-
-		var esResp SearchResponse
-		decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
-		res.Body.Close()
-		if decodeErr != nil {
-			common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
-			if firstErr == nil {
-				firstErr = fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
-			}
-			continue
-		}
-
-		searchChunks := convertESResponse(&esResp, "")
-		totalHits += esResp.Hits.Total.Value
-		allResults = append(allResults, searchChunks...)
-	}
-
-	// If every requested index failed (no results at all), propagate the error
-	// so the caller can fall back (e.g. GrepAdapter's in-memory RE2 filter).
-	// Partial success (some indexes returned results) is returned as-is.
-	if len(allResults) == 0 && firstErr != nil {
-		return nil, firstErr
-	}
-
-	// Single index: ES already applied from/size exactly, so the collected rows
-	// are the requested page — only cap to limit (defensive). Multi index: every
-	// index fetched up to offset+limit from 0, so sort the merged set (per the
-	// requested fields, or by score) and apply the offset once, globally.
-	// Each index already applied from=offset/size=limit, so the merged hits are
-	// the requested page per target. With an explicit sort we re-order the merged
-	// set by the requested fields so cross-index output is deterministic; without
-	// one we cap to limit (the relevance order ES returned is preserved). No
-	// offset is skipped here — it was already applied per index.
-	if req.Sort != nil && len(req.Sort.Fields) > 0 {
-		allResults = sortByFields(allResults, req.Sort)
-	} else {
-		allResults = sortByScore(allResults, limit)
-	}
-	if len(allResults) > limit {
-		allResults = allResults[:limit]
 	}
 
 	return &types.SearchResult{
@@ -3242,53 +3140,6 @@ func toFloat64(v interface{}) (float64, bool) {
 		return float64(val), true
 	}
 	return 0, false
-}
-
-// sortByFields orders chunks by the given OrderByExpr fields ascending. It is
-// used after merging multi-index regexp results so the offset/limit window is
-// applied to a globally-sorted set (ES only sorts within each index). Numeric
-// fields sort numerically, string fields lexicographically.
-func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []map[string]interface{} {
-	if expr == nil || len(expr.Fields) == 0 {
-		return chunks
-	}
-	sort.SliceStable(chunks, func(i, j int) bool {
-		for _, field := range expr.Fields {
-			vi, oki := chunks[i][field.Field]
-			vj, okj := chunks[j][field.Field]
-			if !oki || !okj {
-				// Missing field sorts before a present one.
-				if !oki && !okj {
-					continue
-				}
-				return !oki
-			}
-			var less bool
-			if fi, ei := toFloat64(vi); ei {
-				if fj, ej := toFloat64(vj); ej {
-					less = fi < fj
-				} else {
-					less = false // numeric before non-numeric
-				}
-			} else {
-				si, siOk := vi.(string)
-				sj, sjOk := vj.(string)
-				if siOk && sjOk {
-					less = si < sj
-				} else {
-					less = fmt.Sprintf("%v", vi) < fmt.Sprintf("%v", vj)
-				}
-			}
-			if vi != vj {
-				if field.Type == types.SortDesc {
-					return !less
-				}
-				return less
-			}
-		}
-		return false
-	})
-	return chunks
 }
 
 // sortByScore sorts chunks by _score descending and limits
