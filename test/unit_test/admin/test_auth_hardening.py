@@ -288,3 +288,18 @@ class TestLoginThrottling:
         assert auth._login_block_remaining("1.2.3.4") == 0
         # The recorded failure is visible to the counter.
         assert auth._login_failures.get("1.2.3.4") is not None
+
+
+def test_throttle_client_key_uses_last_forwarded_hop():
+    """Only the rightmost XFF entry (appended by our nginx) may key the limiter."""
+    from flask import Flask
+
+    from admin.server.auth import _client_key
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        "/", headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, environ_base={"REMOTE_ADDR": "9.9.9.9"}
+    ):
+        assert _client_key() == "5.6.7.8"
+    with app.test_request_context("/", environ_base={"REMOTE_ADDR": "9.9.9.9"}):
+        assert _client_key() == "9.9.9.9"

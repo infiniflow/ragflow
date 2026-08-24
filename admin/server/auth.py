@@ -69,16 +69,18 @@ _login_block_until: dict[str, float] = {}  # client key -> monotonic lockout dea
 def _client_key() -> str:
     """Identify the client for login throttling.
 
-    Prefers the first hop of X-Forwarded-For so that requests proxied by the
-    bundled nginx (which appends the real client address) are tracked per
-    client instead of all sharing nginx's address. This header is only
-    trustworthy when port 9381 is not directly reachable from untrusted
-    networks; keep the published port bound to 127.0.0.1 (see
+    Uses the LAST hop of X-Forwarded-For: the bundled nginx appends the real
+    client address to any client-supplied value, so the rightmost entry is
+    the one our own proxy added and cannot be spoofed. Earlier hops are
+    attacker-controlled — using the first hop would let a caller rotate
+    fake XFF values and get a fresh throttle bucket per request. The header
+    is only trustworthy when port 9381 is not directly reachable from
+    untrusted networks; keep the published port bound to 127.0.0.1 (see
     docker/docker-compose.yml).
     """
     forwarded_for = request.headers.get("X-Forwarded-For", "")
-    first_hop = forwarded_for.split(",")[0].strip() if forwarded_for else ""
-    return first_hop or (request.remote_addr or "").strip() or "unknown"
+    last_hop = forwarded_for.split(",")[-1].strip() if forwarded_for else ""
+    return last_hop or (request.remote_addr or "").strip() or "unknown"
 
 
 def _login_block_remaining(key: str) -> int:
