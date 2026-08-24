@@ -58,6 +58,7 @@ These tests pin four contracts:
 """
 
 import importlib.util
+import logging
 import re
 import sys
 from pathlib import Path
@@ -94,6 +95,75 @@ def base_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.misc_utils", fake_misc_utils)
 
     spec = importlib.util.spec_from_file_location("_base_for_regex_test", repo_root / "agent" / "component" / "base.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def retrieval_module(monkeypatch, base_module):
+    """Load the Retrieval class without its service-layer dependencies."""
+    repo_root = Path(__file__).resolve().parents[4]
+
+    def install_module(name, *, package=False, **attributes):
+        module = ModuleType(name)
+        if package:
+            module.__path__ = []
+        for key, value in attributes.items():
+            setattr(module, key, value)
+        monkeypatch.setitem(sys.modules, name, module)
+        if "." in name:
+            parent_name, child_name = name.rsplit(".", 1)
+            setattr(sys.modules[parent_name], child_name, module)
+        return module
+
+    install_module("agent", package=True)
+    install_module("agent.component", package=True)
+    monkeypatch.setitem(sys.modules, "agent.component.base", base_module)
+    sys.modules["agent.component"].base = base_module
+    install_module("agent.tools", package=True)
+
+    class ToolParamBase(base_module.ComponentParamBase):
+        pass
+
+    class ToolBase(base_module.ComponentBase):
+        pass
+
+    install_module("agent.tools.base", ToolParamBase=ToolParamBase, ToolBase=ToolBase, ToolMeta=dict)
+
+    install_module("api", package=True)
+    install_module("api.db", package=True)
+    install_module("api.db.services", package=True)
+    install_module("api.db.joint_services", package=True)
+    install_module("api.db.services.doc_metadata_service", DocMetadataService=type("DocMetadataService", (), {}))
+    install_module("api.db.services.knowledgebase_service", KnowledgebaseService=type("KnowledgebaseService", (), {}))
+    install_module("api.db.services.llm_service", LLMBundle=type("LLMBundle", (), {}))
+    install_module("api.db.services.memory_service", MemoryService=type("MemoryService", (), {}))
+    install_module("api.db.joint_services.memory_message_service")
+    install_module(
+        "api.db.joint_services.tenant_model_service",
+        get_tenant_default_model_by_type=lambda *_args, **_kwargs: None,
+        resolve_model_config=lambda *_args, **_kwargs: None,
+    )
+
+    install_module("common", package=True)
+    install_module("common.constants", LLMType=SimpleNamespace(EMBEDDING="embedding", RERANK="rerank", CHAT="chat"))
+    install_module("common.metadata_utils", apply_meta_data_filter=lambda *_args, **_kwargs: [])
+    install_module("common.settings")
+    install_module("common.connection_utils", timeout=lambda _seconds: lambda function: function)
+
+    install_module("rag", package=True)
+    install_module("rag.app", package=True)
+    install_module("rag.app.tag", label_question=lambda *_args, **_kwargs: None)
+    install_module("rag.prompts", package=True)
+    install_module(
+        "rag.prompts.generator",
+        cross_languages=lambda *_args, **_kwargs: None,
+        kb_prompt=lambda *_args, **_kwargs: [],
+        memory_prompt=lambda *_args, **_kwargs: [],
+    )
+
+    spec = importlib.util.spec_from_file_location("_retrieval_for_regex_test", repo_root / "agent" / "tools" / "retrieval.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -249,6 +319,39 @@ def test_unbalanced_outer_braces_remain_literal(base_module, content):
     assert base_module.ComponentBase.variable_ref_patt_re.fullmatch(content) is None
     assert cpn.get_input_elements_from_text(content) == {}
     assert cpn.string_format(content, {"A@x": "VALUE"}) == content
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("content", ["{ {A@x}", "{A@x} }"])
+def test_manual_metadata_filter_preserves_unbalanced_outer_braces(retrieval_module, content):
+    retrieval = retrieval_module.Retrieval.__new__(retrieval_module.Retrieval)
+    retrieval._canvas = SimpleNamespace(get_variable_value=lambda exp: "VALUE" if exp == "A@x" else None)
+    original = {"key": "author", "op": "=", "value": content}
+
+    assert retrieval._resolve_manual_filter(original) == original
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("content", ["{A@x}", "{{A@x}}", "{ {A@x} }"])
+def test_manual_metadata_filter_resolves_complete_references(retrieval_module, content):
+    retrieval = retrieval_module.Retrieval.__new__(retrieval_module.Retrieval)
+    retrieval._canvas = SimpleNamespace(get_variable_value=lambda exp: "VALUE" if exp == "A@x" else None)
+    original = {"key": "author", "op": "=", "value": f"before {content} after"}
+
+    assert retrieval._resolve_manual_filter(original)["value"] == "before VALUE after"
+    assert original["value"] == f"before {content} after"
+
+
+@pytest.mark.p2
+def test_rejected_incomplete_match_is_logged_without_template_value(base_module, caplog):
+    cpn = base_module.ComponentBase.__new__(base_module.ComponentBase)
+
+    with caplog.at_level(logging.DEBUG):
+        assert list(cpn._iter_template_matches(cpn.variable_ref_patt_re, "{ {SecretNode@token}")) == []
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Ignored incomplete template reference candidate" in message for message in messages)
+    assert all("SecretNode@token" not in message for message in messages)
 
 
 @pytest.mark.p2

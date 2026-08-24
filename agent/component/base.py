@@ -633,23 +633,32 @@ class ComponentBase(ABC):
         for match in pattern.finditer(content):
             if cls._is_complete_template_match(content, match):
                 yield match
+            else:
+                _logger.debug("Ignored incomplete template reference candidate at offset %d", match.start())
+
+    @classmethod
+    def _replace_template_matches(cls, pattern: re.Pattern, content: str, replacement) -> str:
+        out = []
+        last = 0
+        for match in cls._iter_template_matches(pattern, content):
+            out.append(content[last : match.start()])
+            out.append(replacement(match))
+            last = match.end()
+        out.append(content[last:])
+        return "".join(out)
 
     @classmethod
     def string_format(cls, content: str, kv: dict[str, str]) -> str:
         for pattern in (cls.variable_ref_patt_re, cls.iteration_alias_patt_re):
-            out = []
-            last = 0
-            for match in cls._iter_template_matches(pattern, content):
-                out.append(content[last : match.start()])
+
+            def replace(match):
                 key = match.group(1)
                 if key in kv:
                     value = kv[key]
-                    out.append(str(value) if value is not None else "")
-                else:
-                    out.append(match.group(0))
-                last = match.end()
-            out.append(content[last:])
-            content = "".join(out)
+                    return str(value) if value is not None else ""
+                return match.group(0)
+
+            content = cls._replace_template_matches(pattern, content, replace)
         return content
 
     def exception_handler(self):
