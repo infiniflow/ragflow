@@ -174,7 +174,9 @@ def _load_tenant_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
     constants_mod = ModuleType("common.constants")
-    constants_mod.RetCode = SimpleNamespace(AUTHENTICATION_ERROR=401, SERVER_ERROR=500, DATA_ERROR=102)
+    # Match the production enum values (RetCode.AUTHENTICATION_ERROR == 109) so
+    # assertions exercise the same codes the real endpoint returns.
+    constants_mod.RetCode = SimpleNamespace(AUTHENTICATION_ERROR=109, SERVER_ERROR=500, DATA_ERROR=102)
     constants_mod.StatusEnum = SimpleNamespace(VALID=SimpleNamespace(value=1))
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
@@ -660,7 +662,7 @@ def _load_user_app(monkeypatch):
 
     constants_mod = ModuleType("common.constants")
     constants_mod.RetCode = SimpleNamespace(
-        AUTHENTICATION_ERROR=401,
+        AUTHENTICATION_ERROR=109,
         SERVER_ERROR=500,
         FORBIDDEN=403,
         EXCEPTION_ERROR=100,

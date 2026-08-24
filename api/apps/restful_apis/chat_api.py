@@ -1185,6 +1185,7 @@ async def mindmap():
     search_app = {}
     if search_id:
         if not await thread_pool_exec(SearchService.accessible, search_id, current_user.id):
+            logging.warning("Access denied: user=%s resource=%s", current_user.id, search_id)
             return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
         search_app = await thread_pool_exec(SearchService.get_detail, search_id)
     search_config = search_app.get("search_config", {}) if search_app else {}
@@ -1195,6 +1196,7 @@ async def mindmap():
     # check if the kb_ids is accessible for this user
     for kb_id in kb_ids:
         if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=current_user.id):
+            logging.warning("Access denied: user=%s resource=%s", current_user.id, kb_id)
             return get_data_error_result(message=f"You don't own the dataset {kb_id}")
 
     mind_map = await gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
