@@ -32,6 +32,8 @@ def normalize_model_types(model_type_name_list: List[str] | str) -> List[str]:
     """Return model type names using the canonical API/runtime identifiers."""
     if isinstance(model_type_name_list, str):
         model_type_name_list = [model_type_name_list]
+    elif not isinstance(model_type_name_list, list):
+        return []
 
     normalized = []
     for model_type in model_type_name_list:
