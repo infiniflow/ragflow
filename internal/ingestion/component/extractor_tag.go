@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -37,11 +37,32 @@ const (
 	// defaultMatchCoverageThreshold is the asymmetric coverage threshold for Phase 1 (55%).
 	defaultMatchCoverageThreshold = 0.55
 
+	// singleTokenCoverageThreshold is the full-coverage threshold required for 1-token rules (99.9%).
+	singleTokenCoverageThreshold = 0.999
+
+	// singleTokenMinIDF is the minimum total IDF required for 1-token rules to match.
+	singleTokenMinIDF = 1.5
+
 	// defaultTopK is the maximum number of matched example candidates to aggregate in Phase 1.
 	defaultTopK = 5
 
-	// bgSmoothing is the smoothing constant for background prior tag probabilities.
+	// bgSmoothing is the Dirichlet smoothing constant for background prior tag probabilities.
 	bgSmoothing = 10.0
+
+	// rankDecayTierDropRelativeThreshold is the relative drop threshold to descend an effective rank tier.
+	rankDecayTierDropRelativeThreshold = 0.05
+
+	// rankDecayBaseMax is the initial rank base score for the top effective rank.
+	rankDecayBaseMax = 8.5
+
+	// rankDecayBaseMin is the floor for rank base score.
+	rankDecayBaseMin = 3.0
+
+	// rankDecayStep is the score decay per effective rank tier.
+	rankDecayStep = 2.0
+
+	// rankDecayWeightPower is the power exponent applied to relative tag weight.
+	rankDecayWeightPower = 0.4
 )
 
 const taggerLLMConcurrency = 8
@@ -273,15 +294,17 @@ func matchAndTagChunk(
 
 	// 1. Inverted index lookup (skips irrelevant samples).
 	candidateInterIDF := make(map[int]float64)
+	candidateTFScore := make(map[int]float64)
 	candidateMatchedTokens := make(map[int]int)
 	for w, freq := range chunkWordFreq {
 		idf, exists := idx.idfs[w]
-		if !exists || idf <= 0 {
+		if !exists || idf <= 1e-6 {
 			continue
 		}
 		tfBoost := 1.0 + 0.3*math.Log(1.0+float64(freq))
 		for _, docID := range idx.postings[w] {
-			candidateInterIDF[docID] += idf * tfBoost
+			candidateInterIDF[docID] += idf          // Pure IDF sum, ensures coverage <= 1.0
+			candidateTFScore[docID] += idf * tfBoost // Saliency weighted by TF
 			candidateMatchedTokens[docID]++
 		}
 	}
@@ -289,10 +312,11 @@ func matchAndTagChunk(
 		return nil
 	}
 
-	// 2. Compute asymmetric coverage (Coverage(E) = InterIDF / ExTotalIDF >= 0.45).
+	// 2. Compute asymmetric coverage (Coverage(E) = InterIDF / ExTotalIDF in [0.0, 1.0]).
 	type candidateScore struct {
 		docID    int
 		coverage float64
+		tfWeight float64
 	}
 	passed := make([]candidateScore, 0, len(candidateInterIDF))
 	for docID, interIDF := range candidateInterIDF {
@@ -311,15 +335,15 @@ func matchAndTagChunk(
 				continue
 			}
 		} else {
-			// For 1-token examples, require high IDF (exTotal >= 1.5)
-			if exTotal < 1.5 {
+			// For 1-token examples, require high IDF (exTotal >= singleTokenMinIDF)
+			if exTotal < singleTokenMinIDF {
 				continue
 			}
 		}
 
-		cov := interIDF / exTotal
+		cov := min(1.0, interIDF/exTotal)
 		if exTokens < 2 {
-			if cov < 0.999 {
+			if cov < singleTokenCoverageThreshold {
 				continue
 			}
 		} else {
@@ -327,7 +351,12 @@ func matchAndTagChunk(
 				continue
 			}
 		}
-		passed = append(passed, candidateScore{docID: docID, coverage: cov})
+		tfFactor := candidateTFScore[docID] / max(1e-6, interIDF)
+		passed = append(passed, candidateScore{
+			docID:    docID,
+			coverage: cov,
+			tfWeight: cov * tfFactor,
+		})
 	}
 	if len(passed) == 0 {
 		return nil
@@ -346,12 +375,13 @@ func matchAndTagChunk(
 	var totalWeightSum float64
 
 	for i := 0; i < topK; i++ {
+		weight := passed[i].tfWeight
 		cov := passed[i].coverage
 		ex := idx.examples[passed[i].docID]
 		totalWeightSum += cov
 		tagCount := float64(max(1, len(ex.Tags)))
 		for _, t := range ex.Tags {
-			tagWeightedCounts[t] += cov / tagCount
+			tagWeightedCounts[t] += weight / tagCount
 		}
 	}
 
@@ -360,6 +390,7 @@ func matchAndTagChunk(
 	}
 
 	// 4. Score calculation: Rank-decay gradient model ensuring healthy [8/9, 7, 6, 5, 4] distribution.
+	// topK acts as a normalization denominator for average coverage across top matched slots.
 	avgCov := totalWeightSum / float64(topK)
 	type tagCandidate struct {
 		name      string
@@ -411,13 +442,14 @@ func matchAndTagChunk(
 	for i, c := range candidates {
 		if i > 0 {
 			prev := candidates[i-1].combined
-			if prev > 0 && (prev-c.combined)/prev > 0.05 {
+			if prev > 0 && (prev-c.combined)/prev > rankDecayTierDropRelativeThreshold {
 				effectiveRank++
 			}
 		}
-		rankBase := max(3.0, 8.5-2.0*float64(effectiveRank))
+		rankBase := max(rankDecayBaseMin, rankDecayBaseMax-rankDecayStep*float64(effectiveRank))
 		relWeight := c.weightedC / maxWeightedC
-		raw := rankBase * covFactor * math.Pow(relWeight, 0.4)
+		raw := rankBase * covFactor * math.Pow(relWeight, rankDecayWeightPower)
+		// Upper bounded by 10 as a defensive clamp; maximum expected rank score is 9.
 		s := min(10, max(1, roundInt(raw)))
 		scored = append(scored, tagScore{name: c.name, score: s})
 	}
@@ -915,9 +947,21 @@ func splitAndTrim(s, sep string) []string {
 	return out
 }
 
+func isAlphaExt(ext string) bool {
+	if len(ext) < 2 || ext[0] != '.' {
+		return false
+	}
+	for _, r := range ext[1:] {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
 func cleanTitle(title string) string {
 	title = strings.TrimSpace(title)
-	if ext := filepath.Ext(title); ext != "" && len(ext) <= 6 {
+	if ext := filepath.Ext(title); ext != "" && len(ext) <= 6 && isAlphaExt(ext) {
 		title = strings.TrimSuffix(title, ext)
 	}
 	return strings.TrimSpace(title)
@@ -979,45 +1023,63 @@ func getChunkText(chunk map[string]any) string {
 	return strings.Join(parts, " ")
 }
 
+// detectTextLanguage detects language from chunk samples across the document.
+// Priority order:
+// 1. Japanese Kana (\u3040-\u309F, \u30A0-\u30FF) -> "Japanese" (Kana is exclusively Japanese)
+// 2. Korean Hangul (\uAC00-\uD7AF, \u1100-\u11FF) -> "Korean" (Hangul is exclusively Korean)
+// 3. CJK Unified Ideographs (\u4E00-\u9FFF, \u3400-\u4DBF) -> "Chinese"
+// 4. Default -> "English"
 func detectTextLanguage(chunks []map[string]any) string {
-	sampleCount := min(3, len(chunks))
-	hasKana := false
-	hasHangul := false
-	hasCJK := false
+	if len(chunks) == 0 {
+		return "English"
+	}
+	sampleIndices := make([]int, 0, 10)
+	if len(chunks) <= 10 {
+		for i := range chunks {
+			sampleIndices = append(sampleIndices, i)
+		}
+	} else {
+		step := float64(len(chunks)-1) / 9.0
+		for i := 0; i < 10; i++ {
+			idx := int(float64(i) * step)
+			sampleIndices = append(sampleIndices, idx)
+		}
+	}
 
-	for i := 0; i < sampleCount; i++ {
-		txt := getChunkText(chunks[i])
+	kanaCount := 0
+	hangulCount := 0
+	cjkCount := 0
+
+	for _, idx := range sampleIndices {
+		if idx >= len(chunks) {
+			continue
+		}
+		txt := getChunkText(chunks[idx])
 		if txt == "" {
 			continue
 		}
 		runes := []rune(txt)
-		if len(runes) > 300 {
-			runes = runes[:300]
+		if len(runes) > 1000 {
+			runes = runes[:1000]
 		}
 		for _, r := range runes {
 			if (r >= 0x3040 && r <= 0x309F) || (r >= 0x30A0 && r <= 0x30FF) {
-				hasKana = true
-				break
+				kanaCount++
+			} else if (r >= 0xAC00 && r <= 0xD7AF) || (r >= 0x1100 && r <= 0x11FF) {
+				hangulCount++
+			} else if (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF) {
+				cjkCount++
 			}
-			if (r >= 0xAC00 && r <= 0xD7AF) || (r >= 0x1100 && r <= 0x11FF) {
-				hasHangul = true
-			}
-			if (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF) {
-				hasCJK = true
-			}
-		}
-		if hasKana {
-			return "Japanese"
 		}
 	}
 
-	if hasKana {
+	if kanaCount > 0 {
 		return "Japanese"
 	}
-	if hasHangul {
+	if hangulCount > 0 {
 		return "Korean"
 	}
-	if hasCJK {
+	if cjkCount > 0 {
 		return "Chinese"
 	}
 	return "English"
@@ -1068,7 +1130,7 @@ func llmTagChunk(
 	} else if idx != nil && len(idx.examples) > 0 {
 		// Cold-start fallback: sample real examples deterministically using text hash seed
 		sampleCount := min(2, len(idx.examples))
-		r := rand.New(rand.NewSource(textHash))
+		r := rand.New(rand.NewPCG(uint64(textHash), uint64(textHash^0x5bf03635e0689dd2)))
 		perm := r.Perm(len(idx.examples))[:sampleCount]
 		for _, idxDoc := range perm {
 			ex := idx.examples[idxDoc]
@@ -1087,11 +1149,7 @@ func llmTagChunk(
 
 	if cached := getTaggerLLMCache(ctx, llmID, text, allTags, picked, topN); cached != nil {
 		chunk[common.TAG_FLD] = cached
-		tagKwdList := make([]string, 0, len(cached))
-		for k := range cached {
-			tagKwdList = append(tagKwdList, k)
-		}
-		chunk["tag_kwd"] = tagKwdList
+		chunk["tag_kwd"] = sortedTagWeightsKeys(cached)
 		return
 	}
 
@@ -1139,11 +1197,7 @@ func llmTagChunk(
 
 	if len(result) > 0 {
 		chunk[common.TAG_FLD] = result
-		tagKwdList := make([]string, 0, len(result))
-		for k := range result {
-			tagKwdList = append(tagKwdList, k)
-		}
-		chunk["tag_kwd"] = tagKwdList
+		chunk["tag_kwd"] = sortedTagWeightsKeys(result)
 		setTaggerLLMCache(ctx, llmID, text, allTags, picked, topN, result)
 	}
 }
@@ -1288,6 +1342,31 @@ func sortedTagNames(allTags map[string]float64) []string {
 	return out
 }
 
+func sortedTagWeightsKeys(m map[string]int) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	kvs := make([]kv, 0, len(m))
+	for k, v := range m {
+		kvs = append(kvs, kv{k, v})
+	}
+	sort.Slice(kvs, func(i, j int) bool {
+		if kvs[i].v != kvs[j].v {
+			return kvs[i].v > kvs[j].v
+		}
+		return kvs[i].k < kvs[j].k
+	})
+	keys := make([]string, len(kvs))
+	for i, item := range kvs {
+		keys[i] = item.k
+	}
+	return keys
+}
+
 func sampleWithoutReplacement(slice []schema.TaggedChunk, k int, seed int64) []schema.TaggedChunk {
 	if len(slice) == 0 || k <= 0 {
 		return nil
@@ -1297,7 +1376,7 @@ func sampleWithoutReplacement(slice []schema.TaggedChunk, k int, seed int64) []s
 		copy(out, slice)
 		return out
 	}
-	r := rand.New(rand.NewSource(seed))
+	r := rand.New(rand.NewPCG(uint64(seed), uint64(seed^0x5bf03635e0689dd2)))
 	perm := r.Perm(len(slice))
 	out := make([]schema.TaggedChunk, k)
 	for i := 0; i < k; i++ {

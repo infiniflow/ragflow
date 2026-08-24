@@ -19,6 +19,7 @@ package elasticsearch
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -548,6 +549,21 @@ func TestFormatOrderedTagFeas(t *testing.T) {
 	expectedJSON := `{"活动咨询":9,"服务投诉":6,"价格咨询":4,"正面评价":3,"质量投诉":3}`
 	if string(raw) != expectedJSON {
 		t.Fatalf("formatOrderedTagFeas output mismatch:\ngot:  %s\nwant: %s", string(raw), expectedJSON)
+	}
+
+	// Test json.Number and float rounding support
+	tagFeasWithJSONNumber := map[string]any{
+		"LowTag":  json.Number("3.2"),
+		"HighTag": json.Number("8.7"),
+		"MidTag":  float64(5.6),
+	}
+	rawNum, okNum := formatOrderedTagFeas(tagFeasWithJSONNumber)
+	if !okNum {
+		t.Fatal("expected formatOrderedTagFeas with json.Number to succeed")
+	}
+	expectedNumJSON := `{"HighTag":9,"MidTag":6,"LowTag":3}`
+	if string(rawNum) != expectedNumJSON {
+		t.Fatalf("formatOrderedTagFeas with json.Number mismatch:\ngot:  %s\nwant: %s", string(rawNum), expectedNumJSON)
 	}
 
 	// Verify that jsonIterator preserves the raw byte order inside docCopy

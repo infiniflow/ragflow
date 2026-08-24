@@ -730,8 +730,48 @@ func TestPopulateTagKwd_LLMTagChunk(t *testing.T) {
 	if len(tagKwd) != 2 {
 		t.Fatalf("expected 2 tags in tag_kwd, got %d: %v", len(tagKwd), tagKwd)
 	}
+	// Verify strict score-descending order: RAG (8) > vector database (6)
+	if tagKwd[0] != "RAG" || tagKwd[1] != "vector database" {
+		t.Fatalf("expected tag_kwd to be ordered descending by score ['RAG', 'vector database'], got: %v", tagKwd)
+	}
 	if chunk[common.TAG_FLD] == nil {
 		t.Fatal("expected tag_feas to be populated")
+	}
+}
+
+func TestSortedTagWeightsKeys(t *testing.T) {
+	weights := map[string]int{
+		"Low":     3,
+		"Highest": 9,
+		"Medium":  6,
+		"Another": 6,
+	}
+	got := sortedTagWeightsKeys(weights)
+	expected := []string{"Highest", "Another", "Medium", "Low"}
+	if len(got) != len(expected) {
+		t.Fatalf("length mismatch: got %d, want %d", len(got), len(expected))
+	}
+	if got[0] != "Highest" || got[3] != "Low" {
+		t.Fatalf("sortedTagWeightsKeys order mismatch: %v", got)
+	}
+}
+
+func TestCleanTitle_PreservesVersionNumbers(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"document.pdf", "document"},
+		{"report_v1.0.docx", "report_v1.0"},
+		{"version 2.0", "version 2.0"},
+		{"manual_v2.5.txt", "manual_v2.5"},
+		{"data.csv", "data"},
+	}
+	for _, tt := range tests {
+		got := cleanTitle(tt.input)
+		if got != tt.want {
+			t.Errorf("cleanTitle(%q) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 

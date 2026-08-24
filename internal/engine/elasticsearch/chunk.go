@@ -808,6 +808,13 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 		v int
 	}
 	var kvs []kv
+	roundScore := func(f float64) int {
+		if f < 0 {
+			return int(f - 0.5)
+		}
+		return int(f + 0.5)
+	}
+
 	switch m := v.(type) {
 	case map[string]int:
 		kvs = make([]kv, 0, len(m))
@@ -817,7 +824,7 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 	case map[string]float64:
 		kvs = make([]kv, 0, len(m))
 		for k, val := range m {
-			kvs = append(kvs, kv{k, int(val)})
+			kvs = append(kvs, kv{k, roundScore(val)})
 		}
 	case map[string]any:
 		kvs = make([]kv, 0, len(m))
@@ -826,9 +833,13 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 			case int:
 				kvs = append(kvs, kv{k, score})
 			case float64:
-				kvs = append(kvs, kv{k, int(score)})
+				kvs = append(kvs, kv{k, roundScore(score)})
 			case int64:
 				kvs = append(kvs, kv{k, int(score)})
+			case json.Number:
+				if f, err := score.Float64(); err == nil {
+					kvs = append(kvs, kv{k, roundScore(f)})
+				}
 			}
 		}
 	default:
