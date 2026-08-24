@@ -65,6 +65,16 @@ func NewRedisCheckPointStoreWithClient(client *redis.Client, ttl time.Duration) 
 	return &RedisCheckPointStore{client: client, ttl: ttl}
 }
 
+// RedisCheckpointExists reports whether a pipeline checkpoint is present for
+// id. It is used by ingestion progress handling to distinguish a fresh run
+// from a resume: resumed nodes may not emit lifecycle events again, so their
+// previous completed progress rows must be retained.
+func RedisCheckpointExists(ctx context.Context, id string) (bool, error) {
+	store := NewRedisCheckPointStore(0)
+	_, found, err := store.Get(ctx, id)
+	return found, err
+}
+
 // Get implements eino's CheckPointStore.Get. Returns (nil, false, nil) when
 // the key does not exist (redis.Nil) so callers can distinguish "missing"
 // from "present-but-error".

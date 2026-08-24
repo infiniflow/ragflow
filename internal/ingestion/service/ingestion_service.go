@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -615,13 +616,21 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		}
 		return ok
 	}
-	if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
-		common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
-		ok := e.markFailed(ctx, task.ID)
-		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+	resumeCheckpoint, checkpointErr := canvas.RedisCheckpointExists(ctx, task.ID)
+	if checkpointErr != nil {
+		common.Warn(fmt.Sprintf("Failed to check checkpoint for task %s; treating it as a fresh run: %v", task.ID, checkpointErr))
+	}
+	if !resumeCheckpoint {
+		if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
+			common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
+			ok := e.markFailed(ctx, task.ID)
+			if ok {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			}
+			return ok
 		}
-		return ok
+	} else {
+		common.Info(fmt.Sprintf("Preserving component progress for checkpoint resume of task %s", task.ID))
 	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
