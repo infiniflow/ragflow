@@ -17,6 +17,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,17 +93,12 @@ func TestAgentSessionCancelRouteRegistered(t *testing.T) {
 	}
 }
 
-// TestAgentUploadAndAttachmentDownloadOnBetaAuth pins the wiring of the
-// two agent endpoints that python declares with
-// @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
-// (api/apps/restful_apis/agent_api.py upload_agent_file / download_attachment).
-// They serve the embedded/shared agent page, whose only credential is the
-// share (beta) APIToken, so Router.Setup must register them on the
-// beta-auth group — NOT on the JWT-only authorized group. With no
-// Authorization header the beta middleware answers HTTP 200 + code 102
-// ("Authorization is not valid!"), while the JWT-only AuthMiddleware
-// answers a bare HTTP 401 — which is exactly what makes the embedded
-// page redirect to /login after an upload attempt (reported issue).
+// TestAgentUploadAndAttachmentDownloadOnBetaAuth pins the auth wiring of
+// the agent file upload and attachment-download routes: the embedded
+// agent page holds only a share (beta) token, so both must sit on the
+// beta-auth group. Unauthenticated, its middleware answers HTTP 200 +
+// code 102 instead of the bare 401 the JWT-only AuthMiddleware would
+// return, which is what bounced the embedded page to /login.
 func TestAgentUploadAndAttachmentDownloadOnBetaAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -124,7 +120,7 @@ func TestAgentUploadAndAttachmentDownloadOnBetaAuth(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req := httptest.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
 			engine.ServeHTTP(resp, req)
 
 			if resp.Code == http.StatusNotFound {
@@ -142,12 +138,9 @@ func TestAgentUploadAndAttachmentDownloadOnBetaAuth(t *testing.T) {
 		})
 	}
 
-	// Parity pin: attachments preview stays JWT-only in python
-	// (plain @login_required, agent_api.py:2656), so it must keep
-	// answering 401 from the authorized group when unauthenticated.
 	t.Run("agent attachment preview stays JWT-only", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/attachments/att-1/preview", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/agents/attachments/att-1/preview", nil)
 		engine.ServeHTTP(resp, req)
 
 		if resp.Code == http.StatusNotFound {

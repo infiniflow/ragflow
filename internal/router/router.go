@@ -222,14 +222,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
-		// Agent upload + attachment download also serve the embedded/shared
-		// agent page, whose only credential is the share (beta) APIToken
-		// passed as the ?auth= query param. Python declares both endpoints
-		// with @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
-		// (api/apps/restful_apis/agent_api.py:990 upload_agent_file,
-		// :2666 download_attachment); BetaAuthMiddleware resolves the same
-		// three credential kinds (session JWT → API token → beta token), so
-		// the routes stay usable from the logged-in console as well.
 		apiBetaAuth.POST("/agents/:canvas_id/upload", r.agentHandler.UploadAgentFile)
 		apiBetaAuth.GET("/agents/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
 

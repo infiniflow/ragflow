@@ -58,13 +58,6 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// File operations.
 	g.GET("/download", h.DownloadAgentFile)
 	g.GET("/attachments/:attachment_id/preview", h.PreviewAttachment)
-	// POST /:canvas_id/upload and GET /attachments/:attachment_id/download
-	// accept the public share (beta) token used by the embedded/shared agent
-	// page, so they are registered on the beta-auth group in router.go
-	// instead of this JWT-only group. Mirrors python
-	// @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA]) on
-	// upload_agent_file (agent_api.py:990) and download_attachment
-	// (agent_api.py:2666).
 
 	// Component introspection + debug.
 	g.GET("/:canvas_id/components/:component_id/input-form", h.GetComponentInputForm)
