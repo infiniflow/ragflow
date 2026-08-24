@@ -23,12 +23,11 @@ export function canGenerateWiki(knowledgeBase?: IDataset): boolean {
   const parserConfig = knowledgeBase?.parser_config as
     | CompilationParserConfig
     | undefined;
-  const compilationGroupIds =
-    parserConfig?.compilation_template_group_ids ??
-    parserConfig?.compilation_template_group_id;
+  const hasDirectCompilationTemplate =
+    hasConfiguredGroup(parserConfig?.compilation_template_group_ids) ||
+    hasConfiguredGroup(parserConfig?.compilation_template_group_id);
 
   return (
-    Boolean(knowledgeBase?.pipeline_id?.trim()) ||
-    hasConfiguredGroup(compilationGroupIds)
+    Boolean(knowledgeBase?.pipeline_id?.trim()) || hasDirectCompilationTemplate
   );
 }
