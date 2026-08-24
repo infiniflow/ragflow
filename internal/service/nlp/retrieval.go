@@ -124,7 +124,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
 	}
-	common.Info("Retrieval prefetch params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("prefetchSize", prefetchSize))
+	common.Debug("Retrieval prefetch params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("prefetchSize", prefetchSize))
 
 	// Execute search via Search()
 	searchReq := &RetrievalSearchRequest{
