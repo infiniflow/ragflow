@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { IModelInfo } from '@/interfaces/request/llm';
+import { IModelInfo } from "@/interfaces/request/llm";
 
 /**
  * Capitalize the first letter of a string
@@ -24,9 +24,9 @@ export function capitalize(s: string): string {
 }
 
 /**
- * When model_type contains chat and vision=true, automatically add image2text
+ * When model_type contains chat and vision=true, automatically add vision.
  */
-export function applyChatToImage2Text(
+export function applyChatToVision(
   modelType: string[] | string | undefined,
   vision?: boolean,
 ): string[] {
@@ -35,8 +35,8 @@ export function applyChatToImage2Text(
     : modelType
       ? [modelType]
       : [];
-  if (arr.includes('chat') && vision) {
-    return [...arr, 'image2text'];
+  if (arr.includes("chat") && vision) {
+    return [...arr, "vision"];
   }
   return arr;
 }
@@ -56,16 +56,16 @@ export function parseApiKeyAsObject(
   raw: unknown,
 ): Record<string, any> | undefined {
   let obj: any = raw;
-  if (typeof raw === 'string') {
+  if (typeof raw === "string") {
     const trimmed = raw.trim();
-    if (!trimmed.startsWith('{')) return undefined;
+    if (!trimmed.startsWith("{")) return undefined;
     try {
       obj = JSON.parse(trimmed);
     } catch {
       return undefined;
     }
   }
-  return obj && typeof obj === 'object' ? obj : undefined;
+  return obj && typeof obj === "object" ? obj : undefined;
 }
 
 /**
