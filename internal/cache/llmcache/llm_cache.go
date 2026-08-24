@@ -302,10 +302,12 @@ func (e *Engine[T]) GetOrCompute(
 
 	select {
 	case <-ctx.Done():
+		// Unblock retries to start a fresh flight immediately; drain the original
+		// flight asynchronously without a second Forget to avoid evicting a newer flight
+		// registered by a concurrent retry.
 		e.group.Forget(key)
 		go func() {
 			<-ch
-			e.group.Forget(key)
 		}()
 		return zero, ctx.Err()
 	case res := <-ch:

@@ -568,6 +568,83 @@ func TestEngine_GetOrCompute_WriteBack_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestEngine_GetOrCompute_Cancellation_SingleForgetNoRace(t *testing.T) {
+	engine, _, _ := newTestEngineWithRedis[string](t)
+
+	// 1. Caller A starts a slow flight
+	ctxA, cancelA := context.WithCancel(context.Background())
+	startedA := make(chan struct{})
+	finishA := make(chan struct{})
+
+	go func() {
+		_, _ = engine.GetOrCompute(ctxA, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
+			close(startedA)
+			<-finishA
+			return "resultA", nil
+		})
+	}()
+
+	<-startedA
+	// Cancel Caller A's context, triggering Forget(key)
+	cancelA()
+	time.Sleep(10 * time.Millisecond)
+
+	// 2. Caller B starts a new flight for the same key while A is still running in background
+	ctxB := context.Background()
+	startedB := make(chan struct{})
+	finishB := make(chan struct{})
+	var computeCountB atomic.Int32
+
+	var resB string
+	var errB error
+	doneB := make(chan struct{})
+	go func() {
+		resB, errB = engine.GetOrCompute(ctxB, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
+			computeCountB.Add(1)
+			close(startedB)
+			<-finishB
+			return "resultB", nil
+		})
+		close(doneB)
+	}()
+
+	<-startedB
+
+	// 3. Now let Caller A's original background task finish.
+	// If there was a double-forget, A completing would evict B's flight from singleflight map!
+	close(finishA)
+	time.Sleep(20 * time.Millisecond)
+
+	// 4. Caller C arrives while Caller B is still computing.
+	// Caller C MUST merge into Caller B's existing flight and NOT start a new computation.
+	ctxC := context.Background()
+	var resC string
+	var errC error
+	doneC := make(chan struct{})
+	go func() {
+		resC, errC = engine.GetOrCompute(ctxC, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
+			computeCountB.Add(1) // Should NOT be called
+			return "resultC_unwanted", nil
+		})
+		close(doneC)
+	}()
+
+	// 5. Allow Caller B's computation to finish
+	close(finishB)
+	<-doneB
+	<-doneC
+
+	if errB != nil || errC != nil {
+		t.Fatalf("unexpected error: B=%v, C=%v", errB, errC)
+	}
+	if computeCountB.Load() != 1 {
+		t.Errorf("compute count = %d, want 1 (SingleFlight dedup was defeated by double forget race)", computeCountB.Load())
+	}
+	if resB != "resultB" || resC != "resultB" {
+		t.Errorf("resB = %q, resC = %q, both want 'resultB'", resB, resC)
+	}
+}
+
 func BenchmarkBuildKey(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
