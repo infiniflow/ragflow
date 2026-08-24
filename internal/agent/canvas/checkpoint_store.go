@@ -72,7 +72,7 @@ func NewRedisCheckPointStoreWithClient(client *redis.Client, ttl time.Duration) 
 func RedisCheckpointExists(ctx context.Context, id string) (bool, error) {
 	rc := redis2.Get()
 	if rc == nil || rc.GetClient() == nil {
-		return false, nil
+		return false, errors.New("checkpoint store: redis client not initialized")
 	}
 	found, err := rc.GetClient().Exists(ctx, checkpointKeyPrefix+id).Result()
 	return found > 0, err
