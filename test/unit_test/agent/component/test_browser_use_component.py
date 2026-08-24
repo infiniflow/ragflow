@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 
+import re
 import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlparse
 
 from api.db import FileType
 
@@ -45,6 +47,55 @@ def _install_cv2_stub_if_unavailable():
 
 
 _install_cv2_stub_if_unavailable()
+
+
+def _install_xgboost_stub_if_unavailable():
+    # deepdoc/parser/pdf_parser.py imports xgboost unconditionally. Its macOS
+    # wheels need libomp, which slim test environments may not have; none of
+    # these tests touch the layout model, so a stub keeps them collectable.
+    try:
+        import xgboost  # noqa: F401
+
+        return
+    except Exception:
+        pass
+    stub = types.ModuleType("xgboost")
+
+    def _module_getattr(name):
+        raise RuntimeError(f"xgboost runtime call ({name}) is unavailable in this test environment")
+
+    stub.__getattr__ = _module_getattr
+    sys.modules["xgboost"] = stub
+
+
+_install_xgboost_stub_if_unavailable()
+
+
+def _install_requests_stub_if_unavailable():
+    # The Browser URL-upload path imports requests lazily and every test
+    # monkeypatches requests.get, so a minimal stub keeps the suite runnable
+    # in slim environments without the real dependency.
+    try:
+        import requests  # noqa: F401
+
+        return
+    except Exception:
+        pass
+    stub = types.ModuleType("requests")
+
+    class RequestException(Exception):
+        pass
+
+    stub.RequestException = RequestException
+
+    def _get(*_args, **_kwargs):
+        raise RuntimeError("requests.get must be monkeypatched in tests")
+
+    stub.get = _get
+    sys.modules["requests"] = stub
+
+
+_install_requests_stub_if_unavailable()
 
 from agent.component import browser as browser_use_module  # noqa: E402
 
@@ -149,32 +200,53 @@ def test_extract_ids_does_not_split_http_url_by_comma():
     assert refs == ["https://example.com/download?name=a,b.txt"]
 
 
+class _FakeRequestsResponse:
+    def __init__(self, status_code=200, headers=None, data=b""):
+        self.status_code = status_code
+        self.headers = dict(headers or {})
+        self._data = data
+        self.closed = False
+
+    def iter_content(self, chunk_size=1024 * 1024):
+        for i in range(0, len(self._data), max(chunk_size, 1)):
+            yield self._data[i : i + chunk_size]
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise AssertionError(f"unexpected HTTP status: {self.status_code}")
+
+    def close(self):
+        self.closed = True
+
+
+def _allow_public_hosts(monkeypatch, allowed_substrings=("example.com", "example.net")):
+    import common.ssrf_guard as ssrf
+
+    def _fake_assert(url):
+        host = urlparse(url).hostname or ""
+        for marker in allowed_substrings:
+            if marker in host:
+                return (host, "93.184.216.34")
+        raise ValueError(f"blocked in test: {url}")
+
+    monkeypatch.setattr(ssrf, "assert_url_is_safe", _fake_assert)
+
+
 def test_prepare_upload_files_supports_http_url(monkeypatch, tmp_path):
     component = _build_component()
     component._param.upload_sources = "https://example.com/files/demo.txt"
 
-    class _FakeResponse:
-        def __init__(self):
-            self.headers = {"Content-Disposition": 'attachment; filename="remote_demo.txt"'}
-            self._data = b"hello from url"
-            self._pos = 0
+    import requests
 
-        def read(self, size=-1):
-            if size <= 0:
-                chunk = self._data[self._pos :]
-                self._pos = len(self._data)
-                return chunk
-            chunk = self._data[self._pos : self._pos + size]
-            self._pos += len(chunk)
-            return chunk
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            return False
-
-    monkeypatch.setattr(browser_use_module, "urlopen", lambda *_args, **_kwargs: _FakeResponse())
+    _allow_public_hosts(monkeypatch)
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda _url, **_kwargs: _FakeRequestsResponse(
+            headers={"Content-Disposition": 'attachment; filename="remote_demo.txt"'},
+            data=b"hello from url",
+        ),
+    )
 
     prepared = component._prepare_upload_files(str(tmp_path))
 
@@ -184,6 +256,127 @@ def test_prepare_upload_files_supports_http_url(monkeypatch, tmp_path):
     assert prepared[0]["source_url"] == "https://example.com/files/demo.txt"
     assert Path(prepared[0]["local_path"]).exists()
     assert Path(prepared[0]["local_path"]).read_bytes() == b"hello from url"
+
+
+def test_extract_url_filename_decodes_percent_escaped_traversal():
+    # Regression (CWE-22): "%2e%2e%2f" is not a separator for os.path.basename()
+    # before decoding, so basename-then-unquote left "../" sequences in the
+    # name and the joined path escaped the upload directory.
+    name = browser_use_module.Browser._extract_url_filename(
+        "https://example.com/download/%2e%2e%2f..%2f..%2fetc%2fpasswd",
+        headers={},
+    )
+
+    assert name == "passwd"
+
+
+def test_extract_url_filename_sanitizes_content_disposition_traversal():
+    headers = {"Content-Disposition": "attachment; filename*=UTF-8''..%2f..%2fowned.txt"}
+
+    name = browser_use_module.Browser._extract_url_filename("https://example.com/dl", headers=headers)
+
+    assert name == "owned.txt"
+
+
+def test_extract_url_filename_falls_back_to_uuid_when_no_safe_name():
+    # The whole path decodes to a traversal segment, so no safe name remains.
+    name = browser_use_module.Browser._extract_url_filename("https://example.com/%2e%2e%2f", headers={})
+
+    assert re.fullmatch(r"url_file_[0-9a-f]{8}\.bin", name)
+
+
+def test_prepare_upload_url_file_keeps_percent_traversal_inside_upload_dir(monkeypatch, tmp_path):
+    component = _build_component()
+
+    import requests
+
+    _allow_public_hosts(monkeypatch)
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda _url, **_kwargs: _FakeRequestsResponse(data=b"payload"),
+    )
+
+    prepared = component._prepare_upload_url_file("https://example.com/files/%2e%2e%2f..%2fvictim.txt", str(tmp_path))
+
+    assert prepared is not None
+    local_path = Path(prepared["local_path"])
+    assert local_path.parent == tmp_path
+    assert local_path.name == "victim.txt"
+    assert local_path.read_bytes() == b"payload"
+
+
+def test_prepare_upload_url_file_rejects_private_and_metadata_urls(monkeypatch, tmp_path):
+    # Uses the real assert_url_is_safe (no monkeypatch): loopback, link-local
+    # metadata and RFC1918 hosts must be refused before any connection.
+    component = _build_component()
+    monkeypatch.delenv("ALLOW_ANY_HOST", raising=False)
+
+    import requests
+
+    connections = []
+    monkeypatch.setattr(requests, "get", lambda url, **_kwargs: connections.append(url))
+
+    for url in (
+        "http://127.0.0.1:8080/admin",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.1.2.3/internal.txt",
+        "http://[::1]/x.txt",
+    ):
+        assert component._prepare_upload_url_file(url, str(tmp_path)) is None
+
+    assert connections == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_prepare_upload_url_file_rejects_redirect_to_intranet(monkeypatch, tmp_path):
+    # First hop is a public URL answering 302 -> cloud metadata: the redirect
+    # target must be re-validated and rejected before connecting to it.
+    component = _build_component()
+
+    import requests
+
+    _allow_public_hosts(monkeypatch)
+    connections = []
+
+    def _redirect_to_metadata(url, **_kwargs):
+        connections.append(url)
+        return _FakeRequestsResponse(
+            status_code=302,
+            headers={"Location": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"},
+        )
+
+    monkeypatch.setattr(requests, "get", _redirect_to_metadata)
+
+    prepared = component._prepare_upload_url_file("https://example.com/file.bin", str(tmp_path))
+
+    assert prepared is None
+    assert connections == ["https://example.com/file.bin"]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_prepare_upload_url_file_follows_safe_redirects(monkeypatch, tmp_path):
+    component = _build_component()
+
+    import requests
+
+    _allow_public_hosts(monkeypatch)
+
+    def _get(url, **_kwargs):
+        if url == "https://example.com/download":
+            return _FakeRequestsResponse(status_code=301, headers={"Location": "https://cdn.example.net/final/report.pdf"})
+        if url == "https://cdn.example.net/final/report.pdf":
+            return _FakeRequestsResponse(data=b"PDF")
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr(requests, "get", _get)
+
+    prepared = component._prepare_upload_url_file("https://example.com/download", str(tmp_path))
+
+    assert prepared is not None
+    assert prepared["name"] == "report.pdf"
+    assert prepared["source_url"] == "https://example.com/download"
+    assert Path(prepared["local_path"]).read_bytes() == b"PDF"
 
 
 def test_save_downloads_persists_file_records(monkeypatch, tmp_path):
