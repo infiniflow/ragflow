@@ -79,6 +79,7 @@ from common.data_source.box_connector import BoxConnector
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
+from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
@@ -1879,6 +1880,58 @@ class Bitbucket(SyncBase):
         return wrapper()
 
 
+class AzureDevOps(SyncBase):
+    SOURCE_NAME: str = FileSource.AZURE_DEVOPS
+
+    async def _generate(self, task: dict):
+        self.connector = AzureDevOpsConnector(
+            organization=self.conf.get("organization"),
+            index_mode=self.conf.get("index_mode") or "organization",
+            projects=self.conf.get("projects"),
+            repositories=self.conf.get("repositories"),
+            content_types=self.conf.get("content_types") or "both",
+        )
+
+        self.connector.load_credentials(
+            {
+                "azure_devops_pat": self.conf["credentials"].get("azure_devops_pat"),
+            }
+        )
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            _begin_info = "totally"
+        else:
+            start_time = task.get("poll_range_start")
+            _begin_info = f"from {start_time}"
+
+        end_time = datetime.now(timezone.utc)
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+
+            while checkpoint.has_more:
+                gen = self.connector.load_from_checkpoint(start=start_time.timestamp(), end=end_time.timestamp(), checkpoint=checkpoint)
+
+                while True:
+                    try:
+                        item = next(gen)
+                        if isinstance(item, ConnectorFailure):
+                            logging.exception("Azure DevOps connector failure: %s", item.failure_message)
+                            break
+                        yield [item]
+                    except StopIteration as e:
+                        checkpoint = e.value
+                        break
+
+        def wrapper():
+            for batch in document_batches():
+                yield batch
+
+        self.log_connection("AzureDevOps", f"organization({self.conf.get('organization')})", task)
+        return wrapper()
+
+
 class SeaFile(SyncBase):
     SOURCE_NAME: str = FileSource.SEAFILE
 
@@ -2166,6 +2219,7 @@ func_factory = {
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,
+    FileSource.AZURE_DEVOPS: AzureDevOps,
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,

@@ -30,6 +30,7 @@ from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
 from .azure_blob_connector import AzureBlobConnector
 from .bigquery_connector import BigQueryConnector
+from .azure_devops.connector import AzureDevOpsConnector
 from .bitbucket.connector import BitbucketConnector
 from .blob_connector import BlobStorageConnector
 from .box_connector import BoxConnector
@@ -93,6 +94,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.ZENDESK: ZendeskConnector,
     FileSource.GITLAB: GitlabConnector,
     FileSource.BITBUCKET: BitbucketConnector,
+    FileSource.AZURE_DEVOPS: AzureDevOpsConnector,
     FileSource.SEAFILE: SeaFileConnector,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITableConnector,
     FileSource.MYSQL: RDBMSConnector,
@@ -132,6 +134,7 @@ __all__ = [
     "GithubConnector",
     "GitlabConnector",
     "BitbucketConnector",
+    "AzureDevOpsConnector",
     "BoxConnector",
     "OneDriveConnector",
     "OutlookConnector",
