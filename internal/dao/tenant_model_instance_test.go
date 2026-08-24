@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -49,6 +50,10 @@ func TestTenantModelInstanceDAOGetAllInstancesByProviderIDOrdersByCreateTimeDesc
 	var names []string
 	for _, instance := range instances {
 		names = append(names, instance.InstanceName)
+	}
+	// Pin the provider filter explicitly: the provider-2 row must be absent.
+	if slices.Contains(names, "other") {
+		t.Fatalf("expected only provider-1 instances, got %v", names)
 	}
 	want := []string{"newest", "middle", "oldest"}
 	if len(names) != len(want) {
