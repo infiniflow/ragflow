@@ -100,7 +100,7 @@ type TextBox struct {
 	// merged across pages by MergeTablesAcrossPages). When non-empty it
 	// overrides PageNumber for page-span computation in BoxesToSections, so a
 	// cross-page merged table records every page it occupies (not just the
-	// anchor page). Consumers that only read PageNumber are unaffected.
+	// anchor page).
 	Pages      []int
 	LayoutType string
 	LayoutNo   string
