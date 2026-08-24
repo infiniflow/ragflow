@@ -444,15 +444,24 @@ func salesforceTokenErrorDetail(body []byte) string {
 // the canonical instance URL captured in the authentication snapshot. The
 // token exchange may publish a different canonical instance than the one the
 // operator configured, so every request target is derived from the snapshot
-// instead of stale connector state.
-func (c *SalesforceConnector) apiURL(snap salesforceToken, path string) string {
+// instead of stale connector state. Absolute pagination URLs returned by the
+// query API are validated before use: they must use HTTPS on an approved
+// Salesforce host, so a tampered URL can never receive the bearer token.
+func (c *SalesforceConnector) apiURL(snap salesforceToken, path string) (string, error) {
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		return path
+		parsed, err := url.Parse(path)
+		if err != nil {
+			return "", fmt.Errorf("Salesforce pagination URL is invalid: %v", err)
+		}
+		if !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
+			return "", fmt.Errorf("Salesforce pagination URL must use HTTPS on an approved Salesforce host")
+		}
+		return path, nil
 	}
 	if strings.HasPrefix(path, "/services/data/") {
-		return snap.InstanceURL + path
+		return snap.InstanceURL + path, nil
 	}
-	return snap.InstanceURL + "/services/data/" + c.apiVersion + path
+	return snap.InstanceURL + "/services/data/" + c.apiVersion + path, nil
 }
 
 // getJSON GETs a Salesforce REST endpoint and decodes JSON into out. The apiURL
@@ -463,7 +472,10 @@ func (c *SalesforceConnector) getJSON(ctx context.Context, path string, out any)
 	if err != nil {
 		return err
 	}
-	apiURL := c.apiURL(snap, path)
+	apiURL, err := c.apiURL(snap, path)
+	if err != nil {
+		return err
+	}
 	if c.doJSON != nil {
 		return c.doJSON(ctx, apiURL, out)
 	}
@@ -478,7 +490,10 @@ func (c *SalesforceConnector) getJSON(ctx context.Context, path string, out any)
 			if err != nil {
 				return err
 			}
-			apiURL = c.apiURL(snap, path)
+			apiURL, err = c.apiURL(snap, path)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 		if salesforceObjectUnavailable(status, body) {
@@ -493,6 +508,10 @@ func (c *SalesforceConnector) getJSON(ctx context.Context, path string, out any)
 
 // doGet performs one authenticated GET with SSRF protection.
 func (c *SalesforceConnector) doGet(ctx context.Context, apiURL, token string) (int, []byte, error) {
+	parsed, err := url.Parse(apiURL)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
+		return 0, nil, fmt.Errorf("Salesforce request URL must use HTTPS on an approved Salesforce host")
+	}
 	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
 	if err != nil {
 		return 0, nil, err

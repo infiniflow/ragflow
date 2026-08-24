@@ -886,6 +886,66 @@ func TestRequestAccessTokenRequiresHTTPS(t *testing.T) {
 	}
 }
 
+func TestSalesforceConnectorAPIURLAbsoluteValidation(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	snap := salesforceToken{InstanceURL: "https://acme.my.salesforce.com"}
+
+	// A well-formed absolute pagination URL on an approved HTTPS host is kept.
+	valid := "https://instance2.my.salesforce.com/services/data/v59.0/query/01gX"
+	got, err := connector.apiURL(snap, valid)
+	if err != nil {
+		t.Fatalf("apiURL(valid) err = %v", err)
+	}
+	if got != valid {
+		t.Fatalf("apiURL(valid) = %q", got)
+	}
+
+	// Relative Salesforce API paths are still constructed from the snapshot.
+	rel, err := connector.apiURL(snap, "/sobjects/Account/describe")
+	if err != nil {
+		t.Fatalf("apiURL(relative) err = %v", err)
+	}
+	wantRel := "https://acme.my.salesforce.com/services/data/v59.0/sobjects/Account/describe"
+	if rel != wantRel {
+		t.Fatalf("apiURL(relative) = %q, want %q", rel, wantRel)
+	}
+
+	// Absolute pagination URLs with a bad scheme or host must be rejected.
+	for _, bad := range []string{
+		"http://acme.my.salesforce.com/services/data/v59.0/query/01gX",
+		"https://evil.example.com/services/data/v59.0/query/01gX",
+		"https://acme.my.salesforce.com.evil.com/services/data/v59.0/query/01gX",
+	} {
+		if _, err := connector.apiURL(snap, bad); err == nil {
+			t.Fatalf("apiURL(%q) succeeded, want error", bad)
+		}
+	}
+}
+
+func TestSalesforceConnectorGetJSONRejectsUnsafePaginationURL(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		t.Fatalf("doJSON must not run for an unsafe pagination URL")
+		return nil
+	}
+	var page salesforceQueryPage
+	if err := connector.getJSON(context.Background(), "http://evil.example.com/services/data/v59.0/query/01gX", &page); err == nil {
+		t.Fatalf("getJSON succeeded for an unsafe pagination URL, want error")
+	}
+}
+
+func TestSalesforceConnectorDoGetRejectsUnsafeURL(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	for _, bad := range []string{
+		"http://acme.my.salesforce.com/services/data/v59.0/sobjects",
+		"https://evil.example.com/services/data/v59.0/sobjects",
+	} {
+		if _, _, err := connector.doGet(context.Background(), bad, "token"); err == nil {
+			t.Fatalf("doGet(%q) succeeded, want error", bad)
+		}
+	}
+}
+
 // newSalesforceFixtureConnector builds a connector with token acquisition
 // short-circuited so unit tests never touch the network.
 func newSalesforceFixtureConnector() *SalesforceConnector {
