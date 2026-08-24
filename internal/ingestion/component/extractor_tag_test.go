@@ -1758,4 +1758,3 @@ func TestTagger_Cache_EffectiveModelResolution(t *testing.T) {
 		t.Fatalf("chunk8 expected cached ['PinnedModelTag'], got %v", chunk8["tag_kwd"])
 	}
 }
-

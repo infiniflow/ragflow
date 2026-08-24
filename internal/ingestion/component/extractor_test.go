@@ -2934,6 +2934,3 @@ func TestExtractor_DoubleCleanElimination(t *testing.T) {
 		t.Errorf("summary = %v, want 'A concise summary.'", ck["summary"])
 	}
 }
-
-
-
