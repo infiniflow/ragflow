@@ -238,6 +238,20 @@ def test_variable_ref_patt_does_not_match_bare_var_name(base_module):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize("content", ["{ {A@x}", "{A@x} }"])
+def test_unbalanced_outer_braces_remain_literal(base_module, content):
+    cpn = base_module.ComponentBase.__new__(base_module.ComponentBase)
+    cpn._canvas = SimpleNamespace(
+        get_component_name=lambda _cid: "A",
+        get_variable_value=lambda exp: "VALUE" if exp == "A@x" else None,
+    )
+
+    assert base_module.ComponentBase.variable_ref_patt_re.fullmatch(content) is None
+    assert cpn.get_input_elements_from_text(content) == {}
+    assert cpn.string_format(content, {"A@x": "VALUE"}) == content
+
+
+@pytest.mark.p2
 @pytest.mark.parametrize(
     ("pattern_name", "content", "values", "matched_text", "expected"),
     [
@@ -279,8 +293,16 @@ def test_variable_ref_patt_does_not_match_bare_var_name(base_module):
     ],
 )
 def test_reference_patterns_preserve_adjacent_literal_whitespace(base_module, pattern_name, content, values, matched_text, expected):
+    cpn = base_module.ComponentBase.__new__(base_module.ComponentBase)
     pattern = getattr(base_module.ComponentBase, pattern_name)
     matches = list(pattern.finditer(content))
 
     assert [match.group(0) for match in matches] == matched_text
-    assert pattern.sub(lambda match: values[match.group(1)], content) == expected
+    if pattern_name == "variable_ref_patt_re":
+        cpn._canvas = SimpleNamespace(
+            get_component_name=lambda cpn_id: cpn_id,
+            get_variable_value=lambda exp: values.get(exp),
+        )
+        elements = cpn.get_input_elements_from_text(content)
+        assert {key: meta["value"] for key, meta in elements.items()} == values
+    assert cpn.string_format(content, values) == expected
