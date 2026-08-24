@@ -22,7 +22,6 @@ export type ChatCompletionStreamParams = {
   messages: IMessage[];
   enableThinking?: string;
   enableInternet?: boolean;
-  agentMode?: string;
   llmSetting?: Variable;
 };
 
@@ -46,7 +45,6 @@ export function requestChatCompletionStream(
     messages,
     enableThinking,
     enableInternet,
-    agentMode,
     llmSetting,
   }: ChatCompletionStreamParams,
   signal: AbortSignal,
@@ -72,12 +70,8 @@ export function requestChatCompletionStream(
       session_id: sessionId,
       messages,
       pass_all_history_messages: true,
-      // 'agentic' selects the smart-reasoning ReAct path; it does not use the
-      // numeric thinking level, so neutralise reasoning to 0 and forward
-      // agent_mode instead.
-      reasoning: agentMode ? 0 : Number(enableThinking),
+      reasoning: Number(enableThinking),
       internet: enableInternet,
-      ...(agentMode ? { agent_mode: agentMode } : {}),
       ...(temperature === undefined ? {} : { temperature }),
       ...(top_p === undefined ? {} : { top_p }),
       ...(frequency_penalty === undefined ? {} : { frequency_penalty }),
