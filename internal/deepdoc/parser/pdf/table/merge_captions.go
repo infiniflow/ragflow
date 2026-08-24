@@ -125,6 +125,16 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 	}
 
 	const maxCaptionGap = 40000.0 // PDF points (~7cm) — beyond this, don't attach.
+	// maxCaptionVGap is the vertical band within which a caption attaches to a
+	// table regardless of its horizontal offset. A narrow caption (e.g. a short
+	// Chinese label) sitting directly above a much wider table has a large dx to
+	// the table's center; dx² alone can exceed maxCaptionGap and wrongly reject
+	// the match, dropping a legitimate caption. Vertical adjacency (small gapY)
+	// is the primary signal that the caption belongs to that table; dx only
+	// discriminates between candidate tables, which findTables already resolves
+	// via min-distance. Keep this in line with the vertical tolerance implied by
+	// maxCaptionGap when dx≈0 (~200pt).
+	const maxCaptionVGap = 200.0
 	if captionType == pdf.LayoutTypeFigure && len(figures) > 0 {
 		idx, dist := find(figures, -1) // figures don't contain the caption itself
 		if idx >= 0 && dist < maxCaptionGap {
@@ -143,8 +153,12 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 		}
 	}
 	if captionType == pdf.LayoutTypeTable {
-		idx, dist := findTables(sections, caption)
-		if idx >= 0 && dist < maxCaptionGap {
+		idx, dist, gapY := findTables(sections, caption)
+		// Attach a vertically-adjacent caption even when it is horizontally
+		// offset from the (often much wider) table's center. See
+		// maxCaptionVGap for the rationale (narrow captions above wide
+		// tables, e.g. icbccs '请求参数').
+		if idx >= 0 && (dist < maxCaptionGap || gapY <= maxCaptionVGap) {
 			return idx
 		}
 	}
@@ -165,11 +179,12 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 // Revenue'). A caption just above the table (gap to its top) or just below
 // (gap to its bottom) has a small edge distance and attaches; one that
 // vertically overlaps the table has gap 0.
-func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
+func findTables(sections []pdf.Section, caption pdf.Section) (int, float64, float64) {
 	bestIdx := -1
 	bestDist := 1e9
+	bestGapY := 0.0
 	if len(caption.Positions) == 0 {
-		return bestIdx, bestDist
+		return bestIdx, bestDist, bestGapY
 	}
 	cp := caption.Positions[0]
 	ccx := (cp.Left + cp.Right) / 2
@@ -225,10 +240,11 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 		dist := gapY*gapY + dx*dx
 		if dist < bestDist {
 			bestDist = dist
+			bestGapY = gapY
 			bestIdx = i
 		}
 	}
-	return bestIdx, bestDist
+	return bestIdx, bestDist, bestGapY
 }
 
 // appendRawCaptions concatenates caption texts onto a non-table section
