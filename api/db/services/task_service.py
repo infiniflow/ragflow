@@ -20,7 +20,6 @@ import xxhash
 from datetime import datetime
 
 from api.db.db_utils import bulk_insert_into_db
-from deepdoc.parser import PdfParser
 from peewee import JOIN
 from api.db.db_models import DB, File2Document, File
 from api.db import FileType
@@ -30,8 +29,29 @@ from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
-from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
+
+
+# ``PdfParser`` and ``RAGFlowExcelParser`` are heavy backends that
+# transitively pull in the rest of ``deepdoc.parser``. They are only
+# needed for the small ``total_page_number`` and ``row_number`` helpers
+# below, so the imports are deferred to function-local to keep the
+# service-layer module import graph free of parser backends. This
+# avoids breaking the ``test/unit_test/rag/conftest.py`` stub that
+# installs a lightweight ``deepdoc.parser.pdf_parser`` to test the
+# ``rag.nlp`` package in isolation (#18184).
+def _pdf_parser_total_page_number(filename, file_bin):
+    from deepdoc.parser import PdfParser
+
+    return PdfParser.total_page_number(filename, file_bin)
+
+
+def _ragflow_excel_parser_row_number(filename, file_bin):
+    from deepdoc.parser.excel_parser import RAGFlowExcelParser
+
+    return RAGFlowExcelParser.row_number(filename, file_bin)
+
+
 from common import settings
 from rag.nlp import search
 
@@ -471,7 +491,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
 
     if doc["type"] == FileType.PDF.value:
         file_bin = settings.STORAGE_IMPL.get(bucket, name)
-        pages = PdfParser.total_page_number(doc["name"], file_bin)
+        pages = _pdf_parser_total_page_number(doc["name"], file_bin)
         if pages is None:
             pages = 0
         page_size = doc["parser_config"].get("task_page_size") or 12
@@ -492,7 +512,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
 
     elif doc["parser_id"] == "table":
         file_bin = settings.STORAGE_IMPL.get(bucket, name)
-        rn = RAGFlowExcelParser.row_number(doc["name"], file_bin)
+        rn = _ragflow_excel_parser_row_number(doc["name"], file_bin)
         for i in range(0, rn, 3000):
             task = new_task()
             task["from_page"] = i
