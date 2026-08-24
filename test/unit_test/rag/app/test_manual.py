@@ -74,8 +74,9 @@ def test_legacy_doc_is_rejected_with_conversion_message(manual_module):
 
 
 def test_docx_does_not_hit_doc_rejection(manual_module):
+    parser_instance = MagicMock(return_value=((), []))
     with (
-        patch.object(manual_module, "Docx", return_value=((), [])),
+        patch.object(manual_module, "Docx", return_value=parser_instance),
         patch.object(
             manual_module,
             "vision_figure_parser_docx_wrapper",
