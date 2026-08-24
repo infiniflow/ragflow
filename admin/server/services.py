@@ -457,6 +457,19 @@ class EnvironmentsMgr:
         env_kv = {"env": "DEFAULT_SUPERUSER_EMAIL", "value": os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")}
         result.append(env_kv)
 
+        # Surface DEFAULT_SUPERUSER_PASSWORD the same way as the email
+        # so the ``list envs`` view matches the bootstrap path in
+        # ``admin/server/auth.py``. The value is intentionally NOT
+        # redacted here (the existing DEFAULT_SUPERUSER_EMAIL is
+        # already returned in cleartext), but the entry is included
+        # only when the env var is explicitly set — leaving the default
+        # out of the report avoids printing the well-known bootstrap
+        # password.
+        default_superuser_password = os.getenv("DEFAULT_SUPERUSER_PASSWORD")
+        if default_superuser_password is not None:
+            env_kv = {"env": "DEFAULT_SUPERUSER_PASSWORD", "value": default_superuser_password}
+            result.append(env_kv)
+
         env_kv = {"env": "DB_TYPE", "value": os.getenv("DB_TYPE", "mysql")}
         result.append(env_kv)
 
