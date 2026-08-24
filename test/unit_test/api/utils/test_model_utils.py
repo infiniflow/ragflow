@@ -16,6 +16,4 @@ def test_normalize_model_types_ignores_invalid_metadata():
 
 
 def test_calculate_model_type_accepts_legacy_aliases():
-    assert calculate_model_type(["speech2text", "image2text"]) == (
-        ModelTypeBinary.ASR.value | ModelTypeBinary.VISION.value
-    )
+    assert calculate_model_type(["speech2text", "image2text"]) == (ModelTypeBinary.ASR.value | ModelTypeBinary.VISION.value)
