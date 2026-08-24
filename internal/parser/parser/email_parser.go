@@ -225,9 +225,8 @@ func targetFieldsSet(fields []string) map[string]bool {
 // resolve a charset label identically.
 //
 // The "gb2312" label maps to GBK, not HZGB2312: mail labeled gb2312 carries
-// plain 8-bit GB2312 bytes (GBK is a compatible superset), while HZGB2312
-// only decodes the 7-bit HZ escape form used under the distinct "hz-gb-2312"
-// label.
+// plain 8-bit GB2312 bytes, while HZGB2312 only decodes the 7-bit HZ escape
+// form used under the distinct "hz-gb-2312" label.
 func charsetEncoding(charset string) (encoding.Encoding, bool) {
 	switch strings.ToLower(strings.TrimSpace(charset)) {
 	case "gb2312", "gbk":
