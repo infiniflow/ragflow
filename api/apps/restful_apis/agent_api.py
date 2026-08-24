@@ -2375,7 +2375,12 @@ async def _webhook_impl(agent_id: str, is_test: bool):
 
         return True
 
-    parsed = await parse_webhook_request(webhook_cfg.get("content_types"))
+    try:
+        parsed = await parse_webhook_request(webhook_cfg.get("content_types"))
+    except Exception as e:
+        canvas.close()
+        return get_data_error_result(code=RetCode.BAD_REQUEST, message=str(e)), RetCode.BAD_REQUEST
+
     SCHEMA = webhook_cfg.get("schema", {"query": {}, "headers": {}, "body": {}})
 
     # Extract strictly by schema
@@ -2384,6 +2389,7 @@ async def _webhook_impl(agent_id: str, is_test: bool):
         header_clean = extract_by_schema(parsed["headers"], SCHEMA.get("headers", {}), name="headers")
         body_clean = extract_by_schema(parsed["body"], SCHEMA.get("body", {}), name="body")
     except Exception as e:
+        canvas.close()
         return get_data_error_result(code=RetCode.BAD_REQUEST, message=str(e)), RetCode.BAD_REQUEST
 
     clean_request = {"query": query_clean, "headers": header_clean, "body": body_clean, "input": parsed}
@@ -2410,9 +2416,11 @@ async def _webhook_impl(agent_id: str, is_test: bool):
         try:
             status = int(status)
         except (TypeError, ValueError):
+            canvas.close()
             return get_data_error_result(code=RetCode.BAD_REQUEST, message=str(f"Invalid response status code: {status}")), RetCode.BAD_REQUEST
 
         if not (200 <= status <= 399):
+            canvas.close()
             return get_data_error_result(code=RetCode.BAD_REQUEST, message=str(f"Invalid response status code: {status}, must be between 200 and 399")), RetCode.BAD_REQUEST
 
         body_tpl = response_cfg.get("body_template", "")

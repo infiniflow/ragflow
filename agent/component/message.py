@@ -43,6 +43,12 @@ from common import settings
 from api.db.joint_services.memory_message_service import queue_save_to_memory_task
 
 
+def _valid_message_content(content: Any) -> list[str]:
+    if not isinstance(content, list):
+        return []
+    return [item for item in content if isinstance(item, str) and item.strip()]
+
+
 class MessageParam(ComponentParamBase):
     """
     Define the Message component parameters.
@@ -59,7 +65,8 @@ class MessageParam(ComponentParamBase):
         self.outputs = {"content": {"type": "str"}, "downloads": {"type": "list"}}
 
     def check(self):
-        self.check_empty(self.content, "[Message] Content")
+        if not _valid_message_content(self.content):
+            raise ValueError("[Message] Content does not support empty value.")
         self.check_boolean(self.stream, "[Message] stream")
         return True
 
@@ -192,7 +199,8 @@ class Message(ComponentBase):
         all_content = ""
         cache = {}
         downloads = []
-        for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
+        pattern = re.compile(self.variable_ref_patt, flags=re.DOTALL)
+        for r in self._iter_template_matches(pattern, rand_cnt):
             if self.check_if_canceled("Message streaming"):
                 return
 
@@ -264,7 +272,8 @@ class Message(ComponentBase):
 
         self._area_downloads = []
         multi = self._param.emit_all and len(self._param.content) > 1
-        areas = list(self._param.content) if multi else [random.choice(self._param.content)]
+        valid_content = _valid_message_content(self._param.content)
+        areas = list(self._param.content) if multi else [random.choice(valid_content or self._param.content)]
         contents = []
         for area_idx, cnt in enumerate(areas):
             if self.check_if_canceled("Message processing"):

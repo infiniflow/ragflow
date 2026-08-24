@@ -699,3 +699,77 @@ class FunASRSeq2txt(GPTSeq2txt):
             base_url = "http://localhost:8000/v1"
         super().__init__(key=key or "funasr", model_name=model_name, base_url=base_url, **kwargs)
         logging.info("[FunASR] Speech2Text initialized with model %s at %s", model_name, self.base_url)
+
+
+class CitySenseSpeechKitSeq2txt(Base):
+    """CitySense media-speech-mcp (Yandex SpeechKit hybrid, 4h/1GB) via X-Service-Token."""
+
+    _FACTORY_NAME = "CitySense-SpeechKit"
+
+    def __init__(self, key, model_name="general", base_url="http://media-speech-mcp:8080", **kwargs):
+        # MEDIA_SPEECH_BASE_URL / MEDIA_SPEECH_API_KEY env fallback — allows fully configuring via env
+        env_base = (os.getenv("MEDIA_SPEECH_BASE_URL") or "").strip()
+        env_key = (os.getenv("MEDIA_SPEECH_API_KEY") or "").strip()
+        if not base_url or base_url == "http://media-speech-mcp:8080":
+            if env_base:
+                base_url = env_base
+        if not base_url:
+            base_url = "http://media-speech-mcp:8080"
+        if not key and env_key:
+            key = env_key
+        self.base_url = base_url.rstrip("/")
+        self.api_key = key or ""
+        self.model_name = model_name
+        logging.info("[CitySense-SpeechKit] Speech2Text initialized with model %s at %s", model_name, self.base_url)
+
+    def check_available(self) -> tuple[bool, str]:
+        return True, ""
+
+    def transcription(self, audio_path, **kwargs):
+        # media-speech-mcp multipart: POST /api/v1/transcription/upload
+        # fallback to JSON url if audio_path is http(s) url and multipart endpoint absent.
+        url = f"{self.base_url}/api/v1/transcription/upload"
+        headers = {}
+        if self.api_key:
+            headers["X-Service-Token"] = self.api_key
+        # remote url passthrough: use JSON transcribe endpoint
+        if isinstance(audio_path, str) and audio_path.startswith(("http://", "https://")):
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/api/v1/transcription/transcribe",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={"mediaFileUrl": audio_path, "fileName": os.path.basename(audio_path), "language": kwargs.get("language", "")},
+                    timeout=600,
+                )
+                resp.raise_for_status()
+                try:
+                    data = resp.json()
+                    if isinstance(data, dict) and "text" in data:
+                        text = data["text"].strip()
+                        return text, num_tokens_from_string(text)
+                except Exception:
+                    pass
+                text = resp.text.strip()
+                return text, num_tokens_from_string(text)
+            except Exception as e:
+                return f"**ERROR**: {e}", 0
+        try:
+            with open(audio_path, "rb") as f:
+                files = {"file": (os.path.basename(audio_path), f, "audio/mpeg")}
+                data = {"model": self.model_name}
+                if kwargs.get("language"):
+                    data["language"] = kwargs.get("language")
+                resp = requests.post(url, headers=headers, files=files, data=data, timeout=600)
+            resp.raise_for_status()
+            try:
+                j = resp.json()
+                if isinstance(j, dict) and "text" in j and isinstance(j["text"], str):
+                    text = j["text"].strip()
+                    return text, num_tokens_from_string(text)
+            except Exception:
+                pass
+            text = resp.text.strip()
+            return text, num_tokens_from_string(text)
+        except Exception as e:
+            logging.exception("CitySense-SpeechKit transcription failed for model %s", self.model_name)
+            return f"**ERROR**: {e}", 0

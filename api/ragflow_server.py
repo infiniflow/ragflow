@@ -44,8 +44,11 @@ from common.versions import get_ragflow_version
 from common.config_utils import show_configs
 from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from common.log_utils import init_root_logger
+from common import thread_leak_debug
 from agent.plugin import GlobalPluginManager
 from rag.utils.redis_conn import RedisDistributedLock
+
+thread_leak_debug.install()
 
 stop_event = threading.Event()
 chat_channel_thread = None

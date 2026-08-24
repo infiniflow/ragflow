@@ -545,7 +545,8 @@
                     "llm_name": "qwen3.8-max",
                     "max_tokens": 128000,
                     "model_type": [
-                        "chat", "image2text"
+                        "chat",
+                        "image2text"
                     ],
                     "is_tools": true
                 },
@@ -2007,6 +2008,16 @@
                     "tags": "LLM,CHAT,",
                     "max_tokens": 1000000,
                     "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v4-flash-vision-exp",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -7730,6 +7741,22 @@
             "status": "1",
             "llm": [],
             "rank": "885"
+        },
+        {
+            "name": "CitySense-SpeechKit",
+            "logo": "",
+            "tags": "SPEECH2TEXT",
+            "status": "1",
+            "url": "http://media-speech-mcp:8080",
+            "llm": [
+                {
+                    "llm_name": "general",
+                    "tags": "SPEECH2TEXT",
+                    "max_tokens": 0,
+                    "model_type": "speech2text",
+                    "is_tools": false
+                }
+            ]
         }
     ]
 }

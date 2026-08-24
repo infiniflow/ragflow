@@ -97,7 +97,13 @@ class Graph:
         self.task_id = task_id if task_id else get_uuid()
         self.custom_header = custom_header
         self._thread_pool = ThreadPoolExecutor(max_workers=5)
-        self.load()
+        try:
+            self.load()
+        except Exception:
+            # Components built before the failure may hold MCP sessions with
+            # dedicated threads; release them instead of leaking.
+            self.close()
+            raise
 
     def load(self):
         self.components = self.dsl["components"]
@@ -169,7 +175,9 @@ class Graph:
 
     def close(self):
         from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession
+        from common.thread_leak_debug import dump_alive_threads
 
+        dump_alive_threads("canvas.close:before")
         seen = set()
         for cpn in self.components.values():
             obj = cpn.get("obj")
@@ -179,7 +187,7 @@ class Graph:
                     if isinstance(session, MCPToolCallSession) and id(session) not in seen:
                         seen.add(id(session))
                         try:
-                            session.close_sync(timeout=3)
+                            session.close_sync()
                         except Exception:
                             logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
 
@@ -187,6 +195,8 @@ class Graph:
             self._thread_pool.shutdown(wait=True)
         except Exception:
             logging.exception("Error shutting down canvas thread pool")
+
+        dump_alive_threads("canvas.close:after")
 
     @staticmethod
     def _get_component_name(dsl, cid):
@@ -220,30 +230,19 @@ class Graph:
         # Reference the canonical pre-compiled regex from ComponentBase so
         # the source-pattern and the runtime-pattern can never drift apart.
         pat = ComponentBase.variable_ref_patt_re
-        out_parts = []
-        last = 0
 
-        for m in pat.finditer(value):
-            out_parts.append(value[last : m.start()])
+        def replace(m):
             key = m.group(1)
             v = self.get_variable_value(key)
             if v is None:
-                rep = ""
+                return ""
             elif isinstance(v, partial):
-                buf = []
-                for chunk in v():
-                    buf.append(chunk)
-                rep = "".join(buf)
+                return "".join(v())
             elif isinstance(v, str):
-                rep = v
-            else:
-                rep = json.dumps(v, ensure_ascii=False)
+                return v
+            return json.dumps(v, ensure_ascii=False)
 
-            out_parts.append(rep)
-            last = m.end()
-
-        out_parts.append(value[last:])
-        return "".join(out_parts)
+        return ComponentBase._replace_template_matches(pat, value, replace)
 
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
@@ -408,7 +407,6 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
-        print(self.variables)
         for k in self.globals.keys():
             if k.startswith("sys."):
                 if isinstance(self.globals[k], str):

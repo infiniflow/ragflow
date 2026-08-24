@@ -16,7 +16,6 @@
 
 import asyncio
 import logging
-import threading
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -234,76 +233,58 @@ class MCPToolCallSession(ToolCallSession):
             logging.exception(f"Error calling tool '{name}' on MCP server: {self._mcp_server.id}")
             return f"Error calling tool '{name}': {e}."
 
-    async def close(self) -> None:
+    def close_sync(self) -> None:
+        """Stop the session from the caller's thread.
+
+        Cleanup must never be scheduled on the session's own event loop: the
+        loop runs on this session's thread-pool worker, so joining that worker
+        from inside the loop deadlocks (a thread cannot join itself) and leaks
+        one OS thread per MCP session per agent run.
+        """
         if self._close:
             return
-
         self._close = True
 
-        while not self._queue.empty():
+        # Answer queued tasks so their callers fail fast instead of waiting
+        # for their own timeouts. Result queues belong to this event loop,
+        # so they must be filled from it.
+        while True:
             try:
                 _, _, result_queue = self._queue.get_nowait()
-                try:
-                    await result_queue.put(asyncio.CancelledError("Session is closing"))
-                except Exception:
-                    pass
             except asyncio.QueueEmpty:
                 break
             except Exception:
                 break
+            try:
+                self._event_loop.call_soon_threadsafe(
+                    result_queue.put_nowait, asyncio.CancelledError("Session is closing")
+                )
+            except RuntimeError:
+                pass
 
         try:
             self._event_loop.call_soon_threadsafe(self._event_loop.stop)
-        except Exception:
+        except RuntimeError:
             pass
 
         try:
             self._thread_pool.shutdown(wait=True)
         except Exception:
-            pass
+            logging.exception(f"Failed to shut down MCP session for server {self._mcp_server.id}")
 
         self.__class__._ALL_INSTANCES.discard(self)
-
-    def close_sync(self, timeout: float | int = 5) -> None:
-        if not self._event_loop.is_running():
-            logging.warning(f"Event loop already stopped for {self._mcp_server.id}")
-            return
-
-        try:
-            future = asyncio.run_coroutine_threadsafe(self.close(), self._event_loop)
-            try:
-                future.result(timeout=timeout)
-            except FuturesTimeoutError:
-                logging.error(f"Timeout while closing session for server {self._mcp_server.id} (timeout={timeout})")
-            except Exception:
-                logging.exception(f"Unexpected error during close_sync for {self._mcp_server.id}")
-        except Exception:
-            logging.exception(f"Exception while scheduling close for server {self._mcp_server.id}")
 
 
 def close_multiple_mcp_toolcall_sessions(sessions: list[MCPToolCallSession]) -> None:
     logging.info(f"Want to clean up {len(sessions)} MCP sessions")
 
-    async def _gather_and_stop() -> None:
+    for session in sessions:
+        if session is None:
+            continue
         try:
-            await asyncio.gather(*[s.close() for s in sessions if s is not None], return_exceptions=True)
+            session.close_sync()
         except Exception:
-            logging.exception("Exception during MCP session cleanup")
-        finally:
-            try:
-                loop.call_soon_threadsafe(loop.stop)
-            except Exception:
-                pass
-
-    try:
-        loop = asyncio.new_event_loop()
-        thread = threading.Thread(target=loop.run_forever, daemon=True)
-        thread.start()
-
-        asyncio.run_coroutine_threadsafe(_gather_and_stop(), loop).result()
-        thread.join()
-    except Exception:
-        logging.exception("Exception during MCP session cleanup thread management")
+            logging.exception(f"Exception during MCP session cleanup for server {session._mcp_server.id}")
 
     logging.info(f"{len(sessions)} MCP sessions has been cleaned up. {len(list(MCPToolCallSession._ALL_INSTANCES))} in global context.")
 

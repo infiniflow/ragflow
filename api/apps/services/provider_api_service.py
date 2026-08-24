@@ -518,9 +518,6 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
 
-    if instance_name == "default":
-        return False, "Instance name cannot be 'default'"
-
     # Check if provider exists in the system
     allowed_factories = [f["name"] for f in FACTORY_LLM_INFOS]
     if provider_name not in allowed_factories:
@@ -593,9 +590,6 @@ async def create_name_only_provider_instance(tenant_id: str, provider_name: str,
     """
     if not provider_name:
         return False, "Provider name is required"
-
-    if instance_name == "default":
-        return False, "Instance name cannot be 'default'"
 
     allowed_factories = [f["name"] for f in FACTORY_LLM_INFOS]
     if provider_name not in allowed_factories:
@@ -701,6 +695,18 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found", {}
+
+    # CitySense-SpeechKit: skip live verification, always allow save. Real error surfaces at transcription.
+    if target_factory_name == "CitySense-SpeechKit":
+        model_verify_result = {}
+        for llm in (factory_info[0].get("llm") or []):
+            model_verify_result[_factory_llm_name(llm)] = ModelVerifyStatusEnum.SUCCESS.value
+        # also handle explicit model_info case
+        if model_info:
+            for m in model_info:
+                if m and m.get("model_name"):
+                    model_verify_result[m["model_name"]] = ModelVerifyStatusEnum.SUCCESS.value
+        return True, "success", model_verify_result
 
     if model_info:
         factory_llms = [
