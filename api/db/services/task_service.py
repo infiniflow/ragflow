@@ -491,7 +491,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
                 pass
         if is_mineru:
             logging.info("Document %s selected MinerU unsplit-task mode with page size %s", doc["id"], MAXIMUM_TASK_PAGE_NUMBER)
-        if doc["parser_id"] in ["one", "knowledge_graph"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
+        if doc["parser_id"] in ["one", "knowledge_graph", "resume"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
