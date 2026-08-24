@@ -695,7 +695,7 @@ func TestContainsCJK_LanguageAutoDetection(t *testing.T) {
 		{"simplified chinese characters", "这是简体中文字符串", true},
 		{"traditional chinese characters", "這是繁體中文詞彙", true},
 		{"mixed english and chinese", "RAGFlow 智能知识库问答系统 version 2.0", true},
-		{"single CJK character boundary low", "\u4e00", true}, // U+4E00: '一'
+		{"single CJK character boundary low", "\u4e00", true},  // U+4E00: '一'
 		{"single CJK character boundary high", "\u9fa5", true}, // U+9FA5
 		{"CJK Extension A boundary low", "\u3400", true},       // U+3400
 		{"CJK Extension A boundary high", "\u4dbf", true},      // U+4DBF
@@ -1470,6 +1470,3 @@ func TestMatchAndTagChunk_RankDecayGradientScores(t *testing.T) {
 		t.Errorf("expected secondary Database (%d) > peripheral CloudInfra (%d)", dbScore, cloudScore)
 	}
 }
-
-
-
