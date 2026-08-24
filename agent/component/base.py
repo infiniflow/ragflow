@@ -40,6 +40,19 @@ _USER_FEEDED_PARAMS = "_user_feeded_params"
 _IS_RAW_CONF = "_is_raw_conf"
 
 
+def _build_template_ref_pattern(reference_pattern: str) -> str:
+    """Match a plain reference or one balanced outer brace pair.
+
+    Group 1 remains the reference for existing callers. The named ``outer``
+    group records whether the match used the wrapped form.
+    """
+    return (
+        rf"(?=(?:\{{ *)?\{{({reference_pattern})\}})"
+        rf"(?:(?P<outer>\{{) *)?\{{(?:{reference_pattern})\}}"
+        r"(?(outer) *\}|(?! *\}))"
+    )
+
+
 class ComponentParamBase(ABC):
     def __init__(self):
         self.message_history_window_size = 13
@@ -360,9 +373,9 @@ class ComponentBase(ABC):
     # `cpn_id` allows underscores (frontend ids like `userfillup_abc`,
     # `retrieval_xyz`) and colons (legacy DSL ids like `UserFillUp:CateInput`,
     # `Retrieval:KBSearch`).
-    variable_ref_patt = r"\{* *\{([a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    variable_ref_patt = _build_template_ref_pattern(r"[a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+")
     variable_ref_patt_re = re.compile(variable_ref_patt, flags=re.IGNORECASE | re.DOTALL)
-    iteration_alias_patt = r"\{* *\{(item|index|result)\} *\}*"
+    iteration_alias_patt = _build_template_ref_pattern(r"item|index|result")
     iteration_alias_patt_re = re.compile(iteration_alias_patt, flags=re.IGNORECASE | re.DOTALL)
 
     def __str__(self):
@@ -528,7 +541,7 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in self.variable_ref_patt_re.finditer(txt):
+        for r in self._iter_template_matches(self.variable_ref_patt_re, txt):
             exp = r.group(1)
             # Use maxsplit=1 to be defensive: although `exp` here comes
             # from `variable_ref_patt` (which constrains `var_nm` to
@@ -542,7 +555,7 @@ class ComponentBase(ABC):
                 "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
                 "_cpn_id": cpn_id,
             }
-        for r in self.iteration_alias_patt_re.finditer(txt):
+        for r in self._iter_template_matches(self.iteration_alias_patt_re, txt):
             exp = r.group(1)
             if exp in res:
                 continue
@@ -604,13 +617,48 @@ class ComponentBase(ABC):
         return cpn_nms
 
     @staticmethod
-    def string_format(content: str, kv: dict[str, str]) -> str:
-        for n, v in kv.items():
+    def _is_complete_template_match(content: str, match: re.Match) -> bool:
+        if match.groupdict().get("outer") is not None:
+            return True
 
-            def repl(_match, val=v):
-                return str(val) if val is not None else ""
+        # A failed wrapped match can otherwise be rediscovered as its inner
+        # plain reference (for example, ``{ {A@x}``). Keep such malformed
+        # input literal instead of consuming only half of the brace pair.
+        before = content[: match.start()].rstrip(" ")
+        after = content[match.end() :].lstrip(" ")
+        return not before.endswith("{") and not after.startswith("}")
 
-            content = re.sub(r"\{%s\}" % re.escape(n), repl, content)
+    @classmethod
+    def _iter_template_matches(cls, pattern: re.Pattern, content: str):
+        for match in pattern.finditer(content):
+            if cls._is_complete_template_match(content, match):
+                yield match
+            else:
+                _logger.debug("Ignored incomplete template reference candidate at offset %d", match.start())
+
+    @classmethod
+    def _replace_template_matches(cls, pattern: re.Pattern, content: str, replacement) -> str:
+        out = []
+        last = 0
+        for match in cls._iter_template_matches(pattern, content):
+            out.append(content[last : match.start()])
+            out.append(replacement(match))
+            last = match.end()
+        out.append(content[last:])
+        return "".join(out)
+
+    @classmethod
+    def string_format(cls, content: str, kv: dict[str, str]) -> str:
+        for pattern in (cls.variable_ref_patt_re, cls.iteration_alias_patt_re):
+
+            def replace(match):
+                key = match.group(1)
+                if key in kv:
+                    value = kv[key]
+                    return str(value) if value is not None else ""
+                return match.group(0)
+
+            content = cls._replace_template_matches(pattern, content, replace)
         return content
 
     def exception_handler(self):
