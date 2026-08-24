@@ -362,7 +362,7 @@ func (c *AzureBlobStorageConnector) listBlobPage(ctx context.Context, prefix, ma
 	if page.NextMarker != nil {
 		next = *page.NextMarker
 	}
-	return objects, next, page.NextMarker != nil, nil
+	return objects, next, next != "", nil
 }
 
 func (c *AzureBlobStorageConnector) collectBlobNames(ctx context.Context) ([]string, error) {
