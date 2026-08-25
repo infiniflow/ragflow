@@ -21,6 +21,8 @@ interface NumberInputProps {
   min?: number;
   max?: number;
   hideIcons?: boolean;
+  // When true, only integers are propagated to the form: fractional values are
+  // rounded while typing/pasting and on blur, so decimals can never be saved.
   integer?: boolean;
   inputClassName?: string;
   precision?: number;
@@ -70,16 +72,32 @@ const NumberInput = forwardRef<
 
   const valueRef = useRef<number>();
 
+  const normalize = useCallback(
+    (v: number) => (integer ? Math.round(v) : v),
+    [integer],
+  );
+
   useEffect(() => {
     if (initialValue !== undefined) {
-      setValue(initialValue);
+      if (integer && isNumber(initialValue)) {
+        // Heal fractional or out-of-range values saved by older builds so
+        // they are never re-persisted as decimals.
+        const clamped = Math.min(Math.max(Math.round(initialValue), min), max);
+        setValue(clamped);
+        if (clamped !== initialValue) {
+          onChange?.(clamped);
+        }
+      } else {
+        setValue(initialValue);
+      }
     }
-  }, [initialValue]);
+  }, [initialValue, integer, min, max, onChange]);
 
   const handleDecrement = () => {
     if (isNumber(value) && value > min) {
-      setValue(value - 1);
-      onChange?.(value - 1);
+      const nextValue = Math.max(normalize(value) - 1, min);
+      setValue(nextValue);
+      onChange?.(nextValue);
     }
   };
 
@@ -87,11 +105,12 @@ const NumberInput = forwardRef<
     if (!isNumber(value)) {
       return;
     }
-    if (value > max - 1) {
+    const base = normalize(value);
+    if (base > max - 1) {
       return;
     }
-    setValue(value + 1);
-    onChange?.(value + 1);
+    setValue(base + 1);
+    onChange?.(base + 1);
   };
 
   const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -126,18 +145,14 @@ const NumberInput = forwardRef<
         e.target.value = String(limitedValue);
       }
 
-      // Pasted decimals bypass the keydown guard; reject them in integer
-      // mode instead of rounding silently.
-      if (integer && !Number.isInteger(newValue)) {
-        return;
-      }
       // Show the raw typed value as-is, even when it falls outside [min, max]
       // (e.g. deleting "1024" → "102" when min=512), so the controlled input
       // never snaps back mid-edit. Out-of-range values are not propagated to
       // the form; handleBlur clamps them into range on focus loss.
       setValue(limitedValue);
-      if (limitedValue >= min && limitedValue <= max) {
-        onChange?.(limitedValue);
+      const propagated = normalize(limitedValue);
+      if (propagated >= min && propagated <= max) {
+        onChange?.(propagated);
       }
     }
   };
@@ -145,10 +160,10 @@ const NumberInput = forwardRef<
   const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(
     (e) => {
       if (isNumber(value)) {
-        let finalValue = value;
-        if (value < min) {
+        let finalValue = normalize(value);
+        if (finalValue < min) {
           finalValue = min;
-        } else if (value > max) {
+        } else if (finalValue > max) {
           finalValue = max;
         }
         if (finalValue !== value) {
@@ -156,11 +171,10 @@ const NumberInput = forwardRef<
         }
         onChange?.(finalValue);
       } else {
-        const previousValue = valueRef.current ?? min;
-        let finalValue = previousValue;
-        if (previousValue < min) {
+        let finalValue = normalize(valueRef.current ?? min);
+        if (finalValue < min) {
           finalValue = min;
-        } else if (previousValue > max) {
+        } else if (finalValue > max) {
           finalValue = max;
         }
         setValue(finalValue);
@@ -171,7 +185,7 @@ const NumberInput = forwardRef<
       // spread below cannot silently replace this handler.
       onBlurProp?.(e);
     },
-    [min, max, onChange, onBlurProp, value],
+    [min, max, onChange, onBlurProp, value, normalize],
   );
 
   const style = useMemo(

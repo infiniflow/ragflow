@@ -15,7 +15,8 @@ import {
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
-import { Input, NumberInput } from '@/components/ui/input';
+import NumberInput from '@/components/originui/number-input';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -236,7 +237,13 @@ function AgentForm({ node }: INextOperatorForm) {
                   <FormItem className="flex-1">
                     <FormLabel>{t('flow.maxRetries')}</FormLabel>
                     <FormControl>
-                      <NumberInput {...field} max={8} min={0}></NumberInput>
+                      <NumberInput
+                        {...field}
+                        max={8}
+                        min={0}
+                        integer
+                        className="w-full"
+                      ></NumberInput>
                     </FormControl>
                   </FormItem>
                 )}
@@ -248,7 +255,12 @@ function AgentForm({ node }: INextOperatorForm) {
                   <FormItem className="flex-1">
                     <FormLabel>{t('flow.delayAfterError')}</FormLabel>
                     <FormControl>
-                      <NumberInput {...field} max={5} step={0.1}></NumberInput>
+                      <NumberInput
+                        {...field}
+                        max={5}
+                        step={0.1}
+                        className="w-full"
+                      ></NumberInput>
                     </FormControl>
                   </FormItem>
                 )}
@@ -279,7 +291,12 @@ function AgentForm({ node }: INextOperatorForm) {
                     <FormItem className="flex-1">
                       <FormLabel>{t('flow.maxRounds')}</FormLabel>
                       <FormControl>
-                        <NumberInput {...field} min={0}></NumberInput>
+                        <NumberInput
+                          {...field}
+                          min={0}
+                          integer
+                          className="w-full"
+                        ></NumberInput>
                       </FormControl>
                     </FormItem>
                   )}
