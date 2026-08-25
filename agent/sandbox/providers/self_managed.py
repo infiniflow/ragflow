@@ -25,11 +25,11 @@ import base64
 import os
 import time
 import uuid
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 import requests
 
-from .base import SandboxProvider, SandboxInstance, ExecutionResult
+from .base import ExecutionResult, SandboxInstance, SandboxProvider
 
 
 class SelfManagedProvider(SandboxProvider):
@@ -48,7 +48,7 @@ class SelfManagedProvider(SandboxProvider):
         self.api_token: str = ""
         self._initialized: bool = False
 
-    def initialize(self, config: Dict[str, Any]) -> bool:
+    def initialize(self, config: dict[str, Any]) -> bool:
         """
         Initialize the provider with configuration.
 
@@ -117,7 +117,7 @@ class SelfManagedProvider(SandboxProvider):
             },
         )
 
-    def execute_code(self, instance_id: str, code: str, language: str, timeout: int = 10, arguments: Optional[Dict[str, Any]] = None) -> ExecutionResult:
+    def execute_code(self, instance_id: str, code: str, language: str, timeout: int = 10, arguments: dict[str, Any] | None = None) -> ExecutionResult:
         """
         Execute code in the sandbox.
 
@@ -188,7 +188,7 @@ class SelfManagedProvider(SandboxProvider):
             raise TimeoutError(f"Execution timed out after {exec_timeout} seconds")
 
         except requests.RequestException as e:
-            raise RuntimeError(f"HTTP request failed: {str(e)}")
+            raise RuntimeError(f"HTTP request failed: {e!s}")
 
     def destroy_instance(self, instance_id: str) -> bool:
         """
@@ -222,7 +222,7 @@ class SelfManagedProvider(SandboxProvider):
         except Exception:
             return False
 
-    def get_supported_languages(self) -> List[str]:
+    def get_supported_languages(self) -> list[str]:
         """
         Get list of supported programming languages.
 
@@ -232,7 +232,7 @@ class SelfManagedProvider(SandboxProvider):
         return ["python", "nodejs", "javascript"]
 
     @staticmethod
-    def get_config_schema() -> Dict[str, Dict]:
+    def get_config_schema() -> dict[str, dict]:
         """
         Return configuration schema for self-managed provider.
 
@@ -380,7 +380,7 @@ class SelfManagedProvider(SandboxProvider):
         else:
             return language
 
-    def validate_config(self, config: dict) -> tuple[bool, Optional[str]]:
+    def validate_config(self, config: dict) -> tuple[bool, str | None]:
         """
         Validate self-managed provider configuration.
 

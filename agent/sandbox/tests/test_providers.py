@@ -18,11 +18,11 @@
 Unit tests for sandbox provider abstraction layer.
 """
 
-import pytest
 from unittest.mock import Mock, patch
-import requests
 
-from agent.sandbox.providers.base import SandboxProvider, SandboxInstance, ExecutionResult
+import pytest
+import requests
+from agent.sandbox.providers.base import ExecutionResult, SandboxInstance, SandboxProvider
 from agent.sandbox.providers.manager import ProviderManager
 from agent.sandbox.providers.self_managed import SelfManagedProvider
 
