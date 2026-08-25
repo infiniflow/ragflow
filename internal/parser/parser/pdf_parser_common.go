@@ -18,7 +18,6 @@ package parser
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
@@ -366,7 +365,7 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		}
 		normalizePDFDocType(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
-			items[i]["image"] = inlinePNGDataURL(img)
+			items[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
 	}
 	return ParseResult{
@@ -437,19 +436,6 @@ func firstPageNumber(raw any) int {
 	}
 }
 
-func inlinePNGDataURL(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	if strings.HasPrefix(raw, "data:image/") {
-		return raw
-	}
-	if _, err := base64.StdEncoding.DecodeString(raw); err != nil {
-		return raw
-	}
-	return "data:image/png;base64," + raw
-}
-
 func sectionsToMarkdown(sections []deepdoctype.Section) string {
 	var b strings.Builder
 	for _, section := range sections {
@@ -459,7 +445,7 @@ func sectionsToMarkdown(sections []deepdoctype.Section) string {
 		}
 		if (layoutType == deepdoctype.LayoutTypeFigure || layoutType == "image" || section.DocTypeKwd == "image" || (layoutType == deepdoctype.LayoutTypeTable && section.Text == "")) && section.Image != "" {
 			b.WriteString("\n![Image](")
-			b.WriteString(inlinePNGDataURL(section.Image))
+			b.WriteString(pdflayout.InlinePNGDataURL(section.Image))
 			b.WriteString(")")
 			continue
 		}
@@ -696,7 +682,7 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	}
 	for i := range res.JSON {
 		if img, _ := res.JSON[i]["image"].(string); img != "" {
-			res.JSON[i]["image"] = inlinePNGDataURL(img)
+			res.JSON[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
 	}
 	return res

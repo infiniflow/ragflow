@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"encoding/base64"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -118,18 +119,21 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 
 // SectionsToMarkdown converts Sections to a Markdown string.
 //
-// Title sections get a "## " prefix.
-// Figure sections produce an "![Image](data:image/png;base64,...)" tag.
-// Text and all other sections are appended verbatim.
-//
-// This mirrors the Python parser.py:665-671 Markdown output path.
-func inlinePNGDataURL(raw string) string {
+// InlinePNGDataURL ensures a raw base64 or Data URI string has a valid
+// "data:image/png;base64," prefix. It trims surrounding whitespace, preserves
+// pre-formatted data/http URIs, and validates raw base64 before prefixing.
+func InlinePNGDataURL(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
 	}
-	if strings.HasPrefix(raw, "data:image/") {
+	if strings.HasPrefix(raw, "data:image/") || strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		return raw
+	}
+	if _, err := base64.StdEncoding.DecodeString(raw); err != nil {
+		if _, rerr := base64.RawStdEncoding.DecodeString(raw); rerr != nil {
+			return raw
+		}
 	}
 	return "data:image/png;base64," + raw
 }
@@ -142,7 +146,7 @@ func SectionsToMarkdown(sections []pdf.Section) string {
 		}
 		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && s.Text == "")) && s.Image != "" {
 			b.WriteString("\n![Image](")
-			b.WriteString(inlinePNGDataURL(s.Image))
+			b.WriteString(InlinePNGDataURL(s.Image))
 			b.WriteString(")")
 			continue
 		}

@@ -397,7 +397,65 @@ func TestSectionsToJSON_NilSlice(t *testing.T) {
 	}
 }
 
-// TestCrossPageTableMerge verifies that mergeTablesAcrossPages merges
-// two TableItems on consecutive pages with overlapping X positions.
-// Python: _extract_table_figure merges cross-page tables by matching layoutno.
-// Spanning cells should be annotated with colspan/rowspan in the HTML output.
+func TestInlinePNGDataURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantURL string
+	}{
+		{
+			name:    "empty string returns empty",
+			input:   "",
+			wantURL: "",
+		},
+		{
+			name:    "whitespace string returns empty",
+			input:   "   ",
+			wantURL: "",
+		},
+		{
+			name:    "raw base64 gets png data URI prefix",
+			input:   "aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "raw base64 with surrounding whitespace gets trimmed and prefixed",
+			input:   "  aGVsbG8=  \n",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already png data uri is preserved as is",
+			input:   "data:image/png;base64,aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already jpeg data uri is preserved as is",
+			input:   "data:image/jpeg;base64,/9j/4AAQ",
+			wantURL: "data:image/jpeg;base64,/9j/4AAQ",
+		},
+		{
+			name:    "http url is preserved as is",
+			input:   "http://example.com/img.png",
+			wantURL: "http://example.com/img.png",
+		},
+		{
+			name:    "https url is preserved as is",
+			input:   "https://example.com/img.png",
+			wantURL: "https://example.com/img.png",
+		},
+		{
+			name:    "non-base64 invalid string is returned without mangling",
+			input:   "invalid!@#base64",
+			wantURL: "invalid!@#base64",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := InlinePNGDataURL(tc.input)
+			if got != tc.wantURL {
+				t.Errorf("InlinePNGDataURL(%q) = %q, want %q", tc.input, got, tc.wantURL)
+			}
+		})
+	}
+}
