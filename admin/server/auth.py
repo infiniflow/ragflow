@@ -68,8 +68,29 @@ def _required_env(name, default):
     return value
 
 
-DEFAULT_SUPERUSER_NICKNAME = _required_env("DEFAULT_SUPERUSER_NICKNAME", "admin").strip()
-DEFAULT_SUPERUSER_EMAIL = _required_env("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io").strip()
+def _required_env_stripped(name, default):
+    """Like ``_required_env`` but rejects whitespace-only values.
+
+    A raw value of ``" "`` would survive the empty-check in
+    ``_required_env`` and then collapse to ``""`` after the caller
+    ``.strip()``s it, propagating an empty nickname/email into the
+    bootstrap flow and silently failing later checks. Strip before
+    the empty check so the failure surfaces at startup with the
+    intended config-error message."""
+    raw = os.getenv(name, default)
+    stripped = raw.strip()
+    if not stripped:
+        logging.error(
+            "admin server: %s is set to whitespace-only value; either unset it (the default %r will be used) or provide a real value",
+            name,
+            default,
+        )
+        raise RuntimeError(f"admin server: {name} is set to whitespace-only value; either unset it (the default {default!r} will be used) or provide a real value")
+    return stripped
+
+
+DEFAULT_SUPERUSER_NICKNAME = _required_env_stripped("DEFAULT_SUPERUSER_NICKNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = _required_env_stripped("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
 DEFAULT_SUPERUSER_PASSWORD = _required_env("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 
@@ -142,13 +163,17 @@ def init_default_admin():
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
         # Filter existing superuser rows by the configured
-        # ``DEFAULT_SUPERUSER_EMAIL`` *and* by active status. An
-        # inactive row matching the configured email must NOT count as
-        # the bootstrap admin — otherwise the tenant-backfill branch
-        # would skip a real active admin with a different email, and
-        # the "no matching active admin" error below would never
-        # surface.
-        default_admin_rows = [u for u in users if u.email == DEFAULT_SUPERUSER_EMAIL and u.is_active == ActiveEnum.ACTIVE.value]
+        # ``DEFAULT_SUPERUSER_EMAIL``. Per @Lynn-Inf's review on
+        # PR #17674, this intentionally does NOT also filter on
+        # ``is_active`` — an inactive row matching the configured
+        # email must still be treated as the configured bootstrap
+        # admin, otherwise the tenant-backfill branch above could
+        # silently create a duplicate entry for the (already-existing,
+        # just-disabled) default admin. Activity gating already lives
+        # in ``login_admin`` (``is_active == INACTIVE`` rejects the
+        # session at login time), so the bootstrap path stays
+        # read-only.
+        default_admin_rows = [u for u in users if u.email == DEFAULT_SUPERUSER_EMAIL]
         if default_admin_rows:
             default_admin = default_admin_rows[0].to_dict()
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
