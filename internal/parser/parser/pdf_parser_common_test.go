@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"image"
 	"strings"
 	"testing"
 
@@ -389,3 +390,120 @@ func TestPDFParser_ValidateParseMethod(t *testing.T) {
 		t.Fatalf("validateParseMethod error = %q, want IMAGE2TEXT/VLM guidance", err.Error())
 	}
 }
+
+type mockPDFEngineForCommonTest struct {
+	closed bool
+}
+
+func (m *mockPDFEngineForCommonTest) ExtractChars(pageNum int) ([]deepdoctype.TextChar, error) {
+	return nil, nil
+}
+func (m *mockPDFEngineForCommonTest) RenderPage(pageNum int, dpi float64) ([]byte, error) {
+	return nil, nil
+}
+func (m *mockPDFEngineForCommonTest) RenderPageImage(pageNum int, dpi float64) (image.Image, error) {
+	return image.NewRGBA(image.Rect(0, 0, 100, 100)), nil
+}
+func (m *mockPDFEngineForCommonTest) RawData() []byte { return nil }
+func (m *mockPDFEngineForCommonTest) PageCount() (int, error) {
+	return 1, nil
+}
+func (m *mockPDFEngineForCommonTest) Outlines() ([]deepdoctype.Outline, error) { return nil, nil }
+func (m *mockPDFEngineForCommonTest) Close() error {
+	m.closed = true
+	return nil
+}
+
+func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
+	mockEngine := &mockPDFEngineForCommonTest{}
+	parsed := &deepdoctype.ParseResult{
+		Engine:     mockEngine,
+		PageHeight: map[int]float64{0: 100},
+		Sections: []deepdoctype.Section{
+			{
+				Text:        "Figure caption",
+				LayoutType:  deepdoctype.LayoutTypeFigure,
+				PositionTag: "@@0\t10\t50\t10\t50##",
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+				},
+			},
+			{
+				Text:        "Table body",
+				LayoutType:  deepdoctype.LayoutTypeTable,
+				PositionTag: "@@0\t20\t60\t20\t60##",
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 20, Right: 60, Top: 20, Bottom: 60},
+				},
+			},
+			{
+				Text:        "Plain text paragraph",
+				LayoutType:  deepdoctype.LayoutTypeText,
+				PositionTag: "@@0\t0\t100\t70\t90##",
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 70, Bottom: 90},
+				},
+			},
+		},
+	}
+
+	res := pdfParseResultToJSON("media.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if !mockEngine.closed {
+		t.Fatal("Engine should be closed after pdfParseResultToJSON")
+	}
+	if len(res.JSON) != 3 {
+		t.Fatalf("JSON len = %d, want 3", len(res.JSON))
+	}
+
+	// Figure should have cropped image populated
+	figImg, ok := res.JSON[0]["image"].(string)
+	if !ok || figImg == "" {
+		t.Fatalf("Figure JSON[0].image should be non-empty base64 data url, got %v", res.JSON[0]["image"])
+	}
+	if !strings.HasPrefix(figImg, "data:image/png;base64,") {
+		t.Fatalf("Figure JSON[0].image prefix mismatch, got %q", figImg)
+	}
+
+	// Table should have cropped image populated
+	tblImg, ok := res.JSON[1]["image"].(string)
+	if !ok || tblImg == "" {
+		t.Fatalf("Table JSON[1].image should be non-empty base64 data url, got %v", res.JSON[1]["image"])
+	}
+	if !strings.HasPrefix(tblImg, "data:image/png;base64,") {
+		t.Fatalf("Table JSON[1].image prefix mismatch, got %q", tblImg)
+	}
+
+	// Plain text should NOT have cropped image
+	textImg, _ := res.JSON[2]["image"].(string)
+	if textImg != "" {
+		t.Fatalf("Text JSON[2].image should be empty, got %q", textImg)
+	}
+}
+
+func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Engine:     nil,
+		PageHeight: map[int]float64{0: 100},
+		Sections: []deepdoctype.Section{
+			{
+				Text:       "Figure caption",
+				LayoutType: deepdoctype.LayoutTypeFigure,
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+				},
+			},
+		},
+	}
+
+	res := pdfParseResultToJSON("nil_engine.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON with nil engine returned err: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+}
+

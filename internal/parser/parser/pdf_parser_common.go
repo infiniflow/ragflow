@@ -346,6 +346,9 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	}
 	applyPDFPostProcess(&processed, opts)
 
+	cropMediaSections(&processed)
+	processed.Close()
+
 	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
@@ -363,12 +366,9 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		}
 		normalizePDFDocType(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
-			items[i]["image"] = "data:image/png;base64," + img
+			items[i]["image"] = inlinePNGDataURL(img)
 		}
 	}
-	// JSON is consumed by the chunker, which re-acquires the source PDF
-	// and crops image/table sections on demand. Release the engine now.
-	processed.Close()
 	return ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
@@ -391,10 +391,7 @@ func pdfParseResultToMarkdownWithOptions(filename string, parsed *deepdoctype.Pa
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
 	applyPDFPostProcess(&processed, opts)
-	// Markdown embeds figure images inline, so crop figures here while
-	// the engine is still alive. The chunker path crops image/table
-	// chunks on demand instead.
-	cropMarkdownFigures(&processed)
+	cropMediaSections(&processed)
 	processed.Close()
 
 	return ParseResult{
@@ -472,26 +469,24 @@ func sectionsToMarkdown(sections []deepdoctype.Section) string {
 	return b.String()
 }
 
-// cropMarkdownFigures crops inline images for figure sections so the
-// Markdown output can embed them. It mirrors the figure branch of the
-// former Parse.fillSectionImages, but runs only for the Markdown path
-// (the JSON path defers cropping to the chunker). The engine is read
-// from result.Engine; callers must Close the result afterwards.
-func cropMarkdownFigures(result *deepdoctype.ParseResult) {
+// cropMediaSections crops figure and table sections from rendered PDF page
+// images while the engine is still alive, populating sec.Image.
+// It is used by both the JSON and Markdown serialization paths.
+func cropMediaSections(result *deepdoctype.ParseResult) {
 	engine := result.Engine
 	if engine == nil || len(result.PageHeight) == 0 {
 		return
 	}
-	// Render each page at most once across all figures. A PDF can have many
-	// figures on the same page, so a cache shared across the section loop
-	// avoids re-rendering the page for every figure.
+	// Render each page at most once across all media sections. A PDF can have many
+	// figures/tables on the same page, so a cache shared across the section loop
+	// avoids re-rendering the page for every section.
 	//
-	// result.Sections is ordered by page, so once we advance to a figure whose
-	// minimum page is P, no later figure references a page < P. We therefore
+	// result.Sections is ordered by page, so once we advance to a section whose
+	// minimum page is P, no later section references a page < P. We therefore
 	// keep only a sliding window of page images: pages strictly below the
-	// current figure's minimum page are evicted. This bounds memory to the
-	// current figure's page span (typically one page, a few at most for a
-	// cross-page figure) instead of caching the whole PDF.
+	// current section's minimum page are evicted. This bounds memory to the
+	// current section's page span (typically one page, a few at most for a
+	// cross-page section) instead of caching the whole PDF.
 	pageCache := make(map[int]image.Image)
 	renderPage := func(pn int) image.Image {
 		if img, ok := pageCache[pn]; ok {
@@ -499,7 +494,7 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 		}
 		img, err := deepdocpdf.RenderPageToImage(engine, pn)
 		if err != nil || img == nil {
-			slog.Warn("cropMarkdownFigures: render failed, skipping figure",
+			slog.Warn("cropMediaSections: render failed, skipping section",
 				"page", pn, "err", err)
 			pageCache[pn] = nil
 			return nil
@@ -510,13 +505,18 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 
 	for i := range result.Sections {
 		sec := &result.Sections[i]
-		if sec.LayoutType != deepdoctype.LayoutTypeFigure {
+		if sec.Image != "" {
+			continue
+		}
+		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&
+			sec.LayoutType != deepdoctype.LayoutTypeTable &&
+			sec.DocTypeKwd != "image" && sec.DocTypeKwd != "table" {
 			continue
 		}
 		if len(sec.Positions) == 0 {
 			continue
 		}
-		// Minimum page this figure touches; used both to prune stale cache
+		// Minimum page this section touches; used both to prune stale cache
 		// entries and to bound the window.
 		minPage := -1
 		pages := make(map[int]struct{})
@@ -528,8 +528,8 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 				}
 			}
 		}
-		// Evict page images that no later figure can reference (all future
-		// figures start at page >= minPage).
+		// Evict page images that no later section can reference (all future
+		// sections start at page >= minPage).
 		for pn := range pageCache {
 			if pn < minPage {
 				delete(pageCache, pn)
@@ -537,9 +537,9 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 		}
 		// Collect every distinct page this section spans so CropSectionByDLA
 		// can crop and vertically concatenate each page (mirroring Python's
-		// cropout multi-page branch). Single-page figures still render exactly
+		// cropout multi-page branch). Single-page sections still render exactly
 		// one page, and the pageCache above guarantees a page is rendered at
-		// most once even when several figures share it.
+		// most once even when several sections share it.
 		single := make(map[int]image.Image, len(pages))
 		for pn := range pages {
 			if img := renderPage(pn); img != nil {
@@ -549,9 +549,17 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 		if len(single) == 0 {
 			continue
 		}
-		if dla := util.CropSectionByDLA(*sec, result.DLARegions, single); dla != "" {
-			sec.Image = dla
-			continue
+		if sec.LayoutType == deepdoctype.LayoutTypeFigure {
+			if dla := util.CropSectionByDLA(*sec, result.DLARegions, single); dla != "" {
+				sec.Image = dla
+				continue
+			}
+		}
+		if len(sec.Positions) > 0 {
+			if img := util.CropSectionPositions(sec.Positions, single, deepdoctype.DlaScale); img != "" {
+				sec.Image = img
+				continue
+			}
 		}
 		sec.Image = util.CropSectionImage(sec.PositionTag, single, deepdoctype.DlaScale)
 	}
