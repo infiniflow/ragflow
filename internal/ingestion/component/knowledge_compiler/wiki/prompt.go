@@ -11,26 +11,6 @@ const wikiMapSystem = `You are a knowledge extraction engine. Extract structured
 
 const wikiPlanSystem = `You are a knowledge compilation planner. Given structured knowledge, produce a wiki page plan. Return ONLY valid JSON.`
 
-const wikiReduceEntityDisambiguateSystem = `You are a knowledge canonicalization engine. Decide whether two named entities refer to the same real-world concept. Return ONLY valid JSON.`
-
-const wikiReduceEntityDisambiguateUserTemplate = `## Entity A
-{entity_a}
-
-## Entity B
-{entity_b}
-
-Return JSON:
-{
-  "merge": true,
-  "reason": "string"
-}
-
-Rules:
-- merge=true only when A and B are the same real-world entity (e.g. aliases, abbreviations, spelling variants of the same thing).
-- merge=false when they are distinct concepts that merely co-occur.
-- Prefer false when ambiguous.
-- Return ONLY the JSON object.`
-
 const wikiMapUserTemplate = `## Document context
 Document id: {doc_id}
 Batch contains {chunk_count} packed chunk(s). Each chunk is introduced by a

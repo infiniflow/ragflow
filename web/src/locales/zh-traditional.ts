@@ -10,6 +10,7 @@ export default {
       name: '名稱',
       save: '保持',
       namePlaceholder: '請輸入名稱',
+      nameSlashError: '名稱不能包含 "/"',
       next: '下一步',
       create: '創建',
       edit: '編輯',

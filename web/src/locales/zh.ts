@@ -22,6 +22,7 @@ export default {
       stop: '停止',
       resume: '恢复',
       namePlaceholder: '请输入名称',
+      nameSlashError: '名称不能包含 "/"',
       descriptionPlaceholder: '请输入描述',
       next: '下一步',
       create: '创建',
@@ -960,6 +961,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
+      prefetchSize: '预取数量',
+      prefetchSizeTip: '在进行下一步计算之前检索的预取候选分块数量。',
+      prefetchSizeValidation: '预取数量必须大于或等于 Top N。',
       variable: '变量',
       variableTip: `你可以通过对话 API，并配合变量设置来动态调整大模型的系统提示词。
       {knowledge}为系统预留变量，代表从指定知识库召回的文本块。
@@ -1094,6 +1098,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyMessage: '请输入你的 Querit API Key',
       serplyApiKeyTip: '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入你的 Serply API Key',
+      youcomApiKeyTip:
+        '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
+      youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
@@ -2935,7 +2942,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 从给定的文本内容中提取最重要的关键词/短语。
 
 要求
-- 总结文本内容，并给出最重要的5个关键词/短语。
+- 总结文本内容，并给出最重要的{{ topn }}个关键词/短语。
 - 关键词必须与给定的文本内容使用相同的语言。
 - 关键词之间用英文逗号分隔。
 - 仅输出关键词。`,
@@ -2943,10 +2950,10 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 你是一名文本分析员。
 
 任务
-针对给定的文本内容提出3个问题。
+针对给定的文本内容提出{{ topn }}个问题。
 
 要求
-- 理解并总结文本内容，并提出最重要的3个问题。
+- 理解并总结文本内容，并提出最重要的{{ topn }}个问题。
 - 问题的含义不应重叠。
 - 问题应尽可能涵盖文本的主要内容。
 - 问题必须与给定的文本内容使用相同的语言。

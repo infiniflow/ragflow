@@ -4,9 +4,14 @@ import { FormContainer } from '@/components/form-container';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+import { PrefetchSizeFormField } from '@/components/prefetch-size-item';
 
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -32,14 +37,22 @@ export const FormSchema = z.object({
 const RetrievalForm = () => {
   const defaultValues = useValues();
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   const ownerTenantId = useOwnerTenantId();
 
@@ -55,6 +68,7 @@ const RetrievalForm = () => {
               similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
+            <PrefetchSizeFormField></PrefetchSizeFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>

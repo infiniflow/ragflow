@@ -108,6 +108,10 @@ func (n *NatsEngine) Type() string {
 }
 
 func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
+	if n.jetStream == nil {
+		return errors.New("NATS jetstream is nil, engine not properly initialized")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -120,6 +124,10 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 }
 
 func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
+	if n.jetStream == nil || n.stream == nil {
+		return nil, errors.New("NATS jetstream/stream is nil, engine not properly initialized")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	accountInfo, err := n.jetStream.AccountInfo(ctx)
@@ -226,6 +234,10 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	return nil
 }
 func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) {
+	if n.consumer == nil {
+		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
+	}
+
 	resultMessages := make([]common.TaskHandle, 0)
 	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
 	if err != nil {
@@ -238,6 +250,9 @@ func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) 
 }
 
 func (n *NatsEngine) CheckStatus() string {
+	if n.nc == nil {
+		return "NATS connection is nil, engine not properly initialized"
+	}
 	n.nc.Stats()
 	return n.nc.Status().String()
 }

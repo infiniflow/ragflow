@@ -13,7 +13,7 @@ Initiate an AI-powered chat with a configured chat assistant.
 
 ---
 
-Chats in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset, finished file parsing, and [run a retrieval test](../dataset/run_retrieval_test.md), you can go ahead and start an AI conversation.
+Chats in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset, finished file parsing, and [run a retrieval test](../dataset/retrieval_testing.md), you can go ahead and start an AI conversation.
 
 ## Start an AI Chat
 

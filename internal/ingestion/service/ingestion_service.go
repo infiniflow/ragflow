@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -100,12 +101,22 @@ type Ingestor struct {
 	// the full downstream stack.
 	runDocumentTask func(ctx context.Context, ingestionTask *entity.IngestionTask) error
 
+	// runMemoryTask dispatches one async memory-extraction task. Tests may
+	// override this to inject a panicking/failing runner without a live DB or
+	// real MemoryMessageService. Defaults to defaultRunMemoryTask, which calls
+	// memorySvc.HandleSaveToMemoryTask.
+	runMemoryTask func(ctx context.Context, payload map[string]any) error
+
 	// cancelCheck is polled periodically (every 3s) during task execution.
 	// When it returns true the task's context is cancelled, which causes the
 	// pipeline to stop at the next ctx.Err() check. Defaults to a Redis
 	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
 	// override this to simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
+
+	// checkpointExists distinguishes a fresh run from a checkpoint resume.
+	// Tests inject this dependency so unit tests do not require Redis.
+	checkpointExists func(ctx context.Context, taskID string) (bool, error)
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
@@ -130,7 +141,9 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		heartbeatInterval: defaultHeartbeatInterval,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
+	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
+	ingestor.checkpointExists = canvas.RedisCheckpointExists
 	ingestor.kcConcurrency = maxConcurrency // parallel dataset-level compile workers default to the task width
 	return ingestor
 }
@@ -472,8 +485,8 @@ func (e *Ingestor) workerLoop(id int32) {
 
 // executeMemoryTask runs one async memory-extraction task (TaskKindMemory) on
 // a worker of the shared pool. Unlike ingestion tasks, memory tasks have no
-// ingestion_task row / state machine: HandleSaveToMemoryTask persists the
-// extracted messages and settles task progress on the way out.
+// ingestion_task row / state machine: the runner persists the extracted
+// messages and settles task progress on the way out.
 //
 // Settlement is error-category aware:
 //   - Terminal failure (task row absent, already-failed, or progress=-1 already
@@ -482,11 +495,32 @@ func (e *Ingestor) workerLoop(id int32) {
 //   - Transient failure (a task-load DB error before any durable marker, or an
 //     LLM/network failure that did not reach progress=-1) is Nacked so the
 //     message is redelivered and retried instead of being silently dropped.
+//
+// A panic in the memory path is recovered so the worker goroutine survives:
+// the ingestion path already does this via settleMessage's recover, but a
+// panic here previously crashed the worker. With max_concurrent_workers as low
+// as 1, one panicking memory task could permanently remove the only worker and
+// stall every subsequent document parse. The recovered panic is treated as a
+// transient failure and Nacked for redelivery.
 func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
 	taskID, _ := taskCtx.MemoryPayload["id"].(string)
 	if taskID == "" {
 		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
 	}
+
+	// Recover a panic so a single poison memory task never crashes the worker
+	// (and, at max_concurrent_workers=1, the whole ingestor's only slot).
+	defer func() {
+		if r := recover(); r != nil {
+			common.Error(fmt.Sprintf("memory task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
+			if taskCtx != nil && taskCtx.Handle != nil {
+				if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
+					common.Error(fmt.Sprintf("nack memory task %s after panic", taskID), nackErr)
+				}
+			}
+		}
+	}()
+
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
 	if taskCtx.Handle == nil {
 		common.Warn("memory task handle is nil, skip")
@@ -499,8 +533,8 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 		}
 		return
 	}
-	if err := e.memorySvc.HandleSaveToMemoryTask(ctx, taskCtx.MemoryPayload); err != nil {
-		// HandleSaveToMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
+	if err := e.runMemoryTask(ctx, taskCtx.MemoryPayload); err != nil {
+		// defaultRunMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
 		// (durable progress=-1 written, or no row to retry). Everything else is
 		// transient and must be redelivered rather than dropped.
 		if errors.Is(err, servicepkg.ErrMemoryTaskTerminal) {
@@ -520,6 +554,13 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 	if err := taskCtx.Handle.Ack(); err != nil {
 		common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
 	}
+}
+
+// defaultRunMemoryTask is the production memory-task runner. It is held behind
+// the runMemoryTask field so tests can substitute a panicking/failing runner
+// without a live DB or real MemoryMessageService.
+func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, payload map[string]any) error {
+	return e.memorySvc.HandleSaveToMemoryTask(ctx, payload)
 }
 
 func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
@@ -599,17 +640,46 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
-		return e.markStopped(context.Background(), task.ID)
+		stopped := e.markStopped(context.Background(), task.ID)
+		if stopped {
+			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
+		}
+		return stopped
 	default:
 	}
 
 	if err := e.ingestionTaskSvc.IncrementRunCount(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
-	if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
-		common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+	checkpointExists := e.checkpointExists
+	if checkpointExists == nil {
+		checkpointExists = canvas.RedisCheckpointExists
+	}
+	resumeCheckpoint, checkpointErr := checkpointExists(ctx, task.ID)
+	if checkpointErr != nil {
+		common.Error(fmt.Sprintf("Failed to check checkpoint for task %s", task.ID), checkpointErr)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
+	}
+	if !resumeCheckpoint {
+		if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
+			common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
+			ok := e.markFailed(ctx, task.ID)
+			if ok {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			}
+			return ok
+		}
+	} else {
+		common.Info(fmt.Sprintf("Preserving component progress for checkpoint resume of task %s", task.ID))
 	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
@@ -630,15 +700,27 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
-			return e.markStopped(ctx, task.ID)
+			stopped := e.markStopped(ctx, task.ID)
+			if stopped {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
+			}
+			return stopped
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTimeoutProgress(task)
-			return e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task.ID)
+			if ok {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			}
+			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		return e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID)
+		if ok {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+		}
+		return ok
 	}
 
 	if err := e.completeTask(ctx, task.ID); err != nil {
@@ -979,6 +1061,20 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	}
 	e.docState.apply(ctx, result)
 	return nil
+}
+
+func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status string) {
+	if ingestionTask == nil || status == "" {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, taskpkg.PipelineLogInput{
+		KbID:       ingestionTask.DatasetID,
+		DocumentID: ingestionTask.DocumentID,
+		Status:     status,
+	}); err != nil {
+		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
+	}
 }
 
 // Stop gracefully shuts down the ingestor. It cancels the root context so

@@ -1030,6 +1030,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
 
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
+    prefetch_size = int(req.get("prefetch_size", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
@@ -1065,6 +1066,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
         vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
         top = max(1, min(int(search_config.get("top_k", top)), 2048))
+        prefetch_size = int(search_config.get("prefetch_size", 100))
         use_kg = search_config.get("use_kg", use_kg)
         langs = search_config.get("cross_languages", langs)
         logging.debug(
@@ -1144,6 +1146,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
         trace_id=search_id,
+        prefetch_size=prefetch_size,
     )
 
     if use_kg:
@@ -1410,6 +1413,7 @@ async def search_datasets(tenant_id: str, req: dict):
     kb_ids = req.get("dataset_ids", [])
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
+    prefetch_size = int(req.get("prefetch_size", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
@@ -1457,6 +1461,7 @@ async def search_datasets(tenant_id: str, req: dict):
         similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
         vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
         top = max(1, min(int(search_config.get("top_k", top)), 2048))
+        prefetch_size = int(search_config.get("prefetch_size", 100))
         use_kg = search_config.get("use_kg", use_kg)
         langs = search_config.get("cross_languages", langs)
         logging.debug(
@@ -1541,6 +1546,7 @@ async def search_datasets(tenant_id: str, req: dict):
         rank_feature=labels,
         trace_id=search_id,
         must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
+        prefetch_size=prefetch_size,
     )
 
     if use_kg:

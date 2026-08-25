@@ -170,6 +170,13 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 			}
 			tableBoxes = append(tableBoxes, b)
 		}
+		// Drop OCR boxes that are strictly nested inside another box whose
+		// text contains theirs (e.g. a re-detected "Hardware" box fully
+		// inside "Software Hardware"). Without this, NaiveVerticalMerge
+		// concatenates the two into "Software Hardware Hardware" while
+		// Python's construct_table keeps the longer box only. Mirrors
+		// Python's effective behavior: the nested duplicate is not merged.
+		tableBoxes = dedupNestedBoxes(tableBoxes)
 		tableBoxes = lyt.NaiveVerticalMerge(tableBoxes, nil, nil, nil)
 		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
 		for _, b := range tableBoxes {
@@ -185,33 +192,22 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		})
 	}
 	var grid [][]pdf.TSRCell
-	if len(cells) > 0 {
-		grid = tb.GroupCells(cells)
-		if len(grid) > 0 {
-			// Pass the original TSR "table row" bboxes to cell fill so the
-			// box→row matching uses the row component's own X range, exactly
-			// like Python's find_overlapped_with_threshold over the raw row
-			// components. Using the grid column union instead (wider X) can
-			// push a col-0 box that straddles a row pair into the lower row
-			// (13_crosspage_table page 2 rows 43/44: row 44's line starts at
-			// x=106.9 while the grid union starts at 90.8, so '2024-43
-			// 2024-44' overlaps row 44 ~21% against the true bbox but ~50%
-			// against the union; Python keeps it in row 43).
-			tsrRows := make([]pdf.TSRCell, 0, len(cells))
-			for _, c := range cells {
-				if strings.HasSuffix(c.Label, "table row") {
-					tsrRows = append(tsrRows, c)
-				}
-			}
-			tbl.SortYFirstly(tsrRows, 10)
-			flat := tbl.FlattenGrid(grid)
-			tbl.FillCellTextFromBoxesWithRows(flat, boxInCrop, tsrRows)
-			idx := 0
-			for ri := range grid {
-				for ci := range grid[ri] {
-					grid[ri][ci].Text = flat[idx].Text
-					idx++
-				}
+	if len(cells) > 0 && len(boxInCrop) > 0 {
+		// Cross-product grid (structure lines, de-duplicated like Python's
+		// gather) is used ONLY to derive per-box R/C annotations.
+		annotGrid := tb.GroupCells(cells)
+		if len(annotGrid) > 0 {
+			// Derive R/C/H/SP with Python's _table_transformer_job semantics
+			// (whole-row/whole-column line matching), in crop space.
+			tbl.AnnotateBoxesWithGrid(boxInCrop, annotGrid)
+			// Rebuild the grid from the derived per-char R/C, exactly like
+			// Python's construct_table groups boxes by their R/C labels —
+			// rows are produced only for R values that carry boxes. Fall back
+			// to the cross-product grid when no box carries annotations.
+			if rcGrid := tbl.GroupBoxesByRC(boxInCrop); len(rcGrid) > 0 {
+				grid = rcGrid
+			} else {
+				grid = annotGrid
 			}
 		}
 	}
@@ -220,7 +216,54 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,
+		Page: pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	return item
+}
+
+// dedupNestedBoxes drops OCR boxes that are strictly nested inside another
+// box whose trimmed text contains the nested box's trimmed text. This removes
+// re-detected duplicate boxes (e.g. a "Hardware" detection fully inside a
+// "Software Hardware" box) so the subsequent NaiveVerticalMerge does not
+// concatenate them into "Software Hardware Hardware". Python's
+// construct_table keeps the longer box only, so this matches Python's output.
+//
+// Containment requires the nested box's bbox to lie entirely within the other
+// box's bbox (same or narrower X, same or shorter Y). Side-by-side or
+// half-overlapping boxes are never nested, so they are preserved and merged
+// normally.
+func dedupNestedBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	keep := make([]bool, len(boxes))
+	for i := range boxes {
+		keep[i] = strings.TrimSpace(boxes[i].Text) != ""
+	}
+	for i := 0; i < len(boxes); i++ {
+		if !keep[i] {
+			continue
+		}
+		at := strings.TrimSpace(boxes[i].Text)
+		for j := 0; j < len(boxes); j++ {
+			if i == j || !keep[j] {
+				continue
+			}
+			bt := strings.TrimSpace(boxes[j].Text)
+			if bt == "" || !strings.Contains(at, bt) {
+				continue
+			}
+			// Drop the nested (shorter) box when it sits fully inside the
+			// outer box's bbox.
+			if boxes[j].X0 >= boxes[i].X0 && boxes[j].X1 <= boxes[i].X1 &&
+				boxes[j].Top >= boxes[i].Top && boxes[j].Bottom <= boxes[i].Bottom {
+				keep[j] = false
+			}
+		}
+	}
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for i := range boxes {
+		if keep[i] {
+			out = append(out, boxes[i])
+		}
+	}
+	return out
 }

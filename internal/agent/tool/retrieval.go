@@ -61,6 +61,7 @@ type retrievalArgs struct {
 	KBIDs                    []string       `json:"kb_ids,omitempty"`
 	MemoryIDs                []string       `json:"memory_ids,omitempty"`
 	TopN                     int            `json:"top_n,omitempty"`
+	PrefetchSize             int            `json:"prefetch_size,omitempty"`
 	TopK                     int            `json:"top_k,omitempty"`
 	KeywordsSimilarityWeight *float64       `json:"keywords_similarity_weight,omitempty"`
 	UseKG                    bool           `json:"use_kg,omitempty"`
@@ -200,6 +201,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		DatasetIDs:               args.DatasetIDs,
 		MemoryIDs:                args.MemoryIDs,
 		TopN:                     args.TopN,
+		PrefetchSize:             args.PrefetchSize,
 		TopK:                     args.TopK,
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
@@ -273,6 +275,9 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	}
 	if args.TopN <= 0 {
 		args.TopN = r.defaults.TopN
+	}
+	if args.PrefetchSize <= 0 {
+		args.PrefetchSize = r.defaults.PrefetchSize
 	}
 	if args.TopK <= 0 {
 		args.TopK = r.defaults.TopK

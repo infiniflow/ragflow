@@ -114,6 +114,38 @@ func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.Prog
 	}
 }
 
+// OnComponentMessage appends detailed compiler-stage information without
+// creating a lifecycle row. This keeps component_total and completion percent
+// based on actual canvas components while exposing MAP/REDUCE/PLAN/REFINE
+// counts through the existing document progress log.
+func (s *progressSink) OnComponentMessage(ctx context.Context, taskID, docID, component, message string) {
+	if docID == "" || message == "" {
+		return
+	}
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	doc, err := s.docSvc.GetDocumentByID(ctx, docID)
+	if err != nil {
+		common.Error(fmt.Sprintf("progressSink: read document %s for detail failed", docID), err)
+		return
+	}
+	if doc == nil {
+		return
+	}
+	run := ""
+	if doc.Run != nil {
+		run = *doc.Run
+	}
+	log, err := s.accumulateLogLocked(ctx, docID, fmt.Sprintf("%s: %s", component, message))
+	if err != nil {
+		common.Error(fmt.Sprintf("progressSink: append detail for document %s failed", docID), err)
+		return
+	}
+	if err := s.docSvc.UpdateRunProgress(ctx, docID, doc.Progress, run, log); err != nil {
+		common.Error(fmt.Sprintf("progressSink: persist detail for document %s failed", docID), err)
+	}
+}
+
 // updateDocumentProgress serializes log accumulation with the corresponding
 // document write. Without holding the same lock across both operations, a
 // slower database write can store an older snapshot after a newer event has

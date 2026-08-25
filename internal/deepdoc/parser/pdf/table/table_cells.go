@@ -3,11 +3,12 @@ package table
 import (
 	"log/slog"
 	"math"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	"ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"sort"
 	"strings"
+
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ── TSR cell grouping ──────────────────────────────────────────────────
@@ -129,6 +130,14 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 	// row×column cross-product, so every cell in a row shares the same Y band.
 	// A row band spans the full table width (union of its cells), matching
 	// Python's full-width "table row" components.
+	//
+	// Spanning cells are folded into the nearest band by Y0 instead of opening
+	// their own band. GroupCells extends a span cell's bbox across the covered
+	// region, so its Y0 differs from the sibling cells' Y0; a separate band
+	// would span several TSR rows and the top-containment rule would swallow
+	// every covered box into it, emptying the real rows (11→6 in dell/
+	// screenshot real-PDF parity). Python assigns boxes to rows by TSR row
+	// component overlap only — spanning cells never define a row.
 	type rowBand struct {
 		y0, y1  float64
 		stripX0 float64
@@ -141,10 +150,14 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 	// Y0 value, and distinct rows differ by at least a row height, so a tiny
 	// epsilon is enough and never merges two real rows.
 	const yTol = 1e-6
+	// Pass 1: build bands from non-spanning cells only.
 	for i := range cells {
 		c := &cells[i]
 		if c.X1 <= c.X0 || c.Y1 <= c.Y0 {
 			continue // degenerate / span-covered cell: not a fill target
+		}
+		if strings.Contains(c.Label, "spanning") {
+			continue
 		}
 		rb := &rowBand{}
 		found := false
@@ -171,6 +184,34 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 			rb.y1 = c.Y1
 		}
 		rb.cells = append(rb.cells, i)
+	}
+	// Pass 2: fold spanning cells into the nearest band by Y0. GroupCells
+	// extends a span cell's bbox across the covered region, so its Y0 differs
+	// from its own row's other cells; a separate band would span several TSR
+	// rows and the top-containment rule would swallow every covered box into
+	// it, emptying the real rows (dell/screenshot 11→6). Python assigns boxes
+	// to rows by TSR row component overlap only — spanning cells never define
+	// a row. The span cell stays a fill target in that band (its covered
+	// boxes' R/C labels still point at the span cell's column), but it must
+	// NOT extend the band's Y/X geometry — its bbox already covers the span.
+	for i := range cells {
+		c := &cells[i]
+		if c.X1 <= c.X0 || c.Y1 <= c.Y0 {
+			continue
+		}
+		if !strings.Contains(c.Label, "spanning") {
+			continue
+		}
+		best, bestD := -1, math.Inf(1)
+		for ri := range rows {
+			if d := math.Abs(rows[ri].y0 - c.Y0); d < bestD {
+				best, bestD = ri, d
+			}
+		}
+		if best < 0 {
+			continue
+		}
+		rows[best].cells = append(rows[best].cells, i)
 	}
 	// Stable ordering: rows top-to-bottom, cells left-to-right (matches
 	// Python's first-wins tie-breaking in find_overlapped_with_threshold /
@@ -210,7 +251,36 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 		if boxArea <= 0 {
 			continue
 		}
-		// 1. Best row by vertical-overlap ratio (>= 0.3), tie-broken by _ov.
+		// 1. Best row: prefer the row the box BEGINS in.
+		//
+		// Python's construct_table groups boxes into rows by each box's TSR
+		// row label (b["R"]) — the row the box STARTS in — not by spatial
+		// overlap (pdf_parser.py construct_table:176-192). When a label or
+		// value box spans two adjacent data rows (e.g. a Month cell merged
+		// across a pair of rows, or a Margin cell repeated across a seam),
+		// Go must place it in the UPPER row to match Python. Without this,
+		// FillCellTextFromBoxes picked the MAX-overlap row (usually the
+		// lower one) and the doubled text landed one row too low, which is
+		// the 13_crosspage_table.pdf divergence (tracked as go_bug
+		// table-crosspage-merge-seam-duplication, whose root cause is this
+		// row-selection rule, not the cross-page merge itself).
+		//
+		// We therefore prefer the topmost row band whose Y range CONTAINS the
+		// box's TOP edge. Top-containment is a stronger, non-spurious signal
+		// than the 0.3 area ratio (a box whose top sits inside a band clearly
+		// belongs to that row even when its 2D overlap ratio is below 0.3, as
+		// happens for a narrow Month box whose width gives a small area
+		// ratio). Only when no band contains the top edge do we fall back to
+		// the original max-overlap (ov, ov2) rule, so single-row boxes and
+		// genuinely lower-row boxes are unchanged.
+		topR := -1
+		for ri := range rows {
+			rb := &rows[ri]
+			if b.Top >= rb.y0 && b.Top <= rb.y1 {
+				topR = ri
+				break
+			}
+		}
 		bestR := -1
 		bestOv, bestOv2 := 0.3, 0.0
 		for ri := range rows {
@@ -221,16 +291,21 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 			strip := pdf.TSRCell{X0: rb.stripX0, Y0: rb.y0, X1: rb.stripX1, Y1: rb.y1}
 			inter := util.OverlapInter(&strip, &b)
 			ov := inter / boxArea
+			if ov < 0.3 {
+				continue
+			}
 			ov2 := 0.0
 			if a := util.Area(&strip); a > 0 {
 				ov2 = inter / a
 			}
-			// Skip unless strictly better than the current best, mirroring
-			// Python's (ov, _ov) tuple ordering in find_overlapped_with_threshold.
-			if !(ov > bestOv || (ov == bestOv && ov2 > bestOv2)) {
-				continue
+			// Fallback: keep the max-overlap (ov, ov2) best, mirroring
+			// Python's find_overlapped_with_threshold tuple ordering.
+			if ov > bestOv || (ov == bestOv && ov2 > bestOv2) {
+				bestR, bestOv, bestOv2 = ri, ov, ov2
 			}
-			bestR, bestOv, bestOv2 = ri, ov, ov2
+		}
+		if topR >= 0 {
+			bestR = topR
 		}
 		if bestR < 0 {
 			continue
@@ -339,7 +414,11 @@ func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool)
 
 // isCaptionBox checks if a text box is a table/figure caption,
 // matching Python is_caption().  Captions should not enter table cells.
-var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+|(?i)Table\s+\d+`)
+// reCaption backs IsCaptionBox and must mirror Python's start-anchored
+// is_caption: only a line BEGINNING with a caption marker counts. The English
+// alternatives are start-anchored with ^ for the same reason as
+// reTableCaptionText/reFigureCaptionText.
+var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+|(?i)^Table\s+\d+`)
 
 func IsCaptionBox(text string, layoutType string) bool {
 	if strings.Contains(layoutType, "caption") {
@@ -349,11 +428,16 @@ func IsCaptionBox(text string, layoutType string) bool {
 }
 
 // reTableCaptionText matches text patterns that indicate a table caption
-// (as opposed to a figure caption). Python is_caption uses the same set.
-var reTableCaptionText = regexp.MustCompile(`^表|(?i)Table\s+\d+`)
+// (as opposed to a figure caption). Python is_caption uses re.match, which is
+// start-anchored, so a body paragraph that merely MENTIONS "Table N"
+// mid-sentence is NOT a caption. The English alternatives below are therefore
+// start-anchored with ^: an unanchored alternative wrongly classifies such a
+// paragraph as a caption and MergeCaptions then drops it (go_bug
+// table-text-interleaved-paragraph-dropped).
+var reTableCaptionText = regexp.MustCompile(`^表|(?i)^Table\s+\d+`)
 
 // reFigureCaptionText matches text patterns that indicate a figure caption.
-var reFigureCaptionText = regexp.MustCompile(`^图|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+`)
+var reFigureCaptionText = regexp.MustCompile(`^图|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+`)
 
 // captionKind returns "table" if the section is a table caption,
 // "figure" if a figure caption, or "" if not a caption.

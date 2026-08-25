@@ -2,6 +2,9 @@ package connector
 
 import (
 	"context"
+	"errors"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"strings"
 	"testing"
 )
@@ -21,18 +24,20 @@ func TestRegistryOpenFromConfig(t *testing.T) {
 	}
 
 	_, err = registry.OpenFromConfig("missing", map[string]any{})
-	if err == nil || !strings.Contains(err.Error(), `unsupported connector source "missing"`) {
+	if err == nil || !errors.Is(err, ErrUnsupportedSource) || !strings.Contains(err.Error(), `unsupported connector source "missing"`) {
 		t.Fatalf("unsupported source error = %v", err)
 	}
 }
 
 func TestRegistryOpenUsesTaskFactory(t *testing.T) {
 	registry := NewRegistry()
-	registry.Register("rss", func(ctx context.Context, taskContext any) (Connector, error) {
+	registry.Register("rss", func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
 		return NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.xml"})
 	})
 
-	connector, err := registry.Open(context.Background(), struct{ Connector struct{ Source string } }{Connector: struct{ Source string }{Source: "rss"}})
+	connector, err := registry.Open(context.Background(), dao.SyncTaskContext{
+		Connector: entity.Connector{Source: "rss"},
+	})
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}

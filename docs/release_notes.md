@@ -15,7 +15,7 @@ Released on Aug 19, 2026.
 
 ### New features
 - Brand new document level and dataset level knowledge compilation, supporting Wiki, Graph, Tree, Page Index, Mind Map, Timeline, and To Skills ([#16777](https://github.com/infiniflow/ragflow/pull/16777), [#17546](https://github.com/infiniflow/ragflow/pull/17546), [#16797](https://github.com/infiniflow/ragflow/pull/16797), [#16749](https://github.com/infiniflow/ragflow/pull/16749), [#16899](https://github.com/infiniflow/ragflow/pull/16899), [#17996](https://github.com/infiniflow/ragflow/pull/17996))
-- Brand new Agentic RAG with four thinking modes when answering - Low, Medium, High, and Ultra High ([#18303](https://github.com/infiniflow/ragflow/pull/18303), [#18138](https://github.com/infiniflow/ragflow/pull/18138), [#17342](https://github.com/infiniflow/ragflow/pull/17342), [#17444](https://github.com/infiniflow/ragflow/pull/17444))
+- Brand new Agentic RAG with four thinking modes when answering - Low, Medium, High, and Ultra ([#18303](https://github.com/infiniflow/ragflow/pull/18303), [#18138](https://github.com/infiniflow/ragflow/pull/18138), [#17342](https://github.com/infiniflow/ragflow/pull/17342), [#17444](https://github.com/infiniflow/ragflow/pull/17444))
 
 ### Improvements
 - Fully revamped model provider system for easier model configuration and management ([#16604](https://github.com/infiniflow/ragflow/pull/16604))
@@ -665,8 +665,8 @@ Released on September 10, 2025.
 
 - Agent:
   - Agent Performance Optimized: Improves planning and reflection speed for simple tasks; optimizes concurrent tool calls for parallelizable scenarios, significantly reducing overall response time.
-  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control. See [here](./guides/agent/agent_component_reference/agent.mdx#system-prompt).
-  - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables. See [here](./guides/agent/agent_component_reference/execute_sql.md).
+  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control. See [here](./guides/agent/agent_workflow/basic_component.md#prompt-configuration).
+  - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables. See [here](./guides/agent/agent_workflow/tool_components.md#execute-sql).
 - Chat: Re-enables **Reasoning** and **Cross-language search**.
 
 ### Newly supported models
@@ -859,9 +859,9 @@ Released on May 26, 2025.
 
 #### Added documents
 
-- [Select PDF parser](./guides/dataset/select_pdf_parser.md)
-- [Enable Excel2HTML](./guides/dataset/enable_excel2html.md)
-- [Code component](./guides/agent/agent_component_reference/code.mdx)
+- [Select PDF parser](./guides/dataset/configuration.md#document-parsing-configuration)
+- [Enable Excel2HTML]
+- [Code component](./guides/agent/agent_workflow/data_manipulation_components.md#code-component)
 
 ## v0.18.0
 
@@ -891,7 +891,7 @@ From this release onwards, built-in rerank models have been removed because they
 
 #### Added documents
 
-- [Set page rank](./guides/dataset/set_page_rank.md)
+- [Set page rank](./guides/dataset/configuration.md#basic-information)
 - [Enable RAPTOR](./guides/dataset/advanced/enable_raptor.md)
 - [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
 - [Launch RAGFlow MCP server](./develop/mcp/launch_mcp_server.md)
@@ -955,7 +955,7 @@ Released on March 11, 2025.
 
 #### Added documents
 
-- [Use tag set](./guides/dataset/use_tag_sets.md)
+- [Use tag set](./guides/dataset/configuration.md#basic-information)
 
 ## v0.17.0
 
@@ -967,7 +967,7 @@ Released on March 3, 2025.
 - AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying datasets.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
-- Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options. See [here](./guides/dataset/select_pdf_parser.md).
+- Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options. See [here](./guides/dataset/configuration.md#document-parsing-configuration).
 - Agent component: **(x)** or a forward slash `/` can be used to insert available keys (variables) in the system prompt field of the **Generate** or **Template** component.
 - Object storage: Supports using Aliyun OSS (Object Storage Service) as a file storage option.
 - Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
@@ -995,7 +995,7 @@ Adds a key option `"meta_fields"` to the [Update document](./references/python_a
 
 #### Added documents
 
-- [Run retrieval test](./guides/dataset/run_retrieval_test.md)
+- [Run retrieval test](./guides/dataset/retrieval_testing.md)
 
 ## v0.16.0
 
@@ -1005,9 +1005,9 @@ Released on February 6, 2025.
 
 - Supports DeepSeek R1 and DeepSeek V3.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/dataset/advanced/construct_knowledge_graph.md).
-- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_component_reference/iteration.mdx).
+- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration).
 - New UI language: Portuguese.
-- Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/set_metadata.md).
+- Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/metadata_management.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
 - Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
 - Supports creating and referencing a **Tag** dataset as a key milestone towards bridging the semantic gap between query and response.
@@ -1020,21 +1020,21 @@ The **Tag dataset** feature is *unavailable* on the [Infinity](https://github.co
 
 #### Added documents
 
-- [Construct knowledge graph](./guides/dataset/advanced/construct_knowledge_graph.md)
-- [Set metadata](./guides/dataset/set_metadata.md)
-- [Begin component](./guides/agent/agent_component_reference/begin.md)
-- [Generate component](./guides/agent/agent_component_reference/generate.mdx)
-- [Interact component](./guides/agent/agent_component_reference/interact.mdx)
-- [Retrieval component](./guides/agent/agent_component_reference/retrieval.mdx)
-- [Categorize component](./guides/agent/agent_component_reference/categorize.mdx)
-- [Keyword component](./guides/agent/agent_component_reference/keyword.mdx)
-- [Message component](./guides/agent/agent_component_reference/message.md)
-- [Rewrite component](./guides/agent/agent_component_reference/rewrite.mdx)
-- [Switch component](./guides/agent/agent_component_reference/switch.mdx)
-- [Concentrator component](./guides/agent/agent_component_reference/concentrator.mdx)
-- [Template component](./guides/agent/agent_component_reference/template.mdx)
-- [Iteration component](./guides/agent/agent_component_reference/iteration.mdx)
-- [Note component](./guides/agent/agent_component_reference/note.mdx)
+- [Construct knowledge graph]
+- [Set metadata](./guides/dataset/metadata_management.md)
+- [Begin component](./guides/agent/agent_workflow/basic_component.md#begin-component)
+- [Generate component]
+- [Interact component]
+- [Retrieval component](./guides/agent/agent_workflow/basic_component.md#retrieval-component)
+- [Categorize component](./guides/agent/agent_workflow/flow_components.md#categorize-component)
+- [Keyword component]
+- [Message component](./guides/agent/agent_workflow/dialogue_component.md#reply-message-component)
+- [Rewrite component]
+- [Switch component](./guides/agent/agent_workflow/flow_components.md#switch-component)
+- [Concentrator component]
+- [Template component]
+- [Iteration component](./guides/agent/agent_workflow/flow_components.md#iteration)
+- [Note component]
 
 ## v0.15.1
 
@@ -1146,7 +1146,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-the-most-recent-officially-published-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-given-release) before trying this new approach.
 :::
 
 ### API changes
@@ -1166,7 +1166,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](./guides/team/manage_team_members.md)
+- [Manage team members](./guides/team/team_management/index.md)
 - [Run health check on RAGFlow's dependencies](https://ragflow.io/docs/dev/run_health_check)
 
 ## v0.13.0

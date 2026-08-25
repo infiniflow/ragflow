@@ -68,10 +68,9 @@ func topicKey(topic string) string {
 	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(topic)), " "))
 }
 
-func topicSlug(topic string) string {
-	return "topic/" + hashStr(topicKey(topic))
-}
-
+// prepareTopicProduct normalizes topic metadata for legacy routing code. The
+// active merge path does not call it to decide identity; slug remains the
+// caller-provided stable page identity and is never replaced by a hash.
 func prepareTopicProduct(product kccommon.Product, topic string) kccommon.Product {
 	product.Meta = copyMeta(product.Meta)
 	topic = strings.TrimSpace(topic)
@@ -80,25 +79,19 @@ func prepareTopicProduct(product kccommon.Product, topic string) kccommon.Produc
 	}
 	product.Meta["page_type"] = "topic"
 	product.Meta["topic"] = topic
-	product.Meta["slug"] = topicSlug(topic)
-	if productTitle(product) == "" {
-		product.Meta["title"] = topic
-	}
 	return product
 }
 
-// mergeTopicProducts folds pages with the same canonical topic and preserves
-// the first dataset-level page identity.
+// mergeTopicProducts folds only pages with the same canonical slug and
+// preserves the first dataset-level page identity. Similar topics with
+// different slugs remain separate pages.
 func mergeTopicProducts(tenant, kb string, products []kccommon.Product) ([]kccommon.Product, []string) {
 	groups := make(map[string][]kccommon.Product)
 	order := make([]string, 0, len(products))
 	for _, product := range products {
-		key := candidateIdentity(product)
-		if isTopicPage(product) {
-			key = topicKey(productTopic(product))
-			if key == "" {
-				key = candidateIdentity(product)
-			}
+		key := wikiPageMergeKey(product)
+		if key == "" {
+			key = candidateIdentity(product)
 		}
 		if _, exists := groups[key]; !exists {
 			order = append(order, key)
@@ -113,19 +106,11 @@ func mergeTopicProducts(tenant, kb string, products []kccommon.Product) ([]kccom
 			continue
 		}
 		current := items[0]
-		if isTopicPage(current) {
-			existingSlug := metaString(current.Meta, "slug")
-			current = prepareTopicProduct(current, productTopic(current))
-			if existingSlug != "" && current.Merged && current.DocID == kb {
-				current.Meta["slug"] = existingSlug
-			}
-		}
 		for _, item := range items[1:] {
 			if item.ID != "" && item.ID != current.ID && item.Merged && item.DocID == kb {
 				stale = append(stale, item.ID)
 			}
 			if isTopicPage(current) {
-				item = prepareTopicProduct(item, productTopic(current))
 				current = mergeTopicPage(current, item)
 			} else {
 				current = wikiEntityMerge(current, item)
@@ -166,7 +151,7 @@ func mergeTopicPage(existing, incoming kccommon.Product) kccommon.Product {
 	merged.Meta["page_type"] = "topic"
 	topic := firstTopicString(metaString(incoming.Meta, "topic"), metaString(existing.Meta, "topic"))
 	merged.Meta["topic"] = topic
-	merged.Meta["title"] = firstTopicString(metaString(incoming.Meta, "title"), metaString(existing.Meta, "title"), topic)
+	merged.Meta["title"] = firstTopicString(metaString(existing.Meta, "title"), metaString(incoming.Meta, "title"), topic)
 	merged.Meta["entity_names"] = unionStrs(metaStringSlice(existing.Meta, "entity_names"), metaStringSlice(incoming.Meta, "entity_names"))
 	return merged
 }

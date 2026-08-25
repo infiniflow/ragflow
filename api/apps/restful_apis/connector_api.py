@@ -338,7 +338,6 @@ async def start_google_web_oauth():
 
     try:
         credentials = _load_credentials(raw_credentials)
-        print(credentials)
     except ValueError as exc:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
 

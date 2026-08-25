@@ -82,14 +82,14 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 		checkpoints = store
 	}
 
-	coordinator := NewTaskCoordinator(TaskCoordinatorConfig{
+	coordinator := NewTaskCoordinator(SyncRunnerConfig{
 		ItemRetryCount:     config.ItemRetryCount,
 		ItemRetryBaseDelay: config.ItemRetryBaseDelay,
-	}, taskService, registry, sink, pruneService, idResolver, executor, checkpoints)
+	}, taskDAO, taskService, registry, sink, pruneService, idResolver, executor, checkpoints)
 
-	scheduler := NewScheduler(queue, taskService)
+	scheduler := NewScheduler(queue, taskDAO)
 	if broker, ok := messageQueue.(SyncTaskBroker); ok {
-		scheduler = NewNATSScheduler(queue, taskService, broker)
+		scheduler = NewNATSScheduler(queue, taskDAO, broker)
 	}
 
 	return &Syncer{
@@ -97,7 +97,7 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 		config:     config,
 		queue:      queue,
 		scheduler:  scheduler,
-		worker:     NewTaskWorker(queue, taskService, coordinator, locker).WithScheduler(scheduler),
+		worker:     NewTaskWorker(queue, taskDAO, taskService, coordinator, locker).WithScheduler(scheduler),
 		executor:   executor,
 		ShutdownCh: make(chan struct{}),
 	}
@@ -152,9 +152,9 @@ func (s *Syncer) Stop() {
 	})
 }
 
-// logSyncTaskDuration test run time, delete it soon
-func logSyncTaskDuration(taskContext service.SyncTaskContext, startedAt time.Time) {
-	if taskContext.Task.TaskType != service.TaskTypeSync {
+// logSyncTaskDuration get job run time
+func logSyncTaskDuration(taskContext dao.SyncTaskContext, startedAt time.Time) {
+	if taskContext.Task.TaskType != dao.TaskTypeSync {
 		return
 	}
 	common.Info(

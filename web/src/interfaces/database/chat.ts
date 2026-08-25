@@ -23,6 +23,7 @@ export interface PromptConfig {
   tavily_api_key?: string;
   querit_api_key?: string;
   serply_api_key?: string;
+  youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
   toc_enhance?: boolean;
   reference_metadata?: {
@@ -79,6 +80,7 @@ export interface IDialog {
   similarity_threshold: number;
   top_k: number;
   top_n: number;
+  prefetch_size: number;
   rerank_id?: string;
   tenant_rerank_id?: string;
   meta_data_filter: MetaDataFilter;

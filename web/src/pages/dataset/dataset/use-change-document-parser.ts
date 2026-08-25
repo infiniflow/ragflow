@@ -5,7 +5,7 @@ import {
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { useCallback, useState } from 'react';
 
 export const useChangeDocumentParser = () => {
@@ -32,12 +32,14 @@ export const useChangeDocumentParser = () => {
           datasetId: record?.dataset_id,
           parserConfig: parserConfigInfo.parser_config,
         };
-        const ret = isGoBackend()
-          ? await setDocumentPipelineParser({
+        const ret = await pickByBackend({
+          go: () =>
+            setDocumentPipelineParser({
               ...common,
               parseType: parserConfigInfo.parseType,
-            })
-          : await setDocumentParser(common);
+            }),
+          python: () => setDocumentParser(common),
+        })();
         if (ret === 0) {
           hideChangeParserModal();
         }

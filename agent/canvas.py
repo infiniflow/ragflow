@@ -175,9 +175,7 @@ class Graph:
             obj = cpn.get("obj")
             if obj and hasattr(obj, "tools"):
                 for tool in obj.tools.values():
-                    session = tool if isinstance(tool, MCPToolCallSession) else (
-                        tool.session if isinstance(tool, MCPToolBinding) else None
-                    )
+                    session = tool if isinstance(tool, MCPToolCallSession) else (tool.session if isinstance(tool, MCPToolBinding) else None)
                     if isinstance(session, MCPToolCallSession) and id(session) not in seen:
                         seen.add(id(session))
                         try:
@@ -217,30 +215,19 @@ class Graph:
         # Reference the canonical pre-compiled regex from ComponentBase so
         # the source-pattern and the runtime-pattern can never drift apart.
         pat = ComponentBase.variable_ref_patt_re
-        out_parts = []
-        last = 0
 
-        for m in pat.finditer(value):
-            out_parts.append(value[last : m.start()])
+        def replace(m):
             key = m.group(1)
             v = self.get_variable_value(key)
             if v is None:
-                rep = ""
+                return ""
             elif isinstance(v, partial):
-                buf = []
-                for chunk in v():
-                    buf.append(chunk)
-                rep = "".join(buf)
+                return "".join(v())
             elif isinstance(v, str):
-                rep = v
-            else:
-                rep = json.dumps(v, ensure_ascii=False)
+                return v
+            return json.dumps(v, ensure_ascii=False)
 
-            out_parts.append(rep)
-            last = m.end()
-
-        out_parts.append(value[last:])
-        return "".join(out_parts)
+        return ComponentBase._replace_template_matches(pat, value, replace)
 
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
@@ -392,10 +379,12 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
-    def clear_history(self):
+    def start_new_session(self):
+        """Discard replica state that must not leak into a fresh session."""
         self.history = []
-        if isinstance(self.globals.get("sys.history"), list):
-            self.globals["sys.history"] = []
+        self.globals["sys.history"] = []
+        self.path = []
+        _logger.debug("Canvas conversation history and execution path reset for a new session")
 
     def reset(self, mem=False):
         super().reset()
@@ -403,7 +392,6 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
-        print(self.variables)
         for k in self.globals.keys():
             if k.startswith("sys."):
                 if isinstance(self.globals[k], str):

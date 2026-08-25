@@ -305,12 +305,9 @@ func TestOCRMergeChars_OverlappingBoxes(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig())
 	// Box A: PDF x=0..20, y=0..20. Box B: PDF x=10..30, y=0..20.
 	// Overlap zone: x=10..20.
-	// Char "Y" at PDF x=2..8 → Box A only.
-	// Char "X" at PDF x=12..18 → overlap zone (both boxes).
-	// Char "Z" at PDF x=22..28 → Box B only.
-	//
-	// Old box-perspective: Box A gets [Y,X], Box B gets [X,Z].
-	// New char-perspective: Box A gets [Y,X] (best overlap), Box B gets [Z].
+	// Char "甲" at PDF x=2..8 → Box A only.
+	// Char "乙" at PDF x=12..18 → overlap zone (both boxes).
+	// Char "丙" at PDF x=22..28 → Box B only.
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		OCRBoxes: []pdf.OCRBox{
@@ -327,14 +324,18 @@ func TestOCRMergeChars_OverlappingBoxes(t *testing.T) {
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 boxes, got %d", len(boxes))
 	}
-	// Tie on equal overlap → later box wins (matching Python's >=).
-	// "乙" goes to Box B (both overlap=1.0, Box B checked later).
-	// Box A → "甲", Box B → "乙丙" (sorted by X).
-	if boxes[0].Text != "甲" {
-		t.Errorf("box A: expected '甲', got %q", boxes[0].Text)
+	// Tie on equal overlap → FIRST box wins. matchCharsToBoxes keeps the first
+	// box that reaches the max overlap via a strict `>` (preferring the larger
+	// area on ties), mirroring Python's Recognizer.find_overlapped
+	// (recognizer.py:223 `if ov <= max_overlapped: continue` — first-wins;
+	// verified empirically). "乙" has overlap 1.0 with both equal-area boxes,
+	// so it goes to Box A (the earlier one).
+	// Box A → "甲乙", Box B → "丙" (sorted by X).
+	if boxes[0].Text != "甲乙" {
+		t.Errorf("box A: expected '甲乙', got %q", boxes[0].Text)
 	}
-	if boxes[1].Text != "乙丙" {
-		t.Errorf("box B: expected '乙丙', got %q", boxes[1].Text)
+	if boxes[1].Text != "丙" {
+		t.Errorf("box B: expected '丙', got %q", boxes[1].Text)
 	}
 }
 

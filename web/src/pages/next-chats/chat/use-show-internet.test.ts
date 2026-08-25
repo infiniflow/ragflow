@@ -1,6 +1,10 @@
 import { WebSearchProvider } from '@/constants/chat';
 import type { PromptConfig } from '@/interfaces/database/chat';
-import { getWebSearchApiKey, getWebSearchProvider } from './web-search-api-key';
+import {
+  getWebSearchApiKey,
+  getWebSearchProvider,
+  hasWebSearchProvider,
+} from './web-search-api-key';
 
 describe('getWebSearchProvider', () => {
   it('does not select a provider for a new unconfigured dialog', () => {
@@ -88,5 +92,54 @@ describe('getWebSearchApiKey', () => {
     } as unknown as PromptConfig;
 
     expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  });
+});
+
+describe('hasWebSearchProvider', () => {
+  it('is false for a new unconfigured dialog', () => {
+    expect(hasWebSearchProvider({} as PromptConfig)).toBe(false);
+  });
+
+  it('requires a key for providers that need one', () => {
+    expect(
+      hasWebSearchProvider({
+        web_search_provider: WebSearchProvider.Querit,
+      } as PromptConfig),
+    ).toBe(false);
+
+    expect(
+      hasWebSearchProvider({
+        web_search_provider: WebSearchProvider.Querit,
+        querit_api_key: 'querit-test',
+      } as PromptConfig),
+    ).toBe(true);
+  });
+
+  it('is true for keyless You.com with no key configured', () => {
+    expect(
+      hasWebSearchProvider({
+        web_search_provider: WebSearchProvider.YouCom,
+      } as PromptConfig),
+    ).toBe(true);
+
+    expect(
+      hasWebSearchProvider({
+        web_search_provider: WebSearchProvider.YouCom,
+        youcom_api_key: '',
+      } as PromptConfig),
+    ).toBe(true);
+  });
+});
+
+describe('You.com key selection', () => {
+  it('uses only the selected You.com key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.YouCom,
+      youcom_api_key: 'ydc-test',
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchProvider(promptConfig)).toBe(WebSearchProvider.YouCom);
+    expect(getWebSearchApiKey(promptConfig)).toBe('ydc-test');
   });
 });

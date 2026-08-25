@@ -95,10 +95,17 @@ type TextBox struct {
 	Top, Bottom float64
 	Text        string
 	PageNumber  int
-	LayoutType  string
-	LayoutNo    string
-	ColID       int
-	R           int
+	// Pages carries the full set of page numbers a box spans, when it is a
+	// single logical region split across consecutive pages (e.g. a table
+	// merged across pages by MergeTablesAcrossPages). When non-empty it
+	// overrides PageNumber for page-span computation in BoxesToSections, so a
+	// cross-page merged table records every page it occupies (not just the
+	// anchor page).
+	Pages      []int
+	LayoutType string
+	LayoutNo   string
+	ColID      int
+	R          int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
@@ -170,6 +177,10 @@ type TableItem struct {
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// Page is the 0-based page index this table was detected on. It is set
+	// by the pipeline and used by parity/replay harnesses to map replay
+	// intermediates (which are keyed by page) back onto the correct table.
+	Page int
 }
 
 // TSRCell represents one table cell from TSR.
@@ -177,6 +188,11 @@ type TSRCell struct {
 	X0, Y0, X1, Y1 float64
 	Text           string
 	Label          string
+	// Score is the TSR detection confidence. Python's layouts_cleanup keeps
+	// the higher-score line when two structure lines overlap (recognizer.py:141),
+	// so the production table assembly needs it to de-duplicate rows/columns
+	// the same way Python does.
+	Score float64
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {
