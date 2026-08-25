@@ -672,7 +672,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         # Derive the doc-store tenant/namespace from the referenced dataset's own
         # owner, not from dialog.tenant_id: a team-shared dataset may be owned by a
         # different tenant than the one who created this chat.
-        sql_kbs = [kb for kb in kbs if kb.parser_config and "field_map" in kb.parser_config]
+        sql_kbs = [kb for kb in kbs if kb.parser_config and kb.parser_config.get("field_map")]
         sql_tenant_ids = {kb.tenant_id for kb in sql_kbs}
         if len(sql_tenant_ids) > 1:
             # use_sql queries a single tenant's doc-store index per call, and

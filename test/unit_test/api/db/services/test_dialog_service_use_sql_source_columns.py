@@ -428,6 +428,76 @@ def test_async_chat_sql_retrieval_uses_dataset_owner_tenant_not_dialog_tenant(mo
 
 
 @pytest.mark.p2
+def test_async_chat_sql_retrieval_ignores_empty_field_map_datasets(monkeypatch):
+    mapped_kb = SimpleNamespace(
+        id="kb-mapped",
+        tenant_id="mapped-tenant",
+        parser_config={"field_map": {"product": "Product Name"}},
+    )
+    empty_map_kb = SimpleNamespace(
+        id="kb-empty-map",
+        tenant_id="other-tenant",
+        parser_config={"field_map": {}},
+    )
+    chat_model = _StubChatModel(["unused"])
+    dialog = SimpleNamespace(
+        kb_ids=["kb-mapped", "kb-empty-map"],
+        llm_id="chat-model",
+        tenant_llm_id="",
+        tenant_id="chat-creator-tenant",
+        llm_setting={},
+        similarity_threshold=0.1,
+        vector_similarity_weight=0.2,
+        top_n=8,
+        top_k=32,
+        meta_data_filter=None,
+        prompt_config={
+            "quote": True,
+            "keyword": False,
+            "tts": False,
+            "empty_response": "",
+            "system": "Use only this knowledge: {knowledge}",
+            "parameters": [{"key": "knowledge", "optional": False}],
+            "reasoning": False,
+            "toc_enhance": False,
+            "use_kg": False,
+        },
+    )
+
+    captured_calls = []
+
+    async def _fake_use_sql(_question, _field_map, tenant_id, _chat_mdl, _quote, kb_ids, doc_ids=None):
+        captured_calls.append({"tenant_id": tenant_id, "kb_ids": kb_ids})
+        return {"answer": "sql answer", "reference": {"chunks": [], "doc_aggs": []}, "prompt": ""}
+
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(
+        dialog_service,
+        "resolve_model_config",
+        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096, "model_type": "chat"},
+    )
+    monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "get_models",
+        lambda _dialog, **_kwargs: ([mapped_kb, empty_map_kb], object(), None, chat_model, None),
+    )
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {"product": "Product Name"})
+    monkeypatch.setattr(dialog_service, "use_sql", _fake_use_sql)
+
+    async def _collect():
+        items = []
+        async for item in dialog_service.async_chat(dialog, [{"role": "user", "content": "How many products?"}], stream=False):
+            items.append(item)
+        return items
+
+    result = asyncio.run(_collect())
+
+    assert captured_calls == [{"tenant_id": "mapped-tenant", "kb_ids": ["kb-mapped"]}]
+    assert result[0]["answer"] == "sql answer"
+
+
+@pytest.mark.p2
 def test_async_chat_skips_sql_retrieval_for_mixed_tenant_field_map_datasets(monkeypatch):
     """Regression test: SQL retrieval must not silently pick one tenant's index
     when the field-map datasets referenced by a chat span multiple tenants.
