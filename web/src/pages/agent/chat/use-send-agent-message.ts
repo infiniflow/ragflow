@@ -13,7 +13,7 @@ import {
   MessageEventType,
   useSendMessageBySSE,
 } from '@/hooks/use-send-message';
-import { IDocumentDownloadInfo, Message } from '@/interfaces/database/chat';
+import { Message } from '@/interfaces/database/chat';
 import i18n from '@/locales/config';
 import api from '@/utils/api';
 import { get } from 'lodash';
@@ -39,97 +39,65 @@ import {
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
+import { shouldSplitMessage } from '../utils/chat';
 
-export interface IMessageSegment {
-  id: string;
-  content: string;
-  audio_binary?: string;
-  attachment?: IAttachment;
-  downloads: IDocumentDownloadInfo[];
-}
+export function findMessageFromList(eventList: IEventList) {
+  const messageEventList = eventList.filter(
+    (x) => x.event === MessageEventType.Message,
+  ) as IMessageEvent[];
 
-/**
- * Разбивает SSE-поток одного прогона агента на отдельные области ответа.
- *
- * Каждая область ответа — это последовательность `message`-событий,
- * завершённая своим `message_end`. Так получается и при нескольких
- * Message-компонентах по ходу работы агента, и при одном Message-компоненте
- * с включённым `emit_all`. Возвращается по одному элементу на область.
- */
-export function findMessageSegmentsFromList(eventList: IEventList): IMessageSegment[] {
-  const segments: IMessageSegment[] = [];
-  const messageId = eventList[0]?.message_id ?? '';
-  let currentContent = '';
-  let thinking = false;
-  let audioBinary: string | undefined;
+  let nextContent = '';
 
-  const finalizeSegment = (
-    attachment?: IAttachment,
-    downloads: IDocumentDownloadInfo[] = [],
-  ) => {
-    if (thinking) {
-      currentContent += '</think>';
-      thinking = false;
+  let startIndex = -1;
+  let endIndex = -1;
+  let audioBinary = undefined;
+  messageEventList.forEach((x, idx) => {
+    const { data } = x;
+    const { content, start_to_think, end_to_think, audio_binary } = data;
+    if (audio_binary) {
+      audioBinary = audio_binary;
     }
-    segments.push({
-      id: segments.length === 0 ? messageId : `${messageId}#${segments.length}`,
-      content: currentContent,
-      audio_binary: audioBinary,
-      attachment,
-      downloads: dedupeDownloads(downloads),
-    });
-    currentContent = '';
-    audioBinary = undefined;
-  };
-
-  for (const x of eventList) {
-    if (x.event === MessageEventType.Message && x.data) {
-      const { content = '', start_to_think, end_to_think, audio_binary } = x.data;
-      if (audio_binary) {
-        audioBinary = audio_binary;
-      }
-      if (start_to_think === true) {
-        currentContent += '<think>' + content;
-        thinking = true;
-      } else if (end_to_think === true) {
-        currentContent += content + '</think>';
-        thinking = false;
-      } else {
-        currentContent += content;
-      }
-    } else if (x.event === MessageEventType.MessageEnd && x.data) {
-      finalizeSegment(x.data.attachment, x.data.downloads);
+    if (start_to_think === true) {
+      nextContent += '<think>' + content;
+      startIndex = idx;
+      return;
     }
+
+    if (end_to_think === true) {
+      endIndex = idx;
+      nextContent += content + '</think>';
+      return;
+    }
+
+    nextContent += content;
+  });
+
+  const currentIdx = messageEventList.length - 1;
+
+  // Make sure that after start_to_think === true and before end_to_think === true, add a </think> tag at the end.
+  if (startIndex >= 0 && startIndex <= currentIdx && endIndex === -1) {
+    nextContent += '</think>';
   }
 
   const workflowFinished = eventList.find(
     (x) => x.event === MessageEventType.WorkflowFinished,
-  ) as IMessageEvent | undefined;
-  const trailingAttachment = workflowFinished?.data?.outputs?.attachment;
-  const trailingDownloads = (workflowFinished?.data?.outputs?.downloads ?? []) as
-    | IDocumentDownloadInfo[]
-    | undefined;
-
-  if (currentContent !== '' || segments.length === 0) {
-    finalizeSegment(trailingAttachment, trailingDownloads ?? []);
-  } else if (trailingDownloads?.length) {
-    const last = segments[segments.length - 1];
-    last.downloads = dedupeDownloads([...last.downloads, ...trailingDownloads]);
-  }
-
-  return segments;
-}
-
-function dedupeDownloads(downloads: IDocumentDownloadInfo[]) {
-  const seen = new Set<string>();
-  return downloads.filter((d) => {
-    const key = d?.doc_id || d?.filename;
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
+  ) as IMessageEvent;
+  const messageEndEvent = [...eventList]
+    .reverse()
+    .find((x) => x.event === MessageEventType.MessageEnd) as IMessageEndEvent;
+  return {
+    id: eventList[0]?.message_id,
+    content: nextContent,
+    audio_binary: audioBinary,
+    attachment:
+      workflowFinished?.data?.outputs?.attachment ||
+      messageEndEvent?.data?.attachment ||
+      {},
+    downloads:
+      workflowFinished?.data?.outputs?.downloads ||
+      messageEndEvent?.data?.downloads ||
+      [],
+  };
 }
 
 export function findInputFromList(eventList: IEventList) {
@@ -175,9 +143,9 @@ export function useFindMessageReference(answerList: IEventList) {
 
   const findReferenceByMessageId = useCallback(
     (messageId: string) => {
-      const [, suffix] = String(messageId ?? '').split('#');
-      const index = suffix !== undefined ? Number(suffix) : 0;
-      const event = messageEndEventList[index];
+      const event = messageEndEventList.find(
+        (item) => item.message_id === messageId,
+      );
       if (event) {
         return (event?.data as IMessageEndData)?.reference;
       }
@@ -193,7 +161,7 @@ export function useFindMessageReference(answerList: IEventList) {
       setMessageEndEventList((list) => {
         const nextList = [...list];
         if (
-          nextList.every((x) => x !== messageEndEvent)
+          nextList.every((x) => x.message_id !== messageEndEvent.message_id)
         ) {
           nextList.push(messageEndEvent as IMessageEndEvent);
         }
@@ -319,11 +287,6 @@ export const useSendAgentMessage = ({
 
   const userId = searchParams.get('userId');
 
-  // Временный id пустого placeholder, создаваемого сразу при отправке вопроса,
-  // чтобы крутилка появлялась мгновенно — до первого SSE-события. Когда приходит
-  // первый message_id, placeholder перепривязывается к нему (см. useEffect ниже).
-  const pendingAnswerIdRef = useRef<string | null>(null);
-
   const stopConversation = useCallback(() => {
     stopOutputMessage();
   }, [stopOutputMessage]);
@@ -438,7 +401,6 @@ export const useSendAgentMessage = ({
   const resetSession = useCallback(() => {
     stopConversation();
     resetAnswerList();
-    pendingAnswerIdRef.current = null;
     setSessionId(null);
     if (isTaskMode) {
       removeAllMessages();
@@ -465,12 +427,6 @@ export const useSendAgentMessage = ({
         });
       }
       addNewestOneQuestion({ ...msgBody, files: fileList });
-      // Мгновенный placeholder «три точки»: сообщение ассистента появляется
-      // сразу, не дожидаясь первого SSE-события. После прихода первого
-      // message_id оно будет перепривязано к реальному id.
-      const pendingId = `${msgBody.id}-pending`;
-      pendingAnswerIdRef.current = pendingId;
-      addNewestOneAnswer({ answer: '', id: pendingId });
       setTimeout(() => {
         scrollToBottom();
       }, 100);
@@ -479,7 +435,6 @@ export const useSendAgentMessage = ({
       value,
       done,
       addNewestOneQuestion,
-      addNewestOneAnswer,
       fileList,
       setValue,
       sendMessage,
@@ -506,73 +461,39 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    if (answerList.length === 0) return;
-    const segments = findMessageSegmentsFromList(answerList);
+    const { content, id, attachment, audio_binary, downloads } =
+      findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
-    const error = getLatestError(answerList);
-    const messageId = answerList[0]?.message_id;
+    const answer = content || getLatestError(answerList);
 
-    // Мгновенный placeholder из handlePressEnter имеет временный id
-    // («<question>-pending»). Как только приходит первый message_id — меняем
-    // ему id на реальный, чтобы addNewestOneAnswer ниже обновил его, а не
-    // создал дубликат.
-    const pendingId = pendingAnswerIdRef.current;
-    if (pendingId && messageId) {
-      pendingAnswerIdRef.current = null;
-      setDerivedMessages((pre) =>
-        pre.map((x) => (x.id === pendingId ? { ...x, id: messageId } : x)),
-      );
-    }
+    if (answerList.length > 0) {
+      const shouldSplit = shouldSplitMessage(answerList, content);
 
-    if (segments.length === 0) {
-      if (error) {
+      if (shouldSplit) {
         addNewestOneAnswer({
-          answer: error,
-          id: messageId,
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
         });
-      } else if (
-        messageId &&
-        !answerList.some(
-          (x) => x.event === MessageEventType.WorkflowFinished,
-        )
-      ) {
-        // Пока агент работает (первые события уже пришли, но ответ ещё не
-        // завершён message_end), держим пустой placeholder — «три точки».
-        // Его id совпадает с id первого сегмента, поэтому по завершении
-        // области addNewestOneAnswer обновит сообщение вместо дубликата.
         addNewestOneAnswer({
           answer: '',
-          id: messageId,
+          ...inputAnswer,
+          id: `${id}${MessageWaitSuffix}`,
+        });
+      } else {
+        addNewestOneAnswer({
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
+          ...inputAnswer,
         });
       }
-      return;
     }
-
-    segments.forEach((segment, index) => {
-      const hasContent = segment.content !== '';
-      const hasDownloads = (segment.downloads ?? []).length > 0;
-      const hasAttachment = Boolean(segment.attachment?.doc_id);
-      if (!hasContent && !hasDownloads && !hasAttachment) {
-        return;
-      }
-      addNewestOneAnswer({
-        answer: segment.content || (index === 0 ? error ?? '' : ''),
-        audio_binary: segment.audio_binary,
-        attachment: (segment.attachment ?? {}) as IAttachment,
-        downloads: segment.downloads,
-        id: segment.id,
-      });
-    });
-
-    if (inputAnswer.id && segments.length > 0) {
-      const lastId = segments[segments.length - 1].id;
-      addNewestOneAnswer({
-        answer: '',
-        ...inputAnswer,
-        id: `${lastId}${MessageWaitSuffix}`,
-      });
-    }
-  }, [answerList, addNewestOneAnswer, setDerivedMessages]);
+  }, [answerList, addNewestOneAnswer]);
 
   useEffect(() => {
     if (isTaskMode) {

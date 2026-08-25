@@ -132,8 +132,6 @@ export const initialCategorizeValues = {
 
 export const initialMessageValues = {
   content: [''],
-  emit_all: false,
-  thinking: false,
 };
 
 export const initialExcelProcessorValues = {
@@ -518,7 +516,6 @@ export const initialAgentValues = {
   exception_default_value: '',
   tools: [],
   mcp: [],
-  tool_timeout: 10,
   cite: true,
   showStructuredOutput: false,
   outputs: {

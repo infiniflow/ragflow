@@ -97,13 +97,7 @@ class Graph:
         self.task_id = task_id if task_id else get_uuid()
         self.custom_header = custom_header
         self._thread_pool = ThreadPoolExecutor(max_workers=5)
-        try:
-            self.load()
-        except Exception:
-            # Components built before the failure may hold MCP sessions with
-            # dedicated threads; release them instead of leaking.
-            self.close()
-            raise
+        self.load()
 
     def load(self):
         self.components = self.dsl["components"]
@@ -114,7 +108,7 @@ class Graph:
         for k, cpn in self.components.items():
             cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
 
-        self.path = self.dsl["path"]
+        self.path = self.dsl.get("path", [])
 
     @staticmethod
     def validate_component_parameters(dsl):
@@ -175,9 +169,7 @@ class Graph:
 
     def close(self):
         from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession
-        from common.thread_leak_debug import dump_alive_threads
 
-        dump_alive_threads("canvas.close:before")
         seen = set()
         for cpn in self.components.values():
             obj = cpn.get("obj")
@@ -187,16 +179,9 @@ class Graph:
                     if isinstance(session, MCPToolCallSession) and id(session) not in seen:
                         seen.add(id(session))
                         try:
-                            session.close_sync()
+                            session.close_sync(timeout=3)
                         except Exception:
                             logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
-
-        try:
-            self._thread_pool.shutdown(wait=True)
-        except Exception:
-            logging.exception("Error shutting down canvas thread pool")
-
-        dump_alive_threads("canvas.close:after")
 
     @staticmethod
     def _get_component_name(dsl, cid):
@@ -491,10 +476,6 @@ class Canvas(Graph):
         self.message_id = get_uuid()
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
-        # Терминальный компонент — последний в пути запуска. Он отдаёт финальный
-        # ответ пользователю; все остальные Message-компоненты (в т.ч. статусные
-        # «листья» по ходу работы) считаются промежуточными.
-        self._run_terminal_id = self.path[-1] if self.path else None
         path_set = set(self.path)
         for k, cpn in self.components.items():
             if k in path_set:
@@ -679,136 +660,128 @@ class Canvas(Graph):
                             tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
                             tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
                         except Exception as e:
+                            # A missing/unresolvable default TTS model must not
+                            # fail the whole run: skip auto play and keep the
+                            # textual answer flowing.
                             _logger.warning("Auto play skipped: default TTS model is not available: %s", e)
                             tts_mdl = None
-                    _thinking = bool(cpn_obj.get_param("thinking"))
-                    raw_content = cpn_obj.output("content")
-                    areas = raw_content if isinstance(raw_content, list) else [raw_content]
-                    accumulated = []
-                    for area_idx, area in enumerate(areas):
+                    if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
-                        if isinstance(area, partial):
-                            in_thinking = False
-                            tts_queue = asyncio.Queue(maxsize=4)
-                            tts_results = asyncio.Queue()
-                            tts_workers = []
-                            tts_sequence = 0
-                            next_audio_sequence = 0
-                            completed_tts = {}
-                            sentence_end = re.compile(r"(?:[。！？!?；;\n](?:[”’\"』」】》）)]*)|(?<=[.!?])(?=\s|$))")
-                            stream = area()
+                        in_thinking = False
+                        tts_queue = asyncio.Queue(maxsize=4)
+                        tts_results = asyncio.Queue()
+                        tts_workers = []
+                        tts_sequence = 0
+                        next_audio_sequence = 0
+                        completed_tts = {}
+                        sentence_end = re.compile(r"(?:[。！？!?；;\n](?:[”’\"』」】》）)]*)|(?<=[.!?])(?=\s|$))")
+                        stream = cpn_obj.output("content")()
 
-                            async def _tts_worker():
-                                while True:
-                                    sequence, text = await tts_queue.get()
-                                    try:
-                                        audio_binary = await asyncio.to_thread(self.tts, tts_mdl, text)
-                                        await tts_results.put((sequence, audio_binary, None))
-                                    except Exception as exc:
-                                        await tts_results.put((sequence, None, exc))
-                                    finally:
-                                        tts_queue.task_done()
-
-                            if tts_mdl:
-                                tts_workers = [asyncio.create_task(_tts_worker()) for _ in range(2)]
-
-                            async def _schedule_tts(text):
-                                nonlocal tts_sequence
-                                if tts_mdl and text:
-                                    await tts_queue.put((tts_sequence, text))
-                                    tts_sequence += 1
-
-                            async def _drain_ready_tts():
-                                nonlocal next_audio_sequence
-                                events = []
-                                while True:
-                                    try:
-                                        sequence, audio_binary, error = tts_results.get_nowait()
-                                    except asyncio.QueueEmpty:
-                                        break
-                                    completed_tts[sequence] = (audio_binary, error)
-                                while next_audio_sequence in completed_tts:
-                                    audio_binary, error = completed_tts.pop(next_audio_sequence)
-                                    if error:
-                                        _logger.warning("Agent TTS failed for sentence %d: %s", next_audio_sequence, error)
-                                    next_audio_sequence += 1
-                                    if audio_binary:
-                                        events.append(decorate("message", {"content": "", "audio_binary": audio_binary, "thinking": _thinking}))
-                                return events
-
-                            async def _process_stream(m):
-                                nonlocal buff_m, _m, in_thinking
-                                if not m:
-                                    return
-                                if m == "<think>":
-                                    await _schedule_tts(buff_m)
-                                    in_thinking = True
-                                    buff_m = ""
-                                    return decorate("message", {"content": "", "start_to_think": True, "thinking": _thinking})
-
-                                elif m == "</think>":
-                                    in_thinking = False
-                                    return decorate("message", {"content": "", "end_to_think": True, "thinking": _thinking})
-
-                                _m += m
-                                if in_thinking:
-                                    return decorate("message", {"content": m, "thinking": _thinking})
-
-                                buff_m += m
-                                while True:
-                                    match = sentence_end.search(buff_m)
-                                    if not match:
-                                        break
-                                    sentence = buff_m[: match.end()]
-                                    buff_m = buff_m[match.end() :]
-                                    await _schedule_tts(sentence)
-
-                                return decorate("message", {"content": m, "thinking": _thinking})
-
-                            async def _stream_events():
-                                nonlocal buff_m
+                        async def _tts_worker():
+                            while True:
+                                sequence, text = await tts_queue.get()
                                 try:
-                                    if inspect.isasyncgen(stream):
-                                        async for m in stream:
-                                            for ev in await _drain_ready_tts():
-                                                yield ev
-                                            ev = await _process_stream(m)
-                                            if ev:
-                                                yield ev
-                                    else:
-                                        for m in stream:
-                                            for ev in await _drain_ready_tts():
-                                                yield ev
-                                            ev = await _process_stream(m)
-                                            if ev:
-                                                yield ev
-                                    if buff_m:
-                                        await _schedule_tts(buff_m)
-                                        buff_m = ""
-                                    await tts_queue.join()
-                                    for ev in await _drain_ready_tts():
-                                        yield ev
-                                    cpn_obj.set_output("content", _m)
+                                    audio_binary = await asyncio.to_thread(self.tts, tts_mdl, text)
+                                    await tts_results.put((sequence, audio_binary, None))
+                                except Exception as exc:
+                                    await tts_results.put((sequence, None, exc))
                                 finally:
-                                    for worker in tts_workers:
-                                        worker.cancel()
-                                    if tts_workers:
-                                        await asyncio.gather(*tts_workers, return_exceptions=True)
+                                    tts_queue.task_done()
 
-                            async for ev in _stream_events():
-                                yield ev
-                        else:
-                            _m = area if area is not None else ""
-                            if _m:
-                                yield decorate("message", {"content": _m, "thinking": _thinking})
-                        accumulated.append(_m)
-                        message_end = self._build_message_end(
-                            cpn_obj, area_idx if isinstance(raw_content, list) else None
-                        )
-                        yield decorate("message_end", message_end)
+                        if tts_mdl:
+                            tts_workers = [asyncio.create_task(_tts_worker()) for _ in range(2)]
 
-                    cpn_obj.set_output("content", accumulated[0] if len(accumulated) == 1 else accumulated)
+                        async def _schedule_tts(text):
+                            nonlocal tts_sequence
+                            if tts_mdl and text:
+                                await tts_queue.put((tts_sequence, text))
+                                tts_sequence += 1
+
+                        async def _drain_ready_tts():
+                            nonlocal next_audio_sequence
+                            events = []
+                            while True:
+                                try:
+                                    sequence, audio_binary, error = tts_results.get_nowait()
+                                except asyncio.QueueEmpty:
+                                    break
+                                completed_tts[sequence] = (audio_binary, error)
+                            while next_audio_sequence in completed_tts:
+                                audio_binary, error = completed_tts.pop(next_audio_sequence)
+                                if error:
+                                    _logger.warning("Agent TTS failed for sentence %d: %s", next_audio_sequence, error)
+                                next_audio_sequence += 1
+                                if audio_binary:
+                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary}))
+                            return events
+
+                        async def _process_stream(m):
+                            nonlocal buff_m, _m, in_thinking
+                            if not m:
+                                return
+                            if m == "<think>":
+                                await _schedule_tts(buff_m)
+                                in_thinking = True
+                                buff_m = ""
+                                return decorate("message", {"content": "", "start_to_think": True})
+
+                            elif m == "</think>":
+                                in_thinking = False
+                                return decorate("message", {"content": "", "end_to_think": True})
+
+                            _m += m
+                            if in_thinking:
+                                return decorate("message", {"content": m})
+
+                            buff_m += m
+                            while True:
+                                match = sentence_end.search(buff_m)
+                                if not match:
+                                    break
+                                sentence = buff_m[: match.end()]
+                                buff_m = buff_m[match.end() :]
+                                await _schedule_tts(sentence)
+
+                            return decorate("message", {"content": m})
+
+                        async def _stream_events():
+                            nonlocal buff_m
+                            try:
+                                if inspect.isasyncgen(stream):
+                                    async for m in stream:
+                                        for ev in await _drain_ready_tts():
+                                            yield ev
+                                        ev = await _process_stream(m)
+                                        if ev:
+                                            yield ev
+                                else:
+                                    for m in stream:
+                                        for ev in await _drain_ready_tts():
+                                            yield ev
+                                        ev = await _process_stream(m)
+                                        if ev:
+                                            yield ev
+                                if buff_m:
+                                    await _schedule_tts(buff_m)
+                                    buff_m = ""
+                                await tts_queue.join()
+                                for ev in await _drain_ready_tts():
+                                    yield ev
+                                cpn_obj.set_output("content", _m)
+                            finally:
+                                for worker in tts_workers:
+                                    worker.cancel()
+                                if tts_workers:
+                                    await asyncio.gather(*tts_workers, return_exceptions=True)
+
+                        async for ev in _stream_events():
+                            yield ev
+                    else:
+                        yield decorate("message", {"content": cpn_obj.output("content")})
+
+                    message_end = self._build_message_end(cpn_obj)
+                    yield decorate("message_end", message_end)
 
                     while partials:
                         _cpn_obj = self.get_component_obj(partials[0])
@@ -966,24 +939,10 @@ class Canvas(Graph):
         if window_size <= 0:
             return convs
         for role, obj in self.history[window_size * -2 :]:
-            if obj is None:
-                continue
             if isinstance(obj, dict):
-                content = obj.get("content")
+                convs.append({"role": role, "content": obj.get("content", "")})
             else:
-                content = str(obj)
-            # Сообщения с пустым текстом (например, терминальный компонент
-            # вернул только вложение/файл без текста) не должны попадать в
-            # контекст LLM: провайдеры (YandexGPT и др.) отклоняют их с
-            # ошибкой "empty message text", из-за чего повторный проход по
-            # цепочке в той же сессии завершается с ошибкой.
-            if content is None:
-                continue
-            if isinstance(content, str) and not content.strip():
-                continue
-            if isinstance(content, (list, tuple)) and not content:
-                continue
-            convs.append({"role": role, "content": content})
+                convs.append({"role": role, "content": str(obj)})
         return convs
 
     def add_user_input(self, question):
@@ -1060,12 +1019,8 @@ class Canvas(Graph):
         agent_ids = agent_id.split("-->")
         agent_name = self.get_component_name(agent_ids[0])
         path = agent_name if len(agent_ids) < 2 else agent_name + "-->" + "-->".join(agent_ids[1:])
-        # Ключ логов пишется под agent_id (canvas_id), а не task_id (= session_id):
-        # чтение логов (agent_api.get_agent_logs, bot_api.agent_bot_logs) идёт по
-        # f"{agent_id}-{message_id}-logs", и task_id с ним не совпадает.
-        log_key_owner = self._id or self.task_id
         try:
-            bin = REDIS_CONN.get(f"{log_key_owner}-{self.message_id}-logs")
+            bin = REDIS_CONN.get(f"{self.task_id}-{self.message_id}-logs")
             if bin:
                 obj = json.loads(bin.encode("utf-8"))
                 if obj[-1]["component_id"] == agent_ids[0]:
@@ -1074,7 +1029,7 @@ class Canvas(Graph):
                     obj.append({"component_id": agent_ids[0], "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]})
             else:
                 obj = [{"component_id": agent_ids[0], "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]}]
-            REDIS_CONN.set_obj(f"{log_key_owner}-{self.message_id}-logs", obj, 60 * 10)
+            REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60 * 10)
         except Exception as e:
             logging.exception(e)
 
@@ -1104,45 +1059,22 @@ class Canvas(Graph):
             return False
         return bool(ref.get("chunks") or ref.get("doc_aggs"))
 
-    def _build_message_end(self, cpn_obj, area_idx=None) -> dict:
+    def _build_message_end(self, cpn_obj) -> dict:
         message_end = {}
         if cpn_obj.get_param("status"):
             message_end["status"] = cpn_obj.get_param("status")
         if isinstance(cpn_obj.output("attachment"), dict):
             message_end["attachment"] = cpn_obj.output("attachment")
-        downloads = self._area_downloads(cpn_obj, area_idx)
-        if downloads:
+        downloads = cpn_obj.output("downloads")
+        if isinstance(downloads, list) and downloads:
             message_end["downloads"] = downloads
         if self._has_reference():
             message_end["reference"] = self.get_reference()
-        # Терминальный Message-компонент отдаёт финальный ответ пользователю;
-        # промежуточные Message-компоненты — статусные сообщения по ходу работы.
-        message_end["final"] = self._is_terminal_message(cpn_obj)
-        # Message с включённым thinking — это «живой» промежуточный статус
-        # (показывается как думающий draft и заменяется следующим сообщением).
-        message_end["thinking"] = bool(cpn_obj.get_param("thinking"))
         # NOTE: aggregated run token usage is intentionally NOT attached here.
-        # _build_message_end runs once per Message area, so a multi-area Message
-        # component would emit cumulative usage repeatedly and double count. The
-        # run total is emitted exactly once on the terminal workflow_finished event
-        # instead.
+        # _build_message_end runs once per Message component, so a multi-Message graph
+        # would emit cumulative usage repeatedly and double count. The run total is
+        # emitted exactly once on the terminal workflow_finished event instead.
         return message_end
-
-    def _is_terminal_message(self, cpn_obj) -> bool:
-        terminal = getattr(self, "_run_terminal_id", None)
-        if terminal is not None:
-            return cpn_obj._id == terminal
-        comp = self.components.get(cpn_obj._id)
-        return comp is None or not comp.get("downstream")
-
-    @staticmethod
-    def _area_downloads(cpn_obj, area_idx):
-        if area_idx is not None:
-            per_area = getattr(cpn_obj, "_area_downloads", None)
-            if isinstance(per_area, list) and area_idx < len(per_area):
-                return per_area[area_idx] or []
-        dl = cpn_obj.output("downloads")
-        return dl if isinstance(dl, list) else []
 
     def _run_usage_payload(self) -> dict:
         usage = getattr(self, "_run_token_usage", None) or {}
