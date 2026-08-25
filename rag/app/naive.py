@@ -1118,14 +1118,17 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
             except LookupError:
                 pass
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
+        # Skip the local normalize_layout_recognizer() call — the dispatcher
+        # does it internally on the layout_recognize_override argument, so a
+        # second call here just discards the parsed model_name and breaks the
+        # @mineru/@paddleocr/@opendataloader/@somark composite-name wiring
+        # (CodeRabbit review #5 on #17114).
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
         # Pass the resolved layout_recognize (after get_composite_model_name_by_id
-        # turned a TenantModel UUID into a "<model>@<instance>@<provider>" form) so
-        # the dispatch doesn't re-read the stale UUID from parser_config and
-        # fall back through to by_mineru / by_plaintext (issue #17114 review).
+        # turned a TenantModel UUID into a "<model>@<instance>@<provider>" form)
+        # so the dispatch can extract the right parser_model_name.
         parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(
-            parser_config, opendataloader_llm_name, layout_recognize_override=layout_recognizer,
+            parser_config, opendataloader_llm_name, layout_recognize_override=layout_recognize_raw,
         )
 
         if parser_config.get("analyze_hyperlink", False) and is_root:

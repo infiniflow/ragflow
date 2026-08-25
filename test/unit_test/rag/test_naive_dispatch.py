@@ -26,19 +26,18 @@ The fix routes the dispatch to :func:`by_mineru` whenever
 ``layout_recognize`` does not match any known parser name AND the parser
 config carries MinerU-specific options (``mineru_*`` keys).
 
-These tests cover the two helper entry points:
-
-1. :func:`common.parser_config_utils.has_mineru_options` — the predicate
-   that detects MinerU intent (the easy bit, but easy to regress).
-2. :func:`common.parser_config_utils.normalize_layout_recognizer` — the
-   hook that strips the ``@mineru`` / ``@opendataloader`` / ``@paddleocr``
-   / ``@somark`` suffixes produced by the Tenant LLM Provider UI.
-
-The full dispatch in :func:`rag.app.naive._dispatch_pdf_parser` is wired
-up by the chunk() call site and is verified end-to-end via the
-``testcases`` integration suite; we keep the unit tests focused on the
-helper predicates that drive the recovery branch.
+The dispatch helper ``_dispatch_pdf_parser`` lives in
+:mod:`rag.app.naive`, which pulls in a heavy stack (Deepdoc, PaddleOCR,
+Docling, etc.). These tests stub the heavy modules so the helper can be
+loaded and exercised directly.
 """
+
+import importlib.util
+import sys
+import types
+from pathlib import Path
+
+import pytest
 
 from common.parser_config_utils import (
     MINERU_OPTION_KEYS,
@@ -108,98 +107,271 @@ def test_normalize_layout_recognizer_passes_stale_uuid_through():
 
 
 # --------------------------------------------------------------------------- #
-# _dispatch_pdf_parser — guarded MinerU fallback (CodeRabbit review #3)
+# _dispatch_pdf_parser — actually exercised via stubbed load of rag.app.naive
 # --------------------------------------------------------------------------- #
 #
-# These tests cover the dispatch's MinerU fallback guard. They intentionally
-# focus on the predicate that matters (whether the dispatch routes a
-# known keyword to its expected parser) rather than exhaustively stubbing
-# the heavy naive.py module — the full dispatch integration is verified
-# via the testcases suite.
-#
-# CodeRabbit review pointed out that ``parser is by_plaintext`` is also true
-# for the explicit "Plain Text" selection, so guarding the fallback on
-# ``name not in PARSERS`` alone was insufficient. The fix normalizes
-# "Plain Text" -> "plaintext" before the lookup so the guard correctly
-# distinguishes explicit operator choices from stale UUIDs.
-KNOWN_PARSER_KEYWORDS = ("deepdoc", "mineru", "docling", "opendataloader", "tcadp parser",
-                         "paddleocr", "somark", "mistral ocr", "plaintext")
+# naive.py pulls in a heavy stack (Deepdoc, PaddleOCR, Docling, etc.). The
+# fixture below stubs just enough to load the module and exposes
+# ``naive_module`` so individual tests can call _dispatch_pdf_parser
+# directly and assert on the returned parser, normalized name, and
+# parser_model_name.
 
 
-def _expected_parser_name_for(layout_recognize: str) -> str:
-    """Return the normalized PARSERS key for the operator's choice."""
-    if layout_recognize == "Plain Text":
-        return "plaintext"
-    return layout_recognize.strip().lower()
+def _stub(name, **attrs):
+    """Stub a module that *replaces* whatever may already be registered
+    under the same name (e.g. by test_laws_docx_tables). naive.py's
+    fixture needs the same module slots, but with our marker classes —
+    a setdefault would leave stale attributes behind."""
+    mod = types.ModuleType(name)
+    for key, value in attrs.items():
+        setattr(mod, key, value)
+    sys.modules[name] = mod
+    return mod
 
 
-def test_dispatch_does_not_fall_back_to_mineru_for_plain_text_with_mineru_options():
-    """Regression for CodeRabbit review #3 on #17114: an operator who
-    explicitly chose ``layout_recognize='Plain Text'`` must not be
-    silently rerouted to MinerU just because they also set a
-    ``mineru_lang`` (or any other mineru_* key) on the parser config."""
-    parser_config = {
-        "layout_recognize": "Plain Text",
-        "mineru_lang": "English",
-    }
-    expected = _expected_parser_name_for("Plain Text")
-    assert expected == "plaintext"
-    # The exact dispatch invariant the fix preserves: every known keyword
-    # must still resolve to its own parser, regardless of mineru_* noise.
-    assert expected in KNOWN_PARSER_KEYWORDS
+class _Parser:
+    """Marker class so the dispatch can identify by_parser by instance."""
+
+    NAME = ""
+
+    def __init__(self):
+        type(self).NAME = self.__class__.__name__
 
 
-def test_dispatch_does_not_fall_back_to_mineru_for_plaintext_with_mineru_options():
-    parser_config = {
-        "layout_recognize": "plaintext",
-        "mineru_lang": "English",
-    }
-    assert _expected_parser_name_for("plaintext") in KNOWN_PARSER_KEYWORDS
+class _ByDeepdoc(_Parser):
+    pass
 
 
-def test_dispatch_does_not_fall_back_to_mineru_for_deepdoc_with_mineru_options():
-    parser_config = {
-        "layout_recognize": "DeepDOC",
-        "mineru_lang": "English",
-    }
-    assert _expected_parser_name_for("DeepDOC") in KNOWN_PARSER_KEYWORDS
+class _ByMineru(_Parser):
+    pass
 
 
-def test_dispatch_falls_back_to_mineru_only_for_unknown_layout_recognize():
-    """The MinerU fallback must only trigger when layout_recognize is not
-    a known keyword — e.g. a stale TenantModel UUID like the one the issue
-    reports."""
+class _ByDocling(_Parser):
+    pass
+
+
+class _ByOpenDataLoader(_Parser):
+    pass
+
+
+class _ByPlaintext(_Parser):
+    pass
+
+
+@pytest.fixture(scope="module")
+def naive_module():
+    """Load rag.app.naive with all heavy siblings stubbed.
+
+    Yields the loaded module so tests can call _dispatch_pdf_parser
+    directly. Stubs the dispatch's full dependency chain (Deepdoc, the
+    LLM stack, PaddleOCR, Docling, ...) so the module can be loaded
+    inside a minimal pytest env.
+    """
+    # Save sys.modules so the fixture restores it on teardown — naive.py's
+    # import-time side effects would otherwise leak into the rest of the
+    # test suite.
+    saved = {name: sys.modules.get(name) for name in list(sys.modules)}
+
+    try:
+        # Stub the parser stack used at naive.py import time.
+        _stub(
+            "deepdoc.parser",
+            PdfParser=_Parser,
+            DocxParser=_Parser,
+            EpubParser=_Parser,
+            HtmlParser=_Parser,
+            ExcelParser=_Parser,
+            JsonParser=_Parser,
+            MarkdownElementExtractor=_Parser,
+            MarkdownParser=_Parser,
+            PdfParser_module=_Parser,
+            TxtParser=_Parser,
+            RAGFlowPdfParser=_Parser,
+            PlainParser=_Parser,
+            VisionParser=_Parser,
+            DoclingParser=_ByDocling,
+            TCADPParser=_Parser,
+        )
+        _stub("deepdoc.parser.figure_parser",
+              VisionFigureParser=_Parser,
+              vision_figure_parser_docx_wrapper_naive=lambda *a, **k: None,
+              vision_figure_parser_pdf_wrapper=lambda *a, **k: None)
+        _stub("deepdoc.parser.pdf_parser",
+              PlainParser=_ByPlaintext,
+              VisionParser=_Parser,
+              RAGFlowPdfParser=_Parser)
+        _stub("deepdoc.parser.docling_parser", DoclingParser=_ByDocling)
+        _stub("deepdoc.parser.tcadp_parser", TCADPParser=_Parser)
+        _stub("deepdoc.parser.utils", extract_pdf_outlines=lambda *a, **k: [])
+
+        _stub("common.parser_config_utils",
+              normalize_layout_recognizer=normalize_layout_recognizer,
+              MINERU_OPTION_KEYS=MINERU_OPTION_KEYS,
+              has_mineru_options=has_mineru_options)
+        _stub("common.float_utils", normalize_overlapped_percent=lambda x: x)
+        _stub("common.text_utils", normalize_arabic_presentation_forms=lambda x: x)
+        _stub("common.token_utils", num_tokens_from_string=lambda s: len((s or "").split()))
+
+        _stub("rag.utils.file_utils",
+              extract_embed_file=lambda *a, **k: None,
+              extract_links_from_pdf=lambda *a, **k: [],
+              extract_links_from_docx=lambda *a, **k: [],
+              extract_html=lambda *a, **k: (None, None))
+
+        _stub("rag.nlp",
+              num_tokens_from_string=lambda s: len((s or "").split()),
+              find_codec=lambda b: "utf-8",
+              rag_tokenizer=types.SimpleNamespace(tokenize=lambda s: ((s or "").split(), [])),
+              concat_img=lambda *a, **k: None,
+              naive_merge=lambda *a, **k: [],
+              naive_merge_with_images=lambda *a, **k: [],
+              naive_merge_docx=lambda *a, **k: [],
+              tokenize_chunks=lambda *a, **k: [],
+              doc_tokenize_chunks_with_images=lambda *a, **k: [],
+              tokenize_chunks_with_images=lambda *a, **k: [],
+              tokenize_table=lambda *a, **k: [],
+              append_context2table_image4pdf=lambda *a, **k: [])
+
+        _stub("rag.llm.ocr_model",
+              ensure_mineru_from_env=lambda *a, **k: None,
+              get_first_provider_model_name=lambda *a, **k: None)
+
+        _stub("api.db.joint_services.tenant_model_service",
+              resolve_model_config=lambda *a, **k: None,
+              ensure_mineru_from_env=lambda *a, **k: None,
+              get_tenant_default_model_by_type=lambda *a, **k: None,
+              ensure_opendataloader_from_env=lambda *a, **k: None,
+              ensure_paddleocr_from_env=lambda *a, **k: None,
+              ensure_somark_from_env=lambda *a, **k: None,
+              get_first_provider_model_name=lambda *a, **k: None,
+              get_composite_model_name_by_id=lambda *a, **k: (_ for _ in ()).throw(LookupError()))
+
+        _stub("api.db.services.llm_service", LLMBundle=_Parser)
+
+        # Stub the docx stack so the file_format checks at import time succeed.
+        _stub("docx", Document=_Parser)
+        _stub("docx.opc.pkgreader",
+              _SerializedRelationships=_Parser,
+              _SerializedRelationship=_Parser)
+        _stub("docx.table", Table=_Parser)
+        _stub("docx.text.paragraph", Paragraph=_Parser)
+        _stub("docx.opc.oxml", parse_xml=lambda *a, **k: None)
+        _stub("markdown", markdown=lambda *a, **k: "")
+        _stub("PIL", Image=_Parser)
+
+        # Load naive.py from source — we can do this even with stubs in place
+        # because the module only imports the names listed above.
+        repo_root = Path(__file__).resolve().parents[3]
+        spec = importlib.util.spec_from_file_location(
+            "rag.app.naive_test_module", repo_root / "rag" / "app" / "naive.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["rag.app.naive_test_module"] = module
+        spec.loader.exec_module(module)
+
+        # Replace the dispatch's PARSERS entries with our marker classes
+        # so assertions can identify which parser the dispatch selected.
+        module.PARSERS["deepdoc"] = _ByDeepdoc
+        module.PARSERS["mineru"] = _ByMineru
+        module.PARSERS["docling"] = _ByDocling
+        module.PARSERS["opendataloader"] = _ByOpenDataLoader
+        module.PARSERS["plaintext"] = _ByPlaintext
+
+        yield module
+    finally:
+        # Restore sys.modules exactly — naive.py's import-time side
+        # effects would otherwise leak into the rest of the test suite.
+        for name in list(sys.modules):
+            if name not in saved:
+                del sys.modules[name]
+        sys.modules.update(saved)
+
+
+def _dispatch(naive_module, layout_recognize, parser_config=None):
+    """Invoke _dispatch_pdf_parser with the given layout_recognize and
+    parser_config extras. Returns the (parser, name, layout_recognizer,
+    opendataloader_llm_name, parser_model_name) tuple."""
+    cfg = dict(parser_config or {})
+    cfg["layout_recognize"] = layout_recognize
+    return naive_module._dispatch_pdf_parser(cfg)
+
+
+# CodeRabbit review #3: don't fall back to MinerU for known keywords.
+def test_dispatch_does_not_fall_back_to_mineru_for_plain_text_with_mineru_options(naive_module):
+    """layout_recognize='Plain Text' is a known keyword — the dispatcher
+    must keep routing to by_plaintext even if mineru_* options are set."""
+    parser, name, _lr, _op, _model = _dispatch(
+        naive_module, "Plain Text", {"mineru_lang": "English"},
+    )
+    assert name == "plaintext"
+    assert parser is _ByPlaintext
+
+
+def test_dispatch_does_not_fall_back_to_mineru_for_plaintext_with_mineru_options(naive_module):
+    parser, name, _lr, _op, _model = _dispatch(
+        naive_module, "plaintext", {"mineru_lang": "English"},
+    )
+    assert name == "plaintext"
+    assert parser is _ByPlaintext
+
+
+def test_dispatch_does_not_fall_back_to_mineru_for_deepdoc_with_mineru_options(naive_module):
+    parser, name, _lr, _op, _model = _dispatch(
+        naive_module, "DeepDOC", {"mineru_lang": "English"},
+    )
+    assert name == "deepdoc"
+    assert parser is _ByDeepdoc
+
+
+# Issue #17114: the actual dispatch recovery path.
+def test_dispatch_falls_back_to_mineru_only_for_unknown_layout_recognize(naive_module):
+    """A stale TenantModel UUID with mineru_* options must route to
+    by_mineru so the operator's MinerU intent is honored (issue #17114)."""
     stale_uuid = "06d85f8e819111f1995ef33d60f3a479"
-    # The UUID must NOT be a known keyword (that's the whole point).
-    assert stale_uuid.strip().lower() not in KNOWN_PARSER_KEYWORDS
+    parser, name, _lr, _op, _model = _dispatch(
+        naive_module, stale_uuid, {"mineru_lang": "English"},
+    )
+    assert name == "mineru"
+    # The fallback branch reassigns parser=by_mineru directly (not via
+    # PARSERS["mineru"]), so identify it by the function name.
+    assert parser.__name__ == "by_mineru"
 
 
-def test_dispatch_uses_resolved_layout_recognize_via_override():
-    """Regression for CodeRabbit review #4 on #17114: the chunk() call
-    site resolves a valid TenantModel UUID to its composite name via
-    get_composite_model_name_by_id() before reaching the dispatch. The
-    dispatch must honor that resolved value (e.g. "model@instance@provider")
-    via the layout_recognize_override argument — otherwise it would
-    re-normalize the original UUID and either fall through to by_mineru or
-    by_plaintext (issue #17114) and discard the configured model."""
-    # We assert the invariant at the helper level: when the dispatch is
-    # called with an override, it must NOT re-read parser_config's
-    # layout_recognize. Simulate that by giving parser_config a stale UUID
-    # but passing the resolved composite name as the override.
-    parser_config = {"layout_recognize": "06d85f8e819111f1995ef33d60f3a479"}
+# CodeRabbit review #4: layout_recognize_override preserves parser_model_name.
+def test_dispatch_uses_resolved_layout_recognize_via_override(naive_module):
+    """The chunk() call site resolves a valid TenantModel UUID via
+    get_composite_model_name_by_id() into "<model>@<instance>@<provider>"
+    before reaching the dispatch. The dispatch must honor that resolved
+    value via the layout_recognize_override argument so the configured
+    MinerU model name is preserved as parser_model_name (CodeRabbit
+    review #4)."""
+    stale_uuid = "06d85f8e819111f1995ef33d60f3a479"
     resolved = "my-llm@my-instance@my-provider@mineru"
-    # The override path is exercised in chunk() — we can't directly invoke
-    # _dispatch_pdf_parser here without standing up the heavy naive.py
-    # module, so we verify the contract instead:
-    # 1. parser_config["layout_recognize"] alone would route to by_mineru
-    #    fallback (UUID, no mineru_* options).
-    # 2. The resolved composite name, after normalize_layout_recognizer,
-    #    yields the keyword "MinerU" + the composite model name as
-    #    parser_model_name — which is the value the dispatch must see when
-    #    layout_recognize_override is set.
-    name, model = normalize_layout_recognizer(resolved)
-    assert name == "MinerU"
+
+    # If we passed layout_recognizer="MinerU" (the post-normalize form)
+    # instead of layout_recognize_raw, parser_model_name would be None.
+    # Passing the full composite name preserves the model so by_mineru can
+    # bind to the operator's configured OCR model.
+    parser, name, _lr, _op, model = naive_module._dispatch_pdf_parser(
+        {"layout_recognize": stale_uuid},
+        layout_recognize_override=resolved,
+    )
+    assert name == "mineru"
+    # PARSERS["mineru"] resolves to the by_mineru dispatch, which the
+    # fixture exposes as the _ByMineru marker class.
+    assert parser.__name__ == "_ByMineru"
     assert model == resolved
-    # The pre-override parser_config still has the stale UUID so we don't
-    # accidentally pass it via the override.
-    assert parser_config["layout_recognize"] != resolved
+
+
+# CodeRabbit review #4 follow-up: layout_recognize_override threads the
+# opendataloader_llm_name through too.
+def test_dispatch_uses_resolved_layout_recognize_via_override_for_opendataloader(naive_module):
+    resolved = "my-llm@my-instance@my-provider@opendataloader"
+
+    parser, name, _lr, op_name, _model = naive_module._dispatch_pdf_parser(
+        {"layout_recognize": "06d85f8e819111f1995ef33d60f3a479"},
+        layout_recognize_override=resolved,
+    )
+    assert name == "opendataloader"
+    assert parser is _ByOpenDataLoader
+    assert op_name == resolved
