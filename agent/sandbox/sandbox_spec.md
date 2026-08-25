@@ -1548,7 +1548,7 @@ PROVIDER_CLASSES = {
       "name": "sandbox.self_managed",
       "source": "variable",
       "data_type": "json",
-      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 20, \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
+      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
     },
     {
       "name": "sandbox.aliyun_codeinterpreter",
@@ -1573,7 +1573,6 @@ PROVIDER_CLASSES = {
   "provider_type": "self_managed",
   "config": {
     "endpoint": "http://sandbox-executor-manager:9385",
-    "pool_size": 20,
     "max_memory": "512m",
     "timeout": 60,
     "enable_seccomp": true,
@@ -1594,7 +1593,6 @@ PROVIDER_CLASSES = {
     "active": "self_managed",
     "self_managed": {
       "endpoint": "http://sandbox-executor-manager:9385",
-      "pool_size": 20,
       "max_memory": "512m",
       "timeout": 60,
       "enable_seccomp": true,
