@@ -358,6 +358,23 @@ func TestWriteChatbotRunEvent_ErrorCarriesSessionAlias(t *testing.T) {
 	}
 }
 
+func TestWriteChatbotRunEvent_RedactsInternalError(t *testing.T) {
+	rec := &recordingResponseWriter{header: http.Header{}}
+	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}); err != nil {
+		t.Fatalf("WriteChatbotRunEvent: %v", err)
+	}
+	body := rec.body.String()
+	if !strings.Contains(body, canvas.InternalRunErrorMessage) {
+		t.Errorf("body missing safe internal error message: %s", body)
+	}
+	if strings.Contains(body, "mysql.internal") || strings.Contains(body, "password=secret") {
+		t.Fatalf("body leaked internal error details: %s", body)
+	}
+}
+
 // TestBotService_ChatbotCompletion_NewSessionSkipsLLM locks in the
 // share-page handshake behaviour: the front-end opens a shared chat
 // with an empty question and no session_id only to obtain a session

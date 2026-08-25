@@ -618,6 +618,9 @@ export default {
       rebuildTip: '从所有已关联的数据源重新下载文件并再次解析。',
       baseInfo: '基础信息',
       globalIndex: '全局索引',
+      globalIndexModel: '索引模型',
+      globalIndexModelTip:
+        '用于生成自动元数据、自动关键词和自动问题。模型性能会影响生成质量。',
       dataSource: '数据源',
       linkSourceSetTip: '管理与此知识库的数据源链接',
       linkDataSource: '链接数据源',
@@ -1097,7 +1100,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入你的 Querit API Key',
-      serplyApiKeyTip: '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
+      serplyApiKeyTip:
+        '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入你的 Serply API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
