@@ -31,9 +31,9 @@ sys.path.insert(0, str(EXECUTOR_MANAGER_ROOT))
 os.environ["SANDBOX_RUN_RATE_LIMIT"] = os.environ.get("SANDBOX_TEST_RATE_LIMIT_OVERRIDE", "3/minute")
 os.environ["SANDBOX_RUN_PREAUTH_RATE_LIMIT"] = os.environ.get("SANDBOX_TEST_PREAUTH_RATE_LIMIT_OVERRIDE", "1000/minute")
 
-import pytest
-from services.limiter import limiter
-from services.preauth import preauth_limiter
+import pytest  # noqa: E402  (env vars above must be set before these imports)
+from services.limiter import limiter  # noqa: E402
+from services.preauth import preauth_limiter  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
