@@ -133,12 +133,18 @@ Wraps the existing executor_manager implementation. The implementation file is l
   docker pull infiniflow/sandbox-base-nodejs:latest
   ```
 
-**Configuration**: Docker API endpoint, pool size, resource limits:
+**Configuration**: Docker API endpoint, request behavior, resource limits:
 
 - `endpoint`: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
-- `pool_size`: Container pool size (default: 3)
+
+The container pool is **not** sized from this configuration. sandbox-executor-manager reads
+`SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` from its environment once at startup
+(`agent/sandbox/executor_manager/core/config.py`), so changing the pool size is a deployment
+change that requires restarting that service. A `pool_size` key passed to the provider is carried
+for reporting only — `get_info()` echoes it back — and reloading `sandbox.self_managed` recreates
+the RAGFlow-side client without resizing anything.
 
 **Languages**:
 - Python
@@ -507,7 +513,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
   "name": "sandbox.self_managed",
   "source": "variable",
   "data_type": "json",
-  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 3, \"max_memory\": \"256m\", \"timeout\": 30}"
+  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"max_memory\": \"256m\", \"timeout\": 30}"
 }
 ```
 
@@ -608,12 +614,16 @@ class SelfManagedProvider(SandboxProvider):
                 "label": "API Endpoint",
                 "placeholder": "http://sandbox-executor-manager:9385"
             },
-            "pool_size": {
+            # Deployment-level: the value reported here comes from the environment
+            # sandbox-executor-manager was started with, and the UI renders it read-only.
+            "executor_manager_pool_size": {
                 "type": "integer",
-                "default": 3,
+                "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "3")),
                 "label": "Container Pool Size",
                 "min": 1,
-                "max": 100
+                "max": 100,
+                "scope": "deployment",
+                "readonly": True
             },
             "max_memory": {
                 "type": "string",

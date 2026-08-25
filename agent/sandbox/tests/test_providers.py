@@ -335,11 +335,15 @@ class TestSelfManagedProvider:
         assert schema["timeout"]["type"] == "integer"
         assert schema["timeout"]["default"] == 30
 
-        assert "max_retries" in schema
-        assert schema["max_retries"]["type"] == "integer"
-
-        assert "pool_size" in schema
-        assert schema["pool_size"]["type"] == "integer"
+        # The pool size is a deployment-level fact, not a writable runtime field: the value comes
+        # from the environment sandbox-executor-manager was started with, so the schema exposes it
+        # read-only under its real key. Asserting a writable `pool_size` pinned a shape the
+        # provider has never returned, and the assertion failed rather than guarding anything.
+        assert "executor_manager_pool_size" in schema
+        assert schema["executor_manager_pool_size"]["type"] == "integer"
+        assert schema["executor_manager_pool_size"]["scope"] == "deployment"
+        assert schema["executor_manager_pool_size"]["readonly"] is True
+        assert "pool_size" not in schema
 
     def test_normalize_language_python(self):
         """Test normalizing Python language identifier."""
