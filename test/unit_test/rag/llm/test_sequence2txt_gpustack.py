@@ -25,20 +25,20 @@ pytestmark = pytest.mark.p2
 
 
 @pytest.mark.parametrize(
-    ("base_url", "expected_url"),
+    ("gpustack_base_url", "expected_url"),
     [
         ("http://gpustack:80", "http://gpustack:80/v1/audio/transcriptions"),
         ("http://gpustack:80/v1", "http://gpustack:80/v1/audio/transcriptions"),
     ],
 )
-def test_gpustack_asr_transcription_uses_openai_compatible_endpoint(tmp_path, base_url, expected_url):
+def test_gpustack_asr_transcription_uses_openai_compatible_endpoint(tmp_path, gpustack_base_url, expected_url):
     audio_path = tmp_path / "sample.wav"
     audio_path.write_bytes(b"RIFF-test-audio")
     response = MagicMock()
     response.json.return_value = {"text": "  hello from GPUStack  "}
 
     with patch("rag.llm.sequence2txt_model.requests.post", return_value=response) as post, patch("rag.llm.sequence2txt_model.num_tokens_from_string", return_value=3):
-        provider = GPUStackSeq2txt("sk-test", "qwen3-asr", base_url)
+        provider = GPUStackSeq2txt("sk-test", "qwen3-asr", gpustack_base_url)
         text, token_count = provider.transcription(str(audio_path))
 
     assert text == "hello from GPUStack"

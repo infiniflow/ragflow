@@ -25,20 +25,20 @@ pytestmark = pytest.mark.p2
 
 
 @pytest.mark.parametrize(
-    ("base_url", "expected_url"),
+    ("gpustack_base_url", "expected_url"),
     [
         ("http://gpustack:80", "http://gpustack:80/v1/rerank"),
         ("http://gpustack:80/v1", "http://gpustack:80/v1/rerank"),
         ("http://gpustack:80/v1/rerank", "http://gpustack:80/v1/rerank"),
     ],
 )
-def test_gpustack_rerank_uses_single_versioned_endpoint(base_url, expected_url):
+def test_gpustack_rerank_uses_single_versioned_endpoint(gpustack_base_url, expected_url):
     response = MagicMock()
     response.raise_for_status.return_value = None
     response.json.return_value = {"results": [{"index": 0, "relevance_score": 0.8}, {"index": 1, "relevance_score": 0.2}]}
 
     with patch("rag.llm.rerank_model.requests.post", return_value=response) as post, patch("rag.llm.rerank_model.num_tokens_from_string", return_value=1):
-        rank, token_count = GPUStackRerank("sk-test", "qwen3-reranker-4b", base_url).similarity("query", ["first", "second"])
+        rank, token_count = GPUStackRerank("sk-test", "qwen3-reranker-4b", gpustack_base_url).similarity("query", ["first", "second"])
 
     post.assert_called_once()
     assert post.call_args.args[0] == expected_url
