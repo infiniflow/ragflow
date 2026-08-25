@@ -132,7 +132,7 @@ async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr(s
         page_size=10,
         similarity_threshold=0.0,
         vector_similarity_weight=0.8,
-        top=10,
+        knn_top_k=10,
         aggs=False,
     )
 
@@ -163,7 +163,7 @@ async def test_dealer_retrieval_keeps_elasticsearch_fusion_weight(search_environ
         page_size=10,
         similarity_threshold=0.0,
         vector_similarity_weight=0.8,
-        top=10,
+        knn_top_k=10,
         aggs=False,
     )
 
