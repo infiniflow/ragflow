@@ -517,6 +517,7 @@ async def search_datasets(tenant_id):
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
+    "knn_num_candidates" currently applies only to Elasticsearch.
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """
@@ -541,6 +542,7 @@ async def search(tenant_id, dataset_id):
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
+    "knn_num_candidates" currently applies only to Elasticsearch.
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """

@@ -148,6 +148,7 @@ class Dealer:
         orderBy = OrderByExpr()
 
         pg = int(req.get("page", 1)) - 1
+        # Result pagination is independent of the KNN candidate pool size.
         ps = int(req.get("size", 30))
         offset, limit = pg * ps, ps
 
@@ -207,7 +208,7 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
-                matchDense = await self.get_vector(qst, emb_mdl, knn_top_k, knn_num_candidates, req.get("similarity", 0.1))
+                matchDense = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
                 # ES path no longer fetches chunk vectors here. The clean
                 # cosine score is recovered later via a second KNN-only call

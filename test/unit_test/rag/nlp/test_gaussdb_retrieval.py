@@ -233,8 +233,8 @@ async def test_tc_ret_801_dealer_search_uses_requested_gaussdb_fusion_weight(
     dealer = make_dealer(dealer_cls)
     dealer.qryr = FakeQueryer()
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1, num_candidates=None):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     dealer.get_vector = fake_get_vector
 
@@ -271,8 +271,8 @@ async def test_tc_ret_802_dealer_search_uses_default_gaussdb_fusion_weight(deale
     dealer = make_dealer(dealer_cls)
     dealer.qryr = FakeQueryer()
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1, num_candidates=None):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     dealer.get_vector = fake_get_vector
 
@@ -331,8 +331,8 @@ async def _run_tc_ret_807_808_retrieval_scenario(dealer_cls):
         "mid": retrieval_chunk(0.4, "doc-mid", "Mid", "mid"),
     }
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1, num_candidates=None):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     async def fake_prune(sres):
         return sres
@@ -420,8 +420,8 @@ async def _run_gaussdb_rank_feature_retrieval(dealer_cls, fields, rank_feature):
     dealer.dataStore.ids = list(fields)
     dealer.dataStore.fields = fields
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1, num_candidates=None):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     async def fake_prune(sres):
         return sres
