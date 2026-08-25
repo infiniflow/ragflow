@@ -29,6 +29,84 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from common.constants import PipelineTaskType, TaskStatus
+
+
+# Map document suffixes to the DSL "setups" key the flow Parser uses to
+# pick the per-type parser config (issue #18306).
+_PARSER_SETUP_KEY_BY_SUFFIX = {
+    "pdf": "pdf",
+    "xls": "spreadsheet",
+    "xlsx": "spreadsheet",
+    "csv": "spreadsheet",
+    "doc": "doc",
+    "docx": "docx",
+    "ppt": "slides",
+    "pptx": "slides",
+    "pages": "slides",
+    "md": "markdown",
+    "markdown": "markdown",
+    "html": "html",
+    "htm": "html",
+    "jpg": "image",
+    "jpeg": "image",
+    "png": "image",
+    "bmp": "image",
+    "tif": "image",
+    "tiff": "image",
+    "webp": "image",
+    "gif": "image",
+    "mp3": "audio",
+    "wav": "audio",
+    "m4a": "audio",
+    "flac": "audio",
+    "ogg": "audio",
+    "opus": "audio",
+    "mp4": "video",
+    "mov": "video",
+    "avi": "video",
+    "webm": "video",
+    "mkv": "video",
+    "eml": "email",
+    "epub": "epub",
+    "txt": "text&code",
+    "json": "text&code",
+    "log": "text&code",
+}
+
+
+def _parser_for_document_from_dsl(dsl_str: str, document_suffix: str) -> str | None:
+    """Return the parse_method the flow Parser would use for this document.
+
+    The Pipeline's Parser component configures ``parse_method`` per file
+    family (PDF, spreadsheet, slides, ...). For a dataflow task, the
+    PipelineOperationLog should record what the pipeline actually used,
+    not ``document.parser_id`` which may carry the KB default (e.g.
+    "DeepDOC") even when the Pipeline Parser component is set to
+    "Docling" — see issue #18306.
+    """
+    if not dsl_str or dsl_str in ("{}", ""):
+        return None
+    try:
+        dsl = json.loads(dsl_str)
+    except (TypeError, ValueError):
+        return None
+    components = dsl.get("components") or {}
+    setup_key = _PARSER_SETUP_KEY_BY_SUFFIX.get((document_suffix or "").lower())
+    if not setup_key:
+        return None
+    for cpn in components.values():
+        obj = cpn.get("obj") if isinstance(cpn, dict) else None
+        if not isinstance(obj, dict) or obj.get("component_name") != "Parser":
+            continue
+        params = obj.get("params") or {}
+        setups = params.get("setups") or {}
+        cfg = setups.get(setup_key)
+        if isinstance(cfg, dict):
+            method = cfg.get("parse_method")
+            if isinstance(method, str) and method:
+                return method
+    return None
+
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 
@@ -163,6 +241,7 @@ class PipelineOperationLogService(CommonService):
         progress_msg = document.progress_msg
         process_begin_at = document.process_begin_at
         process_duration = document.process_duration
+        parser_id = document.parser_id
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
@@ -171,9 +250,20 @@ class PipelineOperationLogService(CommonService):
             tenant_id = user_pipeline.user_id
             title = user_pipeline.title
             avatar = user_pipeline.avatar
+            # Closes #18306: when the dataflow task is a PARSE, the operator's
+            # chosen Pipeline Parser component (e.g. Docling) is what actually
+            # ran — log that instead of document.parser_id which may carry
+            # the KB default (DeepDOC).
+            if task_type == PipelineTaskType.PARSE:
+                pipeline_parser = _parser_for_document_from_dsl(
+                    dsl,
+                    document.suffix or "",
+                )
+                if pipeline_parser:
+                    parser_id = pipeline_parser
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
-            if not ok:
+            if not kb_info:
                 raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
             tenant_id = kb_info.tenant_id
 
@@ -213,7 +303,7 @@ class PipelineOperationLogService(CommonService):
             kb_id=document.kb_id,
             pipeline_id=pipeline_id,
             pipeline_title=title,
-            parser_id=document.parser_id,
+            parser_id=parser_id,
             document_name=document_name,
             document_suffix=document.suffix,
             document_type=document.type,
