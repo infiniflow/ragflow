@@ -39,11 +39,12 @@ export const useCreateChatDialog = () => {
         toc_enhance: false,
       },
       llm_id: defaultModelDictionary?.llm_id,
+      tenant_llm_id: defaultModelDictionary?.llm_id,
       llm_setting: {},
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.3,
       top_n: 8,
-      top_k: 1024,
+      rerank_candidates_count: 64,
     }),
     [t, defaultModelDictionary?.llm_id],
   );

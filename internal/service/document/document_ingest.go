@@ -105,6 +105,10 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if run == string(entity.TaskStatusCancel) {
 			if err = s.CancelDocParse(ctx, doc); err != nil {
 				common.Error(fmt.Sprintf("go side, start to process %s, run is cancel", doc.ID), err)
+				if errors.Is(err, errParseNotRunning) {
+					// Mirror the Python /documents/ingest endpoint's message.
+					return common.CodeDataError, errors.New("Cannot cancel a task that is not in RUNNING status")
+				}
 				return common.CodeDataError, err
 			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
@@ -136,13 +140,14 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 			}
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
-				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+				var exists bool
+				exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 				if err != nil {
 					common.Error(fmt.Sprintf("go side, doc %s, ChunkStoreExists failed", doc.ID), err)
 					return common.CodeExceptionError, err
 				}
 				if exists {
-					if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+					if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
 						common.Error(fmt.Sprintf("go side, doc %s, DeleteChunks failed", doc.ID), err)
 						return common.CodeExceptionError, err
 					}

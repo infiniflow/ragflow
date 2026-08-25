@@ -85,7 +85,7 @@ type ChunkerFromUpstream struct {
 	// Python). Set when OutputFormat == "json".
 	JSONResult []ChunkDoc `json:"json,omitempty"`
 
-	// MarkdownResult is the upstream markdown payload (alias "markdown").
+	// MarkdownResult is the upstream Markdown payload (alias "markdown").
 	// Set when OutputFormat == "markdown".
 	MarkdownResult *string `json:"markdown,omitempty"`
 
@@ -173,9 +173,10 @@ type ChunkerOutputs struct {
 
 type TokenChunkerParam struct {
 	// DelimiterMode selects the chunking strategy.
-	// Allowed values: "token_size", "delimiter".
-	// The single-chunk "one" behavior is provided by the separate
-	// OneChunker component.
+	// Allowed value: "delimiter". The legacy "token_size" value is accepted for
+	// backward compatibility and normalized to "delimiter" (it is behaviorally
+	// identical at runtime; see Validate). The single-chunk "one" behavior is
+	// provided by the separate OneChunker component.
 	DelimiterMode string `json:"delimiter_mode"`
 
 	// ChunkTokenSize is the target chunk size in tokens.
@@ -205,7 +206,7 @@ type TokenChunkerParam struct {
 // Defaults returns the Python default TokenChunkerParam.
 func (TokenChunkerParam) Defaults() TokenChunkerParam {
 	return TokenChunkerParam{
-		DelimiterMode:      "token_size",
+		DelimiterMode:      "delimiter",
 		ChunkTokenSize:     512,
 		Delimiters:         []string{"\n"},
 		OverlappedPercent:  0,
@@ -247,8 +248,9 @@ func NumericFromAny(v any) (float64, bool) {
 // merge math (token.go, `(100-x)/100`) expects.
 //
 // Behaviour matches Python exactly:
-//   - parse like float(): numbers, or numeric strings; on any failure / NaN /
-//     Inf, return 0
+//   - parse like Python float(): numbers, or decimal numeric strings; on any
+//     failure / NaN / Inf, return 0. Hexadecimal literals such as "0x1p-1"
+//     are rejected (strconv.ParseFloat would accept them; Python float() does not).
 //   - reject ratios outside [0, 1) (including percent-style values like 15)
 //   - ratio * 100, round half away from zero, clamp to [0, 90]
 //
@@ -258,15 +260,39 @@ func NormalizeOverlappedPercent(v any) float64 {
 	value, ok := NumericFromAny(v)
 	if !ok {
 		if s, isStr := v.(string); isStr {
-			if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
-				value, ok = f, true
-			}
+			value, ok = decimalFloatFromString(s)
 		}
 	}
 	if !ok || math.IsNaN(value) || math.IsInf(value, 0) {
 		return 0
 	}
 	return ratioToOverlappedPercent(value)
+}
+
+// decimalFloatFromString parses a decimal float string the way Python float()
+// does. strconv.ParseFloat also accepts hexadecimal literals such as "0x1p-1";
+// Python float() rejects those, so they must return 0 here too.
+func decimalFloatFromString(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	if isHexFloatLiteral(s) {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
+}
+
+func isHexFloatLiteral(s string) bool {
+	if s == "" {
+		return false
+	}
+	i := 0
+	if s[0] == '+' || s[0] == '-' {
+		i = 1
+	}
+	return i+1 < len(s) && s[i] == '0' && (s[i+1] == 'x' || s[i+1] == 'X')
 }
 
 // ratioToOverlappedPercent converts a [0, 1) overlap ratio to an integer
@@ -290,8 +316,16 @@ func ratioToOverlappedPercent(ratio float64) float64 {
 func (p *TokenChunkerParam) Validate() error {
 	// OverlappedPercent is stored as an integer percentage in [0, 90] after
 	// NormalizeOverlappedPercent runs on wire ratios during Update.
+	// Backward-compat: Python removed the standalone "token_size" mode and
+	// treats it as identical to "delimiter" at runtime, normalizing it in
+	// check() (rag/flow/chunker/token_chunker.py). A dataset configured under
+	// the old scheme may still carry delimiter_mode="token_size"; normalize it
+	// here instead of rejecting it so those pipelines keep working.
+	if p.DelimiterMode == "token_size" {
+		p.DelimiterMode = "delimiter"
+	}
 	switch p.DelimiterMode {
-	case "token_size", "delimiter":
+	case "delimiter":
 	default:
 		return errInvalidValue{Field: "delimiter_mode", Value: p.DelimiterMode}
 	}
@@ -341,17 +375,26 @@ type TitleChunkerParam struct {
 	// RootChunkAsHeading, when true, prepends the root chunk's text
 	// to every emitted chunk (and drops the root chunk itself).
 	RootChunkAsHeading bool `json:"root_chunk_as_heading"`
+
+	// ChunkTokenCap is the hard ceiling on each emitted text chunk's token
+	// count (mirrors Python title_chunker/common.py chunk_token_cap, added in
+	// #18455). A built text chunk exceeding it is re-split on sentence
+	// boundaries into <= cap sub-chunks. 0 disables the ceiling. The Python
+	// default is 512; valid range when non-zero is 128..8000.
+	ChunkTokenCap int `json:"chunk_token_cap"`
 }
 
 // Defaults returns the Python default TitleChunkerParam. `Method` is
 // not initialized in the Python `__init__` (it is set externally); the
 // default is left as the empty string and the component must supply it.
+// `ChunkTokenCap` defaults to 512, matching Python #18455.
 func (TitleChunkerParam) Defaults() TitleChunkerParam {
 	return TitleChunkerParam{
 		Levels:                [][]string{},
 		Hierarchy:             nil,
 		IncludeHeadingContent: false,
 		RootChunkAsHeading:    false,
+		ChunkTokenCap:         512,
 	}
 }
 
@@ -359,6 +402,14 @@ func (TitleChunkerParam) Defaults() TitleChunkerParam {
 // expressible in pure-data terms: when Method == "hierarchy" the
 // hierarchy depth and level config must be present.
 func (p *TitleChunkerParam) Validate() error {
+	// chunk_token_cap: 0 disables the ceiling; when set it must be a positive
+	// integer in [128, 8000] (mirrors Python title_chunker #18455). Checked
+	// BEFORE the method switch so an unset method cannot bypass the range.
+	if p.ChunkTokenCap != 0 {
+		if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
+			return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
+		}
+	}
 	switch p.Method {
 	case "hierarchy", "group":
 	case "":

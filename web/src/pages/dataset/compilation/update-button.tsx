@@ -10,10 +10,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
-import {
-  ITraceInfo,
-  useGenerateStatus,
-} from '@/hooks/use-dataset-generate';
+import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
 
 import { UpdateRunProgress } from './update-run-progress';
 
@@ -23,6 +20,7 @@ type CompilationUpdateButtonProps = {
   hasChanges: boolean;
   newlyUploaded: number;
   removed: number;
+  changed?: number;
   loading: boolean;
   tooltip: string;
   onClick: () => void;
@@ -34,6 +32,7 @@ export function CompilationUpdateButton({
   hasChanges,
   newlyUploaded,
   removed,
+  changed = 0,
   loading,
   tooltip,
   onClick,
@@ -59,7 +58,7 @@ export function CompilationUpdateButton({
               <UpdateRunProgress data={traceData} generateType={generateType} />
             ) : (
               <>
-                {t('knowledgeDetails.update', { defaultValue: 'Update' })}
+                {t('knowledgeCompilation.update', { defaultValue: 'Update' })}
                 {newlyUploaded > 0 && (
                   <Badge variant="success" className="ml-1">
                     {newlyUploaded}
@@ -70,6 +69,11 @@ export function CompilationUpdateButton({
                     {removed}
                   </Badge>
                 )}
+                {changed > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {changed}
+                  </Badge>
+                )}
                 <WandSparkles />
               </>
             )}
@@ -77,7 +81,7 @@ export function CompilationUpdateButton({
         </TooltipTrigger>
         <TooltipContent>
           {isGenerating
-            ? t('knowledgeDetails.viewUpdateLogs', {
+            ? t('knowledgeCompilation.viewUpdateLogs', {
                 defaultValue: 'View update logs',
               })
             : tooltip}

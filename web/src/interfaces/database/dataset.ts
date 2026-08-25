@@ -22,6 +22,7 @@ export interface IDataset {
   description?: string;
   document_count: number;
   embedding_model: string;
+  embedding_model_name?: string;
   size?: number;
   graphrag_task_finish_at: string;
   graphrag_task_id: Nullable<string>;
@@ -146,25 +147,10 @@ export interface IKnowledgeFile {
 }
 
 export interface ITenantInfo {
-  asr_id: string;
-  embd_id: string;
-  img2txt_id: string;
-  llm_id: string;
   name: string;
   parser_ids: string;
   role: string;
   tenant_id: string;
-  chat_id: string;
-  speech2text_id: string;
-  rerank_id?: string;
-  tts_id: string;
-  // Tenant model IDs
-  tenant_asr_id?: string;
-  tenant_embd_id?: string;
-  tenant_img2txt_id?: string;
-  tenant_llm_id?: string;
-  tenant_rerank_id?: string;
-  tenant_tts_id?: string;
 }
 
 export type ChunkDocType = 'image' | 'table' | 'text';
@@ -203,6 +189,7 @@ export interface ITestingChunk {
   positions: number[][];
   docnm_kwd: string;
   doc_type_kwd: string;
+  document_metadata?: Record<string, any>;
 }
 
 export interface ITestingDocument {
@@ -244,6 +231,7 @@ export interface IArtifactTopic {
   topic: string;
   title: string;
   slug: string;
+  page_count?: number;
 }
 
 export interface IArtifactPage {
@@ -292,8 +280,10 @@ export interface IArtifactGraphEntity {
 export interface IArtifactAlteration {
   removed: number;
   newly_uploaded: number;
+  changed: number;
   removed_doc_ids: string[];
   newly_uploaded_doc_ids: string[];
+  changed_doc_ids: string[];
   involved_doc_ids: string[];
   eligible_doc_ids: string[];
 }

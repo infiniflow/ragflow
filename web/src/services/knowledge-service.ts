@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { ProcessingType } from '@/constants/knowledge';
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
@@ -10,7 +26,7 @@ import {
 } from '@/interfaces/request/knowledge';
 import api from '@/utils/api';
 import nextRequest from '@/utils/next-request';
-import registerServer from '@/utils/register-server';
+import registerServer, { registerNextServer } from '@/utils/register-server';
 import request from '@/utils/request';
 
 const {
@@ -286,6 +302,20 @@ export const runIndex = (datasetId: string, indexType: string) =>
 
 export const traceIndex = (datasetId: string, indexType: string) =>
   request.get(api.traceIndex(datasetId, indexType));
+
+// getDatasetCompilationStatus reads the Go scheduler compile-status contract
+// (GET /datasets/:id/compilation/status), used by API_PROXY_SCHEME=go/hybrid to
+// replace the legacy traceIndex task-progress endpoint. Route it through the
+// service-layer proxy (registerNextServer -> next-request) like the rest of the
+// *-service.ts HTTP proxies.
+const compilationStatusProxy = registerNextServer({
+  getDatasetCompilationStatus: {
+    url: (datasetId: string) => api.compilationStatus(datasetId),
+    method: 'get',
+  },
+} as const);
+export const getDatasetCompilationStatus = (datasetId: string) =>
+  compilationStatusProxy.getDatasetCompilationStatus(datasetId);
 
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (

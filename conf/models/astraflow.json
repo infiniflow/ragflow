@@ -18,7 +18,8 @@
       "max_tokens": 16384,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 512
     },
     {
       "name": "bge-reranker-v2-m3",
@@ -35,7 +36,8 @@
     },
     {
       "name": "claude-opus-4-7",
-      "max_tokens": 200000,
+      "content_length": 1000000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -45,7 +47,8 @@
     },
     {
       "name": "claude-opus-4-6",
-      "max_tokens": 200000,
+      "content_length": 1000000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -55,7 +58,8 @@
     },
     {
       "name": "claude-sonnet-4-5-20250929",
-      "max_tokens": 200000,
+      "content_length": 200000,
+      "max_output": 64000,
       "model_types": [
         "chat"
       ],
@@ -65,7 +69,8 @@
     },
     {
       "name": "claude-haiku-4-5-20251001",
-      "max_tokens": 200000,
+      "content_length": 200000,
+      "max_output": 64000,
       "model_types": [
         "chat"
       ],
@@ -75,7 +80,8 @@
     },
     {
       "name": "gpt-5.4",
-      "max_tokens": 400000,
+      "content_length": 1050000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -85,7 +91,8 @@
     },
     {
       "name": "gpt-5.4-mini",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -95,7 +102,8 @@
     },
     {
       "name": "gpt-5.4-nano",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -105,7 +113,8 @@
     },
     {
       "name": "gpt-4o-mini",
-      "max_tokens": 128000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat"
       ],
@@ -115,7 +124,8 @@
     },
     {
       "name": "Qwen/Qwen3-Max",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -125,7 +135,8 @@
     },
     {
       "name": "Qwen/Qwen3-Coder",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 65536,
       "model_types": [
         "chat"
       ],
@@ -135,7 +146,8 @@
     },
     {
       "name": "Qwen/Qwen3-32B",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -145,7 +157,8 @@
     },
     {
       "name": "Qwen/Qwen3-VL-235B-A22B-Instruct",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -155,7 +168,8 @@
     },
     {
       "name": "kimi-k2.6",
-      "max_tokens": 200000,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -165,7 +179,8 @@
     },
     {
       "name": "glm-5.1",
-      "max_tokens": 128000,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -175,7 +190,8 @@
     },
     {
       "name": "MiniMax-M2.7",
-      "max_tokens": 1000000,
+      "content_length": 204800,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -185,7 +201,8 @@
     },
     {
       "name": "MiniMax-M2",
-      "max_tokens": 1000000,
+      "content_length": 204800,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -195,7 +212,8 @@
     },
     {
       "name": "gemini-2.5-pro",
-      "max_tokens": 1000000,
+      "content_length": 1048576,
+      "max_output": 65536,
       "model_types": [
         "chat"
       ],
@@ -205,7 +223,8 @@
     },
     {
       "name": "gemini-2.5-flash",
-      "max_tokens": 1000000,
+      "content_length": 1048576,
+      "max_output": 65536,
       "model_types": [
         "chat"
       ],

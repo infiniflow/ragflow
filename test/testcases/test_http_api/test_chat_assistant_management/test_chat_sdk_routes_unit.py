@@ -360,6 +360,7 @@ def _load_chat_module(monkeypatch):
             pass
 
     llm_service_mod.LLMBundle = _StubLLMBundle
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     search_service_mod = ModuleType("api.db.services.search_service")

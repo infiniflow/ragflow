@@ -68,7 +68,10 @@ STOP=false
 PIDS=()
 
 # Set the path to the NLTK data directory
-export NLTK_DATA="./nltk_data"
+# download_deps.py downloads NLTK data into ragflow_deps/nltk_data (see
+# ragflow_deps/download_deps.py); point NLTK_DATA there directly instead of a
+# stale top-level ./nltk_data so this matches what's actually populated.
+export NLTK_DATA="$(pwd)/ragflow_deps/nltk_data"
 
 # Function to handle termination signals
 cleanup() {
@@ -211,6 +214,15 @@ ensure_db_init() {
 }
 
 run_mysql_migrations() {
+    local db_type="${DB_TYPE:-mysql}"
+    db_type="${db_type,,}"
+    if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
+        # This migration script contains MySQL-only SQL and cannot run against
+        # a GaussDB metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+
     tools/scripts/run_migrations.sh
 }
 

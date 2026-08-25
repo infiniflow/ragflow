@@ -242,7 +242,7 @@ func TestTenkiProvider_BuildTenkiExecutionResult(t *testing.T) {
 // always runs (so missing-secrets shows up in CI logs). When enabled,
 // it creates a real sandbox, runs Python, and destroys it.
 func TestTenkiProvider_FullE2E_SkipWithoutKey(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvTenkiApiKey)
+	apiKey := common.GetEnv(common.EnvTenkiAPIKey)
 	if apiKey == "" {
 		t.Skip("TENKI_API_KEY not set — skipping full E2E test (real network call)")
 	}

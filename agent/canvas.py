@@ -101,20 +101,27 @@ class Graph:
 
     def load(self):
         self.components = self.dsl["components"]
-        cpn_nms = set([])
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
+        for cpn in self.components.values():
             cpn["obj"]["params"]["custom_header"] = self.custom_header
+
+        component_params = self.validate_component_parameters(self.dsl)
+        for k, cpn in self.components.items():
+            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
+
+        self.path = self.dsl.get("path", [])
+
+    @staticmethod
+    def validate_component_parameters(dsl):
+        component_params = {}
+        for k, cpn in dsl["components"].items():
+            param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
             except Exception as e:
-                raise ValueError(self.get_component_name(k) + f": {e}")
-
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-
-        self.path = self.dsl["path"]
+                raise ValueError(Graph._get_component_name(dsl, k) + f": {e}")
+            component_params[k] = param
+        return component_params
 
     def __str__(self):
         self.dsl["path"] = self.path
@@ -161,25 +168,30 @@ class Graph:
             logging.exception(e)
 
     def close(self):
-        from common.mcp_tool_call_conn import MCPToolCallSession
+        from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession
 
         seen = set()
         for cpn in self.components.values():
             obj = cpn.get("obj")
             if obj and hasattr(obj, "tools"):
                 for tool in obj.tools.values():
-                    if isinstance(tool, MCPToolCallSession) and id(tool) not in seen:
-                        seen.add(id(tool))
+                    session = tool if isinstance(tool, MCPToolCallSession) else (tool.session if isinstance(tool, MCPToolBinding) else None)
+                    if isinstance(session, MCPToolCallSession) and id(session) not in seen:
+                        seen.add(id(session))
                         try:
-                            tool.close_sync(timeout=3)
+                            session.close_sync(timeout=3)
                         except Exception:
-                            pass
+                            logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
 
-    def get_component_name(self, cid):
-        for n in self.dsl.get("graph", {}).get("nodes", []):
+    @staticmethod
+    def _get_component_name(dsl, cid):
+        for n in dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
                 return n["data"]["name"]
         return ""
+
+    def get_component_name(self, cid):
+        return self._get_component_name(self.dsl, cid)
 
     def run(self, **kwargs):
         raise NotImplementedError()
@@ -203,30 +215,19 @@ class Graph:
         # Reference the canonical pre-compiled regex from ComponentBase so
         # the source-pattern and the runtime-pattern can never drift apart.
         pat = ComponentBase.variable_ref_patt_re
-        out_parts = []
-        last = 0
 
-        for m in pat.finditer(value):
-            out_parts.append(value[last : m.start()])
+        def replace(m):
             key = m.group(1)
             v = self.get_variable_value(key)
             if v is None:
-                rep = ""
+                return ""
             elif isinstance(v, partial):
-                buf = []
-                for chunk in v():
-                    buf.append(chunk)
-                rep = "".join(buf)
+                return "".join(v())
             elif isinstance(v, str):
-                rep = v
-            else:
-                rep = json.dumps(v, ensure_ascii=False)
+                return v
+            return json.dumps(v, ensure_ascii=False)
 
-            out_parts.append(rep)
-            last = m.end()
-
-        out_parts.append(value[last:])
-        return "".join(out_parts)
+        return ComponentBase._replace_template_matches(pat, value, replace)
 
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
@@ -335,7 +336,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": [],
             "sys.history": [],
-            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.variables = {}
         # Aggregated provider token usage (prompt/completion/total) across every LLM
@@ -354,7 +355,7 @@ class Canvas(Graph):
             if "sys.history" not in self.globals:
                 self.globals["sys.history"] = []
             if "sys.date" not in self.globals:
-                self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
                 "sys.query": "",
@@ -362,7 +363,7 @@ class Canvas(Graph):
                 "sys.conversation_turns": 0,
                 "sys.files": [],
                 "sys.history": [],
-                "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -378,10 +379,12 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
-    def clear_history(self):
+    def start_new_session(self):
+        """Discard replica state that must not leak into a fresh session."""
         self.history = []
-        if isinstance(self.globals.get("sys.history"), list):
-            self.globals["sys.history"] = []
+        self.globals["sys.history"] = []
+        self.path = []
+        _logger.debug("Canvas conversation history and execution path reset for a new session")
 
     def reset(self, mem=False):
         super().reset()
@@ -389,7 +392,6 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
-        print(self.variables)
         for k in self.globals.keys():
             if k.startswith("sys."):
                 if isinstance(self.globals[k], str):
@@ -468,7 +470,7 @@ class Canvas(Graph):
             reset_llm_request_context(_req_ctx_token)
 
     async def _run_impl(self, **kwargs):
-        self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()
@@ -654,47 +656,127 @@ class Canvas(Graph):
                 cpn_obj = self.get_component_obj(self.path[i])
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
-                        tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
-                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        try:
+                            tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
+                            tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        except Exception as e:
+                            # A missing/unresolvable default TTS model must not
+                            # fail the whole run: skip auto play and keep the
+                            # textual answer flowing.
+                            _logger.warning("Auto play skipped: default TTS model is not available: %s", e)
+                            tts_mdl = None
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
+                        in_thinking = False
+                        tts_queue = asyncio.Queue(maxsize=4)
+                        tts_results = asyncio.Queue()
+                        tts_workers = []
+                        tts_sequence = 0
+                        next_audio_sequence = 0
+                        completed_tts = {}
+                        sentence_end = re.compile(r"(?:[。！？!?；;\n](?:[”’\"』」】》）)]*)|(?<=[.!?])(?=\s|$))")
                         stream = cpn_obj.output("content")()
 
+                        async def _tts_worker():
+                            while True:
+                                sequence, text = await tts_queue.get()
+                                try:
+                                    audio_binary = await asyncio.to_thread(self.tts, tts_mdl, text)
+                                    await tts_results.put((sequence, audio_binary, None))
+                                except Exception as exc:
+                                    await tts_results.put((sequence, None, exc))
+                                finally:
+                                    tts_queue.task_done()
+
+                        if tts_mdl:
+                            tts_workers = [asyncio.create_task(_tts_worker()) for _ in range(2)]
+
+                        async def _schedule_tts(text):
+                            nonlocal tts_sequence
+                            if tts_mdl and text:
+                                await tts_queue.put((tts_sequence, text))
+                                tts_sequence += 1
+
+                        async def _drain_ready_tts():
+                            nonlocal next_audio_sequence
+                            events = []
+                            while True:
+                                try:
+                                    sequence, audio_binary, error = tts_results.get_nowait()
+                                except asyncio.QueueEmpty:
+                                    break
+                                completed_tts[sequence] = (audio_binary, error)
+                            while next_audio_sequence in completed_tts:
+                                audio_binary, error = completed_tts.pop(next_audio_sequence)
+                                if error:
+                                    _logger.warning("Agent TTS failed for sentence %d: %s", next_audio_sequence, error)
+                                next_audio_sequence += 1
+                                if audio_binary:
+                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary}))
+                            return events
+
                         async def _process_stream(m):
-                            nonlocal buff_m, _m, tts_mdl
+                            nonlocal buff_m, _m, in_thinking
                             if not m:
                                 return
                             if m == "<think>":
+                                await _schedule_tts(buff_m)
+                                in_thinking = True
+                                buff_m = ""
                                 return decorate("message", {"content": "", "start_to_think": True})
 
                             elif m == "</think>":
+                                in_thinking = False
                                 return decorate("message", {"content": "", "end_to_think": True})
 
-                            buff_m += m
                             _m += m
+                            if in_thinking:
+                                return decorate("message", {"content": m})
 
-                            if len(buff_m) > 16:
-                                ev = decorate("message", {"content": m, "audio_binary": self.tts(tts_mdl, buff_m)})
-                                buff_m = ""
-                                return ev
+                            buff_m += m
+                            while True:
+                                match = sentence_end.search(buff_m)
+                                if not match:
+                                    break
+                                sentence = buff_m[: match.end()]
+                                buff_m = buff_m[match.end() :]
+                                await _schedule_tts(sentence)
 
                             return decorate("message", {"content": m})
 
-                        if inspect.isasyncgen(stream):
-                            async for m in stream:
-                                ev = await _process_stream(m)
-                                if ev:
+                        async def _stream_events():
+                            nonlocal buff_m
+                            try:
+                                if inspect.isasyncgen(stream):
+                                    async for m in stream:
+                                        for ev in await _drain_ready_tts():
+                                            yield ev
+                                        ev = await _process_stream(m)
+                                        if ev:
+                                            yield ev
+                                else:
+                                    for m in stream:
+                                        for ev in await _drain_ready_tts():
+                                            yield ev
+                                        ev = await _process_stream(m)
+                                        if ev:
+                                            yield ev
+                                if buff_m:
+                                    await _schedule_tts(buff_m)
+                                    buff_m = ""
+                                await tts_queue.join()
+                                for ev in await _drain_ready_tts():
                                     yield ev
-                        else:
-                            for m in stream:
-                                ev = await _process_stream(m)
-                                if ev:
-                                    yield ev
-                        if buff_m:
-                            yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
-                            buff_m = ""
-                        cpn_obj.set_output("content", _m)
+                                cpn_obj.set_output("content", _m)
+                            finally:
+                                for worker in tts_workers:
+                                    worker.cancel()
+                                if tts_workers:
+                                    await asyncio.gather(*tts_workers, return_exceptions=True)
+
+                        async for ev in _stream_events():
+                            yield ev
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
 
@@ -834,6 +916,8 @@ class Canvas(Graph):
                 flags=re.UNICODE,
             )
             text = emoji_pattern.sub("", text)
+
+            text = re.sub(r"<[^>]*>", "", text)
 
             text = re.sub(r"\s+", " ", text).strip()
 

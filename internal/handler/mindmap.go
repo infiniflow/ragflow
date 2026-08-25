@@ -72,24 +72,37 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	// composite-name parsing which fails for bare IDs. If the configured
 	// model can't be resolved, fall back to the tenant's default chat model
 	// (mirrors Python's gen_mindmap get_tenant_default_model_by_type).
-	ch, streamErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
-	if streamErr != nil && config.TenantSvc != nil {
+	ch, streamErrs, findChatModelErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
+	if findChatModelErr != nil && config.TenantSvc != nil {
 		if defaultModel, err := config.TenantSvc.GetDefaultModelName(streamCtx, modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
-			ch, streamErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
+			ch, streamErrs, findChatModelErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
 		}
 	}
-	if streamErr != nil {
-		return mindMapNode{}, streamErr
+	if findChatModelErr != nil {
+		return mindMapNode{}, findChatModelErr
 	}
-	var sb strings.Builder
-	for delta := range ch {
-		sb.WriteString(delta)
+	fullText, err := collectMindMapStream(streamCtx, ch, streamErrs)
+	if err != nil {
+		return mindMapNode{}, err
 	}
-	fullText := sb.String()
-	if fullText == "" {
+	if strings.TrimSpace(fullText) == "" {
 		return mindMapNode{ID: "root", Children: []mindMapNode{}}, nil
 	}
 	return parseMindMapMarkdown(fullText), nil
+}
+
+func collectMindMapStream(ctx context.Context, chunks <-chan string, streamErrs <-chan error) (string, error) {
+	var sb strings.Builder
+	for chunk := range chunks {
+		sb.WriteString(chunk)
+	}
+	if err := <-streamErrs; err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
 }
 
 func searchConfigFromDetail(detail map[string]interface{}) map[string]interface{} {
@@ -106,6 +119,7 @@ func mindMapRetrievalRequest(question string, kbIDs common.StringSlice, searchID
 	page := 1
 	size := 12
 	topK := intFromConfig(searchConfig, "top_k", 1024)
+	rerankCandidatesCount := intFromConfig(searchConfig, "rerank_candidates_count", 100)
 	similarityThreshold := floatFromConfig(searchConfig, "similarity_threshold", 0.2)
 	vectorSimilarityWeight := floatFromConfig(searchConfig, "vector_similarity_weight", 0.3)
 	req := &service.RetrievalTestRequest{
@@ -114,6 +128,7 @@ func mindMapRetrievalRequest(question string, kbIDs common.StringSlice, searchID
 		Page:                   &page,
 		Size:                   &size,
 		TopK:                   &topK,
+		RerankCandidatesCount:  &rerankCandidatesCount,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		DocIDs:                 stringSliceFromConfig(searchConfig, "doc_ids"),

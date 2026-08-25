@@ -29,10 +29,11 @@ import (
 )
 
 func TestRetrieval_StubsErrorWhenServiceMissing(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	out, err := rt.InvokableRun(context.Background(), `{"query":"hello"}`)
+	out, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)
 	if err == nil {
 		t.Fatal("expected stub error, got nil")
 	}
@@ -54,10 +55,10 @@ func TestRetrieval_StubsErrorWhenServiceMissing(t *testing.T) {
 }
 
 func TestRetrieval_RejectsUseKG(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
-
 	rt := NewRetrievalTool()
-	out, err := rt.InvokableRun(context.Background(), `{"query":"x","use_kg":true}`)
+	out, err := rt.InvokableRun(ctx, `{"query":"x","use_kg":true}`)
 	if !errors.Is(err, ErrGraphRAGNotSupported) {
 		t.Fatalf("err = %v, want ErrGraphRAGNotSupported", err)
 	}
@@ -67,10 +68,11 @@ func TestRetrieval_RejectsUseKG(t *testing.T) {
 }
 
 func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	info, err := rt.Info(context.Background())
+	info, err := rt.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -103,10 +105,11 @@ func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
 }
 
 func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	out, err := rt.InvokableRun(context.Background(), "")
+	out, err := rt.InvokableRun(ctx, "")
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -127,7 +130,7 @@ func TestRetrieval_PassesTenantIDFromCanvasState(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	rt := NewRetrievalTool()
 	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)
@@ -147,7 +150,7 @@ func TestRetrieval_PassesUserIDWhenTenantIDMissing(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	rt := NewRetrievalTool()
 	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)
@@ -171,6 +174,10 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 		"top_k":                      float64(99),
 		"keywords_similarity_weight": 0.7,
 		"similarity_threshold":       0.42,
+		"rerank_id":                  "rerank@provider",
+		"cross_languages":            []any{"English", "Chinese"},
+		"toc_enhance":                true,
+		"meta_data_filter":           map[string]any{"method": "manual"},
 	})
 	if err != nil {
 		t.Fatalf("BuildByName(retrieval): %v", err)
@@ -180,7 +187,9 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
 	}
 
-	_, err = rt.InvokableRun(context.Background(), `{"query":"hello"}`)
+	ctx := t.Context()
+
+	_, err = rt.InvokableRun(ctx, `{"query":"hello"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -196,12 +205,47 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	if svc.req.KeywordsSimilarityWeight == nil || *svc.req.KeywordsSimilarityWeight != 0.7 {
 		t.Fatalf("KeywordsSimilarityWeight=%v want 0.7", svc.req.KeywordsSimilarityWeight)
 	}
-	if svc.req.SimilarityThreshold != 0.42 {
+	if svc.req.SimilarityThreshold == nil || *svc.req.SimilarityThreshold != 0.42 {
 		t.Fatalf("SimilarityThreshold=%v want 0.42", svc.req.SimilarityThreshold)
+	}
+	if svc.req.RerankID != "rerank@provider" {
+		t.Fatalf("RerankID=%q", svc.req.RerankID)
+	}
+	if len(svc.req.CrossLanguages) != 2 || svc.req.CrossLanguages[1] != "Chinese" {
+		t.Fatalf("CrossLanguages=%#v", svc.req.CrossLanguages)
+	}
+	if !svc.req.TOCEnhance || svc.req.MetaDataFilter["method"] != "manual" {
+		t.Fatalf("enhancement request=%#v", svc.req)
 	}
 }
 
-func TestRetrieval_AcceptsEmptyResponseNodeParam(t *testing.T) {
+func TestRetrieval_ExplicitZeroSimilarityArgsOverrideDefaults(t *testing.T) {
+	previous := GetRetrievalService()
+	service := &capturingRetrievalService{}
+	SetRetrievalService(service)
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	similarityThreshold := 0.42
+	keywordsSimilarityWeight := 0.7
+	retrievalTool := NewRetrievalToolWithDefaults(retrievalArgs{
+		DatasetIDs:               []string{"kb-1"},
+		SimilarityThreshold:      &similarityThreshold,
+		KeywordsSimilarityWeight: &keywordsSimilarityWeight,
+	})
+	ctx := t.Context()
+	_, err := retrievalTool.InvokableRun(ctx, `{"query":"hello","similarity_threshold":0,"keywords_similarity_weight":0}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if service.req.SimilarityThreshold == nil || *service.req.SimilarityThreshold != 0 {
+		t.Fatalf("SimilarityThreshold = %v; want explicit zero", service.req.SimilarityThreshold)
+	}
+	if service.req.KeywordsSimilarityWeight == nil || *service.req.KeywordsSimilarityWeight != 0 {
+		t.Fatalf("KeywordsSimilarityWeight = %v; want explicit zero", service.req.KeywordsSimilarityWeight)
+	}
+}
+
+func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 	t.Parallel()
 
 	built, err := BuildByName("retrieval", map[string]any{
@@ -209,7 +253,7 @@ func TestRetrieval_AcceptsEmptyResponseNodeParam(t *testing.T) {
 		"toc_enhance":      true,
 		"meta_data_filter": map[string]any{"method": "manual"},
 		"empty_response":   "empty",
-		"retrieval_from":   "database",
+		"retrieval_from":   "dataset",
 		"memory_ids":       []any{"memory-1"},
 		"kb_vars":          map[string]any{"x": "y"},
 		"cross_languages":  []any{"English"},
@@ -221,8 +265,14 @@ func TestRetrieval_AcceptsEmptyResponseNodeParam(t *testing.T) {
 	if !ok {
 		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
 	}
-	if rt.defaults.TopN != 0 || rt.defaults.TopK != 0 || rt.defaults.KeywordsSimilarityWeight != nil {
-		t.Fatalf("unimplemented params should not mutate retrieval defaults: %#v", rt.defaults)
+	if rt.defaults.RerankID != "rerank-1" || !rt.defaults.TOCEnhance {
+		t.Fatalf("enhancement defaults were not parsed: %#v", rt.defaults)
+	}
+	if len(rt.defaults.CrossLanguages) != 1 || rt.defaults.CrossLanguages[0] != "English" {
+		t.Fatalf("CrossLanguages = %#v", rt.defaults.CrossLanguages)
+	}
+	if rt.defaults.MetaDataFilter["method"] != "manual" {
+		t.Fatalf("MetaDataFilter = %#v", rt.defaults.MetaDataFilter)
 	}
 	if rt.defaults.EmptyResponse != "empty" {
 		t.Fatalf("EmptyResponse = %q, want empty", rt.defaults.EmptyResponse)
@@ -231,9 +281,10 @@ func TestRetrieval_AcceptsEmptyResponseNodeParam(t *testing.T) {
 
 func TestRetrieval_UsesEmptyResponseForEmptyQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	rt := NewRetrievalToolWithDefaults(retrievalArgs{EmptyResponse: "No query or result."})
-	out, err := rt.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := rt.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -243,6 +294,53 @@ func TestRetrieval_UsesEmptyResponseForEmptyQuery(t *testing.T) {
 	}
 	if result.FormalizedContent != "No query or result." {
 		t.Fatalf("FormalizedContent = %q", result.FormalizedContent)
+	}
+}
+
+func TestRetrieval_RoutesMemoryRequests(t *testing.T) {
+	previous := GetMemoryRetrievalService()
+	memoryService := &capturingRetrievalService{}
+	SetMemoryRetrievalService(memoryService)
+	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
+
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{
+		MemoryIDs: []string{"memory-1"},
+	})
+	if _, err := rt.InvokableRun(t.Context(), `{"query":"remember this"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if memoryService.req.RetrievalFrom != "memory" {
+		t.Fatalf("RetrievalFrom = %q, want memory", memoryService.req.RetrievalFrom)
+	}
+	if len(memoryService.req.MemoryIDs) != 1 || memoryService.req.MemoryIDs[0] != "memory-1" {
+		t.Fatalf("MemoryIDs = %#v", memoryService.req.MemoryIDs)
+	}
+}
+
+func TestRetrieval_ResolvesCanvasVariables(t *testing.T) {
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SetVar("source", "ids", []any{"kb-1", "kb-2"})
+	state.SetVar("source", "query", "semantic question")
+	state.SetVar("source", "value", "2026")
+	ctx := runtime.WithState(t.Context(), state)
+
+	ids, err := resolveRetrievalDatasetIDs(ctx, []string{"source@ids"})
+	if err != nil {
+		t.Fatalf("resolveRetrievalDatasetIDs: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "kb-1" || ids[1] != "kb-2" {
+		t.Fatalf("resolved dataset IDs = %#v", ids)
+	}
+	query, err := resolveRetrievalQuery(ctx, "{{source@query}}")
+	if err != nil || query != "semantic question" {
+		t.Fatalf("resolved query = %q, err = %v", query, err)
+	}
+	filter, err := resolveRetrievalFilter(ctx, map[string]any{
+		"method": "manual",
+		"value":  "{{source@value}}",
+	})
+	if err != nil || filter["value"] != "2026" {
+		t.Fatalf("resolved filter = %#v, err = %v", filter, err)
 	}
 }
 
@@ -257,17 +355,18 @@ func TestRetrieval_OmitsUnsetEmptyResponseFromArguments(t *testing.T) {
 }
 
 func TestRetrieval_UsesEmptyResponseWhenSearchHasNoChunks(t *testing.T) {
+	ctx := t.Context()
 	prev := GetRetrievalService()
 	SetRetrievalService(staticRetrievalService{})
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
-	rt := NewRetrievalToolWithDefaults(retrievalArgs{EmptyResponse: "No matching chunk."})
-	out, err := rt.InvokableRun(context.Background(), `{"query":"love"}`)
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{DatasetIDs: []string{"kb-1"}, EmptyResponse: "No matching chunk."})
+	out, err := rt.InvokableRun(ctx, `{"query":"love"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var result retrievalResult
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
+	if err = json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	if result.FormalizedContent != "No matching chunk." {
@@ -294,13 +393,14 @@ func TestRetrieval_IgnoresCanvasMetadataNodeParams(t *testing.T) {
 }
 
 func TestRetrieval_ModelArgsOverrideNodeDatasetIDs(t *testing.T) {
+	ctx := t.Context()
 	prev := GetRetrievalService()
 	svc := &capturingRetrievalService{}
 	SetRetrievalService(svc)
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
 	rt := NewRetrievalToolWithDefaults(retrievalArgs{DatasetIDs: []string{"kb-default"}, TopN: 3})
-	_, err := rt.InvokableRun(context.Background(), `{"query":"hello","dataset_ids":["kb-call"],"top_n":5}`)
+	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-call"],"top_n":5}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -331,7 +431,7 @@ func TestRetrieval_RecordsFrontendReferencePayload(t *testing.T) {
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
 	state := runtime.NewCanvasState("run-1", "task-1")
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	rt := NewRetrievalTool()
 	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)

@@ -16,21 +16,22 @@
 
 // SCOPE (honest) for token.go:
 //
-//   - WHITELIST: delimiter_mode ∈ {"token_size","delimiter"} (the
+//   - WHITELIST: delimiter_mode ∈ {"delimiter"} (the
 //     single-chunk "one" behaviour moved to OneChunker in one.go).
 //     chunk_token_size > 0, overlapped_percent is a [0,1) ratio on the wire
 //     (normalized to [0,90] integer percent by NormalizeOverlappedPercent,
 //     mirroring Python's normalize_overlapped_percent), table_context_size ≥ 0,
 //     image_context_size ≥ 0. enum/range checks live in param.Check.
 //
-//   - DELIMITER PARSING mirrors python `_compile_delimiter_pattern`:
-//     entries wrapped in backticks (e.g. "`\\n\\n`") are treated as
-//     regex split points; plain strings are regex-escaped and joined
-//     into the same alternation. Empty entries are filtered.
+//   - DELIMITER PARSING for the TokenChunker list API mirrors Python
+//     token_chunker: only entries wrapped in backticks (e.g. "`\\n\\n`")
+//     produce an active split pattern. Plain list entries are not
+//     compiled into the pattern. (The single-string parser_config.delimiter
+//     field is not parsed in Go; only the []string list API is consumed.)
 //
 //   - CHILDREN DELIMITERS (the secondary split) is implemented via the
-//     shared splitKeepingDelim helper; emitted chunks carry the parent
-//     ("mom") and the split child ("text") keys.
+//     splitDroppingDelim helper; emitted chunks carry the parent
+//     ("mom") and the split child ("text") keys, with the delimiter dropped.
 //
 //   - MODE "delimiter" uses the regex-aware delimiter pattern to split
 //     text into segments; unlike token_size, these segments are NOT
@@ -52,6 +53,19 @@
 //     generated on demand for text chunks that carry PDF positions:
 //     cropImageChunks crops the text region and writes a preview image,
 //     then imageUploadDecorator uploads it to img_id. See pdfcrop_cgo.go.
+//
+//   - OVER-BUDGET UNITS (contract #17799): a single item that exceeds
+//     chunk_token_size is KEPT WHOLE as its own chunk and is NOT
+//     atom-split; the embedding/rerank layer truncates it later. The
+//     TokenChunker must never sub-split a single item (the naive_merge
+//     invariant). If oversized-unit handling is ever needed to avoid a
+//     single mega-chunk, it belongs at the CHUNKER side (or a dedicated
+//     PreSplitter stage between Parser and Chunker), fed by an EXPLICIT
+//     token budget + tokenizer — NOT in the parser, and NOT as a
+//     char-window atom-split. The earlier splitOversizedUnit /
+//     splitAtomByTokenBudget helpers were a misplaced (parser-layer logic
+//     wrongly living in the chunker) and unwired vestige; they were
+//     removed to align with this contract.
 package chunker
 
 import (
@@ -62,13 +76,16 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
+	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
 
-	"gorm.io/gorm"
+	"ragflow/internal/parser/chunk"
 )
 
 const ComponentNameTokenChunker = "TokenChunker"
@@ -292,59 +309,115 @@ func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 }
 
 // invokeTextPayload handles plain-text input (output_format in
-// {markdown,text,html} on the python side).
+// {Markdown,text,html} on the python side).
 func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	if text == "" {
 		return emptyOutputs()
 	}
 
+	// No active delimiter at all: single-section merge that only re-splits
+	// oversized sections on sentence boundaries.
 	if !hasActiveDelimiter(delimPattern) {
-		return c.mergeByTokenSize(text, childrenPattern)
+		return c.mergeByTokenSize(text, nil, childrenPattern)
 	}
 
-	parts := splitKeepingDelim(text, delimPattern)
+	// Custom (backtick-wrapped) delimiter: one chunk per segment, no token
+	// merge — mirrors Python naive_merge's has_custom branch
+	// (token_chunker.py:1194-1213).
+	if hasCustomDelim(c.param.Delimiters) {
+		return c.chunkPerSegment(text, delimPattern, childrenPattern)
+	}
+
+	// Bare delimiter: split into paragraphs (delimiter dropped), then merge
+	// by token size — mirrors Python naive_merge's default branch. This is
+	// the #17723 fix: bare delimiters were previously ignored entirely.
+	return c.mergeByTokenSize(text, delimPattern, childrenPattern)
+}
+
+// chunkPerSegment splits text on a custom (backtick) delimiter and emits one
+// chunk per segment with no token-size merge. Mirrors Python naive_merge's
+// has_custom branch (token_chunker.py:1194-1213).
+func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
+	parts := splitDroppingDelim(text, delimPattern)
 	cleaned := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if strings.TrimSpace(p) == "" {
+		// Python's text path keeps only the even-index (text) parts from
+		// _split_text_by_pattern and then .strip()s each one
+		// (token_chunker.py:316-338), so the delimiter is dropped and
+		// surrounding whitespace is trimmed.
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
 			continue
 		}
-		cleaned = append(cleaned, p)
+		cleaned = append(cleaned, trimmed)
 	}
 	if len(cleaned) == 0 {
 		return emptyOutputs()
 	}
-	docs := applyChildrenDelim(cleaned, childrenPattern)
-
-	// Python's naive_merge: custom (backtick) delimiters produce one
-	// chunk per segment — no token-size merge (naive_merge:1194-1213).
-	if hasCustomDelim(c.param.Delimiters) {
-		return chunkOutputs(docs)
+	textDocs := make([]schema.ChunkDoc, 0, len(cleaned))
+	for _, s := range cleaned {
+		textDocs = append(textDocs, schema.ChunkDoc{Text: s, DocType: "text", CKType: "text"})
 	}
-
-	// Split-then-merge: split on delimiters, then greedily merge to
-	// chunk_token_size with optional overlap.
-	perItem := [][]schema.ChunkDoc{docs}
-	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent)
-	return chunkOutputs(flatten(merged))
+	docs := applyChildrenDelimText(textDocs, childrenPattern)
+	return chunkOutputs(docs)
 }
 
-// sentenceDelimiter is the sentence/clause-boundary regex used to split
-// oversized sections. It mirrors the delimiter Python's chunker actually
-// uses in production: rag/app/naive.py:1285 passes "\n!?。；！？" to
-// naive_merge, which includes ASCII "!" and "?" as well as the CJK
-// punctuation "。；！？". It deliberately does NOT include an English
-// ". " fallback: Python's production delimiter has no "\.\s", so adding
-// it would diverge from Python's chunk boundaries.
+// sentenceDelimiter is the token-chunker TEXT-path sentence delimiter (the
+// naive_merge port). It mirrors the delimiter Python's naive_merge receives in
+// production: rag/app/naive.py passes "\n!?。；！？", which includes ASCII "!"
+// and "?" plus the CJK punctuation "。；！？" but NOT an English ". " boundary.
+//
+// The Title chunker and the token chunker's JSON path use the shared
+// sentenceBoundaryRe instead (Python _sentence_boundary.py SENTENCE_BOUNDARY_RE,
+// which adds ". "). The two constants mirror two distinct Python delimiters and
+// differ only in that English boundary, exactly as Python does.
 var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？])`)
 
+// overlapCut returns the visible-text rune offset where the overlap prefix
+// begins, mirroring the cut computed inside computeOverlapPrefix. It is split
+// out so the coordinate-carrying path reuses the exact same cut as the text
+// path (#18148).
+func overlapCut(prevText string, overlappedPct float64) int {
+	visible := removeTag(prevText)
+	runes := []rune(visible)
+	cut := int(float64(len(runes)) * (100.0 - overlappedPct) / 100.0)
+	if cut < 0 {
+		cut = 0
+	}
+	if cut >= len(runes) {
+		return len(runes)
+	}
+	return cut
+}
+
+// computeOverlapPrefix returns (overlapText, overlapTokenCount) carved from
+// the tail of prevText after stripping parser tags. overlappedPct is a
+// percentage in [0, 100]. Mirrors Python rag/nlp._compute_overlap_prefix.
+func computeOverlapPrefix(prevText string, overlappedPct float64) (string, int) {
+	visible := removeTag(prevText)
+	if visible == "" {
+		return "", 0
+	}
+	runes := []rune(visible)
+	cut := overlapCut(prevText, overlappedPct)
+	if cut >= len(runes) {
+		return "", 0
+	}
+	overlap := string(runes[cut:])
+	return overlap, tokenizeStr(overlap)
+}
+
 // mergeByTokenSize implements exact token-based chunk merging that mirrors
-// Python's naive_merge (rag/nlp/__init__.py:1156). It uses
-// tokenizeStr (= tokenizer.NumTokensFromString, cl100k_base BPE) for
-// precise token counting, treats the payload as a single section, splits
-// oversized sections on sentence delimiters (dropping the delimiter, as
-// Python does), and greedily merges into chunks of approximately
-// chunk_token_size tokens with optional overlap from the previous chunk.
-func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
+// Python naive_merge (rag/nlp/__init__.py) after the strict chunk_token_num
+// hard-cap fix.
+// It uses tokenizeStr for precise token counting, treats the payload as a
+// single section, and splits oversized sections on production sentence
+// delimiters. Sections are merged with the unified core (hard-cap expansion +
+// UNDER_CAP merge): oversized units are re-split (sentence boundaries first,
+// hard token-split fallback) so no text chunk exceeds chunk_token_size. When
+// overlap>0 the previous chunk's tail is prepended and trimmed to fit, so the
+// hard cap still holds.
+func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	overlapPct := c.param.OverlappedPercent
 	// Clamp to [0,100] so the merge math below never produces a
@@ -359,123 +432,95 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 	}
 
 	// Normalize line endings to LF before any splitting. Python's
-	// naive_merge (rag/nlp/__init__.py:1166) runs
-	//   text = text.replace("\r\n", "\n").replace("\r", "\n")
-	// so CRLF/CR input must segment and split exactly like LF input.
-	// Without this, stray "\r" would survive inside chunks, diverging
-	// from Python.
+	// naive_merge runs text.replace("\r\n", "\n").replace("\r", "\n"),
+	// then treats the input string as one section.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 
-	// Treat the whole payload as a single section, mirroring Python's
-	// naive_merge (rag/nlp/__init__.py:1157) which wraps the input string
-	// as a one-element list. naive_merge does NOT pre-split on blank
-	// lines, and because "\n" is itself a delimiter it is dropped (blank
-	// lines collapse), exactly as Python does. CRLF/CR normalization
-	// already happened above.
-	sections := []string{text}
-	if len(sections) == 0 {
+	// Build the merge units.
+	//
+	// When a bare (non-custom) delimiter is active we split the text into
+	// paragraphs (the delimiter is DROPPED, mirroring Python naive_merge) and
+	// use each paragraph VERBATIM as a unit. This preserves the original
+	// inter-paragraph whitespace, so the merged text matches the source (and
+	// Python naive_merge). An oversized paragraph is re-split by the hard-cap
+	// expansion in mergeUnits.
+	//
+	// Otherwise (no active delimiter) the whole text is a single section and
+	// oversized sections are re-split on production sentence delimiters, which
+	// injects "\n" to mirror Python's sentence-boundary handling. This is the
+	// historical behavior and must stay byte-for-byte identical.
+	useDelimSplit := hasActiveDelimiter(delimPattern) && !hasCustomDelim(c.param.Delimiters)
+	var units []schema.ChunkDoc
+	if useDelimSplit {
+		// Mirror Python naive_merge's default path (rag/nlp/__init__.py:1406-1415):
+		// split on the delimiter, DROP the delimiter text, and prepend "\n" to
+		// each kept paragraph. The sub-sec keeps its original surrounding
+		// whitespace (e.g. the trailing space before the delimiter); only the
+		// delimiter itself is removed. No sentence re-split is performed here —
+		// an oversized paragraph is re-split later by the hard-cap expansion in
+		// mergeUnits.
+		for _, sub := range splitDroppingDelim(text, delimPattern) {
+			if sub == "" {
+				continue
+			}
+			t := "\n" + sub
+			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
+		}
+	} else {
+		sections := []string{text}
+		for _, sec := range sections {
+			sec = strings.TrimSpace(sec)
+			if sec == "" {
+				continue
+			}
+			t := "\n" + sec
+			tk := tokenizeStr(t)
+			if tk <= target {
+				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tk), CKType: "text"})
+				continue
+			}
+			// Oversized section: split on production sentence delimiters into
+			// units. A unit that still exceeds the budget is re-split by the
+			// hard-cap expansion in mergeUnits (sentence boundaries first,
+			// hard token-split fallback), so no chunk ever exceeds the target.
+			parts := sentenceDelimiter.Split(sec, -1)
+			hadPart := false
+			for _, part := range parts {
+				// Keep the raw split fragment, including any inter-line
+				// trailing whitespace (Python's naive_merge builds each unit
+				// from "\n" + sub_sec with its trailing space, never TrimSpaced).
+				// Only genuinely empty fragments are skipped.
+				if part == "" {
+					continue
+				}
+				hadPart = true
+				seg := "\n" + part
+				units = append(units, schema.ChunkDoc{Text: seg, TKNums: intPtr(tokenizeStr(seg)), CKType: "text"})
+			}
+			if !hadPart {
+				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
+			}
+		}
+	}
+
+	if len(units) == 0 {
 		return emptyOutputs()
 	}
 
-	// Sentence/clause-boundary regex for splitting oversized sections.
-	// Mirrors Python's production delimiter (rag/app/naive.py:1285 passes
-	// "\n!?。；！？") — ASCII "!" and "?" plus the CJK punctuation, with no
-	// English ". " fallback.
-	sentenceDelim := sentenceDelimiter
-
-	var cks []string // chunk texts
-	var tkns []int   // token counts per chunk
-
-	// mergeOrNew mirrors Python add_chunk in naive_merge:
-	//   - If the current chunk is empty or would overflow the
-	//     threshold → start a new chunk (with optional overlap prefix).
-	//   - Otherwise → merge into the current chunk.
-	mergeOrNew := func(segment string, tokens int) {
-		threshold := float64(target) * (100 - overlapPct) / 100.0
-		if len(cks) == 0 || float64(tkns[len(tkns)-1]) > threshold {
-			seg := segment
-			segTokens := tokens
-			if overlapPct > 0 && len(cks) > 0 {
-				// Strip parser tags before computing the overlap suffix,
-				// matching Python nlp/__init__.py:1181
-				prev := removeTag(cks[len(cks)-1])
-				// Take the last overlapped_percent of the previous chunk
-				// (in runes, matching Python's len(overlapped) * ratio).
-				prevRunes := []rune(prev)
-				cut := int(float64(len(prevRunes)) * (100 - overlapPct) / 100.0)
-				if cut < len(prevRunes) {
-					suffix := string(prevRunes[cut:])
-					seg = suffix + segment
-					segTokens = tokenizeStr(seg)
-				}
-			}
-			cks = append(cks, seg)
-			tkns = append(tkns, segTokens)
-		} else {
-			cks[len(cks)-1] += segment
-			tkns[len(tkns)-1] += tokens
-		}
-	}
-
-	for _, sec := range sections {
-		sec = strings.TrimSpace(sec)
-		if sec == "" {
-			continue
-		}
-		t := "\n" + sec
-		tn := tokenizeStr(t)
-
-		if tn < 8 {
-			// Tiny section — always merge into the previous chunk.
-			if len(cks) > 0 {
-				cks[len(cks)-1] += t
-				tkns[len(tkns)-1] += tn
-			} else {
-				cks = append(cks, t)
-				tkns = append(tkns, tn)
-			}
-			continue
-		}
-
-		if tn <= target {
-			mergeOrNew(t, tn)
-			continue
-		}
-
-		// Oversized section: split on sentence delimiters. Python's
-		// naive_merge (rag/nlp/__init__.py:1216-1225) splits with a
-		// capturing-group re.split but then SKIPS any segment that is a
-		// pure delimiter (re.fullmatch(dels, sub_sec)), so the delimiter
-		// character (\n / 。 / ！ / ？) is DROPPED from the chunk text
-		// rather than retained. We mirror that by using regexp.Split
-		// (which discards the delimiter) and prepending a single "\n" to
-		// each segment, matching Python's add_chunk("\n"+sub_sec).
-		parts := sentenceDelim.Split(sec, -1)
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			// Route every segment — including tiny <8-token fragments —
-			// through mergeOrNew so it honours the token threshold,
-			// mirroring Python's add_chunk. The old shortcut appended
-			// unconditionally, merging fragments into an already-overfull
-			// chunk (review #2).
-			p := "\n" + part
-			mergeOrNew(p, tokenizeStr(p))
-		}
-	}
-
-	docs := make([]schema.ChunkDoc, 0, len(cks))
-	for _, ch := range cks {
+	// Merge with the unified hard-cap core (oversized-unit expansion + UNDER_CAP
+	// merge + overlap prefix trimmed to fit). joinSep is "" for the text path,
+	// mirroring Python naive_merge's concatenation of adjacent paragraphs.
+	merged := mergeUnits(units, target, overlapPct, "")
+	docs := make([]schema.ChunkDoc, 0, len(merged))
+	for _, ch := range merged {
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text.
-		ch = removeTag(strings.TrimSpace(ch))
-		if ch == "" {
+		ch.Text = removeTag(strings.TrimSpace(ch.Text))
+		if ch.Text == "" {
 			continue
 		}
-		docs = append(docs, schema.ChunkDoc{Text: ch})
+		docs = append(docs, ch)
 	}
 	final := applyChildrenDelimText(docs, childrenPattern)
 	return chunkOutputs(final)
@@ -529,7 +574,11 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// Otherwise split-then-merge: delimiter-split segments are greedily
 	// merged to chunk_token_size with optional overlap.
 	if !hasCustomDelim(c.param.Delimiters) {
-		attached = mergeByTokenSizeFromJSON(attached, c.param.ChunkTokenSize, c.param.OverlappedPercent)
+		// Python _merge_text_chunks_by_token_size merges adjacent text
+		// chunks across JSON items into one global token budget. Flatten the
+		// per-item structure into a single sequence first so the merge is
+		// global; non-text chunks still break the merge via their CKType.
+		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent)
 	}
 
 	flat := flatten(attached)
@@ -546,7 +595,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text. Crop above reads positions, not text,
 		// so the ordering is safe.
-		m.Text = removeTag(strings.TrimSpace(m.Text))
+		m.Text = removeTag(m.Text)
 		if m.Text == "" {
 			continue
 		}
@@ -572,7 +621,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !hasActiveDelimiter(delimPattern) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	parts := splitKeepingDelim(txt, delimPattern)
+	parts := splitDroppingDelim(txt, delimPattern)
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
@@ -764,79 +813,457 @@ func takeFromStart(text string, tokens int) string {
 	return best
 }
 
-// mergeByTokenSizeFromJSON mirrors `naive_merge` at
-// rag/nlp/__init__.py:1156.
+// mergeUnits is the single, unified token-merge core shared by BOTH the text
+// path (mergeByTokenSize) and the JSON path (mergeByTokenSizeFromJSON). It is
+// a faithful port of Python rag/flow/chunker/token_chunker.py:
+// _merge_text_chunks_by_token_size (the JSON strategy) and is also the target
+// the Python text path (rag/nlp naive_merge) is migrating to, so the two
+// languages and the two paths converge on ONE algorithm.
+//
+// Hard-cap contract:
+//   - Every emitted text chunk is <= target tokens. Oversized units (a single
+//     unit whose token count exceeds target) are expanded FIRST: sentence
+//     boundaries are tried, then a hard token-split fallback guarantees each
+//     piece fits the target. The merge itself is UNDER_CAP: a projected join
+//     that would push the running sum over target starts a fresh chunk, so no
+//     chunk ever exceeds target.
+//   - The merge threshold is SCALED to reserve room for overlap:
+//     threshold = target * (100 - overlap) / 100. A chunk keeps receiving
+//     units while its running token sum stays <= threshold; once it exceeds
+//     threshold the next unit starts a fresh chunk.
+//   - When a fresh chunk starts and overlap>0, the tail of the previous chunk
+//     is UNCONDITIONALLY prepended (computeOverlapPrefix already strips parser
+//     tags). If the overlap prefix would push the fresh chunk over target it is
+//     trimmed to fit, so the hard cap still holds with overlap enabled.
+//
+// Token counts use the RUNNING SUM of per-unit counts (never re-tokenizing the
+// joined string), matching Python's tk_nums += current["tk_nums"] (#17948).
+// As a hard-cap safety net the merge ALSO re-checks the actual joined text via
+// tokenizeStr before accepting a merge: joinSep (e.g. "\n" on the JSON path)
+// can add tokens beyond the running sum, so a candidate whose joined text
+// would exceed target starts a fresh chunk. The running-sum bookkeeping (and
+// therefore chunk TKNums) stays as-is — it matches Python and can under-report
+// the joinSep tokens by a few — while the emitted text never exceeds target.
+// Non-text units pass through unchanged and reset the merge run. joinSep is
+// "\n" for the JSON path and "" for the text path.
+// mergeItem records one source unit that contributed to a merged chunk: its
+// visible text and its coordinate box groups. Tracking items (not just the
+// flattened position list) lets the overlap path map a visible-text offset
+// range back to the exact boxes that belong to it, so the overlap prefix
+// carries only the previous chunk's tail coordinates (#18148).
+type mergeItem struct {
+	Text         string
+	PDFPositions json.RawMessage
+	Positions    json.RawMessage
+}
+
+// overlapTailPositions returns the coordinate boxes of the previous chunk's
+// source items whose visible span intersects the overlap tail
+// [overlapStart, total). PDF positions are per-item (coarse), so an item is
+// included wholesale once any part of it falls in the overlap tail. This keeps
+// the overlap prefix highlighted without over-inflating the box set with the
+// previous chunk's non-overlap (head) coordinates (#18148). Offsets are in
+// rune units to match computeOverlapPrefix's visible-text indexing.
+func overlapTailPositions(prevItems []mergeItem, overlapStart int, joinSep string) (json.RawMessage, json.RawMessage) {
+	if len(prevItems) == 0 {
+		return nil, nil
+	}
+	// Items are concatenated with joinSep (a single "\n" for the JSON path),
+	// matching the merge join at mergeUnits. Offsets are measured on the
+	// TAG-FREE visible text so they line up with overlapCut/overlapFitPrefix,
+	// which carve the overlap from removeTag'd text; a coordinate tag in an
+	// earlier item must not shift the boundaries of later items.
+	visible := make([]string, len(prevItems))
+	total := 0
+	for i, it := range prevItems {
+		visible[i] = removeTag(it.Text)
+		total += utf8.RuneCountInString(visible[i]) + utf8.RuneCountInString(joinSep)
+	}
+	total -= utf8.RuneCountInString(joinSep)
+	var pdfAcc, posAcc json.RawMessage
+	offset := 0
+	for i, it := range prevItems {
+		start := offset
+		end := offset + utf8.RuneCountInString(visible[i])
+		if start < total && end > overlapStart {
+			pdfAcc = extendRawJSONArray(pdfAcc, it.PDFPositions)
+			posAcc = extendRawJSONArray(posAcc, it.Positions)
+		}
+		offset = end + utf8.RuneCountInString(joinSep)
+	}
+	return pdfAcc, posAcc
+}
+
+func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
+	if overlapPct < 0 {
+		overlapPct = 0
+	} else if overlapPct > 100 {
+		overlapPct = 100
+	}
+	// Expand oversized text units into <= target pieces BEFORE merging so the
+	// UNDER_CAP merge can never exceed target (hard cap). Non-text units pass
+	// through unchanged.
+	units = expandOversizedUnits(units, target)
+	// Scaled threshold reserves room for the unconditional overlap prefix.
+	threshold := float64(target) * (100.0 - overlapPct) / 100.0
+
+	merged := make([]schema.ChunkDoc, 0, len(units))
+	// mergedItems parallels merged: for each merged chunk, the source items it
+	// was built from. Tracking items (not just the flattened position list)
+	// lets the overlap path map a visible-text offset range back to the exact
+	// boxes that belong to it, so the overlap prefix carries only the previous
+	// chunk's tail coordinates (#18148).
+	mergedItems := make([][]mergeItem, 0, len(units))
+	prevIdx := -1
+	for i := range units {
+		ck := units[i]
+		if ck.CKType != "text" {
+			merged = append(merged, cloneChunkDoc(ck))
+			mergedItems = append(mergedItems, nil)
+			prevIdx = -1
+			continue
+		}
+		tk := intValue(ck.TKNums)
+		if tk <= 0 {
+			tk = tokenizeStr(ck.Text)
+		}
+		cur := mergeItem{Text: ck.Text, PDFPositions: ck.PDFPositions, Positions: ck.Positions}
+		if prevIdx < 0 {
+			// First text chunk (or first after a non-text chunk): no prior
+			// text to overlap with.
+			cp := cloneChunkDoc(ck)
+			cp.TKNums = intPtr(tk)
+			merged = append(merged, cp)
+			mergedItems = append(mergedItems, []mergeItem{cur})
+			prevIdx = len(merged) - 1
+			continue
+		}
+		prev := &merged[prevIdx]
+		// UNDER_CAP: a projected join that would exceed target starts a fresh
+		// chunk. The scaled threshold reserves room for the overlap prefix.
+		startNew := float64(intValue(prev.TKNums)) > threshold || intValue(prev.TKNums)+tk > target
+		if !startNew {
+			// The hard cap must hold on the ACTUAL joined text: joinSep (e.g.
+			// "\n" on the JSON path) can add tokens beyond the running sum, so
+			// re-check the candidate. The running-sum decision and bookkeeping
+			// stay unchanged (Python parity #17948); this guard only splits
+			// when the joined text itself would exceed target.
+			candidate := prev.Text + ck.Text
+			if prev.Text != "" && ck.Text != "" {
+				candidate = prev.Text + joinSep + ck.Text
+			}
+			if tokenizeStr(candidate) > target {
+				startNew = true
+			}
+		}
+		if startNew {
+			cp := cloneChunkDoc(ck)
+			if overlapPct > 0 && prev.Text != "" {
+				// Unconditional overlap prefix (mirrors Python JSON). The
+				// prefix is a duplicate of prev's tail; carry prev's tail
+				// coordinates so the overlap region is highlighted (#18148),
+				// then keep only cur's coordinates for the non-overlap part.
+				// If the prefix would push the fresh chunk over target it is
+				// trimmed to fit so the hard cap still holds.
+				overlap, _ := computeOverlapPrefix(prev.Text, overlapPct)
+				overlap, trimRunes := overlapFitPrefix(overlap, cp.Text, target)
+				pdfTail, posTail := overlapTailPositions(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
+				cp.Text = overlap + cp.Text
+				cp.PDFPositions = extendRawJSONArray(pdfTail, cp.PDFPositions)
+				cp.Positions = extendRawJSONArray(posTail, cp.Positions)
+				cp.TKNums = intPtr(tokenizeStr(cp.Text))
+				merged = append(merged, cp)
+				mergedItems = append(mergedItems, []mergeItem{{Text: cp.Text, PDFPositions: cp.PDFPositions, Positions: cp.Positions}})
+				prevIdx = len(merged) - 1
+				continue
+			}
+			cp.TKNums = intPtr(tk)
+			merged = append(merged, cp)
+			mergedItems = append(mergedItems, []mergeItem{cur})
+			prevIdx = len(merged) - 1
+			continue
+		}
+		// Merge into the previous chunk, maintaining the running token sum.
+		if prev.Text != "" && ck.Text != "" {
+			prev.Text = prev.Text + joinSep + ck.Text
+		} else {
+			prev.Text = prev.Text + ck.Text
+		}
+		prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
+		prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
+		prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
+		mergedItems[prevIdx] = append(mergedItems[prevIdx], cur)
+	}
+	return merged
+}
+
+// mergeByTokenSizeFromJSON merges the text units of each upstream item using
+// the unified mergeUnits core (hard-cap expansion + UNDER_CAP merge),
+// mirroring Python token_chunker.py:_merge_text_chunks_by_token_size. Non-text
+// units pass through and reset the merge run.
 func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64) [][]schema.ChunkDoc {
-	// overlappedPct is a [0,100] percentage. Clamp so the merge math below
-	// never yields a negative/inverted threshold for out-of-range input
-	// (review: yuzhichang, PR #17396).
+	// overlappedPct is a [0,100] percentage. Clamp defensively because this
+	// helper is also exercised directly by tests.
 	if overlappedPct < 0 {
 		overlappedPct = 0
 	} else if overlappedPct > 100 {
 		overlappedPct = 100
 	}
-	threshold := float64(chunkTokens) * (100 - overlappedPct) / 100.0
 	for idx := range perItem {
-		chunks := perItem[idx]
-		if len(chunks) == 0 {
+		if len(perItem[idx]) == 0 {
 			continue
 		}
-		var merged []schema.ChunkDoc
-		for _, ck := range chunks {
-			ckType := ck.CKType
-			if ckType != "text" {
-				merged = append(merged, cloneChunkDoc(ck))
-				continue
-			}
-			tk := intValue(ck.TKNums)
-			// Mirror Python's naive_merge.add_chunk: start a new chunk
-			// when either (a) this is the first text chunk, or
-			// (b) the currently accumulated chunk already exceeds the
-			// threshold (not the incoming segment).
-			if len(merged) == 0 || merged[len(merged)-1].CKType != "text" ||
-				float64(intValue(merged[len(merged)-1].TKNums)) > threshold {
-				cp := cloneChunkDoc(ck)
-				// Overlap: prepend tail of previous chunk onto the new
-				// chunk, matching Python's
-				//   t = overlapped[overlap_cut:] + t
-				//   tnum = num_tokens_from_string(t)
-				if len(merged) > 0 && merged[len(merged)-1].CKType == "text" && overlappedPct > 0 {
-					// Strip parser tags before computing the overlap
-					// suffix, matching Python nlp/__init__.py:1181
-					//
-					if prevText := removeTag(merged[len(merged)-1].Text); prevText != "" {
-						runes := []rune(prevText)
-						cut := int(float64(len(runes)) * (100 - overlappedPct) / 100.0)
-						if cut < len(runes) {
-							cp.Text = string(runes[cut:]) + cp.Text
-							cp.TKNums = intPtr(tokenizeStr(cp.Text))
-						}
-					}
-				}
-				merged = append(merged, cp)
-				continue
-			}
-			// Merge into the accumulated text chunk.
-			prev := &merged[len(merged)-1]
-			// Mirror Python token_chunker.py:236-239: when the accumulated
-			// chunk has empty text, assign the incoming text directly instead
-			// of skipping it
-			if prev.Text == "" {
-				prev.Text = ck.Text
-			} else {
-				prev.Text = prev.Text + "\n" + ck.Text
-			}
-			prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
-			// Preserve PDF coordinates across the merge: extend the
-			// coordinate lists instead of dropping the incoming item's
-			// positions. Mirrors Python token_chunker.py:240
-			// `merged[prev][PDF_POSITIONS_KEY].extend(...)` (diffs 2.5 / 2.3).
-			prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
-			prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
-		}
-		perItem[idx] = merged
+		// All text units in the sequence are merged with the unified
+		// JSON-strategy core. Non-text units pass through and reset the merge
+		// run (see mergeUnits). Join separator is "\n" to mirror
+		// token_chunker.py:_merge_text_chunks_by_token_size, which joins
+		// adjacent item text with "\n".
+		perItem[idx] = mergeUnits(perItem[idx], chunkTokens, overlappedPct, "\n")
 	}
 	return perItem
+}
+
+// ---------------------------------------------------------------------------
+// Hard-cap expansion
+// ---------------------------------------------------------------------------
+
+// expandOversizedUnits re-splits text units whose token count exceeds target
+// so every returned text unit is <= target tokens. Sentence boundaries are
+// tried first (delimiters preserved, lossless); a piece that still exceeds
+// target is hard-split on token count (char-prefix via TrimContentToTokenLimit,
+// also lossless). PDF positions follow Plan A: the original (coarse)
+// coordinates attach to the first sub-piece only. Non-text units pass through
+// unchanged.
+func expandOversizedUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc {
+	if target <= 0 {
+		return units
+	}
+	out := make([]schema.ChunkDoc, 0, len(units))
+	for _, ck := range units {
+		if ck.CKType != "text" {
+			out = append(out, ck)
+			continue
+		}
+		tk := intValue(ck.TKNums)
+		if tk <= 0 {
+			tk = tokenizeStr(ck.Text)
+		}
+		if tk <= target {
+			if ck.TKNums == nil {
+				ck.TKNums = intPtr(tk)
+			}
+			out = append(out, ck)
+			continue
+		}
+		out = append(out, splitOversizedText(ck, target)...)
+	}
+	return out
+}
+
+// splitOversizedText splits one oversized text unit into <= target pieces.
+// Sentence boundaries are preferred; a boundary-less run that still exceeds
+// target is hard token-split. Delimiters are preserved so the concatenated
+// pieces reproduce the unit text exactly (lossless). Every piece keeps the
+// source unit's DocType, and PDF positions follow Plan A (original coordinates
+// on the first piece only).
+func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
+	text := ck.Text
+	// Preserve a leading "\n" glue (text-path units are built as "\n"+part).
+	lead := ""
+	if strings.HasPrefix(text, "\n") {
+		lead = "\n"
+		text = strings.TrimPrefix(text, "\n")
+	}
+	// Split into sentences (delimiters attached). A whitespace-only fragment
+	// (a bare delimiter from a repeated run, e.g. "\n\n") is prepended to the
+	// NEXT non-whitespace piece so the concatenated pieces reproduce the unit
+	// text exactly; trailing whitespace attaches to the last piece. If
+	// attaching whitespace pushes a piece over the target, that piece is
+	// hard-split so the hard cap still holds.
+	var pieces []schema.ChunkDoc
+	var wsPending string
+	for _, part := range splitSentencesLossless(text) {
+		if strings.TrimSpace(part) == "" {
+			wsPending += part
+			continue
+		}
+		p := schema.ChunkDoc{Text: wsPending + part, DocType: ck.DocType, CKType: "text"}
+		wsPending = ""
+		if n := tokenizeStr(p.Text); n > target {
+			pieces = append(pieces, hardSplitPiece(p.Text, ck.DocType, target)...)
+		} else {
+			p.TKNums = intPtr(n)
+			pieces = append(pieces, p)
+		}
+	}
+	if wsPending != "" {
+		if len(pieces) > 0 {
+			last := &pieces[len(pieces)-1]
+			last.Text += wsPending
+			if n := tokenizeStr(last.Text); n > target {
+				replaced := hardSplitPiece(last.Text, ck.DocType, target)
+				pieces = append(pieces[:len(pieces)-1], replaced...)
+			} else {
+				last.TKNums = intPtr(n)
+			}
+		} else {
+			// All-whitespace unit: keep it lossless but still within the cap —
+			// hard-split like any other oversized text so a whitespace-only run
+			// whose token count exceeds the target cannot emit an over-cap chunk.
+			if n := tokenizeStr(wsPending); n > target {
+				pieces = append(pieces, hardSplitPiece(wsPending, ck.DocType, target)...)
+			} else {
+				pieces = append(pieces, schema.ChunkDoc{Text: wsPending, DocType: ck.DocType, TKNums: intPtr(n), CKType: "text"})
+			}
+		}
+	}
+	if len(pieces) == 0 {
+		return nil
+	}
+	if lead != "" {
+		pieces[0].Text = lead + pieces[0].Text
+		// The leading "\n" adds a token; recompute so the running sum stays
+		// faithful. Re-split if it pushes the piece over the target.
+		if n := tokenizeStr(pieces[0].Text); n > target {
+			replaced := hardSplitPiece(pieces[0].Text, ck.DocType, target)
+			pieces = append(replaced, pieces[1:]...)
+		} else {
+			pieces[0].TKNums = intPtr(n)
+		}
+	}
+	// Plan A: the first sub-piece inherits the source unit's metadata (coarse
+	// positions + item attributes); later sub-pieces keep only the basics.
+	// Build it from a clone so every ChunkDoc field survives the split.
+	head := cloneChunkDoc(ck)
+	head.Text = pieces[0].Text
+	head.TKNums = pieces[0].TKNums
+	head.CKType = "text"
+	pieces[0] = head
+	return pieces
+}
+
+// splitSentencesLossless splits text on sentenceDelimiter, keeping each
+// delimiter attached to its preceding sentence, so the concatenated parts
+// reproduce the input exactly (lossless). Mirrors Python's
+// _split_text_by_sentences (rag/flow/chunker/title_chunker/common.py).
+func splitSentencesLossless(text string) []string {
+	if text == "" {
+		return nil
+	}
+	idxs := sentenceDelimiter.FindAllStringIndex(text, -1)
+	var out []string
+	prev := 0
+	for _, idx := range idxs {
+		if idx[0] > prev {
+			out = append(out, text[prev:idx[1]])
+		} else {
+			out = append(out, text[idx[0]:idx[1]])
+		}
+		prev = idx[1]
+	}
+	if prev < len(text) {
+		out = append(out, text[prev:])
+	}
+	return out
+}
+
+// hardSplitPiece hard token-splits a boundary-less run into <= target pieces.
+// Each piece is a true character prefix of the remaining text (U+FFFD tail
+// trimmed), so the concatenated pieces reproduce the input exactly. A token
+// cut never lands inside a @@...## coordinate tag: the cut is extended past
+// the closing "##" when the budget allows, otherwise backed off to before the
+// "@@" — so a tag is never split across two pieces.
+func hardSplitPiece(text string, docType string, target int) []schema.ChunkDoc {
+	var out []schema.ChunkDoc
+	rest := text
+	for tokenizeStr(rest) > target {
+		head := tokenizer.TrimContentToTokenLimit(rest, target)
+		if head == "" || head == rest {
+			break // cannot shrink further; avoid an infinite loop
+		}
+		// TrimContentToTokenLimit decodes a token prefix; if that lands on a
+		// mid-multibyte boundary it can emit a trailing U+FFFD which is not a
+		// true prefix of rest. Trim it so the rest[len(head):] advance stays
+		// lossless.
+		if !strings.HasPrefix(rest, head) {
+			head = strings.TrimRight(head, "\uFFFD")
+			if head == "" {
+				break
+			}
+		}
+		cut := adjustCutPastTag(rest, len(head), target)
+		if cut <= 0 || cut >= len(rest) {
+			// Safety: never stall. An empty cut or a whole-text cut means no
+			// progress is possible; emit the remaining text as the last piece.
+			if rest != "" {
+				out = append(out, schema.ChunkDoc{Text: rest, DocType: docType, TKNums: intPtr(tokenizeStr(rest)), CKType: "text"})
+			}
+			rest = ""
+			break
+		}
+		head = rest[:cut]
+		out = append(out, schema.ChunkDoc{Text: head, DocType: docType, TKNums: intPtr(tokenizeStr(head)), CKType: "text"})
+		rest = rest[cut:]
+	}
+	if rest != "" {
+		out = append(out, schema.ChunkDoc{Text: rest, DocType: docType, TKNums: intPtr(tokenizeStr(rest)), CKType: "text"})
+	}
+	return out
+}
+
+// adjustCutPastTag shifts a character cut so it never lands inside a
+// @@...## coordinate tag: extending past the closing "##" is preferred when
+// the token budget allows; otherwise the cut backs off to just before the
+// "@@". Tags with no closing "##" (unterminated) are ignored — they have no
+// paired span to protect.
+func adjustCutPastTag(text string, cut, target int) int {
+	searchFrom := 0
+	for {
+		s := strings.Index(text[searchFrom:], "@@")
+		if s < 0 {
+			return cut
+		}
+		s += searchFrom
+		eRel := strings.Index(text[s+2:], "##")
+		if eRel < 0 {
+			return cut // unterminated tag; nothing to protect
+		}
+		e := s + 2 + eRel + 2
+		if cut > s && cut < e {
+			// The cut lands inside a tag: prefer extending past the tag if it
+			// stays within the token budget, else back off to before it. A
+			// leading tag (s == 0) cannot back off to an empty piece, so it is
+			// kept whole by extending past it.
+			if e <= len(text) && tokenizeStr(text[:e]) <= target {
+				return e
+			}
+			if s > 0 {
+				return s
+			}
+			return e
+		}
+		searchFrom = e
+	}
+}
+
+// overlapFitPrefix trims the overlap prefix so overlap+current fits within
+// target tokens (hard cap with overlap enabled). It returns the trimmed
+// overlap and the number of runes removed from its front, so callers can
+// adjust the position-tail cut to the actual overlap region.
+func overlapFitPrefix(overlap, current string, target int) (string, int) {
+	if tokenizeStr(overlap+current) <= target {
+		return overlap, 0
+	}
+	runes := []rune(overlap)
+	for c := 1; c <= len(runes); c++ {
+		suffix := string(runes[c:])
+		if tokenizeStr(suffix+current) <= target {
+			return suffix, c
+		}
+	}
+	// current alone should never exceed target (units are pre-expanded); if it
+	// somehow does, drop the overlap entirely.
+	return "", len(runes)
 }
 
 func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
@@ -915,8 +1342,8 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 			out = append(out, ck)
 			continue
 		}
-		mom := ck.Text
-		parts := splitKeepingDelim(mom, pattern)
+		mom := strings.TrimPrefix(ck.Text, "\n")
+		parts := splitDroppingDelim(ck.Text, pattern)
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
 				continue
@@ -934,52 +1361,18 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 // shared text-payload helpers (used by TitleChunker et al.)
 // ---------------------------------------------------------------------------
 
-// hasActiveDelimiter reports whether a regex compiled by
-// compileDelimPattern contains any non-placeholder pattern. The "match
-// nothing" sentinel regexp makes a quick `pattern.MatchString("")`
-// viable as a check without re-walking the source slice.
+// hasActiveDelimiter reports whether a compiled delimiter pattern is
+// present (non-nil). compileDelimPattern returns nil when no active
+// pattern exists, so a nil check is sufficient.
 func hasActiveDelimiter(p *regexp.Regexp) bool {
-	return p != nil && p.String() != `\A(?!)`
+	return p != nil
 }
 
 // hasCustomDelim reports whether any delimiter uses backtick syntax
 // (`pattern`). Python's naive_merge skips token-size merging when
-// custom delimiters are present (naive_merge:1194-1213).
+// custom delimiters are present. Delegates to the canonical helper.
 func hasCustomDelim(delims []string) bool {
-	for _, d := range delims {
-		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
-			return true
-		}
-	}
-	return false
-}
-
-// applyChildrenDelim mirrors token_chunker.py:325-334.
-func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []schema.ChunkDoc {
-	if pattern == nil {
-		out := make([]schema.ChunkDoc, 0, len(segs))
-		for _, s := range segs {
-			out = append(out, schema.ChunkDoc{
-				Text:    s,
-				DocType: "text",
-				CKType:  "text",
-			})
-		}
-		return out
-	}
-	var docs []schema.ChunkDoc
-	for _, seg := range segs {
-		if strings.TrimSpace(seg) == "" {
-			continue
-		}
-		for _, child := range splitKeepingDelim(seg, pattern) {
-			if strings.TrimSpace(child) == "" {
-				continue
-			}
-			docs = append(docs, schema.ChunkDoc{Text: child, Mom: seg})
-		}
-	}
-	return docs
+	return chunk.HasCustomDelimiterList(delims)
 }
 
 func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
@@ -992,11 +1385,11 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		for _, child := range splitKeepingDelim(t, pattern) {
+		for _, child := range splitDroppingDelim(t, pattern) {
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
-			out = append(out, schema.ChunkDoc{Text: child, Mom: t})
+			out = append(out, schema.ChunkDoc{Text: child, Mom: strings.TrimPrefix(t, "\n")})
 		}
 	}
 	return out
@@ -1004,32 +1397,14 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 
 // compileChildrenPattern is the children_delimiters version of
 // compileDelimPattern. Returns nil when no delimiters exist.
+// compileChildrenPattern builds the children-split regex from a
+// `children_delimiters` list. Every non-empty entry is active (including bare
+// ones), and backtick-wrapped entries contribute their inner content — see
+// chunk.CompileDelimiterPatternList. Delegating keeps children splitting
+// consistent with the main delimiter list (backtick stripping + rune-descending
+// order) instead of re-implementing a divergent copy.
 func compileChildrenPattern(delims []string) *regexp.Regexp {
-	if len(delims) == 0 {
-		return nil
-	}
-	escaped := make([]string, 0, len(delims))
-	for _, d := range delims {
-		if d == "" {
-			continue
-		}
-		escaped = append(escaped, regexp.QuoteMeta(d))
-	}
-	if len(escaped) == 0 {
-		return nil
-	}
-	sortSlice(escaped)
-	return regexp.MustCompile(strings.Join(escaped, "|"))
-}
-
-// sortSlice sorts in place by descending length (longest pattern
-// first, mirroring python's `sorted(set, key=len, reverse=True)`).
-func sortSlice(in []string) {
-	for i := 1; i < len(in); i++ {
-		for j := i; j > 0 && len(in[j-1]) < len(in[j]); j-- {
-			in[j-1], in[j] = in[j], in[j-1]
-		}
-	}
+	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
 // stringFromInputs returns the string value at the first matching key

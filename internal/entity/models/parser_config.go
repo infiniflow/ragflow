@@ -16,8 +16,8 @@
 
 package models
 
-// ParserConfig maps a protocol to its usage parsers. Drivers select a
-// ParserConfig instead of implementing usage extraction individually.
+// ParserConfig maps a protocol to its usage and reasoning parsers. Drivers
+// select a ParserConfig instead of implementing extraction individually.
 type ParserConfig struct {
 	// Protocol is the protocol identifier (e.g. "openai", "claude").
 	Protocol string
@@ -25,12 +25,45 @@ type ParserConfig struct {
 	ResponseParser func(map[string]any) (*TokenUsage, bool)
 	// StreamParser extracts usage from one streaming event.
 	StreamParser func(map[string]any) (*TokenUsage, bool)
+	// ExtractStreamReasoning extracts the reasoning text from a parsed
+	// delta map (the delta field of one streaming event), if any.
+	// Defaults to reading delta.reasoning_content.
+	ExtractStreamReasoning func(delta map[string]any) string
+}
+
+// extractDefaultStreamReasoning reads the reasoning text from a parsed
+// delta (delta.reasoning_content).
+func extractDefaultStreamReasoning(delta map[string]any) string {
+	if r, ok := delta["reasoning_content"].(string); ok {
+		return r
+	}
+	return ""
 }
 
 // OpenAIParserConfig is the ParserConfig for OpenAI-compatible APIs
-// (NVIDIA NIM, DeepSeek, Aliyun, Moonshot, xAI, OpenRouter, ...).
+// (NVIDIA NIM, DeepSeek, Aliyun, Moonshot, xAI, ...).
 var OpenAIParserConfig = &ParserConfig{
-	Protocol:       "openai",
-	ResponseParser: extractOpenAIUsage,
-	StreamParser:   extractOpenAIStreamUsage,
+	Protocol:               "openai",
+	ResponseParser:         extractOpenAIUsage,
+	StreamParser:           extractOpenAIStreamUsage,
+	ExtractStreamReasoning: extractDefaultStreamReasoning,
+}
+
+// extractOpenRouterStreamReasoning reads the reasoning text from an
+// OpenRouter streaming event. OpenRouter uses delta.reasoning (not
+// delta.reasoning_content) for its reasoning content.
+func extractOpenRouterStreamReasoning(delta map[string]any) string {
+	if r, ok := delta["reasoning"].(string); ok {
+		return r
+	}
+	return ""
+}
+
+// OpenRouterParserConfig is the ParserConfig for OpenRouter, which emits
+// reasoning under delta.reasoning instead of delta.reasoning_content.
+var OpenRouterParserConfig = &ParserConfig{
+	Protocol:               "openai",
+	ResponseParser:         extractOpenAIUsage,
+	StreamParser:           extractOpenAIStreamUsage,
+	ExtractStreamReasoning: extractOpenRouterStreamReasoning,
 }

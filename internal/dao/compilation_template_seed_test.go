@@ -25,6 +25,38 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestBuiltinCompilationTemplateKinds_NoDatasetnav locks the removal of the
+// datasetnav template from the built-in catalogue: dataset navigation is not an
+// independent compile kind (see component_test.TestKnowledgeCompiler_Datasetnav_NoVariant),
+// so it must not appear in the seeded template kinds.
+func TestBuiltinCompilationTemplateKinds_NoDatasetnav(t *testing.T) {
+	for _, k := range builtinCompilationTemplateKinds {
+		if k.Kind == "datasetnav" || k.Kind == "dataset_nav" {
+			t.Fatalf("builtin compilation template kind %q must not exist (datasetnav is a by-product, not a compile kind)", k.Kind)
+		}
+	}
+}
+
+// TestBuiltinTemplateIDWithinColumnWidth guards against a regression where the
+// built-in template id exceeds the varchar(32) compilation_template.id column,
+// which would make the MySQL seed fail with Error 1406 (data too long).
+func TestBuiltinTemplateIDWithinColumnWidth(t *testing.T) {
+	const idColumnSize = 32
+	seen := make(map[string]string, len(builtinCompilationTemplateKinds))
+	for _, k := range builtinCompilationTemplateKinds {
+		id := builtinTemplateID(k.Kind)
+		if len(id) > idColumnSize {
+			t.Fatalf("built-in template id %q is %d bytes > id column size %d", id, len(id), idColumnSize)
+		}
+		// Truncated ids must stay unique so OnConflict(id) does not clobber two
+		// kinds into one row.
+		if prev, dup := seen[id]; dup {
+			t.Fatalf("built-in template id %q collides for kinds %q and %q", id, prev, k.Kind)
+		}
+		seen[id] = k.Kind
+	}
+}
+
 func TestSeedBuiltinCompilationTemplatesForTenant(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -102,7 +134,7 @@ func TestSeedBuiltinCompilationTemplatesForTenant(t *testing.T) {
 	}
 
 	// ResolveGroupTemplateIDs resolves the built-in group for any tenant.
-	resolved, err := NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, "some-other-tenant", []string{BuiltinCompilationTemplateGroupID})
+	resolved, err := NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, db, "some-other-tenant", []string{BuiltinCompilationTemplateGroupID})
 	if err != nil {
 		t.Fatalf("resolve built-in group: %v", err)
 	}

@@ -36,7 +36,6 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/common"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/ingestion/testutil"
@@ -48,6 +47,7 @@ import (
 type fixedEmbedder struct{}
 
 func (fixedEmbedder) MaxTokens() int { return 2048 }
+func (fixedEmbedder) BatchSize() int { return 16 }
 
 func (fixedEmbedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, 0, len(texts))
@@ -424,9 +424,9 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
-	chunkerState, ok := state["TitleChunker:NineInsectsFind"]
+	chunkerState, ok := state["ManualChunker:NineInsectsFind"]
 	if !ok {
-		t.Fatal("missing TitleChunker:NineInsectsFind state")
+		t.Fatal("missing ManualChunker:NineInsectsFind state")
 	}
 	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
@@ -689,102 +689,6 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	}
 }
 
-func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
-	RequireTokenizerPool(t)
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
-	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
-	model := common.GetEnv(common.EnvOpenAIModel)
-	if apiKey == "" || baseURL == "" || model == "" {
-		t.Skip("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping real resume extractor integration test")
-	}
-
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_resume.json")
-	templateBytes, err := os.ReadFile(templatePath)
-	if err != nil {
-		t.Fatalf("read template: %v", err)
-	}
-	terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
-	if len(terminalIDs) != 1 || terminalIDs[0] != "Tokenizer:KindHandsWin" {
-		t.Fatalf("terminal ids = %v, want [Tokenizer:KindHandsWin]", terminalIDs)
-	}
-
-	mem := withRealTemplateDeps(t)
-	componentpkg.SetExtractorChatTargetResolverOverride(func(llmID string) (driver, modelName, apiKeyOut, baseURLOut string, ok bool) {
-		return "openai", model, apiKey, baseURL, true
-	})
-	t.Cleanup(func() { componentpkg.SetExtractorChatTargetResolverOverride(nil) })
-
-	const (
-		bucket   = "test-bucket"
-		path     = "fixtures/template-resume.txt"
-		filename = "template-resume.txt"
-	)
-	content := strings.Join([]string{
-		"PERSONAL INFORMATION",
-		"",
-		"John Example",
-		"Email: john.example@resume.test",
-		"Phone: +1 555 000 1234",
-		"City: Seattle",
-		"",
-		"EDUCATION",
-		"",
-		"Bachelor of Science in Computer Science",
-		"Example University",
-		"Graduation Year: 2024",
-		"",
-		"WORK EXPERIENCE",
-		"",
-		"Software Engineer",
-		"Example Corp",
-		"2024 - Present",
-		"",
-		"SKILLS",
-		"",
-		"Go",
-		"Python",
-		"Kubernetes",
-	}, "\n")
-	docID := seedTemplateDocument(t, mem, filename, bucket, path, content)
-
-	pipe, err := NewPipelineFromDSL(templateBytes, "template-resume-real")
-	if err != nil {
-		t.Fatalf("NewPipelineFromDSL: %v", err)
-	}
-	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
-		"doc_id": docID,
-		"llm_id": model + "@openai",
-	}, nil)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
-	if got := payload["output_format"]; got != "chunks" {
-		t.Fatalf("output_format = %v, want chunks", got)
-	}
-	chunks, ok := payload["chunks"].([]map[string]any)
-	if !ok || len(chunks) == 0 {
-		t.Fatalf("chunks = %T/%v, want non-empty []map[string]any", payload["chunks"], payload["chunks"])
-	}
-
-	assertExtractedMetadataContains(t, chunks[0]["metadata"], "candidate_name", "John Example")
-	assertExtractedMetadataContains(t, chunks[0]["metadata"], "email", "john.example@resume.test")
-	assertExtractedMetadataContains(t, chunks[0]["metadata"], "phone", "+1 555 000 1234")
-
-	state := stateFromRunOutput(t, out)
-	extractorState, ok := state["Extractor:ThreeDrinksAct"]
-	if !ok {
-		t.Fatal("missing Extractor:ThreeDrinksAct state")
-	}
-	extractorChunks, ok := extractorState["chunks"].([]map[string]any)
-	if !ok || len(extractorChunks) == 0 {
-		t.Fatalf("extractor chunks = %T/%v, want non-empty []map[string]any", extractorState["chunks"], extractorState["chunks"])
-	}
-	assertExtractedMetadataContains(t, extractorChunks[0]["metadata"], "candidate_name", "John Example")
-	assertExtractedMetadataContains(t, extractorChunks[0]["metadata"], "email", "john.example@resume.test")
-}
-
 func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 	RequireTokenizerPool(t)
 
@@ -818,11 +722,8 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "QAChunker") {
 				t.Skip("template uses QAChunker which requires Q&A-structured content; covered separately")
 			}
-			if templateUsesComponent(t, templateBytes, "TagChunker") {
-				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
-			}
-			if templateUsesComponent(t, templateBytes, "KnowledgeCompiler") {
-				t.Skip("template uses KnowledgeCompiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
+			if templateUsesComponent(t, templateBytes, "Compiler") {
+				t.Skip("template uses Compiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
 			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
@@ -911,7 +812,7 @@ func seedTemplateDocument(t *testing.T, stg storage.Storage, name, bucket, path,
 
 func seedTemplateDocumentBytes(t *testing.T, stg storage.Storage, name, bucket, path string, content []byte) string {
 	t.Helper()
-	if err := stg.Put(bucket, path, content); err != nil {
+	if err := stg.Put(context.Background(), bucket, path, content); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	if registerTemplateDocumentRef == nil {

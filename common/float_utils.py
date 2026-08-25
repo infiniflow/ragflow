@@ -15,7 +15,10 @@
 #
 
 
+import logging
 import math
+
+logger = logging.getLogger(__name__)
 
 
 def get_float(v):
@@ -58,9 +61,14 @@ def normalize_overlapped_percent(overlapped_percent):
     """
     try:
         ratio = float(overlapped_percent)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        logger.warning("normalize_overlapped_percent: overlap ratio is not numeric")
         return 0
-    if not math.isfinite(ratio) or ratio < 0 or ratio >= 1:
+    if not math.isfinite(ratio):
+        logger.warning("normalize_overlapped_percent: overlap ratio is not finite")
+        return 0
+    if ratio < 0 or ratio >= 1:
+        logger.warning("normalize_overlapped_percent: overlap ratio is outside [0, 1)")
         return 0
     percent = ratio * 100
     # Match Go's math.Round (away from zero at .5) rather than Python round().

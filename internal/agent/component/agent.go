@@ -82,7 +82,9 @@ type AgentParam struct {
 	SystemPrompt             string
 	UserPrompt               string
 	Thinking                 string
+	MaxTokens                *int
 	TopP                     *float64
+	Temperature              *float64
 	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
 	SubAgents                []SubAgentTool
@@ -172,6 +174,11 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
+		// Python's streaming tool loop consumes the complete provider
+		// response before deciding whether the round contains a tool call.
+		// Eino's default checker only inspects the first non-empty chunk,
+		// which can miss a ToolCall emitted after explanatory text.
+		StreamToolCallChecker: scanAllStreamForToolCall,
 		MessageModifier: func(_ context.Context, msgs []*schema.Message) []*schema.Message {
 			if p.SystemPrompt != "" {
 				return append([]*schema.Message{schema.SystemMessage(p.SystemPrompt)}, msgs...)
@@ -186,12 +193,24 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
+	// Start the model-stream collector BEFORE agent.Stream. The checker
+	// (scanAllStreamForToolCall) must consume the whole round before the
+	// graph releases its output stream, so agent.Stream does not return
+	// until the model finishes. GetMessageStreams blocks on the future's
+	// started signal (closed by the graph onStart callback), so starting
+	// the collector first lets thinking deltas stream out in real time
+	// while the checker runs, instead of buffering the entire round.
+	emitDone := emitAgentModelStreams(ctx, future)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
+		// Drain the collector so its goroutine exits before we return.
+		select {
+		case <-emitDone:
+		case <-ctx.Done():
+		}
 		return nil, err
 	}
 	defer stream.Close()
-	emitDone := emitAgentModelStreams(ctx, future)
 
 	chunks := make([]*schema.Message, 0)
 	for {
@@ -200,6 +219,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			break
 		}
 		if err != nil {
+			select {
+			case <-emitDone:
+			case <-ctx.Done():
+			}
 			return nil, err
 		}
 		if chunk == nil {
@@ -220,21 +243,81 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	return msg, nil
 }
 
+// scanAllStreamForToolCall consumes the whole model response, then branches
+// to the Tools node only when any streamed message contains a ToolCall. It
+// must read to EOF because providers append the tool-call message at the end
+// of the stream (see EinoChatModel.Stream), mirroring Python's
+// async_chat_streamly_with_tools, which likewise consumes an entire SSE round
+// before deciding. This keeps tool_choice=auto — a model may still answer
+// directly when it decides no tool is needed.
+//
+// The checker runs synchronously inside the graph's main loop, so
+// runEinoReActAgent starts emitAgentModelStreams before agent.Stream to keep
+// thinking deltas streaming in real time while this function drains the
+// round.
+func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
+	defer stream.Close()
+
+	hasToolCall := false
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			return hasToolCall, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if msg != nil && len(msg.ToolCalls) > 0 {
+			hasToolCall = true
+		}
+	}
+}
+
 // buildAgentInputMessages assembles the Python-compatible Agent prompt: the
 // configured history window followed by the current user prompt. The current
 // in-flight user entry is excluded through SnapshotPriorHistory, because the
-// canvas service appends it to state before invoking the workflow.
+// canvas service appends it to state before invoking the workflow. Uploaded
+// files from sys.files are folded into that user prompt (file texts merged,
+// images attached as multi-modal content parts).
 func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
-	current := schema.Message{Role: schema.User, Content: p.UserPrompt}
-	messages := []schema.Message{}
-	if p.MessageHistoryWindowSize > 0 {
-		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
-			// Python takes the last 2*N entries from history, which already
-			// contains the current user input, and then removes that final
-			// entry before formatting the configured prompt.
-			priorLimit := p.MessageHistoryWindowSize*2 - 1
-			messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
+	var state *runtime.CanvasState
+	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+		state = s
+	}
+	// Inject sys.files uploads into the current user message, mirroring
+	// the LLM component (llm.go) and Python's Agent._prepare_prompt_variables
+	// delegation to LLMBundle. Uploaded files land in state.Sys["files"]
+	// (service/agent.go) as data:image URIs / parsed text; without this
+	// step a vision agent never sees the attached image. File texts merge
+	// into the user prompt; images become multi-modal content parts.
+	// The {sys.files} placeholder, when present, has already been resolved
+	// by ResolveTemplate upstream in invokeNow, so injection here is
+	// unconditional — same effective behavior as the LLM component.
+	userText := p.UserPrompt
+	var images []string
+	if state != nil {
+		var texts []string
+		texts, images = collectSysFiles(state)
+		if len(texts) > 0 {
+			joined := strings.Join(texts, "\n\n")
+			if userText != "" {
+				userText += "\n\n" + joined
+			} else {
+				userText = joined
+			}
 		}
+	}
+	current := schema.Message{Role: schema.User, Content: userText}
+	if len(images) > 0 {
+		current = userMessageWithImages(userText, images)
+	}
+	messages := []schema.Message{}
+	if p.MessageHistoryWindowSize > 0 && state != nil {
+		// Python takes the last 2*N entries from history, which already
+		// contains the current user input, and then removes that final
+		// entry before formatting the configured prompt.
+		priorLimit := p.MessageHistoryWindowSize*2 - 1
+		messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
 	}
 	if len(messages) > 0 && messages[len(messages)-1].Role == current.Role {
 		messages[len(messages)-1] = current
@@ -990,15 +1073,14 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelID, cfg)
-	// ChatConfig construction is conditional on TopP being set, unlike
-	// the LLM path which always builds a ChatConfig (Temperature/MaxTokens
-	// pass-through). The asymmetry is intentional: AgentParam has no
-	// Temperature/MaxTokens yet, so building a zero-config ChatConfig
-	// would be dead weight. When AgentParam grows Temperature/
-	// MaxTokens, switch to always-build.
+	// Build ChatConfig when a generation parameter or Thinking is set.
 	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" {
-		chatCfg = &models.ChatConfig{TopP: p.TopP}
+	if p.TopP != nil || p.Thinking != "" || p.MaxTokens != nil || p.Temperature != nil {
+		chatCfg = &models.ChatConfig{
+			TopP:        p.TopP,
+			MaxTokens:   p.MaxTokens,
+			Temperature: p.Temperature,
+		}
 		switch p.Thinking {
 		case "enabled":
 			t := true
@@ -1144,7 +1226,7 @@ func toolMessageTextContent(msg *schema.Message) string {
 	return ""
 }
 
-// formatArtifactMarkdown renders a slice of artifacts as markdown
+// formatArtifactMarkdown renders a slice of artifacts as Markdown
 // links, omitting URLs already present in the existing text (Python's
 // `_collect_tool_artifact_markdown` does the same de-duplication).
 //
@@ -1318,6 +1400,14 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := floatFrom(inputs, "top_p"); ok {
 		f := v
 		p.TopP = &f
+	}
+	if v, ok := intFrom(inputs, "max_tokens"); ok {
+		f := v
+		p.MaxTokens = &f
+	}
+	if v, ok := floatFrom(inputs, "temperature"); ok {
+		f := v
+		p.Temperature = &f
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
 		p.Thinking = v

@@ -26,7 +26,7 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "TitleChunker:NineInsectsFind"
+                    "ManualChunker:NineInsectsFind"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -87,12 +87,12 @@
                     "File"
                 ]
             },
-            "TitleChunker:NineInsectsFind": {
+            "ManualChunker:NineInsectsFind": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
-                    "component_name": "TitleChunker",
+                    "component_name": "ManualChunker",
                     "params": {
                         "hierarchy": 0,
                         "include_heading_content": false,
@@ -158,7 +158,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "TitleChunker:NineInsectsFind"
+                    "ManualChunker:NineInsectsFind"
                 ],
                 "downstream": [
                     "Tokenizer:FunnyBalloonsGrin"
@@ -166,19 +166,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0,
-                        "enable_metadata": 0,
-                        "metadata": []
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -196,15 +202,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-TitleChunker:NineInsectsFindend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-ManualChunker:NineInsectsFindend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "TitleChunker:NineInsectsFind",
+                    "target": "ManualChunker:NineInsectsFind",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TitleChunker:NineInsectsFindstart-Extractor:AutoExtractDefaultend",
-                    "source": "TitleChunker:NineInsectsFind",
+                    "id": "xy-edge__ManualChunker:NineInsectsFindstart-Extractor:AutoExtractDefaultend",
+                    "source": "ManualChunker:NineInsectsFind",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -406,10 +412,10 @@
                                 }
                             ]
                         },
-                        "label": "TitleChunker",
-                        "name": "Title Chunker_0"
+                        "label": "ManualChunker",
+                        "name": "Manual Chunker_0"
                     },
-                    "id": "TitleChunker:NineInsectsFind",
+                    "id": "ManualChunker:NineInsectsFind",
                     "measured": {
                         "height": 74,
                         "width": 200

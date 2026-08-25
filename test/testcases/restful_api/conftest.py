@@ -25,6 +25,13 @@ from utils import wait_for
 
 GO_ONLY_SKIPS = {
     "Go route is not implemented": {
+        # Dataset-level graph/raptor/mindmap indexing via POST/GET/DELETE
+        # /datasets/:id/index is a Python-era RunIndex/TraceIndex/DeleteIndex
+        # contract; the Go port schedules dataset compilation through the
+        # knowledge_compile scheduler instead and does not serve /index.
+        "test_dataset_index_endpoints",
+        "test_dataset_index_trace_and_delete_type_contract",
+        "test_dataset_index_run_with_document_creates_task",
         "test_document_download_by_id_invalid_id_contract",
         "test_llm_factories_live_auth_contract",
         "test_llm_list_live_auth_contract",
@@ -71,7 +78,6 @@ GO_ONLY_SKIPS = {
         "test_documents_update_name_contract",
         "test_documents_update_meta_fields_contract",
         "test_documents_metadata_batch_update_contract",
-        "test_documents_metadata_update_path",
         "test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dataset",
         "test_chat_list_concurrent_and_dataset_delete_contract",
         "test_chat_create_dataset_ids_contract",

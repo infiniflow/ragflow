@@ -95,6 +95,9 @@ class TestNormalizeOverlappedPercent:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
+            (0.005, 1),
+            (0.015, 2),
+            (0.025, 3),
             (0, 0),
             (0.1, 10),
             (0.15, 15),
@@ -117,6 +120,9 @@ class TestNormalizeOverlappedPercent:
             (None, 0),
             (float("nan"), 0),
             (float("inf"), 0),
+            (float("-inf"), 0),
+            (10**400, 0),
+            ("0x1p-1", 0),
             (1e300, 0),
             (-1e300, 0),
         ],

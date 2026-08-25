@@ -67,7 +67,7 @@ func TestMiddleware_ChainErrorRecovery(t *testing.T) {
 	}).WithName("mw_chain")
 	agent.name = "mw_chain"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 
 	gotError := false
@@ -178,7 +178,7 @@ func TestSession_ConcurrentValueAccess(t *testing.T) {
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("session_conc")
 	agent.name = "session_conc"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	for {
 		ev, ok := iter.Next()
@@ -229,7 +229,7 @@ func TestCallback_HighVolumeEvents(t *testing.T) {
 	agent.name = "cb_volume"
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	msgs := make([]Message, numEvents)
 	for i := 0; i < numEvents; i++ {
@@ -307,7 +307,7 @@ func TestMiddleware_MultipleMiddlewareInteraction(t *testing.T) {
 	}).WithName("multi_mw")
 	agent.name = "multi_mw"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 	for {
 		ev, ok := iter.Next()

@@ -180,12 +180,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             paper = {"title": filename, "authors": " ", "abstract": "", "sections": sections, "tables": tables}
 
         tbls = paper["tables"]
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        if name != "mineru":
+            tbls = vision_figure_parser_pdf_wrapper(
+                tbls=tbls,
+                sections=sections,
+                callback=callback,
+                lang=lang,
+                **kwargs,
+            )
         paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")

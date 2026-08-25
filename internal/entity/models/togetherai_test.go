@@ -78,8 +78,8 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{
-					"content":   "pong",
-					"reasoning": "thinking",
+					"content":           "pong",
+					"reasoning_content": "thinking",
 				},
 			}},
 		})
@@ -177,11 +177,11 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 			t.Errorf("stream=%v want true", body["stream"])
 		}
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
-			t.Errorf("Accept=%q", got)
+			t.Errorf("Accept=%q, want text/event-stream", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
-			`data: {"choices":[{"delta":{"reasoning":"think "}}]}`+"\n"+
+			`data: {"choices":[{"delta":{"reasoning_content":"think "}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":"Hello"}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n",
 		)
@@ -288,7 +288,7 @@ func TestTogetherAIUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	// Rerank IS implemented; with nil documents it short-circuits to empty response (no error).
 	// It should NOT be blocked by APIConfigCheck.
-	if _, err := m.Rerank(ctx, nil, "", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{Query: "q", Documents: nil}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
 		t.Errorf("Rerank error=%v (expected no error for empty documents)", err)
 	}
 	// Balance IS a stub → "no such method"

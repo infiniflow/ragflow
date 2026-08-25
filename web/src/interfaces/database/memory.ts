@@ -9,5 +9,6 @@ export interface IMemory {
   storage_type: string;
   tenant_id: string;
   embd_id: string;
+  embd_name?: string;
   llm_id: string;
 }

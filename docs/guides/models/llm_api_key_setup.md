@@ -25,7 +25,7 @@ If you find your online LLM is not on the list, don't feel disheartened. The lis
 
 Go to **User settings** **>** **Model providers**. In **Available models**, select a provider and complete its configuration. After the configuration succeeds, the provider is marked as **Configured**.
 
-![Select model provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_model_provider.png)
+![Select model provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_model_provider.jpeg)
 
 ### Create a Model Provider Instance and Configure Connection Information
 
@@ -43,11 +43,19 @@ To configure a model provider:
 3. Enter **API Key** and **Base URL**.
 4. Save the instance.
 
-![Create instance](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_instance.png)
+![Create instance](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_instance.jpeg)
 
 :::caution
 Do not expose your API Key. An incorrect Base URL causes connection verification or model calls to fail. When using a compatible API, confirm whether the path must include `/v1`.
 :::
+
+#### Amazon Bedrock API keys
+
+For **Bedrock**, select **API Key**, enter the Bedrock API key and AWS Region, then list and select the models available to that key. RAGFlow keeps the key scoped to that provider instance and sends it as a Bearer token only for that instance's requests.
+
+Bedrock API key authentication does not support rerank models.
+
+Use short-term Bedrock API keys for production whenever possible. Long-term keys remain valid until they expire or are deleted, so store them as secrets, restrict access to the RAGFlow instance, and rotate them regularly.
 
 ### Verify the Connection
 
@@ -97,7 +105,7 @@ At minimum, set the following defaults:
 
 If you have configured a rerank model, it is also recommended to set a default rerank model. Configure VLM, ASR, TTS, and OCR defaults as required by your business.
 
-![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpeg)
 
 ## Model Types and Usage
 

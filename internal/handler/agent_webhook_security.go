@@ -39,12 +39,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 
 	rediscli "ragflow/internal/engine/redis"
 )
@@ -85,7 +87,7 @@ const (
 // fail-closed default. PR review round 5 (#2) — the previous
 // form leaked that distinction via two different messages.
 var errWebhookFailClosed = errors.New(
-	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks.",
+	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks",
 )
 
 // validateWebhookSecurity is the orchestrator.
@@ -107,6 +109,7 @@ func validateWebhookSecurity(
 	c *gin.Context,
 	canvasID string,
 ) error {
+	ctx := c.Request.Context()
 	if len(securityCfg) == 0 {
 		return errWebhookFailClosed
 	}
@@ -116,7 +119,7 @@ func validateWebhookSecurity(
 	if err := validateIPWhitelist(c, securityCfg); err != nil {
 		return err
 	}
-	if err := validateRateLimit(canvasID, securityCfg); err != nil {
+	if err := validateRateLimit(ctx, canvasID, securityCfg); err != nil {
 		return err
 	}
 	return validateAuth(c, securityCfg)
@@ -242,7 +245,7 @@ func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 //
 // Strict fail-closed: any Redis error → error. The webhook handler
 // surfaces this as 102 so an operator notices a misconfiguration.
-func validateRateLimit(canvasID string, cfg map[string]any) error {
+func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any) error {
 	rawRL, ok := cfg["rate_limit"].(map[string]any)
 	if !ok || len(rawRL) == 0 {
 		return nil
@@ -277,15 +280,20 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	}
 
 	key := fmt.Sprintf("rl:tb:%s", canvasID)
-	ctx, cancel := context.WithTimeout(context.Background(), webhookRateLimitTimeout)
+	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
 	rdb := rediscli.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}
-	allowed, err := rdb.EvalTokenBucketStrict(ctx, key, limitF, limitF/window)
+	allowed, err := rdb.EvalTokenBucketStrict(newCtx, key, limitF, limitF/window)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			common.Warn("rate limit check ambiguous (timeout/cancel), allowing",
+				zap.String("canvas_id", canvasID), zap.Error(err))
+			return nil
+		}
 		return fmt.Errorf("rate limit error: %s", err.Error())
 	}
 	if !allowed {
@@ -362,15 +370,15 @@ func isTruthyAllowAnonymous(cfg map[string]any) bool {
 func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 	rawToken, _ := cfg["token"].(map[string]any)
 	if rawToken == nil {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	header, _ := rawToken["token_header"].(string)
 	want, _ := rawToken["token_value"].(string)
 	if header == "" || want == "" {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	if c.GetHeader(header) != want {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	return nil
 }
@@ -382,16 +390,16 @@ func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 func validateBasicAuth(c *gin.Context, cfg map[string]any) error {
 	rawBasic, _ := cfg["basic_auth"].(map[string]any)
 	if rawBasic == nil {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	username, _ := rawBasic["username"].(string)
 	password, _ := rawBasic["password"].(string)
 	if username == "" || password == "" {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	u, p, ok := c.Request.BasicAuth()
 	if !ok || u != username || p != password {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	return nil
 }

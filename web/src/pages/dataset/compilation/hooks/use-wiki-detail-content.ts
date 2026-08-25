@@ -103,7 +103,6 @@ export function useWikiDetailContent({
 
   const handleMarkdownLinkClick = useCallback(
     (pageType: WikiPageType, slug: string) => {
-      if (isVersionView) return;
       if (currentEntry?.slug === slug && currentEntry?.pageType === pageType)
         return;
 
@@ -125,7 +124,6 @@ export function useWikiDetailContent({
     [
       push,
       onSelectArtifact,
-      isVersionView,
       currentEntry,
       pageData,
       updateCurrentTitle,
@@ -160,7 +158,7 @@ export function useWikiDetailContent({
     }
   }, [handleMarkAsSaved, isVersionView, onSelectVersion]);
 
-  const { isOpen, open, close, form, handleConfirm, isUpdating } =
+  const { isOpen, open, setIsOpen, form, handleConfirm, isUpdating } =
     useCommitArtifact({
       editedContent,
       pageType: currentEntry?.pageType ?? selectedArtifact?.page_type ?? '',
@@ -207,7 +205,7 @@ export function useWikiDetailContent({
     referenceDocuments,
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,

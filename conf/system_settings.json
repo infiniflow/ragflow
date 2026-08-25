@@ -83,6 +83,12 @@
       "source": "variable",
       "data_type": "json",
       "value": "{}"
+    },
+    {
+      "name": "sandbox.ucloud_agent_sandbox",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{}"
     }
   ]
 }

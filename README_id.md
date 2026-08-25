@@ -26,7 +26,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.26.4">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -65,9 +65,9 @@
 - 🎬 [Pengelolaan Mandiri](#-pengelolaan-mandiri)
 - 🔧 [Konfigurasi](#-konfigurasi)
 - 🔧 [Membangun Image Docker](#-membangun-docker-image)
-- 🔨 [Meluncurkan aplikasi dari Sumber untuk Pengembangan](#-meluncurkan-aplikasi-dari-sumber-untuk-pengembangan)
+- 🔨 [Meluncurkan aplikasi dari Sumber untuk Pengembangan](#-menjalankan-aplikasi-dari-sumber-untuk-pengembangan)
 - 📚 [Dokumentasi](#-dokumentasi)
-- 📜 [Peta Jalan](#-peta-jalan)
+- 📜 [Peta Jalan](#-roadmap)
 - 🏄 [Komunitas](#-komunitas)
 - 🙌 [Kontribusi](#-kontribusi)
 
@@ -192,12 +192,12 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.26.4 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.26.4, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
+> Perintah di bawah ini mengunduh edisi v0.27.0 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.27.0, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
 
 ```bash
    cd ragflow/docker
 
-   git checkout v0.26.4
+   git checkout v0.27.0
    # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases)
    # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
@@ -290,7 +290,7 @@ docker build --platform linux/amd64 \
   -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
-## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
+## 🔨 Menjalankan Aplikasi dari Sumber untuk Pengembangan
 
 1. Instal `uv`, atau lewati langkah ini jika sudah terinstal:
 

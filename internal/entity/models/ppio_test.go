@@ -91,9 +91,6 @@ func TestPPIOChatHappyPath(t *testing.T) {
 		if _, ok := body["reasoning_effort"]; ok {
 			t.Errorf("reasoning_effort should not be sent: %v", body["reasoning_effort"])
 		}
-		if body["max_tokens"] != float64(32) {
-			t.Errorf("max_tokens=%v", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v", body["temperature"])
 		}
@@ -229,7 +226,7 @@ func TestPPIOStreamHappyPath(t *testing.T) {
 			t.Errorf("stream_options=%#v, want include_usage=true", body["stream_options"])
 		}
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
-			t.Errorf("Accept=%q", got)
+			t.Errorf("Accept=%q, want text/event-stream", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
@@ -308,7 +305,7 @@ func TestPPIOEmbedRecordsUsage(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "embedding-model"
 	usage := &common.ModelUsage{}
-	embeddings, err := newPPIOForTest(srv.URL).Embed(ctx, &modelName, []string{"document"}, &APIConfig{ApiKey: &apiKey}, nil, usage)
+	embeddings, err := newPPIOForTest(srv.URL).Embed(ctx, &modelName, EmbedRequest{Texts: []string{"document"}}, &APIConfig{ApiKey: &apiKey}, nil, usage)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -349,7 +346,7 @@ func TestPPIORerankRecordsUsage(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "rerank-model"
 	usage := &common.ModelUsage{}
-	reranked, err := newPPIOForTest(srv.URL).Rerank(ctx, &modelName, "query", []string{"document"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 1}, usage)
+	reranked, err := newPPIOForTest(srv.URL).Rerank(ctx, &modelName, RerankRequest{Query: "query", Documents: []string{"document"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 1}, usage)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}

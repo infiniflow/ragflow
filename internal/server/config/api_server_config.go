@@ -20,7 +20,7 @@ import "github.com/spf13/viper"
 
 type AuthenticationConfig struct {
 	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
-	RegisterEnabled      bool `mapstructure:"register_enabled"`
+	EnableRegister       bool `mapstructure:"enable_register"`
 }
 
 type APIServerConfig struct {
@@ -63,7 +63,7 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 func (c *Config) parseAuthenticationConfig(v *viper.Viper) {
 	apiServerConfig := &c.apiServer
 	apiServerConfig.Authentication.DisablePasswordLogin = false
-	apiServerConfig.Authentication.RegisterEnabled = true
+	apiServerConfig.Authentication.EnableRegister = true
 
 	if !v.IsSet("authentication") {
 		return
@@ -78,16 +78,22 @@ func (c *Config) parseAuthenticationConfig(v *viper.Viper) {
 	}
 
 	if sub.IsSet("enable_register") {
-		apiServerConfig.Authentication.RegisterEnabled = sub.GetBool("enable_register")
+		apiServerConfig.Authentication.EnableRegister = sub.GetBool("enable_register")
 	}
 }
 
 func (c *Config) DisablePasswordLogin() bool {
+	if c.environments.DisablePasswordLogin != nil {
+		return *c.environments.DisablePasswordLogin
+	}
 	return c.apiServer.Authentication.DisablePasswordLogin
 }
 
-func (c *Config) RegisterEnabled() bool {
-	return c.apiServer.Authentication.RegisterEnabled
+func (c *Config) EnableRegister() bool {
+	if c.environments.EnableRegister != nil {
+		return *c.environments.EnableRegister
+	}
+	return c.apiServer.Authentication.EnableRegister
 }
 
 func (c *Config) GetAPIServerConfig() APIServerConfig {

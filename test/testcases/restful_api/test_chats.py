@@ -757,6 +757,7 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.LLMBundle = lambda *_args, **_kwargs: None
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     search_service_mod = ModuleType("api.db.services.search_service")
@@ -765,6 +766,15 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+
+    def _get_model_config_by_id(_tenant_id, _model_type, model_ref):
+        if model_ref == "tenant-llm-id":
+            return {}
+        raise LookupError(f"unknown tenant model id: {model_ref}")
+
+    tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
+    tenant_model_service_mod.resolve_model_id = lambda _tenant_id, _model_type, model_name: model_name
+    tenant_model_service_mod.get_composite_model_name_by_id = lambda model_id: model_id
     tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
@@ -1149,11 +1159,11 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
 
-    def _get_model_config_from_provider_instance(**kwargs):
-        query_calls.append(kwargs)
-        return {}
+    def _resolve_model_id(tenant_id, model_type, model_name):
+        query_calls.append({"tenant_id": tenant_id, "model_ref": model_name, "model_type": model_type})
+        return model_name
 
-    monkeypatch.setattr(module, "resolve_model_config", _get_model_config_from_provider_instance)
+    monkeypatch.setattr(module, "resolve_model_id", _resolve_model_id)
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1948,6 +1958,42 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     target_payload = target_res.json()
     assert target_payload["code"] == 0, target_payload
     chat_id = target_payload["data"]["id"]
+    original_parameters = target_payload["data"]["prompt_config"]["parameters"]
+
+    duplicate_create_res = rest_client.post(
+        "/chats",
+        json={
+            "name": "restful_chat_update_mapping_duplicate_parameters",
+            "dataset_ids": [],
+            "prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]},
+        },
+    )
+    assert duplicate_create_res.status_code == 200
+    duplicate_create_payload = duplicate_create_res.json()
+    assert duplicate_create_payload["code"] == 102, duplicate_create_payload
+    assert duplicate_create_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_create_payload
+
+    duplicate_parameters_res = rest_client.put(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_res.status_code == 200
+    duplicate_parameters_payload = duplicate_parameters_res.json()
+    assert duplicate_parameters_payload["code"] == 102, duplicate_parameters_payload
+    assert duplicate_parameters_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_payload
+    get_after_put_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_put_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
+
+    duplicate_parameters_patch_res = rest_client.patch(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_patch_res.status_code == 200
+    duplicate_parameters_patch_payload = duplicate_parameters_patch_res.json()
+    assert duplicate_parameters_patch_payload["code"] == 102, duplicate_parameters_patch_payload
+    assert duplicate_parameters_patch_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_patch_payload
+    get_after_patch_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_patch_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
 
     unauthorized = rest_client.patch("/chats/invalid-chat-id", json={"name": "anything"})
     assert unauthorized.status_code == 200

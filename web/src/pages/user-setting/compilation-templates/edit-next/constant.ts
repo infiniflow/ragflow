@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FormSchemaType, TemplateSchemaType } from './schema';
 
 export const DefaultFieldKeys = ['type', 'description', 'rule'];
@@ -12,16 +28,14 @@ export const DefaultTemplateValues: TemplateSchemaType = {
   id: undefined,
   name: '',
   description: '',
-  llm_id: '',
   kind: '',
   config: {
     kind: '',
-    llm_id: '',
     global_rules: '',
     example: '',
     instruction: '',
-    page_example: '',
     use_blueprint: false,
+    mode: 'entity',
     rechunk: false,
     rechunk_rules: '',
   },
@@ -35,10 +49,10 @@ export const DefaultValues: FormSchemaType = {
 };
 
 export const SectionTitleKeyMap: Record<string, string> = {
-  entity: 'setting.entitySpecification',
-  relation: 'setting.relationSpecification',
-  concept: 'setting.conceptSpecification',
-  claim: 'setting.claimSpecification',
+  entity: 'knowledgeCompilation.entitySpecification',
+  relation: 'knowledgeCompilation.relationSpecification',
+  concept: 'knowledgeCompilation.conceptSpecification',
+  claim: 'knowledgeCompilation.claimSpecification',
 };
 
 export const SectionCardFieldMap: Record<
@@ -54,7 +68,12 @@ export const SectionCardFieldMap: Record<
 export const SectionPriority = ['entity', 'relation'];
 
 export const FieldLabelKeyMap: Record<string, string> = {
-  type: 'setting.fieldType',
-  description: 'setting.fieldDescription',
-  rule: 'setting.fieldRule',
+  type: 'knowledgeCompilation.fieldType',
+  description: 'knowledgeCompilation.description',
+  rule: 'knowledgeCompilation.fieldRule',
+};
+
+export const FieldRequiredMessageKeyMap: Record<string, string> = {
+  type: 'knowledgeCompilation.fieldTypeRequired',
+  description: 'knowledgeCompilation.fieldDescriptionRequired',
 };

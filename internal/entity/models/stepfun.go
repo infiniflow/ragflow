@@ -52,41 +52,6 @@ func (s *StepFunModel) Name() string {
 	return "stepfun"
 }
 
-// StepFunChatResponse is the StepFun chat completion response. StepFun speaks
-// an OpenAI-compatible protocol, so the usage shape matches OpenAI's.
-type StepFunChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index        int    `json:"index"`
-		FinishReason string `json:"finish_reason"`
-		Message      struct {
-			Role             string `json:"role"`
-			Content          string `json:"content"`
-			Reasoning        string `json:"reasoning"`
-			ReasoningContent string `json:"reasoning_content"`
-			Audio            *struct {
-				Data       string `json:"data"`
-				Transcript string `json:"transcript"`
-			} `json:"audio,omitempty"`
-			ToolCalls []map[string]any `json:"tool_calls"`
-		} `json:"message"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens        int `json:"prompt_tokens"`
-		CompletionTokens    int `json:"completion_tokens"`
-		TotalTokens         int `json:"total_tokens"`
-		PromptTokensDetails *struct {
-			CachedTokens int `json:"cached_tokens"`
-		} `json:"prompt_tokens_details,omitempty"`
-		CompletionTokensDetails *struct {
-			ReasoningTokens int `json:"reasoning_tokens"`
-		} `json:"completion_tokens_details,omitempty"`
-	} `json:"usage"`
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (s *StepFunModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -105,85 +70,12 @@ func (s *StepFunModel) ChatWithMessages(ctx context.Context, modelName string, m
 	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := s.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := s.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
-		var result StepFunChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := &result.Choices[0]
-		content := choice.Message.Content
-		toolCalls := choice.Message.ToolCalls
-
-		reasonContent := choice.Message.Reasoning
-		if reasonContent == "" {
-			reasonContent = choice.Message.ReasoningContent
-		}
-
-		// StepFun reasoning models may emit all output as reasoning/content
-		// with the other left empty. Only reject when there is neither
-		// content, reasoning, nor tool calls.
-		if content == "" && reasonContent == "" && len(toolCalls) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no message in response")
-		}
-
-		totalTokens := result.Usage.TotalTokens
-		if totalTokens == 0 {
-			totalTokens = result.Usage.PromptTokens + result.Usage.CompletionTokens
-		}
-
-		var usage *TokenUsage
-		if totalTokens > 0 {
-			usage = &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      totalTokens,
-			}
-		}
-
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &content,
-			ReasonContent: &reasonContent,
-			ToolCalls:     toolCalls,
-			Usage:         usage,
-		}, nil
-	})
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
@@ -200,11 +92,6 @@ func (s *StepFunModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("messages is empty")
 	}
 
-	if chatModelConfig != nil {
-		chatModelConfig.ToolCallsResult = nil
-		chatModelConfig.UsageResult = nil
-	}
-
 	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
@@ -212,102 +99,17 @@ func (s *StepFunModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := s.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning"].(string)
-		if !ok || reasoningContent == "" {
-			reasoningContent, _ = delta["reasoning_content"].(string)
-		}
-		if reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	return s.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-	if !done && !sawTerminal {
-		return fmt.Errorf("stepfun: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // Embed is left as a stub.
-func (s *StepFunModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (s *StepFunModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -377,7 +179,7 @@ func (s *StepFunModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 
 // Rerank calculates similarity scores between query and documents. StepFun
 // does not expose a public rerank API, so this returns "no such method".
-func (s *StepFunModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (s *StepFunModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

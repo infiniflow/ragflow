@@ -14,24 +14,25 @@
 #  limitations under the License.
 #
 
+import json
 import logging
 import os
 import random
 import re
-import json
 import time
 from abc import abstractmethod
 from typing import Callable, TypeVar
 
 import infinity
-from infinity.common import ConflictType
-from infinity.index import IndexInfo, IndexType
-from infinity.errors import ErrorCode
 import pandas as pd
-from common.file_utils import get_project_base_directory
-from rag.nlp import is_english
+from infinity.common import ConflictType
+from infinity.errors import ErrorCode
+from infinity.index import IndexInfo, IndexType
+
 from common import settings
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
+from common.file_utils import get_project_base_directory
+from rag.nlp import is_english
 
 # Concurrent CREATE/DROP TABLE on the same Infinity instance can race on
 # Infinity's RocksDB-backed catalog counters (e.g. ``db|1|next_table_id``).
@@ -83,6 +84,19 @@ def _int_env(name: str, default: int) -> int:
 
 _META_RETRY_MAX = _int_env("INFINITY_META_RETRY_MAX", 5)
 _META_RETRY_BASE_DELAY_MS = _int_env("INFINITY_META_RETRY_BASE_DELAY_MS", 50)
+
+# Health-check retry budget for the connection-pool initializers
+# (InfinityConnectionBase.__init__ and InfinityConnectionPool.__init__).
+# The startup wait budget: 8 attempts with base 5s, capped at
+# HEALTH_CHECK_MAX_DELAY_SECONDS per sleep, gives a worst case of
+# ~255s (5+10+20+40+60+60+60 for attempts 0-6, since the last attempt
+# never sleeps) -- well beyond the original 120s ceiling, but still
+# absorbing the brief blips that used to crash the worker at module
+# import. Keep this in mind when sizing startup timeouts and liveness
+# probes that wait on the initial connection.
+MAX_RETRIES = 8
+HEALTH_CHECK_BASE_DELAY_SECONDS = 5
+HEALTH_CHECK_MAX_DELAY_SECONDS = 60
 
 
 def _is_meta_contention_error(exc: BaseException) -> bool:
@@ -167,7 +181,7 @@ class InfinityConnectionBase(DocStoreConnection):
         self.connPool = None
         self.logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
         conn_pool = INFINITY_CONN.get_conn_pool()
-        for _ in range(24):
+        for attempt in range(MAX_RETRIES):
             try:
                 inf_conn = conn_pool.get_conn()
                 res = inf_conn.show_current_node()
@@ -177,14 +191,32 @@ class InfinityConnectionBase(DocStoreConnection):
                     conn_pool.release_conn(inf_conn)
                     break
                 conn_pool.release_conn(inf_conn)
-                self.logger.warning(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
-                time.sleep(5)
+                self.logger.warning(
+                    "Infinity status %s on attempt %d/%d, waiting Infinity %s to be healthy.",
+                    res.server_status,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    msg = f"Infinity {infinity_uri} status {res.server_status} after {MAX_RETRIES} attempts."
+                    self.logger.error(msg)
+                    raise Exception(msg)
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             except Exception as e:
+                self.logger.warning(
+                    "Infinity connection attempt %d/%d to %s failed: %s",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                    e,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 conn_pool = INFINITY_CONN.refresh_conn_pool()
-                self.logger.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
-                time.sleep(5)
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
         if self.connPool is None:
-            msg = f"Infinity {infinity_uri} is unhealthy in 120s."
+            msg = f"Infinity {infinity_uri} is unhealthy after {MAX_RETRIES} attempts."
             self.logger.error(msg)
             raise Exception(msg)
         self.logger.info(f"Infinity {infinity_uri} is healthy.")
@@ -274,7 +306,7 @@ class InfinityConnectionBase(DocStoreConnection):
             return lst
         return sep.join(lst)
 
-    def equivalent_condition_to_str(self, condition: dict, table_instance=None) -> str | None:
+    def equivalent_condition_to_str(self, condition: dict, table_instance=None, is_delete: bool = False) -> str | None:
         assert "_id" not in condition
         columns = {}
         if table_instance:
@@ -314,12 +346,48 @@ class InfinityConnectionBase(DocStoreConnection):
                 "rechunked_from_chunk_ids",
             }:
                 values = v if isinstance(v, list) else [v]
-                json_conditions = []
+                # The same JSON-list columns were migrated from `varchar` to
+                # `json` in #17288. Pre-#17288 chunk tables in the wild still
+                # have these as `varchar` with a `whitespace-#` analyzer and
+                # store the data as a `###`-joined string (e.g.
+                # ``doc1###doc2``). ``json_contains`` on such a column returns
+                # 3030 ``json_contains(Varchar, Varchar) not found``, so fall
+                # back to ``filter_fulltext`` with the bare item value when
+                # the column is Varchar. New tables with the JSON schema use
+                # ``json_contains`` directly.
+                col_type = ""
+                if columns:
+                    col_type = (columns.get(k, ("",))[0] or "").lower()
+                is_json_col = "json" in col_type
+                col_present = bool(columns) and k in columns
+                logger = getattr(self, "logger", None) or logging.getLogger(__name__)
+                if is_json_col:
+                    logger.debug("INFINITY filter: using json_contains for JSON column %s", k)
+                elif col_present and "char" in col_type:
+                    logger.debug("INFINITY filter: using filter_fulltext fallback for Varchar column %s", k)
+                else:
+                    logger.debug("INFINITY filter: skipping predicate for unmapped/non-string column %s", k)
+                list_conditions = []
                 for item in values:
-                    literal = json.dumps(item, ensure_ascii=False).replace("'", "''")
-                    json_conditions.append(f"json_contains({k}, '{literal}')")
-                if json_conditions:
-                    cond.append("(" + " or ".join(json_conditions) + ")")
+                    if is_json_col:
+                        # ``json_contains`` accepts any JSON-encodable value.
+                        literal = json.dumps(item, ensure_ascii=False).replace("'", "''")
+                        list_conditions.append(f"json_contains({k}, '{literal}')")
+                    elif col_present and "char" in col_type and isinstance(item, str):
+                        # Legacy Varchar column: bare item matches a token
+                        # under the `whitespace-#` analyzer for the old
+                        # `###`-joined encoding. Numeric / other non-string
+                        # values were not meaningfully searchable against the
+                        # legacy encoding, so skip them rather than emit a
+                        # query that returns nothing.
+                        escaped = item.replace("'", "''")
+                        list_conditions.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{escaped}')")
+                    elif is_delete:
+                        raise ValueError(f"Cannot build delete predicate for column '{k}' (type='{col_type}') with value {item!r}")
+                if list_conditions:
+                    cond.append("(" + " or ".join(list_conditions) + ")")
+                elif is_delete:
+                    raise ValueError(f"No valid delete predicate could be generated for column '{k}'")
             elif k in {"compile_kwd", "type_kwd", "parent_kwd"}:
                 values = v if isinstance(v, list) else [v]
                 exact_conditions = []
@@ -680,7 +748,11 @@ class InfinityConnectionBase(DocStoreConnection):
             except Exception:
                 self.logger.warning(f"Skipped deleting from table {table_name} since the table doesn't exist.")
                 return 0
-            filter = self.equivalent_condition_to_str(condition, table_instance)
+            filter = self.equivalent_condition_to_str(condition, table_instance, is_delete=True)
+            if condition and (not filter or filter == "1=1"):
+                msg = f"INFINITY delete aborted: non-empty condition produced an unconstrained filter on table {table_name}."
+                self.logger.error(msg)
+                raise ValueError(msg)
             self.logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
             res = table_instance.delete(filter)
             return res.deleted_rows

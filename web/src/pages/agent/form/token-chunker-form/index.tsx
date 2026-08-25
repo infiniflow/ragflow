@@ -6,6 +6,7 @@ import { BlockButton, Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty } from 'lodash';
 import { Info, Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
@@ -37,7 +38,7 @@ export const FormSchema = z.object({
     }),
   ),
   overlapped_percent: z.number(),
-  delimiter_mode: z.enum(['token_size', 'delimiter', 'one']).optional(),
+  delimiter_mode: z.enum(['delimiter', 'one']).optional(),
 });
 
 export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
@@ -50,9 +51,16 @@ const TokenChunkerForm = ({
   const defaultValues = useFormValues(initialTokenChunkerValues, node);
   const { t } = useTranslation();
 
+  // Normalize legacy values: 'token_size' (removed tab) and empty fall back
+  // to 'delimiter'; nodes saved in the removed tab may carry empty delimiters,
+  // so seed the default '\n' row.
   const formDefaultValues = {
     ...defaultValues,
-    delimiter_mode: defaultValues.delimiter_mode || 'token_size',
+    delimiter_mode:
+      defaultValues.delimiter_mode === 'one' ? 'one' : 'delimiter',
+    delimiters: isEmpty(defaultValues.delimiters)
+      ? [{ value: '\n' }]
+      : defaultValues.delimiters,
   };
 
   const form = useForm<TokenChunkerFormSchemaType>({
@@ -85,18 +93,18 @@ const TokenChunkerForm = ({
             type: FormFieldType.Segmented,
             label: '',
             options: [
-              { label: 'Token Size', value: 'token_size' },
               { label: t('flow.delimiters'), value: 'delimiter' },
               { label: t('flow.one'), value: 'one' },
             ],
           }}
         />
 
-        {delimiterMode === 'token_size' && (
+        {delimiterMode === 'delimiter' && (
           <>
             <SliderInputFormField
               name="chunk_token_size"
               max={2048}
+              min={1}
               label={t('knowledgeConfiguration.chunkTokenNumber')}
             />
             <SliderInputFormField
@@ -112,11 +120,6 @@ const TokenChunkerForm = ({
               label={t('knowledgeConfiguration.imageTableContextWindow')}
               tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
             />
-          </>
-        )}
-
-        {delimiterMode === 'delimiter' && (
-          <>
             <section>
               <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
               <div className="space-y-4">

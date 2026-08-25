@@ -22,7 +22,7 @@ from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
-from api.db.services.dialog_service import DialogService, async_chat
+from api.db.services.dialog_service import DialogService, async_chat, rag_agent
 from common.misc_utils import get_uuid
 import json
 
@@ -172,7 +172,7 @@ class ConversationService(CommonService):
     @DB.connection_context()
     def get_all_conversation_by_dialog_ids(cls, dialog_ids):
         sessions = cls.model.select().where(cls.model.dialog_id.in_(dialog_ids))
-        sessions.order_by(cls.model.create_time.asc())
+        sessions = sessions.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
@@ -333,7 +333,6 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
         return
     else:
-        session_id = session_id
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
         assert conv.dialog_id == dialog_id, "Session does not belong to this dialog"
@@ -361,7 +360,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
 
     if stream:
         try:
-            async for ans in async_chat(dia, msg, True, session_id=session_id, **kwargs):
+            async for ans in rag_agent(dia, msg, True, session_id=session_id, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
             API4ConversationService.append_message(conv.id, conv.to_dict())
@@ -371,7 +370,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
 
     else:
         answer = None
-        async for ans in async_chat(dia, msg, False, session_id=session_id, **kwargs):
+        async for ans in rag_agent(dia, msg, False, session_id=session_id, **kwargs):
             answer = structure_answer(conv, ans, message_id, session_id)
             API4ConversationService.append_message(conv.id, conv.to_dict())
             break
