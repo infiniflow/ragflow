@@ -23,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -390,5 +391,64 @@ func BenchmarkBuildKey(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = BuildKey("tenant1", "task", "part1", "part2", "part3")
 	}
+}
+
+func TestEngine_JitterRange(t *testing.T) {
+	t.Run("100s base duration", func(t *testing.T) {
+		base := 100 * time.Second
+		minExpected := 90 * time.Second
+		maxExpected := 110 * time.Second
+
+		var minObserved time.Duration = 1000 * time.Second
+		var maxObserved time.Duration = 0
+
+		for i := 0; i < 1000; i++ {
+			jittered := ApplyJitter(base)
+			if jittered < minExpected || jittered > maxExpected {
+				t.Fatalf("jittered value %v out of bounds [%v, %v]", jittered, minExpected, maxExpected)
+			}
+			if jittered < minObserved {
+				minObserved = jittered
+			}
+			if jittered > maxObserved {
+				maxObserved = jittered
+			}
+		}
+
+		if minObserved > 95*time.Second || maxObserved < 105*time.Second {
+			t.Fatalf("expected substantial jitter spread, got min=%v, max=%v", minObserved, maxObserved)
+		}
+	})
+
+	t.Run("24h base duration", func(t *testing.T) {
+		base := 24 * time.Hour
+		minExpected := time.Duration(float64(base) * 0.90)
+		maxExpected := time.Duration(float64(base) * 1.10)
+
+		for i := 0; i < 500; i++ {
+			jittered := ApplyJitter(base)
+			if jittered < minExpected || jittered > maxExpected {
+				t.Fatalf("jittered value %v out of bounds [%v, %v]", jittered, minExpected, maxExpected)
+			}
+		}
+	})
+
+	t.Run("non-positive durations", func(t *testing.T) {
+		if got := ApplyJitter(0); got != 0 {
+			t.Errorf("ApplyJitter(0) = %v, want 0", got)
+		}
+		if got := ApplyJitter(-5 * time.Second); got != -5*time.Second {
+			t.Errorf("ApplyJitter(-5s) = %v, want -5s", got)
+		}
+	})
+}
+
+func BenchmarkEngine_ApplyJitter(b *testing.B) {
+	base := 24 * time.Hour
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = ApplyJitter(base)
+		}
+	})
 }
 

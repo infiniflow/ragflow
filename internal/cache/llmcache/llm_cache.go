@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	randv2 "math/rand/v2"
 	"sync"
 	"time"
 
@@ -54,6 +55,9 @@ var xxhashPool = sync.Pool{
 
 // KeyPrefix is the Redis namespace for all entries managed by this engine.
 const KeyPrefix = "kc:llm"
+
+// DefaultTTL mirrors the legacy Python get_llm_cache/set_llm_cache 24h window.
+const DefaultTTL = 24 * time.Hour
 
 // Validator reports whether a computed value should be cached.
 // Return true to keep it (including legitimate empty results), false to drop
@@ -75,6 +79,7 @@ type MetricsHook func(Event)
 
 // Engine is a generic, multi-tenant LLM-result cache.
 type Engine[T any] struct {
+	ttl       time.Duration
 	validate  Validator[T]
 	hook      MetricsHook
 	redisCli  *redis.Client
@@ -83,6 +88,11 @@ type Engine[T any] struct {
 
 // Option configures an Engine.
 type Option[T any] func(*Engine[T])
+
+// WithTTL overrides the cache entry TTL (default DefaultTTL).
+func WithTTL[T any](d time.Duration) Option[T] {
+	return func(e *Engine[T]) { e.ttl = d }
+}
 
 // WithValidator sets the task-aware quality gate.
 func WithValidator[T any](v Validator[T]) Option[T] {
@@ -106,7 +116,7 @@ func WithUniversalClient[T any](client goredis.UniversalClient) Option[T] {
 
 // New constructs an Engine with the given options.
 func New[T any](opts ...Option[T]) *Engine[T] {
-	e := &Engine[T]{}
+	e := &Engine[T]{ttl: DefaultTTL}
 	for _, o := range opts {
 		o(e)
 	}
@@ -130,6 +140,23 @@ func BuildKey(tenantID, taskType string, keyParts ...string) string {
 	h.Reset()
 	xxhashPool.Put(h)
 	return key
+}
+
+// ApplyJitter returns the base duration with ±10% random jitter applied.
+// If base <= 0, it returns base unmodified.
+func ApplyJitter(base time.Duration) time.Duration {
+	return applyJitter(base)
+}
+
+func applyJitter(base time.Duration) time.Duration {
+	if base <= 0 {
+		return base
+	}
+	// ±10% jitter: range is [base * 0.90, base * 1.10]
+	delta := float64(base) * 0.10
+	factor := (randv2.Float64() * 2.0) - 1.0
+	jitter := time.Duration(delta * factor)
+	return base + jitter
 }
 
 func (e *Engine[T]) getRedis() *redis.Client {
@@ -191,19 +218,20 @@ func (e *Engine[T]) set(ctx context.Context, tenantID, key string, v T) {
 	setCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 
+	ttl := applyJitter(e.ttl)
 	if e.rawClient != nil {
 		data, err := json.Marshal(v)
 		if err != nil {
 			return
 		}
-		e.rawClient.Set(setCtx, key, data, 0)
+		e.rawClient.Set(setCtx, key, data, ttl)
 		return
 	}
 	client := e.getRedis()
 	if client == nil {
 		return
 	}
-	client.SetObj(setCtx, key, v, 0)
+	client.SetObj(setCtx, key, v, ttl)
 }
 
 // GetOrCompute returns the cached value for (tenantID, taskType, keyParts), or
