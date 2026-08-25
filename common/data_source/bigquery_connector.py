@@ -150,7 +150,13 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                 _validate_identifier(_col, f"content_columns[{_col!r}]")
                 _content_cols.append(_col)
         self.content_columns = _content_cols
-        self.metadata_columns = [c.strip() for c in (metadata_columns or "").split(",") if c.strip()]
+        _meta_cols: List[str] = []
+        for _c in (metadata_columns or "").split(","):
+            _col = _c.strip()
+            if _col:
+                _validate_identifier(_col, f"metadata_columns[{_col!r}]")
+                _meta_cols.append(_col)
+        self.metadata_columns = _meta_cols
         self.id_column = _validate_identifier(id_column.strip() if id_column else None, "id_column")
         self.timestamp_column = _validate_identifier(timestamp_column.strip() if timestamp_column else None, "timestamp_column")
         self.batch_size = batch_size

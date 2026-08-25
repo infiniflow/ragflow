@@ -163,6 +163,7 @@ def test_invalid_credentials_json_raises():
         ("id_column", "foo; DROP TABLE users --"),
         ("timestamp_column", "ts OR 1=1"),
         ("content_columns", "name` UNION SELECT password FROM users --"),
+        ("metadata_columns", "status` UNION SELECT password FROM users --"),
     ],
 )
 def test_rejects_malicious_identifier(field, value):
