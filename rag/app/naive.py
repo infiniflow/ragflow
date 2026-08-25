@@ -127,6 +127,72 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
     return sections, tables, pdf_parser
 
 
+_MINERU_OPTION_KEYS = (
+    "mineru_parse_method",
+    "mineru_formula_enable",
+    "mineru_table_enable",
+    "mineru_lang",
+)
+
+
+def _has_mineru_options(parser_config: dict) -> bool:
+    """Return True if parser_config carries any MinerU-specific option.
+
+    Thin wrapper around :func:`common.parser_config_utils.has_mineru_options`
+    kept here so callers in this module don't need to import the helper
+    separately. Used by :func:`_dispatch_pdf_parser` to recover from a
+    misconfigured ``layout_recognize`` value (a stale TenantModel id
+    rather than the ``"MinerU"`` keyword) — see issue #17114.
+    """
+    from common.parser_config_utils import has_mineru_options
+    return has_mineru_options(parser_config)
+
+
+def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None) -> tuple[Callable, str, Any, str, Any]:
+    """Resolve the PDF parser callable for the current ``parser_config``.
+
+    Returns a 5-tuple ``(parser_callable, parser_name, layout_recognizer,
+    opendataloader_llm_name, parser_model_name)`` so the dispatch logic
+    stays testable in isolation (issue #17114).
+
+    When ``layout_recognize`` is a value that does not match any known parser
+    name — typically a stale ``TenantModel`` UUID stored on the document —
+    and the parser config carries MinerU-specific options (``mineru_*``
+    keys), the dispatch falls back to :func:`by_mineru` instead of routing
+    to :func:`by_plaintext`, which would otherwise try to resolve the UUID
+    as an IMAGE2TEXT vision model and crash.
+    """
+    layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+    if layout_recognizer == "OpenDataLoader" and parser_model_name:
+        opendataloader_llm_name = parser_model_name
+
+    if isinstance(layout_recognizer, bool):
+        layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
+
+    name = layout_recognizer.strip().lower()
+    parser = PARSERS.get(name, by_plaintext)
+
+    # Closes #17114: when the document's layout_recognize is a model id
+    # (e.g. a TenantModel UUID) that does not match any known parser name,
+    # the previous dispatch fell through to by_plaintext, which tried to
+    # resolve the id as an IMAGE2TEXT vision model and failed with
+    # ``Provider <empty> not found for model <id>``. If mineru-specific
+    # options are set in parser_config, the operator clearly intended the
+    # MinerU parser, so route there instead and surface a clear log line
+    # rather than masking the misconfiguration silently.
+    if parser is by_plaintext and _has_mineru_options(parser_config):
+        logging.warning(
+            "[naive] layout_recognize=%r does not match a known parser; "
+            "falling back to MinerU because mineru_* options are set "
+            "(see issue #17114).",
+            layout_recognizer,
+        )
+        parser = by_mineru
+        name = "mineru"
+
+    return parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name
+
+
 def by_mineru(
     filename,
     binary=None,
@@ -1054,17 +1120,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 pass
         layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
-        if layout_recognizer == "OpenDataLoader" and parser_model_name:
-            opendataloader_llm_name = parser_model_name
+        parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(parser_config, opendataloader_llm_name)
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_pdf(binary)
-
-        if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
-
-        name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
         if name == "mineru":
             kwargs["parse_method"] = "naive"
