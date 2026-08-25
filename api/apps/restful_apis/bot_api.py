@@ -349,6 +349,7 @@ async def retrieval_test_embedded(tenant_id=None):
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
+    rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     if top <= 0:
         return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
@@ -358,7 +359,7 @@ async def retrieval_test_embedded(tenant_id=None):
     search_config = {}
 
     async def _retrieval():
-        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
+        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id, rerank_candidates_count
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
@@ -387,6 +388,8 @@ async def retrieval_test_embedded(tenant_id=None):
                 top = int(search_config.get("top_k", top))
             if not req.get("rerank_id"):
                 rerank_id = search_config.get("rerank_id", "")
+            if not req.get("rerank_candidates_count"):
+                rerank_candidates_count = int(search_config.get("rerank_candidates_count", 100))
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
@@ -447,6 +450,7 @@ async def retrieval_test_embedded(tenant_id=None):
             rerank_mdl=rerank_mdl,
             highlight=req.get("highlight"),
             rank_feature=labels,
+            rerank_candidates_count=rerank_candidates_count,
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)

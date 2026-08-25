@@ -64,6 +64,7 @@ type RetrievalTestRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`

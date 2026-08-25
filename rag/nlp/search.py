@@ -16,7 +16,6 @@
 import json
 import logging
 import re
-import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
@@ -552,42 +551,17 @@ class Dealer:
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd, ins_embd, rag_tokenizer.tokenize(ans).split(), rag_tokenizer.tokenize(inst).split())
 
-    @staticmethod
-    def _rerank_window(page_size: int, top: int = 0) -> int:
-        """Candidate-window size shared by retrieval's block fetch and slice.
-
-        ``retrieval`` reuses this value BOTH as the backend block size and as
-        the modulus for extracting a single page from a (re)ranked block::
-
-            req["page"] = global_offset // window   # which block to fetch
-            begin       = global_offset %  window   # where the page starts
-
-        For those two to agree the window MUST be an exact multiple of
-        ``page_size``; otherwise blocks and pages drift apart and deep
-        pagination silently drops results and returns short pages.
-
-        The window targets a provider-friendly pool of ~64 candidates, bounded
-        by ``top`` when given (i.e. when an external reranker is active), and is
-        always rounded UP to a whole number of pages to preserve the invariant.
-        """
-        if page_size <= 1:
-            return min(30, top) if top > 0 else 30
-        window = math.ceil(64 / page_size) * page_size
-        if top > 0:
-            window = min(window, math.ceil(top / page_size) * page_size)
-        return window
-
     async def retrieval(
         self,
         question,
         embd_mdl,
         tenant_ids,
         kb_ids,
-        page,
-        page_size,
+        page,  # MUST be 1 when rerank_mdl is specified
+        page_size,  # it is topn when rerank_mdl is specified
         similarity_threshold=0.2,
         vector_similarity_weight=0.3,
-        top=1024,
+        top=1024,  # for knn, no need to let user pass in.
         doc_ids=None,
         aggs=True,
         rerank_mdl=None,
@@ -595,24 +569,34 @@ class Dealer:
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
         must_not: dict | None = None,
+        rerank_candidates_count=64,
     ):
+        """
+        Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
+          - Retrieve more rerank candidates than the requested page_size.
+          - Rerank those records to calculate similarity scores.
+          - Filter out records below than the similarity threshold.
+        When requesting page 2, the system must still process all candidates needed for page 1,
+          resulting in a significant waste of time and computational resources. (without cache)
+        Moreover, when rerank_candidates_count expands into the next retrieval window, new records are added to the candidate set and the entire set is reranked.
+          That meant the previous returned pages might not be the same as the current returned pages, which is not acceptable for pagination.
+        """
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
 
-        # Candidate window for block-based pagination. It MUST stay a multiple
-        # of page_size so the block fetched (global_offset // RERANK_LIMIT) and
-        # the in-block page slice (global_offset % RERANK_LIMIT) stay aligned;
-        # see _rerank_window. When an external reranker is active the pool is
-        # also bounded by top.
-        RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
         page = max(page, 1)
-        global_offset = (page - 1) * page_size
+        if page * page_size > rerank_candidates_count:
+            raise Exception(f"rerank_candidates_count({rerank_candidates_count}) must be greater than page * page_size({page * page_size}) to ensure correct pagination.")
+        if rerank_mdl is not None and page != 1:
+            raise Exception(f"Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top {page_size} results.")
+
+        rerank_candidates_page = 1
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": global_offset // RERANK_LIMIT + 1,
-            "size": RERANK_LIMIT,
+            "page": rerank_candidates_page,
+            "size": rerank_candidates_count,
             "question": question,
             "vector": True,
             "topk": top,
@@ -622,7 +606,7 @@ class Dealer:
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
-        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
+        logging.debug(f"[Search] page={page}, page_size={page_size}, rerank_candidates_count={rerank_candidates_count}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -716,7 +700,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        begin = global_offset % RERANK_LIMIT
+        begin = (page - 1) * page_size
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 

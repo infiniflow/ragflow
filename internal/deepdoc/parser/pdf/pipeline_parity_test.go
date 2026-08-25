@@ -35,8 +35,10 @@ import (
 //   - textSim==100% -> PASS (fully aligned, includes table HTML byte-identical)
 //   - table PDF, gridSim==100% AND structSim==100% but textSim<100% ->
 //     NONCELL_TEXT: cell content AND structure match Python, the residual gap
-//     is non-cell-text (caption/body paragraph Go omits, and/or HTML tag/format
-//     differences). Reported separately (not labeled PASS) and not counted as a
+//     is non-cell-text HTML-emitter formatting (e.g. header <th> vs <td>,
+//     whitespace/newline) — not cell content. In other PDFs it may also be a
+//     caption/body paragraph Go omits. Reported separately (not labeled PASS)
+//     and not counted as a
 //     content failure; classified as go_intentional/go_bug via known_diffs.json.
 //   - table PDF, gridSim<100% OR structSim<100% (or non-table textSim<100%) ->
 //     FAIL if not exempted; INTENTIONAL if a go_intentional rule names this
@@ -192,9 +194,10 @@ func TestPipelineParity(t *testing.T) {
 		// reconstructed grid content (cell text) rather than the rendered HTML.
 		// Grid content parity (gridSim + structSim) isolates Go's GroupCells +
 		// FillCellTextFromBoxes assembly. When gridSim AND structSim are 100%
-		// but textSim<100%, the residual gap is NON-CELL-TEXT: a <caption> Go
-		// omits, an interleaved body paragraph Go drops, and/or HTML tag/format
-		// differences — none of which is a table-cell-assembly bug.
+		// but textSim<100%, the residual gap is NON-CELL-TEXT: HTML-emitter
+		// formatting (header <th> vs <td>, whitespace/newline) — none of which is
+		// a table-cell-assembly bug. (A caption/body paragraph Go omits is also
+		// possible in other PDFs.)
 		pyRows, pyHasTables := loadPythonTables(t, filepath.Join(tablesDir, name+".json"))
 		goRows := goTableRows(result)
 		goHasTables := len(goRows) > 0
@@ -220,19 +223,19 @@ func TestPipelineParity(t *testing.T) {
 			structureSim, shapeDetail := gridStructureSimilarity(goRows, pyRows)
 			// Full content parity = identical cell text AND identical
 			// structure. Only then is the residual textSim gap purely the
-			// non-cell-text layer (caption/body/format outside table cells),
+			// non-cell-text layer (HTML-emitter formatting outside table cells, e.g.
 			// reported as NONCELL_TEXT.
 			contentMatch := gridSim >= 100.0 && structureSim >= 100.0
 			if contentMatch {
 				// Cells + structure match Python, but the full text still
-				// diverges — the gap is OUTSIDE table cells: caption text
-				// Go omits, an interleaved body paragraph Go drops, and/or
-				// HTML tag/format differences. Label it noncell-text (not
-				// "html-divergent", which wrongly implies content matches)
-				// so the divergence is named and not hidden.
+				// diverges — the gap is OUTSIDE table cells: emitter
+				// markup/whitespace OR an omitted caption/body paragraph
+				// (not a table-cell-assembly bug). Label it noncell-text
+				// (not "html-divergent", which wrongly implies content
+				// matches) so the divergence is named and not hidden.
 				noncellText++
 				status = "NONCELL_TEXT"
-				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (non-cell-text divergence: caption/body/format outside table cells)", gridSim, structureSim, shapeDetail, sim)
+				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (non-cell-text divergence outside table-cell content: emitter markup/whitespace or omitted caption/body text)", gridSim, structureSim, shapeDetail, sim)
 			} else if intentionalPDF(name) {
 				// go_intentional rule covers this PDF: the divergence (cell
 				// content and/or structure) is a documented, deliberate one

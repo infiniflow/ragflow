@@ -535,6 +535,45 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
+func validateBedrockAPIKeyAuth(providerName, apiKey string) (bool, string, error) {
+	if !strings.EqualFold(providerName, "Bedrock") {
+		return false, apiKey, nil
+	}
+	var rawConfig map[string]json.RawMessage
+	if json.Unmarshal([]byte(apiKey), &rawConfig) != nil {
+		return false, apiKey, nil
+	}
+	var authMode string
+	if json.Unmarshal(rawConfig["auth_mode"], &authMode) != nil || authMode != "bedrock_api_key" {
+		return false, apiKey, nil
+	}
+	var config struct {
+		APIKey string `json:"bedrock_api_key"`
+		Region string `json:"bedrock_region"`
+	}
+	if json.Unmarshal([]byte(apiKey), &config) != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
+	}
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	if config.APIKey == "" {
+		return true, apiKey, errors.New("Bedrock API key must be provided")
+	}
+	config.Region = strings.TrimSpace(config.Region)
+	if config.Region == "" {
+		return true, apiKey, errors.New("AWS region must be provided")
+	}
+	if err := modelModule.ValidateBedrockRegion(config.Region); err != nil {
+		return true, apiKey, err
+	}
+	rawConfig["bedrock_api_key"], _ = json.Marshal(config.APIKey)
+	rawConfig["bedrock_region"], _ = json.Marshal(config.Region)
+	normalizedAPIKey, err := json.Marshal(rawConfig)
+	if err != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
+	}
+	return true, string(normalizedAPIKey), nil
+}
+
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil && provider.TenantID == tenantID {
@@ -545,6 +584,9 @@ func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenant
 
 func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -570,6 +612,20 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		apiKey = "x"
 	}
 
+	bedrockAPIKeyAuth, apiKey, err := validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
+	}
+	if bedrockAPIKeyAuth {
+		if len(modelInfo) == 0 {
+			return common.CodeBadRequest, errors.New("at least one Bedrock model must be selected")
+		}
+		for _, model := range modelInfo {
+			if strings.TrimSpace(model.ModelName) == "" {
+				return common.CodeBadRequest, errors.New("Bedrock model name must be provided")
+			}
+		}
+	}
 	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)
@@ -601,7 +657,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 				return common.CodeServerError, err
 			}
 		}
-	} else {
+	} else if !bedrockAPIKeyAuth {
 		// model_info not provided — add all factory default models.
 		// Mirrors Python's create_provider_instance
 		// (api/apps/services/provider_api_service.py:506-531).
@@ -1913,6 +1969,9 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 }
 
 func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -1944,6 +2003,10 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		apiKey = "x"
 	}
 
+	_, apiKey, err = validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
+	}
 	// Update instance record.
 	instanceUpdates := map[string]interface{}{
 		"api_key": apiKey,

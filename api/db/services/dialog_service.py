@@ -222,6 +222,7 @@ class DialogService(CommonService):
             cls.model.similarity_threshold,
             cls.model.vector_similarity_weight,
             cls.model.top_n,
+            cls.model.rerank_candidates_count,
             cls.model.top_k,
             cls.model.do_refer,
             cls.model.rerank_id,
@@ -522,6 +523,11 @@ def convert_last_user_msg_to_multimodal(msg: list[dict], image_data_uris: list[s
         return
 
 
+# Keys the chat-completions message schema defines. Stored messages also carry
+# RAGFlow bookkeeping such as id, created_at and doc_ids, plus the conversationId
+# the web client stamps on every turn, and strict providers reject those.
+LLM_MESSAGE_FIELDS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"})
+
 BAD_CITATION_PATTERNS = [
     re.compile(r"\(\s*ID\s*[: ]*\s*(\d+)\s*\)"),  # (ID: 12)
     re.compile(r"\[\s*ID\s*[: ]*\s*(\d+)\s*\]"),  # [ID: 12]
@@ -664,6 +670,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], llm_model_config["model_type"])
 
     prompt_config = dialog.prompt_config
+    rerank_candidates_count = getattr(dialog, "rerank_candidates_count", 64)
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
@@ -737,6 +744,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     similarity_threshold=0.2,
                     vector_similarity_weight=0.3,
                     doc_ids=scoped_doc_ids,
+                    rerank_candidates_count=rerank_candidates_count,
                 ),
                 internet_enabled=use_web_search,
             )
@@ -776,6 +784,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
+                    rerank_candidates_count=rerank_candidates_count,
                 )
                 if prompt_config.get("toc_enhance"):
                     cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -1824,6 +1833,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     if include_reference_metadata:
         logging.debug(
@@ -1925,6 +1935,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         aggs=False,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
@@ -1943,7 +1954,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     model_type = chat_mdl.model_config["model_type"]
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
-    agent_messages = deepcopy(messages)
+    agent_messages = [{k: deepcopy(v) for k, v in m.items() if k in LLM_MESSAGE_FIELDS} for m in messages]
     if text_attachments_content and agent_messages:
         agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:

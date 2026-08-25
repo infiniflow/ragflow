@@ -41,6 +41,7 @@ type SearchDatasetsRequest struct {
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -68,6 +69,7 @@ type SearchDatasetRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -91,6 +93,7 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Question:               req.Question,
 		Page:                   req.Page,
 		Size:                   req.Size,
+		RerankCandidatesCount:  req.RerankCandidatesCount,
 		DocIDs:                 req.DocIDs,
 		UseKG:                  req.UseKG,
 		TopK:                   req.TopK,

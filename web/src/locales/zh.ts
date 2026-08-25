@@ -64,6 +64,7 @@ export default {
       search: '搜索',
       reset: '重置',
       noDataFound: '没有找到数据。',
+      searchOrEnterToAdd: '搜索或输入后回车添加',
       noData: '暂无数据',
       bedrockCredentialsHint:
         '提示：ACCESS KEY / SECRET KEY 可留空，以启用 AWS IAM 自动验证。',
@@ -932,7 +933,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       emptyResponse: '空回复',
       emptyResponsePlaceholder: '在知识库中未找到您要寻找的答案！',
       emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。仅在思考模式是简单模式时候生效。`,
-      emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
+      emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空回复。由于未选择任何知识库，因此请清除“空回复”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
       setAnOpenerTip: '您想如何欢迎您的客户？',
@@ -961,6 +962,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
+      rerankCandidatesCount: '重排候选数',
+      rerankCandidatesCountTip: '用于重排的候选分块数量。',
+      rerankCandidatesCountValidation: '重排候选数必须大于或等于 Top N。',
       variable: '变量',
       variableTip: `你可以通过对话 API，并配合变量设置来动态调整大模型的系统提示词。
       {knowledge}为系统预留变量，代表从指定知识库召回的文本块。
@@ -1697,6 +1701,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       instanceNameMessage: '请输入实例名称！',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
+      instanceNameExists: '实例名称已存在',
       deleteInstance: '删除实例',
       modelName: '模型名称',
       modelID: '模型ID',
@@ -1872,6 +1877,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       listModelsEmpty: '暂无可用模型',
       listModelsLoading: '正在加载模型…',
       selectModelBeforeVerify: '请至少选择一个模型后再验证。',
+      selectModelBeforeSave: '请先发现并选择至少一个模型后再保存。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
       batchAddModels: '添加全部模型',
@@ -1916,7 +1922,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       fieldRule: '规则',
       addField: '添加字段',
       editField: '编辑字段',
-      selectFieldType: '选择字段类型',
+      selectFieldType: '选择或输入字段类型',
       fieldTypeExists: '该字段类型已存在',
       example: '示例',
       instruction: 'Instruction',
@@ -2352,6 +2358,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
+      youComSearch: 'You.com',
+      youComSearchDescription:
+        '基于 You.com 自有索引的网络搜索组件。每条结果附带从页面提取的多段文本，而不只是一段摘要。默认无需 API Key 即可使用（免密钥免费额度）；配置 Key 可解除限速。',
+      youComFreshness: '时间范围',
+      youComFreshnessTip: '按发布时间的新旧程度筛选结果。',
+      youComFreshnessAny: '不限时间',
+      youComFreshnessDay: '一天内',
+      youComFreshnessWeek: '一周内',
+      youComFreshnessMonth: '一个月内',
+      youComFreshnessYear: '一年内',
+      youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
@@ -2939,7 +2956,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 从给定的文本内容中提取最重要的关键词/短语。
 
 要求
-- 总结文本内容，并给出最重要的5个关键词/短语。
+- 总结文本内容，并给出最重要的{{ topn }}个关键词/短语。
 - 关键词必须与给定的文本内容使用相同的语言。
 - 关键词之间用英文逗号分隔。
 - 仅输出关键词。`,
@@ -2947,10 +2964,10 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 你是一名文本分析员。
 
 任务
-针对给定的文本内容提出3个问题。
+针对给定的文本内容提出{{ topn }}个问题。
 
 要求
-- 理解并总结文本内容，并提出最重要的3个问题。
+- 理解并总结文本内容，并提出最重要的{{ topn }}个问题。
 - 问题的含义不应重叠。
 - 问题应尽可能涵盖文本的主要内容。
 - 问题必须与给定的文本内容使用相同的语言。

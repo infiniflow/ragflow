@@ -72,6 +72,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         },
       },
       top_n: 8,
+      rerank_candidates_count: 64,
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.2,
       top_k: 1024,

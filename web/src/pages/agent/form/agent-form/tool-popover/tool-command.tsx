@@ -31,6 +31,7 @@ const Menus = [
       Operator.Wikipedia,
       Operator.SearXNG,
       Operator.KeenableSearch,
+      Operator.YouComSearch,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,

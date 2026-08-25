@@ -1760,6 +1760,8 @@ export default {
       listModelsEmpty: '사용 가능한 모델 없음',
       listModelsLoading: '모델 로딩 중…',
       selectModelBeforeVerify: '검증 전 모델을 최소 하나 이상 선택해 주세요.',
+      selectModelBeforeSave:
+        '저장하기 전에 모델을 하나 이상 검색하고 선택해 주세요.',
       addCustomModel: '커스텀 모델 추가',
       addCustomModelTitle: '커스텀 모델 추가',
       editCustomModelTitle: '모델 편집',
@@ -2679,7 +2681,7 @@ Task
 Extract the most important keywords/phrases of a given piece of text content.
 
 Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`,
@@ -2687,10 +2689,10 @@ Requirements
 You are a text analyzer.
 
 Task
-Propose 3 questions about a given piece of text content.
+Propose {{ topn }} questions about a given piece of text content.
 
 Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.

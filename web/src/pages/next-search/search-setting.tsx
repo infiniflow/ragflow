@@ -20,6 +20,7 @@ import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
 import {
@@ -110,6 +111,7 @@ function SearchSetting({
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,
         top_k: search_config?.top_k || 1024,
+        rerank_candidates_count: search_config?.rerank_candidates_count ?? 100,
         summary: search_config?.summary || false,
         chat_id: search_config?.chat_id || '',
         llm_setting: {
@@ -399,6 +401,10 @@ function SearchSetting({
               similarityWeightName="search_config.vector_similarity_weight"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField
+              name="search_config.rerank_candidates_count"
+              defaultValue={100}
+            ></RerankCandidatesCountFormField>
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}
