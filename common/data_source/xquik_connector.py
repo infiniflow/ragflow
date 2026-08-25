@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
@@ -22,8 +23,10 @@ def _positive_int(value: Any, default: int, field: str, maximum: int | None = No
         return default
     try:
         parsed = int(value)
-    except (TypeError, ValueError) as exc:
+    except (OverflowError, TypeError, ValueError) as exc:
         raise ConnectorValidationError(f"Xquik connector {field} must be a positive integer") from exc
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+        raise ConnectorValidationError(f"Xquik connector {field} must be a positive integer")
     if parsed <= 0 or (maximum is not None and parsed > maximum):
         suffix = f" from 1 to {maximum}" if maximum is not None else " a positive integer"
         raise ConnectorValidationError(f"Xquik connector {field} must be{suffix}")
@@ -37,7 +40,7 @@ def _non_negative_float(value: Any, default: float, field: str) -> float:
         parsed = float(value)
     except (TypeError, ValueError) as exc:
         raise ConnectorValidationError(f"Xquik connector {field} must be a non-negative number") from exc
-    if parsed < 0:
+    if not math.isfinite(parsed) or parsed < 0:
         raise ConnectorValidationError(f"Xquik connector {field} must be a non-negative number")
     return parsed
 

@@ -126,9 +126,11 @@ def test_xquik_continues_after_empty_page_when_response_has_more(_dns):
     [
         ({"query": ""}, ConnectorValidationError, "query is required"),
         ({"query_type": "Popular"}, ConnectorValidationError, "Latest or Top"),
+        ({"page_size": 1.5}, ConnectorValidationError, "positive integer"),
         ({"page_size": 10_001}, ConnectorValidationError, "from 1 to 10000"),
         ({"max_pages": 1_001}, ConnectorValidationError, "from 1 to 1000"),
         ({"request_delay": -1}, ConnectorValidationError, "non-negative"),
+        ({"request_delay": float("inf")}, ConnectorValidationError, "non-negative"),
         ({"credentials": {}}, ConnectorMissingCredentialError, "xquik_api_key"),
     ],
 )

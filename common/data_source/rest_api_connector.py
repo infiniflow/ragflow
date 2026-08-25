@@ -38,7 +38,7 @@ from common.data_source.utils import rl_requests, retry_builder
 from common.ssrf_guard import assert_url_is_safe, pin_dns
 
 try:
-    from jsonpath import jsonpath as _jsonpath  # type: ignore[import]
+    from jsonpath import search as _jsonpath  # type: ignore[import]
 except Exception:  # pragma: no cover
     _jsonpath = None
 
@@ -820,7 +820,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         """Extract the items array from a JSON response."""
         if self.items_path and _jsonpath is not None:
             try:
-                matches = _jsonpath(response_json, self.items_path)
+                matches = _jsonpath(self.items_path, response_json)
             except Exception as exc:
                 raise ConnectorValidationError(f"Failed to apply items JSONPath '{self.items_path}': {exc}") from exc
             if not matches:
@@ -869,7 +869,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             return None
 
         try:
-            matches = _jsonpath(response_json, cursor_path)
+            matches = _jsonpath(cursor_path, response_json)
         except Exception:
             return None
 
