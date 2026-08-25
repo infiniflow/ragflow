@@ -55,7 +55,10 @@ func (dao *TenantModelInstanceDAO) Create(ctx context.Context, db *gorm.DB, inst
 
 func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(ctx context.Context, db *gorm.DB, providerID string) ([]*entity.TenantModelInstance, error) {
 	var instances []*entity.TenantModelInstance
-	err := db.WithContext(ctx).Where("provider_id = ?", providerID).Find(&instances).Error
+	// Newest instance first. Mirrors Python's provider_api_service
+	// list_provider_instances, which sorts by create_time desc so the list
+	// follows creation order instead of the random-token primary key order.
+	err := db.WithContext(ctx).Where("provider_id = ?", providerID).Order("create_time DESC").Find(&instances).Error
 	if err != nil {
 		return nil, err
 	}

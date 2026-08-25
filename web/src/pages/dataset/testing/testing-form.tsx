@@ -7,9 +7,9 @@ import { z } from 'zod';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import {
-  PrefetchSizeFormField,
-  prefetchSizeSchema,
-} from '@/components/prefetch-size-item';
+  RerankCandidatesCountFormField,
+  rerankCandidatesCountSchema,
+} from '@/components/rerank-candidates-count-item';
 import {
   MetadataFilter,
   MetadataFilterSchema,
@@ -71,11 +71,11 @@ export default function TestingForm({
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
       size: z.number().int().min(1).max(100),
-      ...prefetchSizeSchema,
+      ...rerankCandidatesCountSchema,
     })
-    .refine((values) => values.prefetch_size >= values.size, {
-      message: t('chat.prefetchSizeValidation'),
-      path: ['prefetch_size'],
+    .refine((values) => values.rerank_candidates_count >= values.size, {
+      message: t('chat.rerankCandidatesCountValidation'),
+      path: ['rerank_candidates_count'],
     });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -86,7 +86,7 @@ export default function TestingForm({
       ...initialTopKValue,
       dataset_ids: [knowledgeBaseId],
       size: 10,
-      prefetch_size: 64,
+      rerank_candidates_count: 64,
     },
   });
 
@@ -120,7 +120,7 @@ export default function TestingForm({
               name={'cross_languages'}
             ></CrossLanguageFormField>
             <MetadataFilter prefix=""></MetadataFilter>
-            <PrefetchSizeFormField></PrefetchSizeFormField>
+            <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
             <TopSelectFormItem></TopSelectFormItem>
           </FormContainer>
         </div>

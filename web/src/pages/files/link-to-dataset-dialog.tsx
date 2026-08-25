@@ -24,7 +24,7 @@ import { IDataset } from '@/interfaces/database/dataset';
 import { useDebounce } from 'ahooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -64,24 +64,38 @@ function LinkToDatasetForm({
 
   // Cache all datasets the user has seen so names survive across searches
   // and scroll. The paginated list may not contain every selected dataset
-  // (e.g. initially-connected ones), so resolve the rest by ID.
-  const datasetCacheRef = useRef(new Map<string, IDataset>());
+  // (e.g. initially-connected ones), so resolve the rest by ID. Kept as
+  // state so badges re-render once a missing name is fetched.
+  const [datasetCache, setDatasetCache] = useState<Map<string, IDataset>>(
+    new Map(),
+  );
 
   const missingIds = useMemo(() => {
     const loadedIds = new Set(list.map((d) => d.id));
     return selectedIds.filter(
-      (id) => !loadedIds.has(id) && !datasetCacheRef.current.has(id),
+      (id) => !loadedIds.has(id) && !datasetCache.has(id),
     );
-  }, [list, selectedIds]);
+  }, [list, selectedIds, datasetCache]);
 
   const { data: missingDatasets } = useFetchDatasetsByIds(missingIds);
 
   useEffect(() => {
-    list.forEach((item) => {
-      datasetCacheRef.current.set(item.id, item);
-    });
-    missingDatasets?.forEach((item) => {
-      datasetCacheRef.current.set(item.id, item);
+    setDatasetCache((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+      list.forEach((item) => {
+        if (!next.has(item.id)) {
+          next.set(item.id, item);
+          changed = true;
+        }
+      });
+      missingDatasets?.forEach((item) => {
+        if (!next.has(item.id)) {
+          next.set(item.id, item);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
     });
   }, [list, missingDatasets]);
 
@@ -96,7 +110,7 @@ function LinkToDatasetForm({
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const kbsInfo = data.knowledgeIds.map((id) => {
-      const dataset = datasetCacheRef.current.get(id);
+      const dataset = datasetCache.get(id);
       return {
         kb_id: id,
         kb_name: dataset?.name ?? id,
@@ -104,10 +118,6 @@ function LinkToDatasetForm({
     });
     onConnectToKnowledgeOk(kbsInfo);
   }
-
-  //   useEffect(() => {
-  //     form.setValue('knowledgeIds', initialConnectedIds); // this is invalid
-  //   }, [form, initialConnectedIds]);
 
   return (
     <Form {...form}>
@@ -134,7 +144,9 @@ function LinkToDatasetForm({
                   isSearching={loading}
                   shouldFilter={false}
                   onListScroll={hasNextPage ? handleScroll : undefined}
-                  //   {...field}
+                  // Selected datasets filtered out of the current list page
+                  // still show their names via the seen-datasets cache.
+                  getOptionLabel={(value) => datasetCache.get(value)?.name}
                   modalPopover
                 />
               </FormControl>

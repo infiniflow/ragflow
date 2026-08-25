@@ -569,16 +569,16 @@ class Dealer:
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
         must_not: dict | None = None,
-        prefetch_size=64,
+        rerank_candidates_count=64,
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
-          - Prefetch more records than the requested page_size.
+          - Retrieve more rerank candidates than the requested page_size.
           - Rerank those records to calculate similarity scores.
           - Filter out records below than the similarity threshold.
         When requesting page 2, the system must still process all candidates needed for page 1,
           resulting in a significant waste of time and computational resources. (without cache)
-        Moreover, when prefetch_size expands into the next retrieval window, new records are added to the candidate set and the entire set is reranked.
+        Moreover, when rerank_candidates_count expands into the next retrieval window, new records are added to the candidate set and the entire set is reranked.
           That meant the previous returned pages might not be the same as the current returned pages, which is not acceptable for pagination.
         """
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
@@ -586,17 +586,17 @@ class Dealer:
             return ranks
 
         page = max(page, 1)
-        if page * page_size > prefetch_size:
-            raise Exception(f"prefetch_size({prefetch_size}) must be greater than page * page_size({page * page_size}) to ensure correct pagination.")
+        if page * page_size > rerank_candidates_count:
+            raise Exception(f"rerank_candidates_count({rerank_candidates_count}) must be greater than page * page_size({page * page_size}) to ensure correct pagination.")
         if rerank_mdl is not None and page != 1:
             raise Exception(f"Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top {page_size} results.")
 
-        prefetch_page = 1
+        rerank_candidates_page = 1
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": prefetch_page,
-            "size": prefetch_size,
+            "page": rerank_candidates_page,
+            "size": rerank_candidates_count,
             "question": question,
             "vector": True,
             "topk": top,
@@ -606,7 +606,7 @@ class Dealer:
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
-        logging.info(f"[Search] page={page}, page_size={page_size}, prefetch_size={prefetch_size}")
+        logging.debug(f"[Search] page={page}, page_size={page_size}, rerank_candidates_count={rerank_candidates_count}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")

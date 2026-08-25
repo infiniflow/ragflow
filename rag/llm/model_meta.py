@@ -13,14 +13,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import json
 import logging
-import aiohttp
 from abc import ABC
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 from json.decoder import JSONDecodeError
 from typing import ClassVar
+from urllib.parse import urlparse
+
+import aiohttp
+from botocore import UNSIGNED
+from botocore.awsrequest import AWSRequest
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
+from botocore.utils import validate_region_name
 
 from common.aimlapi_utils import attribution_headers
 from common.constants import LLMType
@@ -94,6 +101,86 @@ class Base(ABC):
         raw_model_list = await self._get_raw_model_list()
         if not raw_model_list:
             return []
+        return self._format_model_list(raw_model_list)
+
+
+class Bedrock(Base):
+    _FACTORY_NAME = "Bedrock"
+
+    def _get_config(self) -> tuple[str, str]:
+        config = self.api_key
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except JSONDecodeError as error:
+                raise ValueError("Bedrock credentials must be a JSON object") from error
+        if not isinstance(config, dict) or config.get("auth_mode") != "bedrock_api_key":
+            raise ValueError("Bedrock API key authentication is required to list models")
+
+        api_key = config.get("bedrock_api_key")
+        if not isinstance(api_key, str) or not api_key.strip():
+            raise ValueError("Bedrock API key must be provided")
+        region = config.get("bedrock_region")
+        if not isinstance(region, str) or not region.strip():
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_region_name(region)
+        return api_key.strip(), region
+
+    def _list_foundation_models(self, api_key: str, region: str) -> dict[str, object]:
+        import boto3
+
+        client = boto3.client(
+            service_name="bedrock",
+            region_name=region,
+            config=Config(
+                signature_version=UNSIGNED,
+                connect_timeout=10,
+                read_timeout=10,
+                retries={"mode": "standard", "max_attempts": 0},
+            ),
+        )
+
+        def add_bearer_token(request: AWSRequest, **_kwargs: object) -> None:
+            request.headers["Authorization"] = f"Bearer {api_key}"
+
+        client.meta.events.register("before-sign.bedrock.*", add_bearer_token)
+        return client.list_foundation_models(byInferenceType="ON_DEMAND")
+
+    def _format_model_list(self, raw_model_list: dict[str, object]) -> list[dict[str, object]]:
+        models: list[dict[str, object]] = []
+        for summary in raw_model_list.get("modelSummaries", []):
+            if not isinstance(summary, dict):
+                continue
+            model_id = summary.get("modelId")
+            input_modalities = summary.get("inputModalities", [])
+            output_modalities = summary.get("outputModalities", [])
+            inference_types = summary.get("inferenceTypesSupported", [])
+            lifecycle_status = (summary.get("modelLifecycle") or {}).get("status")
+            if not model_id or "TEXT" not in input_modalities or "rerank" in model_id.lower():
+                continue
+            if inference_types and "ON_DEMAND" not in inference_types:
+                continue
+            if lifecycle_status and lifecycle_status != "ACTIVE":
+                continue
+            if "EMBEDDING" in output_modalities and model_id.startswith(("amazon.titan-embed-text", "cohere.embed-")):
+                model_types = [LLMType.EMBEDDING.value]
+            elif "TEXT" in output_modalities:
+                model_types = [LLMType.CHAT.value]
+                if "IMAGE" in input_modalities:
+                    model_types.append(LLMType.VISION.value)
+            else:
+                continue
+            models.append({"name": model_id, "model_types": model_types, "max_tokens": 8192, "features": []})
+        return models
+
+    async def get_model_list(self) -> list[dict[str, object]]:
+        api_key, region = self._get_config()
+        try:
+            raw_model_list = await asyncio.to_thread(self._list_foundation_models, api_key, region)
+        except ClientError as error:
+            raise ValueError(f"Failed to list models from Amazon Bedrock in region '{region}'") from error
+        except BotoCoreError as error:
+            raise ValueError("Failed to list models from Amazon Bedrock") from error
         return self._format_model_list(raw_model_list)
 
 

@@ -33,11 +33,11 @@ export function NaiveConfiguration() {
           sliderTestId="ds-settings-parser-recommended-chunk-size-slider"
           numberInputTestId="ds-settings-parser-recommended-chunk-size-input"
         ></MaxTokenNumberFormField>
+        <OverlappedPercent />
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
         <ImageContextWindow />
         <AutoMetadata />
-        <OverlappedPercent />
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
         <AutoKeywordsFormField

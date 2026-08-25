@@ -24,8 +24,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strings"
+
+	"ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 type PaddleOCRLocalModel struct {
@@ -146,29 +149,68 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		req.Header.Set("Authorization", auth)
 	}
 
+	algorithm := ""
+	if ocrConfig != nil {
+		algorithm = ocrConfig.Algorithm
+	}
+	common.Info("paddleocr local submit: sending",
+		zap.String("driver", p.Name()),
+		zap.String("url", url),
+		zap.String("model", *modelName),
+		zap.String("algorithm", algorithm),
+		zap.Int("content_bytes", len(content)))
+
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
+		common.Error("paddleocr local submit: request failed",
+			err,
+			zap.String("driver", p.Name()),
+			zap.String("url", url))
 		return nil, fmt.Errorf("failed to send request to local PaddleOCR: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errBody := readErrorBody(resp.Body)
+		common.Error("paddleocr local submit: non-200",
+			fmt.Errorf("status %d", resp.StatusCode),
+			zap.String("driver", p.Name()),
+			zap.String("url", url),
+			zap.Int("status", resp.StatusCode),
+			zap.String("body", errBody))
+		return nil, fmt.Errorf("local PaddleOCR failed with status %d: %s", resp.StatusCode, errBody)
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("local PaddleOCR failed with status %d: %s", resp.StatusCode, string(respBody))
-	}
-
 	var ocrResp paddleLocalOCRResponse
 	if err := json.Unmarshal(respBody, &ocrResp); err != nil {
-		return nil, fmt.Errorf("failed to parse local PaddleOCR response: %w, raw: %s", err, string(respBody))
+		common.Error("paddleocr local submit: parse failed",
+			err,
+			zap.String("driver", p.Name()),
+			zap.String("url", url),
+			zap.String("body", logBody(respBody)))
+		return nil, fmt.Errorf("failed to parse local PaddleOCR response: %w, raw: %s", err, logBody(respBody))
 	}
 
 	if ocrResp.ErrorCode != 0 {
+		common.Error("paddleocr local submit: task failed",
+			fmt.Errorf("errorCode %d", ocrResp.ErrorCode),
+			zap.String("driver", p.Name()),
+			zap.String("url", url),
+			zap.Int("error_code", ocrResp.ErrorCode),
+			zap.String("error_msg", ocrResp.ErrorMsg))
 		return nil, fmt.Errorf("local PaddleOCR task failed: %s (errorCode: %d)", ocrResp.ErrorMsg, ocrResp.ErrorCode)
 	}
+
+	common.Info("paddleocr local submit: ok",
+		zap.String("driver", p.Name()),
+		zap.String("url", url),
+		zap.Int("status", resp.StatusCode),
+		zap.String("log_id", ocrResp.LogId))
 
 	var fullMarkdown strings.Builder
 	for _, layoutRes := range ocrResp.Result.LayoutParsingResults {
