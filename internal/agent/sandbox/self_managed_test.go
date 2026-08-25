@@ -567,6 +567,9 @@ func TestNewSelfManagedProviderFromConfig_CanonicalPythonSchema(t *testing.T) {
 		"pool_size":   float64(9),
 		"api_token":   "settings-secret",
 	})
+	if p.helper.maxAttempts != 5 {
+		t.Errorf("helper maxAttempts = %d, want 5 from settings max_retries", p.helper.maxAttempts)
+	}
 	if p.endpoint != "https://manager.example:9385" {
 		t.Errorf("endpoint = %q, want trailing slash stripped", p.endpoint)
 	}
@@ -672,6 +675,7 @@ func TestNewSelfManagedProvider_EnvOnlyFallbacks(t *testing.T) {
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "15s")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES", "6")
+	// asserted via p.helper.maxAttempts below
 	t.Setenv("SANDBOX_BASE_PYTHON_IMAGE", "reg.example.com/envpy:2")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "env-only-secret")
 
@@ -690,6 +694,9 @@ func TestNewSelfManagedProvider_EnvOnlyFallbacks(t *testing.T) {
 	}
 	if p.apiToken != "env-only-secret" {
 		t.Errorf("apiToken = %q, want env value", p.apiToken)
+	}
+	if p.helper.maxAttempts != 6 {
+		t.Errorf("helper maxAttempts = %d, want 6 from env max retries", p.helper.maxAttempts)
 	}
 }
 

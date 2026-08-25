@@ -182,8 +182,9 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 
 	timeout := configDurationEnv(cfg, 30*time.Second, common.EnvSandboxExecutorManagerTimeout, "timeout")
 	poolSize := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerPoolSize, "executor_manager_pool_size", "pool_size")
+	// max_retries maps to the HTTP client's total attempt count (first try
+	// included), matching its default of 3 attempts.
 	maxRetries := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerMaxRetries, "max_retries")
-	_ = maxRetries // retained for future use; retry is in HTTPClient
 
 	// Per-language base image overrides. Empty = executor_manager
 	// default; non-empty = the operator picked a custom base image
@@ -204,7 +205,8 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 		baseImages: baseImages,
 		apiToken:   apiToken,
 		helper: NewHTTPClient(HTTPConfig{
-			Timeout: timeout,
+			Timeout:     timeout,
+			MaxAttempts: maxRetries,
 		}),
 		healthHelper: NewHTTPClient(HTTPConfig{
 			Timeout: 5 * time.Second,
