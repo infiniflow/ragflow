@@ -116,39 +116,77 @@ type SelfManagedProvider struct {
 // are also read; empty values mean "use executor_manager's
 // default image" — no override.
 func newSelfManagedProviderFromEnv() *SelfManagedProvider {
-	return newSelfManagedProviderFromConfig(selfManagedConfigFromEnv())
+	return newSelfManagedProviderFromConfig(map[string]any{})
 }
 
-// selfManagedConfigFromEnv builds a config map from the SANDBOX_*
-// env vars, mirroring the admin-panel settings JSON shape.
-func selfManagedConfigFromEnv() map[string]any {
-	return map[string]any{
-		"EXECUTOR_MANAGER_URL":         common.GetEnv(common.EnvSandboxExecutorManagerURL),
-		"EXECUTOR_MANAGER_TIMEOUT":     common.GetEnv(common.EnvSandboxExecutorManagerTimeout),
-		"EXECUTOR_MANAGER_POOL_SIZE":   common.GetEnv(common.EnvSandboxExecutorManagerPoolSize),
-		"EXECUTOR_MANAGER_MAX_RETRIES": common.GetEnv(common.EnvSandboxExecutorManagerMaxRetries),
-		"EXECUTOR_MANAGER_API_TOKEN":   common.GetEnv(common.EnvSandboxExecutorManagerAPIToken),
-		"BASE_PYTHON_IMAGE":            common.GetEnv(common.EnvSandboxBasePythonImage),
-		"BASE_NODEJS_IMAGE":            common.GetEnv(common.EnvSandboxBaseNodeJSImage),
+// canonicalSelfManagedKeys maps each provider field to its lookup order:
+// the canonical lowercase admin-panel settings key first (endpoint,
+// timeout, max_retries, pool_size, api_token — the schema
+// agent/sandbox/providers/self_managed.py persists and reads), then the
+// legacy UPPERCASE env-style alias this Go port historically accepted.
+// Environment variables act as the final fallback for fields absent
+// from persisted settings, mirroring the Python provider's
+// config-over-env resolution.
+func configStringChain(cfg map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := configString(cfg, key); value != "" {
+			return value
+		}
 	}
+	return ""
 }
 
-// newSelfManagedProviderFromConfig builds the provider from a JSON
-// config map (as stored in the system_settings table for the
-// self_managed provider). The config keys mirror the env-var names
-// without the SANDBOX_ prefix; see selfManagedConfigFromEnv for the
-// shape. Missing / unparseable values fall back to the same defaults
-// the env-driven path uses.
+func configDurationChain(cfg map[string]any, fallback time.Duration, keys ...string) time.Duration {
+	for _, key := range keys {
+		if _, ok := cfg[key]; ok && cfg[key] != nil {
+			return configDuration(cfg, key, fallback)
+		}
+	}
+	return fallback
+}
+
+func configIntChain(cfg map[string]any, fallback int, keys ...string) int {
+	for _, key := range keys {
+		if _, ok := cfg[key]; ok && cfg[key] != nil {
+			return configInt(cfg, key, fallback)
+		}
+	}
+	return fallback
+}
+
+// newSelfManagedProviderFromConfig builds the provider from the persisted
+// settings JSON (the `sandbox.self_managed` row written by the admin panel,
+// lowercase keys: endpoint, timeout, max_retries, pool_size, api_token,
+// optionally base_python_image / base_nodejs_image). Legacy UPPERCASE keys
+// are still honored, and any field absent from the settings falls back to
+// its SANDBOX_* environment variable before the built-in default. This
+// keeps the Go provider on the same configuration contract as the Python
+// provider: a standard settings row plus the token environment variable
+// produces an authenticated Go client too.
 func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
-	endpoint := configString(cfg, "EXECUTOR_MANAGER_URL")
+	endpoint := configStringChain(cfg, "endpoint", "EXECUTOR_MANAGER_URL")
+	if endpoint == "" {
+		endpoint = common.GetEnv(common.EnvSandboxExecutorManagerURL)
+	}
 	if endpoint == "" {
 		endpoint = selfManagedDefaultEndpoint
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
 
-	timeout := configDuration(cfg, "EXECUTOR_MANAGER_TIMEOUT", 30*time.Second)
-	poolSize := configInt(cfg, "EXECUTOR_MANAGER_POOL_SIZE", 3)
-	maxRetries := configInt(cfg, "EXECUTOR_MANAGER_MAX_RETRIES", 3)
+	timeout := configDurationChain(cfg, 0, "timeout", "EXECUTOR_MANAGER_TIMEOUT")
+	if timeout == 0 {
+		if envTimeout := common.GetEnv(common.EnvSandboxExecutorManagerTimeout); envTimeout != "" {
+			if parsed, err := time.ParseDuration(envTimeout); err == nil && parsed > 0 {
+				timeout = parsed
+			}
+		}
+	}
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+
+	poolSize := configIntChain(cfg, 3, "pool_size", "executor_manager_pool_size", "EXECUTOR_MANAGER_POOL_SIZE")
+	maxRetries := configIntChain(cfg, 3, "max_retries", "EXECUTOR_MANAGER_MAX_RETRIES")
 	_ = maxRetries // retained for future use; retry is in HTTPClient
 
 	// Per-language base image overrides. Empty = executor_manager
@@ -156,12 +194,23 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	// (typically a heavier Python image with torch/tensorflow
 	// pre-installed, or a node image with native deps for native
 	// addons).
+	pythonImage := configStringChain(cfg, "base_python_image", "BASE_PYTHON_IMAGE")
+	if pythonImage == "" {
+		pythonImage = common.GetEnv(common.EnvSandboxBasePythonImage)
+	}
+	nodejsImage := configStringChain(cfg, "base_nodejs_image", "BASE_NODEJS_IMAGE")
+	if nodejsImage == "" {
+		nodejsImage = common.GetEnv(common.EnvSandboxBaseNodeJSImage)
+	}
 	baseImages := map[string]string{
-		"python": configString(cfg, "BASE_PYTHON_IMAGE"),
-		"nodejs": configString(cfg, "BASE_NODEJS_IMAGE"),
+		"python": pythonImage,
+		"nodejs": nodejsImage,
 	}
 
-	apiToken := strings.TrimSpace(configString(cfg, "EXECUTOR_MANAGER_API_TOKEN"))
+	apiToken := strings.TrimSpace(configStringChain(cfg, "api_token", "EXECUTOR_MANAGER_API_TOKEN"))
+	if apiToken == "" {
+		apiToken = strings.TrimSpace(common.GetEnv(common.EnvSandboxExecutorManagerAPIToken))
+	}
 
 	return &SelfManagedProvider{
 		endpoint:   endpoint,

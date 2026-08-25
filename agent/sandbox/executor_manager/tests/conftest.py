@@ -24,17 +24,24 @@ EXECUTOR_MANAGER_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(EXECUTOR_MANAGER_ROOT))
 
 # Keep tests hermetic: a small window makes the 429 case cheap to exercise.
-# Must be set before `services.limiter` is first imported (module-level env read).
+# Must be set before `services.limiter` / `services.preauth` are first imported
+# (module-level env reads). The pre-auth budget stays generous by default so
+# ordinary auth tests never trip it; the dedicated pre-auth tests shrink the
+# limiter explicitly.
 os.environ["SANDBOX_RUN_RATE_LIMIT"] = os.environ.get("SANDBOX_TEST_RATE_LIMIT_OVERRIDE", "3/minute")
+os.environ["SANDBOX_RUN_PREAUTH_RATE_LIMIT"] = os.environ.get("SANDBOX_TEST_PREAUTH_RATE_LIMIT_OVERRIDE", "1000/minute")
 
 import pytest
 from services.limiter import limiter
+from services.preauth import preauth_limiter
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limiter():
+def _reset_rate_limiters():
     limiter.reset()
+    preauth_limiter.reset()
     yield
+    preauth_limiter.reset()
     limiter.reset()
 
 

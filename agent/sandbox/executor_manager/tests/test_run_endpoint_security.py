@@ -20,14 +20,17 @@ Run from the executor_manager directory:
     cd agent/sandbox/executor_manager
     python -m pytest tests/
 
-Covers: shared-secret authentication (401 without/with wrong token, success
-via Authorization: Bearer and X-Sandbox-Token, backwards compatibility when
-no token is configured), rate limiting on /run, and the docker network flag
-used for sandbox runner containers.
+Covers: fail-closed shared-secret authentication (503 when no token is
+configured unless the explicit unauthenticated opt-in flag is set, 401 with a
+wrong token, success via Authorization: Bearer and X-Sandbox-Token), the
+pre-auth rate limit applied to all /run traffic, the authenticated execution
+quota, the standalone Compose environment contract, and the docker network
+flag used for sandbox runner containers.
 """
 
 import asyncio
 import base64
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,6 +38,7 @@ from models.enums import ResultStatus, SupportLanguage
 from models.schemas import CodeExecutionResult
 
 API_TOKEN_ENV = "SANDBOX_EXECUTOR_MANAGER_API_TOKEN"
+ALLOW_UNAUTH_ENV = "SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED"
 TEST_TOKEN = "unit-test-shared-secret"
 
 
@@ -91,10 +95,41 @@ class TestRunEndpointAuth:
         response = client.post("/run", json=_payload(), headers={"X-Sandbox-Token": TEST_TOKEN})
         assert response.status_code == 200
 
-    def test_unset_token_keeps_endpoint_open_for_backwards_compatibility(self, client, monkeypatch):
+    def test_unset_token_fails_closed_with_503(self, client, monkeypatch):
         monkeypatch.delenv(API_TOKEN_ENV, raising=False)
+        monkeypatch.delenv(ALLOW_UNAUTH_ENV, raising=False)
+        response = client.post("/run", json=_payload())
+        assert response.status_code == 503
+        assert "SANDBOX_EXECUTOR_MANAGER_API_TOKEN" in response.json()["detail"]
+
+    def test_blank_token_fails_closed_with_503(self, client, monkeypatch):
+        monkeypatch.setenv(API_TOKEN_ENV, "   ")
+        monkeypatch.delenv(ALLOW_UNAUTH_ENV, raising=False)
+        assert client.post("/run", json=_payload()).status_code == 503
+
+    def test_explicit_opt_in_restores_open_endpoint(self, client, monkeypatch):
+        monkeypatch.delenv(API_TOKEN_ENV, raising=False)
+        monkeypatch.setenv(ALLOW_UNAUTH_ENV, "true")
         response = client.post("/run", json=_payload())
         assert response.status_code == 200
+
+    @pytest.mark.parametrize("flag", ["1", "TRUE", "Yes", "on "])
+    def test_opt_in_accepts_truthy_flag_spellings(self, client, monkeypatch, flag):
+        monkeypatch.delenv(API_TOKEN_ENV, raising=False)
+        monkeypatch.setenv(ALLOW_UNAUTH_ENV, flag)
+        assert client.post("/run", json=_payload()).status_code == 200
+
+    @pytest.mark.parametrize("flag", ["false", "0", "no", "unexpected"])
+    def test_opt_in_rejects_non_truthy_flag_spellings(self, client, monkeypatch, flag):
+        monkeypatch.delenv(API_TOKEN_ENV, raising=False)
+        monkeypatch.setenv(ALLOW_UNAUTH_ENV, flag)
+        assert client.post("/run", json=_payload()).status_code == 503
+
+    def test_opt_in_is_ignored_when_a_token_is_configured(self, client, monkeypatch):
+        monkeypatch.setenv(API_TOKEN_ENV, TEST_TOKEN)
+        monkeypatch.setenv(ALLOW_UNAUTH_ENV, "true")
+        # The flag never weakens a configured token: bad credentials still 401.
+        assert client.post("/run", json=_payload(), headers={"Authorization": "Bearer wrong"}).status_code == 401
 
     def test_healthz_does_not_require_token(self, client, monkeypatch):
         monkeypatch.setenv(API_TOKEN_ENV, TEST_TOKEN)
@@ -114,13 +149,30 @@ class TestRunEndpointRateLimit:
         body = response.json()
         assert body["exit_code"] == -429
 
-    def test_unauthenticated_requests_do_not_consume_quota(self, client, monkeypatch):
+    def test_repeated_unauthenticated_requests_eventually_get_429(self, client, monkeypatch):
+        # The pre-auth limiter throttles ALL /run traffic before authentication,
+        # so an invalid-token flood cannot generate unbounded authentication
+        # work. The limiter is shrunk to 3/minute for this test (conftest
+        # resets it afterwards).
+        import services.preauth as preauth_module
+
         monkeypatch.setenv(API_TOKEN_ENV, TEST_TOKEN)
-        # Rejected before the endpoint (and its limiter) runs.
-        for _ in range(5):
+        monkeypatch.setattr(
+            preauth_module,
+            "preauth_limiter",
+            preauth_module.PreAuthRateLimiter(preauth_module._parse_rate_limit("3/minute")),
+        )
+        for _ in range(3):
             assert client.post("/run", json=_payload()).status_code == 401
-        response = client.post("/run", json=_payload(), headers={"Authorization": f"Bearer {TEST_TOKEN}"})
-        assert response.status_code == 200
+        response = client.post("/run", json=_payload())
+        assert response.status_code == 429
+        body = response.json()
+        assert body["exit_code"] == -429
+
+    def test_single_auth_failures_still_return_401_under_generous_preauth(self, client, monkeypatch):
+        monkeypatch.setenv(API_TOKEN_ENV, TEST_TOKEN)
+        assert client.post("/run", json=_payload()).status_code == 401
+        assert client.post("/run", json=_payload(), headers={"X-Sandbox-Token": "wrong"}).status_code == 401
 
 
 class TestContainerNetworkIsolation:
@@ -159,3 +211,31 @@ class TestContainerNetworkIsolation:
         assert "--runtime=runsc" in argv
         assert "--read-only" in argv
         assert argv[argv.index("--user") + 1] == "nobody"
+
+
+class TestStandaloneComposeEnvironment:
+    """Regression: the standalone Compose file must actually deliver the
+    documented environment contract (SANDBOX_RUN_RATE_LIMIT, the pre-auth
+    limit, and the explicit unauthenticated opt-in flag) into the container."""
+
+    COMPOSE_PATH = Path(__file__).resolve().parents[2] / "docker-compose.yml"
+    ENV_EXAMPLE_PATH = Path(__file__).resolve().parents[2] / ".env.example"
+
+    def test_documented_rate_limit_reaches_the_container(self):
+        compose = self.COMPOSE_PATH.read_text(encoding="utf-8")
+        assert "- SANDBOX_RUN_RATE_LIMIT=${SANDBOX_RUN_RATE_LIMIT:-120/minute}" in compose
+        assert "- SANDBOX_RUN_PREAUTH_RATE_LIMIT=${SANDBOX_RUN_PREAUTH_RATE_LIMIT:-30/minute}" in compose
+
+    def test_unauthenticated_opt_in_flag_is_forwarded(self):
+        compose = self.COMPOSE_PATH.read_text(encoding="utf-8")
+        assert "- SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED=${SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED:-false}" in compose
+
+    def test_env_example_matches_compose_defaults(self):
+        example = self.ENV_EXAMPLE_PATH.read_text(encoding="utf-8")
+        for name in (
+            "SANDBOX_RUN_RATE_LIMIT",
+            "SANDBOX_RUN_PREAUTH_RATE_LIMIT",
+            "SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED",
+            "SANDBOX_EXECUTOR_MANAGER_API_TOKEN",
+        ):
+            assert name in example, f"{name} missing from .env.example"

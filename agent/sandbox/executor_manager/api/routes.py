@@ -16,6 +16,7 @@
 from fastapi import APIRouter, Depends
 from services.auth import require_api_token
 from services.limiter import RUN_RATE_LIMIT, limiter
+from services.preauth import preauth_rate_limit
 
 from api.handlers import healthz_handler, run_code_handler
 
@@ -23,6 +24,8 @@ router = APIRouter()
 
 router.get("/")(healthz_handler)
 router.get("/healthz")(healthz_handler)
-# Execution endpoints require the shared-secret token (when configured) and
-# are rate limited per client address. Health probes stay unauthenticated.
-router.post("/run", dependencies=[Depends(require_api_token)])(limiter.limit(RUN_RATE_LIMIT)(run_code_handler))
+# Execution endpoints throttle ALL traffic per client address before
+# authentication (so invalid-token floods eventually receive 429), then
+# require the shared-secret token, then apply the larger authenticated
+# execution quota. Health probes stay unauthenticated.
+router.post("/run", dependencies=[Depends(preauth_rate_limit), Depends(require_api_token)])(limiter.limit(RUN_RATE_LIMIT)(run_code_handler))

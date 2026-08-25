@@ -669,3 +669,63 @@ func TestReloadFromSettingsWithReader(t *testing.T) {
 		t.Errorf("endpoint = %q, want %q (from settings after reload)", sm.endpoint, srv.URL)
 	}
 }
+
+// TestLoadFromSettingsWithReader_CanonicalSchemaTokenPropagation verifies
+// the full settings-driven path against the canonical lowercase persisted
+// JSON: LoadFromSettingsWithReader builds the provider from the
+// sandbox.self_managed row, and the executor manager receives the
+// Authorization header derived from the row's api_token on /run. This is
+// the configuration-level counterpart of the request-level bearer test in
+// self_managed_test.go.
+func TestLoadFromSettingsWithReader_CanonicalSchemaTokenPropagation(t *testing.T) {
+	var capturedAuth string
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/run":
+			capturedAuth, authSeen = r.Header.Get("Authorization"), true
+			handleRun(t, w, r, "ok", "")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	// The exact lowercase shape the admin panel persists; only endpoint and
+	// api_token are set so the env fallbacks for the other fields stay
+	// exercised.
+	r := &fakeSettingsReader{
+		rows: map[string][]entity.SystemSettings{
+			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "self_managed"}},
+			"sandbox.self_managed": {{Name: "sandbox.self_managed", Value: `{
+				"endpoint": "` + srv.URL + `",
+				"api_token": "canonical-settings-secret"
+			}`}},
+		},
+	}
+	m := &ProviderManager{}
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
+		t.Fatalf("LoadFromSettingsWithReader: %v", err)
+	}
+	sm, ok := m.Provider().(*SelfManagedProvider)
+	if !ok {
+		t.Fatalf("provider type = %T, want *SelfManagedProvider", m.Provider())
+	}
+	if sm.apiToken != "canonical-settings-secret" {
+		t.Errorf("apiToken = %q, want canonical-settings-secret (from lowercase settings row)", sm.apiToken)
+	}
+	inst, err := sm.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := sm.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if !authSeen || capturedAuth != "Bearer canonical-settings-secret" {
+		t.Errorf("Authorization header = %q (seen=%v), want Bearer canonical-settings-secret", capturedAuth, authSeen)
+	}
+}

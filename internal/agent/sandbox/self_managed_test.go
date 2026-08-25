@@ -552,3 +552,113 @@ func handleRunWithResult(t *testing.T, w http.ResponseWriter, _ *http.Request, s
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
 }
+
+// TestNewSelfManagedProviderFromConfig_CanonicalPythonSchema pins the
+// canonical lowercase admin-panel settings shape that the Python provider
+// persists and reads (`sandbox.self_managed`: endpoint, timeout,
+// max_retries, pool_size, api_token). The Go provider must map the same
+// schema so a standard settings row configures both runtimes identically.
+func TestNewSelfManagedProviderFromConfig_CanonicalPythonSchema(t *testing.T) {
+	t.Parallel()
+	p := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint":    "https://manager.example:9385/",
+		"timeout":     float64(20), // JSON-decoded seconds
+		"max_retries": float64(5),
+		"pool_size":   float64(9),
+		"api_token":   "settings-secret",
+	})
+	if p.endpoint != "https://manager.example:9385" {
+		t.Errorf("endpoint = %q, want trailing slash stripped", p.endpoint)
+	}
+	if p.timeout != 20*time.Second {
+		t.Errorf("timeout = %v, want 20s", p.timeout)
+	}
+	if p.poolSize != 9 {
+		t.Errorf("poolSize = %d, want 9", p.poolSize)
+	}
+	if p.apiToken != "settings-secret" {
+		t.Errorf("apiToken = %q, want settings-secret", p.apiToken)
+	}
+}
+
+// TestNewSelfManagedProviderFromConfig_ApiTokenResolution pins the token
+// resolution contract shared with the Python provider: an explicit settings
+// value wins, and an absent/empty settings value falls back to
+// SANDBOX_EXECUTOR_MANAGER_API_TOKEN. Cannot use t.Parallel() with t.Setenv.
+func TestNewSelfManagedProviderFromConfig_ApiTokenResolution(t *testing.T) {
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "env-secret")
+
+	fromEnv := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint": "https://manager.example:9385",
+	})
+	if fromEnv.apiToken != "env-secret" {
+		t.Errorf("apiToken = %q, want env fallback value", fromEnv.apiToken)
+	}
+
+	fromSettings := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint":  "https://manager.example:9385",
+		"api_token": "settings-secret",
+	})
+	if fromSettings.apiToken != "settings-secret" {
+		t.Errorf("apiToken = %q, want settings value to win over env", fromSettings.apiToken)
+	}
+
+	blankSettingsWins := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint":  "https://manager.example:9385",
+		"api_token": "   ",
+	})
+	if blankSettingsWins.apiToken != "env-secret" {
+		t.Errorf("apiToken = %q, want blank settings value to fall back to env", blankSettingsWins.apiToken)
+	}
+}
+
+// TestSelfManaged_ExecuteCode_TokenFromCanonicalSettingsPropagation is the
+// end-to-end version of the bearer-token test: the provider is built from
+// the real lowercase persisted settings JSON (not by setting apiToken
+// directly), and the fake executor manager asserts the Authorization header
+// that /run actually receives.
+func TestSelfManaged_ExecuteCode_TokenFromCanonicalSettingsPropagation(t *testing.T) {
+	t.Parallel()
+	var capturedAuth string
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/run":
+			capturedAuth, authSeen = r.Header.Get("Authorization"), true
+			handleRun(t, w, r, "ok", "")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	// The exact JSON shape the admin panel persists for sandbox.self_managed.
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"endpoint": "`+srv.URL+`",
+		"timeout": 5,
+		"max_retries": 3,
+		"pool_size": 3,
+		"api_token": "settings-shared-secret"
+	}`), &settings); err != nil {
+		t.Fatalf("unmarshal settings: %v", err)
+	}
+	p := newSelfManagedProviderFromConfig(settings)
+	if err := p.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if !authSeen || capturedAuth != "Bearer settings-shared-secret" {
+		t.Errorf("Authorization header = %q (seen=%v), want Bearer settings-shared-secret", capturedAuth, authSeen)
+	}
+}
