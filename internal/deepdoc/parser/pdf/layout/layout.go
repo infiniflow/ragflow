@@ -255,6 +255,12 @@ func dedupNormText(s string) string {
 //   - Only boxes whose Text is exactly one ASCII letter or digit. This
 //     excludes multi-token repetition (e.g. repeated SKU "ABC123"), CJK
 //     glyphs (always ≥3 UTF-8 bytes → len>1), punctuation, and whitespace.
+//     We deliberately do NOT TrimSpace before classifying: a box whose
+//     raw text is " Q " (3 bytes) has already been built by LineToTextBox
+//     from real char-layer data, and we MUST NOT collapse it with bare
+//     "Q" into the same watermark key. Per the CodeRabbit review on PR
+//     #18308, trimming would let four " Q " boxes get promoted and dropped
+//     on the strength of one "Q"-shaped slot.
 //   - Promoted only if the box's text appears ≥ watermarkBoxesMinOccurrences
 //     times on the page. A real "Q" or "1" appears at most once per page
 //     outside a watermark tiling.
@@ -269,18 +275,19 @@ func FilterWatermarkBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
-	// Pass 1: per-page count of single-char ASCII boxes.
+	// Pass 1: per-page count of single-char ASCII boxes. Use the raw
+	// box.Text for both classification and the promotion key so no
+	// normalization collapses distinct bytes.
 	type key struct {
 		page int
 		text string
 	}
 	counts := make(map[key]int, len(boxes))
 	for _, b := range boxes {
-		t := strings.TrimSpace(b.Text)
-		if !isSingleAsciiAlnum(t) {
+		if !isSingleAsciiAlnum(b.Text) {
 			continue
 		}
-		counts[key{b.PageNumber, t}]++
+		counts[key{b.PageNumber, b.Text}]++
 	}
 	// Promote any (page, text) that meets the watermark threshold.
 	promoted := make(map[key]struct{}, len(counts))
@@ -295,9 +302,8 @@ func FilterWatermarkBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	// Pass 2: drop boxes whose (page, text) was promoted.
 	out := make([]pdf.TextBox, 0, len(boxes))
 	for _, b := range boxes {
-		t := strings.TrimSpace(b.Text)
-		if isSingleAsciiAlnum(t) {
-			if _, drop := promoted[key{b.PageNumber, t}]; drop {
+		if isSingleAsciiAlnum(b.Text) {
+			if _, drop := promoted[key{b.PageNumber, b.Text}]; drop {
 				continue
 			}
 		}

@@ -144,6 +144,55 @@ func TestFilterWatermarkBoxes_NoFalsePositiveOnMixed(t *testing.T) {
 	}
 }
 
+// TestFilterWatermarkBoxes_WhitespacePaddedNotCollapsedWithBareSingleChar
+// regression-tests the CodeRabbit review on PR #18308: the previous
+// implementation stripped whitespace before classifying, which meant a
+// box whose raw text was " Q " (3 bytes) and a box whose raw text was
+// "Q" (1 byte) collapsed into the same (page, "Q") promotion key. Four
+// padded boxes could therefore promote and drop on the strength of one
+// bare slot. The new contract uses raw b.Text for both classification
+// and keying, so padded boxes must survive verbatim even when a bare
+// "Q" sits next to them.
+//
+// Test layout: 4 raw "Q" boxes reach watermarkBoxesMinOccurrences (4)
+// so they DO get promoted and dropped — that proves the filter is
+// alive on real watermark-shaped input. 3 padded variants ("Q ",
+// " Q", " Q ") must be untouched because they never entered the
+// candidate set under the new no-TrimSpace contract.
+func TestFilterWatermarkBoxes_WhitespacePaddedNotCollapsedWithBareSingleChar(t *testing.T) {
+	boxes := []pdf.TextBox{
+		makeBox(0, 50, 58, 100, 112, "Q"),   // raw → candidate
+		makeBox(0, 50, 58, 130, 142, "Q "),  // padded → NOT a candidate under no-TrimSpace
+		makeBox(0, 50, 58, 160, 172, " Q"),  // padded
+		makeBox(0, 50, 58, 190, 202, " Q "), // padded
+		makeBox(0, 50, 58, 220, 232, "Q"),   // raw → candidate
+		makeBox(0, 50, 58, 250, 262, "Q"),   // raw → candidate
+		makeBox(0, 50, 58, 280, 292, "Q"),   // raw → candidate
+	}
+	if got := len(boxes); got != 7 {
+		t.Fatalf("sanity: want 7 boxes, got %d", got)
+	}
+	out := FilterWatermarkBoxes(boxes)
+	rawQ, padded := 0, 0
+	for _, b := range out {
+		switch b.Text {
+		case "Q":
+			rawQ++
+		case "Q ", " Q", " Q ":
+			padded++
+		}
+	}
+	if rawQ != 0 {
+		t.Errorf("expected all raw 'Q' boxes dropped (4 promoted, ≥ threshold), %d survived", rawQ)
+	}
+	if padded != 3 {
+		t.Errorf("expected all 3 whitespace-padded boxes kept, %d survived", padded)
+	}
+	if len(out) != 3 {
+		t.Errorf("expected 3 surviving boxes, got %d", len(out))
+	}
+}
+
 func TestIsSingleAsciiAlnum(t *testing.T) {
 	cases := []struct {
 		in   string
