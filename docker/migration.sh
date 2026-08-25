@@ -248,12 +248,19 @@ perform_restore() {
             echo "  - $volume"
         done
         echo ""
-        echo "🔴 IMPORTANT: Restoring will OVERWRITE existing data!"
-        echo "💡 Recommendation: Create a backup of your current data first:"
+        echo "🔴 IMPORTANT: Restoring will PERMANENTLY REPLACE the contents of these"
+        echo "   volumes. Any files in the volumes that are NOT present in the backup"
+        echo "   archive will be DELETED before extraction begins — this is necessary to"
+        echo "   reproduce a faithful copy of the backup and avoid silent merges of old"
+        echo "   and new state across restore cycles. This operation is irreversible."
+        echo ""
+        echo "💡 Recommendation: Snapshot the current volumes first (e.g. with"
+        echo "   'docker volume create --name <snapshot>' + a tar backup, or stop and"
+        echo "   copy the volume via a helper container):"
         echo "   $0 -p $PROJECT_NAME backup current_backup_$(date +%Y%m%d_%H%M%S)"
         echo ""
 
-        if ! confirm_action "Do you want to continue with the restore operation?"; then
+        if ! confirm_action "Continue with the restore? (type 'y' to permanently overwrite these volumes)"; then
             echo "❌ Restore operation cancelled by user"
             exit 0
         fi
@@ -284,12 +291,22 @@ perform_restore() {
         # volume, file format upgrades never took effect, etc.). Clean the
         # target path inside the helper container before extracting, so
         # stateful volumes land as a faithful copy of the backup.
+        #
+        # The cleanup glob is split into three patterns so we cover every
+        # POSIX-basename shape the volume might contain:
+        #   /target/*       — non-hidden entries
+        #   /target/.[!.]*  — single-dot hidden entries (".env", ".cache")
+        #   /target/..?*    — multi-dot hidden entries (".example", "..tmp",
+        #                     "...state"). POSIX "[!.]" only excludes the
+        #                     second character being ".", which leaves
+        #                     names like ".example" and "...state"
+        #                     unremoved under the two-character pattern.
         # Regression for #18354.
         echo "  📥 Restoring data from $backup_file..."
         docker run --rm \
             -v "$volume":/target \
             -v "$(pwd)/$backup_folder":/backup \
-            alpine sh -c "rm -rf /target/* /target/.[!.]* && tar xzf \"/backup/$backup_file\" -C /target"
+            alpine sh -c "rm -rf /target/* /target/.[!.]* /target/..?* && tar xzf \"/backup/$backup_file\" -C /target"
 
         echo "✅ Successfully restored $volume"
         echo ""
