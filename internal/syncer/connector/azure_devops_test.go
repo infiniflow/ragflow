@@ -614,24 +614,60 @@ func TestAzureDevOpsActivePullRequestIsAlwaysReindexed(t *testing.T) {
 	}
 }
 
+// countingBody reports how many bytes the connector actually pulled off the
+// wire, so a regression that reads everything and checks the size afterwards
+// cannot pass.
+type countingBody struct {
+	remaining int64
+	read      *int64
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	if b.remaining <= 0 {
+		return 0, io.EOF
+	}
+	n := int64(len(p))
+	if n > b.remaining {
+		n = b.remaining
+	}
+	for i := int64(0); i < n; i++ {
+		p[i] = 'x'
+	}
+	b.remaining -= n
+	*b.read += n
+	return int(n), nil
+}
+
+func (b *countingBody) Close() error { return nil }
+
+type stubTransport struct {
+	respond func(*http.Request) *http.Response
+}
+
+func (t stubTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return t.respond(request), nil
+}
+
 // A single oversized repository file must never be allocated in full.
-func TestAzureDevOpsOversizedFileIsSkippedWithoutFullRead(t *testing.T) {
-	served := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		served++
-		w.Header().Set("Content-Type", "text/plain")
-		chunk := strings.Repeat("x", 64*1024)
-		for written := 0; written < azureDevOpsMaxFileBytes+256*1024; written += len(chunk) {
-			if _, err := io.WriteString(w, chunk); err != nil {
-				return
-			}
+func TestAzureDevOpsOversizedFileStopsAtTheLimit(t *testing.T) {
+	var read int64
+
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"organization": "contoso",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	connector.httpClient = &http.Client{Transport: stubTransport{respond: func(*http.Request) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/plain"}},
+			Body:       &countingBody{remaining: azureDevOpsMaxFileBytes * 4, read: &read},
 		}
-	}))
-	defer server.Close()
+	}}}
 
-	connector := newTestAzureDevOpsConnector(t, server.URL, nil)
 	repo := azureDevOpsRepository{Project: "iddaa", Name: "repo-a", Branch: "master"}
-
 	content, err := connector.fetchFile(context.Background(), repo, "/huge.bin")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -639,8 +675,8 @@ func TestAzureDevOpsOversizedFileIsSkippedWithoutFullRead(t *testing.T) {
 	if content != nil {
 		t.Fatalf("an oversized file must be skipped, got %d bytes", len(content))
 	}
-	if served != 1 {
-		t.Fatalf("expected exactly one request, got %d", served)
+	if read != azureDevOpsMaxFileBytes+1 {
+		t.Fatalf("the download must stop one byte past the limit, read %d bytes", read)
 	}
 }
 
@@ -660,5 +696,22 @@ func TestAzureDevOpsFileWithinLimitIsReturned(t *testing.T) {
 	}
 	if string(content) != "public class App {}" {
 		t.Fatalf("unexpected content: %q", string(content))
+	}
+}
+
+func TestAzureDevOpsRetryAfterIsClamped(t *testing.T) {
+	response := &http.Response{Header: http.Header{"Retry-After": []string{"86400"}}}
+	if got := azureDevOpsRetryAfter(response, time.Second); got != azureDevOpsRetryMaxDelay {
+		t.Fatalf("a large Retry-After must be clamped, got %s", got)
+	}
+
+	response.Header.Set("Retry-After", "5")
+	if got := azureDevOpsRetryAfter(response, time.Second); got != 5*time.Second {
+		t.Fatalf("a small Retry-After must be honoured, got %s", got)
+	}
+
+	response.Header.Set("Retry-After", "not-a-number")
+	if got := azureDevOpsRetryAfter(response, 2*time.Second); got != 2*time.Second {
+		t.Fatalf("an unparsable Retry-After must fall back, got %s", got)
 	}
 }

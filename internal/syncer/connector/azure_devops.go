@@ -426,10 +426,17 @@ func (c *AzureDevOpsConnector) getJSON(ctx context.Context, apiURL string, out a
 	return json.Unmarshal(body, out)
 }
 
+// azureDevOpsRetryAfter honours a Retry-After header, clamped to the backoff
+// ceiling. Azure DevOps can ask for a long pause, and waiting it out verbatim
+// would park a sync worker for hours.
 func azureDevOpsRetryAfter(response *http.Response, fallback time.Duration) time.Duration {
 	if value := response.Header.Get("Retry-After"); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
-			return time.Duration(seconds) * time.Second
+			wait := time.Duration(seconds) * time.Second
+			if wait > azureDevOpsRetryMaxDelay {
+				return azureDevOpsRetryMaxDelay
+			}
+			return wait
 		}
 	}
 	return fallback

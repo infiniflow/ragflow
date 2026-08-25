@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
@@ -47,6 +48,10 @@ MAX_FILE_BYTES = 1_000_000
 # The pull request *list* endpoint truncates descriptions at 400 characters;
 # only the single pull request endpoint returns the full text.
 PULL_REQUEST_DESCRIPTION_LIMIT = 400
+
+# Upper bound for a server supplied Retry-After. Azure DevOps can ask for a long
+# pause, and honouring it verbatim would park a sync worker for hours.
+MAX_RETRY_AFTER_SECONDS = 30
 
 
 def build_auth_client(personal_access_token: str) -> httpx.Client:
@@ -96,6 +101,17 @@ def raise_for_auth(response: httpx.Response, expect_json: bool = True) -> None:
         raise InsufficientPermissionsError("Personal access token lacks the required 'Code (Read)' scope (HTTP 403).")
 
 
+def sleep_for_retry_after(retry_after: str | None) -> None:
+    """Honour a ``Retry-After`` header, clamped to the retry backoff ceiling."""
+    if retry_after is None:
+        return
+    try:
+        seconds = int(retry_after)
+    except (TypeError, ValueError):
+        return
+    time.sleep(max(0, min(seconds, MAX_RETRY_AFTER_SECONDS)))
+
+
 class AzureDevOpsRetriableError(Exception):
     """Raised for throttling and server-side failures worth retrying."""
 
@@ -130,12 +146,7 @@ def azure_devops_get(
 
     status = response.status_code
     if status == 429:
-        retry_after = response.headers.get("Retry-After")
-        if retry_after is not None:
-            try:
-                time.sleep(int(retry_after))
-            except (TypeError, ValueError):
-                pass
+        sleep_for_retry_after(response.headers.get("Retry-After"))
         raise AzureDevOpsRetriableError("Azure DevOps rate limit exceeded (429).")
     if 500 <= status < 600:
         raise AzureDevOpsRetriableError(f"Azure DevOps server error: {status}")
@@ -254,12 +265,7 @@ def azure_devops_get_bytes(
 
         status = response.status_code
         if status == 429:
-            retry_after = response.headers.get("Retry-After")
-            if retry_after is not None:
-                try:
-                    time.sleep(int(retry_after))
-                except (TypeError, ValueError):
-                    pass
+            sleep_for_retry_after(response.headers.get("Retry-After"))
             raise AzureDevOpsRetriableError("Azure DevOps rate limit exceeded (429).")
         if 500 <= status < 600:
             raise AzureDevOpsRetriableError(f"Azure DevOps server error: {status}")
@@ -271,6 +277,10 @@ def azure_devops_get_bytes(
         for chunk in response.iter_bytes():
             size += len(chunk)
             if size > max_bytes:
+                logging.warning(
+                    "[AzureDevOps] skipping %s: larger than the %d byte limit",
+                    params.get("path") or url, max_bytes,
+                )
                 return None
             chunks.append(chunk)
 

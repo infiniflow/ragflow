@@ -222,9 +222,14 @@ class _FakeStreamResponse:
         self._chunks = chunks
         self.status_code = status_code
         self.headers = {"content-type": content_type}
+        self.consumed_chunks = 0
+        self.consumed_bytes = 0
 
     def iter_bytes(self):
-        yield from self._chunks
+        for chunk in self._chunks:
+            self.consumed_chunks += 1
+            self.consumed_bytes += len(chunk)
+            yield chunk
 
     def __enter__(self) -> "_FakeStreamResponse":
         return self
@@ -297,6 +302,20 @@ def test_throttling_response_is_retriable():
 
 
 @pytest.mark.p2
+def test_retry_after_is_clamped(monkeypatch):
+    """A large Retry-After must not park a sync worker for hours."""
+    slept: list[float] = []
+    monkeypatch.setattr(azure_utils.time, "sleep", lambda seconds: slept.append(seconds))
+
+    azure_utils.sleep_for_retry_after("86400")
+    azure_utils.sleep_for_retry_after("5")
+    azure_utils.sleep_for_retry_after("not-a-number")
+    azure_utils.sleep_for_retry_after(None)
+
+    assert slept == [azure_utils.MAX_RETRY_AFTER_SECONDS, 5]
+
+
+@pytest.mark.p2
 def test_server_error_is_retriable():
     client = _FakeClient({"": _FakeResponse(status_code=503)})
     with pytest.raises(azure_utils.AzureDevOpsRetriableError):
@@ -340,10 +359,16 @@ def test_oversized_file_is_abandoned_mid_download():
     """The limit is enforced while reading, not after the body is in memory."""
     chunk = b"x" * 64_000
     chunks = [chunk] * (azure_utils.MAX_FILE_BYTES // len(chunk) + 4)
-    client = _FakeStreamClient(_FakeStreamResponse(chunks))
+    response = _FakeStreamResponse(chunks)
+    client = _FakeStreamClient(response)
 
     content = azure_utils.fetch_file_content(client, "https://dev.azure.com/contoso/p/_apis/git/repositories/r", "/huge.bin", "master")
+
     assert content is None
+    # Reading the whole body and checking the size afterwards would also return
+    # None, so the download itself has to be shown to stop early.
+    assert response.consumed_chunks < len(chunks)
+    assert response.consumed_bytes <= azure_utils.MAX_FILE_BYTES + len(chunk)
 
 
 @pytest.mark.p2
