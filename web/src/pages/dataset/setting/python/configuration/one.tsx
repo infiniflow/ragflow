@@ -5,7 +5,7 @@ import {
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { ConfigurationFormContainer } from '../configuration-form-container';
 import { useOwnerTenantId } from '../../../contexts/knowledge-base-context';
-import { AutoMetadata } from './common-item';
+import { AutoMetadata, GlobalIndexModelItem } from './common-item';
 import { FormLayout } from '@/constants/form';
 
 export function OneConfiguration() {
@@ -15,6 +15,7 @@ export function OneConfiguration() {
       <LayoutRecognizeFormField
         ownerTenantId={ownerTenantId}
       ></LayoutRecognizeFormField>
+      <GlobalIndexModelItem />
       <>
         <AutoMetadata />
         <AutoKeywordsFormField

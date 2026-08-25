@@ -8,7 +8,7 @@ import {
   MainContainer,
 } from '../configuration-form-container';
 import { useOwnerTenantId } from '../../../contexts/knowledge-base-context';
-import { AutoMetadata } from './common-item';
+import { AutoMetadata, GlobalIndexModelItem } from './common-item';
 import { FormLayout } from '@/constants/form';
 
 export function BookConfiguration() {
@@ -19,6 +19,7 @@ export function BookConfiguration() {
         <LayoutRecognizeFormField
           ownerTenantId={ownerTenantId}
         ></LayoutRecognizeFormField>
+        <GlobalIndexModelItem />
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>

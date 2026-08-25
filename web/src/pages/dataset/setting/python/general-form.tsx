@@ -16,7 +16,7 @@ import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../contexts/knowledge-base-context';
 import { TagItems } from './components/tag-item';
-import { EmbeddingModelItem, LLMModelItem } from './configuration/common-item';
+import { EmbeddingModelItem } from './configuration/common-item';
 import { PermissionFormField } from './permission-form-field';
 
 export function GeneralForm() {
@@ -129,12 +129,6 @@ export function GeneralForm() {
         isEdit={true}
         ownerTenantId={ownerTenantId}
       ></EmbeddingModelItem>
-      <LLMModelItem
-        isEdit={true}
-        name="parser_config.llm_id"
-        label={t('knowledgeConfiguration.globalIndexModel')}
-        ownerTenantId={ownerTenantId}
-      ></LLMModelItem>
       <PageRankFormField></PageRankFormField>
 
       <TagItems></TagItems>

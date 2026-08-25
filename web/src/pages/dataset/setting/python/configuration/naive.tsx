@@ -14,6 +14,7 @@ import {
 import { useOwnerTenantId } from '../../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
+  GlobalIndexModelItem,
   ImageContextWindow,
   OverlappedPercent,
 } from './common-item';
@@ -28,6 +29,7 @@ export function NaiveConfiguration() {
           testId="ds-settings-parser-pdf-parser-select"
           ownerTenantId={ownerTenantId}
         ></LayoutRecognizeFormField>
+        <GlobalIndexModelItem />
         <MaxTokenNumberFormField
           initialValue={512}
           sliderTestId="ds-settings-parser-recommended-chunk-size-slider"
