@@ -252,15 +252,10 @@ func dedupNormText(s string) string {
 //
 // Scope is intentionally tight so legitimate content is never dropped:
 //
-//   - Only boxes whose Text is exactly one ASCII letter or digit. This
-//     excludes multi-token repetition (e.g. repeated SKU "ABC123"), CJK
-//     glyphs (always ≥3 UTF-8 bytes → len>1), punctuation, and whitespace.
-//     We deliberately do NOT TrimSpace before classifying: a box whose
-//     raw text is " Q " (3 bytes) has already been built by LineToTextBox
-//     from real char-layer data, and we MUST NOT collapse it with bare
-//     "Q" into the same watermark key. Per the CodeRabbit review on PR
-//     #18308, trimming would let four " Q " boxes get promoted and dropped
-//     on the strength of one "Q"-shaped slot.
+//   - Only boxes whose Text is exactly one ASCII letter or digit, classified
+//     against raw Text (no normalization). This excludes multi-token
+//     repetition (e.g. repeated SKU "ABC123"), CJK glyphs (always ≥3 UTF-8
+//     bytes → len>1), punctuation, and whitespace.
 //   - Promoted only if the box's text appears ≥ watermarkBoxesMinOccurrences
 //     times on the page. A real "Q" or "1" appears at most once per page
 //     outside a watermark tiling.

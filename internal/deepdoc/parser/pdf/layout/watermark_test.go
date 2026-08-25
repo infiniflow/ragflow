@@ -144,21 +144,9 @@ func TestFilterWatermarkBoxes_NoFalsePositiveOnMixed(t *testing.T) {
 	}
 }
 
-// TestFilterWatermarkBoxes_WhitespacePaddedNotCollapsedWithBareSingleChar
-// regression-tests the CodeRabbit review on PR #18308: the previous
-// implementation stripped whitespace before classifying, which meant a
-// box whose raw text was " Q " (3 bytes) and a box whose raw text was
-// "Q" (1 byte) collapsed into the same (page, "Q") promotion key. Four
-// padded boxes could therefore promote and drop on the strength of one
-// bare slot. The new contract uses raw b.Text for both classification
-// and keying, so padded boxes must survive verbatim even when a bare
-// "Q" sits next to them.
-//
-// Test layout: 4 raw "Q" boxes reach watermarkBoxesMinOccurrences (4)
-// so they DO get promoted and dropped — that proves the filter is
-// alive on real watermark-shaped input. 3 padded variants ("Q ",
-// " Q", " Q ") must be untouched because they never entered the
-// candidate set under the new no-TrimSpace contract.
+// 4 raw "Q" boxes reach the watermark threshold and must drop; the
+// 3 padded variants ("Q ", " Q", " Q ") are not single-character
+// candidates (length > 1) and must survive.
 func TestFilterWatermarkBoxes_WhitespacePaddedNotCollapsedWithBareSingleChar(t *testing.T) {
 	boxes := []pdf.TextBox{
 		makeBox(0, 50, 58, 100, 112, "Q"),   // raw → candidate
