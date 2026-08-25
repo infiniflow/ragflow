@@ -63,6 +63,7 @@ def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", None)
     _stub(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
+        get_composite_model_name_by_ids=MagicMock(),
         resolve_model_config=MagicMock(),
         resolve_model_id=MagicMock(),
     )
@@ -72,12 +73,20 @@ def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", None)
         PAGERANK_FLD="pagerank",
         LLMType=SimpleNamespace(),
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
-        PipelineTaskType=SimpleNamespace(),
+        RetCode=SimpleNamespace(),
         StatusEnum=SimpleNamespace(),
+        TaskStatus=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(monkeypatch, "common.settings", docStoreConn=doc_store, DOC_ENGINE="infinity")
-    _stub(monkeypatch, "api.db.db_models", File=SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.db_models",
+        Connector2Kb=SimpleNamespace(),
+        Document=SimpleNamespace(),
+        File=SimpleNamespace(),
+        SyncLogs=SimpleNamespace(),
+    )
     _stub(
         monkeypatch,
         "api.db.services.document_service",
@@ -92,7 +101,12 @@ def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", None)
         KnowledgebaseService=knowledgebase_service,
         validate_dataset_embedding_models=lambda kbs: None,
     )
-    _stub(monkeypatch, "api.db.services.connector_service", Connector2KbService=SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.connector_service",
+        Connector2KbService=SimpleNamespace(),
+        SyncLogsService=SimpleNamespace(),
+    )
     _stub(
         monkeypatch,
         "api.db.services.task_service",
@@ -115,8 +129,14 @@ def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", None)
         remap_dictionary_keys=lambda source_data, key_aliases=None: dict(source_data),
         verify_embedding_availability=MagicMock(),
     )
-    _stub(monkeypatch, "api.utils.thread_pool", thread_pool_exec=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)))
+    _stub(
+        monkeypatch,
+        "common.misc_utils",
+        thread_pool_exec=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)),
+        thread_pool_exec_long_time=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)),
+    )
     _stub(monkeypatch, "rag.advanced_rag.knowlege_compile.wiki", WIKI_PAGE_COMPILE_KWD="wiki")
+    _stub(monkeypatch, "common.doc_store.doc_store_base", OrderByExpr=MagicMock)
 
     repo_root = Path(__file__).resolve().parents[5]
     module_path = repo_root / "api" / "apps" / "services" / "dataset_api_service.py"
@@ -140,6 +160,9 @@ def test_nav_item_shapes_cluster_row(monkeypatch):
     assert item == {
         "name": "cluster-a",
         "description": "Top cluster",
+        "keywords": [],
+        "entities": [],
+        "graph_content": "",
         "doc_count": 3,
         "type": "cluster",
         "doc_id": None,

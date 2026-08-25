@@ -43,6 +43,11 @@ class DocumentService(CommonService):
     model = Document
 
     @classmethod
+    @DB.connection_context()
+    def get_disabled_doc_ids_by_kb_id(cls, kb_id) -> set[str]:
+        return {str(doc_id) for (doc_id,) in cls.model.select(cls.model.id).where((cls.model.kb_id == kb_id) & (cls.model.status == "0")).tuples()}
+
+    @classmethod
     def get_cls_model_fields(cls):
         return [
             cls.model.id,
@@ -357,7 +362,7 @@ class DocumentService(CommonService):
     def get_all_doc_ids_by_kb_ids(cls, kb_ids):
         fields = [cls.model.id, cls.model.kb_id]
         docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -431,7 +436,7 @@ class DocumentService(CommonService):
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -676,6 +681,32 @@ class DocumentService(CommonService):
                 {"remove": {"source_doc_ids": doc.id}},
                 index,
                 doc.kb_id,
+            )
+
+        # 3. Clean up doc_page_source tracking rows (new incremental design).
+        try:
+            doc_page_kwd = "wiki_doc_page_source"
+            res = settings.docStoreConn.search(
+                ["id"],
+                [],
+                {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                [],
+                OrderByExpr(),
+                0,
+                10,
+                index,
+                doc.kb_id,
+            )
+            if settings.docStoreConn.get_fields(res, ["id"]):
+                settings.docStoreConn.delete(
+                    {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                    index,
+                    doc.kb_id,
+                )
+        except Exception:
+            logging.exception(
+                "DocumentService.remove_wiki_products: doc_page_source cleanup failed for doc %s",
+                doc.id,
             )
 
     @classmethod

@@ -92,6 +92,7 @@ const GenericProviderInstanceCard = forwardRef<
   // via `setModelInfo`, read by the payload builder.
   const { t } = useTranslation();
   const modelInfoRef = useRef<IModelInfo[]>([]);
+  const modelsLoadedRef = useRef(false);
 
   // Provider-specific config: carries `verifyTransform` / `submitTransform`
   // for providers whose form field names don't map directly onto
@@ -158,6 +159,7 @@ const GenericProviderInstanceCard = forwardRef<
     providerName,
     formRef,
     providerConfig.verifyTransform,
+    modelInfoRef,
   );
   const handleDelete = useDeleteInstance(
     providerName,
@@ -193,6 +195,10 @@ const GenericProviderInstanceCard = forwardRef<
         // catch it). For both drafts and saved cards, run the form's
         // own validation so errors surface in the UI.
         if (isDraft && !draftName.trim()) return false;
+        if (!isDraft && instanceDetails && !modelsLoadedRef.current) {
+          message.error(t('setting.selectModelBeforeSave'));
+          return false;
+        }
         // List-model providers (list picker) require at least one selected model.
         if (
           LIST_MODEL_PROVIDERS.has(providerName) &&
@@ -207,12 +213,20 @@ const GenericProviderInstanceCard = forwardRef<
       getSavePayload,
       markSaved,
     }),
-    [isDraft, draftName, getSavePayload, markSaved, providerName, t],
+    [
+      isDraft,
+      draftName,
+      getSavePayload,
+      markSaved,
+      providerName,
+      t,
+      instanceDetails,
+    ],
   );
 
   return (
     <div
-      className="border-b border-border-button mb-5 pb-5"
+      className="mb-5 pb-5"
       data-testid={`instance-card-${instance.instance_name || 'draft'}`}
     >
       {isDraft ? (
@@ -246,6 +260,9 @@ const GenericProviderInstanceCard = forwardRef<
           instance={instance}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}
+          onInstanceModelsStatusChange={(ready) => {
+            modelsLoadedRef.current = ready;
+          }}
           draftName={draftName}
           open={open}
           setOpen={setOpen}

@@ -42,7 +42,7 @@ func newTestTracker(t *testing.T, ttl time.Duration) (*RunTracker, *miniredis.Mi
 
 func TestRunTracker_StateTransitions(t *testing.T) {
 	tracker, mr := newTestTracker(t, 30*24*time.Hour)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// B1: Start
 	if err := tracker.Start(ctx, "run_1", "canvas_42", "tenant_a", ""); err != nil {
@@ -73,7 +73,7 @@ func TestRunTracker_StateTransitions(t *testing.T) {
 	}
 
 	// AttachCheckpoint
-	if err := tracker.AttachCheckpoint(ctx, "run_1", "cpn_xyz"); err != nil {
+	if err = tracker.AttachCheckpoint(ctx, "run_1", "cpn_xyz"); err != nil {
 		t.Fatalf("AttachCheckpoint: %v", err)
 	}
 	got, _ = tracker.Get(ctx, "run_1")
@@ -82,14 +82,14 @@ func TestRunTracker_StateTransitions(t *testing.T) {
 	}
 
 	// B2: MarkSucceeded
-	if err := tracker.MarkSucceeded(ctx, "run_1"); err != nil {
+	if err = tracker.MarkSucceeded(ctx, "run_1"); err != nil {
 		t.Fatalf("MarkSucceeded: %v", err)
 	}
 	got, _ = tracker.Get(ctx, "run_1")
 	if got["status"] != "1" {
 		t.Fatalf("status = %q, want 1 (succeeded)", got["status"])
 	}
-	if _, err := strconv.ParseInt(got["finished_at"], 10, 64); err != nil {
+	if _, err = strconv.ParseInt(got["finished_at"], 10, 64); err != nil {
 		t.Fatalf("finished_at %q is not an int: %v", got["finished_at"], err)
 	}
 	// All previous fields preserved.
@@ -100,7 +100,7 @@ func TestRunTracker_StateTransitions(t *testing.T) {
 
 func TestRunTracker_FailedAndCancelled(t *testing.T) {
 	tracker, _ := newTestTracker(t, time.Hour)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// B3: MarkFailed
 	if err := tracker.Start(ctx, "run_fail", "c", "t", "run_parent"); err != nil {
@@ -138,7 +138,7 @@ func TestRunTracker_FailedAndCancelled(t *testing.T) {
 
 func TestRunTracker_TTLRefresh(t *testing.T) {
 	tracker, mr := newTestTracker(t, 2*time.Second)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := tracker.Start(ctx, "run_ttl", "c", "t", ""); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -168,7 +168,7 @@ func TestRunTracker_TTLRefresh(t *testing.T) {
 	// A wait-for-user pause must also keep the run metadata alive for the
 	// full tracker TTL so the next request can resume it.
 	mr.FastForward(500 * time.Millisecond)
-	if err := tracker.MarkWaiting(ctx, "run_ttl"); err != nil {
+	if err = tracker.MarkWaiting(ctx, "run_ttl"); err != nil {
 		t.Fatalf("MarkWaiting: %v", err)
 	}
 	if d := mr.TTL(runKey("run_ttl")); d < 1500*time.Millisecond {
@@ -185,7 +185,7 @@ func TestRunTracker_TTLRefresh(t *testing.T) {
 
 func TestRunTracker_NilClient(t *testing.T) {
 	tracker := &RunTracker{client: nil, ttl: time.Minute}
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := tracker.Start(ctx, "x", "c", "t", ""); err == nil {
 		t.Fatal("Start with nil client: err = nil, want error")
 	}
@@ -211,7 +211,7 @@ func TestRunTracker_NilClient(t *testing.T) {
 
 func TestRunTrackerActiveSessionRegistration(t *testing.T) {
 	tracker, mr := newTestTracker(t, time.Hour)
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := tracker.client.Set(ctx, cancelKey("session-1"), "x", time.Hour).Err(); err != nil {
 		t.Fatalf("seed cancel marker: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestRunTrackerActiveSessionRegistration(t *testing.T) {
 
 func TestRunTrackerActiveSessionTokenProtectsRefreshAndRelease(t *testing.T) {
 	tracker, _ := newTestTracker(t, time.Hour)
-	ctx := context.Background()
+	ctx := t.Context()
 	registered, err := tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-a"})
 	if err != nil || !registered {
 		t.Fatalf("RegisterActiveSession = %v, %v", registered, err)
@@ -275,7 +275,7 @@ func TestRunTrackerActiveSessionTokenProtectsRefreshAndRelease(t *testing.T) {
 	if got, _ := tracker.GetActiveSession(ctx, "session-1"); got == nil {
 		t.Fatal("foreign release removed active session")
 	}
-	if err := tracker.client.Set(ctx, cancelKey("session-1"), "x", time.Hour).Err(); err != nil {
+	if err = tracker.client.Set(ctx, cancelKey("session-1"), "x", time.Hour).Err(); err != nil {
 		t.Fatalf("seed cancel marker: %v", err)
 	}
 	released, err = tracker.ReleaseActiveSession(ctx, "session-1", "owner-a")
@@ -292,7 +292,7 @@ func TestRunTrackerActiveSessionTokenProtectsRefreshAndRelease(t *testing.T) {
 
 func TestRunTrackerActiveSessionTokenProtectsCancel(t *testing.T) {
 	tracker, _ := newTestTracker(t, time.Hour)
-	ctx := context.Background()
+	ctx := t.Context()
 	registered, err := tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-a"})
 	if err != nil || !registered {
 		t.Fatalf("RegisterActiveSession = %v, %v", registered, err)

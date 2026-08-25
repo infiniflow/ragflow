@@ -1,5 +1,4 @@
 import { BaseNode } from '@/interfaces/database/agent';
-import { cn } from '@/lib/utils';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
 import { memo, useMemo } from 'react';
@@ -9,7 +8,7 @@ import { AgentFormSchemaType } from '../../form/agent-form';
 import useGraphStore from '../../store';
 import { hasSubAgent, isBottomSubAgent } from '../../utils';
 import { LLMLabelCard } from './card';
-import { CommonHandle, LeftEndHandle } from './handle';
+import { BottomHandle, CommonHandle, LeftEndHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
@@ -68,26 +67,18 @@ function InnerAgentNode({
             className="!bg-accent-primary !size-2"
           ></Handle>
         )}
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          isConnectable={false}
+        <BottomHandle
           id={NodeHandleId.AgentBottom}
-          style={{ left: 180 }}
-          className={cn('!bg-accent-primary !size-2 invisible', {
-            visible: hasSubAgent(edges, id),
-          })}
-        ></Handle>
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          isConnectable={false}
+          left={180}
+          visible={hasSubAgent(edges, id)}
+          nodeId={id}
+        />
+        <BottomHandle
           id={NodeHandleId.Tool}
-          style={{ left: 20 }}
-          className={cn('!bg-accent-primary !size-2 invisible', {
-            visible: hasTools,
-          })}
-        ></Handle>
+          left={20}
+          visible={hasTools}
+          nodeId={id}
+        />
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="flex flex-col gap-2">
           <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>

@@ -170,3 +170,133 @@ func TestParseAddModelWithDimensions(t *testing.T) {
 		})
 	}
 }
+
+func TestParseListSyncLogs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected *Command
+		wantErr  bool
+	}{
+		{
+			name:  "LIST SYNC_LOGS",
+			input: "LIST SYNC_LOGS;",
+			expected: &Command{
+				Type:   "api_list_sync_logs",
+				Params: map[string]interface{}{},
+			},
+		},
+		{
+			name:  "LIST SYNC_LOGS FROM dataset_id",
+			input: "LIST SYNC_LOGS FROM 'kb-1';",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_id": "kb-1",
+				},
+			},
+		},
+		{
+			name:  "LIST DATASET name SYNC_LOGS",
+			input: "LIST DATASET 'my dataset' SYNC_LOGS;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_name": "my dataset",
+				},
+			},
+		},
+		{
+			name:  "LIST SYNC_LOGS WITH page and page_size",
+			input: "LIST SYNC_LOGS WITH PAGE 2 PAGE_SIZE 50;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"page":      2,
+					"page_size": 50,
+				},
+			},
+		},
+		{
+			name:  "LIST SYNC_LOGS FROM dataset_id WITH page",
+			input: "LIST SYNC_LOGS FROM 'kb-1' WITH PAGE 3;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_id": "kb-1",
+					"page":       3,
+				},
+			},
+		},
+		{
+			name:  "LIST DATASET name SYNC_LOGS WITH page_size",
+			input: "LIST DATASET 'my dataset' SYNC_LOGS WITH PAGE_SIZE 20;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_name": "my dataset",
+					"page_size":    20,
+				},
+			},
+		},
+		{
+			name:    "unknown WITH option",
+			input:   "LIST SYNC_LOGS WITH FOO 1;",
+			wantErr: true,
+		},
+		{
+			name:    "non-integer WITH option",
+			input:   "LIST SYNC_LOGS WITH PAGE 'x';",
+			wantErr: true,
+		},
+		{
+			name:    "comma-separated WITH options",
+			input:   "LIST SYNC_LOGS WITH PAGE 2, PAGE_SIZE 50;",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Parse() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != tt.expected.Type {
+				t.Errorf("Command Type = %v, expected = %v", cmd.Type, tt.expected.Type)
+			}
+
+			gotDatasetID, _ := cmd.Params["dataset_id"].(string)
+			expectedDatasetID, _ := tt.expected.Params["dataset_id"].(string)
+			if gotDatasetID != expectedDatasetID {
+				t.Errorf("dataset_id = %v, expected = %v", gotDatasetID, expectedDatasetID)
+			}
+
+			gotDatasetName, _ := cmd.Params["dataset_name"].(string)
+			expectedDatasetName, _ := tt.expected.Params["dataset_name"].(string)
+			if gotDatasetName != expectedDatasetName {
+				t.Errorf("dataset_name = %v, expected = %v", gotDatasetName, expectedDatasetName)
+			}
+
+			gotPage, _ := cmd.Params["page"].(int)
+			expectedPage, _ := tt.expected.Params["page"].(int)
+			if gotPage != expectedPage {
+				t.Errorf("page = %v, expected = %v", gotPage, expectedPage)
+			}
+
+			gotPageSize, _ := cmd.Params["page_size"].(int)
+			expectedPageSize, _ := tt.expected.Params["page_size"].(int)
+			if gotPageSize != expectedPageSize {
+				t.Errorf("page_size = %v, expected = %v", gotPageSize, expectedPageSize)
+			}
+		})
+	}
+}

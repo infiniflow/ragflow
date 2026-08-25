@@ -14,18 +14,19 @@
 #  limitations under the License.
 #
 
-import re
+import copy
 import json
+import re
 import time
 
-import copy
-from elasticsearch_dsl import UpdateByQuery, Q, Search
 from elastic_transport import ConnectionTimeout
+from elasticsearch_dsl import Q, Search, UpdateByQuery
+
+from common.constants import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
-from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr, MatchExpr, MatchDenseExpr, FusionExpr
+from common.doc_store.doc_store_base import FusionExpr, MatchDenseExpr, MatchExpr, MatchTextExpr, OrderByExpr
 from common.doc_store.es_conn_base import ESConnectionBase
 from common.float_utils import get_float
-from common.constants import PAGERANK_FLD, TAG_FLD
 
 ATTEMPT_TIME = 2
 MAX_RESULT_WINDOW = 10000
@@ -101,6 +102,10 @@ class ESConnection(ESConnectionBase):
     """
     CRUD operations
     """
+
+    def refresh_idx(self, index_name: str) -> bool:
+        self.es.indices.refresh(index=index_name)
+        return True
 
     def _es_search_once(self, index_names: list[str], query: dict, track_total_hits: bool):
         return self.es.search(index=index_names, body=query, timeout="600s", track_total_hits=track_total_hits)
@@ -223,7 +228,7 @@ class ESConnection(ESConnectionBase):
             elif isinstance(v, str) or isinstance(v, int):
                 bool_query.filter.append(Q("term", **{k: v}))
             else:
-                raise Exception(f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                raise Exception(f"Condition `{k!s}={v!s}` value type is {type(v)!s}, expected to be int, str or list.")
 
         s = Search()
         vector_similarity_weight = 0.5
@@ -239,7 +244,7 @@ class ESConnection(ESConnectionBase):
                 vector_similarity_weight = get_float(weights.split(",")[1])
         for m in match_expressions:
             if isinstance(m, MatchTextExpr):
-                minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
+                minimum_should_match = (m.extra_options or {}).get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     minimum_should_match = str(int(minimum_should_match * 100)) + "%"
                 bool_query.must.append(Q("query_string", fields=m.fields, type="best_fields", query=m.matching_text, minimum_should_match=minimum_should_match, boost=1))
@@ -250,10 +255,15 @@ class ESConnection(ESConnectionBase):
                 similarity = 0.0
                 if "similarity" in m.extra_options:
                     similarity = m.extra_options["similarity"]
+                k = min(m.topn, 10000)
+                if "num_candidates" in m.extra_options:
+                    num_candidates = max(k, min(m.extra_options["num_candidates"], 10000))
+                else:
+                    num_candidates = min(k * 2, 10000)
                 s = s.knn(
                     m.vector_column_name,
-                    m.topn,
-                    m.topn * 2,
+                    k,
+                    num_candidates,
                     query_vector=list(m.embedding_data),
                     filter=bool_query.to_dict(),  # filter=_build_knn_filter_query(bool_query, vector_similarity_weight),
                     similarity=similarity,
@@ -306,7 +316,7 @@ class ESConnection(ESConnectionBase):
         vector_fields = [f for f in (select_fields or []) if f.endswith("_vec")]
         if vector_fields:
             q["fields"] = vector_fields
-        self.logger.debug(f"ESConnection.search {str(index_names)} query: " + json.dumps(q))
+        self.logger.debug(f"ESConnection.search {index_names!s} query: " + json.dumps(q))
 
         for i in range(ATTEMPT_TIME):
             try:
@@ -317,7 +327,7 @@ class ESConnection(ESConnectionBase):
                     res = self._es_search_once(index_names, q, track_total_hits=True)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
-                self.logger.debug(f"ESConnection.search {str(index_names)} res: " + str(res))
+                self.logger.debug(f"ESConnection.search {index_names!s} res: " + str(res))
                 return res
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
@@ -326,15 +336,15 @@ class ESConnection(ESConnectionBase):
             except Exception as e:
                 # Only log debug for NotFoundError(accepted when metadata index doesn't exist)
                 if "NotFound" in str(e):
-                    self.logger.debug(f"ESConnection.search {str(index_names)} query: " + str(q) + " - " + str(e))
+                    self.logger.debug(f"ESConnection.search {index_names!s} query: " + str(q) + " - " + str(e))
                 else:
-                    self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
+                    self.logger.exception(f"ESConnection.search {index_names!s} query: " + str(q) + str(e))
                 raise e
 
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
 
-    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
+    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None, refresh: str | bool = "wait_for") -> list[str]:
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
@@ -351,7 +361,7 @@ class ESConnection(ESConnectionBase):
         for _ in range(ATTEMPT_TIME):
             try:
                 res = []
-                r = self.es.bulk(index=index_name, operations=operations, refresh="wait_for", timeout="60s")
+                r = self.es.bulk(index=index_name, operations=operations, refresh=refresh, timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
@@ -439,7 +449,7 @@ class ESConnection(ESConnectionBase):
             elif isinstance(v, str) or isinstance(v, int):
                 bool_query.filter.append(Q("term", **{k: v}))
             else:
-                raise Exception(f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                raise Exception(f"Condition `{k!s}={v!s}` value type is {type(v)!s}, expected to be int, str or list.")
         scripts = []
         params = {}
         for k, v in new_value.items():
@@ -469,7 +479,7 @@ class ESConnection(ESConnectionBase):
                 scripts.append(f"ctx._source.{k}=params.pp_{k};")
                 params[f"pp_{k}"] = json.dumps(v, ensure_ascii=False)
             else:
-                raise Exception(f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
+                raise Exception(f"newValue `{k!s}={v!s}` value type is {type(v)!s}, expected to be int, str.")
         ubq = UpdateByQuery(index=index_name).using(self.es).query(bool_query)
         ubq = ubq.script(source="".join(scripts), params=params)
         ubq = ubq.params(refresh=True)

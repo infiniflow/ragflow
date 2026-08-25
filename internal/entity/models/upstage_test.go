@@ -125,7 +125,7 @@ func TestUpstageChatExtractsReasoningField(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
 			"content":"15% of 80 is **12**.",
-			"reasoning":"15/100 = 0.15; 0.15 * 80 = 12"
+			"reasoning_content":"15/100 = 0.15; 0.15 * 80 = 12"
 		}}]}`)
 	}))
 	defer srv.Close()
@@ -204,7 +204,6 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 	want := map[string]interface{}{
 		"model":            "solar-pro2",
 		"stream":           false,
-		"max_tokens":       float64(256),
 		"temperature":      0.7,
 		"top_p":            0.9,
 		"reasoning_effort": "high",
@@ -241,7 +240,7 @@ func TestUpstageEmbedRejectsDuplicateIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := u.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -258,7 +257,7 @@ func TestUpstageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := u.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -279,7 +278,7 @@ func TestUpstageEmbedHappyPathReordersByIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	vecs, err := u.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := u.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -306,9 +305,9 @@ func TestUpstageStreamExtractsReasoningDelta(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w,
 			`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"reasoning":"We need "}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"reasoning":"to compute. "}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"reasoning":"15% = 0.15."}}]}`+"\n"+
+				`data: {"choices":[{"index":0,"delta":{"reasoning_content":"We need "}}]}`+"\n"+
+				`data: {"choices":[{"index":0,"delta":{"reasoning_content":"to compute. "}}]}`+"\n"+
+				`data: {"choices":[{"index":0,"delta":{"reasoning_content":"15% = 0.15."}}]}`+"\n"+
 				`data: {"choices":[{"index":0,"delta":{"content":"15% of 80 "}}]}`+"\n"+
 				`data: {"choices":[{"index":0,"delta":{"content":"is 12."},"finish_reason":"stop"}]}`+"\n"+
 				`data: [DONE]`+"\n",
@@ -366,7 +365,7 @@ func TestUpstageStreamReasoningChunksArriveBeforeContent(t *testing.T) {
 		_, _ = io.WriteString(w,
 			// One SSE event carries BOTH reasoning and content in the
 			// same delta. The driver must forward reasoning first.
-			`data: {"choices":[{"index":0,"delta":{"reasoning":"R1","content":"C1"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"R1","content":"C1"}}]}`+"\n"+
 				`data: {"choices":[{"index":0,"delta":{"content":"C2"},"finish_reason":"stop"}]}`+"\n"+
 				`data: [DONE]`+"\n",
 		)

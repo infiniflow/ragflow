@@ -50,23 +50,38 @@ type RetrievalChunk struct {
 type RetrievalRequest struct {
 	Query                    string
 	DatasetIDs               []string
+	MemoryIDs                []string
 	TopN                     int
+	RerankCandidatesCount    int
 	TopK                     int
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
-	SimilarityThreshold      float64
+	SimilarityThreshold      *float64
+	RerankID                 string
+	CrossLanguages           []string
+	TOCEnhance               bool
+	MetaDataFilter           map[string]any
+	RetrievalFrom            string
+	// DocScope restricts retrieval to a set of document ids (the doc_id list
+	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
+	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
-	// Optional for the nlp adapter; the KG adapter uses it to resolve the
-	// tenant's default chat + embedding models. Reads from
+	// It is used for dataset-name resolution and memory access. Reads from
 	// CanvasState.Sys["user_id"] when empty (set by the Begin component at
 	// internal/agent/component/begin.go:82).
 	TenantID string
 }
 
-// RetrievalService is the interface the Retrieval tool uses.
-// Today only the stub impl exists; production code can register
-// a real impl via SetRetrievalService during boot.
+// RetrievalService is the knowledge-base search interface used by the tool.
+// The server installs NLPRetrievalAdapter during boot.
 type RetrievalService interface {
+	Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error)
+}
+
+// MemoryRetrievalService is the memory-message retrieval surface used when
+// retrieval_from=memory. It is separate from knowledge-base retrieval because
+// memory messages live in different indices and have a different result shape.
+type MemoryRetrievalService interface {
 	Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error)
 }
 
@@ -82,14 +97,16 @@ type KGRetrievalService interface {
 	Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error)
 }
 
-// ErrRetrievalServiceMissing is declared in retrieval.go (kept
-// for backward compat with retrieval_test.go). Callers using
-// the RetrievalService interface here can match against the
-// same sentinel by referring to the same package-level var.
-
+// ErrRetrievalServiceMissing is declared in retrieval.go so callers and the
+// default stub share the same sentinel.
 var (
 	retrievalServiceMu   sync.RWMutex
 	retrievalServiceImpl RetrievalService = stubRetrievalService{}
+)
+
+var (
+	memoryRetrievalServiceMu   sync.RWMutex
+	memoryRetrievalServiceImpl MemoryRetrievalService = stubMemoryRetrievalService{}
 )
 
 func SetRetrievalService(svc RetrievalService) {
@@ -108,17 +125,36 @@ func GetRetrievalService() RetrievalService {
 	return retrievalServiceImpl
 }
 
+func SetMemoryRetrievalService(svc MemoryRetrievalService) {
+	memoryRetrievalServiceMu.Lock()
+	defer memoryRetrievalServiceMu.Unlock()
+	if svc == nil {
+		memoryRetrievalServiceImpl = stubMemoryRetrievalService{}
+		return
+	}
+	memoryRetrievalServiceImpl = svc
+}
+
+func GetMemoryRetrievalService() MemoryRetrievalService {
+	memoryRetrievalServiceMu.RLock()
+	defer memoryRetrievalServiceMu.RUnlock()
+	return memoryRetrievalServiceImpl
+}
+
 type stubRetrievalService struct{}
 
 func (stubRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return nil, ErrRetrievalServiceMissing
 }
 
-// simpleRetrievalService is a deterministic test/demo impl that
-// returns synthetic chunks based on the query. Useful for
-// development and integration tests; the production impl lands
-// when the boot path wires internal/service.ChunkService into
-// SetRetrievalService.
+type stubMemoryRetrievalService struct{}
+
+func (stubMemoryRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
+	return nil, ErrMemoryRetrievalServiceMissing
+}
+
+// simpleRetrievalService is a deterministic test implementation that returns
+// synthetic chunks based on the query.
 type simpleRetrievalService struct{}
 
 func (simpleRetrievalService) Search(_ context.Context, _ *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
@@ -151,12 +187,8 @@ func (simpleRetrievalService) Search(_ context.Context, _ *gorm.DB, req Retrieva
 	return chunks, nil
 }
 
-// SetSimpleRetrievalService installs the simpleRetrievalService
-// (deterministic synthetic chunks). Useful for development and
-// integration tests. Production code should call
-// SetRetrievalService with a real implementation backed by
-// internal/service.ChunkService — see design doc §4.2
-// RetrievalService.
+// SetSimpleRetrievalService installs deterministic synthetic retrieval for
+// tests and local demos.
 func SetSimpleRetrievalService() {
 	SetRetrievalService(simpleRetrievalService{})
 }
@@ -170,6 +202,10 @@ func SetSimpleRetrievalService() {
 var ErrKGRetrievalServiceMissing = errors.New(
 	"GraphRAG (kg) retrieval service not yet wired — " +
 		"call tool.SetKGRetrievalService(tool.NewKGRetrievalAdapter(...)) at boot",
+)
+
+var ErrMemoryRetrievalServiceMissing = errors.New(
+	"memory retrieval service not registered",
 )
 
 var (

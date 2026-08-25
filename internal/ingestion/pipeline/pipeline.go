@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cloudwego/eino/compose"
+	"go.uber.org/zap"
 )
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
@@ -54,7 +55,7 @@ type Pipeline struct {
 	tracker *canvas.RunTracker     // optional injected; nil -> resolve at Run
 	// requireResume, when true, makes Run refuse to start if no checkpoint
 	// store can be resolved (no injected store AND no global Redis client).
-	// Plan §6.a M4 方案 A: a deployment that cannot persist checkpoints must
+	// Plan §6.a M4: a deployment that cannot persist checkpoints must
 	// not silently degrade to a non-resumable run — it must surface a clear,
 	// distinguishable error so the caller knows resume is unavailable.
 	requireResume bool
@@ -140,17 +141,19 @@ func WithProgressSink(s ProgressSink) PipelineOption {
 // It accepts either the inner canvas DSL or the template wrapper whose
 // top-level `dsl` field carries that canvas.
 func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pipeline, error) {
-	var raw map[string]any
-	if err := json.Unmarshal(dsl, &raw); err != nil {
-		return nil, fmt.Errorf("pipeline: decode DSL: %w", err)
-	}
-	canvasDSL, err := unwrapCanvasDSL(raw)
+	// UnwrapCanvasDSL is the single source of truth for stripping the
+	// optional {"dsl": {...}} canvas envelope; it also reports a nil/unparseable
+	// DSL.
+	canvasDSL, err := UnwrapCanvasDSL(dsl)
 	if err != nil {
 		return nil, err
 	}
 	cnv, err := canvas.DecodeFromDSL(canvasDSL)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: decode canvas DSL: %w", err)
+	}
+	if err := ValidatePipeline(cnv); err != nil {
+		return nil, err
 	}
 	// Capture the canonical canvas DSL bytes for the resume-time DSL
 	// fingerprint. json.Marshal sorts map keys, so this is stable across
@@ -170,6 +173,24 @@ func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pip
 	return p, nil
 }
 
+// ValidatePipeline enforces ingestion pipeline constraints.
+// Specifically, at most one Extractor component is permitted in the graph.
+func ValidatePipeline(cnv *canvas.Canvas) error {
+	if cnv == nil {
+		return nil
+	}
+	extractorCount := 0
+	for id, comp := range cnv.Components {
+		if isExtractorComponent(id, comp.Obj.ComponentName) {
+			extractorCount++
+		}
+	}
+	if extractorCount > 1 {
+		return fmt.Errorf("pipeline validation error: at most 1 Extractor component is allowed, found %d", extractorCount)
+	}
+	return nil
+}
+
 // WithComponentFactory installs an instance-scoped factory override for this
 // pipeline. It is used during canvas compilation so one pipeline run can
 // construct task-specific component instances without mutating the process-wide
@@ -179,20 +200,6 @@ func (p *Pipeline) WithComponentFactory(factory runtime.ComponentFactory) *Pipel
 		p.factory = factory
 	}
 	return p
-}
-
-func unwrapCanvasDSL(raw map[string]any) (map[string]any, error) {
-	if len(raw) == 0 {
-		return nil, errNilDSL
-	}
-	if rawDSL, ok := raw["dsl"]; ok {
-		canvasDSL, ok := rawDSL.(map[string]any)
-		if !ok || len(canvasDSL) == 0 {
-			return nil, errNilDSL
-		}
-		return canvasDSL, nil
-	}
-	return raw, nil
 }
 
 func mergeInto(dst, src map[string]any) map[string]any {
@@ -387,7 +394,7 @@ func coalesceErr(errs ...error) error {
 // There is no pipeline-layer partial resume entry point: execution always
 // starts from the graph entry and component-level replay decisions belong to
 // the components themselves.
-func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_params map[string]any) (map[string]any, error) {
+func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParams map[string]any) (map[string]any, error) {
 	if p == nil {
 		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
 	}
@@ -414,7 +421,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	store := p.resolveStore()
 	tracker := p.resolveTracker()
 
-	// M4 (plan §6.a 方案 A): refuse to start when resume is required but no
+	// M4 (plan §6.a): refuse to start when resume is required but no
 	// checkpoint store is resolvable. A Redis-less deployment must not pretend
 	// the task is resumable; it must report the gap clearly so the caller can
 	// refuse to enqueue the task instead of silently running a non-resumable
@@ -435,8 +442,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
 	// setups at compile time (higher priority; see canvas.WithOverrideParams).
-	if override_params != nil {
-		compileOpts = append(compileOpts, canvas.WithOverrideParams(override_params))
+	if overrideParams != nil {
+		compileOpts = append(compileOpts, canvas.WithOverrideParams(overrideParams))
 	}
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
@@ -460,6 +467,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	// runs), in which case TrackProgress is a no-op — progress is an
 	// observability concern, not a data dependency.
 	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
+	runCtx = runtime.WithProgressMessageCallback(runCtx, p.componentProgressMessageCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -477,7 +485,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 
 	// Resumable path: detect DSL / override edits since the checkpoint was
 	// written and discard a stale checkpoint before resuming (see guardDSLChange).
-	p.guardDSLChange(ctx, store, tracker, p.taskID, override_params)
+	p.guardDSLChange(ctx, store, tracker, p.taskID, overrideParams)
 
 	// Resumable path: record the run, then loop Invoke until the graph
 	// completes or a non-resumable error surfaces.
@@ -668,6 +676,34 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 				msg = ev.Component + " Error"
 			}
 		}
+		// Surface every component lifecycle event as a structured log line so
+		// a component failure (e.g. an LLM/client error) is captured in
+		// ingestor_server.log even if the wrapped error never reaches the
+		// higher-level "Task ... failed" branch.
+		switch ev.Phase {
+		case runtime.PhaseError:
+			if ev.Err != nil {
+				common.Error("component progress: error", ev.Err,
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			} else {
+				common.Info("component progress: error",
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			}
+		default:
+			// Keep the message constant: msg may carry component names or
+			// error-derived text, and a newline in it could forge a log record
+			// (CWE-117). Pass msg and the phase as structured fields instead.
+			common.Info("component progress",
+				zap.String("message", msg),
+				zap.Int("phase", int(ev.Phase)),
+				zap.String("component", ev.Component),
+				zap.String("task_id", p.taskID),
+				zap.String("document_id", p.documentID))
+		}
 		p.sink.OnComponentProgress(ctx, ProgressEvent{
 			TaskID:     p.taskID,
 			DocumentID: p.documentID,
@@ -675,5 +711,24 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			Message:    msg,
 			Phase:      int(ev.Phase),
 		})
+	}
+}
+
+type detailedProgressSink interface {
+	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime.ProgressMessageCallback {
+	sink, ok := p.sink.(detailedProgressSink)
+	if !ok {
+		return nil
+	}
+	return func(component, message string) {
+		common.Info("component progress detail",
+			zap.String("component", component),
+			zap.String("task_id", p.taskID),
+			zap.String("document_id", p.documentID),
+			zap.String("message", message))
+		sink.OnComponentMessage(ctx, p.taskID, p.documentID, component, message)
 	}
 }

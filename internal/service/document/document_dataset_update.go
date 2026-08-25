@@ -80,13 +80,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				hasError = true
 				continue
 			}
-			err := s.docEngine.UpdateChunks(
-				context.Background(),
-				map[string]interface{}{"doc_id": docID},
-				map[string]interface{}{"available_int": statusInt},
-				fmt.Sprintf("ragflow_%s", kb.TenantID),
-				doc.KbID,
-			)
+			err = s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 			if err != nil {
 				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
 				msg := err.Error()
@@ -99,6 +93,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				continue
 			}
 		}
+		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
 		result[docID] = map[string]string{"status": status}
 	}
 
@@ -166,6 +161,13 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
+			if tenantErr == nil && tenant != nil {
+				cleaned = service.ApplyComponentScopedParserConfig(
+					cleaned,
+					tenant.LLMID,
+				)
+			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"parser_config": cleaned,
 			}); err != nil {
@@ -240,17 +242,17 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 		return common.CodeDataError, errors.New("invalid request payload")
 	}
 	if present["chunk_count"] && req.ChunkCount != nil && *req.ChunkCount != 0 && *req.ChunkCount != doc.ChunkNum {
-		return common.CodeDataError, errors.New("Can't change `chunk_count`.")
+		return common.CodeDataError, errors.New("can't change `chunk_count`")
 	}
 	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
-		return common.CodeDataError, errors.New("Can't change `token_count`.")
+		return common.CodeDataError, errors.New("can't change `token_count`")
 	}
 	if present["progress"] && req.Progress != nil {
 		if *req.Progress > 1 {
 			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%s>", pythonFloatRepr(*req.Progress))
 		}
 		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
-			return common.CodeDataError, errors.New("Can't change `progress`.")
+			return common.CodeDataError, errors.New("can't change `progress`")
 		}
 	}
 
@@ -319,7 +321,7 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 
 	if strings.ToLower(filepath.Ext(newName)) != strings.ToLower(filepath.Ext(oldName)) {
-		return common.CodeArgumentError, errors.New("The extension of file can't be changed")
+		return common.CodeArgumentError, errors.New("the extension of file can't be changed")
 	}
 
 	docs, err := s.documentDAO.GetByNameAndKBID(ctx, dao.DB, newName, doc.KbID)
@@ -328,7 +330,7 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 	for _, d := range docs {
 		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
-			return common.CodeDataError, errors.New("Duplicated document name in the same dataset.")
+			return common.CodeDataError, errors.New("duplicated document name in the same dataset")
 		}
 	}
 
@@ -390,7 +392,7 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	return s.docEngine.UpdateChunks(
-		context.Background(),
+		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
 		map[string]interface{}{
 			"docnm_kwd":    newName,

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
@@ -9,6 +25,7 @@ import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
@@ -28,6 +45,7 @@ export enum DataSourceKey {
   BOX = 'box',
   DROPBOX = 'dropbox',
   BITBUCKET = 'bitbucket',
+  AZURE_DEVOPS = 'azure_devops',
   GITLAB = 'gitlab',
   GITHUB = 'github',
   MOODLE = 'moodle',
@@ -108,6 +126,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.BITBUCKET]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AZURE_DEVOPS]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.AIRTABLE]: {
@@ -316,6 +337,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Bitbucket',
       description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
       icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
+    },
+    [DataSourceKey.AZURE_DEVOPS]: {
+      name: 'Azure DevOps',
+      description: t(`setting.${DataSourceKey.AZURE_DEVOPS}Description`),
+      icon: <SvgIcon name={'data-source/azure-devops'} width={38} />,
     },
     [DataSourceKey.ZENDESK]: {
       name: 'Zendesk',
@@ -1326,6 +1352,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
+  [DataSourceKey.AZURE_DEVOPS]: azureDevOpsConstant(t),
   [DataSourceKey.ZENDESK]: [
     {
       label: t('setting.dataSourceFieldZendeskDomain'),
@@ -2262,6 +2289,20 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.AZURE_DEVOPS]: {
+    name: '',
+    source: DataSourceKey.AZURE_DEVOPS,
+    config: {
+      organization: '',
+      index_mode: 'organization',
+      projects: '',
+      repositories: '',
+      content_types: 'both',
+      credentials: {
+        azure_devops_pat: '',
       },
     },
   },

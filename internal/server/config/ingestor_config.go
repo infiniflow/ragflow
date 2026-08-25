@@ -12,19 +12,26 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-//
 
 package config
 
 import "github.com/spf13/viper"
 
 type IngestorConfig struct {
+	// MaxConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
+	// parallel (the task channel width and dataset-level compile worker count
+	// default to this value). 0/negative falls back to runtime.NumCPU().
 	MaxConcurrentWorkers int `mapstructure:"max_concurrent_workers"`
+	// CompilerPoolSize bounds the process-wide knowledge-compilation worker
+	// pool that drives the cross-doc KNN / LLM-merge / write stages. 0/negative
+	// falls back to runtime.NumCPU() (or KC_COMPILE_CONCURRENCY if set).
+	CompilerPoolSize int `mapstructure:"compiler_pool_size"`
 }
 
 func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// Default Ingestor config
 	c.ingestor.MaxConcurrentWorkers = 1
+	c.ingestor.CompilerPoolSize = 0
 
 	if !v.IsSet("ingestor") {
 		return nil
@@ -38,5 +45,13 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 		c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
 	}
 
+	if sub.IsSet("compiler_pool_size") {
+		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
+	}
+
 	return nil
+}
+
+func (c *Config) GetIngestorConfig() *IngestorConfig {
+	return &c.ingestor
 }

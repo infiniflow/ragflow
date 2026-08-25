@@ -5,7 +5,7 @@ import { SkeletonCard } from '@/components/skeleton-card';
 import { Button } from '@/components/ui/button';
 import { useDeleteDocumentStructureGraph } from '@/hooks/use-document-request';
 import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   type ClickableNode,
@@ -22,7 +22,6 @@ function Representation({ onNodeClick }: RepresentationProps) {
   const { t } = useTranslation();
   const { deleteDocumentStructureGraph, loading: deleting } =
     useDeleteDocumentStructureGraph();
-  const [searchKeyword, setSearchKeyword] = useState('');
 
   const {
     data,
@@ -32,17 +31,15 @@ function Representation({ onNodeClick }: RepresentationProps) {
     selectedTemplate,
     isGraphKind,
     entityOptions,
+    searchKeyword,
     graphSelectValue,
     highlightNodeId,
     handleSelectEntity,
     handleNoMatchEnter,
+    handleSearchKeywordChange,
     handleTemplateChange,
     handleNodeClick,
   } = useGraphEntitySearch(onNodeClick);
-
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchKeyword(value);
-  }, []);
 
   const handleDelete = useCallback(async () => {
     if (!selectedTemplateId) return;
@@ -63,7 +60,7 @@ function Representation({ onNodeClick }: RepresentationProps) {
               options={entityOptions}
               value={graphSelectValue}
               onChange={handleSelectEntity}
-              placeholder={t('knowledgeDetails.searchEntity')}
+              placeholder={t('knowledgeCompilation.searchEntity')}
               allowClear
               onNoMatchEnter={handleNoMatchEnter}
               disableAutoSelectOnEnter
@@ -71,8 +68,8 @@ function Representation({ onNodeClick }: RepresentationProps) {
           ) : (
             <ExpandableSearchInput
               value={searchKeyword}
-              onChange={handleSearchChange}
-              placeholder={t('chunk.search', 'Search')}
+              onChange={handleSearchKeywordChange}
+              placeholder={t('common.search')}
             />
           )}
           {templates.length > 0 && (
@@ -94,16 +91,12 @@ function Representation({ onNodeClick }: RepresentationProps) {
       {loading && !data && <SkeletonCard className="mt-6" />}
       {!(loading && !data) && templates.length === 0 && (
         <div className="mt-6 text-text-secondary">
-          {t(
-            'chunk.representationEmpty',
-            'No representation templates available.',
-          )}
+          {t('knowledgeCompilation.representationEmpty')}
         </div>
       )}
       {!(loading && !data) && templates.length > 0 && (
         <RepresentationRenderer
           template={selectedTemplate}
-          searchKeyword={searchKeyword}
           onNodeClick={handleNodeClick}
           highlightNodeId={highlightNodeId}
         />

@@ -129,13 +129,13 @@ func (h *AgentHandler) WithDocumentService(s documentAccessChecker) *AgentHandle
 
 // NewAgentHandler create agent handler
 
-func NewAgentHandler(agentService *service.AgentService, fileService *file.FileService) *AgentHandler {
+func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fileService *file.FileService) *AgentHandler {
 	return &AgentHandler{
 		agentService: agentService,
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
-		redisGet:     func(key string) (string, error) { return redis.Get().Get(key) },
+		redisGet:     func(key string) (string, error) { return redis.Get().Get(ctx, key) },
 		redisStore:   redis.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
@@ -184,6 +184,19 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	// Filter-aggregation mode: the agents page filter bar fetches
+	// GET /api/v1/agents?type=filter and expects
+	// {filter: {owner, canvas_category}, total} instead of a canvas list.
+	if c.Query("type") == "filter" {
+		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID)
+		if err != nil {
+			common.ResponseWithCodeData(c, code, false, err.Error())
+			return
+		}
+		common.SuccessWithData(c, filters, "success")
 		return
 	}
 
@@ -394,13 +407,13 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	canvas, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
-	if err != nil || canvas == nil {
+	canvasInstance, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
+	if err != nil || canvasInstance == nil {
 		common.SuccessWithData(c, map[string]interface{}{}, "success")
 		return
 	}
 	common.SuccessWithData(c, map[string]interface{}{
-		"update_time": canvas.UpdateTime,
+		"update_time": canvasInstance.UpdateTime,
 	}, "success")
 }
 
@@ -630,15 +643,11 @@ func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err err
 // (id/name/created_by); the raw bytes are fetched from the per-user downloads
 // bucket via the file service. When no usable file is present it returns a
 // default name and a nil slice so the pipeline can still run file-less.
-func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files [][]map[string]interface{}, user *entity.User) (string, []byte) {
+func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[string]interface{}, user *entity.User) (string, []byte) {
 	if len(files) == 0 {
 		return "debug", nil
 	}
-	fileList := files[0]
-	if len(fileList) == 0 {
-		return "debug", nil
-	}
-	fd := fileList[0]
+	fd := files[0]
 	name, _ := fd["name"].(string)
 	id, _ := fd["id"].(string)
 	if id == "" {
@@ -658,23 +667,6 @@ func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files [][]map[s
 		name = "debug"
 	}
 	return name, data
-}
-
-// sanitiseRunEventError passes through the error event payload
-// unchanged. The runner serialises canvas.ErrorEvent ({"message": ...})
-// before push, so when the payload round-trips through JSON the
-// message field is already preserved. Heuristic sanitisation is
-// disabled until the runner tags error events with a "kind"
-// field — without that, blanket rewriting every error to
-// "Internal storage error while accessing the agent." hides the
-// real failure from the front-end and the user (v3.6.1 diagnostic
-// regression: every canvas run failure surfaced as the same opaque
-// string).
-func sanitiseRunEventError(data string) string {
-	if data == "" {
-		return `{"message":"Unknown agent runtime error"}`
-	}
-	return data
 }
 
 // CancelSessionRun cancels one ordinary Agent run by session id.
@@ -917,11 +909,14 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")
-	orderby := c.DefaultQuery("orderby", "create_time")
-	desc := c.DefaultQuery("desc", "true") != "false"
+	orderby := c.DefaultQuery("orderby", "update_time")
+	descParam := c.Query("desc")
+	desc := descParam != "false" && descParam != "False"
 	sessionID := c.Query("id")
-	expUserID := c.Query("user_id")
-	includeDSL := c.Query("dsl") == "true"
+	queryUserID := c.Query("user_id")
+	expUserID := c.Query("exp_user_id")
+	dslParam := c.Query("dsl")
+	includeDSL := dslParam != "false" && dslParam != "False"
 	ctx := c.Request.Context()
 	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
 		Page:       page,
@@ -932,7 +927,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		OrderBy:    orderby,
 		Desc:       desc,
 		SessionID:  sessionID,
-		UserID:     user.ID,
+		UserID:     queryUserID,
 		ExpUserID:  expUserID,
 		IncludeDSL: includeDSL,
 	})
@@ -940,7 +935,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, resp.Data, "success")
+	common.SuccessWithDataAndTotal(c, resp.Data, resp.Total, "success")
 }
 
 // CreateAgentSession POST /api/v1/agents/:canvas_id/sessions
@@ -1047,12 +1042,11 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 //     defaults to non-streaming): collects all canvas events and returns a
 //     plain JSON response with `data.content` set to the concatenated
 //     message content (matching Python's final_ans["data"]["content"]).
-//   - Openai-compatible path: requires `messages` (a non-empty list with at
-//     least one user message is needed to derive the question). The full
-//     OpenAI wire framing (delta + reference + token counts — see
-//     `completion_openai` at api/db/services/canvas_service.py:378-479) is
-//     still a Phase 5 TODO; until then the openai-compat branches return a
-//     hardcoded "hello" stub so the validation contracts keep passing.
+//   - OpenAI-compatible path: requires `messages` and returns the direct
+//     OpenAI chat-completion wire format, including streaming deltas,
+//     references, token usage, and the `[DONE]` terminator. The protocol
+//     adapter lives in agent_openai.go so the regular Agent event contract
+//     remains unchanged.
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
@@ -1063,16 +1057,44 @@ type agentChatCompletionsRequest struct {
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
-	// Files carries the uploaded file references for a run. The RAGFlow web
-	// front-end wraps the file list one extra level (a list of per-turn file
-	// lists), so the wire shape is `[[{id, name, ...}]]`. This mirrors the
-	// Python agent_api.py:1611 contract `queue_dataflow(..., files[0], 0)`,
-	// where `files[0]` (the first inner list) is the set of files for this
-	// run. The dataflow debug extractor and the agent run path both unwrap
-	// the outer layer: `Files[0]` reaches the file dicts. The web contract
-	// is 2D, so a plain 1D `[]map[string]interface{}` would fail to decode
-	// and 400 the whole request.
-	Files [][]map[string]interface{} `json:"files"`
+	// Files carries the uploaded file references for a run, normalized to
+	// the 1D file-dict list. See agentFiles for the two accepted wire
+	// shapes.
+	Files agentFiles `json:"files"`
+}
+
+// agentFiles carries the uploaded file references for a canvas run. The
+// wire shape differs by caller: the agent chat front-end posts a 1D list
+// of file dicts (`files: [{id, ...}]`, web use-send-agent-message.ts),
+// while the dataflow debug front-end wraps it one extra level
+// (`files: [[{id, ...}]]`, web use-run-dataflow.ts). Python accepts both
+// because each consumer path only sees the shape its own front-end sends:
+// the chat path iterates the 1D list directly (canvas.py get_files_async)
+// and the dataflow debug branch takes `files[0]` (agent_api.py
+// queue_dataflow call site). We normalize both to the 1D list here; for
+// the 2D shape the first inner list wins, matching Python's `files[0]`.
+type agentFiles []map[string]interface{}
+
+// UnmarshalJSON accepts both the 1D (`[{...}]`) and 2D (`[[{...}]]`)
+// wire shapes described on agentFiles and normalizes to the 1D list.
+func (f *agentFiles) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*f = nil
+		return nil
+	}
+	var oneD []map[string]interface{}
+	if err := json.Unmarshal(data, &oneD); err == nil {
+		*f = oneD
+		return nil
+	}
+	var twoD [][]map[string]interface{}
+	if err := json.Unmarshal(data, &twoD); err != nil {
+		return err
+	}
+	if len(twoD) > 0 {
+		*f = twoD[0]
+	}
+	return nil
 }
 
 // extractLastUserContent returns the content of the last message in
@@ -1086,8 +1108,9 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 		if role != "user" {
 			continue
 		}
-		if c, _ := messages[i]["content"].(string); c != "" {
-			return c
+		content, err := service.NormalizeOpenAIMessageContent(messages[i]["content"])
+		if err == nil && content != "" {
+			return content
 		}
 	}
 	return ""
@@ -1195,19 +1218,8 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		zap.Int("messages_count", len(req.Messages)),
 	)
 
-	// TODO(phase5-openai-framing): the openai-compat branches below are
-	// stubs. They keep the existing "choices"-shape contract for the
-	// openai-compat tests, but the production wire format must mirror
-	// api/db/services/canvas_service.py:378-479 (`completion_openai`):
-	// per-token `delta.content`, cumulative token counts, `[DONE]`
-	// terminator, `reference` attached to the final choice. Land that
-	// once the chat path needs to interop with OpenAI clients.
 	if req.OpenAICompat {
-		common.SuccessWithData(c, gin.H{
-			"choices": []map[string]interface{}{
-				{"message": gin.H{"content": "hello"}},
-			},
-		}, "success")
+		h.handleOpenAICompat(c, user, &req)
 		return
 	}
 
@@ -1258,16 +1270,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		req.SessionID = utility.GenerateToken()
 	}
 
-	// The web contract wraps `files` one level ([[{...}]]); unwrap the
-	// outer layer so RunAgent receives the inner 1D file list, matching the
-	// Python canvas file component's `kwargs.get("file")[0]` unwrap. When no
-	// files are present (the common agent-chat case) pass nil so RunAgent's
-	// `len(files) > 0` guard sees an empty run.
-	var chatFiles []map[string]interface{}
-	if len(req.Files) > 0 {
-		chatFiles = req.Files[0]
-	}
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, chatFiles)
+	// req.Files is already normalized to the 1D file list by the
+	// agentFiles unmarshaler. A nil/empty list reaches RunAgent as-is so
+	// its `len(files) > 0` guard sees a file-less run.
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{
@@ -1360,6 +1366,14 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			if ev.Type == "message" {
 				if c, ok := evData["content"].(string); ok {
 					fullContent += c
+				}
+				// Mirror Python agent_api.py: the reasoning segment stays
+				// wrapped in <think> tags in the aggregated answer so the
+				// chat UI can render the "thought" section.
+				if st, _ := evData["start_to_think"].(bool); st {
+					fullContent += "<think>"
+				} else if et, _ := evData["end_to_think"].(bool); et {
+					fullContent += "</think>"
 				}
 			}
 			if ref, _ := evData["reference"].(map[string]any); ref != nil {
@@ -1521,7 +1535,8 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	code, err := h.agentService.TestDBConnection(user.ID, &req)
+	ctx := c.Request.Context()
+	code, err := h.agentService.TestDBConnection(ctx, user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

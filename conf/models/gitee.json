@@ -20,7 +20,8 @@
   "models": [
     {
       "name": "qwen3-8b",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -30,7 +31,8 @@
     },
     {
       "name": "qwen3-0.6b",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -40,7 +42,8 @@
     },
     {
       "name": "glm-4.7-flash",
-      "max_tokens": 204800,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -60,7 +63,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 32
     },
     {
       "name": "GOT-OCR2_0",
@@ -84,7 +88,8 @@
       "name": "jina-clip-v2",
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 16384
     },
     {
       "name": "HunyuanOCR",

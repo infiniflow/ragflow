@@ -18,8 +18,8 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -69,19 +69,21 @@ func (c *Config) parseRedisConfig(v *viper.Viper) error {
 	if sub.IsSet("host") {
 		hostStr := sub.GetString("host")
 		// Handle host:port format (e.g., "localhost:6379")
-		if hostStr == "" {
-			return fmt.Errorf("empty host of Redis configuration")
+		host, portStr, err := net.SplitHostPort(hostStr)
+		if err != nil {
+			return fmt.Errorf("error address format of Redis: %s", hostStr)
 		}
 
-		if idx := strings.LastIndex(hostStr, ":"); idx != -1 {
-			c.cacheEngine.Redis.Host = hostStr[:idx]
-			if portStr := hostStr[idx+1:]; portStr != "" {
-				if port, err := strconv.Atoi(portStr); err == nil {
-					c.cacheEngine.Redis.Port = port
-				}
+		if host == "" {
+			return fmt.Errorf("empty host of Redis configuration")
+		}
+		c.cacheEngine.Redis.Host = host
+
+		if portStr != "" {
+			var port int
+			if port, err = strconv.Atoi(portStr); err == nil {
+				c.cacheEngine.Redis.Port = port
 			}
-		} else {
-			return fmt.Errorf("error address format of Redis: %s", hostStr)
 		}
 	}
 
@@ -102,4 +104,15 @@ func (c *Config) parseRedisConfig(v *viper.Viper) error {
 
 func (c *Config) GetRedisConfig() RedisConfig {
 	return c.cacheEngine.Redis
+}
+
+func (r RedisConfig) ExportConfigs() map[string]interface{} {
+	var redisConfigs map[string]interface{}
+	redisConfigs = make(map[string]interface{})
+	redisConfigs["host"] = r.Host
+	redisConfigs["port"] = r.Port
+	redisConfigs["username"] = r.Username
+	redisConfigs["password"] = r.Password
+	redisConfigs["db"] = r.DB
+	return redisConfigs
 }

@@ -53,3 +53,25 @@ func TestChunkID_PreservesLeadingZero(t *testing.T) {
 		t.Fatalf("ChunkID length = %d, want 16", len(got))
 	}
 }
+
+func TestBaseModelName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"bare model name stays", "BAAI/bge-m3", "BAAI/bge-m3"},
+		{"2-part composite strips provider", "BAAI/bge-m3@SILICONFLOW", "BAAI/bge-m3"},
+		{"3-part composite strips instance and provider", "BAAI/bge-m3@renew@SILICONFLOW", "BAAI/bge-m3"},
+		{"embedded @ in model name is preserved", "text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio", "text-embedding-nomic-embed-text-v1.5@q8_0"},
+		{"opaque id without @ stays intact", "2d8ff0a97d75431c8c91526549939328", "2d8ff0a97d75431c8c91526549939328"},
+		{"empty string", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := BaseModelName(tt.input); got != tt.want {
+				t.Fatalf("BaseModelName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

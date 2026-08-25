@@ -17,15 +17,17 @@
 package engine
 
 import (
+	"context"
 	"fmt"
-	"ragflow/internal/common"
-	"ragflow/internal/engine/nats"
-	"ragflow/internal/server"
 	"sync"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
-
+	"ragflow/internal/engine/nats"
+	"ragflow/internal/engine/oceanbase"
+	"ragflow/internal/engine/serenedb"
+	"ragflow/internal/server"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -38,8 +40,8 @@ var (
 	once               sync.Once
 )
 
-// Init initializes document engine
-func Init() error {
+// InitDocEngine initializes document engine
+func InitDocEngine(ctx context.Context) error {
 
 	var initErr error
 	once.Do(func() {
@@ -49,9 +51,18 @@ func Init() error {
 		var err error
 		switch engineType {
 		case "elasticsearch":
-			globalEngine, err = elasticsearch.NewEngine(globalConfig.GetElasticsearchConfig())
+			globalEngine, err = elasticsearch.NewEngine(ctx, globalConfig.GetElasticsearchConfig())
 		case "infinity":
-			globalEngine, err = infinity.NewEngine(globalConfig.GetInfinityConfig())
+			globalEngine, err = infinity.NewEngine(ctx, globalConfig.GetInfinityConfig())
+		case "oceanbase", "seekdb":
+			connectionConfig, resolveErr := globalConfig.ResolveOceanBaseConnection(engineType)
+			if resolveErr != nil {
+				err = resolveErr
+			} else {
+				globalEngine, err = oceanbase.NewEngine(engineType, connectionConfig)
+			}
+		case "serenedb":
+			globalEngine, err = serenedb.NewEngine(globalConfig.GetSereneDBConfig())
 		default:
 			err = fmt.Errorf("unsupported doc engine type: %s", engineType)
 		}
@@ -89,12 +100,12 @@ func GetMessageQueueEngine() MessageQueue {
 
 // SetMessageQueueEngine installs the global message-queue engine. It exists
 // primarily as a test seam so callers can drive Start() without a real server
-// config; production code uses InitMessageQueueEngine.
+// config; production code uses InitMessageQueue.
 func SetMessageQueueEngine(mq MessageQueue) {
 	messageQueueEngine = mq
 }
 
-func InitMessageQueueEngine() error {
+func InitMessageQueue() error {
 	globalConfig := server.GetConfig()
 	messageQueueType := globalConfig.QueueEngineType()
 	switch messageQueueType {

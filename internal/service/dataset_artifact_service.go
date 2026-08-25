@@ -18,9 +18,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
+
+	"gorm.io/gorm"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/nav"
 )
 
 // Compile keyword constants used by the knowledge-compilation artifacts stored
@@ -34,19 +43,6 @@ const (
 	CompileKwdSkillAll     = "skill_all"
 	CompileKwdDatasetNav   = "dataset_nav"
 	CompileKwdRaptorGraph  = "raptor_graph"
-
-	// Structure / graph compilation keywords.
-	CompileKwdStructure          = "structure"
-	CompileKwdStructureIndex     = "structureIndex"
-	CompileKwdStructureEntity    = "structureEntity"
-	CompileKwdStructureRelation  = "structureRelation"
-	CompileKwdStructureCommunity = "structureCommunity"
-
-	// Field name for the structure index type discriminator.
-	FieldStructureIndexType = "structure_index_type"
-	FieldStructureKind      = "structure_kind"
-	FieldPageID             = "page_id"
-	FieldGraphType          = "graph_type"
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
@@ -166,12 +162,20 @@ type WikiPageItem struct {
 // ListWikiPages lists wiki pages for a dataset with optional page_type/topic
 // filters and pagination.
 func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, datasetID, pageType, topic string, page, pageSize int) ([]WikiPageItem, int64, error) {
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}}
+	// Only surface the merged dataset-level pages. Each unique (page_type, slug)
+	// can also have a per-document source row (available_int=0); without this
+	// filter the same entity/concept would appear once per source doc. Python's
+	// list_wiki_pages has no such duplication because its writer emits one row
+	// per page, so mirror that by selecting the merged rows (available_int=1).
+	filter := map[string]interface{}{
+		"compile_kwd":   []string{CompileKwdWikiPage},
+		"available_int": 1, // merged dataset-level rows only (see engine available_int handling)
+	}
 	if pageType != "" {
 		filter["page_type_kwd"] = []string{pageType}
 	}
 	if topic != "" {
-		filter["topic_kwd"] = []string{topic}
+		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
 	}
 	offset := (page - 1) * pageSize
 	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
@@ -182,24 +186,34 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 	}
 	items := make([]WikiPageItem, 0, len(chunks))
 	for _, c := range chunks {
+		pageType := firstStringValue(c["page_type_kwd"])
+		// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
+		// contract); expose the bare slug to the frontend so it can be placed in
+		// a single URL path segment (gin :slug does not match '/').
+		bareSlug := firstStringValue(c["slug_kwd"])
+		if pageType != "" {
+			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
+		}
 		items = append(items, WikiPageItem{
-			Slug:     firstStringValue(c["slug_kwd"]),
+			Slug:     bareSlug,
 			Title:    firstStringValue(c["title_kwd"]),
-			PageType: firstStringValue(c["page_type_kwd"]),
-			Topic:    firstStringValue(c["topic_kwd"]),
+			PageType: pageType,
+			Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 			Summary:  firstStringValue(c["summary_with_weight"]),
 		})
 	}
 	return items, total, nil
 }
 
-// WikiPageDetail is the full wiki page payload.
+// WikiPageDetail is the full wiki page payload. The content field is exposed as
+// content_md_rendered to match the frontend IArtifactPage contract (and Python's
+// get_wiki_page), which renders it directly.
 type WikiPageDetail struct {
 	Slug           string   `json:"slug"`
 	Title          string   `json:"title"`
 	PageType       string   `json:"page_type"`
 	Topic          string   `json:"topic"`
-	ContentMd      string   `json:"content_md"`
+	ContentMd      string   `json:"content_md_rendered"`
 	Summary        string   `json:"summary"`
 	EntityNames    []string `json:"entity_names"`
 	Outlinks       []string `json:"outlinks"`
@@ -210,16 +224,21 @@ type WikiPageDetail struct {
 
 // GetWikiPage returns a single wiki page by page_type and slug.
 func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug string) (*WikiPageDetail, error) {
+	// Match Python's get_wiki_page contract (dataset_api_service.py): slug_kwd
+	// is stored as the full "<page_type>/<slug>" form, and list_wiki_pages
+	// returns the bare slug. Reconstruct the full form deterministically so the
+	// filter matches the stored value exactly.
 	slugKwd := pageType + "/" + slug
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{pageType},
 		"slug_kwd":      []string{slugKwd},
+		"available_int": 1, // merged dataset-level page, not the per-doc source row
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "content_with_weight",
-			"summary_with_weight", "entity_names_kwd", "outlinks_kwd", "related_kb_pages_kwd",
-			"source_chunk_ids", "source_doc_ids"},
+		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "md_with_weight",
+			"content_with_weight", "summary_with_weight", "entity_names_kwd", "outlinks_kwd",
+			"related_kb_pages_kwd", "source_chunk_ids", "source_doc_ids"},
 		0, 1, nil)
 	if err != nil {
 		return nil, err
@@ -228,12 +247,26 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		return nil, nil
 	}
 	c := chunks[0]
+	// Python stores the page body in md_with_weight (incremental writer), falling
+	// back to content_with_weight for legacy rows; mirror that here.
+	content := firstStringValue(c["md_with_weight"])
+	if content == "" {
+		content = firstStringValue(c["content_with_weight"])
+	}
+	// slug_kwd is the full "<page_type>/<slug>" form; expose the bare slug so a
+	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
+	// "<page_type>/" prefix being doubled (matches ListWikiPages).
+	detailPageType := firstStringValue(c["page_type_kwd"])
+	detailSlug := firstStringValue(c["slug_kwd"])
+	if detailPageType != "" {
+		detailSlug = strings.TrimPrefix(detailSlug, detailPageType+"/")
+	}
 	detail := &WikiPageDetail{
-		Slug:           firstStringValue(c["slug_kwd"]),
+		Slug:           detailSlug,
 		Title:          firstStringValue(c["title_kwd"]),
-		PageType:       firstStringValue(c["page_type_kwd"]),
-		Topic:          firstStringValue(c["topic_kwd"]),
-		ContentMd:      firstStringValue(c["content_with_weight"]),
+		PageType:       detailPageType,
+		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
+		ContentMd:      content,
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
 		Outlinks:       toStringSlice(c["outlinks_kwd"]),
@@ -252,11 +285,14 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	if docEngine == nil {
 		return nil, fmt.Errorf("document engine is not initialized")
 	}
+	// Python contract: slug_kwd is stored as "page_type/slug"; reconstruct it
+	// deterministically from the bare slug (see GetWikiPage).
 	slugKwd := pageType + "/" + slug
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{pageType},
 		"slug_kwd":      []string{slugKwd},
+		"available_int": 1, // merged dataset-level page only
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 1, nil)
 	if err != nil {
@@ -271,6 +307,9 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	}
 	update := map[string]interface{}{}
 	if contentMd != "" {
+		// GetWikiPage prefers md_with_weight and falls back to content_with_weight,
+		// so write both to keep the edit readable regardless of the row's writer.
+		update["md_with_weight"] = contentMd
 		update["content_with_weight"] = contentMd
 	}
 	if title != "" {
@@ -296,41 +335,76 @@ type WikiTopicItem struct {
 	PageCount int    `json:"page_count"`
 }
 
-// ListWikiTopics aggregates wiki topics for a dataset.
+// ListWikiTopics aggregates materialized Wiki topic paths for a dataset. Topic
+// is the complete path and Title is its leaf segment; the frontend may derive a
+// navigation tree by splitting Topic on '/'.
 func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID string) ([]WikiTopicItem, int64, error) {
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
-		"page_type_kwd": []string{"concept", "entity"},
+		"page_type_kwd": []string{"concept", "entity", "topic"},
+		"available_int": 1, // count only merged pages, not per-doc source rows
 	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"topic_kwd", "title_kwd", "slug_kwd"}, 0, 1000, nil)
-	if err != nil {
-		return nil, 0, err
+	const batchSize = 1000
+	fields := []string{"topic_kwd"}
+	chunks := make([]map[string]interface{}, 0, batchSize)
+	for offset := 0; ; offset += batchSize {
+		batch, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, fields, offset, batchSize, nil)
+		if err != nil {
+			return nil, 0, err
+		}
+		chunks = append(chunks, batch...)
+		if len(batch) == 0 || int64(len(chunks)) >= total {
+			break
+		}
 	}
-	counts := map[string]int{}
-	metas := map[string]WikiTopicItem{}
+	items := aggregateWikiTopicItems(chunks)
+	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
+	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
+	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
+	// which orders Chinese by pinyin and handles Latin/digits/other scripts
+	// correctly, case-insensitively, without assuming topics are all-Chinese.
+	sort.Slice(items, func(i, j int) bool {
+		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
+	})
+	return items, int64(len(items)), nil
+}
+
+func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
+	type aggregate struct {
+		topic string
+		count int
+	}
+	byKey := make(map[string]*aggregate)
 	for _, c := range chunks {
-		t := firstStringValue(c["topic_kwd"])
+		t := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
 		if t == "" {
 			continue
 		}
-		counts[t]++
-		if _, ok := metas[t]; !ok {
-			metas[t] = WikiTopicItem{
-				Topic: t,
-				Title: firstStringValue(c["title_kwd"]),
-				Slug:  firstStringValue(c["slug_kwd"]),
-			}
+		key := strings.ToLower(t)
+		item := byKey[key]
+		if item == nil {
+			item = &aggregate{topic: t}
+			byKey[key] = item
 		}
+		item.count++
 	}
-	items := make([]WikiTopicItem, 0, len(metas))
-	for t, it := range metas {
-		it.PageCount = counts[t]
-		items = append(items, it)
+	items := make([]WikiTopicItem, 0, len(byKey))
+	for _, aggregate := range byKey {
+		items = append(items, WikiTopicItem{
+			Topic:     aggregate.topic,
+			Title:     kccommon.WikiTopicLeaf(aggregate.topic),
+			Slug:      aggregate.topic,
+			PageCount: aggregate.count,
+		})
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Topic < items[j].Topic })
-	return items, int64(len(items)), nil
+	return items
 }
+
+// wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
+// selects the CLDR zh collation (pinyin-based for Han), while Latin/digits and
+// other scripts sort naturally, case-insensitively. It is safe for concurrent
+// use after construction.
+var wikiTopicCollator = collate.New(language.Chinese)
 
 // WikiGraph is the entity/relation graph for a dataset's wiki artifacts.
 type WikiGraph struct {
@@ -358,7 +432,7 @@ type WikiGraphRelation struct {
 // GetWikiGraph returns the wiki entity/relation graph for a dataset.
 func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, datasetID string) (*WikiGraph, error) {
 	entityChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}},
+		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}, "available_int": 1},
 		[]string{"slug_kwd", "title_kwd", "aliases_kwd", "description_with_weight", "entity_type_kwd", "weight_int", "source_chunk_ids"},
 		0, 1000, (&types.OrderByExpr{}).Desc("weight_int"))
 	if err != nil {
@@ -371,27 +445,43 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	graph := &WikiGraph{Entities: []WikiGraphEntity{}, Relations: []WikiGraphRelation{}}
 	for _, c := range entityChunks {
 		w := intValue(c["weight_int"])
+		// Match the GetWikiPage / ListWikiPages contract: expose the bare slug
+		// and the pure page_type (no "wiki_" prefix, no "<page_type>/" prefix)
+		// so the frontend can build artifact/<page_type>/<slug> links that
+		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
+		// "wiki_topic"); strip the prefix. slug_kwd stores the full
+		// "<page_type>/<slug>" form; preserve nested slug segments.
+		fullSlug := firstStringValue(c["slug_kwd"])
+		bareSlug := fullSlug
+		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
+		if idx := strings.IndexByte(bareSlug, '/'); idx >= 0 {
+			pageType = bareSlug[:idx]
+			bareSlug = bareSlug[idx+1:]
+		}
 		graph.Entities = append(graph.Entities, WikiGraphEntity{
-			Slug:           firstStringValue(c["slug_kwd"]),
+			Slug:           bareSlug,
 			Name:           firstStringValue(c["title_kwd"]),
 			Aliases:        toStringSlice(c["aliases_kwd"]),
 			Description:    firstStringValue(c["description_with_weight"]),
-			Type:           firstStringValue(c["entity_type_kwd"]),
+			Type:           pageType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
 		})
 	}
 	if len(fromKwds) > 0 {
 		relChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "from_kwd": fromKwds},
+			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "available_int": 1, "from_kwd": fromKwds},
 			[]string{"from_kwd", "to_kwd"}, 0, 10000, nil)
 		if err != nil {
 			return nil, err
 		}
 		for _, c := range relChunks {
+			// Relations reference endpoints by their full "<page_type>/<slug>"
+			// form in ES; expose them as bare slugs so the frontend's
+			// nodesBySlug (keyed on the entity's bare slug) can resolve edges.
 			graph.Relations = append(graph.Relations, WikiGraphRelation{
-				From: firstStringValue(c["from_kwd"]),
-				To:   firstStringValue(c["to_kwd"]),
+				From: bareWikiSlug(firstStringValue(c["from_kwd"])),
+				To:   bareWikiSlug(firstStringValue(c["to_kwd"])),
 			})
 		}
 	}
@@ -410,31 +500,204 @@ type WikiAlteration struct {
 
 // GetWikiAlteration returns the wiki alteration summary for a dataset.
 func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID, datasetID string) (*WikiAlteration, error) {
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
-		[]string{"source_doc_ids"}, 0, 10000, nil)
-	if err != nil {
-		return nil, err
-	}
 	involved := map[string]struct{}{}
-	for _, c := range chunks {
-		for _, d := range toStringSlice(c["source_doc_ids"]) {
-			involved[d] = struct{}{}
+	for offset := 0; ; offset += 1000 {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
+			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
+			[]string{"source_doc_ids"}, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range chunks {
+			for _, d := range toStringSlice(c["source_doc_ids"]) {
+				if d != "" {
+					involved[d] = struct{}{}
+				}
+			}
+		}
+		if len(chunks) == 0 || int64(offset+len(chunks)) >= total {
+			break
 		}
 	}
-	ids := make([]string, 0, len(involved))
-	for d := range involved {
-		ids = append(ids, d)
+	// The database is the source of truth for the current document set. The
+	// previous implementation returned the source_doc_ids from the compiled
+	// pages as both sides of the comparison, which made deletion impossible to
+	// observe. In particular, a deleted document remains in source_doc_ids until
+	// the dataset-level consumer removes the old page.
+	var documents []entity.Document
+	if err := dao.DB.WithContext(ctx).Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
+		return nil, fmt.Errorf("list dataset documents for wiki alteration: %w", err)
+	}
+	eligible := make(map[string]struct{}, len(documents))
+	for i := range documents {
+		if documents[i].Status != nil && *documents[i].Status == "0" {
+			continue
+		}
+		pipelineID := ""
+		if documents[i].PipelineID != nil {
+			pipelineID = *documents[i].PipelineID
+		}
+		ok, err := s.documentHasWikiTemplate(ctx, tenantID, documents[i].ParserConfig, pipelineID)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			eligible[documents[i].ID] = struct{}{}
+		}
+	}
+
+	removedIDs := setDifference(involved, eligible)
+	newlyUploadedIDs := setDifference(eligible, involved)
+	return &WikiAlteration{
+		Removed:             len(removedIDs),
+		NewlyUploaded:       len(newlyUploadedIDs),
+		RemovedDocIDs:       removedIDs,
+		NewlyUploadedDocIDs: newlyUploadedIDs,
+		InvolvedDocIDs:      sortedSetKeys(involved),
+		EligibleDocIDs:      sortedSetKeys(eligible),
+	}, nil
+}
+
+// documentHasWikiTemplate reports whether a document's saved pipeline config
+// contains a valid wiki compiler template. A document is eligible only when it
+// is configured for wiki compilation; treating every document in the dataset
+// as eligible would hide both template removal and document deletion.
+func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string) (bool, error) {
+	ok, err := s.valueHasWikiTemplate(ctx, tenantID, config)
+	if err != nil || ok {
+		return ok, err
+	}
+	if pipelineID == "" {
+		return false, nil
+	}
+	var canvas entity.UserCanvas
+	if err := dao.DB.WithContext(ctx).Where("id = ?", pipelineID).First(&canvas).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load pipeline %q for wiki alteration: %w", pipelineID, err)
+	}
+	return s.valueHasWikiTemplate(ctx, tenantID, canvas.DSL)
+}
+
+// valueHasWikiTemplate recursively inspects persisted parser/pipeline JSON.
+// Pipeline DSLs and document parser configs use different nesting layouts, so
+// looking only at a single top-level Compiler key misses pipeline documents.
+func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenantID string, value interface{}) (bool, error) {
+	if items, ok := value.([]interface{}); ok {
+		for _, item := range items {
+			if found, err := s.valueHasWikiTemplate(ctx, tenantID, item); err != nil || found {
+				return found, err
+			}
+		}
+		return false, nil
+	}
+	params, isMap := value.(map[string]interface{})
+	if !isMap {
+		if typed, ok := value.(entity.JSONMap); ok {
+			params = map[string]interface{}(typed)
+			isMap = true
+		}
+	}
+	if !isMap {
+		return false, nil
+	}
+	if id, ok := params["compilation_template_id"].(string); ok && id != "" {
+		var template entity.CompilationTemplate
+		if err := dao.DB.WithContext(ctx).
+			Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND status = ?", id, tenantID, string(entity.StatusValid)).
+			First(&template).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return false, nil
+			}
+			return false, fmt.Errorf("load wiki compilation template %q: %w", id, err)
+		}
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	if groupID, ok := params["compilation_template_group_id"].(string); ok && groupID != "" {
+		if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+			return found, err
+		}
+	}
+	if rawGroupIDs, ok := params["compilation_template_group_ids"]; ok {
+		groupIDs := []string{}
+		switch values := rawGroupIDs.(type) {
+		case string:
+			groupIDs = append(groupIDs, values)
+		case []interface{}:
+			for _, value := range values {
+				if groupID, ok := value.(string); ok {
+					groupIDs = append(groupIDs, groupID)
+				}
+			}
+		case []string:
+			groupIDs = values
+		}
+		for _, groupID := range groupIDs {
+			if strings.TrimSpace(groupID) != "" {
+				if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+					return found, err
+				}
+			}
+		}
+	}
+	for _, child := range params {
+		if found, err := s.valueHasWikiTemplate(ctx, tenantID, child); err != nil || found {
+			return found, err
+		}
+	}
+	return false, nil
+}
+
+func (s *DatasetArtifactService) groupHasWikiTemplate(ctx context.Context, tenantID, groupID string) (bool, error) {
+	var group entity.CompilationTemplateGroup
+	if err := dao.DB.WithContext(ctx).
+		Where("id = ? AND (tenant_id = ? OR tenant_id = '') AND status = ?", groupID, tenantID, string(entity.StatusValid)).
+		First(&group).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	var templates []entity.CompilationTemplate
+	if err := dao.DB.WithContext(ctx).Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).Find(&templates).Error; err != nil {
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	for _, template := range templates {
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func templateKind(template entity.CompilationTemplate) string {
+	if kind, ok := template.Config["kind"].(string); ok && strings.TrimSpace(kind) != "" {
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
+	return strings.ToLower(strings.TrimSpace(template.Kind))
+}
+
+func setDifference(left, right map[string]struct{}) []string {
+	ids := make([]string, 0)
+	for id := range left {
+		if _, ok := right[id]; !ok {
+			ids = append(ids, id)
+		}
 	}
 	sort.Strings(ids)
-	return &WikiAlteration{
-		Removed:             0,
-		NewlyUploaded:       0,
-		RemovedDocIDs:       []string{},
-		NewlyUploadedDocIDs: []string{},
-		InvolvedDocIDs:      ids,
-		EligibleDocIDs:      ids,
-	}, nil
+	return ids
+}
+
+func sortedSetKeys(set map[string]struct{}) []string {
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // ClearWiki deletes all wiki artifacts for a dataset.
@@ -470,107 +733,6 @@ func (s *DatasetArtifactService) ClearWiki(ctx context.Context, tenantID, datase
 	return deleted, nil
 }
 
-// StructureItem is a single compiled structure entry for a dataset.
-type StructureItem struct {
-	PageID             string `json:"page_id"`
-	StructureKind      string `json:"structure_kind"`
-	StructureIndexType string `json:"structure_index_type"`
-	Data               string `json:"data"`
-}
-
-// ListStructures returns the compiled structures of a dataset, filtered by
-// optional structure_kind and structure_index_type.
-func (s *DatasetArtifactService) ListStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) ([]StructureItem, int64, error) {
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{FieldPageID, FieldStructureKind, FieldStructureIndexType, "content_with_weight"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]StructureItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, StructureItem{
-			PageID:             firstStringValue(c[FieldPageID]),
-			StructureKind:      firstStringValue(c[FieldStructureKind]),
-			StructureIndexType: firstStringValue(c[FieldStructureIndexType]),
-			Data:               firstStringValue(c["content_with_weight"]),
-		})
-	}
-	return items, total, nil
-}
-
-// DeleteStructures deletes the compiled structures of a dataset, optionally
-// scoped by structure_kind and structure_index_type.
-func (s *DatasetArtifactService) DeleteStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 10000, nil)
-	if err != nil {
-		return 0, err
-	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
-		}
-	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
-// DocGraphItem is a single node/edge entry in a document's structure graph.
-type DocGraphItem struct {
-	ID       string `json:"id"`
-	Content  string `json:"content"`
-	SourceID string `json:"source_id"`
-}
-
-// GetDocumentGraph returns the structure graph of a single document.
-func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, tenantID, datasetID, documentID, graphType string) ([]DocGraphItem, int64, error) {
-	filter := map[string]interface{}{
-		"doc_id":             []string{documentID},
-		"compiled_graph_kwd": []string{"graph"},
-	}
-	if graphType != "" {
-		filter[FieldGraphType] = []string{graphType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"id", "content_with_weight", "source_id"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]DocGraphItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, DocGraphItem{
-			ID:       firstStringValue(c["id"]),
-			Content:  firstStringValue(c["content_with_weight"]),
-			SourceID: firstStringValue(c["source_id"]),
-		})
-	}
-	return items, total, nil
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -601,113 +763,94 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 	return len(ids), nil
 }
 
-// NavigationItem is a single navigation cluster.
-type NavigationItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// ListNavClusters returns the navigation clusters of a dataset.
-func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]NavigationItem, int64, error) {
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}},
-		[]string{"nav_cluster_kwd", "title_kwd", "count_int"}, 0, 10000, nil)
+// ListNavClusters returns the navigation clusters of a dataset. It delegates to
+// the ES-backed NavService and returns the frontend DatasetNavNode shape
+// (snake_case NavNode JSON), matching Python GET /navigation exactly. The old
+// NavigationItem{name,title,count} shape did not match the frontend interface
+// and has been removed.
+func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]nav.NavNode, int64, error) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
+	}
+	nodes, total, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavigationItem, 0, len(chunks))
-	for _, c := range chunks {
-		count := intValue(c["count_int"])
-		items = append(items, NavigationItem{
-			Name:  firstStringValue(c["nav_cluster_kwd"]),
-			Title: firstStringValue(c["title_kwd"]),
-			Count: count,
-		})
-	}
-	return items, total, nil
+	return nodes, total, nil
 }
 
-// DeleteNav deletes all navigation clusters of a dataset.
+// ListNavChildren returns the children of a navigation cluster in the frontend
+// DatasetNavNode shape.
+func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]nav.NavNode, int64, error) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
+	}
+	nodes, total, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
+	if err != nil {
+		return nil, 0, err
+	}
+	return nodes, total, nil
+}
+
+// DeleteNav removes the direct nav_doc children of every root cluster of a
+// dataset. DEPRECATED — this is the minimal-loop approximation of Python
+// delete_nav: it drains only the immediate nav_doc rows under root clusters and
+// does NOT implement Python's full subtree traversal or empty-cluster cascade
+// cleanup. Prefer the NavService (future work) for a complete delete. Returns
+// the number of nav_doc rows removed.
 func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datasetID string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
+	ns := nav.GetNavService()
+	if ns == nil {
+		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
 	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}}, []string{"id"}, 0, 10000, nil)
+	clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
 	if err != nil {
 		return 0, err
 	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
+	deleted := 0
+	for _, c := range clusters {
+		children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 10000)
+		if err != nil {
+			continue
+		}
+		for _, ch := range children {
+			if ch.DocID != "" {
+				if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
+					return deleted, err
+				}
+				deleted++
+			}
 		}
 	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
+	return deleted, nil
 }
 
-// DeleteNavNode deletes a single navigation cluster by name.
+// DeleteNavNode deletes the direct nav_doc children of a named cluster.
+// DEPRECATED — the minimal loop only drains immediate doc children (returns the
+// count); it does NOT delete sub-clusters recursively nor perform Python's
+// empty-cluster cascade. A full tree-node delete is future NavService work.
 func (s *DatasetArtifactService) DeleteNavNode(ctx context.Context, tenantID, datasetID, name string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
+	ns := nav.GetNavService()
+	if ns == nil {
+		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
 	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}, "nav_cluster_kwd": []string{name}},
-		[]string{"id"}, 0, 10000, nil)
+	// Minimal loop has no per-node delete; drain direct children's docs.
+	children, _, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
 	if err != nil {
 		return 0, err
 	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
+	deleted := 0
+	for _, ch := range children {
+		if ch.DocID != "" {
+			if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
+				return deleted, err
+			}
+			deleted++
 		}
 	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
-// NavChildItem is a single child entry under a navigation cluster.
-type NavChildItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// ListNavChildren returns the children of a navigation cluster.
-func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]NavChildItem, int64, error) {
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}, "nav_cluster_kwd": []string{name}},
-		[]string{"nav_child_kwd", "title_kwd", "count_int"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]NavChildItem, 0, len(chunks))
-	for _, c := range chunks {
-		count := intValue(c["count_int"])
-		items = append(items, NavChildItem{
-			Name:  firstStringValue(c["nav_child_kwd"]),
-			Title: firstStringValue(c["title_kwd"]),
-			Count: count,
-		})
-	}
-	return items, total, nil
+	return deleted, nil
 }
 
 // SkillTreeItem is a single skill-tree page summary.
@@ -823,12 +966,27 @@ func firstStringValue(v interface{}) string {
 	return ""
 }
 
+// bareWikiSlug strips only the first path segment from a full wiki slug
+// ("entity/location/长社" -> "location/长社"). Nested type/name segments are
+// preserved so distinct typed entities remain distinguishable in graph links.
+func bareWikiSlug(slug string) string {
+	s := strings.TrimSpace(slug)
+	if idx := strings.IndexByte(s, '/'); idx >= 0 && idx < len(s)-1 {
+		return s[idx+1:]
+	}
+	return s
+}
+
 // toStringSlice normalizes an ES field value (string or list) to []string.
 func toStringSlice(v interface{}) []string {
 	switch t := v.(type) {
 	case string:
 		if t == "" {
 			return []string{}
+		}
+		var decoded interface{}
+		if json.Unmarshal([]byte(t), &decoded) == nil {
+			return toStringSlice(decoded)
 		}
 		return []string{t}
 	case []interface{}:

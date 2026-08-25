@@ -139,7 +139,7 @@ type DeepResearcher struct {
 	PromptConfig    map[string]interface{}
 	KBRetrieve      KBRetrieveFunc
 	InternetEnabled bool
-	TavilyAPIKey    string
+	WebSearch       *webSearchProviderConfig
 
 	// Fields needed for KG retrieval (mirrors async_chat.go usage).
 	DocEngine engine.DocEngine
@@ -168,7 +168,7 @@ func NewDeepResearcher(
 		PromptConfig:    promptConfig,
 		KBRetrieve:      kbRetrieve,
 		InternetEnabled: internetEnabled,
-		TavilyAPIKey:    mapStringValue(promptConfig, "tavily_api_key"),
+		WebSearch:       resolveWebSearchProvider(promptConfig),
 		DocEngine:       docEngine,
 		KbIDs:           kbIDs,
 		TenantIDs:       tenantIDs,
@@ -226,13 +226,19 @@ func (dr *DeepResearcher) _research(
 		return "", nil
 	}
 
+	// Stop the recursion quickly once the request is canceled so a
+	// cancellation drains the tree instead of doing more retrieval work.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	if callback != nil {
 		callback(fmt.Sprintf("Searching by `%s`...", query))
 	}
 
 	// 1. Retrieve information (KB + optional web)
 	st := time.Now()
-	kbinfos, err := dr._retrieve_information(ctx, query)
+	kbinfos, err := dr.retrieveInformation(ctx, query)
 	if err != nil {
 		return "", err
 	}
@@ -329,6 +335,11 @@ func (dr *DeepResearcher) _research(
 	select {
 	case <-done:
 	case <-ctx.Done():
+		// Sub-research goroutines invoke the progress callback, which
+		// writes to the caller's channel; do not orphan them. Draining
+		// here guarantees no callback fires after Research returns
+		// (mirrors Python's asyncio.gather cancellation semantics).
+		wg.Wait()
 		return retContent, ctx.Err()
 	}
 
@@ -340,8 +351,8 @@ func (dr *DeepResearcher) _research(
 // Retrieval (KB + optional Web)
 // ──────────────────────────────────────────────────────────────────────
 
-// _retrieve_information does KB + optional web retrieval.
-func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query string) (map[string]interface{}, error) {
+// retrieveInformation does KB + optional web retrieval.
+func (dr *DeepResearcher) retrieveInformation(ctx context.Context, query string) (map[string]interface{}, error) {
 	kbinfos := map[string]interface{}{
 		"total":    int64(0),
 		"chunks":   []map[string]interface{}{},
@@ -367,17 +378,17 @@ func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query strin
 		}
 	}
 
-	// 2. Web retrieval (Tavily)
-	if dr.InternetEnabled && dr.TavilyAPIKey != "" {
-		tavRes, err := dr.tavilyRetrieve(ctx, query)
+	// 2. Web retrieval
+	if dr.InternetEnabled && dr.WebSearch != nil {
+		webRes, err := dr.retrieveWebSearch(ctx, dr.WebSearch, query)
 		if err != nil {
 			common.Warn("DeepResearcher: web retrieval error", zap.Error(err))
-		} else if tavRes != nil {
-			if chunks, ok := tavRes["chunks"].([]map[string]interface{}); ok {
+		} else if webRes != nil {
+			if chunks, ok := webRes["chunks"].([]map[string]interface{}); ok {
 				existing, _ := kbinfos["chunks"].([]map[string]interface{})
 				kbinfos["chunks"] = append(existing, chunks...)
 			}
-			if aggs, ok := tavRes["doc_aggs"].([]interface{}); ok {
+			if aggs, ok := webRes["doc_aggs"].([]interface{}); ok {
 				existing, _ := kbinfos["doc_aggs"].([]interface{})
 				kbinfos["doc_aggs"] = append(existing, aggs...)
 			}
@@ -410,10 +421,10 @@ func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query strin
 }
 
 // tavilyRetrieve calls the Tavily Search API.
-func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, query string) (map[string]interface{}, error) {
+func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query string) (map[string]interface{}, error) {
 	reqBody := map[string]interface{}{
 		"query":        query,
-		"api_key":      dr.TavilyAPIKey,
+		"api_key":      apiKey,
 		"search_depth": "advanced",
 		"max_results":  6,
 	}
@@ -682,14 +693,14 @@ func (dr *DeepResearcher) chatOnce(
 	return *resp.Answer, nil
 }
 
-// cleanLLMResponse strips think tags, markdown fences, and trailing backticks.
+// cleanLLMResponse strips think tags, Markdown fences, and trailing backticks.
 var thinkTagRe = regexp.MustCompile(`(?s)^.*?</think>`)
 var trailingCommaRe = regexp.MustCompile(`,\s*([}\]])`)
 var cleanResponseRe = regexp.MustCompile(`(?s)(^.*?</think>|` + "```json\\n" + `|` + "```\\n*$" + `)`)
 var trailingBacktickRe = regexp.MustCompile("```\\n*$")
 
 func cleanLLMResponse(raw string) string {
-	// Strip think tags, markdown fences
+	// Strip think tags, Markdown fences
 	raw = cleanResponseRe.ReplaceAllString(raw, "")
 
 	// Also handle trailing ```` in case any remain after the regex pass
@@ -831,16 +842,6 @@ func getMapString(m map[string]interface{}, keys ...string) string {
 			if s, ok := v.(string); ok {
 				return s
 			}
-		}
-	}
-	return ""
-}
-
-// mapStringValue extracts a string value from a map by key.
-func mapStringValue(m map[string]interface{}, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
 		}
 	}
 	return ""

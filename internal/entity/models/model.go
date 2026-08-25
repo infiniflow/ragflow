@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -60,13 +61,11 @@ type Reasoning struct {
 	RawType string           `json:"type"`
 }
 
-// Reasoning represents the reasoning capability (can be one of three types)
 type ClearReasoningContent struct {
 	DefaultValue    bool     `json:"default_value"`
 	SupportedModels []string `json:"supported_models"`
 }
 
-// Reasoning represents the reasoning capability (can be one of three types)
 type Thinking struct {
 	DefaultValue    bool     `json:"default_value"`
 	SupportedModels []string `json:"supported_models"`
@@ -160,17 +159,22 @@ type ModelTools struct {
 
 // Model represents a single LLM model
 type Model struct {
-	Name         string         `json:"name"`
-	MaxTokens    *int           `json:"max_tokens"`
-	ModelTypes   []string       `json:"model_types"`
-	Thinking     *ModelThinking `json:"thinking"`
-	Tools        *ModelTools    `json:"tools"`
-	Class        *string        `json:"class"`
-	MaxDimension *int           `json:"max_dimension"` // used by embedding models
-	Dimensions   []int          `json:"dimensions"`
-	Alias        []string       `json:"alias"`
-	Rank         *int           `json:"rank"`
-	ModelTypeMap map[string]bool
+	Name          string         `json:"name"`
+	ContentLength *int           `json:"content_length"`
+	MaxOutput     *int           `json:"max_output"`
+	MaxTokens     *int           `json:"max_tokens"`
+	ModelTypes    []string       `json:"model_types"`
+	Thinking      *ModelThinking `json:"thinking"`
+	Tools         *ModelTools    `json:"tools"`
+	Class         *string        `json:"class"`
+	URL           string         `json:"url"`
+	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
+	Dimensions    []int          `json:"dimensions"`
+	BatchSize     *int           `json:"batch_size"` // max texts per Embed request; used by embedding models
+	Alias         []string       `json:"alias"`
+	Rank          *int           `json:"rank"`
+	ModelTypeMap  map[string]bool
 }
 
 // Provider represents an LLM provider
@@ -232,7 +236,7 @@ func GetProviderManager() *ProviderManager {
 
 // InitProviderManager creates a new ProviderManager by reading all JSON files from a directory
 func InitProviderManager(dirPath string) error {
-	providers := []Provider{}
+	var providers []Provider
 
 	// Read all files in the directory
 	files, err := os.ReadDir(dirPath)
@@ -350,7 +354,6 @@ func InitProviderManager(dirPath string) error {
 	return nil
 }
 
-// 1. List all providers
 func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 
 	var providers []map[string]interface{}
@@ -411,14 +414,20 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.Thinking != nil {
 			modelData["thinking"] = model.Thinking
 		}
-		if model.MaxTokens != nil {
-			modelData["max_tokens"] = *model.MaxTokens
+		if model.MaxOutput != nil {
+			modelData["max_output"] = *model.MaxOutput
 		}
 		if model.MaxDimension != nil {
 			modelData["max_dimension"] = *model.MaxDimension
 		}
+		if model.MaxBatchSize != nil {
+			modelData["max_batch_size"] = *model.MaxBatchSize
+		}
 		if len(model.Dimensions) > 0 {
 			modelData["dimensions"] = model.Dimensions
+		}
+		if model.BatchSize != nil {
+			modelData["batch_size"] = *model.BatchSize
 		}
 		if model.Thinking != nil {
 			modelData["thinking"] = "supported"
@@ -446,6 +455,33 @@ func (pm *ProviderManager) GetModelByNameOrAlias(modelName string) *Model {
 	return nil
 }
 
+// DefaultEmbeddingBatchSize is the fallback per-request embedding input count
+// when a model reports no batch_size capability (mirrors Python's
+// settings.EMBEDDING_BATCH_SIZE).
+const DefaultEmbeddingBatchSize = 16
+
+// GetEmbeddingBatchSize returns the max texts per Embed request for the named
+// model. It consults the model provider capability (batch_size, added to
+// all_models.json by #17877/#17878) and falls back to
+// DefaultEmbeddingBatchSize when unset or unknown. The
+// TOKENIZER_EMBEDDING_BATCH_SIZE env var, when valid, overrides everything for
+// local tuning.
+func GetEmbeddingBatchSize(modelName string) int {
+	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	if modelName != "" {
+		if pm := GetProviderManager(); pm != nil {
+			if m := pm.GetModelByNameOrAlias(modelName); m != nil && m.BatchSize != nil && *m.BatchSize > 0 {
+				return *m.BatchSize
+			}
+		}
+	}
+	return DefaultEmbeddingBatchSize
+}
+
 // 2. Show specific provider information (including base_url)
 func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
@@ -463,14 +499,13 @@ func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]in
 	return providerInfo, nil
 }
 
-// 3. List models under a specific provider
 func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interface{}, error) {
 	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
-	modelList := []map[string]interface{}{}
+	var modelList []map[string]interface{}
 	for _, model := range provider.Models {
 		// Field name "model_type" (singular) matches the IInstanceModel
 		// contract in web/src/interfaces/database/llm.ts:75 and Python's
@@ -487,11 +522,18 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		// keep the response shape stable for clients that destructure
 		// the object.
 		modelData := map[string]interface{}{
-			"name":          model.Name,
-			"max_tokens":    model.MaxTokens,
-			"model_types":   model.ModelTypes,
-			"max_dimension": model.MaxDimension,
-			"dimensions":    model.Dimensions,
+			"name":           model.Name,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"max_dimension":  model.MaxDimension,
+			"max_batch_size": model.MaxBatchSize,
+			"dimensions":     model.Dimensions,
+		}
+		if model.MaxTokens != nil {
+			modelData["max_tokens"] = *model.MaxTokens
+		}
+		if model.BatchSize != nil {
+			modelData["batch_size"] = *model.BatchSize
 		}
 		if model.Thinking != nil {
 			modelData["thinking"] = "supported"
@@ -554,7 +596,7 @@ func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string
 	}
 }
 
-// 4. Search specific model information with filtering by max_tokens or type
+// SearchModelInfo search specific model information with filtering by type or other conditions
 func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -580,13 +622,13 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 	matchFilter := true
 	if filterBy != "" && filterValue != nil {
 		switch filterBy {
-		case "max_tokens":
+		case "max_output":
 			if maxVal, ok := filterValue.(int); ok {
-				if *model.MaxTokens < maxVal {
+				if *model.MaxOutput < maxVal {
 					matchFilter = false
 					resp.Code = 400
-					resp.Message = fmt.Sprintf("Model does not meet filter criteria: max_tokens (%d) < %d",
-						model.MaxTokens, maxVal)
+					resp.Message = fmt.Sprintf("Model does not meet filter criteria: max_output (%d) < %d",
+						model.MaxOutput, maxVal)
 				}
 			}
 		case "type":
@@ -602,9 +644,10 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 
 	if matchFilter {
 		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"max_tokens":  model.MaxTokens,
-			"model_types": model.ModelTypes,
+			"name":           model.Name,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"max_batch_size": model.MaxBatchSize,
 			//"features":    getFeaturesMap(model.Features),
 		}
 
@@ -621,7 +664,6 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 	return resp
 }
 
-// 5. Display models with specific features
 func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -652,7 +694,6 @@ func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 	return resp
 }
 
-// 6. Display models with specific type
 func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -664,10 +705,11 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 		for _, model := range provider.Models {
 			if containsModelType(model.ModelTypes, modelType) {
 				modelData := map[string]interface{}{
-					"provider":    provider.Name,
-					"name":        model.Name,
-					"max_tokens":  model.MaxTokens,
-					"model_types": model.ModelTypes,
+					"provider":       provider.Name,
+					"name":           model.Name,
+					"max_output":     model.MaxOutput,
+					"model_types":    model.ModelTypes,
+					"max_batch_size": model.MaxBatchSize,
 					//"features":    getFeaturesMap(model.Features),
 				}
 				resp.Data = append(resp.Data, modelData)
@@ -749,24 +791,6 @@ func getFeaturesMap(features Features) map[string]interface{} {
 	return featuresMap
 }
 
-// Helper: Check if model has a specific feature
-func modelHasFeature(features Features, featureType string) bool {
-	switch strings.ToLower(featureType) {
-	case "multimodal":
-		return features.Multimodal != nil && features.Multimodal.Enabled
-	case "reasoning":
-		return features.Reasoning != nil
-	case "reasoning_simple":
-		return features.Reasoning != nil && features.Reasoning.RawType == "simple"
-	case "reasoning_budget":
-		return features.Reasoning != nil && features.Reasoning.RawType == "budget"
-	case "reasoning_effort":
-		return features.Reasoning != nil && features.Reasoning.RawType == "effort"
-	default:
-		return false
-	}
-}
-
 // findRepoRoot walks up from CWD until it finds the repo root (marked by
 // conf/all_models.json).  This makes tests work regardless of the Go test
 // binary's CWD (which is set to the package directory by go test).
@@ -784,7 +808,6 @@ func findRepoRoot() string {
 	return "."
 }
 
-// Helper: Find provider by name
 func (pm *ProviderManager) FindProvider(name string) *Provider {
 	for i := range pm.Providers {
 		if strings.EqualFold(pm.Providers[i].Name, name) {
@@ -794,7 +817,6 @@ func (pm *ProviderManager) FindProvider(name string) *Provider {
 	return nil
 }
 
-// Helper: Find model by name
 func (pm *ProviderManager) FindModel(provider *Provider, modelName string) *Model {
 	for i := range provider.Models {
 		if strings.EqualFold(provider.Models[i].Name, modelName) {

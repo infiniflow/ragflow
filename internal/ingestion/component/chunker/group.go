@@ -14,6 +14,7 @@
 //  limitations under the License.
 //
 
+// Package chunker implements the GroupTitleChunker variant: aggregates adjacent
 // SCOPE (honest) for group.go:
 //
 //   - Implements the GroupTitleChunker variant: aggregates adjacent
@@ -106,9 +107,9 @@ func buildSectionIDs(levels []int, targetLevel int) []int {
 }
 
 // invokeGroup runs the GroupTitleChunker strategy against the
-// supplied inputs. Detected headings + adjacent merges happen in two
-// goroutines (heading detection sequential, then a fan-out over
-// record-buckets for the merge pass).
+// supplied inputs. It extracts the line records and defers to the
+// shared chunkFromRecords pipeline (which ManualChunker also uses,
+// after a physical-position resort).
 func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
 	records := extractLineRecords(inputs)
 	common.Debug("chunker stage",
@@ -119,6 +120,24 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
+	return chunkFromRecords(parentCtx, db, inputs, p, records, p.ChunkTokenCap)
+}
+
+// chunkFromRecords runs the shared GroupTitle / Manual grouping pipeline over
+// an already-extracted record list: resolve heading levels, split into
+// sections, merge adjacent text records, build chunks, enforce the token cap
+// (title family only), and perform on-demand PDF cropping. GroupTitleChunker
+// feeds records in input order; ManualChunker feeds them after a (page, top,
+// left) resort. Sharing this body keeps both strategies byte-identical for
+// coordinate-free input as long as no built chunk exceeds the token cap
+// (TestManualChunker_NoPositionsEqualsGroupChunker); once one does, only
+// GroupTitleChunker re-splits it (ManualChunker is exempt).
+//
+// tokenCap is the title-family token ceiling (chunk_token_cap). ManualChunker
+// must stay exempt from #18455's cap, so it passes 0; GroupTitleChunker passes
+// p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
+// on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
+func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
 	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
@@ -156,6 +175,13 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 		zap.Int("groups", len(groups)),
 	)
 	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
+	// Enforce the title-family token ceiling (chunk_token_cap) right after
+	// build_chunks and BEFORE the on-demand crop, mirroring Python's
+	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
+	// tokenCap=0, so this is a no-op there.
+	if tokenCap > 0 {
+		chunks = enforceTitleTokenCap(chunks, tokenCap)
+	}
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
 		zap.String("variant", "group"),
@@ -169,7 +195,7 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
 		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
 		if eErr != nil {
-			slog.Warn("GroupTitleChunker: could not open PDF for on-demand cropping", "err", eErr)
+			slog.Warn("chunker: could not open PDF for on-demand cropping", "err", eErr)
 		}
 		if engine != nil {
 			defer engine.Close()
@@ -329,6 +355,21 @@ func removeTag(text string) string {
 	return posTagRemove.ReplaceAllString(text, "")
 }
 
+// pdfPosRowLess orders two PDF coordinate 5-tuples [page,left,right,top,bottom]
+// by (page, top, left) — i.e. by indices (0, 3, 1). It is the single shared
+// (page, top, left) comparator used both when re-sorting chunker records
+// (ManualChunker) and when de-duplicating/merging position matrices
+// (mergePositionMatrix). Both rows must have length >= 5.
+func pdfPosRowLess(a, b []float64) bool {
+	if a[0] != b[0] {
+		return a[0] < b[0]
+	}
+	if a[3] != b[3] {
+		return a[3] < b[3]
+	}
+	return a[1] < b[1]
+}
+
 // mergePositionMatrix aggregates multiple PDF coordinate matrices into a
 // single de-duplicated, sorted matrix. Mirrors Python
 // pdf_chunk_metadata.py:127 merge_pdf_positions: rows are 5-tuples
@@ -362,13 +403,7 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 		return nil
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i][0] != out[j][0] {
-			return out[i][0] < out[j][0]
-		}
-		if out[i][3] != out[j][3] {
-			return out[i][3] < out[j][3]
-		}
-		return out[i][1] < out[j][1]
+		return pdfPosRowLess(out[i], out[j])
 	})
 	return out
 }
@@ -377,7 +412,7 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 // python BaseTitleChunker.extract_line_records uses:
 //
 //  1. If upstream emitted chunks (output_format == "chunks") OR
-//     upstream emitted JSON, normalise from the list payload.
+//     upstream emitted JSON, normalize from the list payload.
 //  2. Otherwise, treat text/markdown/html as a "one record per line"
 //     stream (preserving indentation for non-text formats, strip-only
 //     for the text format).

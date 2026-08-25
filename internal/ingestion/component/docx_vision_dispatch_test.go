@@ -75,11 +75,11 @@ func (c *docxVisionCaptureInvoker) invoke(
 func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker
-	origPrompt := docxVisionPromptBuilder
+	origPrompt := figureVisionPromptBuilder
 	defer func() {
 		resolveTenantModelByType = origResolver
 		visionChatInvoker = origInvoker
-		docxVisionPromptBuilder = origPrompt
+		figureVisionPromptBuilder = origPrompt
 	}()
 
 	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -87,7 +87,11 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	}
 	invoker := &docxVisionCaptureInvoker{}
 	visionChatInvoker = invoker.invoke
-	docxVisionPromptBuilder = func(string, string) (string, error) { return "describe the figure", nil }
+	var capturedLanguage string
+	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
+		capturedLanguage = language
+		return "describe the figure", nil
+	}
 
 	dispatched := parserDispatchResult{
 		OutputFormat: "json",
@@ -105,7 +109,7 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
+		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		defaultSetups(),
 	)
 	if err != nil {
@@ -130,14 +134,17 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	if len(invoker.images) != 1 {
 		t.Fatalf("vision invoker called %d times, want 1 (only the image item)", len(invoker.images))
 	}
+	if capturedLanguage != "Japanese" {
+		t.Errorf("figure prompt language = %q, want Japanese", capturedLanguage)
+	}
 	if want := "data:image/png;base64,aGVsbG8taW1hZ2U="; invoker.images[0] != want {
 		t.Errorf("vision image data URI = %q, want %q", invoker.images[0], want)
 	}
 }
 
-// TestMaybeDispatchDOCXVision_JSONOnly verifies Diff 2.4: the markdown output
+// TestMaybeDispatchDOCXVision_JSONOnly verifies Diff 2.4: the Markdown output
 // path must NOT be enhanced (Python's markdown/docx branch performs no vision
-// enrichment). A markdown result with embedded figures is returned untouched.
+// enrichment). A Markdown result with embedded figures is returned untouched.
 func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker
@@ -184,5 +191,64 @@ func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 	}
 	if res.Markdown != "![Image](data:image/png;base64,abc)" {
 		t.Errorf("markdown mutated: %q", res.Markdown)
+	}
+}
+
+func TestBuildVisionMessages_PreventsDoublePrefix(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantURL string
+	}{
+		{
+			name:    "raw base64 gets png prefix",
+			input:   "aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already png data uri is preserved without double prefix",
+			input:   "data:image/png;base64,aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "jpeg data uri is preserved as jpeg",
+			input:   "data:image/jpeg;base64,/9j/4AAQ",
+			wantURL: "data:image/jpeg;base64,/9j/4AAQ",
+		},
+		{
+			name:    "https url is preserved",
+			input:   "https://example.com/figure.png",
+			wantURL: "https://example.com/figure.png",
+		},
+		{
+			name:    "whitespace trimmed",
+			input:   "  data:image/png;base64,abc  ",
+			wantURL: "data:image/png;base64,abc",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			msgs := buildVisionMessages("describe", tc.input)
+			if len(msgs) != 1 {
+				t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+			}
+			parts, ok := msgs[0].Content.([]interface{})
+			if !ok || len(parts) < 2 {
+				t.Fatalf("Content parts = %+v, want >= 2", msgs[0].Content)
+			}
+			img, ok := parts[1].(map[string]any)
+			if !ok {
+				t.Fatalf("parts[1] = %+v, want map[string]any", parts[1])
+			}
+			imgURL, ok := img["image_url"].(map[string]any)
+			if !ok {
+				t.Fatalf("img[image_url] = %+v, want map[string]any", img["image_url"])
+			}
+			got, _ := imgURL["url"].(string)
+			if got != tc.wantURL {
+				t.Errorf("image_url.url = %q, want %q", got, tc.wantURL)
+			}
+		})
 	}
 }

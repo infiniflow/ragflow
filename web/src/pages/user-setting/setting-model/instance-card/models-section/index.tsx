@@ -14,21 +14,20 @@
  *  limitations under the License.
  */
 
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
 import { IProviderModelItem } from '@/interfaces/request/llm';
+import { Loader2, Plus, Search, ShieldCheck } from 'lucide-react';
 import {
-  ListMinus,
-  ListPlus,
-  Loader2,
-  Plus,
-  Search,
-  ShieldCheck,
-} from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
@@ -59,9 +58,11 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideIfEmpty = false,
     getFormValues,
     verifyTransform,
+    instanceDetailsLoaded,
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
+    onInstanceModelsStatusChange,
   } = props;
 
   const isDraftInstance =
@@ -77,15 +78,32 @@ export function ModelsSection(props: ModelsSectionProps) {
   const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
-  const { data: instanceModels } = useFetchInstanceModels(
-    providerName,
-    instanceName,
-  );
+  const {
+    data: instanceModels,
+    loading: instanceModelsLoading,
+    isSuccess: instanceModelsSucceeded,
+  } = useFetchInstanceModels(providerName, instanceName);
+
+  useLayoutEffect(() => {
+    if (
+      !isDraftInstance &&
+      (instanceModelsLoading || !instanceModelsSucceeded)
+    ) {
+      onInstanceModelsStatusChange?.(false);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
 
   // 3. Upstream catalog + auto-fetch on mount.
   const {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -96,6 +114,8 @@ export function ModelsSection(props: ModelsSectionProps) {
     resolveCreds,
     instanceModels,
     apiKeyValue: currentCreds.apiKey,
+    baseUrlValue: currentCreds.baseUrl,
+    instanceDetailsLoaded,
   });
 
   // 3a. Draft-only: locally-tracked "added models" list.
@@ -152,11 +172,24 @@ export function ModelsSection(props: ModelsSectionProps) {
   const { instanceItems, models, addedSet } = useModelsDerived({
     catalog,
     instanceModels,
+    instanceModelsLoading,
+    instanceModelsSucceeded,
     draftModels,
     isDraftInstance,
     onInstanceModelsChange,
     onInstanceModelsEdited,
   });
+
+  useEffect(() => {
+    if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
+      onInstanceModelsStatusChange?.(true);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
 
   // 5. Search + tag filter.
   const { search, tag, setSearch, setTag, filteredModels, allTags } =
@@ -173,50 +206,9 @@ export function ModelsSection(props: ModelsSectionProps) {
       verifyTransform,
     });
 
-  // 6a. Model selection for batch verify.
-  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
-
-  const toggleModel = useCallback((name: string) => {
-    setSelectedModels((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
-      return next;
-    });
-  }, []);
-
-  const toggleAllFiltered = useCallback(() => {
-    setSelectedModels((prev) => {
-      const allSelected = filteredModels.every((m) => prev.has(m.name));
-      const next = new Set(prev);
-      if (allSelected) {
-        filteredModels.forEach((m) => next.delete(m.name));
-      } else {
-        filteredModels.forEach((m) => next.add(m.name));
-      }
-      return next;
-    });
-  }, [filteredModels]);
-
-  const filteredSelectedCount = useMemo(
-    () => filteredModels.filter((m) => selectedModels.has(m.name)).length,
-    [filteredModels, selectedModels],
-  );
-
-  const selectAllChecked: boolean | 'indeterminate' =
-    filteredSelectedCount === 0
-      ? false
-      : filteredSelectedCount === filteredModels.length
-        ? true
-        : 'indeterminate';
-
   const handleBatchVerifyClick = useCallback(() => {
-    const selected = filteredModels.filter((m) => selectedModels.has(m.name));
-    handleBatchVerify(selected);
-  }, [filteredModels, selectedModels, handleBatchVerify]);
+    handleBatchVerify(filteredModels);
+  }, [filteredModels, handleBatchVerify]);
 
   // 7. Add / remove / batch toggle / custom add.
   const {
@@ -237,6 +229,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     filteredModels,
     addedSet,
     setCatalog,
+    clearCatalogOverride,
     addDraftModel,
     removeDraftModel,
     setDraftModelsList: setDraftModels,
@@ -255,7 +248,10 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelEdit({
     providerName,
     instanceName,
+    addedSet,
     isDraftInstance,
+    updateCatalogModel,
+    clearCatalogOverride,
     updateDraftModel,
   });
 
@@ -318,33 +314,6 @@ export function ModelsSection(props: ModelsSectionProps) {
               placeholder={t('setting.search')}
               rootClassName="flex-1"
             />
-            {!hideActions && (
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={handleBatchToggleModels}
-                disabled={batchLoading || filteredModels.length === 0}
-                data-testid="models-batch-toggle"
-                aria-label={
-                  allFilteredAdded
-                    ? tSetting('batchRemoveModels')
-                    : tSetting('batchAddModels')
-                }
-                title={
-                  allFilteredAdded
-                    ? tSetting('batchRemoveModels')
-                    : tSetting('batchAddModels')
-                }
-              >
-                {batchLoading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : allFilteredAdded ? (
-                  <ListMinus className="size-4" />
-                ) : (
-                  <ListPlus className="size-4" />
-                )}
-              </Button>
-            )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             <TagFilterButton
@@ -368,20 +337,11 @@ export function ModelsSection(props: ModelsSectionProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <Checkbox
-            checked={selectAllChecked}
-            onCheckedChange={toggleAllFiltered}
-            disabled={batchVerifying || filteredModels.length === 0}
-            aria-label={tSetting('selectAllFiltered')}
-          />
-          <span className="text-sm text-text-secondary">
-            {tSetting('selectAllFiltered')}
-          </span>
           <Button
             variant="outline"
             size="sm"
             onClick={handleBatchVerifyClick}
-            disabled={selectedModels.size === 0 || batchVerifying}
+            disabled={batchVerifying || filteredModels.length === 0}
             data-testid="models-batch-verify"
             className="ml-auto"
           >
@@ -390,8 +350,32 @@ export function ModelsSection(props: ModelsSectionProps) {
             ) : (
               <ShieldCheck className="size-3" />
             )}
-            {tSetting('batchVerifySelected', { count: selectedModels.size })}
+            {tSetting('batchVerifyModels')}
           </Button>
+          {!hideActions && (
+            // When the toggle is in "remove all" mode the click opens a
+            // confirmation dialog instead of mutating directly; the button
+            // acts as the dialog trigger, so the handler moves to `onOk`.
+            <ConfirmDeleteDialog
+              hidden={!allFilteredAdded}
+              onOk={handleBatchToggleModels}
+              title={t('common.removeModalTitle')}
+              okButtonText={t('common.remove')}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={allFilteredAdded ? undefined : handleBatchToggleModels}
+                disabled={batchLoading || filteredModels.length === 0}
+                data-testid="models-batch-toggle"
+              >
+                {batchLoading && <Loader2 className="size-3 animate-spin" />}
+                {allFilteredAdded
+                  ? tSetting('batchRemoveModels')
+                  : tSetting('batchAddModels')}
+              </Button>
+            </ConfirmDeleteDialog>
+          )}
         </div>
 
         <div className="bg-bg-card rounded-lg max-h-80 overflow-auto scrollbar-auto border border-border-button">
@@ -409,8 +393,6 @@ export function ModelsSection(props: ModelsSectionProps) {
                   isAdded={addedSet.has(model.name)}
                   verifyStatus={verify[model.name] ?? 'idle'}
                   hideActions={hideActions}
-                  isSelected={selectedModels.has(model.name)}
-                  onToggleSelect={() => toggleModel(model.name)}
                   onVerify={() => handleVerify(model)}
                   onAdd={() => handleAddModel(model)}
                   onRemove={() => handleRemoveModel(model)}

@@ -59,7 +59,7 @@ export function DraftModeCard({
   );
 
   return (
-    <div className="px-2 py-3 flex flex-col gap-4">
+    <div className="px-5 py-3 flex flex-col gap-4 bg-bg-card rounded-xl ">
       <InstanceNameSection
         draftName={draftName}
         setDraftName={setDraftName}
@@ -73,19 +73,22 @@ export function DraftModeCard({
         onSubmit={() => undefined}
         defaultValues={formDefaultValues}
         labelClassName="font-normal"
+        resetOptions={{ keepDirtyValues: true }}
       />
 
       {providerName === LLMFactory.AIMLAPI && (
         <AimlapiGetKeyButton onKey={handleAimlapiKey} />
       )}
 
-      <div className="pt-3">
-        <VerifyButton
-          onVerify={handleVerify}
-          isAbsolute={false}
-          formRef={formRef}
-        />
-      </div>
+      {providerName !== LLMFactory.OpenAiAPICompatible && (
+        <div className="pt-3">
+          <VerifyButton
+            onVerify={handleVerify}
+            isAbsolute={false}
+            formRef={formRef}
+          />
+        </div>
+      )}
 
       <div className="pt-3">
         <ModelsSection

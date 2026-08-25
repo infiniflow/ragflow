@@ -82,7 +82,7 @@ export function WikiGraphPanel({
         options={entityOptions}
         value={selectedEntitySlug || graphKeywords}
         onChange={handleSelectEntity}
-        placeholder={t('knowledgeDetails.searchEntity')}
+        placeholder={t('knowledgeCompilation.searchEntity')}
         allowClear
         triggerClassName="w-96 max-w-full"
         onNoMatchEnter={handleNoMatchEnter}

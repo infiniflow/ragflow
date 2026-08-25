@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.26.4"
+version = "0.27.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -36,7 +36,6 @@ dependencies = [
     "discord-py==2.3.2",
     "dropbox==12.0.2",
     "duckduckgo-search>=7.2.0,<8.0.0",
-    "editdistance==0.8.1",
     "elasticsearch-dsl==8.12.0",
     "exceptiongroup>=1.3.0,<2.0.0",
     "feedparser>=6.0.11,<7.0.0",
@@ -57,7 +56,7 @@ dependencies = [
     "groq>=0.30.0,<1.0.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.7.2",
+    "infinity-sdk==0.7.3",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.60.1",
@@ -69,7 +68,7 @@ dependencies = [
     "mcp>=1.28.1,<2.0.0",
     "mini-racer>=0.12.4,<0.13.0",
     "minio==7.2.4",
-    "mistralai==0.4.2",
+    "mistralai>=2.7.2,<3.0.0",
     "mysql-connector-python>=9.0.0,<10.0.0",
     "moodlepy>=0.23.0",
     "mypy-boto3-s3==1.40.26",
@@ -91,7 +90,7 @@ dependencies = [
     "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
-    "pypdf>=6.14.2",
+    "pypdf>=6.15.0",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
     "paramiko>=3.5.1",
@@ -100,7 +99,12 @@ dependencies = [
     "qianfan==0.4.6",
     "quart-auth==0.11.0",
     "quart-cors==0.8.0",
+    # Werkzeug 3.1.5 can prepend \r\n to multipart file bodies when TCP chunks
+    # split at part headers (https://github.com/pallets/werkzeug/issues/3088);
+    # fixed in >=3.1.7. Pin so uv.lock cannot resolve back to the buggy release.
+    "werkzeug>=3.1.7,<4",
     "ranx==0.3.20",
+    "rapidfuzz==3.14.5",
     "readability-lxml>=0.8.4,<1.0.0",
     "replicate==0.31.0",
     "reportlab>=4.4.1",
@@ -110,7 +114,14 @@ dependencies = [
     "scholarly==1.7.11",
     "selenium-wire==5.1.0",
     "spacy==3.8.14",
+    "langdetect==1.0.9",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+    "zh-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/zh_core_web_sm-3.8.0/zh_core_web_sm-3.8.0-py3-none-any.whl",
+    "de-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl",
+    "fr-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/fr_core_news_sm-3.8.0/fr_core_news_sm-3.8.0-py3-none-any.whl",
+    "es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl",
+    "pt-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.8.0/pt_core_news_sm-3.8.0-py3-none-any.whl",
+    "ja-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/ja_core_news_sm-3.8.0/ja_core_news_sm-3.8.0-py3-none-any.whl",
     "slack-sdk==3.37.0",
     "socksio==1.0.0",
     "agentrun-sdk>=0.0.51,<1.0.0",
@@ -119,6 +130,7 @@ dependencies = [
     "tavily-python==0.5.1",
     "tencentcloud-sdk-python==3.0.1478",
     "tika==2.6.0",
+    "ucloud-sandbox>=1.4.2,<2.0.0",
     "valkey==6.0.2",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
@@ -177,7 +189,7 @@ dependencies = [
     "python-telegram-bot>=21.0",
     "line-bot-sdk>=3.0.0",
     "wechatpy>=1.8.18",
-    "aiohttp>=3.14.1",
+    "aiohttp>=3.14.3",
 ]
 
 [dependency-groups]
@@ -236,6 +248,18 @@ constraint-dependencies = [
     # CVE-2026-59939: httplib2 < 0.32.0 vulnerable; pulled in transitively via
     # google-api-python-client, google-auth-httplib2
     "httplib2>=0.32.0",
+    # CVE-2025-67221: orjson < 3.11.6 vulnerable; pulled in transitively via
+    # langgraph-sdk, langsmith, ranx. Previously blocked by mistralai==0.4.2
+    # pinning orjson<3.11
+    "orjson>=3.11.6",
+    # CVE-2026-26209: cbor2 < 5.9.0 vulnerable; pulled in transitively via ranx
+    "cbor2>=5.9.0",
+    # CVE-2026-21226: azure-core < 1.38.0 vulnerable; pulled in transitively via
+    # azure-identity, azure-storage-blob, azure-storage-file-datalake
+    "azure-core>=1.38.0",
+    # CVE-2026-33752: curl_cffi < 0.15.0 vulnerable; pulled in transitively via
+    # akshare, yfinance
+    "curl_cffi>=0.15.0"
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same

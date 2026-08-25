@@ -16,7 +16,8 @@
   "models": [
     {
       "name": "deepseek-ai/DeepSeek-V3.2",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -33,7 +34,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 1024
     },
     {
       "name": "hexgrad/Kokoro-82M",

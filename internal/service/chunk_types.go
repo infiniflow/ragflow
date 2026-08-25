@@ -21,14 +21,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
-	"ragflow/internal/entity"
 	"strings"
+	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 
@@ -63,6 +64,7 @@ type RetrievalTestRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -223,7 +225,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, docID string) er
 		if task == nil {
 			continue
 		}
-		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+		redisClient.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", time.Hour)
 	}
 
 	return nil
@@ -298,12 +300,13 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 		indexName := IndexName(kb.TenantID)
 
-		exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, datasetID)
+		var exists bool
+		exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
 		}
 		if exists {
-			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
 				return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
 			}
 		} else {

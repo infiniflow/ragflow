@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -15,79 +16,237 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-func TestValidateEmbeddingDimension(t *testing.T) {
-	maxDimension := 2048
+type remoteModelProbeDriver struct {
+	*modelModule.DummyModel
+	remoteModels []modelModule.ListModelResponse
+	embedCalls   int
+	checkCalls   int
+	checkErr     error
+}
 
+func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	return d.remoteModels, nil
+}
+
+func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.EmbedRequest, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+	d.embedCalls++
+	return nil, nil
+}
+
+func (d *remoteModelProbeDriver) CheckConnection(context.Context, *modelModule.APIConfig) error {
+	d.checkCalls++
+	return d.checkErr
+}
+
+func TestValidateBedrockAPIKeyAuth(t *testing.T) {
 	tests := []struct {
-		name      string
-		model     *modelModule.Model
-		requested int
-		wantErr   string
+		name    string
+		apiKey  string
+		wantErr string
 	}{
 		{
-			name:      "allows unset requested dimension",
-			model:     &modelModule.Model{MaxDimension: &maxDimension, Dimensions: []int{256, 512}},
-			requested: 0,
+			name:    "rejects non-string API key",
+			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":[],"bedrock_region":"us-east-1"}`,
+			wantErr: "invalid Bedrock API-key configuration",
 		},
 		{
-			name:      "allows missing model schema",
-			model:     nil,
-			requested: 256,
+			name:    "rejects invalid region",
+			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":"test-key","bedrock_region":"us east 1"}`,
+			wantErr: "invalid region",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			authenticated, _, err := validateBedrockAPIKeyAuth("Bedrock", test.apiKey)
+			if !authenticated || err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateBedrockAPIKeyAuth() = (%v, %v), want API-key mode error containing %q", authenticated, err, test.wantErr)
+			}
+		})
+	}
+
+	nonAPIKey := `{"auth_mode":"access_key_secret","bedrock_region":"us-east-1"}`
+	authenticated, normalized, err := validateBedrockAPIKeyAuth("Bedrock", nonAPIKey)
+	if authenticated || err != nil || normalized != nonAPIKey {
+		t.Fatalf("non-API-key mode = (%v, %q, %v), want unchanged", authenticated, normalized, err)
+	}
+
+	authenticated, normalized, err = validateBedrockAPIKeyAuth("Bedrock", `{"auth_mode":"bedrock_api_key","bedrock_api_key":" test-key ","bedrock_region":" us-east-1 ","custom":"value"}`)
+	if !authenticated || err != nil {
+		t.Fatalf("valid API-key mode = (%v, %v), want success", authenticated, err)
+	}
+	var config map[string]string
+	if err = json.Unmarshal([]byte(normalized), &config); err != nil {
+		t.Fatalf("decode normalized API key: %v", err)
+	}
+	if config["bedrock_api_key"] != "test-key" || config["bedrock_region"] != "us-east-1" || config["custom"] != "value" {
+		t.Fatalf("normalized API key = %#v", config)
+	}
+}
+
+func TestValidateEmbeddingModel(t *testing.T) {
+	maxDimension := 2048
+	maxBatchSize := 128
+
+	tests := []struct {
+		name               string
+		model              *modelModule.Model
+		requestedDimension int
+		requestedBatchSize int
+		wantErr            string
+	}{
+		{
+			name:               "rejects nil model",
+			requestedDimension: 1024,
+			requestedBatchSize: 16,
+			wantErr:            "embedding model is nil",
 		},
 		{
-			name:      "allows dimension listed in explicit options",
-			model:     &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, Dimensions: []int{256, 512, 1024, 2048}},
-			requested: 1024,
+			name:               "rejects zero dimension",
+			model:              &modelModule.Model{},
+			requestedDimension: 0,
+			requestedBatchSize: 1,
+			wantErr:            "input dimension <= 0",
 		},
 		{
-			name:      "rejects dimension not listed in explicit options",
-			model:     &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, Dimensions: []int{256, 512, 1024, 2048}},
-			requested: 1536,
-			wantErr:   "supported dimensions",
+			name:               "rejects negative dimension",
+			model:              &modelModule.Model{},
+			requestedDimension: -1,
+			requestedBatchSize: 1,
+			wantErr:            "input dimension <= 0",
 		},
 		{
-			name:      "allows custom dimension within max dimension",
-			model:     &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension},
-			requested: 1536,
+			name:               "rejects zero batch size",
+			model:              &modelModule.Model{},
+			requestedDimension: 1024,
+			requestedBatchSize: 0,
+			wantErr:            "input batch size <= 0",
 		},
 		{
-			name:      "rejects custom dimension above max dimension",
-			model:     &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension},
-			requested: 4096,
-			wantErr:   "max dimension",
+			name:               "rejects negative batch size",
+			model:              &modelModule.Model{},
+			requestedDimension: 1024,
+			requestedBatchSize: -1,
+			wantErr:            "input batch size <= 0",
+		},
+		{
+			name:               "rejects missing max dimension",
+			model:              &modelModule.Model{MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1024,
+			requestedBatchSize: 1,
+			wantErr:            "max dimension is nil",
+		},
+		{
+			name:               "rejects missing max batch size",
+			model:              &modelModule.Model{MaxDimension: &maxDimension},
+			requestedDimension: 1024,
+			requestedBatchSize: 1,
+			wantErr:            "max batch size is nil",
+		},
+		{
+			name:               "allows dimension listed in explicit options",
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize, Dimensions: []int{256, 512, 1024, 2048}},
+			requestedDimension: 1024,
+			requestedBatchSize: 128,
+		},
+		{
+			name:               "rejects dimension not listed in explicit options",
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize, Dimensions: []int{256, 512, 1024, 2048}},
+			requestedDimension: 1536,
+			requestedBatchSize: 128,
+			wantErr:            "supported dimensions",
+		},
+		{
+			name:               "allows custom dimension within max dimension",
+			model:              &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1536,
+			requestedBatchSize: 1,
+		},
+		{
+			name:               "rejects custom dimension above max dimension",
+			model:              &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
+			requestedDimension: 4096,
+			requestedBatchSize: 1,
+			wantErr:            "max dimension",
+		},
+		{
+			name:               "allows batch at model limit",
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1024,
+			requestedBatchSize: 128,
+		},
+		{
+			name:               "rejects batch above model limit",
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1024,
+			requestedBatchSize: 129,
+			wantErr:            "max batch size",
+		},
+		{
+			name:               "rejects batch when model limit is unspecified",
+			model:              &modelModule.Model{Name: "custom-embedding", MaxDimension: &maxDimension},
+			requestedDimension: 1024,
+			requestedBatchSize: 10000,
+			wantErr:            "max batch size is nil",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateEmbeddingDimension(tt.model, tt.requested)
+			err := validateEmbeddingModel(tt.model, tt.requestedDimension, tt.requestedBatchSize)
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Fatalf("validateEmbeddingDimension() error = %v", err)
+					t.Fatalf("validateEmbeddingModel() error = %v", err)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatalf("validateEmbeddingDimension() expected error containing %q", tt.wantErr)
+				t.Fatalf("validateEmbeddingModel() expected error containing %q", tt.wantErr)
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("validateEmbeddingDimension() error = %v, want substring %q", err, tt.wantErr)
+				t.Fatalf("validateEmbeddingModel() error = %v, want substring %q", err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestModelInfoWithTenantExtraAppliesEmbeddingDimensions(t *testing.T) {
+func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
+	maxDimension := 1024
+	maxBatchSize := 0
+	driver := &remoteModelProbeDriver{
+		DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+		remoteModels: []modelModule.ListModelResponse{{
+			Name:         "remote-embedding",
+			ModelTypes:   []string{"embedding"},
+			MaxDimension: &maxDimension,
+			MaxBatchSize: &maxBatchSize,
+		}},
+	}
+
+	result, err := verifyProviderModel(context.Background(), driver, nil, &modelModule.APIConfig{}, nil)
+	if err == nil {
+		t.Fatal("verifyProviderModel() error = nil, want validation error")
+	}
+	if result["remote-embedding"] != entity.ModelVerifyFail {
+		t.Fatalf("verification result = %#v, want remote model failure", result)
+	}
+	if driver.embedCalls != 0 {
+		t.Fatalf("Embed calls = %d, want 0 after metadata validation failure", driver.embedCalls)
+	}
+}
+
+func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 	factoryMaxDimension := 2048
+	factoryBatchSize := 128
 	modelInfo := &modelModule.Model{
 		Name:         "embedding-3",
 		MaxDimension: &factoryMaxDimension,
+		MaxBatchSize: &factoryBatchSize,
 		Dimensions:   []int{1024, 2048},
 		ModelTypes:   []string{"embedding"},
 		ModelTypeMap: map[string]bool{"embedding": true},
 	}
 	modelEntity := &entity.TenantModel{
-		Extra: `{"max_dimension":768,"dimensions":[384,768],"model_types":["embedding"]}`,
+		Extra: `{"max_dimension":768,"max_batch_size":16,"dimensions":[384,768],"model_types":["embedding"]}`,
 	}
 
 	merged, err := modelInfoWithTenantExtra(modelInfo, modelEntity)
@@ -100,17 +259,26 @@ func TestModelInfoWithTenantExtraAppliesEmbeddingDimensions(t *testing.T) {
 	if merged.MaxDimension == nil || *merged.MaxDimension != 768 {
 		t.Fatalf("MaxDimension = %v, want 768", merged.MaxDimension)
 	}
+	if merged.MaxBatchSize == nil || *merged.MaxBatchSize != 16 {
+		t.Fatalf("MaxBatchSize = %v, want 16", merged.MaxBatchSize)
+	}
 	if len(merged.Dimensions) != 2 || merged.Dimensions[0] != 384 || merged.Dimensions[1] != 768 {
 		t.Fatalf("Dimensions = %v, want [384 768]", merged.Dimensions)
 	}
-	if err := validateEmbeddingDimension(merged, 1024); err == nil || !strings.Contains(err.Error(), "supported dimensions") {
-		t.Fatalf("validateEmbeddingDimension() error = %v, want supported dimensions error", err)
+	if validationErr := validateEmbeddingModel(merged, 1024, 16); validationErr == nil || !strings.Contains(validationErr.Error(), "supported dimensions") {
+		t.Fatalf("validateEmbeddingModel() error = %v, want supported dimensions error", validationErr)
 	}
-	if err := validateEmbeddingDimension(merged, 768); err != nil {
-		t.Fatalf("validateEmbeddingDimension() error = %v", err)
+	if validationErr := validateEmbeddingModel(merged, 768, 16); validationErr != nil {
+		t.Fatalf("validateEmbeddingModel() error = %v", validationErr)
+	}
+	if validationErr := validateEmbeddingModel(merged, 768, 17); validationErr == nil || !strings.Contains(validationErr.Error(), "max batch size") {
+		t.Fatalf("validateEmbeddingModel() error = %v, want max batch size error", validationErr)
 	}
 	if modelInfo.MaxDimension == nil || *modelInfo.MaxDimension != factoryMaxDimension {
 		t.Fatalf("factory MaxDimension was mutated: %v", modelInfo.MaxDimension)
+	}
+	if modelInfo.MaxBatchSize == nil || *modelInfo.MaxBatchSize != factoryBatchSize {
+		t.Fatalf("factory MaxBatchSize was mutated: %v", modelInfo.MaxBatchSize)
 	}
 	if len(modelInfo.Dimensions) != 2 || modelInfo.Dimensions[0] != 1024 || modelInfo.Dimensions[1] != 2048 {
 		t.Fatalf("factory Dimensions were mutated: %v", modelInfo.Dimensions)
@@ -157,6 +325,124 @@ func seedModelProviderServiceScope(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	for _, row := range []interface{}{
+		&entity.UserTenant{ID: "user-tenant-bedrock", UserID: "user-1", TenantID: "tenant-bedrock", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-bedrock", TenantID: "tenant-bedrock", ProviderName: "Bedrock"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("Bedrock")
+	if provider == nil {
+		t.Fatal("Bedrock provider is not configured")
+	}
+	probe := &remoteModelProbeDriver{
+		DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+		checkErr:   errors.New("runtime verification must not run"),
+	}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_api_key":"test-key","bedrock_region":"us-east-1"}`
+	code, err := NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Bedrock",
+		"api-key-instance",
+		apiKey,
+		"",
+		"default",
+		"user-1",
+		[]CreateInstanceModelInfo{{
+			ModelName:  "amazon.nova-lite-v1:0",
+			ModelTypes: []string{"chat", "vision"},
+			MaxTokens:  8192,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("CreateProviderInstance() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+	if probe.checkCalls != 0 {
+		t.Fatalf("CheckConnection calls = %d, want 0", probe.checkCalls)
+	}
+
+	var models []*entity.TenantModel
+	if err = db.Find(&models).Error; err != nil {
+		t.Fatalf("list models: %v", err)
+	}
+	if len(models) != 1 || models[0].ModelName != "amazon.nova-lite-v1:0" {
+		t.Fatalf("models = %#v, want persisted Bedrock model", models)
+	}
+	code, err = NewModelProviderService().AlterProviderInstance(
+		t.Context(),
+		"user-1",
+		"Bedrock",
+		"api-key-instance",
+		"api-key-instance",
+		apiKey,
+		"",
+		"default",
+		[]CreateInstanceModelInfo{{
+			ModelName:  "amazon.nova-lite-v1:0",
+			ModelTypes: []string{"chat", "vision"},
+			MaxTokens:  8192,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("AlterProviderInstance() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("alter code = %v, want %v", code, common.CodeSuccess)
+	}
+	if probe.checkCalls != 0 {
+		t.Fatalf("CheckConnection calls after alter = %d, want 0", probe.checkCalls)
+	}
+
+	code, err = NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Bedrock",
+		"empty-api-key-instance",
+		apiKey,
+		"",
+		"default",
+		"user-1",
+		nil,
+	)
+	if code != common.CodeBadRequest || err == nil {
+		t.Fatalf("empty model list returned (%v, %v), want bad request", code, err)
+	}
+
+	code, err = NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Bedrock",
+		"empty-model-name-instance",
+		apiKey,
+		"",
+		"default",
+		"user-1",
+		[]CreateInstanceModelInfo{{}},
+	)
+	if code != common.CodeBadRequest || err == nil {
+		t.Fatalf("empty model name returned (%v, %v), want bad request", code, err)
+	}
+	var instanceCount int64
+	if err = db.Model(&entity.TenantModelInstance{}).Where("instance_name = ?", "empty-model-name-instance").Count(&instanceCount).Error; err != nil {
+		t.Fatalf("count instances: %v", err)
+	}
+	if instanceCount != 0 {
+		t.Fatalf("empty model name created %d instances, want 0", instanceCount)
+	}
+}
+
 func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
@@ -198,6 +484,106 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey != "sk-test" {
 		t.Fatalf("apiConfig.ApiKey = %v, want %q", apiConfig.ApiKey, "sk-test")
+	}
+}
+
+func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	// Seed a tenant chat model that maps to a real factory-catalog model
+	// (Anthropic / claude-opus-4-8 has content_length=1000000, max_output=128000).
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
+		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	ctx := t.Context()
+
+	// UUID path: resolves content_length (context window) from the factory
+	// catalog, NOT max_output.
+	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
+	if err != nil {
+		t.Fatalf("ResolveModelContextLength(uuid) error = %v", err)
+	}
+	if got != 1000000 {
+		t.Fatalf("uuid content_length = %d, want 1000000 (must be the context window, not max_output=128000)", got)
+	}
+
+	// Composite "model@instance@provider" path resolves the same value.
+	got2, err := svc.ResolveModelContextLength(ctx, "user-1", "claude-opus-4-8@default@Anthropic")
+	if err != nil {
+		t.Fatalf("ResolveModelContextLength(composite) error = %v", err)
+	}
+	if got2 != 1000000 {
+		t.Fatalf("composite content_length = %d, want 1000000", got2)
+	}
+}
+
+func TestModelProviderServiceResolveModelContextLengthUnknownModel(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+
+	// A model that does not exist in the factory catalog resolves to 0 so the
+	// caller falls back to its default context length instead of failing.
+	got, err := NewModelProviderService().ResolveModelContextLength(
+		t.Context(), "user-1", "gpt-no-such-model@default@OpenAI")
+	if err != nil {
+		t.Fatalf("ResolveModelContextLength(unknown) error = %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("unknown model content_length = %d, want 0", got)
+	}
+}
+
+// TestModelProviderServiceResolveModelContextLengthOverride verifies that the
+// tenant-configured "max_tokens" override in tenant_model.extra wins over the
+// catalog content_length through the service delegation. UUID resolution is
+// unscoped (globally unique); the composite path needs the real tenant id to
+// locate the tenant's provider/instance/model rows.
+func TestModelProviderServiceResolveModelContextLengthOverride(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
+		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"max_tokens": 4096}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	ctx := t.Context()
+
+	// UUID path: the 4096 override wins over catalog content_length 1000000.
+	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
+	if err != nil {
+		t.Fatalf("ResolveModelContextLength(override uuid) error = %v", err)
+	}
+	if got != 4096 {
+		t.Fatalf("uuid override content_length = %d, want 4096 (custom override, not catalog 1000000)", got)
+	}
+
+	// Composite path with the real tenant id honors the same override.
+	got2, err := svc.ResolveModelContextLength(ctx, "tenant-cl", "claude-opus-4-8@default@Anthropic")
+	if err != nil {
+		t.Fatalf("ResolveModelContextLength(override composite) error = %v", err)
+	}
+	if got2 != 4096 {
+		t.Fatalf("composite override content_length = %d, want 4096", got2)
 	}
 }
 
@@ -282,8 +668,8 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 	maxTokens := 131072
 	maxDimension := 2048
 	remote := []modelModule.ListModelResponse{
-		{Name: "nvidia/keep", MaxTokens: &maxTokens, ModelTypes: []string{"chat", "vision"}},
-		{Name: "nvidia/new-embed", MaxTokens: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
+		{Name: "nvidia/keep", MaxOutput: &maxTokens, ModelTypes: []string{"chat", "vision"}},
+		{Name: "nvidia/new-embed", MaxOutput: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
 	}
 
 	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
@@ -292,7 +678,7 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 	}
 
 	var got []*entity.TenantModel
-	if err := db.Order("model_name").Find(&got).Error; err != nil {
+	if err = db.Order("model_name").Find(&got).Error; err != nil {
 		t.Fatalf("list models: %v", err)
 	}
 	if len(got) != 2 || got[0].ModelName != "nvidia/keep" || got[1].ModelName != "nvidia/new-embed" {

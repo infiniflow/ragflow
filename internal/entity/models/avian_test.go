@@ -91,9 +91,6 @@ func TestAvianChatHappyPath(t *testing.T) {
 		if body["stream"] != false {
 			t.Errorf("stream=%v, want false", body["stream"])
 		}
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v, want 64", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v, want 0.3", body["temperature"])
 		}
@@ -368,10 +365,10 @@ func TestAvianUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	a := newAvianForTest("http://unused")
 	model := "deepseek/deepseek-v3.2"
 
-	if _, err := a.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := a.Rerank(ctx, &model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
 	if _, err := a.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {

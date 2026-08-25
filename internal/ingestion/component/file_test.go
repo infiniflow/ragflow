@@ -83,7 +83,8 @@ func TestFileComponent_Registered(t *testing.T) {
 // even when explicit storage overrides are supplied.
 func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	ms := withMemoryStorage(t)
-	if err := ms.Put("bucketA", "path/to/file.txt", []byte("hello, ragflow")); err != nil {
+	ctx := t.Context()
+	if err := ms.Put(ctx, "bucketA", "path/to/file.txt", []byte("hello, ragflow")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -113,9 +114,10 @@ func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 
 func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 	ms := withMemoryStorage(t)
+	ctx := t.Context()
 	db := withFileComponentTestDB(t)
 	location := "docs/from-document.bin"
-	if err := ms.Put("kb-doc", location, []byte("doc-location")); err != nil {
+	if err := ms.Put(ctx, "kb-doc", location, []byte("doc-location")); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	docName := "report.pdf"
@@ -151,9 +153,10 @@ func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 
 func TestFileComponent_Invoke_ResolvesDocIDViaFileMapping(t *testing.T) {
 	ms := withMemoryStorage(t)
+	ctx := t.Context()
 	db := withFileComponentTestDB(t)
 	location := "tenant-root/from-file.bin"
-	if err := ms.Put("folder-1", location, []byte("file-mapping")); err != nil {
+	if err := ms.Put(ctx, "folder-1", location, []byte("file-mapping")); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	docName := "deck.pptx"
@@ -249,8 +252,9 @@ func TestFileComponent_Invoke_MissingDoc(t *testing.T) {
 // bucket/path overrides still flow through for downstream Parser use.
 func TestFileComponent_Invoke_IncludesCheckpointPath(t *testing.T) {
 	ms := withMemoryStorage(t)
+	ctx := t.Context()
 	const wantPath = "checkpoint/expected/path.bin"
-	if err := ms.Put("b", wantPath, []byte("x")); err != nil {
+	if err := ms.Put(ctx, "b", wantPath, []byte("x")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	c := &FileComponent{}
