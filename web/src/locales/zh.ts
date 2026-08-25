@@ -64,6 +64,7 @@ export default {
       search: '搜索',
       reset: '重置',
       noDataFound: '没有找到数据。',
+      searchOrEnterToAdd: '搜索或输入后回车添加',
       noData: '暂无数据',
       bedrockCredentialsHint:
         '提示：ACCESS KEY / SECRET KEY 可留空，以启用 AWS IAM 自动验证。',
@@ -1919,7 +1920,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       fieldRule: '规则',
       addField: '添加字段',
       editField: '编辑字段',
-      selectFieldType: '选择字段类型',
+      selectFieldType: '选择或输入字段类型',
       fieldTypeExists: '该字段类型已存在',
       example: '示例',
       instruction: 'Instruction',
