@@ -117,11 +117,10 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 	}
 }
 
-// SectionsToMarkdown converts Sections to a Markdown string.
-//
 // InlinePNGDataURL ensures a raw base64 or Data URI string has a valid
 // "data:image/png;base64," prefix. It trims surrounding whitespace, preserves
-// pre-formatted data/http URIs, and validates raw base64 before prefixing.
+// pre-formatted data/http URIs, normalizes line-wrapped base64 by stripping
+// CR/LF/whitespace, and validates raw base64 before prefixing.
 func InlinePNGDataURL(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -130,12 +129,21 @@ func InlinePNGDataURL(raw string) string {
 	if strings.HasPrefix(raw, "data:image/") || strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		return raw
 	}
-	if _, err := base64.StdEncoding.DecodeString(raw); err != nil {
-		if _, rerr := base64.RawStdEncoding.DecodeString(raw); rerr != nil {
+	cleaned := strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, raw)
+	if cleaned == "" {
+		return ""
+	}
+	if _, err := base64.StdEncoding.DecodeString(cleaned); err != nil {
+		if _, rerr := base64.RawStdEncoding.DecodeString(cleaned); rerr != nil {
 			return raw
 		}
 	}
-	return "data:image/png;base64," + raw
+	return "data:image/png;base64," + cleaned
 }
 
 func SectionsToMarkdown(sections []pdf.Section) string {

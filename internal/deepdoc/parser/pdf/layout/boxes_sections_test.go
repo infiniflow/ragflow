@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -510,6 +511,16 @@ func TestInlinePNGDataURL(t *testing.T) {
 			wantURL: "https://example.com/img.png",
 		},
 		{
+			name:    "line-wrapped base64 with CRLF is normalized without CRLF",
+			input:   "aGVs\r\nbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "multi-line wrapped base64 with LF is normalized without LF",
+			input:   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk\n+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+			wantURL: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+		},
+		{
 			name:    "non-base64 invalid string is returned without mangling",
 			input:   "invalid!@#base64",
 			wantURL: "invalid!@#base64",
@@ -521,6 +532,9 @@ func TestInlinePNGDataURL(t *testing.T) {
 			got := InlinePNGDataURL(tc.input)
 			if got != tc.wantURL {
 				t.Errorf("InlinePNGDataURL(%q) = %q, want %q", tc.input, got, tc.wantURL)
+			}
+			if strings.HasPrefix(got, "data:image/png;base64,") && strings.ContainsAny(got, "\r\n") {
+				t.Errorf("InlinePNGDataURL(%q) contains CR/LF characters: %q", tc.input, got)
 			}
 		})
 	}
