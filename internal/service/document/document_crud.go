@@ -342,7 +342,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	// the deleted document's contribution in both paths.
 	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
-	if err := s.publishWikiDocumentDeleted(pubCtx, kb.TenantID, kb.ID, docID); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID); err != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	return nil
@@ -405,14 +405,15 @@ func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*e
 	return doc, kb, nil
 }
 
-// deleteDocEngineData removes chunks and metadata from the document engine and
-// publishes the document deletion event for dataset-level products.
+// deleteDocEngineData removes chunks and metadata from the document engine.
+// No-op when the engine is nil.
 func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string) {
-	if s.docEngine != nil {
-		indexName := fmt.Sprintf("ragflow_%s", tenantID)
-		if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
-			common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
-		}
+	if s.docEngine == nil {
+		return
+	}
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
+		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
 	}
 	// Notify the dataset-level post-processing consumer (§11) that this document's
 	// source + per-doc compiled chunks are gone. The consumer removes the
@@ -421,21 +422,14 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	// source/per-doc chunks, so the consumer only owns merged-product cleanup.
 	// Bound the publish with a timeout so a stalled scheduler (MySQL/NATS) can
 	// never block the document delete, which already succeeded above.
-	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	pubCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := s.publishWikiDocumentDeleted(pubCtx, tenantID, kbID, docID); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID); err != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
 	}
-}
-
-func (s *DocumentService) publishWikiDocumentDeleted(ctx context.Context, tenantID, datasetID, docID string) error {
-	if s.wikiPublisher != nil {
-		return s.wikiPublisher.Publish(ctx, tenantID, datasetID, docID, string(knowledge_compile.EventTypeDeleted), nil)
-	}
-	return knowledge_compile.PublishDeleted(ctx, tenantID, datasetID, docID)
 }
 
 // deleteDocRecordWithCounters hard-deletes the document row and decrements the

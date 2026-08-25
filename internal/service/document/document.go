@@ -26,7 +26,6 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	"ragflow/internal/ingestion/knowledge_compile"
 )
 
 // DocumentService document service
@@ -43,7 +42,6 @@ type DocumentService struct {
 	fileDAO             *dao.FileDAO
 	canvasDAO           *dao.UserCanvasDAO
 	api4ConvDAO         *dao.API4ConversationDAO
-	wikiPublisher       knowledge_compile.Publisher
 }
 
 // NewDocumentService create document service
@@ -64,7 +62,6 @@ func NewDocumentService() *DocumentService {
 		fileDAO:             dao.NewFileDAO(),
 		canvasDAO:           dao.NewUserCanvasDAO(),
 		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
-		wikiPublisher:       knowledge_compile.NewPublisher(dao.DB, engine.GetMessageQueueEngine()),
 	}
 }
 
