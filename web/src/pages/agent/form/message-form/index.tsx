@@ -35,7 +35,7 @@ function MessageForm({ node }: INextOperatorForm) {
     content: z
       .array(
         z.object({
-          value: z.string(),
+          value: z.string().min(1, t('flow.messageMsg')),
         }),
       )
       .optional(),
@@ -47,6 +47,7 @@ function MessageForm({ node }: INextOperatorForm) {
   });
 
   const form = useForm({
+    mode: 'onChange',
     defaultValues: {
       ...values,
       output_format: values.output_format,
@@ -87,6 +88,7 @@ function MessageForm({ node }: INextOperatorForm) {
                           placeholder={t('flow.messagePlaceholder')}
                         ></PromptEditor>
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />

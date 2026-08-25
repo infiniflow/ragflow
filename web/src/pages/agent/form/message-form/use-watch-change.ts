@@ -15,7 +15,11 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
 
       nextValues = {
         ...values,
-        content: convertToStringArray(values.content),
+        // Empty message entries must never reach the canvas DSL: the
+        // backend rejects all-empty content and blank entries are junk.
+        content: convertToStringArray(values.content).filter(
+          (x) => typeof x === 'string' && x.trim().length > 0,
+        ),
       };
 
       updateNodeForm(id, nextValues);
