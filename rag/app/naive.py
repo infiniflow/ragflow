@@ -127,22 +127,13 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
     return sections, tables, pdf_parser
 
 
-_MINERU_OPTION_KEYS = (
-    "mineru_parse_method",
-    "mineru_formula_enable",
-    "mineru_table_enable",
-    "mineru_lang",
-)
-
-
 def _has_mineru_options(parser_config: dict) -> bool:
     """Return True if parser_config carries any MinerU-specific option.
 
     Thin wrapper around :func:`common.parser_config_utils.has_mineru_options`
     kept here so callers in this module don't need to import the helper
-    separately. Used by :func:`_dispatch_pdf_parser` to recover from a
-    misconfigured ``layout_recognize`` value (a stale TenantModel id
-    rather than the ``"MinerU"`` keyword) — see issue #17114.
+    separately. The MinerU option-key contract lives in
+    :data:`common.parser_config_utils.MINERU_OPTION_KEYS` — see issue #17114.
     """
     from common.parser_config_utils import has_mineru_options
     return has_mineru_options(parser_config)
