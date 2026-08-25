@@ -1173,9 +1173,11 @@ func (c *Consumer) mergeWikiProductsBySlug(ctx context.Context, tenant, kb strin
 	merged := make([]kccommon.Product, 0, len(order))
 	rewriteIndexes := make([]int, 0, len(order))
 	for _, key := range order {
+		group := groups[key]
+		topic := selectMergedWikiTopicPath(group)
 		var current kccommon.Product
 		exists := false
-		for _, candidate := range groups[key] {
+		for _, candidate := range group {
 			candidate.Merged = true
 			candidate.DocID = kb
 			if !exists || current.ID == "" {
@@ -1190,10 +1192,12 @@ func (c *Consumer) mergeWikiProductsBySlug(ctx context.Context, tenant, kb strin
 			}
 		}
 		if current.ID != "" {
+			current.Meta = copyMeta(current.Meta)
+			current.Meta["topic"] = topic
 			current.Merged = true
 			current.DocID = kb
 			merged = append(merged, current)
-			if len(groups[key]) > 1 {
+			if len(group) > 1 {
 				rewriteIndexes = append(rewriteIndexes, len(merged)-1)
 			}
 		}

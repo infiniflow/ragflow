@@ -39,6 +39,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// Fields defined by the chat-completions message schema. Stored messages also
+// carry RAGFlow bookkeeping such as id, created_at, doc_ids, and conversationId,
+// which strict providers reject.
+var llmMessageFields = [...]string{"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"}
+
 // ChatPipelineService is the shared RAG chat pipeline engine used by both
 // the OpenAI-compatible endpoint (/api/v1/openai/<chat_id>/chat/completions)
 // and the regular chat completion endpoint (/api/v1/chat/completions).
@@ -928,14 +933,13 @@ func (s *ChatPipelineService) AsyncChat(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			llmMessages = append(llmMessages, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			llmMessages = append(llmMessages, llmMessage)
 		}
 
 		// Fit messages within token budget.
@@ -1380,14 +1384,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			msg = append(msg, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			msg = append(msg, llmMessage)
 		}
 		// Append text attachments to the last user message (no separator).
 		if attachmentsStr != "" && len(msg) > 0 {
@@ -1445,10 +1448,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					content = converted["content"]
 				}
 			}
-			chatMessages = append(chatMessages, modelModule.Message{
-				Role:    role,
-				Content: content,
-			})
+			m["content"] = content
+			chatMessages = append(chatMessages, modelMessageFromMap(m))
 		}
 
 		// 7. Drive the LLM: stream (per-delta with think markers) or non-stream (one-shot).
@@ -2548,13 +2549,38 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	}
 	for _, m := range messages {
 		role, _ := m["role"].(string)
-		content := m["content"]
-		if role == "" || content == nil {
+		if role == "" {
 			continue
 		}
-		result = append(result, modelModule.Message{Role: role, Content: content})
+		result = append(result, modelMessageFromMap(m))
 	}
 	return result
+}
+
+func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
+	normalized := make(map[string]interface{}, len(llmMessageFields))
+	for _, field := range llmMessageFields {
+		if value, ok := message[field]; ok {
+			normalized[field] = value
+		}
+	}
+	return normalized
+}
+
+func modelMessageFromMap(message map[string]interface{}) modelModule.Message {
+	msg := modelModule.Message{Role: stringFromMap(message, "role"), Content: message["content"], Name: message["name"], FunctionCall: message["function_call"], Refusal: message["refusal"], Audio: message["audio"]}
+	msg.ToolCallID, _ = message["tool_call_id"].(string)
+	switch toolCalls := message["tool_calls"].(type) {
+	case []map[string]interface{}:
+		msg.ToolCalls = toolCalls
+	case []interface{}:
+		for _, toolCall := range toolCalls {
+			if value, ok := toolCall.(map[string]interface{}); ok {
+				msg.ToolCalls = append(msg.ToolCalls, value)
+			}
+		}
+	}
+	return msg
 }
 
 // buildChatDriver creates a ChatModel wrapper from the chat.
