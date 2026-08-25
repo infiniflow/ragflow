@@ -20,6 +20,7 @@ import os
 from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
+from typing import Any, Callable
 from docx import Document
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.table import Table as DocxTable
@@ -47,7 +48,7 @@ from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
-from common.parser_config_utils import normalize_layout_recognizer
+from common.parser_config_utils import has_mineru_options, normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
@@ -127,18 +128,6 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
     return sections, tables, pdf_parser
 
 
-def _has_mineru_options(parser_config: dict) -> bool:
-    """Return True if parser_config carries any MinerU-specific option.
-
-    Thin wrapper around :func:`common.parser_config_utils.has_mineru_options`
-    kept here so callers in this module don't need to import the helper
-    separately. The MinerU option-key contract lives in
-    :data:`common.parser_config_utils.MINERU_OPTION_KEYS` — see issue #17114.
-    """
-    from common.parser_config_utils import has_mineru_options
-    return has_mineru_options(parser_config)
-
-
 def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None) -> tuple[Callable, str, Any, str, Any]:
     """Resolve the PDF parser callable for the current ``parser_config``.
 
@@ -160,6 +149,12 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None) -> t
     if isinstance(layout_recognizer, bool):
         layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
 
+    # Normalize "Plain Text" to "plaintext" so the PARSERS lookup below
+    # hits the explicit "plaintext" entry instead of falling through to
+    # the by_plaintext default — important because the MinerU fallback
+    # guard below keys off whether the parsed name is a known keyword.
+    if layout_recognizer == "Plain Text":
+        layout_recognizer = "plaintext"
     name = layout_recognizer.strip().lower()
     parser = PARSERS.get(name, by_plaintext)
 
@@ -171,7 +166,11 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None) -> t
     # options are set in parser_config, the operator clearly intended the
     # MinerU parser, so route there instead and surface a clear log line
     # rather than masking the misconfiguration silently.
-    if parser is by_plaintext and _has_mineru_options(parser_config):
+    # Guard: only fall back when the parser name is NOT a known keyword
+    # (e.g. "DeepDOC", "Plain Text"). A configuration like
+    # ``{"layout_recognize": "Plain Text", "mineru_lang": "English"}``
+    # must keep honoring PlainText, not be silently rerouted to MinerU.
+    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
         logging.warning(
             "[naive] layout_recognize=%r does not match a known parser; "
             "falling back to MinerU because mineru_* options are set "
