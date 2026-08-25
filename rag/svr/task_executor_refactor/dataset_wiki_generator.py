@@ -287,6 +287,26 @@ def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, 
     return pipeline_chat_llm_ids
 
 
+def _wiki_empty_eligible_message(all_docs) -> str:
+    """Return the user-facing progress message when ``_wiki_eligible_docs``
+    returned an empty list. Distinguishes two failure modes (#18683):
+
+    * No enabled documents in the dataset — user needs to upload / enable
+      documents first.
+    * Enabled documents exist but none of them has a Wiki compilation
+      template attached — user needs to configure a Wiki template on
+      the dataset or on each document's parser_config.
+    """
+    enabled_docs = [d for d in (all_docs or []) if str(d.get("status", "1")) == "1"]
+    if not enabled_docs:
+        return "No enabled documents are configured for wiki compilation."
+    return (
+        f"{len(enabled_docs)} enabled document(s) found, but none of them has a Wiki "
+        f"compilation template attached. Set a Wiki template on the dataset or on each "
+        f"document's parser_config to enable Wiki generation."
+    )
+
+
 def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tuple[dict, str]]:
     """Docs eligible for wiki compilation, each paired with its wiki template id.
 
@@ -1321,7 +1341,7 @@ async def run_wiki(
 
     eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id)
     if not eligible:
-        progress(1.0, "No documents are configured for wiki compilation.")
+        progress(1.0, _wiki_empty_eligible_message(all_docs))
         return
     pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible)
 
@@ -1659,7 +1679,7 @@ async def run_wiki_incremental(
     eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id, skip_doc_ids=deleted_doc_ids)
 
     if not eligible and not is_incremental:
-        progress(1.0, "No enabled documents are configured for wiki compilation.")
+        progress(1.0, _wiki_empty_eligible_message(all_docs))
         return
     pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible) if eligible else {}
 
