@@ -1,11 +1,10 @@
 ---
 sidebar_position: 5
-title: Chunk: Parsing Results and Knowledge Fragment Management
-sidebar_label: Chunk: Parsing Results and Knowledge Fragment Management
+title: "Chunk: Parsing Results and Knowledge Fragment Management"
+sidebar_label: "Chunk: Parsing Results and Knowledge Fragment Management"
 slug: /chunk_parsing_results_and_knowledge_fragment_management
-sidebar_custom_props: {
+sidebar_custom_props:
   categoryIcon: LucideDatabaseZap
-}
 ---
 
 # Chunk: Parsing Results and Knowledge Fragment Management

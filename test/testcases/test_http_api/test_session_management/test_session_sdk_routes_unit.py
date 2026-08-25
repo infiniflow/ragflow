@@ -422,6 +422,7 @@ def _load_session_module(monkeypatch):
             return "mock transcription"
 
     llm_service_mod.LLMBundle = _StubLLMBundle
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     # Mock tenant_model_service to ensure it uses mocked services
@@ -568,6 +569,13 @@ def _load_session_module(monkeypatch):
     quart_mod.has_websocket_context = lambda: False
     quart_mod.websocket = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.AUTH_BETA = False
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    api_apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
 
     quart_auth_mod = ModuleType("quart_auth")
 
@@ -2298,7 +2306,10 @@ def _load_chat_api_module(monkeypatch):
     tenant_model_svc = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_svc.get_tenant_default_model_by_type = lambda *_a, **_k: {}
     tenant_model_svc.get_model_config_from_provider_instance = lambda **_k: {}
+    tenant_model_svc.get_model_config_by_id = lambda **_k: {}
     tenant_model_svc.resolve_model_config = lambda **_k: {}
+    tenant_model_svc.resolve_model_id = lambda *_a, **_k: "model-id"
+    tenant_model_svc.get_composite_model_name_by_id = lambda *_a, **_k: "composite-model-name"
     tenant_model_svc.get_api_key = lambda **_k: "fake-api-key"
     tenant_model_svc.split_model_name = lambda model_name: (model_name, "", "")
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_svc)
@@ -2353,6 +2364,7 @@ def _load_chat_api_module(monkeypatch):
     )
     dialog_svc_mod.async_chat = lambda *_a, **_k: None
     dialog_svc_mod.gen_mindmap = lambda *_a, **_k: None
+    dialog_svc_mod.rag_agent = lambda *_a, **_k: None
     monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_svc_mod)
 
     kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
@@ -2366,6 +2378,7 @@ def _load_chat_api_module(monkeypatch):
 
     llm_svc_mod = ModuleType("api.db.services.llm_service")
     llm_svc_mod.LLMBundle = _FakeLLMBundle
+    llm_svc_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_svc_mod)
 
     search_svc_mod = ModuleType("api.db.services.search_service")

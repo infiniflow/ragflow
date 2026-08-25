@@ -1,11 +1,10 @@
 ---
 sidebar_position: 7
-title: Retrieval Testing: Retrieval Test
-sidebar_label: Retrieval Testing: Retrieval Test
+title: "Retrieval Testing: Retrieval Test"
+sidebar_label: "Retrieval Testing: Retrieval Test"
 slug: /retrieval_testing
-sidebar_custom_props: {
+sidebar_custom_props:
   categoryIcon: LucideDatabaseZap
-}
 ---
 
 # Retrieval Testing: Retrieval Test

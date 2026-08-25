@@ -70,6 +70,17 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	SortYFirstly(rows, 10)
 	SortXFirstly(cols, 10)
 
+	// Python's _table_transformer_job de-duplicates the structure lines before
+	// grouping: rows via gather (layouts_cleanup far=5 thr=0.6), columns via
+	// layouts_cleanup far=5 thr=0.5. Overlapping duplicate row/column lines are
+	// collapsed (higher detection score wins), so the cross-product grid rows
+	// match the rows Python's per-char R/C view counts.
+	rows = layoutCleanup(rows, nil, 5, 0.6)
+	cols = layoutCleanup(cols, nil, 5, 0.5)
+	if len(rows) == 0 {
+		return nil
+	}
+
 	// 2. If no column cells, synthesize one wide column from row extents.
 	if len(cols) == 0 {
 		x0 := rows[0].X0

@@ -433,11 +433,11 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// so the frontend can build artifact/<page_type>/<slug> links that
 		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
 		// "wiki_topic"); strip the prefix. slug_kwd stores the full
-		// "<page_type>/<slug>" form; expose the trailing bare slug.
+		// "<page_type>/<slug>" form; preserve nested slug segments.
 		fullSlug := firstStringValue(c["slug_kwd"])
 		bareSlug := fullSlug
 		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
-		if idx := strings.LastIndex(bareSlug, "/"); idx >= 0 {
+		if idx := strings.IndexByte(bareSlug, '/'); idx >= 0 {
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
 		}
@@ -949,13 +949,12 @@ func firstStringValue(v interface{}) string {
 	return ""
 }
 
-// bareWikiSlug strips the "<page_type>/" prefix from a full wiki slug
-// ("topic/yellow-turban-rebellion" -> "yellow-turban-rebellion"), matching the
-// bare-slug form the graph UI keys nodes/relations on. Slugs with no prefix are
-// returned unchanged.
+// bareWikiSlug strips only the first path segment from a full wiki slug
+// ("entity/location/长社" -> "location/长社"). Nested type/name segments are
+// preserved so distinct typed entities remain distinguishable in graph links.
 func bareWikiSlug(slug string) string {
 	s := strings.TrimSpace(slug)
-	if idx := strings.LastIndex(s, "/"); idx >= 0 && idx < len(s)-1 {
+	if idx := strings.IndexByte(s, '/'); idx >= 0 && idx < len(s)-1 {
 		return s[idx+1:]
 	}
 	return s

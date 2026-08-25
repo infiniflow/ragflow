@@ -847,7 +847,9 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 		return errors.New("message store is not initialized")
 	}
 
-	now := time.Now().UTC()
+	// forget_at is stamped as server-local wall clock, not UTC. forget_at_flt
+	// below is a Unix millisecond value and therefore zone-independent.
+	now := memoryNow()
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{

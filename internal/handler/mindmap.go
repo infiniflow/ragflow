@@ -72,10 +72,10 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	// composite-name parsing which fails for bare IDs. If the configured
 	// model can't be resolved, fall back to the tenant's default chat model
 	// (mirrors Python's gen_mindmap get_tenant_default_model_by_type).
-	ch, streamErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
+	ch, _, streamErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
 	if streamErr != nil && config.TenantSvc != nil {
 		if defaultModel, err := config.TenantSvc.GetDefaultModelName(streamCtx, modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
-			ch, streamErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
+			ch, _, streamErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
 		}
 	}
 	if streamErr != nil {
@@ -106,6 +106,7 @@ func mindMapRetrievalRequest(question string, kbIDs common.StringSlice, searchID
 	page := 1
 	size := 12
 	topK := intFromConfig(searchConfig, "top_k", 1024)
+	prefetchSize := intFromConfig(searchConfig, "prefetch_size", 100)
 	similarityThreshold := floatFromConfig(searchConfig, "similarity_threshold", 0.2)
 	vectorSimilarityWeight := floatFromConfig(searchConfig, "vector_similarity_weight", 0.3)
 	req := &service.RetrievalTestRequest{
@@ -114,6 +115,7 @@ func mindMapRetrievalRequest(question string, kbIDs common.StringSlice, searchID
 		Page:                   &page,
 		Size:                   &size,
 		TopK:                   &topK,
+		PrefetchSize:           &prefetchSize,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		DocIDs:                 stringSliceFromConfig(searchConfig, "doc_ids"),

@@ -148,8 +148,8 @@ func TestConnectorServiceTestConnectorRejectsUnsupportedSource(t *testing.T) {
 		"source": "unknown",
 		"config": entity.JSONMap{"ok": true},
 	})
-	if err == nil || !strings.Contains(err.Error(), `unsupported connector source "unknown"`) {
-		t.Fatalf("error = %v, want unsupported source", err)
+	if !errors.Is(err, ErrConnectorSourceNotImplemented) || !strings.Contains(err.Error(), "unknown") {
+		t.Fatalf("error = %v, want source not implemented", err)
 	}
 }
 
