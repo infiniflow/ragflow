@@ -1701,6 +1701,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       instanceNameMessage: '请输入实例名称！',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
+      instanceNameExists: '实例名称已存在',
       deleteInstance: '删除实例',
       modelName: '模型名称',
       modelID: '模型ID',
