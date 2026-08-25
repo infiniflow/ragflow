@@ -299,6 +299,22 @@ class PipelineOperationLogService(CommonService):
                 )
                 if pipeline_parser:
                     parser_id = pipeline_parser
+                elif dsl_mapping is None:
+                    # The pipeline's DSL is missing or malformed (None
+                    # from _load_dsl_mapping for None/""/invalid JSON/
+                    # non-mapping input). We can't recover the configured
+                    # parser from the DSL, so log the gap explicitly
+                    # before falling back to document.parser_id (which
+                    # may carry the KB default like "DeepDOC" — see
+                    # #18306).
+                    logging.warning(
+                        "[PipelineOperationLog] Pipeline DSL is missing or "
+                        "malformed for document_id=%s suffix=%s; falling back to "
+                        "document.parser_id=%s.",
+                        document_id,
+                        document.suffix,
+                        parser_id,
+                    )
                 elif dsl and dsl != "":
                     logging.warning(
                         "[PipelineOperationLog] Could not resolve pipeline parser from DSL "
