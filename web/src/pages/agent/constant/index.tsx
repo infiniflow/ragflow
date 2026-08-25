@@ -88,7 +88,6 @@ export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
   rerank_candidates_count: 64,
-  top_k: 1024,
   kb_ids: [],
   rerank_id: '',
   empty_response: '',

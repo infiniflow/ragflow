@@ -45,7 +45,6 @@ export const useCreateChatDialog = () => {
       vector_similarity_weight: 0.3,
       top_n: 8,
       rerank_candidates_count: 64,
-      top_k: 1024,
     }),
     [t, defaultModelDictionary?.llm_id],
   );
