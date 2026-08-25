@@ -100,6 +100,18 @@ def test_find_codec_utf8_emoji_roundtrips(find_codec):
 
 
 @pytest.mark.p2
+def test_find_codec_rejects_utf8_when_only_the_sample_looks_valid(find_codec):
+    # An incremental decoder buffers a trailing partial sequence instead of
+    # rejecting it, so a sample-only check calls this blob UTF-8. The full blob
+    # is not valid UTF-8, and callers decode with errors="ignore", which drops
+    # bytes. The returned codec must decode the whole blob.
+    blob = b"a" * 1023 + b"\xe9" + b" "
+    codec = find_codec(blob)
+    assert codec != "utf-8"
+    assert isinstance(blob.decode(codec), str)
+
+
+@pytest.mark.p2
 @pytest.mark.parametrize(
     "text, encoding",
     [

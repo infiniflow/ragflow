@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import codecs
 import copy
 import logging
 import random
@@ -157,12 +156,17 @@ def find_codec(blob):
     # A blob that decodes as UTF-8 is UTF-8; nothing else needs to be guessed.
     # Check this first because chardet can report a confident single-byte guess
     # for short UTF-8 text, and callers decode with errors="ignore", so a wrong
-    # codec is silently lossy instead of raising.
+    # codec is silently lossy instead of raising. The second decode covers a
+    # multi-byte character that the 1024-byte sample cuts in half.
     try:
-        codecs.getincrementaldecoder("utf-8")().decode(sample)
+        sample.decode("utf-8")
         return "utf-8"
     except UnicodeDecodeError:
-        pass
+        try:
+            blob.decode("utf-8")
+            return "utf-8"
+        except UnicodeDecodeError:
+            pass
 
     detected = chardet.detect(sample)
     encoding = detected["encoding"]
