@@ -1335,6 +1335,7 @@ export default {
         'Microsoft Graph経由でSharePointサイトに接続し、ドキュメントライブラリを同期します。',
       sharepointSiteUrlTip:
         'インデックス対象のSharePointサイトの完全なURLです（例: https://contoso.sharepoint.com/sites/MySite）。Sites.Read.AllおよびFiles.Read.Allのアプリケーション権限（管理者の同意）を持つAzure ADアプリが必要です。',
+      azure_devopsDescription: 'Azure DevOps に接続し、リポジトリのファイルとプルリクエストを同期します。',
       bitbucketDescription: 'Bitbucketに接続し、PRの内容を同期します。',
       bitbucketTopWorkspaceTip:
         'インデックス対象のBitbucketワークスペースです（例: https://bitbucket.org/atlassian/workspace の「atlassian」）。',

@@ -390,6 +390,33 @@ The Bitbucket data source is used to synchronize Bitbucket repository content, i
 
 ![Bitbucket](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Bitbucket.jpg)
 
+## Azure DevOps
+
+The Azure DevOps data source is used to synchronize Azure Repos source files and pull requests to a RAGFlow knowledge base. After configuration, repository content and code review history can be queried.
+
+**Permission requirements**: The personal access token (PAT) must have the **Code (Read)** scope for the target organization.
+
+**Account version requirements**: Both Azure DevOps Services (`dev.azure.com`) and self-hosted Azure DevOps Server are supported. For a self-hosted server, provide the full collection URL as the organization, for example `https://tfs.contoso.com/DefaultCollection`. The URL must use HTTPS, because the personal access token is sent in the `Authorization` header.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Azure DevOps connection.
+- **Azure DevOps Personal Access Token**: The PAT used to access the organization.
+- **Azure DevOps Organization**: The organization name, or the collection URL of a self-hosted server.
+- **Index Mode**: Choose whether to index every repository in the organization, only selected team projects, or only selected repositories.
+- **Projects**: Comma separated team project names, used when indexing by project.
+- **Repositories**: Comma separated repositories, used when indexing by repository. Use `project/repo` to disambiguate repositories that share a name across projects.
+- **Content Types**: Choose whether to index source files, pull requests, or both.
+
+Pull request descriptions are re-fetched individually when they reach the 400
+character limit the list endpoint truncates at, so long descriptions are indexed
+in full. Completed and abandoned pull requests are filtered by their close date;
+active ones are always re-indexed, because Azure DevOps exposes no dependable
+"last updated" timestamp for them.
+- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+
+Build output and vendored directories such as `node_modules`, `bin`, `obj`, `dist`, and `vendor` are skipped, along with binary files and files larger than 1 MB.
+
 ## Jira
 
 The Jira data source is used to synchronize issues, comments, and project records in Jira to a RAGFlow knowledge base. After configuration, project tasks, requirements, bugs, and handling records can be queried.
