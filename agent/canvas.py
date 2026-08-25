@@ -108,7 +108,7 @@ class Graph:
         for k, cpn in self.components.items():
             cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
 
-        self.path = self.dsl["path"]
+        self.path = self.dsl.get("path", [])
 
     @staticmethod
     def validate_component_parameters(dsl):
