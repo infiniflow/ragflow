@@ -606,7 +606,7 @@ class Dealer:
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
-        logging.info(f"[Search] page={page}, page_size={page_size}, prefetch_size={prefetch_size}")
+        logging.debug(f"[Search] page={page}, page_size={page_size}, prefetch_size={prefetch_size}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")

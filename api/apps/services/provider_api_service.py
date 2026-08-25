@@ -26,7 +26,7 @@ from api.db.joint_services.tenant_model_service import resolve_model_config, del
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
-from api.utils.model_utils import get_model_type_human, calculate_model_type
+from api.utils import model_utils
 from rag.llm import ChatModel, CvModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel, Seq2txtModel, TTSModel
 
 
@@ -39,9 +39,7 @@ def _to_int(v, default=500):
 
 def _factory_model_types(llm: dict) -> list[str]:
     model_type = llm.get("model_type")
-    if isinstance(model_type, list):
-        return model_type
-    return [model_type] if model_type else []
+    return model_utils.normalize_model_types(model_type) if model_type else []
 
 
 def _normalize_provider_base_url(provider_name: str, base_url: str | None):
@@ -422,7 +420,7 @@ async def update_provider_instance(
                 # Update existing model
                 update_dict = {}
                 if isinstance(model.get("model_type"), (str, list)):
-                    target_model_type = calculate_model_type(model["model_type"])
+                    target_model_type = model_utils.calculate_model_type(model["model_type"])
                     if target_model_type != existing_model_names[model_name].model_type:
                         update_dict["model_type"] = target_model_type
                 merged_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
@@ -447,7 +445,7 @@ async def update_provider_instance(
                 if llm_name in existing_model_names:
                     # Update existing
                     update_dict = {}
-                    target_model_type = calculate_model_type(_factory_model_types(llm))
+                    target_model_type = model_utils.calculate_model_type(_factory_model_types(llm))
                     if target_model_type != existing_model_names[llm_name].model_type:
                         update_dict["model_type"] = target_model_type
                     db_extra = json.loads(existing_model_names[llm_name].extra) if existing_model_names[llm_name].extra else {}
@@ -1061,7 +1059,7 @@ def _reconcile_nvidia_instance_models(provider_obj, instance_obj, remote_models:
         for model in normalized:
             model_name = model["name"]
             model_types = model.get("model_types") or [LLMType.CHAT.value]
-            model_type = calculate_model_type(model_types)
+            model_type = model_utils.calculate_model_type(model_types)
             if existing := existing_by_name.pop(model_name, None):
                 extra = json.loads(existing.extra or "{}")
                 _set_discovered_model_metadata(extra, model)
@@ -1158,7 +1156,7 @@ async def list_instance_models(tenant_id: str, provider_id_or_name: str, instanc
         model_list.append(
             {
                 "name": model.model_name,
-                "model_type": get_model_type_human(model.model_type),
+                "model_type": model_utils.get_model_type_human(model.model_type),
                 "max_tokens": model_extra.get("max_tokens", 8192) if model.extra else 8192,
                 "status": model.status,
                 "verify": model_extra.get("verify", ModelVerifyStatusEnum.UNKNOWN.value),
@@ -1196,7 +1194,7 @@ def update_instance_models(tenant_id: str, provider_id_or_name: str, instance_id
     if not_exist_models:
         return False, f"Models {not_exist_models} not found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
-    target_model_type_bin = calculate_model_type(model_types)
+    target_model_type_bin = model_utils.calculate_model_type(model_types)
     to_update = [model_obj.id for model_obj in model_objs if model_obj.model_type != target_model_type_bin and model_obj.model_name in model_names]
     if to_update:
         TenantModelService.batch_update_model_type(to_update, target_model_type_bin)
@@ -1229,7 +1227,7 @@ def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_
     if isinstance(model_type, str):
         model_type = [model_type]
 
-    model_type_bin = calculate_model_type(model_type)
+    model_type_bin = model_utils.calculate_model_type(model_type)
     extra_fields = {"max_tokens": max_tokens}
     target_model = [llm for llm in llms if llm["llm_name"] == model_name]
     if target_model:
@@ -1298,7 +1296,7 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
         db_extra.update(**new_extra)
         to_update.update({"extra": json.dumps(db_extra)})
     if "model_type" in update_dict:
-        target_model_type = calculate_model_type(update_dict["model_type"])
+        target_model_type = model_utils.calculate_model_type(update_dict["model_type"])
         if target_model_type != model_obj.model_type:
             to_update.update({"model_type": target_model_type})
 
