@@ -104,6 +104,40 @@ def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
     return api_key
 
 
+def _bedrock_api_key_config(api_key: str | dict | None) -> dict | None:
+    if isinstance(api_key, dict):
+        config = api_key
+    elif isinstance(api_key, str):
+        try:
+            config = json.loads(api_key)
+        except json.JSONDecodeError:
+            return None
+    else:
+        return None
+    if isinstance(config, dict) and config.get("auth_mode") == "bedrock_api_key":
+        return config
+    return None
+
+
+def _validate_bedrock_api_key_config(api_key: str | dict | None) -> dict[str, object] | None:
+    config = _bedrock_api_key_config(api_key)
+    if config is None:
+        return None
+
+    bedrock_api_key = config.get("bedrock_api_key")
+    if not isinstance(bedrock_api_key, str) or not bedrock_api_key.strip():
+        raise ValueError("Bedrock API key must be provided")
+    bedrock_region = config.get("bedrock_region")
+    if not isinstance(bedrock_region, str) or not bedrock_region.strip():
+        raise ValueError("AWS region must be provided")
+
+    return {
+        **config,
+        "bedrock_api_key": bedrock_api_key.strip(),
+        "bedrock_region": bedrock_region.strip(),
+    }
+
+
 def _factory_llm_name(llm: dict) -> str:
     return llm.get("name") or llm.get("llm_name", "")
 
@@ -228,7 +262,11 @@ def show_provider(provider_id_or_name: str):
     return True, {"base_url": {"default": factory_info.get("url", "")}, "name": factory_info["name"], "total_models": len(factory_info.get("llm", []))}
 
 
-async def list_provider_models(provider_id_or_name: str, api_key: str = None, base_url: str = None):
+async def list_provider_models(
+    provider_id_or_name: str,
+    api_key: str | dict | None = None,
+    base_url: str | None = None,
+):
     """
     List all models for a provider from the LLM dictionary.
 
@@ -257,16 +295,36 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
 
     model_base_url = _normalize_provider_base_url(provider_name, base_url) or factory_info[0].get("url", "")
     remote_models = []
-    if provider_name in ModelMeta:
-        remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+    bedrock_api_key_config = _bedrock_api_key_config(api_key)
+    should_fetch_remote = provider_name in ModelMeta and (provider_name != "Bedrock" or bedrock_api_key_config is not None)
+    if should_fetch_remote:
+        try:
+            remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+        except ValueError as error:
+            if provider_name == "Bedrock":
+                return False, str(error)
+            raise
+
+    if provider_name == "Bedrock" and bedrock_api_key_config is not None and not remote_models:
+        return False, "No Bedrock models were discovered"
 
     if not static_llms and not remote_models:
         return True, []
 
-    # Merge static and remote models, preferring remote_models on name conflicts
-    merged = {m["name"]: m for m in static_llms}
-    merged.update({m["name"]: m for m in remote_models})
-    models = list(merged.values())
+    if provider_name == "Bedrock" and bedrock_api_key_config is not None:
+        static_models = {model["name"]: model for model in static_llms}
+        models = [
+            {
+                **model,
+                "max_tokens": static_models.get(model["name"], {}).get("max_tokens", model.get("max_tokens", 8192)),
+            }
+            for model in remote_models
+        ]
+    else:
+        # Merge static and remote models, preferring remote_models on name conflicts
+        merged = {m["name"]: m for m in static_llms}
+        merged.update({m["name"]: m for m in remote_models})
+        models = list(merged.values())
 
     models.sort(key=lambda x: x["name"])
     return True, models
@@ -305,7 +363,15 @@ def show_provider_model(provider_id_or_name: str, model_name: str):
 
 
 async def update_provider_instance(
-    tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, instance_name: str, api_key: str | dict, base_url: str, region: str, model_info: list[dict] = None, verify: bool = True
+    tenant_id: str,
+    provider_id_or_name: str,
+    instance_id_or_name: str,
+    instance_name: str,
+    api_key: str | dict,
+    base_url: str,
+    region: str,
+    model_info: list[dict] = None,
+    verify: bool = True,
 ):
     """
     Update a provider instance.
@@ -355,6 +421,15 @@ async def update_provider_instance(
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
+    region = (region or "").strip()
+
+    try:
+        bedrock_api_key_config = _validate_bedrock_api_key_config(api_key) if provider_name == "Bedrock" else None
+    except ValueError as error:
+        return False, str(error)
+    bedrock_api_key_auth = bedrock_api_key_config is not None
+    if bedrock_api_key_auth:
+        api_key = bedrock_api_key_config
 
     api_key_str = ""
     if api_key:
@@ -362,7 +437,8 @@ async def update_provider_instance(
 
     # Verify api_key
     model_verify_result = {}
-    if verify:
+    runtime_verify = verify and not bedrock_api_key_auth
+    if runtime_verify:
         success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
         if not success:
             return False, msg
@@ -409,7 +485,7 @@ async def update_provider_instance(
             model_name = model.get("model_name")
             if not model_name:
                 continue
-            if verify:
+            if runtime_verify:
                 verify_status = model_verify_result.get(model_name, ModelVerifyStatusEnum.UNKNOWN.value)
                 if model.get("extra"):
                     model["extra"].update({"verify": verify_status})
@@ -424,7 +500,7 @@ async def update_provider_instance(
                     if target_model_type != existing_model_names[model_name].model_type:
                         update_dict["model_type"] = target_model_type
                 merged_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
-                merged_extra.update(model["extra"])
+                merged_extra.update(model.get("extra") or {})
                 if "max_tokens" in model:
                     merged_extra.update({"max_tokens": model["max_tokens"]})
                 update_dict["extra"] = json.dumps(merged_extra)
@@ -454,7 +530,7 @@ async def update_provider_instance(
                         "is_tools": llm.get("is_tools", False),
                         "thinking": "thinking" in llm.get("features", []),
                     }
-                    if verify:
+                    if runtime_verify:
                         verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
                         db_extra_fields["verify"] = verify_status
                     db_extra.update(db_extra_fields)
@@ -466,7 +542,7 @@ async def update_provider_instance(
                         "is_tools": llm.get("is_tools", False),
                         "thinking": "thinking" in llm.get("features", []),
                     }
-                    if verify:
+                    if runtime_verify:
                         verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
                         extra_fields["verify"] = verify_status
                     success, _msg = add_model_to_instance(
@@ -474,7 +550,8 @@ async def update_provider_instance(
                     )
                     if not success:
                         msg += _msg
-
+    if msg:
+        return False, msg
     return True, "success"
 
 
@@ -515,6 +592,7 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
+    region = (region or "").strip()
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
@@ -524,13 +602,26 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     if provider_name not in allowed_factories:
         return False, f"Provider '{provider_name}' is not allowed"
 
+    try:
+        bedrock_api_key_config = _validate_bedrock_api_key_config(api_key) if provider_name == "Bedrock" else None
+    except ValueError as error:
+        return False, str(error)
+    bedrock_api_key_auth = bedrock_api_key_config is not None
+    if bedrock_api_key_auth:
+        api_key = bedrock_api_key_config
+
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
-    success, verify_msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
-    if not success:
-        return False, verify_msg
+    if bedrock_api_key_auth:
+        if not model_info:
+            return False, "At least one Bedrock model must be selected"
+        model_verify_result = {}
+    else:
+        success, verify_msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+        if not success:
+            return False, verify_msg
 
     extra_fields = {}
     if base_url:
