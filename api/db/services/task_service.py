@@ -494,6 +494,10 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         if doc["parser_id"] in ["one", "knowledge_graph", "resume"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
+        if doc["parser_id"] == "resume":
+            # The resume parser ignores from_page and to_page, so every task parses the whole
+            # file. Collapse the configured ranges into one range to keep a resume document at a single task.
+            page_ranges = [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
