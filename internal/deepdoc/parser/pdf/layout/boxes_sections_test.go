@@ -252,6 +252,17 @@ func TestSectionsToMarkdown_FigureWithImage(t *testing.T) {
 	}
 }
 
+func TestSectionsToMarkdown_FigureWithDataURLImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "data:image/png;base64,abc123"},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n![Image](data:image/png;base64,abc123)"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestSectionsToMarkdown_FigureWithoutImage(t *testing.T) {
 	sections := []pdf.Section{
 		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: ""},

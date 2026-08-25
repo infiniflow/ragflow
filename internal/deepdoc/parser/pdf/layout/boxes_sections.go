@@ -123,6 +123,17 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 // Text and all other sections are appended verbatim.
 //
 // This mirrors the Python parser.py:665-671 Markdown output path.
+func inlinePNGDataURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "data:image/") {
+		return raw
+	}
+	return "data:image/png;base64," + raw
+}
+
 func SectionsToMarkdown(sections []pdf.Section) string {
 	var b strings.Builder
 	for _, s := range sections {
@@ -130,8 +141,8 @@ func SectionsToMarkdown(sections []pdf.Section) string {
 			b.WriteString("\n## ")
 		}
 		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && s.Text == "")) && s.Image != "" {
-			b.WriteString("\n![Image](data:image/png;base64,")
-			b.WriteString(s.Image)
+			b.WriteString("\n![Image](")
+			b.WriteString(inlinePNGDataURL(s.Image))
 			b.WriteString(")")
 			continue
 		}
