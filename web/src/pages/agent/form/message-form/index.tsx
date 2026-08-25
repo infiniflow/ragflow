@@ -41,6 +41,7 @@ function MessageForm({ node }: INextOperatorForm) {
       .optional(),
     output_format: z.string().optional(),
     auto_play: z.boolean().optional(),
+    thinking: z.boolean().optional(),
     status: z.number().optional(),
     memory_ids: z.array(z.string()).optional(),
     user_id: z.string().optional(),
@@ -51,6 +52,7 @@ function MessageForm({ node }: INextOperatorForm) {
       ...values,
       output_format: values.output_format,
       auto_play: values.auto_play,
+      thinking: values.thinking,
     },
     resolver: zodResolver(FormSchema),
   });
@@ -150,6 +152,25 @@ function MessageForm({ node }: INextOperatorForm) {
               <FormField
                 control={form.control}
                 name={`auto_play`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FormItem>
+            <FormItem>
+              <FormLabel tooltip={t('flow.thinkingTip')}>
+                {t('flow.thinking')}
+              </FormLabel>
+              <FormField
+                control={form.control}
+                name={`thinking`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
                     <FormControl>
