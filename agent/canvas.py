@@ -714,7 +714,7 @@ class Canvas(Graph):
                                     _logger.warning("Agent TTS failed for sentence %d: %s", next_audio_sequence, error)
                                 next_audio_sequence += 1
                                 if audio_binary:
-                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary, "thinking": _thinking}))
+                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary}))
                             return events
 
                         async def _process_stream(m):
@@ -725,11 +725,11 @@ class Canvas(Graph):
                                 await _schedule_tts(buff_m)
                                 in_thinking = True
                                 buff_m = ""
-                                return decorate("message", {"content": "", "start_to_think": True, "thinking": _thinking})
+                                return decorate("message", {"content": "", "start_to_think": True})
 
                             elif m == "</think>":
                                 in_thinking = False
-                                return decorate("message", {"content": "", "end_to_think": True, "thinking": _thinking})
+                                return decorate("message", {"content": "", "end_to_think": True})
 
                             _m += m
                             if in_thinking:
