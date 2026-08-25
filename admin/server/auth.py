@@ -83,47 +83,58 @@ def _client_key() -> str:
     return last_hop or (request.remote_addr or "").strip() or "unknown"
 
 
-def _reserve_login_attempt(key: str) -> int:
+def _reserve_login_attempt(key: str) -> tuple[int, float | None]:
     """Atomically admit one login attempt for ``key``.
 
-    Returns the remaining lockout seconds when the key is blocked, or 0 when
-    the attempt is admitted. Admission records a failure slot under the same
-    state lock that checks the lockout, so concurrent requests cannot all
-    observe "not blocked" and run credential verification before any of them
-    records the failure that should have locked the key. Callers keep the
-    reservation when verification fails, release it via
+    Returns ``(remaining_lockout_seconds, reserved_marker)``: ``remaining``
+    is positive when the key is blocked (``reserved_marker`` is then None),
+    or 0 with the marker of the recorded failure slot when the attempt is
+    admitted. Admission records the slot under the same state lock that
+    checks the lockout, so concurrent requests cannot all observe "not
+    blocked" and run credential verification before any of them records the
+    failure that should have locked the key. Callers keep the reservation
+    when verification fails, release exactly their own slot via
     ``_release_login_attempt`` on verification errors, and clear all state
     via ``_reset_login_failures`` on success.
+
+    The recorded timestamps are kept when the lockout arms — clearing them
+    would let a single release (judged against the shortened list) lift a
+    lockout earned by genuine failures. They age out with
+    ``ADMIN_LOGIN_FAILURE_WINDOW`` instead.
     """
     now = time.monotonic()
     with _login_state_lock:
         deadline = _login_block_until.get(key, 0.0)
         remaining = deadline - now
         if remaining > 0:
-            return int(remaining) + 1
+            return int(remaining) + 1, None
         _login_block_until.pop(key, None)
         failures = [ts for ts in _login_failures.get(key, []) if now - ts < ADMIN_LOGIN_FAILURE_WINDOW]
         failures.append(now)
         _login_failures[key] = failures
         if len(failures) >= ADMIN_LOGIN_MAX_FAILURES:
             _login_block_until[key] = now + ADMIN_LOGIN_LOCKOUT_SECONDS
-            _login_failures[key] = []
             logging.warning(f"Admin login from {key} blocked for {ADMIN_LOGIN_LOCKOUT_SECONDS}s after {ADMIN_LOGIN_MAX_FAILURES} failed attempts within {ADMIN_LOGIN_FAILURE_WINDOW}s.")
-        return 0
+        return 0, now
 
 
-def _release_login_attempt(key: str) -> None:
-    """Undo the most recent reserved attempt for ``key``.
+def _release_login_attempt(key: str, marker: float | None) -> None:
+    """Undo exactly the reservation identified by ``marker`` for ``key``.
 
     Used when verification could not evaluate the credentials (an internal
     error) or rejected the caller before credential evaluation, so a
-    non-credential failure does not consume the failure budget. A lockout
-    set only by reservations is lifted with the release.
+    non-credential failure does not consume the failure budget. Removing one
+    marker leaves the other recorded failures intact — including the
+    ADMIN_LOGIN_MAX_FAILURES - 1 genuine ones — so a lockout is lifted only
+    when the released reservation is what armed it.
     """
     with _login_state_lock:
         failures = _login_failures.get(key)
         if failures:
-            failures.pop()
+            try:
+                failures.remove(marker)
+            except ValueError:
+                pass  # already expired out of the window; nothing to undo
             if not failures:
                 _login_failures.pop(key, None)
         if len(_login_failures.get(key, [])) < ADMIN_LOGIN_MAX_FAILURES:
@@ -285,7 +296,7 @@ def login_admin(email: str, password: str):
     # Admission and the failure record are one atomic step: the attempt slot
     # is consumed before credential verification, so a concurrent burst from
     # one client cannot exceed ADMIN_LOGIN_MAX_FAILURES verifications.
-    remaining = _reserve_login_attempt(key)
+    remaining, marker = _reserve_login_attempt(key)
     if remaining > 0:
         raise AdminException(f"Too many failed login attempts. Retry in {remaining}s.", 429)
 
@@ -293,26 +304,33 @@ def login_admin(email: str, password: str):
         users = UserService.query(email=email)
         if not users:
             raise UserNotFoundError(email)
-        decrypted = decrypt(password)
+        try:
+            decrypted = decrypt(password)
+        except Exception:
+            # A payload the client could not encode correctly is the
+            # client's failure, not a server fault: it keeps the reserved
+            # slot like any other credential rejection.
+            logging.info("Admin login with undecryptable password payload.")
+            raise AdminException("Email and password do not match!")
         user = UserService.query_user(email, decrypted)
         if not user:
             raise AdminException("Email and password do not match!")
         if not user.is_superuser:
             # Valid credentials, but not an admin account: reject without
             # consuming the client's failure budget.
-            _release_login_attempt(key)
+            _release_login_attempt(key, marker)
             raise AdminException("Not admin", 403)
         if user.is_active == ActiveEnum.INACTIVE.value:
-            _release_login_attempt(key)
+            _release_login_attempt(key, marker)
             raise AdminException(f"User {email} inactive", 403)
     except (UserNotFoundError, AdminException):
         # Deliberate rejections keep the reserved failure slot (the 403
         # branches released theirs above).
         raise
     except Exception:
-        # Verification errors (unexpected exceptions) release the slot so a
-        # server-side fault does not consume the client's failure budget.
-        _release_login_attempt(key)
+        # Verification errors (unexpected server-side faults) release the
+        # reserved slot so they do not consume the client's failure budget.
+        _release_login_attempt(key, marker)
         raise
 
     _reset_login_failures(key)
@@ -358,7 +376,7 @@ def login_verify(f):
         # Same atomic admission as login_admin: the failure slot is consumed
         # before credential verification so concurrent bursts cannot exceed
         # ADMIN_LOGIN_MAX_FAILURES verifications from one client.
-        remaining = _reserve_login_attempt(key)
+        remaining, marker = _reserve_login_attempt(key)
         if remaining > 0:
             logging.warning(f"Admin basic-auth verification from {key} throttled, retry in {remaining}s.")
             return jsonify({"code": 429, "message": f"Too many failed login attempts. Retry in {remaining}s.", "data": None}), 200
@@ -369,7 +387,7 @@ def login_verify(f):
             verified = check_admin(username, password)
         except Exception:
             logging.exception("An error occurred during admin login verification.")
-            _release_login_attempt(key)
+            _release_login_attempt(key, marker)
             return jsonify({"code": 500, "message": "An internal server error occurred."}), 200
         if not verified:
             # The reserved slot already records this failure.

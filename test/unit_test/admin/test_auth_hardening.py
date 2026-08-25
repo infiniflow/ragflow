@@ -173,22 +173,37 @@ class TestLoginThrottling:
         # (it is the one that trips the lockout) and everything after it
         # is blocked.
         for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
-            assert auth._reserve_login_attempt("1.2.3.4") == 0
-        assert auth._reserve_login_attempt("1.2.3.4") > 0
+            remaining, marker = auth._reserve_login_attempt("1.2.3.4")
+            assert remaining == 0
+            assert marker is not None
+        remaining, marker = auth._reserve_login_attempt("1.2.3.4")
+        assert remaining > 0
+        assert marker is None
 
     def test_success_resets_failures(self):
         for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES - 1):
-            assert auth._reserve_login_attempt("1.2.3.4") == 0
+            assert auth._reserve_login_attempt("1.2.3.4")[0] == 0
         auth._reset_login_failures("1.2.3.4")
-        assert auth._reserve_login_attempt("1.2.3.4") == 0
+        assert auth._reserve_login_attempt("1.2.3.4")[0] == 0
 
-    def test_release_undo_reserves_a_slot(self):
+    def test_release_keeps_genuine_failures_and_rearms_quickly(self):
+        """Releasing one reservation must not wipe the genuine failures that
+        armed a lockout, and must not permanently open the throttle either."""
+        marker = None
         for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
-            auth._reserve_login_attempt("1.2.3.4")
-        auth._release_login_attempt("1.2.3.4")
-        # The released attempt no longer counts, and a lockout set only by
-        # reservations is lifted with it.
-        assert auth._reserve_login_attempt("1.2.3.4") == 0
+            _, marker = auth._reserve_login_attempt("1.2.3.4")
+        assert auth._login_block_until.get("1.2.3.4") is not None
+
+        # Undo exactly the last reservation: the genuine failures stay
+        # recorded, the lockout armed by that reservation is lifted...
+        auth._release_login_attempt("1.2.3.4", marker)
+        assert len(auth._login_failures["1.2.3.4"]) == auth.ADMIN_LOGIN_MAX_FAILURES - 1
+
+        # ...one subsequent attempt is admitted (and re-arms the lockout,
+        # since the window still holds the earlier failures)...
+        assert auth._reserve_login_attempt("1.2.3.4")[0] == 0
+        # ...and the next attempt is blocked again.
+        assert auth._reserve_login_attempt("1.2.3.4")[0] > 0
 
     def test_concurrent_reservations_cannot_exceed_max_admissions(self):
         """Atomic admission: a simultaneous burst gets at most MAX verifications."""
@@ -200,7 +215,7 @@ class TestLoginThrottling:
 
         def attempt():
             barrier.wait()
-            was_admitted = auth._reserve_login_attempt("10.0.0.9") == 0
+            was_admitted = auth._reserve_login_attempt("10.0.0.9")[0] == 0
             with lock:
                 (admitted if was_admitted else blocked).append(1)
 
@@ -248,7 +263,7 @@ class TestLoginThrottling:
             assert auth.login_admin("admin@ragflow.io", "encrypted") is response_marker
 
         # A fresh reservation is admitted immediately after the success reset.
-        assert auth._reserve_login_attempt("1.2.3.4") == 0
+        assert auth._reserve_login_attempt("1.2.3.4")[0] == 0
 
     def test_login_verify_returns_429_when_throttled(self):
         for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
@@ -296,7 +311,7 @@ class TestLoginThrottling:
         # The reserved failure slot is visible to the counter but does not
         # block the very next attempt.
         assert auth._login_failures.get("1.2.3.4") is not None
-        assert auth._reserve_login_attempt("1.2.3.4") == 0
+        assert auth._reserve_login_attempt("1.2.3.4")[0] == 0
 
 
 def test_throttle_client_key_uses_last_forwarded_hop():
@@ -360,3 +375,19 @@ class TestConcurrentLoginBurst:
         # credential check.
         assert outcomes.count(429) == workers - auth.ADMIN_LOGIN_MAX_FAILURES
         assert len(verification_calls) == auth.ADMIN_LOGIN_MAX_FAILURES
+
+
+class TestDecryptFailuresCountAsCredentialRejections:
+    def test_undecryptable_password_keeps_the_reserved_slot(self):
+        registered = mock.MagicMock()
+        with (
+            mock.patch.object(auth, "_client_key", return_value="10.0.0.7"),
+            mock.patch.object(auth, "UserService") as user_service,
+            mock.patch.object(auth, "decrypt", side_effect=ValueError("bad payload")),
+        ):
+            user_service.query.return_value = [registered]
+            for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
+                with pytest.raises(auth.AdminException, match="do not match"):
+                    auth.login_admin("admin@ragflow.io", "not-valid-base64")
+            with pytest.raises(auth.AdminException, match="Too many failed login attempts"):
+                auth.login_admin("admin@ragflow.io", "not-valid-base64")
