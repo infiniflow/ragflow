@@ -25,6 +25,7 @@ import rag.graphrag.utils as graphrag_utils
 from rag.graphrag.utils import (
     GRAPH_FIELD_SEP,
     GraphChange,
+    _iter_valid_n_hop_edges,
     clean_str,
     compute_args_hash,
     dict_has_keys_with_types,
@@ -569,6 +570,28 @@ class TestNNeighbor:
         nbrs = n_neighbor(self._line_graph(), "D", n_hop=1)
         assert nbrs[0]["path"][0] == "D"
         assert nbrs[0]["weights"] == [3]
+
+
+@pytest.mark.p1
+class TestValidNHopEdges:
+    """Tests for defensive parsing of persisted n-hop relation metadata."""
+
+    def test_skips_malformed_entries_and_keeps_valid_edges(self, caplog):
+        n_hop_ents = [
+            {"path": ["A", "B"], "weights": []},
+            {"path": ["B", "C"], "weights": ["2"]},
+            {"path": ["C", "D"], "weights": ["not-a-number"]},
+            {"path": ["E", "F", "G"], "weights": [3, 4]},
+            "not an entry",
+        ]
+
+        edges = list(_iter_valid_n_hop_edges(n_hop_ents, "ROOT"))
+
+        assert edges == [(0, "B", "C", 2.0), (0, "E", "F", 3.0), (1, "F", "G", 4.0)]
+        assert "Skipping malformed n-hop" in caplog.text
+
+    def test_non_list_metadata_is_ignored(self):
+        assert list(_iter_valid_n_hop_edges({"path": ["A", "B"]}, "ROOT")) == []
 
 
 @pytest.mark.p1

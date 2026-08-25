@@ -23,7 +23,7 @@ import pandas as pd
 
 from common.misc_utils import get_uuid
 from rag.graphrag.query_analyze_prompt import PROMPTS
-from rag.graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
+from rag.graphrag.utils import _iter_valid_n_hop_edges, get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
 from common.token_utils import num_tokens_from_string
 
 from rag.nlp.search import Dealer, index_name
@@ -170,20 +170,12 @@ class KGSearch(Dealer):
         rels_from_txt = await self.get_relevant_relations_by_txt(qst, filters, idxnms, kb_ids, emb_mdl, rel_sim_threshold)
         nhop_pathes = defaultdict(dict)
         for _, ent in ents_from_query.items():
-            nhops = ent.get("n_hop_ents", [])
-            if not isinstance(nhops, list):
-                logging.warning(f"Abnormal n_hop_ents: {nhops}")
-                continue
-            for nbr in nhops:
-                path = nbr["path"]
-                wts = nbr["weights"]
-                for i in range(len(path) - 1):
-                    f, t = path[i], path[i + 1]
-                    if (f, t) in nhop_pathes:
-                        nhop_pathes[(f, t)]["sim"] += ent["sim"] / (2 + i)
-                    else:
-                        nhop_pathes[(f, t)]["sim"] = ent["sim"] / (2 + i)
-                    nhop_pathes[(f, t)]["pagerank"] = max(nhop_pathes[(f, t)].get("pagerank", 0), wts[i])
+            for i, f, t, weight in _iter_valid_n_hop_edges(ent.get("n_hop_ents", []), ent.get("entity_kwd")):
+                if (f, t) in nhop_pathes:
+                    nhop_pathes[(f, t)]["sim"] += ent["sim"] / (2 + i)
+                else:
+                    nhop_pathes[(f, t)]["sim"] = ent["sim"] / (2 + i)
+                nhop_pathes[(f, t)]["pagerank"] = max(nhop_pathes[(f, t)].get("pagerank", 0), weight)
 
         logging.info("Retrieved entities: {}".format(list(ents_from_query.keys())))
         logging.info("Retrieved relations: {}".format(list(rels_from_txt.keys())))

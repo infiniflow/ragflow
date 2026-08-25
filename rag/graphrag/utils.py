@@ -14,6 +14,7 @@ import dataclasses
 import html
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -36,6 +37,7 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 GRAPH_FIELD_SEP = "<SEP>"
+logger = logging.getLogger(__name__)
 
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
@@ -833,6 +835,47 @@ def n_neighbor(graph: nx.Graph, node, n_hop: int = 2):
             nbr["weights"].append(w)
         nbrs.append(nbr)
     return nbrs
+
+
+def _iter_valid_n_hop_edges(n_hop_ents, entity_name):
+    """Yield well-formed weighted edges from serialized n-hop metadata.
+
+    N-hop metadata is persisted with entity chunks, so older or partially
+    written records can outlive the code that produced them.  Keep malformed
+    records from aborting the whole GraphRAG query while preserving valid
+    paths from the same result set.
+    """
+    if not isinstance(n_hop_ents, list):
+        logger.warning("Abnormal n_hop_ents for entity %s: %r", entity_name, n_hop_ents)
+        return
+
+    for neighbor in n_hop_ents:
+        if not isinstance(neighbor, dict):
+            logger.warning("Skipping malformed n-hop entry for entity %s: %r", entity_name, neighbor)
+            continue
+
+        path = neighbor.get("path")
+        weights = neighbor.get("weights")
+        if not isinstance(path, list) or not isinstance(weights, list) or len(path) < 2 or len(weights) != len(path) - 1:
+            logger.warning("Skipping malformed n-hop path for entity %s: %r", entity_name, neighbor)
+            continue
+
+        edges = []
+        for edge_index, (source, target, weight) in enumerate(zip(path, path[1:], weights)):
+            if not isinstance(source, str) or not isinstance(target, str) or not source or not target:
+                logger.warning("Skipping n-hop path with invalid entities for %s: %r", entity_name, neighbor)
+                break
+            try:
+                normalized_weight = float(weight)
+            except (TypeError, ValueError):
+                logger.warning("Skipping n-hop path with invalid weight for %s: %r", entity_name, neighbor)
+                break
+            if not math.isfinite(normalized_weight):
+                logger.warning("Skipping n-hop path with non-finite weight for %s: %r", entity_name, neighbor)
+                break
+            edges.append((edge_index, source, target, normalized_weight))
+        else:
+            yield from edges
 
 
 async def get_entity_type2samples(idxnms, kb_ids: list):
