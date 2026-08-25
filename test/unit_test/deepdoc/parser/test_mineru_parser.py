@@ -120,6 +120,103 @@ def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):
     assert "</td>" not in sanitized
 
 
+def test_parse_pdf_emits_image_coverage_final_log_with_vlm_configured_flag(monkeypatch, tmp_path, caplog):
+    """Regression for xugangqiang's review on #16978: parse_pdf must
+    emit the final ``[MinerU] image_coverage final ... vlm_configured=...``
+    log line so operators can see the image-coverage stamp at the parser
+    boundary, including whether a vision model was configured."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    # Three images: one captioned, one dropped, one VLM-described.
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Exhibit A"],
+            "image_footnote": [],
+            "img_path": "/tmp/a.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/b.jpg",
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/c.jpg",
+            "page_idx": 2,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "VLM description for image C.",
+        },
+    ]
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", Mock())
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=outputs))
+    monkeypatch.setattr(parser, "_enhance_images_with_vlm", Mock())
+    monkeypatch.setattr(parser, "_transfer_to_tables", Mock(return_value=[]))
+    # Do NOT mock _transfer_to_sections — the real method must run so it
+    # populates parser.last_image_coverage with the actual detected/chunked/
+    # described/dropped counts before the summary log line is emitted.
+
+    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+        parser.parse_pdf(
+            filepath=pdf_path,
+            binary=None,
+            output_dir=str(output_dir),
+            delete_output=False,
+            vision_model=object(),  # a configured vision model
+        )
+
+    # The summary log line must include the vlm_configured flag and
+    # reflect the actual coverage the real _transfer_to_sections
+    # accumulated.
+    assert "image_coverage final" in caplog.text
+    assert "vlm_configured=True" in caplog.text
+    assert "detected=3" in caplog.text
+    assert "described=1" in caplog.text
+
+
+def test_parse_pdf_image_coverage_final_log_reflects_no_vision_model(monkeypatch, tmp_path, caplog):
+    """When parse_pdf is called without a vision_model kwarg, the final
+    log must reflect vlm_configured=False so operators know downstream
+    chunks could NOT have been VLM-enriched."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", Mock())
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "_enhance_images_with_vlm", Mock())
+    monkeypatch.setattr(parser, "_transfer_to_tables", Mock(return_value=[]))
+
+    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+        parser.parse_pdf(
+            filepath=pdf_path,
+            binary=None,
+            output_dir=str(output_dir),
+            delete_output=False,
+            # no vision_model kwarg
+        )
+
+    assert "image_coverage final" in caplog.text
+    assert "vlm_configured=False" in caplog.text
+
+
 def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypatch, caplog):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
@@ -703,3 +800,301 @@ def test_read_output_keeps_original_tag_when_middle_json_has_single_table_positi
     assert module.MinerUParser.extract_positions(line_tag) == [
         ([0], 20.0, 170.0, 40.0, 340.0),
     ]
+
+
+def test_transfer_to_sections_tracks_image_coverage_for_captioned_image(monkeypatch, caplog):
+    """An IMAGE block with a caption should count as detected and chunked, but
+    not as described (no VLM). The coverage dict should be visible on the
+    parser instance so callers can inspect silent loss (issue #16978)."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Exhibit A: signature page"],
+            "image_footnote": [],
+            "img_path": "/tmp/example.jpg",
+            "page_idx": 0,
+            "bbox": (10, 10, 100, 100),
+        }
+    ]
+
+    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert len(sections) == 1
+    # The upstream section construction joins caption + "\n" + footnote, so a
+    # captioned image with no footnote yields a trailing newline; the
+    # substantive text must still be retrievable.
+    assert "Exhibit A: signature page" in sections[0][0]
+    coverage = parser.last_image_coverage
+    assert coverage == {
+        "images_detected": 1,
+        "images_chunked": 1,
+        "images_dropped_no_text": 0,
+        "images_described": 0,
+    }
+    assert "image_coverage detected=1 chunked=1 described=0 dropped_no_text=0" in caplog.text
+
+
+def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch, caplog):
+    """When an embedded PDF image has no caption, no footnote, and no VLM
+    description, it must not silently disappear from the chunk stream —
+    the loss must be visible in logs and the coverage stamp."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/silent_drop.jpg",
+            "page_idx": 2,
+            "bbox": (0, 0, 50, 50),
+        }
+    ]
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert sections == []
+    coverage = parser.last_image_coverage
+    assert coverage == {
+        "images_detected": 1,
+        "images_chunked": 0,
+        "images_dropped_no_text": 1,
+        "images_described": 0,
+    }
+    assert "Dropped embedded image" in caplog.text
+    assert "page_idx=2" in caplog.text
+    assert "Configure an IMAGE2TEXT vision model" in caplog.text
+
+
+def test_transfer_to_sections_counts_vlm_description(monkeypatch):
+    """An IMAGE block enriched by _enhance_images_with_vlm must be counted
+    as described so operators can tell the gap between detected and
+    described."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/described.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "A scanned signature in cursive.",
+        }
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert len(sections) == 1
+    assert "A scanned signature in cursive." in sections[0][0]
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 1
+    assert coverage["images_described"] == 1
+    assert coverage["images_dropped_no_text"] == 0
+
+
+def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
+    """Mixed batch: one captioned, one described, one dropped. The coverage
+    stamp must reflect the truth so the regression fixture can assert on
+    the loss invariant (images_detected >= images_chunked)."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption 1"],
+            "image_footnote": [],
+            "img_path": "/tmp/c1.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/d1.jpg",
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "Described by VLM.",
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/x1.jpg",
+            "page_idx": 2,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.TEXT,
+            "text": "Body text between images.",
+            "page_idx": 2,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert len(sections) == 3  # captioned + described + text (the dropped image yields no section)
+    coverage = parser.last_image_coverage
+    assert coverage == {
+        "images_detected": 3,
+        "images_chunked": 2,
+        "images_dropped_no_text": 1,
+        "images_described": 1,
+    }
+    assert "image_coverage detected=3 chunked=2 described=1 dropped_no_text=1" in caplog.text
+    assert "Dropped embedded image" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
+# Review follow-ups (issue #16978): naive/manual/paper modes + parse_pdf log line
+# --------------------------------------------------------------------------- #
+#
+# xugangqiang's review flagged that the previous tests only covered
+# parse_method="raw" — exactly the mode where the coverage tracking was
+# already working. The naive/manual/paper modes use a separate
+# _transfer_to_tables path and the early-skip branch above the
+# match/case block, so the original `images_detected += 1` increment
+# (inside the IMAGE case) was never reached and these modes silently
+# reported images_detected=0.
+#
+# The fix moves `images_detected += 1` above the early-skip branch.
+# These tests pin the new behavior for every parse_method.
+
+
+@pytest.mark.parametrize(
+    "parse_method",
+    ["naive", "manual", "paper"],
+)
+def test_transfer_to_sections_counts_images_detected_for_app_media_modes(monkeypatch, parse_method):
+    """Regression for xugangqiang's review on #16978: naive, manual,
+    and paper all route IMAGE blocks through _transfer_to_tables and
+    skip them in _transfer_to_sections. The image_coverage stamp must
+    still report images_detected correctly for these modes so operators
+    can see how many images the parser saw."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["A"],
+            "image_footnote": [],
+            "img_path": "/tmp/a.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["B"],
+            "image_footnote": [],
+            "img_path": "/tmp/b.jpg",
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    # _transfer_to_sections returns no IMAGE sections for app-media
+    # modes — they go to _transfer_to_tables instead.
+    sections = parser._transfer_to_sections(outputs, parse_method=parse_method)
+    assert sections == []
+
+    # But the coverage stamp must still report both images detected so
+    # operators can spot the gap between detection and chunking.
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 2
+    # The IMAGE blocks produced no section because the parser skipped
+    # them — they are not "dropped_no_text" (that count tracks images
+    # that reached the section-building branch with no caption/footnote),
+    # they are simply not chunked via _transfer_to_sections.
+    assert coverage["images_chunked"] == 0
+    assert coverage["images_dropped_no_text"] == 0
+
+
+def test_transfer_to_sections_app_media_mode_with_image_dropped_after_sanitization(monkeypatch, caplog):
+    """Regression for #16978: even in naive/manual/paper modes, an IMAGE
+    block whose caption/footnote/VLM description is empty would still
+    register as `images_dropped_no_text` if it ever reached the
+    section-building branch. App-media modes skip IMAGE entirely before
+    the branch, so this case is a no-op — but the helper must not
+    raise or misreport counters."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/silent.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        }
+    ]
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        parser._transfer_to_sections(outputs, parse_method="naive")
+
+    coverage = parser.last_image_coverage
+    # Detected is correct (1); the IMAGE block was skipped at the
+    # naive/manual/paper branch, not at the empty-section branch.
+    assert coverage["images_detected"] == 1
+    assert coverage["images_dropped_no_text"] == 0
+    # App-media modes do not warn per-image — _transfer_to_tables handles
+    # them instead, so the warning channel here stays quiet.
+    assert "Dropped embedded image" not in caplog.text
+
+
+def test_mineruparser_initializes_last_image_coverage_in_constructor(monkeypatch):
+    """Regression for xugangqiang's review on #16978: the attribute
+    must exist from construction, independent of whether parse_pdf has
+    run yet — no more getattr(self, ..., None) fallback in the
+    caller."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+
+    # Direct attribute access — not a getattr with a default — must work.
+    assert isinstance(parser.last_image_coverage, dict)
+    assert parser.last_image_coverage == {
+        "images_detected": 0,
+        "images_chunked": 0,
+        "images_described": 0,
+        "images_dropped_no_text": 0,
+    }
+
+
+def test_transfer_to_sections_app_media_image_with_only_vlm_description(monkeypatch, caplog):
+    """Even when an IMAGE block has a vlm_description and no
+    caption/footnote, app-media modes (naive/manual/paper) must still
+    register the image as detected so the operator sees the count
+    matches what the VLM model produced."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": "/tmp/vlm.jpg",
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "A description from the vision model.",
+        }
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method="naive")
+    assert sections == []
+
+    coverage = parser.last_image_coverage
+    # The VLM description is still counted because the IMAGE block was
+    # observed (detected=1). The describe/chunked counters are not
+    # incremented for app-media modes because _transfer_to_sections
+    # skipped the section-building branch — the vlm_description is
+    # consumed by _transfer_to_tables instead.
+    assert coverage["images_detected"] == 1
