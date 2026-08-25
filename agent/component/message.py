@@ -60,6 +60,7 @@ class MessageParam(ComponentParamBase):
         self.stream = True
         self.output_format = None  # default output format
         self.auto_play = False
+        self.thinking = False
         self.outputs = {"content": {"type": "str"}, "downloads": {"type": "list"}}
 
     def check(self):

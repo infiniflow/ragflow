@@ -665,6 +665,7 @@ class Canvas(Graph):
                             # textual answer flowing.
                             _logger.warning("Auto play skipped: default TTS model is not available: %s", e)
                             tts_mdl = None
+                    _thinking = bool(cpn_obj.get_param("thinking"))
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
@@ -713,7 +714,7 @@ class Canvas(Graph):
                                     _logger.warning("Agent TTS failed for sentence %d: %s", next_audio_sequence, error)
                                 next_audio_sequence += 1
                                 if audio_binary:
-                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary}))
+                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary, "thinking": _thinking}))
                             return events
 
                         async def _process_stream(m):
@@ -724,15 +725,15 @@ class Canvas(Graph):
                                 await _schedule_tts(buff_m)
                                 in_thinking = True
                                 buff_m = ""
-                                return decorate("message", {"content": "", "start_to_think": True})
+                                return decorate("message", {"content": "", "start_to_think": True, "thinking": _thinking})
 
                             elif m == "</think>":
                                 in_thinking = False
-                                return decorate("message", {"content": "", "end_to_think": True})
+                                return decorate("message", {"content": "", "end_to_think": True, "thinking": _thinking})
 
                             _m += m
                             if in_thinking:
-                                return decorate("message", {"content": m})
+                                return decorate("message", {"content": m, "thinking": _thinking})
 
                             buff_m += m
                             while True:
@@ -743,7 +744,7 @@ class Canvas(Graph):
                                 buff_m = buff_m[match.end() :]
                                 await _schedule_tts(sentence)
 
-                            return decorate("message", {"content": m})
+                            return decorate("message", {"content": m, "thinking": _thinking})
 
                         async def _stream_events():
                             nonlocal buff_m
@@ -778,7 +779,7 @@ class Canvas(Graph):
                         async for ev in _stream_events():
                             yield ev
                     else:
-                        yield decorate("message", {"content": cpn_obj.output("content")})
+                        yield decorate("message", {"content": cpn_obj.output("content"), "thinking": _thinking})
 
                     message_end = self._build_message_end(cpn_obj)
                     yield decorate("message_end", message_end)
@@ -1059,17 +1060,32 @@ class Canvas(Graph):
             return False
         return bool(ref.get("chunks") or ref.get("doc_aggs"))
 
-    def _build_message_end(self, cpn_obj) -> dict:
+    def _area_downloads(self, cpn_obj, area_idx=None) -> list:
+        downloads = cpn_obj.output("downloads")
+        if isinstance(downloads, list):
+            return downloads
+        return []
+
+    def _is_terminal_message(self, cpn_obj) -> bool:
+        terminal = getattr(self, "_run_terminal_id", None)
+        if terminal is not None:
+            return cpn_obj._id == terminal
+        comp = self.components.get(cpn_obj._id)
+        return comp is None or not comp.get("downstream")
+
+    def _build_message_end(self, cpn_obj, area_idx=None) -> dict:
         message_end = {}
         if cpn_obj.get_param("status"):
             message_end["status"] = cpn_obj.get_param("status")
         if isinstance(cpn_obj.output("attachment"), dict):
             message_end["attachment"] = cpn_obj.output("attachment")
-        downloads = cpn_obj.output("downloads")
-        if isinstance(downloads, list) and downloads:
+        downloads = self._area_downloads(cpn_obj, area_idx)
+        if downloads:
             message_end["downloads"] = downloads
         if self._has_reference():
             message_end["reference"] = self.get_reference()
+        message_end["final"] = self._is_terminal_message(cpn_obj)
+        message_end["thinking"] = bool(cpn_obj.get_param("thinking"))
         # NOTE: aggregated run token usage is intentionally NOT attached here.
         # _build_message_end runs once per Message component, so a multi-Message graph
         # would emit cumulative usage repeatedly and double count. The run total is
