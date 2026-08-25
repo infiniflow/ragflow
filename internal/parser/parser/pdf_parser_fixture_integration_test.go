@@ -12,6 +12,12 @@ import (
 	"ragflow/internal/deepdoc/parser/pdf/inference"
 )
 
+// defaultDeepDocURL is where a locally started OSS DeepDoc inference server
+// listens (deepdoc/server/deepdoc_server.py). It is a test convenience only:
+// production code requires DEEPDOC_URL to be set explicitly, since no single
+// default is correct in both source builds and Docker (http://deepdoc:9390).
+const defaultDeepDocURL = "http://localhost:9390"
+
 // requireDeepDocServer skips the test when no healthy DeepDoc inference
 // service is reachable at DEEPDOC_URL (default http://localhost:9390).
 func requireDeepDocServer(t *testing.T) {

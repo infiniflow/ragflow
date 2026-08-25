@@ -310,27 +310,26 @@ func emptyPDFResult(filename string) ParseResult {
 	}
 }
 
-// defaultDeepDocURL is where the OSS DeepDoc inference server listens by
-// default (see deepdoc/server/deepdoc_server.py and the deepdoc service in
-// docker/docker-compose.yml).
-const defaultDeepDocURL = "http://localhost:9390"
-
-// deepDocAnalyzerFromEnv resolves the DeepDoc inference endpoint (DEEPDOC_URL,
-// defaulting to defaultDeepDocURL) and returns an analyzer backed by it. It
-// returns an error when no healthy service is reachable so a PDF parse fails
-// loudly instead of silently degrading to layout-less text chunks (tables and
-// figures would otherwise be flattened into plain text).
+// deepDocAnalyzerFromEnv resolves the DeepDoc inference endpoint from
+// DEEPDOC_URL and returns an analyzer backed by it. DEEPDOC_URL is required:
+// no single default is correct in both source builds (a locally started
+// deepdoc/server/deepdoc_server.py on localhost) and Docker (the opt-in
+// deepdoc profile at http://deepdoc:9390), so an unset variable is a
+// configuration error rather than a guessed URL. A configured but unhealthy
+// endpoint also fails so a PDF parse fails loudly instead of silently
+// degrading to layout-less text chunks (tables and figures would otherwise be
+// flattened into plain text).
 func deepDocAnalyzerFromEnv() (deepdoctype.DocAnalyzer, error) {
 	baseURL := strings.TrimSpace(common.GetEnv(common.EnvDeepDocURL))
 	if baseURL == "" {
-		baseURL = defaultDeepDocURL
+		return nil, fmt.Errorf("parser: DEEPDOC_URL is not set: start the DeepDoc inference service (deepdoc/server/deepdoc_server.py from source, or the deepdoc profile in docker/docker-compose.yml, reachable as http://deepdoc:9390 in Docker) and point DEEPDOC_URL at it")
 	}
 	client, err := inference.NewClient(baseURL)
 	if err != nil {
 		return nil, err
 	}
 	if !client.Health() {
-		return nil, fmt.Errorf("parser: DeepDoc inference service unreachable at %s: start deepdoc/server/deepdoc_server.py or set DEEPDOC_URL to a healthy instance", baseURL)
+		return nil, fmt.Errorf("parser: DeepDoc inference service unhealthy at %s: start the service or point DEEPDOC_URL at a healthy instance (in Docker: http://deepdoc:9390)", baseURL)
 	}
 	// Wrap with Redis-backed cache (1h TTL) so repeated
 	// DLA/TSR/OCR inference on the same image is served from

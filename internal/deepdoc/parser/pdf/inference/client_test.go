@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mustNewDeepDocClient wraps NewClient for test convenience.
@@ -226,6 +227,31 @@ func TestDeepDocHTTP_HealthDown(t *testing.T) {
 	client := mustNewDeepDocClient(t, "http://127.0.0.1:1")
 	if client.Health() {
 		t.Error("Health() = true for unreachable server, want false")
+	}
+}
+
+func TestDeepDocHTTP_HealthProbeTimesOutFast(t *testing.T) {
+	// A server that accepts the connection but never answers models a
+	// firewall/wrong-subnet endpoint. The probe must give up after
+	// healthProbeTimeout, not the client's 120s inference timeout.
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	old := healthProbeTimeout
+	healthProbeTimeout = 50 * time.Millisecond
+	defer func() { healthProbeTimeout = old }()
+
+	client := mustNewDeepDocClient(t, srv.URL)
+	start := time.Now()
+	if client.Health() {
+		t.Error("Health() = true for hanging server, want false")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("Health() took %s for hanging server; want fast failure bounded by healthProbeTimeout", elapsed)
 	}
 }
 

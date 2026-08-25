@@ -225,14 +225,25 @@ func (c *Client) OCRRecognize(ctx context.Context, cropped image.Image) ([]pdf.O
 	return texts, nil
 }
 
+// healthProbeTimeout bounds the /health probe independently of the client's
+// 120s inference timeout, so an endpoint that drops packets (firewall, wrong
+// subnet) fails fast instead of stalling a parse for up to two minutes.
+var healthProbeTimeout = 5 * time.Second
+
 // Health checks whether the DeepDoc service is reachable.
 func (c *Client) Health() bool {
-	resp, err := c.httpClient.Get(c.baseURL + "/health")
+	ctx, cancel := context.WithTimeout(context.Background(), healthProbeTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return false
 	}
 	resp.Body.Close()
-	return resp.StatusCode == 200
+	return resp.StatusCode == http.StatusOK
 }
 
 func (c *Client) post(ctx context.Context, endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {
