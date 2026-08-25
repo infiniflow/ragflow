@@ -71,32 +71,6 @@ def _install_xgboost_stub_if_unavailable():
 _install_xgboost_stub_if_unavailable()
 
 
-def _install_requests_stub_if_unavailable():
-    # The Browser URL-upload path imports requests lazily and every test
-    # monkeypatches requests.get, so a minimal stub keeps the suite runnable
-    # in slim environments without the real dependency.
-    try:
-        import requests  # noqa: F401
-
-        return
-    except Exception:
-        pass
-    stub = types.ModuleType("requests")
-
-    class RequestException(Exception):
-        pass
-
-    stub.RequestException = RequestException
-
-    def _get(*_args, **_kwargs):
-        raise RuntimeError("requests.get must be monkeypatched in tests")
-
-    stub.get = _get
-    sys.modules["requests"] = stub
-
-
-_install_requests_stub_if_unavailable()
-
 from agent.component import browser as browser_use_module  # noqa: E402
 
 
@@ -219,6 +193,61 @@ class _FakeRequestsResponse:
         self.closed = True
 
 
+class _FakeRequestsSession:
+    """Stands in for requests.Session: records calls and lifecycle state."""
+
+    def __init__(self, handler):
+        # Production must set trust_env = False right after construction.
+        self.trust_env = True
+        self.closed = False
+        self.calls = []
+        self._handler = handler
+
+    def get(self, url, **kwargs):
+        self.calls.append(url)
+        return self._handler(url, **kwargs)
+
+    def close(self):
+        self.closed = True
+
+
+def _patch_requests_session(monkeypatch, handler):
+    """Redirect requests.Session() to a recording fake; returns created sessions."""
+    import requests
+
+    created = []
+
+    def _factory():
+        session = _FakeRequestsSession(handler)
+        created.append(session)
+        return session
+
+    monkeypatch.setattr(requests, "Session", _factory)
+    return created
+
+
+def _record_dns_pins(monkeypatch):
+    """Record pin_dns(host, ip) activations; exposes the active stack."""
+    import common.ssrf_guard as ssrf
+
+    active = []
+    recorded = []
+
+    class _pin:
+        def __init__(self, host, ip):
+            self._host, self._ip = host, ip
+
+        def __enter__(self):
+            active.append((self._host, self._ip))
+            recorded.append((self._host, self._ip))
+
+        def __exit__(self, *_exc):
+            active.pop()
+
+    monkeypatch.setattr(ssrf, "pin_dns", _pin)
+    return recorded, active
+
+
 def _allow_public_hosts(monkeypatch, allowed_substrings=("example.com", "example.net")):
     import common.ssrf_guard as ssrf
 
@@ -236,12 +265,9 @@ def test_prepare_upload_files_supports_http_url(monkeypatch, tmp_path):
     component = _build_component()
     component._param.upload_sources = "https://example.com/files/demo.txt"
 
-    import requests
-
     _allow_public_hosts(monkeypatch)
-    monkeypatch.setattr(
-        requests,
-        "get",
+    _patch_requests_session(
+        monkeypatch,
         lambda _url, **_kwargs: _FakeRequestsResponse(
             headers={"Content-Disposition": 'attachment; filename="remote_demo.txt"'},
             data=b"hello from url",
@@ -288,14 +314,8 @@ def test_extract_url_filename_falls_back_to_uuid_when_no_safe_name():
 def test_prepare_upload_url_file_keeps_percent_traversal_inside_upload_dir(monkeypatch, tmp_path):
     component = _build_component()
 
-    import requests
-
     _allow_public_hosts(monkeypatch)
-    monkeypatch.setattr(
-        requests,
-        "get",
-        lambda _url, **_kwargs: _FakeRequestsResponse(data=b"payload"),
-    )
+    _patch_requests_session(monkeypatch, lambda _url, **_kwargs: _FakeRequestsResponse(data=b"payload"))
 
     prepared = component._prepare_upload_url_file("https://example.com/files/%2e%2e%2f..%2fvictim.txt", str(tmp_path))
 
@@ -312,10 +332,8 @@ def test_prepare_upload_url_file_rejects_private_and_metadata_urls(monkeypatch, 
     component = _build_component()
     monkeypatch.delenv("ALLOW_ANY_HOST", raising=False)
 
-    import requests
-
     connections = []
-    monkeypatch.setattr(requests, "get", lambda url, **_kwargs: connections.append(url))
+    sessions = _patch_requests_session(monkeypatch, lambda url, **_kwargs: connections.append(url))
 
     for url in (
         "http://127.0.0.1:8080/admin",
@@ -327,14 +345,14 @@ def test_prepare_upload_url_file_rejects_private_and_metadata_urls(monkeypatch, 
 
     assert connections == []
     assert list(tmp_path.iterdir()) == []
+    # The isolated session is still constructed and released on each attempt.
+    assert all(session.closed for session in sessions)
 
 
 def test_prepare_upload_url_file_rejects_redirect_to_intranet(monkeypatch, tmp_path):
     # First hop is a public URL answering 302 -> cloud metadata: the redirect
     # target must be re-validated and rejected before connecting to it.
     component = _build_component()
-
-    import requests
 
     _allow_public_hosts(monkeypatch)
     connections = []
@@ -346,30 +364,34 @@ def test_prepare_upload_url_file_rejects_redirect_to_intranet(monkeypatch, tmp_p
             headers={"Location": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"},
         )
 
-    monkeypatch.setattr(requests, "get", _redirect_to_metadata)
+    sessions = _patch_requests_session(monkeypatch, _redirect_to_metadata)
 
     prepared = component._prepare_upload_url_file("https://example.com/file.bin", str(tmp_path))
 
     assert prepared is None
     assert connections == ["https://example.com/file.bin"]
     assert list(tmp_path.iterdir()) == []
+    # The rejected fetch still releases its isolated session.
+    assert sessions[0].closed is True
 
 
 def test_prepare_upload_url_file_follows_safe_redirects(monkeypatch, tmp_path):
     component = _build_component()
 
-    import requests
-
     _allow_public_hosts(monkeypatch)
+    responses = []
 
     def _get(url, **_kwargs):
         if url == "https://example.com/download":
-            return _FakeRequestsResponse(status_code=301, headers={"Location": "https://cdn.example.net/final/report.pdf"})
-        if url == "https://cdn.example.net/final/report.pdf":
-            return _FakeRequestsResponse(data=b"PDF")
-        raise AssertionError(f"unexpected url: {url}")
+            response = _FakeRequestsResponse(status_code=301, headers={"Location": "https://cdn.example.net/final/report.pdf"})
+        elif url == "https://cdn.example.net/final/report.pdf":
+            response = _FakeRequestsResponse(data=b"PDF")
+        else:
+            raise AssertionError(f"unexpected url: {url}")
+        responses.append(response)
+        return response
 
-    monkeypatch.setattr(requests, "get", _get)
+    sessions = _patch_requests_session(monkeypatch, _get)
 
     prepared = component._prepare_upload_url_file("https://example.com/download", str(tmp_path))
 
@@ -377,6 +399,111 @@ def test_prepare_upload_url_file_follows_safe_redirects(monkeypatch, tmp_path):
     assert prepared["name"] == "report.pdf"
     assert prepared["source_url"] == "https://example.com/download"
     assert Path(prepared["local_path"]).read_bytes() == b"PDF"
+    # The isolated session ignores ambient proxy/netrc config and is closed,
+    # and every hop's response (including intermediate redirects) is closed.
+    assert sessions[0].trust_env is False
+    assert sessions[0].closed is True
+    assert [r.closed for r in responses] == [True, True]
+
+
+def test_prepare_upload_url_file_redirect_limit_boundary(monkeypatch, tmp_path):
+    # MAX_UPLOAD_URL_REDIRECTS is 5: five hops to the final 200 are accepted,
+    # a chain that needs a sixth redirect is refused.
+    component = _build_component()
+    _allow_public_hosts(monkeypatch)
+
+    def _chain(hop_count):
+        def _get(url, **_kwargs):
+            hop = int(url.rsplit("/", 1)[-1])
+            if hop < hop_count:
+                return _FakeRequestsResponse(status_code=302, headers={"Location": f"https://example.com/hop/{hop + 1}"})
+            return _FakeRequestsResponse(data=b"ok")
+
+        return _get
+
+    _patch_requests_session(monkeypatch, _chain(5))
+    prepared = component._prepare_upload_url_file("https://example.com/hop/0", str(tmp_path))
+    assert prepared is not None
+    assert Path(prepared["local_path"]).read_bytes() == b"ok"
+
+    _patch_requests_session(monkeypatch, _chain(6))
+    prepared = component._prepare_upload_url_file("https://example.com/hop/0", str(tmp_path / "sub"))
+    assert prepared is None
+
+
+def test_prepare_upload_url_file_cleans_partial_file_on_size_limit(monkeypatch, tmp_path):
+    component = _build_component()
+    monkeypatch.setattr(browser_use_module.Browser, "_resolve_upload_url_max_bytes", lambda _self: 4)
+    _allow_public_hosts(monkeypatch)
+    _patch_requests_session(monkeypatch, lambda _url, **_kwargs: _FakeRequestsResponse(data=b"0123456789"))
+
+    prepared = component._prepare_upload_url_file("https://example.com/big.bin", str(tmp_path))
+
+    assert prepared is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_prepare_upload_url_file_cleans_partial_file_when_stream_fails(monkeypatch, tmp_path):
+    import requests
+
+    component = _build_component()
+    _allow_public_hosts(monkeypatch)
+
+    class _ExplodingResponse(_FakeRequestsResponse):
+        def iter_content(self, chunk_size=1024 * 1024):
+            yield b"partial-"
+            raise requests.RequestException("connection reset mid-stream")
+
+    _patch_requests_session(monkeypatch, lambda _url, **_kwargs: _ExplodingResponse(data=b"partial-"))
+
+    prepared = component._prepare_upload_url_file("https://example.com/dies.bin", str(tmp_path))
+
+    assert prepared is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_prepare_upload_url_file_pins_dns_for_every_hop(monkeypatch, tmp_path):
+    component = _build_component()
+
+    import common.ssrf_guard as ssrf
+
+    def _assert(url):
+        host = urlparse(url).hostname or ""
+        return (host, {"example.com": "93.184.216.34", "cdn.example.net": "198.51.100.7"}[host])
+
+    monkeypatch.setattr(ssrf, "assert_url_is_safe", _assert)
+    recorded, active = _record_dns_pins(monkeypatch)
+
+    def _get(url, **_kwargs):
+        if url == "https://example.com/download":
+            assert active[-1] == ("example.com", "93.184.216.34"), active
+            return _FakeRequestsResponse(status_code=302, headers={"Location": "https://cdn.example.net/report.pdf"})
+        assert active[-1] == ("cdn.example.net", "198.51.100.7"), active
+        return _FakeRequestsResponse(data=b"ok")
+
+    _patch_requests_session(monkeypatch, _get)
+
+    prepared = component._prepare_upload_url_file("https://example.com/download", str(tmp_path))
+
+    assert prepared is not None
+    assert recorded == [
+        ("example.com", "93.184.216.34"),
+        ("cdn.example.net", "198.51.100.7"),
+    ]
+    # No pin leaks past the fetch: the stack unwinds to empty.
+    assert active == []
+
+
+def test_extract_url_filename_sanitizes_all_content_disposition_forms():
+    cases = [
+        ('attachment; filename*=UTF-8\'\'..%2f..%2fstar.txt', "star.txt"),
+        ('attachment; filename="..\\..\\quoted.txt"', "quoted.txt"),
+        ("attachment; filename=../../unquoted.txt", "unquoted.txt"),
+        ('attachment; filename="..%2F..%2Fmixed.txt"', "mixed.txt"),
+    ]
+    for header, expected in cases:
+        name = browser_use_module.Browser._extract_url_filename("https://example.com/dl", headers={"Content-Disposition": header})
+        assert name == expected, (header, name)
 
 
 def test_save_downloads_persists_file_records(monkeypatch, tmp_path):

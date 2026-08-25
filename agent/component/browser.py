@@ -179,12 +179,14 @@ class Browser(ComponentBase, ABC):
 
         Percent-escapes are decoded BEFORE splitting path segments: "%2e%2e%2f"
         is not a separator for os.path.basename(), but decodes to "../", which
-        previously escaped the upload directory on join (CWE-22).
+        previously escaped the upload directory on join (CWE-22). Backslashes
+        are normalized to forward slashes first so Windows-style traversal is
+        split the same way while legitimate names survive.
         """
         token = str(candidate or "").strip()
         if not token:
             return ""
-        token = os.path.basename(unquote(token).strip()).strip()
+        token = os.path.basename(unquote(token).strip().replace("\\", "/")).strip()
         if not token or token in {".", ".."}:
             return ""
         if "/" in token or "\\" in token or os.sep in token or (os.altsep and os.altsep in token):
@@ -248,13 +250,19 @@ class Browser(ComponentBase, ABC):
         local_name = ""
         total_size = 0
         response = None
+        # Isolated session: upload URLs are untrusted, so the fetch must not
+        # honor ambient environment proxies (HTTP_PROXY/HTTPS_PROXY would let
+        # the proxy resolve the hostname, bypassing the pinned IP) and must not
+        # load .netrc credentials for the target.
+        session = requests.Session()
+        session.trust_env = False
         try:
             # SSRF guard: upload URLs can come from untrusted canvas variables,
             # so validate and DNS-pin every hop before connecting. Redirects are
             # followed manually so each hop is re-validated, mirroring
             # rag/app/naive.py load_images_from_urls. The thread-local pin_dns
-            # (not pin_dns_global) matches this synchronous requests.get path,
-            # which resolves DNS in the calling thread.
+            # (not pin_dns_global) matches this synchronous fetch path, which
+            # resolves DNS in the calling thread.
             current_hostname, current_ip = assert_url_is_safe(url)
             current_url = url
             for _ in range(MAX_UPLOAD_URL_REDIRECTS + 1):
@@ -264,7 +272,7 @@ class Browser(ComponentBase, ABC):
                 if response is not None:
                     response.close()
                 with pin_dns(current_hostname, current_ip):
-                    response = requests.get(
+                    response = session.get(
                         current_url,
                         stream=True,
                         timeout=30,
@@ -312,6 +320,7 @@ class Browser(ComponentBase, ABC):
             # error paths where the body is never read.
             if response is not None:
                 response.close()
+            session.close()
 
         if total_size <= 0:
             if local_path and os.path.exists(local_path):
