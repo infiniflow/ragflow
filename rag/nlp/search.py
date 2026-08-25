@@ -61,14 +61,14 @@ class Dealer:
         keywords: list[str] | None = None
         group_docs: list[list] | None = None
 
-    async def get_vector(self, txt, emb_mdl, top_k=10, similarity=0.1, num_candidates=None):
+    async def get_vector(self, txt, emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
         qv, _ = await thread_pool_exec(emb_mdl.encode_queries, txt)
         shape = np.array(qv).shape
         if len(shape) > 1:
             raise Exception(f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
         embedding_data = [get_float(v) for v in qv]
         vector_column_name = f"q_{len(embedding_data)}_vec"
-        return MatchDenseExpr(vector_column_name, embedding_data, "float", "cosine", top_k, {"similarity": similarity, "num_candidates": num_candidates or top_k * 2})
+        return MatchDenseExpr(vector_column_name, embedding_data, "float", "cosine", top_k, {"similarity": similarity, "num_candidates": num_candidates})
 
     async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
         if not doc_ids:
@@ -207,7 +207,7 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
-                matchDense = await self.get_vector(qst, emb_mdl, knn_top_k, req.get("similarity", 0.1), knn_num_candidates)
+                matchDense = await self.get_vector(qst, emb_mdl, knn_top_k, knn_num_candidates, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
                 # ES path no longer fetches chunk vectors here. The clean
                 # cosine score is recovered later via a second KNN-only call
