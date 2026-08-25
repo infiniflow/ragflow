@@ -77,14 +77,16 @@ _PARSER_SETUP_KEY_BY_SUFFIX = {
 def _load_dsl_mapping(dsl_str) -> dict | None:
     """Decode + validate a pipeline DSL string into a mapping.
 
-    Returns None for missing, empty, malformed, or non-mapping input so
-    callers can fall back to ``document.parser_id`` (issue #18306). The
-    PipelineOperationLog create path decodes the DSL exactly once and
-    reuses the parsed mapping for both parser extraction and the
-    persisted ``dsl`` column — avoids a second ``json.loads`` that would
-    re-raise on the same malformed input.
+    Returns None for missing, malformed, or non-mapping input so callers
+    can fall back to ``document.parser_id`` (issue #18306). An empty
+    mapping (``{}``) is a valid result and is returned as such so callers
+    can persist it on the log row. The PipelineOperationLog create path
+    decodes the DSL exactly once and reuses the parsed mapping for both
+    parser extraction and the persisted ``dsl`` column — avoids a
+    second ``json.loads`` that would re-raise on the same malformed
+    input.
     """
-    if not dsl_str or dsl_str in ("{}", ""):
+    if dsl_str is None or dsl_str == "":
         return None
     try:
         parsed = json.loads(dsl_str)
@@ -270,6 +272,19 @@ class PipelineOperationLogService(CommonService):
         process_duration = document.process_duration
         parser_id = document.parser_id
 
+        # Closes #18306: decode the DSL exactly once and reuse the parsed
+        # mapping for both parser extraction and the persisted ``dsl``
+        # column — avoids a second ``json.loads`` that would re-raise on
+        # the same malformed input. If the DSL is malformed or missing we
+        # fall back to an empty mapping instead of crashing, and the
+        # warning below tells the operator why the parser resolution
+        # fell back to ``document.parser_id``.
+        dsl_mapping = _load_dsl_mapping(dsl)
+        if dsl_mapping is None:
+            dsl_for_log = {}
+        else:
+            dsl_for_log = _remove_embedding_vectors(dsl_mapping)
+
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
             if not ok:
@@ -277,14 +292,6 @@ class PipelineOperationLogService(CommonService):
             tenant_id = user_pipeline.user_id
             title = user_pipeline.title
             avatar = user_pipeline.avatar
-            # Closes #18306: when the dataflow task is a PARSE, the operator's
-            # chosen Pipeline Parser component (e.g. Docling) is what actually
-            # ran — log that instead of document.parser_id which may carry
-            # the KB default (DeepDOC). Decode the DSL exactly once and reuse
-            # the parsed mapping for both parser extraction and the persisted
-            # ``dsl`` column; if the DSL is malformed we fall back to
-            # ``document.parser_id`` instead of crashing.
-            dsl_mapping = _load_dsl_mapping(dsl)
             if task_type == PipelineTaskType.PARSE:
                 pipeline_parser = _parser_for_document_from_dsl(
                     dsl_mapping,
@@ -292,7 +299,7 @@ class PipelineOperationLogService(CommonService):
                 )
                 if pipeline_parser:
                     parser_id = pipeline_parser
-                elif dsl and dsl not in ("{}", ""):
+                elif dsl and dsl != "":
                     logging.warning(
                         "[PipelineOperationLog] Could not resolve pipeline parser from DSL "
                         "for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
@@ -300,13 +307,6 @@ class PipelineOperationLogService(CommonService):
                         document.suffix,
                         parser_id,
                     )
-            # Persist a sanitized copy of the DSL we just validated, instead of
-            # re-running json.loads on the raw string (which would re-raise on
-            # malformed input we already handled gracefully above).
-            if dsl_mapping is not None:
-                dsl_for_log = _remove_embedding_vectors(dsl_mapping)
-            else:
-                dsl_for_log = {}
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not kb_info:

@@ -304,17 +304,52 @@ def test_extracts_docling_when_multiple_components_present():
 
 def test_setup_key_map_covers_common_families():
     """Guards against accidentally dropping a family from the suffix map
-    (which would silently re-introduce #18306 for that family)."""
+    (which would silently re-introduce #18306 for that family), and
+    against a suffix being mapped to the wrong setup key (which would
+    record the parser for a different file family)."""
     expected = {
-        "pdf", "xls", "xlsx", "csv",
-        "doc", "docx",
-        "ppt", "pptx", "pages",
-        "md", "markdown",
-        "html", "htm",
-        "jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp", "gif",
-        "mp3", "wav", "m4a", "flac", "ogg", "opus",
-        "mp4", "mov", "avi", "webm", "mkv",
-        "eml", "epub",
-        "txt", "json", "log",
+        "pdf": "pdf",
+        "xls": "spreadsheet",
+        "xlsx": "spreadsheet",
+        "csv": "spreadsheet",
+        "doc": "doc",
+        "docx": "docx",
+        "ppt": "slides",
+        "pptx": "slides",
+        "pages": "slides",
+        "md": "markdown",
+        "markdown": "markdown",
+        "html": "html",
+        "htm": "html",
+        "jpg": "image",
+        "jpeg": "image",
+        "png": "image",
+        "bmp": "image",
+        "tif": "image",
+        "tiff": "image",
+        "webp": "image",
+        "gif": "image",
+        "mp3": "audio",
+        "wav": "audio",
+        "m4a": "audio",
+        "flac": "audio",
+        "ogg": "audio",
+        "opus": "audio",
+        "mp4": "video",
+        "mov": "video",
+        "avi": "video",
+        "webm": "video",
+        "mkv": "video",
+        "eml": "email",
+        "epub": "epub",
+        "txt": "text&code",
+        "json": "text&code",
+        "log": "text&code",
     }
-    assert set(_PARSER_SETUP_KEY_BY_SUFFIX.keys()) >= expected
+    # Verify both keys AND values — a suffix mapped to the wrong setup
+    # key would silently log the parser for a different file family.
+    for suffix, expected_setup_key in expected.items():
+        assert _PARSER_SETUP_KEY_BY_SUFFIX[suffix] == expected_setup_key, (
+            f"suffix {suffix!r} maps to {_PARSER_SETUP_KEY_BY_SUFFIX[suffix]!r}, "
+            f"expected {expected_setup_key!r}"
+        )
