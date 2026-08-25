@@ -11,7 +11,7 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
-import { useKnowledgeBaseContext } from '../../../contexts/knowledge-base-context';
+import { useOwnerTenantId } from '../../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
   ImageContextWindow,
@@ -20,7 +20,7 @@ import {
 import { FormLayout } from '@/constants/form';
 
 export function NaiveConfiguration() {
-  const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
+  const ownerTenantId = useOwnerTenantId();
   return (
     <MainContainer>
       <ConfigurationFormContainer>
