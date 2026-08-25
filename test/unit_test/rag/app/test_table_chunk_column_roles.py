@@ -313,9 +313,7 @@ def _enable_oceanbase(monkeypatch):
     monkeypatch.setattr(settings, "DOC_ENGINE_OCEANBASE", True)
 
 
-def test_chunk_infinity_field_map_uses_original_column_names(
-    table_module, mock_update_kb: MagicMock, monkeypatch
-):
+def test_chunk_infinity_field_map_uses_original_column_names(table_module, mock_update_kb: MagicMock, monkeypatch):
     _enable_infinity(monkeypatch)
     _run_chunk(table_module, {}, mock_update_kb)
     payload = mock_update_kb.call_args.args[1]
@@ -339,9 +337,7 @@ def test_chunk_infinity_field_map_uses_original_column_names(
     assert field_map["row_id"] == "row id"
 
 
-def test_chunk_oceanbase_field_map_uses_original_column_names(
-    table_module, mock_update_kb: MagicMock, monkeypatch
-):
+def test_chunk_oceanbase_field_map_uses_original_column_names(table_module, mock_update_kb: MagicMock, monkeypatch):
     _enable_oceanbase(monkeypatch)
     _run_chunk(table_module, {}, mock_update_kb)
     payload = mock_update_kb.call_args.args[1]
@@ -353,9 +349,7 @@ def test_chunk_oceanbase_field_map_uses_original_column_names(
     assert field_map["row_id"] == "row id"
 
 
-def test_chunk_infinity_field_map_non_ascii_columns_are_keys(
-    table_module, mock_update_kb: MagicMock, monkeypatch
-):
+def test_chunk_infinity_field_map_non_ascii_columns_are_keys(table_module, mock_update_kb: MagicMock, monkeypatch):
     """The original bug repros here: a non-ASCII column would be keyed by
     its pinyin form (`xing_ming`) under the old behavior, so the LLM
     is told a key that doesn't exist in `chunk_data`. After the fix the
