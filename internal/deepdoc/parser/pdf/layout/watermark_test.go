@@ -1,108 +1,162 @@
 package layout
 
 import (
-	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-func TestLooksLikeWatermarkCandidate(t *testing.T) {
+// makeBox is a small constructor so the per-case tables read like the
+// per-glyph reproductions that actually triggered #18145: one box per
+// rotated watermark glyph, positioned in disjoint X/Y locations across
+// the same page.
+func makeBox(page int, x0, x1, top, bot float64, text string) pdf.TextBox {
+	return pdf.TextBox{
+		X0:         x0,
+		X1:         x1,
+		Top:        top,
+		Bottom:     bot,
+		Text:       text,
+		PageNumber: page,
+	}
+}
+
+func TestFilterWatermarkBoxes_DropsRepeatedSingleChars(t *testing.T) {
+	// 5× "Q" and 5× "1" on page 0 (≥ watermarkMinOccurrences) — these
+	// are the rotated glyphs from the tiled watermark in #18145.
+	var boxes []pdf.TextBox
+	for i := 0; i < 5; i++ {
+		y := float64(100 + i*20)
+		boxes = append(boxes,
+			makeBox(0, 50, 58, y, y+12, "Q"),
+			makeBox(0, 80, 88, y, y+12, "1"),
+		)
+	}
+	out := FilterWatermarkBoxes(boxes)
+	for _, b := range out {
+		if b.Text == "Q" || b.Text == "1" {
+			t.Errorf("watermark glyph %q survived (page=%d)", b.Text, b.PageNumber)
+		}
+	}
+	if len(out) != 0 {
+		t.Errorf("expected all watermark glyphs dropped, got %d", len(out))
+	}
+}
+
+func TestFilterWatermarkBoxes_KeepsLegitimateShortContent(t *testing.T) {
+	// 1× "Q", 1× "1", 1× "A" on page 0 — all legitimate single-char uses
+	// (list markers, table column labels). Each appears below the
+	// threshold so NOTHING should be dropped.
+	boxes := []pdf.TextBox{
+		makeBox(0, 50, 58, 100, 112, "Q"),
+		makeBox(0, 50, 58, 130, 142, "1"),
+		makeBox(0, 50, 58, 160, 172, "A"),
+	}
+	out := FilterWatermarkBoxes(boxes)
+	if len(out) != len(boxes) {
+		t.Errorf("expected %d boxes kept, got %d", len(boxes), len(out))
+	}
+}
+
+func TestFilterWatermarkBoxes_KeepsCJK(t *testing.T) {
+	// 6× "姓" on page 0 — a real form-field label appearing repeatedly
+	// in a Chinese resume. CJK glyphs are ≥3 UTF-8 bytes per rune, so
+	// isSingleAsciiAlnum rejects them outright. Every box survives.
+	var boxes []pdf.TextBox
+	for i := 0; i < 6; i++ {
+		boxes = append(boxes,
+			makeBox(0, 50, 58, float64(100+i*20), float64(112+i*20), "姓"),
+		)
+	}
+	out := FilterWatermarkBoxes(boxes)
+	if len(out) != len(boxes) {
+		t.Errorf("CJK boxes (%d) lost — watermark filter must not touch CJK", len(boxes)-len(out))
+	}
+}
+
+func TestFilterWatermarkBoxes_KeepsRepeatedMultiCharTokens(t *testing.T) {
+	// "ABC123" is a realistic repeated SKU / batch-code / part-number
+	// pattern. Even when it appears 8× per page, the multi-char length
+	// keeps it out of the watermark filter, so the data is not lost.
+	var boxes []pdf.TextBox
+	for i := 0; i < 8; i++ {
+		boxes = append(boxes,
+			makeBox(0, float64(50+i*30), float64(80+i*30), 100, 112, "ABC123"),
+		)
+	}
+	out := FilterWatermarkBoxes(boxes)
+	if len(out) != len(boxes) {
+		t.Errorf("multi-char SKU '%s' should survive verbatim, lost %d", "ABC123", len(boxes)-len(out))
+	}
+}
+
+func TestFilterWatermarkBoxes_PerPageScopeIsolatesByPageNumber(t *testing.T) {
+	// 4× "Q" on page 0 (≥ threshold → watermark), 2× "Q" on page 1
+	// (legitimate repetition below threshold).
+	var boxes []pdf.TextBox
+	for i := 0; i < 4; i++ {
+		boxes = append(boxes, makeBox(0, float64(50+i*30), 58, 100, 112, "Q"))
+	}
+	for i := 0; i < 2; i++ {
+		boxes = append(boxes, makeBox(1, float64(50+i*30), 58, 100, 112, "Q"))
+	}
+	out := FilterWatermarkBoxes(boxes)
+	page0 := 0
+	page1 := 0
+	for _, b := range out {
+		switch b.PageNumber {
+		case 0:
+			page0++
+		case 1:
+			page1++
+		}
+	}
+	if page0 != 0 {
+		t.Errorf("page 0 still has %d 'Q' boxes after filter", page0)
+	}
+	if page1 != 2 {
+		t.Errorf("page 1 'Q' boxes lost: want 2, got %d", page1)
+	}
+}
+
+func TestFilterWatermarkBoxes_HandlesEmptyAndNil(t *testing.T) {
+	if got := FilterWatermarkBoxes(nil); len(got) != 0 {
+		t.Errorf("nil input should give empty output, got %d", len(got))
+	}
+	if got := FilterWatermarkBoxes([]pdf.TextBox{}); len(got) != 0 {
+		t.Errorf("empty input should give empty output, got %d", len(got))
+	}
+}
+
+func TestFilterWatermarkBoxes_NoFalsePositiveOnMixed(t *testing.T) {
+	// A page with one "Q", one "1", one "ABC123", one " ", one "," — no
+	// single ASCII-alnum token hits the threshold, nothing dropped.
+	boxes := []pdf.TextBox{
+		makeBox(0, 50, 58, 100, 112, "Q"),
+		makeBox(0, 50, 58, 130, 142, "1"),
+		makeBox(0, 50, 100, 160, 172, "ABC123"),
+		makeBox(0, 50, 58, 190, 202, " "),
+		makeBox(0, 50, 58, 220, 232, ","),
+	}
+	out := FilterWatermarkBoxes(boxes)
+	if len(out) != len(boxes) {
+		t.Errorf("expected %d boxes kept, got %d (lost %d)", len(boxes), len(out), len(boxes)-len(out))
+	}
+}
+
+func TestIsSingleAsciiAlnum(t *testing.T) {
 	cases := []struct {
-		text string
+		in   string
 		want bool
 	}{
-		// Real watermark tokens from the issue.
-		{"Q2qRhNU_P", true},
-		{"Wdy_V2iYxTR", true},
-		{"ZH1c56f", true},
-		{"ce1a60", true},
-		{"4326dc", true},
-		{"G0", true},
-		{"md24", true},
-		// Edge cases.
-		{"", false},                      // empty
-		{"a", false},                     // too short
-		{"abc", false},                   // no digit
-		{"ABC", false},                   // no digit, no lower
-		{"123", false},                   // no letter
-		{"abc123", true},                 // lowercase + digit
-		{"ABC123", true},                 // uppercase + digit
-		{"Abcdef", false},                // no digit
-		{"hello world", false},           // whitespace
-		{strings.Repeat("A", 65), false}, // too long
+		{"A", true}, {"z", true}, {"0", true}, {"9", true},
+		{"", false}, {"AA", false}, {"a1", false},
+		{" ", false}, {",", false}, {"中", false},
+		{"\n", false}, {"\x00", false},
 	}
-	for _, tc := range cases {
-		if got := looksLikeWatermarkCandidate(tc.text); got != tc.want {
-			t.Errorf("looksLikeWatermarkCandidate(%q) = %v, want %v", tc.text, got, tc.want)
+	for _, c := range cases {
+		if got := isSingleAsciiAlnum(c.in); got != c.want {
+			t.Errorf("isSingleAsciiAlnum(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
-}
-
-func TestFilterWatermarkChars_DropsRepeatedTokens(t *testing.T) {
-	// Simulate a page with a resume-watermark pattern: a 6-character token
-	// "ce1a60" appears 4 times scattered across the page (the issue
-	// reports this exact pattern).
-	chars := []pdf.TextChar{
-		{Text: "姓", X0: 50, X1: 58, Top: 100, Bottom: 112},
-		{Text: "名", X0: 60, X1: 68, Top: 100, Bottom: 112},
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 100, Bottom: 112},
-		{Text: "Q", X0: 300, X1: 305, Top: 110, Bottom: 112},
-		{Text: "2", X0: 310, X1: 315, Top: 110, Bottom: 112},
-		{Text: "q", X0: 320, X1: 325, Top: 110, Bottom: 112},
-		{Text: "RhNU_P", X0: 330, X1: 360, Top: 110, Bottom: 112},
-		{Text: "教育", X0: 50, X1: 68, Top: 200, Bottom: 212},
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 200, Bottom: 212},
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 300, Bottom: 312},
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 400, Bottom: 412},
-	}
-	filtered := filterWatermarkChars(chars)
-	for _, c := range filtered {
-		if c.Text == "ce1a60" {
-			t.Errorf("watermark token %q survived filtering", c.Text)
-		}
-	}
-	if len(filtered) != len(chars)-4 {
-		t.Errorf("expected %d chars after filter, got %d", len(chars)-4, len(filtered))
-	}
-}
-
-func TestFilterWatermarkChars_KeepsUniqueTokens(t *testing.T) {
-	// Single-occurrence tokens must not be stripped even if they look
-	// plausible — promotion requires 3+ occurrences on the page.
-	chars := []pdf.TextChar{
-		{Text: "Abc123", X0: 50, X1: 80, Top: 100, Bottom: 112},
-		{Text: "Xyz789", X0: 100, X1: 130, Top: 100, Bottom: 112},
-		{Text: "Def456", X0: 150, X1: 180, Top: 100, Bottom: 112},
-		{Text: "Ghi012", X0: 200, X1: 230, Top: 100, Bottom: 112},
-	}
-	filtered := filterWatermarkChars(chars)
-	if len(filtered) != len(chars) {
-		t.Errorf("expected %d chars after filter (no promotions), got %d", len(chars), len(filtered))
-	}
-}
-
-func TestCharsToBoxes_DropsWatermarkBeforeGrouping(t *testing.T) {
-	// Even when the watermark tokens have unique vertical positions (so
-	// they'd each become their own "line" before the fix), the boxes
-	// emitted by CharsToBoxes must not contain them.
-	chars := []pdf.TextChar{
-		{Text: "姓", X0: 50, X1: 58, Top: 100, Bottom: 112},
-		{Text: "名", X0: 60, X1: 68, Top: 100, Bottom: 112},
-		// Scattered watermark tokens with different vertical positions.
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 100, Bottom: 112},
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 200, Bottom: 212},
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 300, Bottom: 312},
-		{Text: "ce1a60", X0: 200, X1: 250, Top: 400, Bottom: 412},
-	}
-	boxes := CharsToBoxes(chars, 0, false)
-	for _, b := range boxes {
-		if containsWatermark(b.Text) {
-			t.Errorf("box text %q contains watermark token", b.Text)
-		}
-	}
-}
-
-func containsWatermark(s string) bool {
-	return strings.Contains(s, "ce1a60")
 }
