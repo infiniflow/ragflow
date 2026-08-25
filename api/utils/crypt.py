@@ -66,27 +66,3 @@ def decrypt(line):
         return plaintext.decode("utf-8")
     except UnicodeDecodeError as e:
         raise CryptPayloadError("decrypted password payload is not valid UTF-8") from e
-
-
-def decrypt2(crypt_text):
-    from base64 import b64decode, b16decode
-    from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
-    from Crypto.PublicKey import RSA
-
-    decode_data = b64decode(crypt_text)
-    if len(decode_data) == 127:
-        hex_fixed = "00" + decode_data.hex()
-        decode_data = b16decode(hex_fixed.upper())
-
-    file_path = os.path.join(get_project_base_directory(), "conf", "private.pem")
-    pem = Path(file_path).read_text()
-    rsa_key = RSA.importKey(pem, "Welcome")
-    cipher = Cipher_PKCS1_v1_5.new(rsa_key)
-    decrypt_text = cipher.decrypt(decode_data, None)
-    return (b64decode(decrypt_text)).decode()
-
-
-if __name__ == "__main__":
-    passwd = crypt(sys.argv[1])
-    print(passwd)
-    print(decrypt(passwd))
