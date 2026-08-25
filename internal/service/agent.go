@@ -1464,6 +1464,10 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
 	lockToken := utility.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
+	// Keep workflow cancellation separate from event-consumer cancellation.
+	// An explicit session cancellation should still reach an attached client,
+	// while a disconnected HTTP request must stop event delivery promptly.
+	runCtx = canvas.WithEventContext(runCtx, ctx)
 	active := &activeAgentRun{
 		userID:     userID,
 		canvasID:   canvasID,
@@ -1899,7 +1903,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if events == nil {
 				return
 			}
-			canvas.PushEvent(events, canvas.RunEvent{
+			canvas.PushEvent(ctx, events, canvas.RunEvent{
 				Type: typ, Data: data,
 				MessageID: messageID,
 				CreatedAt: time.Now().Unix(),
