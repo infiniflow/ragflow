@@ -116,6 +116,7 @@ class XquikConnector(RestAPIConnector):
             pagination_config={
                 "cursor_param": "cursor",
                 "next_cursor_field": "next_cursor",
+                "has_next_page_field": "has_next_page",
                 "page_size": page_size,
             },
             poll_timestamp_field="createdAt",

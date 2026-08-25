@@ -206,9 +206,10 @@ func (c *XquikConnector) restConnector(request SyncRequest, validation bool) (*R
 		}, ","),
 		"pagination_type": paginationType,
 		"pagination_config": map[string]any{
-			"cursor_param":      "cursor",
-			"next_cursor_field": "next_cursor",
-			"page_size":         c.cfg.pageSize,
+			"cursor_param":        "cursor",
+			"next_cursor_field":   "next_cursor",
+			"has_next_page_field": "has_next_page",
+			"page_size":           c.cfg.pageSize,
 		},
 		"poll_timestamp_field": "createdAt",
 		"batch_size":           c.cfg.batchSize,

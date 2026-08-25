@@ -526,9 +526,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 raise ConnectorValidationError(f"REST API page fetch failed: {exc}") from exc
 
             items = self._extract_items(response_json)
-            if not items:
+            has_next_page = self._extract_has_next_page(response_json)
+            if not items and not (self.pagination_type == PaginationType.CURSOR and has_next_page is True):
                 break
-
             for item in items:
                 if isinstance(item, Mapping):
                     yield item
@@ -546,6 +546,8 @@ class RestAPIConnector(LoadConnector, PollConnector):
                     break
                 offset += limit
             elif self.pagination_type == PaginationType.CURSOR:
+                if has_next_page is False:
+                    break
                 next_cursor = self._extract_next_cursor(response_json)
                 if not next_cursor:
                     break
@@ -844,6 +846,14 @@ class RestAPIConnector(LoadConnector, PollConnector):
             items = []
 
         return [it for it in items if isinstance(it, Mapping)]
+
+    def _extract_has_next_page(self, response_json: Any) -> Optional[bool]:
+        """Return an explicit cursor continuation flag when configured."""
+        field = self.pagination_config.get("has_next_page_field")
+        if not field or not isinstance(response_json, Mapping):
+            return None
+        value = response_json.get(field)
+        return value if isinstance(value, bool) else None
 
     def _extract_next_cursor(self, response_json: Any) -> Optional[str]:
         """Extract cursor value for cursor-based pagination."""

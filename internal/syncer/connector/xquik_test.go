@@ -238,6 +238,53 @@ func TestXquikValidateConnectorSettingLimitsUsage(t *testing.T) {
 	}
 }
 
+func TestXquikContinuesAfterEmptyPageWhenResponseHasMore(t *testing.T) {
+	connector := newXquikTestConnector(t, validXquikConfig())
+	requests := 0
+	withXquikTestServer(t, connector, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		response := map[string]any{
+			"tweets":        []any{},
+			"has_next_page": true,
+			"next_cursor":   "cursor-2",
+		}
+		if r.URL.Query().Get("cursor") == "cursor-2" {
+			response = map[string]any{
+				"tweets": []any{map[string]any{
+					"id":        "101",
+					"text":      "Older post",
+					"createdAt": "2026-08-24T12:00:00Z",
+				}},
+				"has_next_page": false,
+				"next_cursor":   "ignored-cursor",
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}))
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 || !strings.Contains(string(batch.Documents[0].Blob), "Older post") {
+		t.Fatalf("documents = %+v, want older post", batch.Documents)
+	}
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("second NextBatch error = %v, want EOF", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+}
+
 func TestXquikStopsAfterRepeatedCursor(t *testing.T) {
 	config := validXquikConfig()
 	config["batch_size"] = 1

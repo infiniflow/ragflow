@@ -1182,7 +1182,8 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	}
 
 	items := restAPIExtractItems(response, it.c.cfg.ItemsPath)
-	if len(items) == 0 {
+	hasNext, reportsHasNext := restAPIExtractHasNextPage(response, it.c.cfg.PaginationConfig)
+	if len(items) == 0 && !(it.c.cfg.PaginationType == restAPIPaginationCursor && reportsHasNext && hasNext) {
 		it.finished = true
 		return nil, nil
 	}
@@ -1204,6 +1205,10 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 			it.offset += it.limit
 		}
 	case restAPIPaginationCursor:
+		if reportsHasNext && !hasNext {
+			it.finished = true
+			break
+		}
 		next := restAPIExtractNextCursor(response, it.c.cfg.PaginationConfig)
 		if next == "" {
 			it.finished = true
@@ -1284,6 +1289,19 @@ func restAPIExtractItems(response any, itemsPath string) []map[string]any {
 		}
 	}
 	return out
+}
+
+func restAPIExtractHasNextPage(response any, paginationConfig map[string]any) (bool, bool) {
+	field := strings.TrimSpace(stringConfig(paginationConfig["has_next_page_field"]))
+	if field == "" {
+		return false, false
+	}
+	dict, ok := response.(map[string]any)
+	if !ok {
+		return false, false
+	}
+	value, ok := dict[field].(bool)
+	return value, ok
 }
 
 // restAPIExtractNextCursor mirrors _extract_next_cursor.

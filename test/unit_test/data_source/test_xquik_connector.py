@@ -94,6 +94,33 @@ def test_xquik_maps_post_content_metadata_and_source(_dns):
     assert document.metadata["media[*].mediaUrl"] == "https://pbs.twimg.com/media/example.jpg"
 
 
+@patch("common.data_source.rest_api_connector.socket.getaddrinfo", return_value=_MOCK_DNS)
+def test_xquik_continues_after_empty_page_when_response_has_more(_dns):
+    connector = XquikConnector.from_config(_config())
+    responses = iter(
+        [
+            {"tweets": [], "has_next_page": True, "next_cursor": "cursor-2"},
+            {
+                "tweets": [{"id": "101", "text": "Older post"}],
+                "has_next_page": False,
+                "next_cursor": "ignored-cursor",
+            },
+        ]
+    )
+    requests = []
+
+    def fetch_page(params):
+        requests.append(dict(params))
+        return next(responses)
+
+    connector._fetch_page = fetch_page
+
+    items = list(connector._iter_items())
+
+    assert items == [{"id": "101", "text": "Older post"}]
+    assert requests == [{}, {"cursor": "cursor-2"}]
+
+
 @pytest.mark.parametrize(
     ("override", "error_type", "message"),
     [
