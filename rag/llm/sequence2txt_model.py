@@ -702,36 +702,53 @@ class FunASRSeq2txt(GPTSeq2txt):
 
 
 class CitySenseSpeechKitSeq2txt(Base):
-    """CitySense media-speech-mcp (Yandex SpeechKit hybrid, 4h/1GB) via X-Service-Token."""
+    """Провайдер CitySense media-speech-mcp (гибрид Yandex SpeechKit 4ч/1ГБ) через X-Service-Token."""
 
     _FACTORY_NAME = "CitySense-SpeechKit"
 
-    def __init__(self, key, model_name="general", base_url="http://media-speech-mcp:8080", **kwargs):
-        # MEDIA_SPEECH_BASE_URL / MEDIA_SPEECH_API_KEY env fallback — allows fully configuring via env
+    def __init__(self, key, model_name="general", base_url="", **kwargs):
+        # URL и ключ задаются только через UI (base_url инстанса) или env MEDIA_SPEECH_BASE_URL / MEDIA_SPEECH_API_KEY — хардкода нет
         env_base = (os.getenv("MEDIA_SPEECH_BASE_URL") or "").strip()
         env_key = (os.getenv("MEDIA_SPEECH_API_KEY") or "").strip()
-        if not base_url or base_url == "http://media-speech-mcp:8080":
-            if env_base:
-                base_url = env_base
-        if not base_url:
-            base_url = "http://media-speech-mcp:8080"
+        if not base_url and env_base:
+            base_url = env_base
         if not key and env_key:
             key = env_key
-        self.base_url = base_url.rstrip("/")
+        self.base_url = (base_url or "").rstrip("/")
         self.api_key = key or ""
         self.model_name = model_name
-        logging.info("[CitySense-SpeechKit] Speech2Text initialized with model %s at %s", model_name, self.base_url)
+        if not self.base_url:
+            logging.warning("[CitySense-SpeechKit] base_url не задан — укажите через UI Base URL или env MEDIA_SPEECH_BASE_URL")
+        logging.info("[CitySense-SpeechKit] Speech2Text initialized with model %s at %s", model_name, self.base_url or "<empty>")
 
     def check_available(self) -> tuple[bool, str]:
-        return True, ""
+        # Живая проверка: пробуем GET {base_url}/api/v1/models с X-Service-Token — ключ обязателен
+        if not self.base_url:
+            return False, "base_url не задан — укажите Base URL в UI или env MEDIA_SPEECH_BASE_URL"
+        if not self.api_key:
+            return False, "API ключ не задан — укажите MEDIA_SPEECH_API_KEY в UI или env"
+        try:
+            headers = {"X-Service-Token": self.api_key}
+            resp = requests.get(f"{self.base_url}/api/v1/models", headers=headers, timeout=10)
+            if resp.status_code == 401:
+                return False, "Ключ CitySense недействителен (несовпадение X-Service-Token)"
+            resp.raise_for_status()
+            data = resp.json()
+            if not data.get("data"):
+                return False, "Не удалось получить список моделей CitySense"
+            return True, ""
+        except Exception as e:
+            return False, f"Не удалось подключиться к CitySense по адресу {self.base_url}: {e}"
 
     def transcription(self, audio_path, **kwargs):
         # media-speech-mcp multipart: POST /api/v1/transcription/upload
-        # fallback to JSON url if audio_path is http(s) url and multipart endpoint absent.
+        # Фолбэк на JSON URL, если audio_path — это http(s) ссылка и multipart эндпоинт отсутствует
+        if not self.api_key:
+            return "**ERROR**: API ключ не задан — укажите MEDIA_SPEECH_API_KEY в UI или env", 0
+        if not self.base_url:
+            return "**ERROR**: base_url не задан — укажите Base URL в UI или env MEDIA_SPEECH_BASE_URL", 0
         url = f"{self.base_url}/api/v1/transcription/upload"
-        headers = {}
-        if self.api_key:
-            headers["X-Service-Token"] = self.api_key
+        headers = {"X-Service-Token": self.api_key}
         # remote url passthrough: use JSON transcribe endpoint
         if isinstance(audio_path, str) and audio_path.startswith(("http://", "https://")):
             try:
@@ -754,8 +771,11 @@ class CitySenseSpeechKitSeq2txt(Base):
             except Exception as e:
                 return f"**ERROR**: {e}", 0
         try:
+            ext = os.path.splitext(audio_path)[1].lower()
+            mime_map = {".wav": "audio/wav", ".flac": "audio/flac", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm", ".mp3": "audio/mpeg"}
+            mime_type = mime_map.get(ext, "audio/mpeg")
             with open(audio_path, "rb") as f:
-                files = {"file": (os.path.basename(audio_path), f, "audio/mpeg")}
+                files = {"file": (os.path.basename(audio_path), f, mime_type)}
                 data = {"model": self.model_name}
                 if kwargs.get("language"):
                     data["language"] = kwargs.get("language")
@@ -771,5 +791,5 @@ class CitySenseSpeechKitSeq2txt(Base):
             text = resp.text.strip()
             return text, num_tokens_from_string(text)
         except Exception as e:
-            logging.exception("CitySense-SpeechKit transcription failed for model %s", self.model_name)
+            logging.exception("Транскрибация CitySense-SpeechKit не удалась для модели %s", self.model_name)
             return f"**ERROR**: {e}", 0
