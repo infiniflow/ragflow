@@ -16,7 +16,7 @@ function cluster(name: string) {
   };
 }
 
-const treeOptions = {
+const TreeOptions = {
   structureMap: {},
   onNodeClick: jest.fn(),
   onNodeExpand: jest.fn(),
@@ -27,7 +27,7 @@ const treeOptions = {
 describe('buildNavTreeData', () => {
   it('renders an error placeholder when a child load failed', () => {
     const data = buildNavTreeData([cluster('cluster-a')], {
-      ...treeOptions,
+      ...TreeOptions,
       childrenMap: {},
       childrenErrorParents: { 'cluster-a': true },
     });
@@ -39,7 +39,7 @@ describe('buildNavTreeData', () => {
 
   it('does not keep the loading placeholder after an empty child list is cached', () => {
     const data = buildNavTreeData([cluster('cluster-a')], {
-      ...treeOptions,
+      ...TreeOptions,
       childrenMap: { 'cluster-a': [] },
     });
 

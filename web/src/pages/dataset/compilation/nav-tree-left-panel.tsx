@@ -173,21 +173,28 @@ export function NavTreeLeftPanel({
           <div className="py-8 flex justify-center">
             <Spin size="small" />
           </div>
-        ) : navError ? (
-          <div className="py-8 text-center text-sm text-text-secondary">
-            {t('knowledgeCompilation.navLoadFailed')}
-          </div>
         ) : treeData.length === 0 ? (
           <div className="py-8 text-center text-sm text-text-secondary">
-            {t('knowledgeCompilation.navEmpty')}
+            {t(
+              navError
+                ? 'knowledgeCompilation.navLoadFailed'
+                : 'knowledgeCompilation.navEmpty',
+            )}
           </div>
         ) : (
-          <TreeView
-            data={treeData}
-            expandOnRowClick={false}
-            defaultNodeIcon={Folder}
-            defaultLeafIcon={FileText}
-          />
+          <>
+            {navError ? (
+              <div className="px-2 pb-2 text-center text-sm text-text-secondary">
+                {t('knowledgeCompilation.navLoadFailed')}
+              </div>
+            ) : null}
+            <TreeView
+              data={treeData}
+              expandOnRowClick={false}
+              defaultNodeIcon={Folder}
+              defaultLeafIcon={FileText}
+            />
+          </>
         )}
       </div>
     </aside>
