@@ -1777,6 +1777,8 @@ export default {
       listModelsLoading: 'モデルを読み込み中…',
       selectModelBeforeVerify:
         '検証する前に、少なくとも1つのモデルを選択してください。',
+      selectModelBeforeSave:
+        '保存する前に、少なくとも1つのモデルを検出して選択してください。',
       addCustomModel: 'カスタムモデルを追加',
       addCustomModelTitle: 'カスタムモデルを追加',
       batchAddModels: '表示中のモデルをすべて追加',

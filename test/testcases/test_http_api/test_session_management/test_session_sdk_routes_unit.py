@@ -1982,7 +1982,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["question"] == "translated-q-translated"
     assert retrieval_capture["similarity_threshold"] == 0.42
     assert retrieval_capture["vector_similarity_weight"] == 0.8
-    assert retrieval_capture["top"] == 7
+    assert retrieval_capture["knn_top_k"] == 7
     assert retrieval_capture["local_doc_ids"] == ["doc-filtered"]
     assert retrieval_capture["rank_feature"] == ["label-1"]
     assert retrieval_capture["rerank_mdl"] is not None

@@ -95,10 +95,17 @@ type TextBox struct {
 	Top, Bottom float64
 	Text        string
 	PageNumber  int
-	LayoutType  string
-	LayoutNo    string
-	ColID       int
-	R           int
+	// Pages carries the full set of page numbers a box spans, when it is a
+	// single logical region split across consecutive pages (e.g. a table
+	// merged across pages by MergeTablesAcrossPages). When non-empty it
+	// overrides PageNumber for page-span computation in BoxesToSections, so a
+	// cross-page merged table records every page it occupies (not just the
+	// anchor page).
+	Pages      []int
+	LayoutType string
+	LayoutNo   string
+	ColID      int
+	R          int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)

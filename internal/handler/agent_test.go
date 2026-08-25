@@ -1159,6 +1159,46 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsRunnerError(t *testin
 	}
 }
 
+func TestAgentChatCompletions_OpenAICompat_NonStreamRedactsInternalRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "server_error" {
+		t.Errorf("error.type = %q, want server_error", response.Error.Type)
+	}
+	if response.Error.Message != canvas.InternalRunErrorMessage {
+		t.Errorf("error.message = %q, want %q", response.Error.Message, canvas.InternalRunErrorMessage)
+	}
+	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("response leaked internal error details: %s", w.Body.String())
+	}
+}
+
 func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsWaitingForUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1193,6 +1233,42 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsWaitingForUser(t *tes
 	if !strings.Contains(response.Error.Message, "waiting for user input") ||
 		!strings.Contains(response.Error.Message, "input-1") {
 		t.Errorf("error.message = %q, want waiting state and cpn id", response.Error.Message)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "cancelled", Data: `{"message":"Agent run was cancelled."}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "invalid_request_error" {
+		t.Errorf("error.type = %q, want invalid_request_error", response.Error.Type)
+	}
+	if response.Error.Message != "Agent run was cancelled." {
+		t.Errorf("error.message = %q, want cancellation message", response.Error.Message)
 	}
 }
 
@@ -1381,6 +1457,47 @@ func TestAgentChatCompletions_OpenAICompat_StreamSurfacesRunnerError(t *testing.
 	}
 }
 
+func TestAgentChatCompletions_OpenAICompat_StreamRedactsInternalRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("failed stream must not end with [DONE]")
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("decoded %d chunks, want one internal error", len(chunks))
+	}
+	choice := chunks[0]["choices"].([]interface{})[0].(map[string]interface{})
+	if choice["finish_reason"] != "error" {
+		t.Errorf("finish_reason = %v, want error", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	if delta["content"] != "**ERROR**: "+canvas.InternalRunErrorMessage {
+		t.Errorf("error content = %v, want redacted error", delta["content"])
+	}
+	errorPayload := delta["error"].(map[string]interface{})
+	if errorPayload["message"] != canvas.InternalRunErrorMessage {
+		t.Errorf("error payload = %v, want redacted message", errorPayload)
+	}
+	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("stream leaked internal error details: %s", w.Body.String())
+	}
+}
+
 func TestAgentChatCompletions_OpenAICompat_StreamSurfacesWaitingForUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1413,6 +1530,41 @@ func TestAgentChatCompletions_OpenAICompat_StreamSurfacesWaitingForUser(t *testi
 	waiting := delta["waiting_for_user"].(map[string]interface{})
 	if waiting["cpn_id"] != "input-1" {
 		t.Errorf("waiting_for_user = %v, want cpn_id input-1", waiting)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamSurfacesCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "cancelled", Data: `{"message":"Agent run was cancelled."}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("cancelled stream must not end with [DONE]")
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("decoded %d chunks, want cancellation state", len(chunks))
+	}
+	choices := chunks[0]["choices"].([]interface{})
+	choice := choices[0].(map[string]interface{})
+	if choice["finish_reason"] != "cancelled" {
+		t.Errorf("finish_reason = %v, want cancelled", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	cancelled := delta["cancelled"].(map[string]interface{})
+	if cancelled["message"] != "Agent run was cancelled." {
+		t.Errorf("cancelled payload = %v, want cancellation message", cancelled)
 	}
 }
 

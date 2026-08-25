@@ -106,7 +106,7 @@ func mindMapRetrievalRequest(question string, kbIDs common.StringSlice, searchID
 	page := 1
 	size := 12
 	topK := intFromConfig(searchConfig, "top_k", 1024)
-	prefetchSize := intFromConfig(searchConfig, "prefetch_size", 100)
+	rerankCandidatesCount := intFromConfig(searchConfig, "rerank_candidates_count", 100)
 	similarityThreshold := floatFromConfig(searchConfig, "similarity_threshold", 0.2)
 	vectorSimilarityWeight := floatFromConfig(searchConfig, "vector_similarity_weight", 0.3)
 	req := &service.RetrievalTestRequest{
@@ -115,7 +115,7 @@ func mindMapRetrievalRequest(question string, kbIDs common.StringSlice, searchID
 		Page:                   &page,
 		Size:                   &size,
 		TopK:                   &topK,
-		PrefetchSize:           &prefetchSize,
+		RerankCandidatesCount:  &rerankCandidatesCount,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		DocIDs:                 stringSliceFromConfig(searchConfig, "doc_ids"),

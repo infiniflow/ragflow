@@ -53,7 +53,7 @@ type RetrievalRequest struct {
 	DocIDs                 []string
 	Page                   int
 	PageSize               int
-	PrefetchSize           *int
+	RerankCandidatesCount  *int
 	Top                    *int
 	SimilarityThreshold    *float64
 	VectorSimilarityWeight *float64
@@ -73,9 +73,11 @@ type RetrievalResult struct {
 }
 
 // Retrieval performs hybrid search + reranking + pagination
-// - Prefetch candidates for reranking
+// - Retrieve candidates for reranking
 // - Perform reranking via Rerank()
 // - Sort indices by score descending and filter by threshold
+// - Require Page * PageSize to fit within RerankCandidatesCount
+// - Support only the first page when a rerank model is configured
 // - Calculate pagination to extract actual page returned from reranked results
 // - Build chunks
 // - Build document aggregation if specified
@@ -108,23 +110,19 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if req.PageSize <= 0 {
 		req.PageSize = 1
 	}
-	if req.PrefetchSize == nil {
-		req.PrefetchSize = func() *int { v := 64; return &v }()
+	if req.RerankCandidatesCount == nil {
+		req.RerankCandidatesCount = func() *int { v := 64; return &v }()
 	}
 
 	pageSize := req.PageSize
-	prefetchSize := *req.PrefetchSize
-	if prefetchSize <= 0 || req.Page > prefetchSize/pageSize {
-		requiredSize := "overflow"
-		if req.Page <= int(^uint(0)>>1)/pageSize {
-			requiredSize = strconv.Itoa(req.Page * pageSize)
-		}
-		return nil, fmt.Errorf("prefetch_size(%d) must be greater than page * page_size(%s) to ensure correct pagination", prefetchSize, requiredSize)
+	rerankCandidatesCount := *req.RerankCandidatesCount
+	if rerankCandidatesCount <= 0 || req.Page > rerankCandidatesCount/pageSize {
+		return nil, fmt.Errorf("rerank_candidates_count(%d) must be greater than or equal to page(%d) * page_size(%d)", rerankCandidatesCount, req.Page, pageSize)
 	}
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
 	}
-	common.Info("Retrieval prefetch params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("prefetchSize", prefetchSize))
+	common.Debug("Retrieval rerank candidate params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("rerankCandidatesCount", rerankCandidatesCount))
 
 	// Execute search via Search()
 	searchReq := &RetrievalSearchRequest{
@@ -133,7 +131,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		KbIDs:                  req.KbIDs,
 		DocIDs:                 req.DocIDs,
 		Page:                   1,
-		PageSize:               prefetchSize,
+		PageSize:               rerankCandidatesCount,
 		Top:                    *req.Top,
 		RankFeature:            *req.RankFeature,
 		EmbeddingModel:         req.EmbeddingModel,

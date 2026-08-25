@@ -103,6 +103,38 @@ func TestCrawler_FetchesAndExtractsText(t *testing.T) {
 	}
 }
 
+func TestCrawler_RejectsOversizedResponse(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", maxCrawlerResponseBytes+1)))
+	}))
+	defer srv.Close()
+
+	loopbackResolver := func(rawURL string) (string, net.IP, error) {
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			return "", nil, err
+		}
+		host := u.Hostname()
+		return host, net.ParseIP(host), nil
+	}
+	c := NewCrawlerTool().WithResolver(loopbackResolver)
+	out, err := c.InvokableRun(ctx, `{"query":`+jsonString(srv.URL)+`}`)
+	if err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("err = %v, want response too large", err)
+	}
+
+	var got crawlerResult
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	}
+	if !strings.Contains(got.Error, "response too large") {
+		t.Fatalf("_ERROR = %q, want response too large", got.Error)
+	}
+}
+
 func TestCrawler_RejectsMaxDepthGreaterThanZero(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

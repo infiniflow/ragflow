@@ -43,6 +43,48 @@ from rag.prompts.generator import content_tagging, gen_metadata, keyword_extract
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
 
+# Elasticsearch keyword fields reject terms whose UTF-8 encoding exceeds
+# 32766 bytes. Split oversized terms so ingestion never fails because a
+# malformed LLM response produced a single huge "keyword".
+_ES_KEYWORD_MAX_TERM_BYTES = 32766
+
+
+def _sanitize_keyword_term(term: str) -> list[str]:
+    """Return keyword pieces that fit into an Elasticsearch keyword field.
+
+    If ``term`` is small enough it is returned as-is. Otherwise it is
+    truncated at a character boundary so the UTF-8 encoding never exceeds
+    the ES keyword limit. This avoids corrupting multi-byte characters by
+    slicing raw bytes.
+    """
+    term = term.strip()
+    if not term:
+        return []
+    term_byte_length = len(term.encode("utf-8"))
+    if term_byte_length <= _ES_KEYWORD_MAX_TERM_BYTES:
+        return [term]
+
+    logging.warning(
+        "Sanitizing oversized keyword term (%d bytes, limit %d)",
+        term_byte_length,
+        _ES_KEYWORD_MAX_TERM_BYTES,
+    )
+    length = 0
+    end = 0
+    for index, character in enumerate(term):
+        character_bytes = len(character.encode("utf-8"))
+        if length + character_bytes > _ES_KEYWORD_MAX_TERM_BYTES:
+            end = index
+            break
+        length += character_bytes
+    else:
+        end = len(term)
+    truncated = term[:end].rstrip()
+    if not truncated:
+        return []
+    return [truncated]
+
+
 async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:
     """Extract keywords for chunks.
 
@@ -67,7 +109,7 @@ async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", cached) if k.strip()]
+                d["important_kwd"] = [kw for k in re.split(r"[,，;；、\r\n]+", cached) for kw in _sanitize_keyword_term(k)]
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
 

@@ -52,7 +52,7 @@ type SearchBotRetrievalTestRequest struct {
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
-	PrefetchSize           *int                   `json:"prefetch_size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -510,7 +510,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 		Question:               h.Question,
 		Page:                   h.Page,
 		Size:                   h.Size,
-		PrefetchSize:           h.PrefetchSize,
+		RerankCandidatesCount:  h.RerankCandidatesCount,
 		DocIDs:                 h.DocIDs,
 		UseKG:                  h.UseKG,
 		TopK:                   h.TopK,

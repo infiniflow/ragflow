@@ -24,7 +24,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 from uuid import UUID
 
 from quart import Request
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator, ValidationInfo
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator, ValidationInfo
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
@@ -982,7 +982,8 @@ class SearchDatasetReq(BaseModel):
     doc_ids: Annotated[list[str], Field(default=[])]
     page: Annotated[int, Field(default=1, ge=1)]
     size: Annotated[int, Field(default=30, ge=1)]
-    top_k: Annotated[int, Field(default=1024, ge=1)]
+    knn_top_k: Annotated[int, Field(default=1024, ge=1, le=2048, validation_alias=AliasChoices("knn_top_k", "top_k"))]
+    knn_num_candidates: Annotated[int, Field(default=2048, ge=1, le=10000)]
     similarity_threshold: Annotated[float, Field(default=0.0, ge=0.0, le=1.0)]
     vector_similarity_weight: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
     use_kg: Annotated[bool, Field(default=False)]
@@ -993,6 +994,12 @@ class SearchDatasetReq(BaseModel):
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
     include_knowledge_compilation: Annotated[bool, Field(default=True)]
+
+    @model_validator(mode="after")
+    def validate_knn_parameters(self):
+        if self.knn_num_candidates < self.knn_top_k:
+            raise ValueError("knn_num_candidates must be greater than or equal to knn_top_k")
+        return self
 
 
 class SearchDatasetsReq(BaseModel):
@@ -1005,7 +1012,8 @@ class SearchDatasetsReq(BaseModel):
     doc_ids: Annotated[list[str], Field(default=[])]
     page: Annotated[int, Field(default=1, ge=1)]
     size: Annotated[int, Field(default=30, ge=1)]
-    top_k: Annotated[int, Field(default=1024, ge=1)]
+    knn_top_k: Annotated[int, Field(default=1024, ge=1, le=2048, validation_alias=AliasChoices("knn_top_k", "top_k"))]
+    knn_num_candidates: Annotated[int, Field(default=2048, ge=1, le=10000)]
     similarity_threshold: Annotated[float, Field(default=0.0, ge=0.0, le=1.0)]
     vector_similarity_weight: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
     use_kg: Annotated[bool, Field(default=False)]
@@ -1016,6 +1024,12 @@ class SearchDatasetsReq(BaseModel):
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
     include_knowledge_compilation: Annotated[bool, Field(default=True)]
+
+    @model_validator(mode="after")
+    def validate_knn_parameters(self):
+        if self.knn_num_candidates < self.knn_top_k:
+            raise ValueError("knn_num_candidates must be greater than or equal to knn_top_k")
+        return self
 
 
 class BaseListReq(BaseModel):
