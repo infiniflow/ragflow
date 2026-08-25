@@ -520,7 +520,8 @@ func (h *AgentHandler) runWebhookDetached(
 			zap.String("canvas", cv.ID),
 			zap.Error(err))
 		if isTest {
-			appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, webhookStartErrorEvent(err, sessionID))
+			h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 		}
 		return
 	}
@@ -528,9 +529,19 @@ func (h *AgentHandler) runWebhookDetached(
 		if ev.SessionID == "" {
 			ev.SessionID = sessionID
 		}
+		terminal := isWebhookTerminalEvent(ev)
 		if isTest {
-			appendWebhookTrace(ctx, cv.ID, startTs, ev)
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
 		}
+		if terminal {
+			if isTest {
+				h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+			}
+			return
+		}
+	}
+	if isTest {
+		h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, true)
 	}
 }
 
@@ -552,17 +563,13 @@ func (h *AgentHandler) runWebhookSync(
 	ctx = service.WithAgentSessionID(ctx, sessionID)
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
+		errorEvent := webhookStartErrorEvent(err, sessionID)
 		if isTest {
-			appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
-			appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": false})})
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, errorEvent)
+			h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 		}
-		return webhookSyncResult{status: http.StatusBadRequest, body: gin.H{
-			"code":       400,
-			"message":    err.Error(),
-			"success":    false,
-			"task_id":    sessionID,
-			"session_id": sessionID,
-		}}
+		code, message := mapAgentError(err)
+		return newWebhookFailureResult(webhookHTTPStatusForAgentError(code, err), message, sessionID)
 	}
 
 	contents := []string{}
@@ -570,8 +577,15 @@ func (h *AgentHandler) runWebhookSync(
 		if ev.SessionID == "" {
 			ev.SessionID = sessionID
 		}
+		if result, terminal := webhookTerminalResult(ev, sessionID); terminal {
+			if isTest {
+				h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
+				h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+			}
+			return result
+		}
 		if isTest {
-			appendWebhookTrace(ctx, cv.ID, startTs, ev)
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 		}
 		switch ev.Type {
 		case "message":
@@ -602,7 +616,7 @@ func (h *AgentHandler) runWebhookSync(
 	}
 	final := strings.Join(contents, "")
 	if isTest {
-		appendWebhookTrace(ctx, cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": true})})
+		h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, true)
 	}
 	return webhookSyncResult{status: status, body: gin.H{
 		"message":    final,
@@ -611,6 +625,112 @@ func (h *AgentHandler) runWebhookSync(
 		"task_id":    sessionID,
 		"session_id": sessionID,
 	}}
+}
+
+func webhookStartErrorEvent(err error, sessionID string) canvas.RunEvent {
+	code, message := mapAgentError(err)
+	payload := canvas.ErrorEvent{Message: message}
+	if code == common.CodeServerError {
+		payload.Kind = canvas.RunErrorKindInternal
+	}
+	return canvas.RunEvent{
+		Type:      "error",
+		SessionID: sessionID,
+		Data:      mustJSON(payload),
+	}
+}
+
+func webhookHTTPStatusForAgentError(code common.ErrorCode, err error) int {
+	switch {
+	case code == common.CodeServerError:
+		return http.StatusInternalServerError
+	case errors.Is(err, service.ErrAgentSessionBusy):
+		return http.StatusConflict
+	case code == common.CodeOperatingError:
+		return http.StatusForbidden
+	default:
+		return http.StatusBadRequest
+	}
+}
+
+func webhookTerminalResult(ev canvas.RunEvent, sessionID string) (webhookSyncResult, bool) {
+	switch ev.Type {
+	case "error":
+		return newWebhookFailureResult(
+			http.StatusInternalServerError,
+			agentRunEventMessage(ev, "Agent run failed."),
+			sessionID,
+		), true
+	case "cancelled":
+		return newWebhookFailureResult(
+			http.StatusConflict,
+			agentRunEventMessage(ev, "Agent run was cancelled."),
+			sessionID,
+		), true
+	case "waiting_for_user":
+		return newWebhookFailureResult(
+			http.StatusConflict,
+			agentWaitingForUserMessage(ev),
+			sessionID,
+		), true
+	default:
+		return webhookSyncResult{}, false
+	}
+}
+
+func newWebhookFailureResult(status int, message, sessionID string) webhookSyncResult {
+	return webhookSyncResult{status: status, body: gin.H{
+		"code":       status,
+		"message":    message,
+		"success":    false,
+		"task_id":    sessionID,
+		"session_id": sessionID,
+	}}
+}
+
+func isWebhookTerminalEvent(ev canvas.RunEvent) bool {
+	switch ev.Type {
+	case "error", "cancelled", "waiting_for_user":
+		return true
+	default:
+		return false
+	}
+}
+
+func sanitizeWebhookTraceEvent(ev canvas.RunEvent) canvas.RunEvent {
+	if ev.Type != "error" {
+		return ev
+	}
+	var payload canvas.ErrorEvent
+	if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil || payload.Kind != canvas.RunErrorKindInternal {
+		return ev
+	}
+	payload.Message = canvas.InternalRunErrorMessage
+	ev.Data = mustJSON(payload)
+	return ev
+}
+
+func (h *AgentHandler) appendWebhookRunTrace(
+	ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent,
+) {
+	if h.webhookTraceAppender != nil {
+		h.webhookTraceAppender(ctx, agentID, startTs, ev)
+		return
+	}
+	appendWebhookTrace(ctx, agentID, startTs, ev)
+}
+
+func (h *AgentHandler) appendWebhookFinishedTrace(
+	ctx context.Context, agentID string, startTs time.Time, sessionID string, success bool,
+) {
+	h.appendWebhookRunTrace(ctx, agentID, startTs, canvas.RunEvent{
+		Type:      "finished",
+		SessionID: sessionID,
+		Data: mustJSON(map[string]any{
+			"elapsed_time": time.Since(startTs).Seconds(),
+			"success":      success,
+		}),
+	})
 }
 
 // mustJSON marshals v to a JSON object string. Used by trace appenders;
