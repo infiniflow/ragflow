@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import codecs
 import copy
 import logging
 import random
@@ -151,25 +152,34 @@ all_codecs = [
 
 
 def find_codec(blob):
-    detected = chardet.detect(blob[:1024])
-    encoding = detected['encoding']
-    if encoding and detected['confidence'] > 0.5:
-        if encoding.lower() == "ascii":
-            return "utf-8"
-        # Honor a confident detection when it actually decodes the sample.
-        # Otherwise the brute-force loop below returns the first codec that
-        # does not raise, and legacy single-byte codecs (e.g. cp037) decode
-        # arbitrary bytes without error, yielding garbage text.
+    sample = blob[:1024]
+
+    # A blob that decodes as UTF-8 is UTF-8; nothing else needs to be guessed.
+    # Check this first because chardet can report a confident single-byte guess
+    # for short UTF-8 text, and callers decode with errors="ignore", so a wrong
+    # codec is silently lossy instead of raising.
+    try:
+        codecs.getincrementaldecoder("utf-8")().decode(sample)
+        return "utf-8"
+    except UnicodeDecodeError:
+        pass
+
+    detected = chardet.detect(sample)
+    encoding = detected["encoding"]
+    if encoding:
+        # Honor the detection whenever it decodes the sample. The loop below
+        # returns the first codec that does not raise, and legacy single-byte
+        # codecs (cp037, utf_16) decode arbitrary bytes without error, so a
+        # low-confidence detection still beats the loop's first non-raising hit.
         try:
-            blob[:1024].decode(encoding)
+            sample.decode(encoding)
             return encoding
         except (UnicodeDecodeError, LookupError) as e:
-            logging.debug("find_codec: confident detection %r (%.2f) did not decode the sample, "
-                          "falling back to brute force: %s", encoding, detected['confidence'], e)
+            logging.debug("find_codec: detection %r (%.2f) did not decode the sample: %s", encoding, detected["confidence"] or 0.0, e)
 
     for c in all_codecs:
         try:
-            blob[:1024].decode(c)
+            sample.decode(c)
             return c
         except Exception:
             pass

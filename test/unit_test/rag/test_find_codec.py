@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import codecs
 import sys
 import types
 
@@ -87,3 +88,66 @@ def test_find_codec_utf8_roundtrips(find_codec):
     text = "Lorem ipsum UTF-8 sample 日本語 and Ελληνικά mixed together."
     blob = text.encode("utf-8")
     assert blob.decode(find_codec(blob)) == text
+
+
+@pytest.mark.p2
+def test_find_codec_utf8_emoji_roundtrips(find_codec):
+    # Regression: the repo-pinned chardet 5.2.0 reports Windows-1254 at 0.56
+    # confidence, so trusting it before checking UTF-8 mis-decodes this blob.
+    text = "Sales are up 20% this quarter \U0001f4c8\U0001f680"
+    blob = text.encode("utf-8")
+    assert blob.decode(find_codec(blob)) == text
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "text, encoding",
+    [
+        ("Ежедневный отчет о продажах за прошлую неделю показывает рост.", "cp1251"),
+        ("Η ετήσια έκθεση πωλήσεων δείχνει σημαντική αύξηση στα έσοδα.", "cp1253"),
+    ],
+)
+def test_find_codec_uses_low_confidence_detection(find_codec, monkeypatch, text, encoding):
+    # The old code gated on confidence > 0.5, so a correct detection below the
+    # gate was discarded and the brute-force loop returned utf_16 instead,
+    # which mis-decodes. Both samples are verified not to decode as UTF-8, so
+    # the UTF-8 check does not short-circuit.
+    nlp = sys.modules["rag.nlp"]
+    monkeypatch.setattr(
+        nlp.chardet,
+        "detect",
+        lambda blob: {"encoding": encoding, "confidence": 0.3},
+    )
+    blob = text.encode(encoding)
+    with pytest.raises(UnicodeDecodeError):
+        blob.decode("utf-8")
+    assert find_codec(blob) == encoding
+    assert blob.decode(find_codec(blob)) == text
+
+
+@pytest.mark.p2
+def test_find_codec_invalid_detected_codec_falls_back(find_codec, monkeypatch):
+    # This covers the LookupError fallback; it need not fail against old code.
+    nlp = sys.modules["rag.nlp"]
+    monkeypatch.setattr(
+        nlp.chardet,
+        "detect",
+        lambda blob: {"encoding": "not-a-real-codec", "confidence": 0.99},
+    )
+    blob = "Ελληνικά".encode("cp1253")
+    codec = find_codec(blob)
+    codecs.lookup(codec)
+    assert isinstance(blob.decode(codec), str)
+
+
+@pytest.mark.p2
+def test_find_codec_utf8_wins_over_confident_wrong_detection(find_codec, monkeypatch):
+    # These UTF-8 bytes are valid cp1254, so old code returns the wrong guess.
+    nlp = sys.modules["rag.nlp"]
+    monkeypatch.setattr(
+        nlp.chardet,
+        "detect",
+        lambda blob: {"encoding": "cp1254", "confidence": 0.99},
+    )
+    blob = "Ελληνικά".encode("utf-8")
+    assert find_codec(blob) == "utf-8"
