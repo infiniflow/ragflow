@@ -21,15 +21,15 @@ func TestLooksLikeWatermarkCandidate(t *testing.T) {
 		{"G0", true},
 		{"md24", true},
 		// Edge cases.
-		{"", false},         // empty
-		{"a", false},        // too short
-		{"abc", false},      // no digit
-		{"ABC", false},      // no digit, no lower
-		{"123", false},      // no letter
-		{"abc123", true},    // lowercase + digit
-		{"ABC123", true},    // uppercase + digit
-		{"Abcdef", false},   // no digit
-		{"hello world", false}, // whitespace
+		{"", false},                      // empty
+		{"a", false},                     // too short
+		{"abc", false},                   // no digit
+		{"ABC", false},                   // no digit, no lower
+		{"123", false},                   // no letter
+		{"abc123", true},                 // lowercase + digit
+		{"ABC123", true},                 // uppercase + digit
+		{"Abcdef", false},                // no digit
+		{"hello world", false},           // whitespace
 		{strings.Repeat("A", 65), false}, // too long
 	}
 	for _, tc := range cases {
