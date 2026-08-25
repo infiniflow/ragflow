@@ -614,8 +614,11 @@ class SelfManagedProvider(SandboxProvider):
                 "label": "API Endpoint",
                 "placeholder": "http://sandbox-executor-manager:9385"
             },
-            # Deployment-level: the value reported here comes from the environment
-            # sandbox-executor-manager was started with, and the UI renders it read-only.
+            # Deployment-level: the pool is sized by SANDBOX_EXECUTOR_MANAGER_POOL_SIZE in the
+            # sandbox-executor-manager environment, not by this field, and the UI renders it
+            # read-only. The default below is read from the RAGFlow server's own environment and
+            # falls back to 3, so it can disagree with the manager's actual pool. The standalone
+            # compose file starts that service with 5, and the manager's own in-code fallback is 1.
             "executor_manager_pool_size": {
                 "type": "integer",
                 "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "3")),
