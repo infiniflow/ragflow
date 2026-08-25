@@ -128,12 +128,17 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
     return sections, tables, pdf_parser
 
 
-def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None) -> tuple[Callable, str, Any, str, Any]:
+def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layout_recognize_override: str | None = None) -> tuple[Callable, str, Any, str, Any]:
     """Resolve the PDF parser callable for the current ``parser_config``.
 
     Returns a 5-tuple ``(parser_callable, parser_name, layout_recognizer,
     opendataloader_llm_name, parser_model_name)`` so the dispatch logic
     stays testable in isolation (issue #17114).
+
+    ``layout_recognize_override`` lets callers pass an already-resolved
+    layout_recognize value (e.g. a UUID resolved via
+    :func:`get_composite_model_name_by_id`) so the dispatch doesn't
+    re-read the stale UUID from ``parser_config`` and re-normalize it.
 
     When ``layout_recognize`` is a value that does not match any known parser
     name — typically a stale ``TenantModel`` UUID stored on the document —
@@ -142,7 +147,12 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None) -> t
     to :func:`by_plaintext`, which would otherwise try to resolve the UUID
     as an IMAGE2TEXT vision model and crash.
     """
-    layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+    raw_layout_recognize = (
+        layout_recognize_override
+        if layout_recognize_override is not None
+        else parser_config.get("layout_recognize", "DeepDOC")
+    )
+    layout_recognizer, parser_model_name = normalize_layout_recognizer(raw_layout_recognize)
     if layout_recognizer == "OpenDataLoader" and parser_model_name:
         opendataloader_llm_name = parser_model_name
 
@@ -1110,7 +1120,13 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 pass
         layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
-        parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(parser_config, opendataloader_llm_name)
+        # Pass the resolved layout_recognize (after get_composite_model_name_by_id
+        # turned a TenantModel UUID into a "<model>@<instance>@<provider>" form) so
+        # the dispatch doesn't re-read the stale UUID from parser_config and
+        # fall back through to by_mineru / by_plaintext (issue #17114 review).
+        parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(
+            parser_config, opendataloader_llm_name, layout_recognize_override=layout_recognizer,
+        )
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_pdf(binary)

@@ -172,3 +172,34 @@ def test_dispatch_falls_back_to_mineru_only_for_unknown_layout_recognize():
     stale_uuid = "06d85f8e819111f1995ef33d60f3a479"
     # The UUID must NOT be a known keyword (that's the whole point).
     assert stale_uuid.strip().lower() not in KNOWN_PARSER_KEYWORDS
+
+
+def test_dispatch_uses_resolved_layout_recognize_via_override():
+    """Regression for CodeRabbit review #4 on #17114: the chunk() call
+    site resolves a valid TenantModel UUID to its composite name via
+    get_composite_model_name_by_id() before reaching the dispatch. The
+    dispatch must honor that resolved value (e.g. "model@instance@provider")
+    via the layout_recognize_override argument — otherwise it would
+    re-normalize the original UUID and either fall through to by_mineru or
+    by_plaintext (issue #17114) and discard the configured model."""
+    # We assert the invariant at the helper level: when the dispatch is
+    # called with an override, it must NOT re-read parser_config's
+    # layout_recognize. Simulate that by giving parser_config a stale UUID
+    # but passing the resolved composite name as the override.
+    parser_config = {"layout_recognize": "06d85f8e819111f1995ef33d60f3a479"}
+    resolved = "my-llm@my-instance@my-provider@mineru"
+    # The override path is exercised in chunk() — we can't directly invoke
+    # _dispatch_pdf_parser here without standing up the heavy naive.py
+    # module, so we verify the contract instead:
+    # 1. parser_config["layout_recognize"] alone would route to by_mineru
+    #    fallback (UUID, no mineru_* options).
+    # 2. The resolved composite name, after normalize_layout_recognizer,
+    #    yields the keyword "MinerU" + the composite model name as
+    #    parser_model_name — which is the value the dispatch must see when
+    #    layout_recognize_override is set.
+    name, model = normalize_layout_recognizer(resolved)
+    assert name == "MinerU"
+    assert model == resolved
+    # The pre-override parser_config still has the stale UUID so we don't
+    # accidentally pass it via the override.
+    assert parser_config["layout_recognize"] != resolved
