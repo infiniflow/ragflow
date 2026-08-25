@@ -17,7 +17,6 @@
 package service
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -204,6 +203,7 @@ func TestExtractVisibleAnswer_StrayTag(t *testing.T) {
 }
 
 func TestStreamThinkTagDelta(t *testing.T) {
+	ctx := t.Context()
 	chunks := []string{"hello ", "wor", "<think>", "think text", "</think>", "ld", " final"}
 	ch := make(chan string, len(chunks))
 	for _, c := range chunks {
@@ -213,7 +213,7 @@ func TestStreamThinkTagDelta(t *testing.T) {
 
 	var texts []string
 	var markers []string
-	for d := range StreamThinkTagDelta(context.Background(), ch, 16) {
+	for d := range StreamThinkTagDelta(ctx, ch, 16) {
 		switch d.Kind {
 		case ThinkDeltaText:
 			texts = append(texts, d.Value)
@@ -239,6 +239,7 @@ func TestStreamThinkTagDelta(t *testing.T) {
 }
 
 func TestStreamThinkTagDelta_IncrementalFlush(t *testing.T) {
+	ctx := t.Context()
 	chunks := []string{"1234", "5678", "90ab"}
 	ch := make(chan string, len(chunks))
 	for _, c := range chunks {
@@ -247,7 +248,7 @@ func TestStreamThinkTagDelta_IncrementalFlush(t *testing.T) {
 	close(ch)
 
 	var texts []string
-	for d := range StreamThinkTagDelta(context.Background(), ch, 1) {
+	for d := range StreamThinkTagDelta(ctx, ch, 1) {
 		if d.Kind == ThinkDeltaText {
 			texts = append(texts, d.Value)
 		}
@@ -258,6 +259,7 @@ func TestStreamThinkTagDelta_IncrementalFlush(t *testing.T) {
 }
 
 func TestStreamThinkTagDelta_NoThinkTags(t *testing.T) {
+	ctx := t.Context()
 	chunks := []string{"just", " plain", " text"}
 	ch := make(chan string, len(chunks))
 	for _, c := range chunks {
@@ -266,7 +268,7 @@ func TestStreamThinkTagDelta_NoThinkTags(t *testing.T) {
 	close(ch)
 
 	var texts []string
-	for d := range StreamThinkTagDelta(context.Background(), ch, 4) {
+	for d := range StreamThinkTagDelta(ctx, ch, 4) {
 		texts = append(texts, d.Value)
 	}
 
@@ -277,6 +279,7 @@ func TestStreamThinkTagDelta_NoThinkTags(t *testing.T) {
 }
 
 func TestStreamThinkTagDelta_DeferredClose(t *testing.T) {
+	ctx := t.Context()
 	// When </think> has no visible text after it, the marker is deferred.
 	chunks := []string{"<think>", "hello", "</think>", "world"}
 	ch := make(chan string, len(chunks))
@@ -286,7 +289,7 @@ func TestStreamThinkTagDelta_DeferredClose(t *testing.T) {
 	close(ch)
 
 	var markers []string
-	for d := range StreamThinkTagDelta(context.Background(), ch, 1) {
+	for d := range StreamThinkTagDelta(ctx, ch, 1) {
 		if d.Kind == ThinkDeltaMarker {
 			markers = append(markers, d.Value)
 		}

@@ -35,7 +35,7 @@ func NewMinerUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerUModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -56,11 +56,11 @@ func (m *MinerUModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	return fmt.Errorf("%s no such method", m.Name())
 }
 
-func (m *MinerUModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *MinerUModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
-func (m *MinerUModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (m *MinerUModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
@@ -93,7 +93,45 @@ func (m *MinerUModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 }
 
 func (m *MinerUModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+
+	// Use the doc_parse endpoint with a dummy task ID to verify connectivity
+	// and authentication. The API returns 401/403 for invalid credentials,
+	// or 404 (task not found) when the key is valid but the task doesn't
+	// exist — both cases confirm the server is reachable.
+	apiURL := fmt.Sprintf("%s/api/v4/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := m.baseModel.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("authentication failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Non-auth errors (e.g. 404) indicate the server is reachable and
+	// credentials are valid.
+	return nil
 }
 
 type mineruTaskSubmitResponse struct {

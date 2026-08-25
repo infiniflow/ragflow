@@ -37,7 +37,7 @@ import (
 	"time"
 )
 
-// Show server version to show RAGFlow server version
+// APIShowVersionCommand show RAGFlow server version
 // Returns benchmark result map if iterations > 1, otherwise prints status
 func (c *CLI) APIShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
@@ -71,160 +71,6 @@ func (c *CLI) APIShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 
 	return &result, nil
-}
-
-func (c *CLI) ListConfigs(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-	// Get iterations from command params (for benchmark)
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-
-	if iterations > 1 {
-		// Benchmark mode: multiple iterations
-		return httpClient.RequestWithIterations("GET", "/system/configs", "web", nil, nil, iterations)
-	}
-
-	// Single mode
-	resp, err := httpClient.Request("GET", "/system/configs", "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list configs: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list configs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var response CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &response); err != nil {
-		return nil, fmt.Errorf("list configs failed: invalid JSON (%w)", err)
-	}
-
-	var result CommonResponse
-	result.Code = 0
-	result.Data, err = GetConfigs(&response.Data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list configs: %w", err)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-func GetConfigs(config *map[string]interface{}) ([]map[string]interface{}, error) {
-	if config == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	result := []map[string]interface{}{}
-	{
-		redisHost := GetHost(config, "Redis", "Host", "Port")
-		result = append(result, map[string]interface{}{
-			"key":   "redis_host",
-			"value": redisHost})
-	}
-	{
-		if docEngine, ok := (*config)["DocEngine"].(map[string]interface{}); ok {
-			engineType, _ := docEngine["Type"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "doc_engine",
-				"value": engineType})
-			if engineType == "elasticsearch" {
-				esCfg, _ := docEngine["ES"].(map[string]interface{})
-				esHost, _ := esCfg["Hosts"].(string)
-				result = append(result, map[string]interface{}{
-					"key":   "elasticsearch_host",
-					"value": esHost})
-			} else if engineType == "Infinity" {
-				infinityCfg, _ := docEngine["Infinity"].(map[string]interface{})
-				infinityHost, _ := infinityCfg["URI"]
-				result = append(result, map[string]interface{}{
-					"key":   "infinity_host",
-					"value": infinityHost})
-			} else {
-				return nil, fmt.Errorf("unknown doc engine: %s", engineType)
-			}
-		}
-	}
-	{
-		if logConfig, ok := (*config)["Log"].(map[string]interface{}); ok {
-			level, _ := logConfig["Level"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "log_level",
-				"value": level})
-		}
-	}
-	{
-		if databaseConfig, ok := (*config)["Database"].(map[string]interface{}); ok {
-			driver, _ := databaseConfig["Driver"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "database",
-				"value": driver})
-			driverAddr, _ := databaseConfig["Host"].(string)
-			driverPort, _ := databaseConfig["Port"].(float64)
-			driverHost := fmt.Sprintf("%s:%0.f", driverAddr, driverPort)
-			result = append(result, map[string]interface{}{
-				"key":   "database_host",
-				"value": driverHost})
-		}
-	}
-	{
-		if language, ok := (*config)["Language"].(map[string]interface{}); ok {
-			result = append(result, map[string]interface{}{
-				"key":   "language",
-				"value": language})
-		}
-	}
-	{
-		if adminConfig, ok := (*config)["Admin"].(map[string]interface{}); ok {
-			adminAddr, _ := adminConfig["Host"].(string)
-			adminPort, _ := adminConfig["Port"].(float64)
-			adminHost := fmt.Sprintf("%s:%0.f", adminAddr, adminPort)
-			result = append(result, map[string]interface{}{
-				"key":   "admin",
-				"value": adminHost})
-		}
-	}
-	{
-		if storageEngineConfig, ok := (*config)["StorageEngine"].(map[string]interface{}); ok {
-			engineType, _ := storageEngineConfig["Type"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "storage_engine",
-				"value": engineType})
-			if engineType == "minio" {
-				minioCfg, _ := storageEngineConfig["Minio"].(map[string]interface{})
-				miniHost, _ := minioCfg["Host"].(string)
-				result = append(result, map[string]interface{}{
-					"key":   "minio_host",
-					"value": miniHost})
-			} else {
-				return nil, fmt.Errorf("unknown storage engine: %s", engineType)
-			}
-		}
-	}
-	return result, nil
-}
-
-func GetHost(config *map[string]interface{}, serverType, address, port string) string {
-	if config == nil {
-		return ""
-	}
-
-	result := ""
-
-	if redis, ok := (*config)[serverType].(map[string]interface{}); ok {
-		serverAddr, hostOk := redis[address].(string)
-		serverPort, portOk := redis[port].(float64)
-
-		if hostOk && portOk {
-			result = fmt.Sprintf("%s:%.0f", serverAddr, serverPort)
-		}
-	}
-
-	return result
 }
 
 func (c *CLI) APISetLogLevelCommand(cmd *Command) (ResponseIf, error) {
@@ -3619,6 +3465,76 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonResponse(resp, "list ingestion tasks")
+}
+
+// APIListSyncLogsCommand lists sync logs (user mode).
+// LIST SYNC_LOGS; lists the sync logs of all datasets.
+// LIST SYNC_LOGS FROM 'dataset_id'; and LIST DATASET 'dataset_name' SYNC_LOGS;
+// restrict the listing to one dataset.
+func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetID := ""
+	if rawID, ok := cmd.Params["dataset_id"].(string); ok {
+		datasetID = strings.TrimSpace(rawID)
+	}
+	if datasetName, ok := cmd.Params["dataset_name"].(string); ok && datasetName != "" {
+		id, err := c.getDatasetID(datasetName)
+		if err != nil {
+			return nil, err
+		}
+		datasetID = id
+	}
+
+	url := "/connectors/sync_logs"
+	query := netUrl.Values{}
+	if datasetID != "" {
+		query.Set("dataset_id", datasetID)
+	}
+	page, hasPage := cmd.Params["page"].(int)
+	pageSize, hasPageSize := cmd.Params["page_size"].(int)
+	switch {
+	case hasPage && hasPageSize:
+		query.Set("page", fmt.Sprintf("%d", page))
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	case hasPage:
+		query.Set("page", fmt.Sprintf("%d", page))
+	case hasPageSize:
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	default:
+		// No pagination requested: ask the API for every matching row.
+		query.Set("page_size", "0")
+	}
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sync logs: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list sync logs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListSyncLogsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list sync logs failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
 }
 
 // APIShowLogLevelCommand sets the log level for the system.

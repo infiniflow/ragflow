@@ -1,5 +1,7 @@
 export interface ITestRetrievalRequestBody {
   question: string;
+  size: number;
+  prefetch_size: number;
   similarity_threshold: number;
   vector_similarity_weight: number;
   rerank_id?: string;
@@ -58,6 +60,8 @@ export interface IFetchArtifactTopicListRequestParams {
 
 export interface IFetchArtifactGraphRequestParams {
   node?: string;
+  keywords?: string;
+  top_n?: number;
 }
 
 export interface IUpdateArtifactPageRequestBody {

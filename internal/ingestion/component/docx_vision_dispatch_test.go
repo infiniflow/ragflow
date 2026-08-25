@@ -17,12 +17,15 @@ package component
 
 import (
 	"context"
+	"ragflow/internal/dao"
 	"sync"
 	"testing"
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // docxVisionFakeDriver satisfies modelModule.ModelDriver but never reaches the
@@ -66,25 +69,29 @@ func (c *docxVisionCaptureInvoker) invoke(
 // TestMaybeDispatchDOCXVision_EnhancesJSONImages verifies Diff 2.4: DOCX vision
 // enhancement must trigger on the JSON output path (like Python's
 // enhance_media_sections_with_vision in parser.py:_doc) and must NOT trigger on
-// the markdown path. Image items with a non-empty `image` field get their VLM
+// the Markdown path. Image items with a non-empty `image` field get their VLM
 // description appended to `text`; table items (no image) and text items are
 // left untouched.
 func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker
-	origPrompt := docxVisionPromptBuilder
+	origPrompt := figureVisionPromptBuilder
 	defer func() {
 		resolveTenantModelByType = origResolver
 		visionChatInvoker = origInvoker
-		docxVisionPromptBuilder = origPrompt
+		figureVisionPromptBuilder = origPrompt
 	}()
 
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return &docxVisionFakeDriver{}, "docx-vision-model", &modelModule.APIConfig{}, 0, nil
 	}
 	invoker := &docxVisionCaptureInvoker{}
 	visionChatInvoker = invoker.invoke
-	docxVisionPromptBuilder = func(string, string) (string, error) { return "describe the figure", nil }
+	var capturedLanguage string
+	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
+		capturedLanguage = language
+		return "describe the figure", nil
+	}
 
 	dispatched := parserDispatchResult{
 		OutputFormat: "json",
@@ -95,12 +102,14 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 			{"text": "<table></table>", "image": nil, "doc_type_kwd": "table"},
 		},
 	}
+	ctx := t.Context()
 
 	res, handled, err := maybeDispatchDOCXVision(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
+		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		defaultSetups(),
 	)
 	if err != nil {
@@ -125,14 +134,17 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	if len(invoker.images) != 1 {
 		t.Fatalf("vision invoker called %d times, want 1 (only the image item)", len(invoker.images))
 	}
+	if capturedLanguage != "Japanese" {
+		t.Errorf("figure prompt language = %q, want Japanese", capturedLanguage)
+	}
 	if want := "data:image/png;base64,aGVsbG8taW1hZ2U="; invoker.images[0] != want {
 		t.Errorf("vision image data URI = %q, want %q", invoker.images[0], want)
 	}
 }
 
-// TestMaybeDispatchDOCXVision_JSONOnly verifies Diff 2.4: the markdown output
+// TestMaybeDispatchDOCXVision_JSONOnly verifies Diff 2.4: the Markdown output
 // path must NOT be enhanced (Python's markdown/docx branch performs no vision
-// enrichment). A markdown result with embedded figures is returned untouched.
+// enrichment). A Markdown result with embedded figures is returned untouched.
 func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker
@@ -142,7 +154,7 @@ func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 	}()
 
 	called := false
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		called = true
 		return &docxVisionFakeDriver{}, "m", &modelModule.APIConfig{}, 0, nil
 	}
@@ -158,9 +170,11 @@ func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 		Markdown:     "![Image](data:image/png;base64,abc)",
 		File:         map[string]any{"figures": []map[string]any{{"image": "abc", "marker": "x"}}},
 	}
+	ctx := t.Context()
 
 	res, handled, err := maybeDispatchDOCXVision(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
 		map[string]any{"tenant_id": "t1"},

@@ -49,7 +49,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 	}
 	apiKey := strings.TrimSpace(parser.DoclingAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvDoclingApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvDoclingAPIKey))
 	}
 
 	baseURL := strings.TrimRight(serverURL, "/")
@@ -88,7 +88,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 	var lastErr error
 	for _, candidate := range payloads {
 		url := baseURL + candidate.endpoint
-		resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(), url, auth, candidate.body())
+		resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(false), url, auth, candidate.body())
 		if err != nil {
 			lastErr = fmt.Errorf("%s: %w", candidate.endpoint, err)
 			continue

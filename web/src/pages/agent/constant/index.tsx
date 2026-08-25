@@ -87,14 +87,13 @@ export enum RetrievalFrom {
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
+  prefetch_size: 64,
   top_k: 1024,
   kb_ids: [],
   rerank_id: '',
   empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
-  use_kg: false,
-  toc_enhance: false,
   cross_languages: [],
   retrieval_from: RetrievalFrom.Dataset,
   outputs: {
@@ -572,6 +571,48 @@ export const initialTavilyValues = {
   },
 };
 
+export const initialQueritValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  count: 10,
+  chunks_per_doc: 3,
+  site_include: [],
+  site_exclude: [],
+  time_range: '',
+  country_include: [],
+  language_include: [],
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
+export enum QueritContentFormat {
+  Text = 'text',
+  Markdown = 'markdown',
+  Html = 'html',
+}
+
+export const initialQueritContentsValues = {
+  api_key: '',
+  urls: '',
+  format: QueritContentFormat.Markdown,
+  crawl_timeout: 10,
+  extras_meta: false,
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
 export enum TavilyExtractDepth {
   Basic = 'basic',
   Advanced = 'advanced',
@@ -722,6 +763,8 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.QueritContents]: [Operator.Begin],
+  [Operator.QueritSearch]: [Operator.Begin],
   [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
@@ -736,7 +779,7 @@ export const RestrictedUpstreamMap = {
   [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
-  [Operator.Compilation]: [Operator.Begin],
+  [Operator.Compiler]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
@@ -777,6 +820,8 @@ export const NodeMap = {
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.QueritContents]: 'ragNode',
+  [Operator.QueritSearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',
   [Operator.TavilyExtract]: 'ragNode',
@@ -787,7 +832,7 @@ export const NodeMap = {
   [Operator.TokenChunker]: 'chunkerNode',
   [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
-  [Operator.Compilation]: 'compilationNode',
+  [Operator.Compiler]: 'compilationNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
@@ -834,7 +879,7 @@ export const NoDebugOperatorsList = [
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
-  Operator.Compilation,
+  Operator.Compiler,
   Operator.Tool,
   Operator.Loop,
 ];
@@ -846,7 +891,7 @@ export const NoCopyOperatorsList = [
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
-  Operator.Compilation,
+  Operator.Compiler,
 ];
 
 export enum NodeHandleId {

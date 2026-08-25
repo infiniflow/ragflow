@@ -36,7 +36,6 @@ import {
   useIsTaskMode,
   useSelectBeginNodeDataInputs,
 } from '../hooks/use-get-begin-query';
-import { useStopMessage } from '../hooks/use-stop-message';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
@@ -288,15 +287,9 @@ export const useSendAgentMessage = ({
 
   const userId = searchParams.get('userId');
 
-  const { stopMessage } = useStopMessage();
-
   const stopConversation = useCallback(() => {
-    const taskId = firstAnswer?.task_id;
     stopOutputMessage();
-    if (!isShared) {
-      stopMessage(taskId);
-    }
-  }, [firstAnswer, isShared, stopMessage, stopOutputMessage]);
+  }, [stopOutputMessage]);
 
   const sendMessage = useCallback(
     async ({

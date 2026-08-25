@@ -17,7 +17,6 @@
 package chunker
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -81,7 +80,7 @@ func TestHierarchyTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHierarchyTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -104,7 +103,7 @@ func TestHierarchyTitleChunker_NestedHeadings(t *testing.T) {
 		t.Fatalf("NewHierarchyTitleChunker: %v", err)
 	}
 	input := "# H1\nbody1a\nbody1b\n## H2a\nbody2a1\nbody2a2\n## H2b\nbody2b1\n# H1-2\nbody-last"
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "doc.md",
 		"text": input,
 	})
@@ -133,7 +132,7 @@ func TestHierarchyTitleChunker_LeafOnlyDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHierarchyTitleChunker: %v", err)
 	}
-	_, err = c.Invoke(context.Background(), map[string]any{
+	_, err = c.Invoke(t.Context(), nil, map[string]any{
 		"name": "doc.md",
 		"text": "# A\nbody a\n## A1\nbody a1\n# B\nbody b",
 	})
@@ -158,7 +157,7 @@ func TestHierarchyChunker_StructuredMetadata(t *testing.T) {
 		{"text": "body one", "doc_type_kwd": "text"},
 		{"text": "imgA caption", "doc_type_kwd": "image", "img_id": "a"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc",
 		"output_format": "chunks",
 		"chunks":        items,
@@ -196,7 +195,7 @@ func TestHierarchyTitleChunker_InvokeDeterministic(t *testing.T) {
 	var firstLen int
 	var firstTexts []string
 	for run := 0; run < 10; run++ {
-		out, err := c.Invoke(context.Background(), inputs)
+		out, err := c.Invoke(t.Context(), nil, inputs)
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
@@ -246,7 +245,7 @@ func TestHierarchyTitleChunker_ColonTitlePromotion(t *testing.T) {
 		{"text": "Another section continuing the discussion. The key provisions are outlined below:", "doc_type_kwd": "text"},
 		{"text": "Body two.", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":   "test.txt",
 		"chunks": items,
 	})
@@ -278,7 +277,7 @@ func TestHierarchyTitleChunker_ColonTitleShortLine_Negative(t *testing.T) {
 		{"text": "Note:", "doc_type_kwd": "text"},
 		{"text": "Body text.", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":   "test.txt",
 		"chunks": items,
 	})
@@ -313,7 +312,7 @@ func TestHierarchyTitleChunker_ShortNumericLineFilter(t *testing.T) {
 		{"text": "2", "doc_type_kwd": "text"},
 		{"text": "Methodology paragraph.", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":   "test.txt",
 		"chunks": items,
 	})
@@ -389,7 +388,7 @@ func TestHierarchyTitleChunker_ColonTitlePromotion_CJK_EdgeCase(t *testing.T) {
 		{"text": "def。1234567890123456789012345678901：", "doc_type_kwd": "text"},
 		{"text": "Body two.", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":   "test.txt",
 		"chunks": items,
 	})
@@ -427,7 +426,7 @@ func TestHierarchyTitleChunker_ShortSingleCJKLineFilter(t *testing.T) {
 		{"text": "例", "doc_type_kwd": "text"},
 		{"text": "Body two.", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":   "test.txt",
 		"chunks": items,
 	})
@@ -466,7 +465,7 @@ func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
 		{"text": "Conclusion", "doc_type_kwd": "text", "ck_type": "heading"},
 		{"text": "Final words.", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":   "test.docx",
 		"chunks": items,
 	})
@@ -507,7 +506,7 @@ func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 		{"text": "# H2", "doc_type_kwd": "text"},
 		{"text": "body two", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":   "doc",
 		"chunks": items,
 	})

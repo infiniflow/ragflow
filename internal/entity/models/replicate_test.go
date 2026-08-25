@@ -75,6 +75,7 @@ func TestReplicatePredictionEndpoint(t *testing.T) {
 }
 
 func TestReplicateOfficialChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models/meta/meta-llama-3-70b-instruct/predictions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -104,8 +105,8 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 		if input["system_prompt"] != "be helpful" {
 			t.Errorf("system_prompt=%v", input["system_prompt"])
 		}
-		if input["max_new_tokens"] != float64(128) {
-			t.Errorf("max_new_tokens=%v", input["max_new_tokens"])
+		if _, ok := input["max_new_tokens"]; ok {
+			t.Errorf("max_new_tokens should be omitted, got %v", input["max_new_tokens"])
 		}
 		// Stop is deliberately filtered out because Replicate model
 		// inputs are model-specific and upstream support is undefined.
@@ -143,6 +144,7 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 }
 
 func TestReplicateCommunityChatUsesVersionEndpoint(t *testing.T) {
+	withSSRFBypass(t)
 	const version = "replicate/hello-world:5c7d5dc6dd8bf75c1acaa8565735e7986bc5b66206b55cca93cb72c9bf15ccaa"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/predictions" {
@@ -180,6 +182,7 @@ func TestReplicateCommunityChatUsesVersionEndpoint(t *testing.T) {
 }
 
 func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
+	withSSRFBypass(t)
 	var getCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
@@ -223,6 +226,7 @@ func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 }
 
 func TestReplicateStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	var streamURL string
 	streamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
@@ -283,6 +287,7 @@ func TestReplicateStreamHappyPath(t *testing.T) {
 }
 
 func TestReplicateListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -315,12 +320,13 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestReplicateUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newReplicateForTest("http://unused")
 	apiKey := "test-key"
 	// Rerank IS implemented; with empty documents it short-circuits (no error).
 	// Pass non-empty docs + nil modelName to trigger model-name validation.
-	if _, err := m.Rerank(ctx, nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	// Balance IS a stub → "no such method"

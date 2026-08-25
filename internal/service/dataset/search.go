@@ -3,6 +3,7 @@ package dataset
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/dao"
 
 	"go.uber.org/zap"
 
@@ -13,14 +14,14 @@ import (
 	"ragflow/internal/service/nlp"
 )
 
-func (d *DatasetService) SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
 	if datasetID == "" {
 		return nil, fmt.Errorf("dataset_id is required")
 	}
-	return d.SearchDatasets(req.ToSearchDatasetsRequest(datasetID), userID)
+	return d.SearchDatasets(ctx, req.ToSearchDatasetsRequest(datasetID), userID)
 }
 
-func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
@@ -36,6 +37,10 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	pageSize := 30
 	if req.Size != nil {
 		pageSize = *req.Size
+	}
+	prefetchSize := 64
+	if req.PrefetchSize != nil {
+		prefetchSize = *req.PrefetchSize
 	}
 	useKG := false
 	if req.UseKG != nil {
@@ -76,7 +81,6 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	metadataFilter := req.MetadataFilter
 	crossLanguages := req.CrossLanguages
 
-	ctx := context.Background()
 	modelProviderSvc := service.NewModelProviderService()
 
 	// Access check for all datasets
@@ -84,12 +88,12 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	var kbRecords []*entity.Knowledgebase
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
-		if !d.kbDAO.Accessible(datasetID, userID) {
+		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
 			return nil, fmt.Errorf("only owner of dataset %s is authorized for this operation", datasetID)
 		}
 
-		kb, err := d.kbDAO.GetByID(datasetID)
+		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
 			common.Warn("SearchDatasets dataset not found", zap.String("datasetID", datasetID))
 			return nil, fmt.Errorf("dataset %s not found", datasetID)
@@ -102,7 +106,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	}
 
 	// Check if all kbs have the same embedding model
-	if err := service.ValidateDatasetEmbeddingModels(kbRecords); err != nil {
+	if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
 		return nil, err
 	}
 
@@ -111,13 +115,23 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	if searchID != "" {
 		if d.searchService == nil {
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
+			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchDetail, err := d.searchService.GetDetail(searchID)
-		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
+		searchDetail, err := d.searchService.GetDetail(ctx, searchID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
-			return nil, fmt.Errorf("Invalid search_id")
-		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
+			return nil, fmt.Errorf("invalid search_id")
+		}
+		if searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("invalid search_id")
+		}
+
+		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
+			prefetchSize = 100
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
 			}
@@ -134,6 +148,9 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 				} else if topK > 2048 {
 					topK = 2048
 				}
+			}
+			if scPrefetchSize, ok := common.GetInt(searchConfig["prefetch_size"]); ok {
+				prefetchSize = scPrefetchSize
 			}
 			if scUseKG, ok := searchConfig["use_kg"].(bool); ok {
 				useKG = scUseKG
@@ -155,7 +172,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 			chatID, _ = searchConfig["chat_id"].(string)
 		} else {
 			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
+			return nil, fmt.Errorf("invalid search_id")
 		}
 	}
 
@@ -165,7 +182,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
 			if chatID != "" {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, chatID)
+				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
@@ -174,7 +191,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 			}
 
 			if chatModelForFilter == nil {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
+				driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantIDs[0], entity.ModelTypeChat)
 				if err != nil {
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
 				} else {
@@ -189,7 +206,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	copy(docIDs, req.DocIDs)
 	if len(metadataFilter) > 0 {
 		metadataSvc := service.NewMetadataService()
-		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(datasetIDs)
+		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, datasetIDs)
 		if err != nil {
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
@@ -209,7 +226,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 		}
 	}
 	if keyword {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
+		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantIDs[0], entity.ModelTypeChat)
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
@@ -225,12 +242,12 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 
 	// Get tag-based rank features via LabelQuestion
 	metadataSvc := service.NewMetadataService()
-	labels := metadataSvc.LabelQuestion(modifiedQuestion, kbRecords)
+	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
 
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
+		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
 		if embErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
 		}
@@ -240,7 +257,7 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}
@@ -254,12 +271,16 @@ func (d *DatasetService) SearchDatasets(req *service.SearchDatasetsRequest, user
 		DocIDs:                 docIDs,
 		Page:                   page,
 		PageSize:               pageSize,
+		PrefetchSize:           &prefetchSize,
 		Top:                    &topK,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		RerankModel:            rerankModel,
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
+	}
+	if req.IncludeCompiledChunks != nil && !*req.IncludeCompiledChunks {
+		retrievalReq.Filter = map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
 	}
 
 	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)

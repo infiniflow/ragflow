@@ -21,14 +21,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
-	"ragflow/internal/entity"
 	"strings"
+	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 
@@ -63,6 +64,7 @@ type RetrievalTestRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	PrefetchSize           *int                   `json:"prefetch_size,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -123,7 +125,7 @@ type ErrorCoder interface {
 }
 
 // Get retrieves a chunk by ID
-func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkResponse, error) {
+func (s *ChunkService) Get(ctx context.Context, req *GetChunkRequest, userID string) (*GetChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -132,10 +134,8 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 		return nil, fmt.Errorf("chunk_id is required")
 	}
 
-	ctx := context.Background()
-
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -147,7 +147,7 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 	var chunk map[string]interface{}
 	for _, tenant := range tenants {
 		// Get kbIDs for this tenant
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(tenant.TenantID)
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, tenant.TenantID)
 		if err != nil {
 			continue
 		}
@@ -209,8 +209,8 @@ type StopParsingResponse struct {
 	Message string
 }
 
-func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
-	tasks, err := s.taskDAO.GetByDocID(docID)
+func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, docID string) error {
+	tasks, err := s.taskDAO.GetByDocID(ctx, dao.DB, docID)
 	if err != nil {
 		return fmt.Errorf("failed to get tasks for document %s: %w", docID, err)
 	}
@@ -225,7 +225,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
 		if task == nil {
 			continue
 		}
-		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+		redisClient.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", time.Hour)
 	}
 
 	return nil
@@ -254,7 +254,7 @@ func IndexName(uid string) string {
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req StopParsingRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("You don't own the dataset %s", datasetID)
 	}
 
@@ -264,7 +264,7 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 	docList, duplicateMessages := CheckDuplicateIDs(req.DocumentIDs, "document")
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
 	}
@@ -274,17 +274,17 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 		var doc *entity.Document
 		doc, err = s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, id, datasetID)
 		if err != nil {
-			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", id)
+			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", id)
 		}
 		if doc == nil {
-			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", id)
+			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", id)
 		}
 
 		if doc.Run == nil || *doc.Run != RUNNING {
-			return nil, common.CodeDataError, fmt.Errorf("Can't stop parsing document that has not started or already completed")
+			return nil, common.CodeDataError, fmt.Errorf("can't stop parsing document that has not started or already completed")
 		}
 
-		err = s.cancelAllTasksOfDoc(id)
+		err = s.cancelAllTasksOfDoc(ctx, id)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -300,12 +300,13 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 		indexName := IndexName(kb.TenantID)
 
-		exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, datasetID)
+		var exists bool
+		exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
 		}
 		if exists {
-			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
 				return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
 			}
 		} else {
@@ -354,7 +355,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -373,7 +374,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 	}
 
 	// Get knowledge base to find tenant
-	kb, err := s.kbDAO.GetByID(doc.KbID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
 		return nil, fmt.Errorf("knowledge base not found")
 	}
@@ -391,7 +392,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 	}
 
 	// Get kbIDs for this tenant
-	kbIDs, err := s.kbDAO.GetKBIDsByTenantID(targetTenantID)
+	kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, targetTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kb ids: %w", err)
 	}
@@ -462,13 +463,15 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 		chunks = append(chunks, result)
 	}
 
-	// Build document info
+	// Build document info, mirroring Python's _map_doc key renames:
+	// kb_id→dataset_id, parser_id→chunk_method, token_num→token_count,
+	// chunk_num→chunk_count, run→text status.
 	timeFormat := "2006-01-02T15:04:05"
 	docInfo := map[string]interface{}{
 		"id":               doc.ID,
 		"thumbnail":        doc.Thumbnail,
-		"kb_id":            doc.KbID,
-		"parser_id":        doc.ParserID,
+		"dataset_id":       doc.KbID,
+		"chunk_method":     doc.ParserID,
 		"pipeline_id":      doc.PipelineID,
 		"parser_config":    doc.ParserConfig,
 		"source_type":      doc.SourceType,
@@ -477,15 +480,15 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 		"name":             doc.Name,
 		"location":         doc.Location,
 		"size":             doc.Size,
-		"token_num":        doc.TokenNum,
-		"chunk_num":        doc.ChunkNum,
+		"token_count":      doc.TokenNum,
+		"chunk_count":      doc.ChunkNum,
 		"progress":         utility.JSONFloat64(doc.Progress),
 		"progress_msg":     doc.ProgressMsg,
 		"process_begin_at": utility.FormatTimeToString(doc.ProcessBeginAt, timeFormat),
 		"process_duration": doc.ProcessDuration,
 		"content_hash":     doc.ContentHash,
 		"suffix":           doc.Suffix,
-		"run":              doc.Run,
+		"run":              chunkDocRunText(doc.Run),
 		"status":           doc.Status,
 		"create_time":      doc.CreateTime,
 		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
@@ -525,7 +528,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *UpdateChunkRequest,
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -536,7 +539,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *UpdateChunkRequest,
 	// Find the tenant that owns this dataset
 	var targetTenantID string
 	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(req.DatasetID, tenant.TenantID)
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
 			break
@@ -715,7 +718,7 @@ type RemoveChunksRequest struct {
 
 // RemoveChunks removes chunks from the dataset table.
 // If ChunkIDs is empty and DeleteAll is true, removes all chunks for the document.
-// Otherwise removes only the specified chunks.
+// Otherwise, removes only the specified chunks.
 func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksRequest, userID string) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
@@ -726,7 +729,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksReques
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -744,7 +747,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksReques
 	// Find the tenant that owns this document
 	var targetTenantID string
 	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(doc.KbID, tenant.TenantID)
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, doc.KbID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
 			break
@@ -933,6 +936,27 @@ func isInternalField(k string) bool {
 
 // applyCommonChunkMapping applies field mappings shared between GetChunk and
 // ListChunks. Returns true if the field was handled.
+// chunkDocRunText maps the document run code to its text form, mirroring
+// Python's _map_doc run_mapping.
+func chunkDocRunText(run *string) interface{} {
+	if run == nil {
+		return nil
+	}
+	switch *run {
+	case "0":
+		return "UNSTART"
+	case "1":
+		return "RUNNING"
+	case "2":
+		return "CANCEL"
+	case "3":
+		return "DONE"
+	case "4":
+		return "FAIL"
+	}
+	return *run
+}
+
 func applyCommonChunkMapping(result map[string]interface{}, k string, v interface{}) bool {
 	switch k {
 	case "content":

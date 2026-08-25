@@ -6,13 +6,16 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "models": "models"
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank"
   },
   "class": "ppio",
   "models": [
     {
       "name": "deepseek/deepseek-v4-flash",
-      "max_tokens": 1048576,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
@@ -22,7 +25,8 @@
     },
     {
       "name": "deepseek/deepseek-v4-pro",
-      "max_tokens": 1048576,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
@@ -32,7 +36,8 @@
     },
     {
       "name": "deepseek/deepseek-r1/community",
-      "max_tokens": 64000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -42,7 +47,8 @@
     },
     {
       "name": "deepseek/deepseek-v3/community",
-      "max_tokens": 64000,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -52,7 +58,8 @@
     },
     {
       "name": "deepseek/deepseek-r1",
-      "max_tokens": 64000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -62,7 +69,8 @@
     },
     {
       "name": "deepseek/deepseek-v3",
-      "max_tokens": 64000,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -72,7 +80,8 @@
     },
     {
       "name": "deepseek/deepseek-r1-distill-llama-70b",
-      "max_tokens": 32000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -82,7 +91,8 @@
     },
     {
       "name": "deepseek/deepseek-r1-distill-qwen-32b",
-      "max_tokens": 64000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -92,7 +102,8 @@
     },
     {
       "name": "deepseek/deepseek-r1-distill-qwen-14b",
-      "max_tokens": 64000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -102,7 +113,8 @@
     },
     {
       "name": "deepseek/deepseek-r1-distill-llama-8b",
-      "max_tokens": 32000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -112,7 +124,8 @@
     },
     {
       "name": "qwen/qwen-2.5-72b-instruct",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -122,7 +135,8 @@
     },
     {
       "name": "qwen/qwen-2-vl-72b-instruct",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -132,7 +146,8 @@
     },
     {
       "name": "meta-llama/llama-3.2-3b-instruct",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -142,7 +157,8 @@
     },
     {
       "name": "qwen/qwen2.5-32b-instruct",
-      "max_tokens": 32000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -152,7 +168,8 @@
     },
     {
       "name": "baichuan/baichuan2-13b-chat",
-      "max_tokens": 14336,
+      "content_length": 196608,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -162,7 +179,8 @@
     },
     {
       "name": "meta-llama/llama-3.1-70b-instruct",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -172,7 +190,8 @@
     },
     {
       "name": "meta-llama/llama-3.1-8b-instruct",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -182,7 +201,8 @@
     },
     {
       "name": "01-ai/yi-1.5-34b-chat",
-      "max_tokens": 16384,
+      "content_length": 16384,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -192,7 +212,8 @@
     },
     {
       "name": "01-ai/yi-1.5-9b-chat",
-      "max_tokens": 16384,
+      "content_length": 16384,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -202,7 +223,8 @@
     },
     {
       "name": "thudm/glm-4-9b-chat",
-      "max_tokens": 32768,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat"
       ],
@@ -212,13 +234,41 @@
     },
     {
       "name": "qwen/qwen-2-7b-instruct",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
       "tools": {
         "support": true
       }
+    },
+    {
+      "name": "qwen/qwen3-embedding-8b",
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 32
+    },
+    {
+      "name": "baai/bge-m3",
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 32
+    },
+    {
+      "name": "qwen/qwen3-embedding-0.6b",
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 32
+    },
+    {
+      "name": "baai/bge-reranker-v2-m3",
+      "model_types": [
+        "rerank"
+      ]
     }
   ]
 }

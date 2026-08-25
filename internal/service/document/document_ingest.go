@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -11,7 +12,7 @@ import (
 )
 
 func (s *DocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.ListByUser(userID, datasetID, page, pageSize)
+	return s.ingestionTaskSvc.ListByUser(ctx, userID, datasetID, page, pageSize)
 }
 
 func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
@@ -24,11 +25,11 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID
 }
 
 func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(tasks, &userID)
+	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, &userID)
 }
 
 func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(tasks, &userID)
+	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, &userID)
 }
 
 func (s *DocumentService) Ingest(ctx context.Context, userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
@@ -59,21 +60,21 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if doc == nil {
 			return common.CodeDataError, fmt.Errorf("document not found")
 		}
-		kb, err := s.kbDAO.GetByID(doc.KbID)
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if !s.kbDAO.Accessible(kb.ID, userID) {
+		if !s.kbDAO.Accessible(ctx, dao.DB, kb.ID, userID) {
 			return common.CodeAuthenticationError, fmt.Errorf("no authorization")
 		}
 		validated = append(validated, validatedDoc{doc, kb})
 		validatedIDs = append(validatedIDs, docID)
 	}
 
-	// Batch pre-check for re-parse with delete: use the validated doc IDs
+	// Batch pre-check for reparse with delete: use the validated doc IDs
 	// so we don't silently skip non-existent or unauthorized documents.
 	if run == string(entity.TaskStatusRunning) && req.Delete {
-		if err = s.AssertIngestionTasksTerminal(validatedIDs); err != nil {
+		if err = s.AssertIngestionTasksTerminal(ctx, validatedIDs); err != nil {
 			return common.CodeDataError, err
 		}
 	}
@@ -104,6 +105,10 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if run == string(entity.TaskStatusCancel) {
 			if err = s.CancelDocParse(ctx, doc); err != nil {
 				common.Error(fmt.Sprintf("go side, start to process %s, run is cancel", doc.ID), err)
+				if errors.Is(err, errParseNotRunning) {
+					// Mirror the Python /documents/ingest endpoint's message.
+					return common.CodeDataError, errors.New("Cannot cancel a task that is not in RUNNING status")
+				}
 				return common.CodeDataError, err
 			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
@@ -127,16 +132,22 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		}
 
 		if req.Delete {
-			_, _ = s.taskDAO.DeleteIngestionTasksByDocIDs([]string{doc.ID})
+			if _, delErr := s.taskDAO.DeleteIngestionTasksByDocIDs(ctx, dao.DB, []string{doc.ID}); delErr != nil {
+				if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
+					return common.CodeExceptionError, fmt.Errorf("delete ingestion tasks: %w", delErr)
+				}
+				common.Error(fmt.Sprintf("go side, doc %s, DeleteIngestionTasksByDocIDs failed", doc.ID), delErr)
+			}
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
-				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+				var exists bool
+				exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 				if err != nil {
 					common.Error(fmt.Sprintf("go side, doc %s, ChunkStoreExists failed", doc.ID), err)
 					return common.CodeExceptionError, err
 				}
 				if exists {
-					if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+					if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
 						common.Error(fmt.Sprintf("go side, doc %s, DeleteChunks failed", doc.ID), err)
 						return common.CodeExceptionError, err
 					}

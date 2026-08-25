@@ -248,7 +248,7 @@ rm agent/sandbox/tests/test_aliyun_integration.py
 ## Related Documentation
 
 - [Official Documentation](https://help.aliyun.com/zh/functioncompute/fc/sandbox-sandbox-code-interepreter)
-- [Sandbox Specification](../docs/develop/sandbox_spec.md)
+- [Sandbox Specification](../sandbox_spec.md)
 - [Testing Guide](./README.md)
 - [Quick Start](./QUICKSTART.md)
 

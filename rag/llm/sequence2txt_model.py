@@ -16,12 +16,13 @@
 import base64
 import io
 import json
+import logging
 import os
 import re
 import struct
-from abc import ABC
 import tempfile
-import logging
+from abc import ABC
+from collections.abc import Mapping, Sequence
 from urllib.parse import urlparse
 
 import requests
@@ -29,7 +30,10 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
-from rag.utils.url_utils import ensure_v1
+from rag.llm.key_utils import _resolve_provider_credentials
+from rag.utils.url_utils import append_api_path, ensure_v1
+
+logger = logging.getLogger(__name__)
 
 
 class Base(ABC):
@@ -124,6 +128,67 @@ class FuturMixSeq2txt(GPTSeq2txt):
         logging.info("[FuturMix] Speech2Text initialized with model %s", model_name)
 
 
+class GreenPTSeq2txt(Base):
+    """Transcribe audio with GreenPT's Deepgram-compatible endpoint."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name="green-s", base_url="https://api.greenpt.ai/v1", **kwargs):
+        self.api_key = key
+        self.model_name = model_name
+        self.base_url = (base_url or "https://api.greenpt.ai/v1").rstrip("/")
+
+    def transcription(self, audio_path, **kwargs):
+        """Transcribe audio while logging only non-sensitive request metadata."""
+        params = {"model": self.model_name}
+        params.update(kwargs)
+        logger.info("[GreenPT] Starting speech transcription with model %s", self.model_name)
+        try:
+            with open(audio_path, "rb") as audio_file:
+                response = requests.post(
+                    f"{self.base_url}/listen",
+                    headers={"Authorization": f"Token {self.api_key}", "Content-Type": "application/octet-stream"},
+                    params=params,
+                    data=audio_file,
+                    timeout=300,
+                )
+            response.raise_for_status()
+        except (OSError, requests.RequestException):
+            logger.exception("[GreenPT] Speech transcription request failed for model %s", self.model_name)
+            raise
+        try:
+            payload = response.json()
+            if not isinstance(payload, Mapping):
+                raise TypeError("response root must be an object")
+            results = payload.get("results")
+            if not isinstance(results, Mapping):
+                raise TypeError("results must be an object")
+            channels = results.get("channels")
+            if not isinstance(channels, Sequence) or isinstance(channels, (str, bytes)) or not channels:
+                raise TypeError("channels must be a non-empty array")
+            channel = channels[0]
+            if not isinstance(channel, Mapping):
+                raise TypeError("channel must be an object")
+            alternatives = channel.get("alternatives")
+            if not isinstance(alternatives, Sequence) or isinstance(alternatives, (str, bytes)) or not alternatives:
+                raise TypeError("alternatives must be a non-empty array")
+            alternative = alternatives[0]
+            if not isinstance(alternative, Mapping):
+                raise TypeError("alternative must be an object")
+            transcript = alternative.get("transcript")
+            if not isinstance(transcript, str) or not (text := transcript.strip()):
+                raise TypeError("transcript must be a non-empty string")
+        except (TypeError, ValueError) as exc:
+            logger.warning("[GreenPT] Invalid speech response; model=%s status=%s", self.model_name, response.status_code)
+            raise ValueError("GreenPT speech response contains no valid transcript") from exc
+        logger.info(
+            "[GreenPT] Speech transcription completed; status=%s transcript_available=%s",
+            response.status_code,
+            bool(text),
+        )
+        return text, num_tokens_from_string(text)
+
+
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
     _FUN_ASR_FLASH_PREFIX = "fun-asr-flash"
@@ -166,7 +231,13 @@ class QWenSeq2txt(Base):
         resp = dashscope.MultiModalConversation.call(model=self.model_name, messages=messages, result_format="message", asr_options={"enable_lid": True, "enable_itn": False})
 
         try:
-            text = resp["output"]["choices"][0]["message"].content[0]["text"]
+            choices = resp["output"].get("choices") or []
+            if not choices:
+                raise ValueError("no valid speech content in response")
+            content = (choices[0].get("message") or {}).get("content") or []
+            if not content or "text" not in content[0]:
+                raise ValueError("no speech text in response")
+            text = content[0]["text"]
         except Exception as e:
             text = "**ERROR**: " + str(e)
         return text, num_tokens_from_string(text)
@@ -305,7 +376,13 @@ class QWenSeq2txt(Base):
         full = ""
         for chunk in stream:
             try:
-                piece = chunk["output"]["choices"][0]["message"].content[0]["text"]
+                choices = chunk["output"].get("choices") or []
+                if not choices:
+                    raise ValueError("no valid speech content in response")
+                content = (choices[0].get("message") or {}).get("content") or []
+                if not content or "text" not in content[0]:
+                    raise ValueError("no speech text in response")
+                piece = content[0]["text"]
                 full = piece
                 yield {"event": "delta", "text": piece}
             except Exception as e:
@@ -332,7 +409,7 @@ class XinferenceSeq2txt(Base):
         self.model_name = model_name
         self.key = key
 
-    def transcription(self, audio, language="zh", prompt=None, response_format="json"):
+    def transcription(self, audio, language="Chinese", prompt=None, response_format="json"):
         if isinstance(audio, str):
             with open(audio, "rb") as audio_file:
                 audio_data = audio_file.read()
@@ -346,7 +423,8 @@ class XinferenceSeq2txt(Base):
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 
         try:
-            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload, timeout=60)
+            headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
+            response = requests.post(append_api_path(self.base_url, "audio/transcriptions"), files=files, data=payload, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
 
@@ -367,7 +445,10 @@ class TencentCloudSeq2txt(Base):
         from tencentcloud.asr.v20190614 import asr_client
         from tencentcloud.common import credential
 
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         sid = key.get("tencent_cloud_sid", "")
         sk = key.get("tencent_cloud_sk", "")
         cred = credential.Credential(sid, sk)

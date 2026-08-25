@@ -20,9 +20,9 @@ import (
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID)
+	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, userID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
+		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
 	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
@@ -80,13 +80,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				hasError = true
 				continue
 			}
-			err := s.docEngine.UpdateChunks(
-				context.Background(),
-				map[string]interface{}{"doc_id": docID},
-				map[string]interface{}{"available_int": statusInt},
-				fmt.Sprintf("ragflow_%s", kb.TenantID),
-				doc.KbID,
-			)
+			err = s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 			if err != nil {
 				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
 				msg := err.Error()
@@ -99,6 +93,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				continue
 			}
 		}
+		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
 		result[docID] = map[string]string{"status": status}
 	}
 
@@ -110,10 +105,10 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
 	tenantID := userID
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+			return nil, common.CodeDataError, errors.New("you don't own the dataset")
 		}
 		return nil, common.CodeDataError, errors.New("can't find this dataset")
 	}
@@ -121,7 +116,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("The dataset doesn't own the document.")
+			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -157,7 +152,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			return nil, common.CodeDataError, err
 		}
 		var dslJSON []byte
-		dslJSON, err = service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
+		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {
 			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
 				zap.Error(err))
@@ -166,6 +161,13 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
+			if tenantErr == nil && tenant != nil {
+				cleaned = service.ApplyComponentScopedParserConfig(
+					cleaned,
+					tenant.LLMID,
+				)
+			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"parser_config": cleaned,
 			}); err != nil {
@@ -194,6 +196,17 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			if present["pipeline_id"] && req.PipelineID != nil {
 				reparsePipelineID = req.PipelineID
 			}
+		}
+	} else if present["chunk_method"] && req.ChunkMethod != nil {
+		// chunk_method is the public alias for a direct parser change; it does
+		// not require parse_type (mirrors Python's update_chunk_method).
+		if p := strings.TrimSpace(*req.ChunkMethod); !strings.EqualFold(p, doc.ParserID) {
+			reparseParserID = &p
+			empty := ""
+			reparsePipelineID = &empty
+		} else if doc.PipelineID != nil && *doc.PipelineID != "" {
+			empty := ""
+			reparsePipelineID = &empty
 		}
 	}
 	if reparseParserID != nil || reparsePipelineID != nil {
@@ -236,7 +249,7 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	}
 	if present["progress"] && req.Progress != nil {
 		if *req.Progress > 1 {
-			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%v>", *req.Progress)
+			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%s>", pythonFloatRepr(*req.Progress))
 		}
 		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
 			return common.CodeDataError, errors.New("can't change `progress`")
@@ -246,6 +259,19 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	if present["enabled"] {
 		if req.Enabled == nil || (*req.Enabled != 0 && *req.Enabled != 1) {
 			return common.CodeDataError, errors.New("`enabled` value invalid, only accept 0 or 1")
+		}
+	}
+
+	if present["chunk_method"] {
+		if req.ChunkMethod == nil || strings.TrimSpace(*req.ChunkMethod) == "" {
+			return common.CodeDataError, errors.New("`chunk_method` (empty string) is not valid")
+		}
+		cm := strings.TrimSpace(*req.ChunkMethod)
+		if !validDocumentChunkMethods[cm] {
+			return common.CodeDataError, fmt.Errorf("Field: <chunk_method> - Message: <`chunk_method` %s doesn't exist> - Value: <%s>", cm, cm)
+		}
+		if (doc.Type == "visual" && cm != "picture") || (isPresentationFile(doc.Name) && cm != "presentation") {
+			return common.CodeDataError, errors.New("not supported yet")
 		}
 	}
 
@@ -263,9 +289,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 			}
 		}
 	}
-	if present["name"] && req.Name != nil {
-		if err := s.validateDocumentName(ctx, doc, *req.Name); err != nil {
-			return common.CodeDataError, err
+	if present["name"] {
+		// An explicit null name is a type error, not an unset field.
+		if req.Name == nil {
+			return common.CodeDataError, errors.New("Field: <name> - Message: <Input should be a valid string> - Value: <None>")
+		}
+		if code, err := s.validateDocumentName(ctx, doc, *req.Name); err != nil {
+			return code, err
 		}
 	}
 
@@ -278,12 +308,11 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	return common.CodeSuccess, nil
 }
 
-func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.Document, newName string) error {
-	if strings.TrimSpace(newName) == "" {
-		return errors.New("file name can't be empty")
-	}
+// validateDocumentName mirrors Python's validate_document_name: length check
+// (101), then extension check (101), then duplicate check (102).
+func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.Document, newName string) (common.ErrorCode, error) {
 	if len([]byte(newName)) > 255 {
-		return errors.New("file name must be 255 bytes or less")
+		return common.CodeArgumentError, errors.New("File name must be 255 bytes or less.")
 	}
 
 	oldName := ""
@@ -292,20 +321,20 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 
 	if strings.ToLower(filepath.Ext(newName)) != strings.ToLower(filepath.Ext(oldName)) {
-		return errors.New("the extension of file can't be changed")
+		return common.CodeArgumentError, errors.New("the extension of file can't be changed")
 	}
 
 	docs, err := s.documentDAO.GetByNameAndKBID(ctx, dao.DB, newName, doc.KbID)
 	if err != nil {
-		return err
+		return common.CodeServerError, err
 	}
 	for _, d := range docs {
 		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
-			return errors.New("duplicated document name in the same dataset")
+			return common.CodeDataError, errors.New("duplicated document name in the same dataset")
 		}
 	}
 
-	return nil
+	return common.CodeSuccess, nil
 }
 
 func isPresentationFile(name *string) bool {
@@ -331,11 +360,11 @@ func validateMetaFields(meta map[string]any) error {
 				case string, float64, int, int64, float32:
 					continue
 				default:
-					return fmt.Errorf("the type is not supported in list: %v", typed)
+					return fmt.Errorf("Field: <meta_fields> - Message: <The type is not supported in list: %s> - Value: <%s>", pyRepr(typed), pyRepr(map[string]interface{}(meta)))
 				}
 			}
 		default:
-			return fmt.Errorf("the type is not supported: %v", v)
+			return fmt.Errorf("Field: <meta_fields> - Message: <The type is not supported: %s> - Value: <%s>", pyRepr(v), pyRepr(map[string]interface{}(meta)))
 		}
 	}
 
@@ -363,7 +392,7 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	return s.docEngine.UpdateChunks(
-		context.Background(),
+		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
 		map[string]interface{}{
 			"docnm_kwd":    newName,
@@ -446,4 +475,60 @@ func mapDocumentRunStatus(run *string) string {
 	default:
 		return "UNSTART"
 	}
+}
+
+// validDocumentChunkMethods mirrors Python's UpdateDocumentReq chunk_method set.
+var validDocumentChunkMethods = map[string]bool{
+	"naive": true, "manual": true, "qa": true, "table": true, "paper": true,
+	"book": true, "laws": true, "presentation": true, "picture": true,
+	"one": true, "knowledge_graph": true, "email": true, "tag": true,
+}
+
+// pythonFloatRepr formats a float the way Python's str()/repr() does:
+// integral floats keep a trailing ".0".
+func pythonFloatRepr(v float64) string {
+	if v == math.Trunc(v) {
+		return fmt.Sprintf("%.1f", v)
+	}
+	return strconv.FormatFloat(v, 'g', -1, 64)
+}
+
+// pyRepr renders a decoded JSON value the way Python's repr() does, for
+// pydantic-style "Field: <f> - Message: <m> - Value: <v>" contract messages.
+func pyRepr(v interface{}) string {
+	switch typed := v.(type) {
+	case nil:
+		return "None"
+	case string:
+		return "'" + strings.ReplaceAll(typed, "'", "\\'") + "'"
+	case bool:
+		if typed {
+			return "True"
+		}
+		return "False"
+	case float64:
+		if typed == math.Trunc(typed) {
+			return strconv.FormatInt(int64(typed), 10)
+		}
+		return strconv.FormatFloat(typed, 'g', -1, 64)
+	case float32:
+		return pyRepr(float64(typed))
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	case []interface{}:
+		parts := make([]string, len(typed))
+		for i, item := range typed {
+			parts[i] = pyRepr(item)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case map[string]interface{}:
+		parts := make([]string, 0, len(typed))
+		for k, item := range typed {
+			parts = append(parts, pyRepr(k)+": "+pyRepr(item))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	}
+	return fmt.Sprintf("%v", v)
 }

@@ -36,7 +36,7 @@ func NewJieKouAIModel(baseURL map[string]string, urlSuffix URLSuffix) *JieKouAIM
 	// JieKouAI's methods issue requests without a per-call context deadline, so
 	// keep an explicit 120s client-level timeout to bound them. Built on the
 	// shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient()
+	client := NewDriverHTTPClient(false)
 	client.Timeout = 120 * time.Second
 	return &JieKouAIModel{
 		baseModel: BaseModel{
@@ -62,11 +62,45 @@ func validateJieKouAIModelName(modelName *string) (string, error) {
 	return strings.TrimSpace(*modelName), nil
 }
 
+// JieKouAIEmbeddingResponse mirrors Jiekou.AI's embeddings response.
+type JieKouAIEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// JieKouAIRerankResponse mirrors Jiekou.AI's rerank response.
+type JieKouAIRerankResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if modelName = strings.TrimSpace(modelName); modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -86,94 +120,22 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 	if chatModelConfig != nil {
 		// For zai-org/glm-4.5: https://docs.jiekou.ai/docs/models/reference-llm-create-chat-completion
 		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["enable_thinking"] = *chatModelConfig.Thinking
-			}
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := j.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := j.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		// if first char of reasonContent is \n remove the '\n'
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if modelName = strings.TrimSpace(modelName); modelName == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -182,6 +144,10 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
+	}
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+		modelConfig.UsageResult = nil
 	}
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
@@ -192,95 +158,25 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
 	if modelConfig != nil {
 		if modelConfig.Thinking != nil {
-			if *modelConfig.Thinking {
-				reqBody["enable_thinking"] = *modelConfig.Thinking
-			}
+			reqBody["enable_thinking"] = *modelConfig.Thinking
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := j.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	accumulatedToolCalls := make(map[int]map[string]any)
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return j.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
-func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
 	model, err := validateJieKouAIModelName(modelName)
@@ -297,7 +193,7 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 
 	reqBody := map[string]interface{}{
 		"model": model,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -305,7 +201,10 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -328,12 +227,7 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var parsedResponse struct {
-		Data []struct {
-			Embedding []float64 `json:"embedding"`
-			Index     int       `json:"index"`
-		} `json:"data"`
-	}
+	var parsedResponse JieKouAIEmbeddingResponse
 
 	if err = json.Unmarshal(body, &parsedResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -342,6 +236,11 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 	if len(parsedResponse.Data) == 0 {
 		return nil, fmt.Errorf("failed to parse response")
 	}
+	recordResponseUsage(modelUsage, parsedResponse.ID, &TokenUsage{
+		PromptTokens:     parsedResponse.Usage.PromptTokens,
+		CompletionTokens: parsedResponse.Usage.CompletionTokens,
+		TotalTokens:      parsedResponse.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, embedding := range parsedResponse.Data {
@@ -354,11 +253,12 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 	return embeddings, nil
 }
 
-func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -391,7 +291,10 @@ func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query str
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -414,16 +317,16 @@ func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query str
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var rerankResp struct {
-		Results []struct {
-			Index          int     `json:"index"`
-			RelevanceScore float64 `json:"relevance_score"`
-		} `json:"results"`
-	}
+	var rerankResp JieKouAIRerankResponse
 
 	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	recordResponseUsage(modelUsage, rerankResp.ID, &TokenUsage{
+		PromptTokens:     rerankResp.Usage.PromptTokens,
+		CompletionTokens: rerankResp.Usage.CompletionTokens,
+		TotalTokens:      rerankResp.Usage.TotalTokens,
+	}, "rerank")
 
 	var rerankResponse RerankResponse
 	for _, result := range rerankResp.Results {

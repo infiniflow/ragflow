@@ -51,7 +51,7 @@ export function WikiNavBar({
   } = useCreateDirectory();
 
   return (
-    <div className="size-full flex flex-col gap-3 px-3">
+    <div className="size-full flex flex-col gap-3">
       <SearchInput
         placeholder={t('common.search')}
         value={searchString}
@@ -71,7 +71,7 @@ export function WikiNavBar({
                       : 'text-text-primary cursor-default',
                   )}
                 >
-                  {t('knowledgeDetails.topics')}
+                  {t('knowledgeCompilation.topics')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
               {selectedTopic && (
@@ -91,6 +91,7 @@ export function WikiNavBar({
               variant="secondary"
               size="icon-xs"
               onClick={handleShowCreateDialog}
+              className="hidden"
             >
               <Plus className="size-4" />
             </Button>

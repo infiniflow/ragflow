@@ -43,7 +43,7 @@ func ResolvePageSpan(pageNum int, bottom float64, pageHeights map[int]float64) (
 	return
 }
 
-// boxesToSections converts layout boxes to section format with position tags.
+// BoxesToSections converts layout boxes to section format with position tags.
 //
 // pageHeights provides the PDF-point height of each page (image height / zoom).
 // Boxes that extend beyond their page produce multi-page position tags
@@ -57,18 +57,33 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 		if t == "" {
 			continue
 		}
-		toPage, bottom := ResolvePageSpan(b.PageNumber, b.Bottom, pageHeights)
 
 		var posTag string
 		var pageNums []int
-		if b.PageNumber == toPage {
-			posTag = util.FormatPositionTag(b.PageNumber, b.X0, b.X1, b.Top, bottom)
-			pageNums = []int{b.PageNumber}
+		var bottom float64
+		if len(b.Pages) > 0 {
+			// Box carries an explicit page span (e.g. a cross-page merged
+			// table). Use it directly instead of inferring from geometry, so
+			// the section records every page the box occupies.
+			pageNums = b.Pages
+			bottom = b.Bottom
+			if len(pageNums) == 1 {
+				posTag = util.FormatPositionTag(pageNums[0], b.X0, b.X1, b.Top, bottom)
+			} else {
+				posTag = util.FormatPositionTagRange(pageNums[0], pageNums[len(pageNums)-1], b.X0, b.X1, b.Top, bottom)
+			}
 		} else {
-			posTag = util.FormatPositionTagRange(b.PageNumber, toPage, b.X0, b.X1, b.Top, bottom)
-			pageNums = make([]int, 0, toPage-b.PageNumber+1)
-			for p := b.PageNumber; p <= toPage; p++ {
-				pageNums = append(pageNums, p)
+			toPage, resolved := ResolvePageSpan(b.PageNumber, b.Bottom, pageHeights)
+			bottom = resolved
+			if b.PageNumber == toPage {
+				posTag = util.FormatPositionTag(b.PageNumber, b.X0, b.X1, b.Top, bottom)
+				pageNums = []int{b.PageNumber}
+			} else {
+				posTag = util.FormatPositionTagRange(b.PageNumber, toPage, b.X0, b.X1, b.Top, bottom)
+				pageNums = make([]int, 0, toPage-b.PageNumber+1)
+				for p := b.PageNumber; p <= toPage; p++ {
+					pageNums = append(pageNums, p)
+				}
 			}
 		}
 		sections = append(sections, pdf.Section{
@@ -101,13 +116,13 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 	}
 }
 
-// SectionsToMarkdown converts Sections to a markdown string.
+// SectionsToMarkdown converts Sections to a Markdown string.
 //
 // Title sections get a "## " prefix.
 // Figure sections produce an "![Image](data:image/png;base64,...)" tag.
 // Text and all other sections are appended verbatim.
 //
-// This mirrors the Python parser.py:665-671 markdown output path.
+// This mirrors the Python parser.py:665-671 Markdown output path.
 func SectionsToMarkdown(sections []pdf.Section) string {
 	var b strings.Builder
 	for _, s := range sections {

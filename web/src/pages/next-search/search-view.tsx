@@ -1,6 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
-import HighLightMarkdown from '@/components/highlight-markdown';
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { SkeletonCard } from '@/components/skeleton-card';
@@ -27,6 +42,8 @@ import MarkdownContent from './markdown-content';
 import MindMapSheet from './mindmap-sheet';
 import { RAGFlowLogo } from './ragflow-logo';
 import RetrievalDocuments from './retrieval-documents';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import classNames from 'classnames';
 
 const formatMetadataValue = (value: unknown) => {
   if (Array.isArray(value)) return value.join(', ');
@@ -79,8 +96,7 @@ export default function SearchingView({
     setSearchText(searchStr);
   }, [searchStr, setSearchText]);
 
-  useAutoResizeTextarea(searchInputRef, searchText);
-
+  const isMultiLine = useAutoResizeTextarea(searchInputRef, searchText);
   return (
     <section
       className={cn(
@@ -111,7 +127,8 @@ export default function SearchingView({
                 rows={1}
                 placeholder={t('search.searchGreeting')}
                 className={cn(
-                  'w-full rounded-3xl py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none overflow-y-auto scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  'w-full rounded-full py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  isMultiLine ? 'rounded-3xl' : 'rounded-full',
                 )}
                 value={searchText}
                 onChange={(e) => {
@@ -129,19 +146,26 @@ export default function SearchingView({
                   }
                 }}
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 transform flex items-center gap-1">
-                <X
-                  className="text-text-secondary cursor-pointer opacity-80"
-                  size={14}
-                  onClick={() => {
-                    setSearchText('');
-                    handleClickRelatedQuestion('');
-                  }}
-                />
-                <span className="text-text-secondary opacity-20 ml-4">|</span>
+              <div
+                className={cn(
+                  'absolute  right-3 flex items-center gap-3',
+                  isMultiLine ? 'bottom-3' : 'top-1/2 -translate-y-1/2',
+                )}
+              >
+                {searchText && (
+                  <X
+                    className="text-text-secondary cursor-pointer opacity-80 hover:opacity-100"
+                    size={16}
+                    onClick={() => {
+                      setSearchText('');
+                      handleClickRelatedQuestion('');
+                    }}
+                  />
+                )}
+                <span className="h-4 w-px bg-border-button" aria-hidden />
                 <button
                   type="button"
-                  className="rounded-full bg-text-primary p-1 text-bg-base shadow w-12 h-8 ml-4"
+                  className="flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90"
                   onClick={() => {
                     if (sendingLoading) {
                       stopOutputMessage();
@@ -151,10 +175,9 @@ export default function SearchingView({
                   }}
                 >
                   {sendingLoading ? (
-                    // <Square size={22} className="m-auto" />
-                    <div className="w-2 h-2 bg-bg-base m-auto"></div>
+                    <div className="size-2 bg-bg-base"></div>
                   ) : (
-                    <Search size={22} className="m-auto" />
+                    <Search size={18} />
                   )}
                 </button>
               </div>
@@ -198,7 +221,9 @@ export default function SearchingView({
                   <RetrievalDocuments
                     selectedDocumentIds={selectedDocumentIds}
                     setSelectedDocumentIds={setSelectedDocumentIds}
-                    onTesting={handleTestChunk}
+                    onTesting={(vals: string[]) =>
+                      handleTestChunk(vals, 1, pageSize)
+                    }
                     setLoading={(loading: boolean) => {
                       setRetrievalLoading(loading);
                     }}
@@ -206,6 +231,7 @@ export default function SearchingView({
                 </div>
                 <div className="w-44">
                   <TopSelect
+                    max={searchData.search_config.prefetch_size ?? 100}
                     value={pageSize}
                     onChange={handleTopChange}
                   ></TopSelect>
@@ -228,9 +254,18 @@ export default function SearchingView({
                                 id={chunk.image_id || chunk.img_id}
                               ></ImageWithPopover>
                             )}
-                            <HighLightMarkdown>
-                              {chunk.content_with_weight}
-                            </HighLightMarkdown>
+                            <div
+                              dangerouslySetInnerHTML={{
+                                __html: sanitizeHtmlWithImagesAsText(
+                                  chunk.content_with_weight,
+                                ).trim(),
+                              }}
+                              className={classNames(
+                                // Keep whitespaces?
+                                'text-wrap break-words whitespace-pre text-base',
+                                '[&_em]:text-accent-primary [&_em]:not-italic',
+                              )}
+                            />
                           </div>
                           {chunk.document_metadata &&
                             Object.keys(chunk.document_metadata).length > 0 && (
@@ -333,14 +368,12 @@ export default function SearchingView({
             )}
         </div>
         {mindMapVisible && (
-          <div className="flex-1 h-[88dvh] z-30 ml-32 mt-5">
-            <MindMapSheet
-              visible={mindMapVisible}
-              hideModal={hideMindMapModal}
-              data={mindMap}
-              loading={mindMapLoading}
-            ></MindMapSheet>
-          </div>
+          <MindMapSheet
+            visible={mindMapVisible}
+            hideModal={hideMindMapModal}
+            data={mindMap}
+            loading={mindMapLoading}
+          ></MindMapSheet>
         )}
       </div>
 

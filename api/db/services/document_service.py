@@ -43,6 +43,11 @@ class DocumentService(CommonService):
     model = Document
 
     @classmethod
+    @DB.connection_context()
+    def get_disabled_doc_ids_by_kb_id(cls, kb_id) -> set[str]:
+        return {str(doc_id) for (doc_id,) in cls.model.select(cls.model.id).where((cls.model.kb_id == kb_id) & (cls.model.status == "0")).tuples()}
+
+    @classmethod
     def get_cls_model_fields(cls):
         return [
             cls.model.id,
@@ -357,7 +362,7 @@ class DocumentService(CommonService):
     def get_all_doc_ids_by_kb_ids(cls, kb_ids):
         fields = [cls.model.id, cls.model.kb_id]
         docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -431,7 +436,7 @@ class DocumentService(CommonService):
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -512,12 +517,26 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
 
+        # Record doc deletion for incremental structure-merge ghost cleanup.
+        # Runs after the doc_id sweep so the marker (stored under
+        # deleted_doc_id to avoid matching the same sweep) survives.
+        try:
+            from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                record_doc_deletion,
+            )
+
+            record_doc_deletion(tenant_id, doc.kb_id, doc.id)
+        except Exception as e:
+            logging.warning(
+                f"Failed to record doc deletion for structure merge: {e}",
+            )
+
         # Ref-counted cleanup of wiki/artifact products this doc fed into
         # (non-critical, log and continue). A product shared by other docs
         # survives; one this doc solely owned is removed.
         try:
             if chunk_index_exists:
-                cls.remove_artifact_products(doc, tenant_id)
+                cls.remove_wiki_products(doc, tenant_id)
         except Exception as e:
             logging.warning(f"Failed to clean up artifact products for document {doc.id}: {e}")
 
@@ -568,7 +587,7 @@ class DocumentService(CommonService):
             page += 1
 
     @classmethod
-    def remove_artifact_products(cls, doc, tenant_id):
+    def remove_wiki_products(cls, doc, tenant_id):
         """Reference-counted cleanup of KB-scoped wiki/artifact products
         in the doc store when a document is deleted.
 
@@ -577,7 +596,7 @@ class DocumentService(CommonService):
         of the documents that contributed to it. On delete we detach
         ``doc.id`` from that list and drop the row only when this document
         was its sole contributor — a product shared by other docs
-        survives. ``artifact_map_extract`` resume rows are 1:1 with a
+        survives. ``wiki_map_extract`` resume rows are 1:1 with a
         document and are removed directly by ``doc_id``.
 
         The compile_kwd set is pulled from the wiki generator so new
@@ -662,6 +681,32 @@ class DocumentService(CommonService):
                 {"remove": {"source_doc_ids": doc.id}},
                 index,
                 doc.kb_id,
+            )
+
+        # 3. Clean up doc_page_source tracking rows (new incremental design).
+        try:
+            doc_page_kwd = "wiki_doc_page_source"
+            res = settings.docStoreConn.search(
+                ["id"],
+                [],
+                {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                [],
+                OrderByExpr(),
+                0,
+                10,
+                index,
+                doc.kb_id,
+            )
+            if settings.docStoreConn.get_fields(res, ["id"]):
+                settings.docStoreConn.delete(
+                    {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                    index,
+                    doc.kb_id,
+                )
+        except Exception:
+            logging.exception(
+                "DocumentService.remove_wiki_products: doc_page_source cleanup failed for doc %s",
+                doc.id,
             )
 
     @classmethod
@@ -1211,7 +1256,7 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
         "graphrag",
         "raptor",
         "mindmap",
-        "artifact",
+        "wiki",
         "skill",
         # KB-wide structure-graph merge task types (rebuild dataset_graph rows).
         "structure_graph",

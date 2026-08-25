@@ -40,7 +40,6 @@
 package canvas
 
 import (
-	"context"
 	"testing"
 )
 
@@ -73,7 +72,7 @@ func TestCanvas_ParallelExecution_StaticAnalysis(t *testing.T) {
 		Path: []string{"begin", "a", "b", "c", "final"},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}

@@ -12,7 +12,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 
 ## Current stack
 - Backend: Python 3.13+, Quart-based API server, Peewee ORM, async workers.
-- Frontend: React + TypeScript + Vite in `web/`.
+- Frontend: React + TypeScript + Vite in `web/` (dual-backend Go/Python variant conventions: see `web/CLAUDE.md`).
 - Go: the repository also has a substantial Go module for servers, ingestion, parser/runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 
@@ -51,7 +51,33 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Remove commented-out Go code instead of leaving recovery notes in place.
 - Keep package comments and doc comments aligned with the current runtime path, not with migration history.
 
+## Go Test Tiers
+Go tests are classified by build tag so the default `go test ./...` run stays self-contained. Tag a test file with `//go:build <tier>` placed before the `package` clause.
+
+| Tier | Build tag | Runs by default? | Needs |
+|---|---|---|---|
+| Unit | (none) | Yes (`go test ./...`) | Native CGO static libs (wired by `build.sh --test`); no external services — uses in-memory SQLite, miniredis, or `httptest` stubs. |
+| Integration | `integration` | No (`-tags integration`) | A real service: MySQL/MinIO/Elasticsearch/Infinity/LLM. Single component, reasonably fast. |
+| E2E | `e2e` | No (`-tags e2e`) | Full cross-component pipeline (ingest → index → retrieve) against real services; heavy/slow. |
+| Manual | `manual` | No (`-tags manual`) | Very slow/expensive (deepdoc render/parity/snapshot/bench). **Local opt-in ONLY — never run in CI.** |
+| Native (orthogonal) | `cgo` / `!cgo` | `cgo` auto-satisfies under CGO_ENABLED=1 | Native static libs (`office_oxide`/`pdfium`/`pdf_oxide`). Combine with tiers, e.g. `//go:build cgo && integration`. |
+
+Run tiers locally via `build.sh`:
+```bash
+bash build.sh --test                      # unit tier (no tags)
+bash build.sh --test-integration ./...    # integration tier
+bash build.sh --test-e2e                  # e2e tier
+bash build.sh --test-manual               # manual tier (very slow)
+bash build.sh --test-all                  # integration + e2e (never includes manual)
+```
+Rules:
+- New tests that touch a real external service MUST carry `integration`/`e2e`/`manual` — do not rely on `t.Skip` + env vars to soft-isolate them in the default unit run. Keep an env guard as a harmless secondary safety net if desired.
+- `manual` is never wired into CI or any automated pipeline.
+- `unit` (no tag) must stay free of external-service dependencies so `go test ./...` passes without MySQL/MinIO/ES/Infinity/LLM. The native CGO static libraries (`office_oxide`/`pdfium`/`pdf_oxide`) are still required at build time and are wired automatically by `build.sh --test`; that is expected, not an external service.
+
 ## Working Rules
+- When reviewing documentation or code, inspect the full affected path and report all verifiable findings in one review; do not return after only a few findings and expose further issues in later rounds.
+- When handling review comments, independently verify each substantive claim against the current code or tests before accepting, rejecting, or acting on it.
 - Before editing, inspect the nearest code path that actually owns the behavior.
 - Keep changes small and local unless the task is explicitly a broader refactor.
 - Prefer one implementation path instead of preserving old and new versions side by side.

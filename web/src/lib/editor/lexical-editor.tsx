@@ -67,7 +67,7 @@ function InitialContentPlugin({
         root.append($createParagraphNode());
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [editor]);
 
   return null;

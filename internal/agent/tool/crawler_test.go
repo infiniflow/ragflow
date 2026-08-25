@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -41,6 +40,7 @@ const sampleHTML = `<!DOCTYPE html>
 
 func TestCrawler_FetchesAndExtractsText(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -63,7 +63,7 @@ func TestCrawler_FetchesAndExtractsText(t *testing.T) {
 		return host, net.ParseIP(host), nil
 	}
 	c := NewCrawlerTool().WithResolver(loopbackResolver)
-	out, err := c.InvokableRun(context.Background(),
+	out, err := c.InvokableRun(ctx,
 		`{"query":`+jsonString(srv.URL)+`,"max_depth":0}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -105,9 +105,10 @@ func TestCrawler_FetchesAndExtractsText(t *testing.T) {
 
 func TestCrawler_RejectsMaxDepthGreaterThanZero(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"query":"https://example.com","max_depth":1}`)
+	_, err := c.InvokableRun(ctx, `{"query":"https://example.com","max_depth":1}`)
 	if !errors.Is(err, ErrCrawlerDepthUnsupported) {
 		t.Fatalf("err = %v, want ErrCrawlerDepthUnsupported", err)
 	}
@@ -115,9 +116,10 @@ func TestCrawler_RejectsMaxDepthGreaterThanZero(t *testing.T) {
 
 func TestCrawler_RejectsMissingQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"query":""}`)
+	_, err := c.InvokableRun(ctx, `{"query":""}`)
 	if err == nil {
 		t.Fatal("expected error for empty query")
 	}
@@ -125,9 +127,10 @@ func TestCrawler_RejectsMissingQuery(t *testing.T) {
 
 func TestCrawler_RejectsNonHTTPScheme(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"query":"file:///etc/passwd"}`)
+	_, err := c.InvokableRun(ctx, `{"query":"file:///etc/passwd"}`)
 	if err == nil || !strings.Contains(err.Error(), "scheme") {
 		t.Fatalf("err = %v, want to reject file:// scheme", err)
 	}
@@ -135,6 +138,7 @@ func TestCrawler_RejectsNonHTTPScheme(t *testing.T) {
 
 func TestCrawler_AcceptsLegacyURLArgument(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	sentinel := errors.New("stop after legacy url normalization")
 	c := NewCrawlerTool().WithResolver(func(rawURL string) (string, net.IP, error) {
@@ -144,7 +148,7 @@ func TestCrawler_AcceptsLegacyURLArgument(t *testing.T) {
 		return "example.com", net.ParseIP("93.184.216.34"), sentinel
 	})
 
-	_, err := c.InvokableRun(context.Background(), `{"url":"https://example.com"}`)
+	_, err := c.InvokableRun(ctx, `{"url":"https://example.com"}`)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want resolver error after accepting legacy url", err)
 	}
@@ -152,9 +156,10 @@ func TestCrawler_AcceptsLegacyURLArgument(t *testing.T) {
 
 func TestCrawler_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCrawlerTool()
-	info, err := c.Info(context.Background())
+	info, err := c.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

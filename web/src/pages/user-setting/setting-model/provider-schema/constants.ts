@@ -38,6 +38,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.OpenRouter,
   LLMFactory.VLLM,
   LLMFactory.OpenAiAPICompatible,
+  LLMFactory.MWS,
   LLMFactory.LMStudio,
   LLMFactory.VolcEngine,
   LLMFactory.Xinference,
@@ -46,6 +47,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.BaiduYiYan,
   LLMFactory.NewAPI,
   LLMFactory.RAGcon,
+  LLMFactory.SoMark,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,

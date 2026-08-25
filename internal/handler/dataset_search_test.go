@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -23,7 +24,7 @@ type fakeSearchDatasetService struct {
 	err       error
 }
 
-func (f *fakeSearchDatasetService) SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
+func (f *fakeSearchDatasetService) SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
 	f.datasetID = datasetID
 	f.userID = userID
 	f.req = req
@@ -37,7 +38,7 @@ type fakeSearchDatasetsService struct {
 	err    error
 }
 
-func (f *fakeSearchDatasetsService) SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
+func (f *fakeSearchDatasetsService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
 	f.userID = userID
 	f.req = req
 	return f.resp, f.err
@@ -156,7 +157,7 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	h := &DatasetsHandler{searchDatasetsService: fake}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"  hello  ","dataset_ids":["ds-1"],"top_k":7}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"  hello  ","dataset_ids":["ds-1"],"top_k":7,"include_knowledge_compilation":false}`))
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
@@ -169,6 +170,9 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	}
 	if fake.userID != "user-1" || fake.req == nil || fake.req.Question != "hello" || len(fake.req.DatasetIDs) != 1 || fake.req.DatasetIDs[0] != "ds-1" {
 		t.Fatalf("call args userID=%q req=%#v", fake.userID, fake.req)
+	}
+	if fake.req.IncludeCompiledChunks == nil || *fake.req.IncludeCompiledChunks {
+		t.Fatalf("include_knowledge_compilation=%v want false", fake.req.IncludeCompiledChunks)
 	}
 	body := decodeSearchResponse(t, rec)
 	if body["code"] != float64(common.CodeSuccess) {

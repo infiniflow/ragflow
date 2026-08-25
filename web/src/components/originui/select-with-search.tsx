@@ -2,6 +2,7 @@
 
 import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
 import {
+  KeyboardEvent,
   MouseEventHandler,
   ReactNode,
   forwardRef,
@@ -27,9 +28,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { RAGFlowSelectOptionType } from '../ui/select';
 import { Separator } from '../ui/separator';
+import { useTranslation } from 'react-i18next';
 
 export type SelectWithSearchOptionType = RAGFlowSelectOptionType & {
   description?: ReactNode;
@@ -54,6 +55,9 @@ export type SelectWithSearchFlagProps = {
   placeholder?: string;
   emptyData?: string;
   allowCustomValue?: boolean;
+  // Return false to veto selecting the custom value on Enter
+  onNoMatchEnter?(searchValue: string): boolean | void;
+  disableAutoSelectOnEnter?: boolean;
   testId?: string;
   optionTestIdPrefix?: string;
 };
@@ -81,6 +85,36 @@ function findLabelWithOptions(
     .filter(Boolean)[0]?.label;
 }
 
+function hasMatchingOptions(
+  options: SelectWithSearchFlagOptionType[],
+  searchValue: string,
+) {
+  const search = searchValue.trim();
+  if (!search) {
+    return true;
+  }
+  return options.some((group) => {
+    if (group.options) {
+      return group.options.some(
+        (option) =>
+          filterFn(
+            option.value ?? '',
+            search,
+            typeof option.label === 'string' ? [option.label] : [],
+          ) === 1,
+      );
+    }
+    return (
+      filterFn(
+        group.value ?? '',
+        search,
+        group.keywords ??
+          (typeof group.label === 'string' ? [group.label] : []),
+      ) === 1
+    );
+  });
+}
+
 export const SelectWithSearch = forwardRef<
   React.ElementRef<typeof Button>,
   SelectWithSearchFlagProps
@@ -93,14 +127,19 @@ export const SelectWithSearch = forwardRef<
       triggerClassName,
       allowClear = false,
       disabled = false,
-      placeholder = t('common.selectPlaceholder'),
-      emptyData = t('common.noDataFound'),
+      placeholder,
+      emptyData,
       allowCustomValue = false,
+      onNoMatchEnter,
+      disableAutoSelectOnEnter = false,
       testId,
       optionTestIdPrefix,
     },
     ref,
   ) => {
+    const { t } = useTranslation();
+    const resolvedPlaceholder = placeholder ?? t('common.selectPlaceholder');
+    const resolvedEmptyData = emptyData ?? t('common.noDataFound');
     const id = useId();
     const [open, setOpen] = useState<boolean>(false);
     const [value, setValue] = useState<string>('');
@@ -176,6 +215,26 @@ export const SelectWithSearch = forwardRef<
       [onChange],
     );
 
+    const handleInputKeyDown = useCallback(
+      (e: KeyboardEvent<HTMLInputElement>) => {
+        const keywords = searchValue.trim();
+        if (e.key === 'Enter' && keywords) {
+          if (disableAutoSelectOnEnter) {
+            e.preventDefault();
+            onNoMatchEnter?.(keywords);
+            setSearchValue('');
+            setOpen(false);
+          } else if (!hasMatchingOptions(options, keywords)) {
+            if (onNoMatchEnter?.(keywords) === false) {
+              // Vetoed: prevent cmdk from selecting the custom value item
+              e.preventDefault();
+            }
+          }
+        }
+      },
+      [searchValue, options, onNoMatchEnter, disableAutoSelectOnEnter],
+    );
+
     useEffect(() => {
       setValue(val);
     }, [val]);
@@ -201,7 +260,7 @@ export const SelectWithSearch = forwardRef<
                 {selectLabel || value}
               </span>
             ) : (
-              <span className="text-text-disabled">{placeholder}</span>
+              <span className="text-text-disabled">{resolvedPlaceholder}</span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (
@@ -235,17 +294,20 @@ export const SelectWithSearch = forwardRef<
                 className=" placeholder:text-text-disabled"
                 value={searchValue}
                 onValueChange={setSearchValue}
+                onKeyDown={handleInputKeyDown}
               />
             )}
             <CommandList className="mt-2 outline-none">
               <CommandEmpty>
-                <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
+                <div
+                  dangerouslySetInnerHTML={{ __html: resolvedEmptyData }}
+                ></div>
               </CommandEmpty>
               {hasCustomSearchValue && (
                 <CommandItem
                   value={searchValue.trim()}
                   onSelect={handleSelect}
-                  className="mb-1 min-h-10"
+                  className="mb-1 min-h-10 data-[selected='true']:bg-card-soft"
                 >
                   <span className="leading-none">{searchValue.trim()}</span>
                 </CommandItem>
@@ -278,7 +340,7 @@ export const SelectWithSearch = forwardRef<
                               : 'combobox-option'
                           }
                           className={cn(
-                            'relative flex flex-col min-h-10',
+                            "relative flex flex-col min-h-10 data-[selected='true']:bg-card-soft",
                             option.description
                               ? 'items-start gap-1'
                               : 'justify-center items-start',
@@ -318,7 +380,7 @@ export const SelectWithSearch = forwardRef<
                           : 'combobox-option'
                       }
                       className={cn(
-                        'relative flex flex-col min-h-10 mb-1',
+                        "relative flex flex-col min-h-10 mb-1 data-[selected='true']:bg-card-soft",
                         group.description
                           ? 'items-start gap-1'
                           : 'justify-center items-start',

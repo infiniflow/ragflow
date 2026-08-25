@@ -50,11 +50,6 @@ func readProviderConfig(t *testing.T, fileName string) []byte {
 	return nil
 }
 
-func readPPIOProviderConfig(t *testing.T) []byte {
-	t.Helper()
-	return readProviderConfig(t, "ppio.json")
-}
-
 // setupProviderTestDir creates a temporary directory populated with provider
 // config files and conf/all_models.json, then changes the working directory to
 // it. InitProviderManager hardcodes a read of conf/all_models.json relative to
@@ -135,6 +130,23 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 	}
 	if paddleOCR.URLSuffix.OCR != "v2/ocr/jobs" {
 		t.Errorf("PaddleOCR.Net OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
+func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "bedrock.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	model, err := GetProviderManager().GetModelByName("Bedrock", "cohere.embed-english-v3")
+	if err != nil {
+		t.Fatalf("GetModelByName: %v", err)
+	}
+	if model.MaxTokens == nil || *model.MaxTokens != 512 {
+		t.Fatalf("MaxTokens = %v, want 512", model.MaxTokens)
 	}
 }
 
@@ -235,6 +247,7 @@ func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 }
 
 func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
+	withSSRFBypass(t)
 	dir, restore := setupProviderTestDir(t, "ppio.json")
 	defer restore()
 
@@ -269,12 +282,12 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if provider.ModelDriver.Name() != "ppio" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
-	if len(provider.Models) != 21 {
-		t.Fatalf("PPIO model count=%d, want 21", len(provider.Models))
+	if len(provider.Models) != 25 {
+		t.Fatalf("PPIO model count=%d, want 25", len(provider.Models))
 	}
 	for _, model := range provider.Models {
-		if !model.ModelTypeMap["chat"] {
-			t.Errorf("model %q missing chat type map", model.Name)
+		if len(model.ModelTypes) == 0 {
+			t.Errorf("model %q missing model types", model.Name)
 		}
 		if model.Class == nil || *model.Class != "PPIO" {
 			t.Errorf("model %q class=%v", model.Name, model.Class)
@@ -285,30 +298,47 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(models) != 21 {
-		t.Errorf("ListModels count=%d, want 21", len(models))
+	if len(models) != 25 {
+		t.Errorf("ListModels count=%d, want 25", len(models))
 	}
 
 	model, err := pm.GetModelByName("ppio", "deepseek/deepseek-r1")
 	if err != nil {
 		t.Fatalf("GetModelByName: %v", err)
 	}
-	if *model.MaxTokens != 64000 {
-		t.Errorf("deepseek/deepseek-r1 max_tokens=%d", *model.MaxTokens)
+	if *model.MaxOutput != 32768 || *model.ContentLength != 131072 {
+		t.Errorf("deepseek/deepseek-r1 max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-pro")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 pro: %v", err)
 	}
-	if *model.MaxTokens != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-pro max_tokens=%d", *model.MaxTokens)
+	if *model.MaxOutput != 393216 || *model.ContentLength != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-pro max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-flash")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 flash: %v", err)
 	}
-	if *model.MaxTokens != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-flash max_tokens=%d", *model.MaxTokens)
+	if *model.MaxOutput != 393216 || *model.ContentLength != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-flash max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
+	}
+	if !model.ModelTypeMap["chat"] {
+		t.Errorf("deepseek/deepseek-v4-flash missing chat type map")
+	}
+	model, err = pm.GetModelByName("ppio", "qwen/qwen3-embedding-8b")
+	if err != nil {
+		t.Fatalf("GetModelByName qwen/qwen3-embedding-8b: %v", err)
+	}
+	if !model.ModelTypeMap["embedding"] {
+		t.Errorf("qwen/qwen3-embedding-8b missing embedding type map")
+	}
+	model, err = pm.GetModelByName("ppio", "baai/bge-reranker-v2-m3")
+	if err != nil {
+		t.Fatalf("GetModelByName baai/bge-reranker-v2-m3: %v", err)
+	}
+	if !model.ModelTypeMap["rerank"] {
+		t.Errorf("baai/bge-reranker-v2-m3 missing rerank type map")
 	}
 
 	resp := pm.SearchByType("chat")
@@ -354,8 +384,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
 	}
-	if *deepSeekV4Pro.MaxTokens != 1048576 {
-		t.Errorf("DeepSeek-V4-Pro max_tokens=%d", *deepSeekV4Pro.MaxTokens)
+	if *deepSeekV4Pro.MaxOutput != 393216 || *deepSeekV4Pro.ContentLength != 1048576 {
+		t.Errorf("DeepSeek-V4-Pro max_output=%d content_length=%d", *deepSeekV4Pro.MaxOutput, *deepSeekV4Pro.ContentLength)
 	}
 	if !deepSeekV4Pro.ModelTypeMap["chat"] {
 		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
@@ -365,8 +395,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
 	}
-	if *kimiK26.MaxTokens != 262144 {
-		t.Errorf("Kimi-K2.6 max_tokens=%d", *kimiK26.MaxTokens)
+	if *kimiK26.MaxOutput != 65536 || *kimiK26.ContentLength != 262144 {
+		t.Errorf("Kimi-K2.6 max_output=%d content_length=%d", *kimiK26.MaxOutput, *kimiK26.ContentLength)
 	}
 	if !kimiK26.ModelTypeMap["chat"] || !kimiK26.ModelTypeMap["vision"] {
 		t.Errorf("Kimi-K2.6 model types=%v, want chat+vision", kimiK26.ModelTypes)
@@ -376,7 +406,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName GLM-5.1: %v", err)
 	}
-	if *glm51.MaxTokens != 204800 {
-		t.Errorf("GLM-5.1 max_tokens=%d", *glm51.MaxTokens)
+	if *glm51.MaxOutput != 128000 || *glm51.ContentLength != 200000 {
+		t.Errorf("GLM-5.1 max_output=%d content_length=%d", *glm51.MaxOutput, *glm51.ContentLength)
 	}
 }

@@ -5,13 +5,15 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 type stubComponent struct {
 	params map[string]any
 }
 
-func (s *stubComponent) Invoke(_ context.Context, in map[string]any) (map[string]any, error) {
+func (s *stubComponent) Invoke(_ context.Context, _ *gorm.DB, in map[string]any) (map[string]any, error) {
 	return in, nil
 }
 

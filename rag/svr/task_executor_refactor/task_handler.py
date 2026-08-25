@@ -87,28 +87,6 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     return template_ids
 
 
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order:
-      1. The template's own ``llm_id`` (what the user picked in the
-         compilation-template panel).
-      2. The doc's ``parser_config.llm_id`` (the doc-level chunking
-         model).
-      3. ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
-    doc_cfg = getattr(ctx, "parser_config", None) or {}
-    if isinstance(doc_cfg, dict):
-        did = doc_cfg.get("llm_id")
-        if isinstance(did, str) and did.strip():
-            return did.strip()
-    return ctx.llm_id
-
-
 # Document-structure compilation tunables
 # (DOC_STRUCTURE_COMPILE_BATCH_CHUNKS, DOC_STRUCTURE_MERGE_MAX_DOCS,
 # STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S) moved to
@@ -255,15 +233,36 @@ class TaskHandler:
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
-            elif task_type == "artifact":
+            elif task_type == "wiki":
                 from rag.svr.task_executor_refactor.dataset_wiki_generator import (
-                    run_wiki,
+                    run_wiki_incremental,
                 )
 
-                await run_wiki(
+                # Parse the Wiki mode from the template config.
+                wiki_mode = None
+                try:
+                    from api.db.services.compilation_template_service import (
+                        CompilationTemplateService,
+                    )
+                    from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+                        _parser_config_compilation_template_ids,
+                    )
+
+                    pc = self._task_context.parser_config or {}
+                    for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
+                        tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
+                        cfg = (tpl.get("config") or {}) if tpl else {}
+                        if isinstance(cfg, dict) and cfg.get("mode") in ("entity", "topic"):
+                            wiki_mode = cfg["mode"]
+                            break
+                except Exception:
+                    pass
+
+                await run_wiki_incremental(
                     self._task_context,
                     embedding_model,
                     self._load_chunks_for_doc,
+                    mode=wiki_mode,
                 )
             elif task_type == "skill":
                 from rag.svr.task_executor_refactor.dataset_skill_generator import (
@@ -374,14 +373,13 @@ class TaskHandler:
                 {
                     "raptor": {
                         "use_raptor": True,
-                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                        "max_token": 256,
-                        "threshold": 0.1,
+                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                        "max_token": 512,
+                        "clustering_threshold": 0.3,
+                        "clustering_ratio": 0.5,
                         "max_cluster": 64,
                         "random_seed": 0,
                         "scope": "file",
-                        "clustering_method": "gmm",
-                        "tree_builder": "raptor",
                     },
                 }
             )
@@ -557,6 +555,11 @@ class TaskHandler:
         task_dataset_id = ctx.kb_id
         task_doc_id = ctx.doc_id
         task_start_ts = timer()
+
+        def on_chunking_start(wait_time):
+            nonlocal task_start_ts
+            task_start_ts += wait_time
+
         doc_task_llm_id = ctx.parser_config.get("llm_id") or ctx.llm_id
         ctx.raw_task["llm_id"] = doc_task_llm_id
 
@@ -570,7 +573,7 @@ class TaskHandler:
         if binary is None:
             raise FileNotFoundError(f"Can not find file <{ctx.name}> from minio. Could you try it again.")
 
-        chunks = await chunk_service.build_chunks(binary)
+        chunks = await chunk_service.build_chunks(binary, on_chunking_start)
         ctx.recording_context.record("chunks", chunks)
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
         ctx.recording_context.record("chunk_ids_count", len(chunk_ids))
@@ -747,6 +750,7 @@ class TaskHandler:
             "compile_kwd",
         ]
         order_by = OrderByExpr()
+        order_by.asc("chunk_order_int")
         order_by.asc("page_num_int")
         order_by.asc("top_int")
 
@@ -778,6 +782,66 @@ class TaskHandler:
                 logging.exception("load_chunks_for_doc: failed to load chunks for doc=%s", doc_id)
                 return
             if not field_map:
+                # Recover rows damaged by the old doc-page-source upsert, which
+                # updated every row sharing ``doc_id`` and stamped source chunks
+                # with ``compile_kwd=wiki_doc_page_source``. Genuine tracking
+                # rows have no chunk body; MAP rows are unavailable. Source
+                # rows remain available and retain their content, so they can
+                # be identified without guessing from ids.
+                try:
+                    recovery_fields = [*select_fields, "available_int"]
+                    recovered_batch: List[Dict] = []
+                    recovery_offset = 0
+                    recovery_page_size = 1000
+                    while True:
+                        recovery_res = await thread_pool_exec(
+                            settings.docStoreConn.search,
+                            recovery_fields,
+                            [],
+                            {"doc_id": [doc_id], "available_int": 1},
+                            [],
+                            order_by,
+                            recovery_offset,
+                            recovery_page_size,
+                            index_nm,
+                            [kb_id],
+                        )
+                        recovery_rows = settings.docStoreConn.get_fields(recovery_res, recovery_fields) or {}
+                        for row_id, recovery_row in recovery_rows.items():
+                            marker = recovery_row.get("compile_kwd")
+                            if isinstance(marker, (list, tuple)):
+                                marker = marker[0] if marker else ""
+                            content = recovery_row.get("content_with_weight") or ""
+                            if marker != "wiki_doc_page_source" or not content:
+                                continue
+                            await thread_pool_exec(
+                                settings.docStoreConn.update,
+                                {"id": row_id},
+                                {"remove": "compile_kwd"},
+                                index_nm,
+                                kb_id,
+                            )
+                            recovered_batch.append(
+                                {
+                                    "id": row_id,
+                                    "doc_id": recovery_row.get("doc_id") or doc_id,
+                                    "content_with_weight": content,
+                                    "page_num_int": recovery_row.get("page_num_int", 0),
+                                    "top_int": recovery_row.get("top_int", 0),
+                                }
+                            )
+                        if len(recovery_rows) < recovery_page_size:
+                            break
+                        recovery_offset += recovery_page_size
+                    if recovered_batch:
+                        logging.warning(
+                            "load_chunks_for_doc: recovered %d source chunk(s) mislabeled as wiki_doc_page_source doc=%s",
+                            len(recovered_batch),
+                            doc_id,
+                        )
+                        yield recovered_batch
+                except Exception:
+                    logging.exception("load_chunks_for_doc: recovery query failed for doc=%s", doc_id)
                 return
 
             batch: List[Dict] = []

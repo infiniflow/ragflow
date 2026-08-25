@@ -231,10 +231,10 @@ class TestChatAssistantUpdate:
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         chat_id = chat_assistant_ids[0]
 
-        # Auth: non-owned chat returns 109 "No authorization."
+        # Auth: non-owned chat returns 109 "no authorization"
         res = patch_chat_assistant(HttpApiAuth, "invalid-chat-id", {"name": "anything"})
         assert res["code"] == 109
-        assert res["message"] == "No authorization."
+        assert res["message"] == "no authorization"
 
         # PATCH: toggle quote via prompt_config
         res = patch_chat_assistant(HttpApiAuth, chat_id, {"prompt_config": {"quote": False}})

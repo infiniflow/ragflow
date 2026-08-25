@@ -5,6 +5,10 @@ import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
@@ -22,12 +26,18 @@ import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
+import { getWebSearchProvider } from '../web-search-api-key';
 
 type ChatSettingsProps = { hasSingleChatBox: boolean };
 
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
-  const formSchema = useChatSettingSchema();
   const { data } = useFetchChat();
+
+  const chatSettingSchema = useChatSettingSchema();
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    chatSettingSchema,
+    data?.dataset_ids,
+  );
   const { updateChat, loading } = useUpdateChat();
   const findLlmByUuid = useFindLlmByUuid();
   const { id } = useParams();
@@ -41,6 +51,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     shouldUnregister: false,
+    mode: 'onChange',
     defaultValues: {
       name: '',
       icon: '',
@@ -50,19 +61,18 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         quote: true,
         keyword: false,
         tts: false,
-        use_kg: false,
         refine_multiturn: true,
         system: '',
         parameters: [],
         reasoning: false,
         cross_languages: [],
-        toc_enhance: false,
         reference_metadata: {
           include: false,
           fields: undefined,
         },
       },
       top_n: 8,
+      prefetch_size: 64,
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.2,
       top_k: 1024,
@@ -101,6 +111,8 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...omit(data, [
           'operator_permission',
           'tenant_id',
+          'tenant_llm_id',
+          'tenant_rerank_id',
           'created_by',
           'create_time',
           'create_date',
@@ -133,6 +145,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       ...data,
       prompt_config: {
         ...data.prompt_config,
+        web_search_provider: getWebSearchProvider(data.prompt_config),
         reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,
@@ -142,6 +155,8 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       form.reset(nextData as FormSchemaType);
     }
   }, [data, form]);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <>

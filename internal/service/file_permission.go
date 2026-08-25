@@ -23,11 +23,11 @@ func CheckFileTeamPermission(ctx context.Context, fileDAO *dao.FileDAO, file *en
 
 	kbDAO := dao.NewKnowledgebaseDAO()
 	for _, datasetID := range datasetIDs {
-		kb, err := kbDAO.GetByID(datasetID)
+		kb, err := kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
 			continue
 		}
-		if HasKBTeamPermission(kb, userID, dao.NewTenantDAO()) {
+		if HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
 			return true
 		}
 	}

@@ -195,7 +195,7 @@ func TestUpdateChatHandlerRejectsNonOwner(t *testing.T) {
 	if resp["data"] != false {
 		t.Fatalf("expected data=false, got %v", resp["data"])
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
@@ -224,7 +224,7 @@ func TestGetChatHandlerRejectsNonOwner(t *testing.T) {
 	if resp["data"] != false {
 		t.Fatalf("expected data=false, got %v", resp["data"])
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
@@ -250,7 +250,7 @@ func TestDeleteChatHandlerRejectsNonOwner(t *testing.T) {
 	if resp["code"] != float64(common.CodeAuthenticationError) {
 		t.Fatalf("expected auth error code 109, got %v", resp["code"])
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }

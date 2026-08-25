@@ -32,8 +32,8 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 	if modelProviderSvc == nil {
 		return nil, fmt.Errorf("model provider service not configured")
 	}
-	searchConfig := relatedQuestionsSearchConfig(searchID, searchSvc)
-	modelID := relatedQuestionsModelID(tenantID, searchConfig, tenantSvc)
+	searchConfig := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
+	modelID := relatedQuestionsModelID(ctx, tenantID, searchConfig, tenantSvc)
 	prompt, err := LoadPrompt("related_question")
 	if err != nil {
 		return nil, err
@@ -52,11 +52,11 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 	return []string{}, nil
 }
 
-func relatedQuestionsSearchConfig(searchID string, searchSvc *SearchService) map[string]interface{} {
+func relatedQuestionsSearchConfig(ctx context.Context, searchID string, searchSvc *SearchService) map[string]interface{} {
 	if searchID == "" || searchSvc == nil {
 		return map[string]interface{}{}
 	}
-	if detail, err := searchSvc.GetDetail(searchID); err == nil && detail != nil {
+	if detail, err := searchSvc.GetDetail(ctx, searchID); err == nil && detail != nil {
 		return relatedQuestionsSearchConfigFromDetail(detail)
 	}
 	return map[string]interface{}{}
@@ -72,12 +72,12 @@ func relatedQuestionsSearchConfigFromDetail(detail map[string]interface{}) map[s
 	return map[string]interface{}{}
 }
 
-func relatedQuestionsModelID(tenantID string, searchConfig map[string]interface{}, tenantSvc *TenantService) string {
+func relatedQuestionsModelID(ctx context.Context, tenantID string, searchConfig map[string]interface{}, tenantSvc *TenantService) string {
 	modelID, _ := searchConfig["chat_id"].(string)
 	if modelID != "" || tenantSvc == nil {
 		return modelID
 	}
-	defaultModel, err := tenantSvc.GetDefaultModelName(tenantID, entity.ModelTypeChat)
+	defaultModel, err := tenantSvc.GetDefaultModelName(ctx, tenantID, entity.ModelTypeChat)
 	if err == nil {
 		modelID = defaultModel
 	}

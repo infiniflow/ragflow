@@ -80,10 +80,10 @@ func (a *sourceHTTPClientAdapter) Get(url string) (*http.Response, error) {
 // NewInstallSkillCommand creates a new install-skill command handler
 func NewInstallSkillCommand(client HTTPClientInterface, fileProvider *FileProvider, skillProvider Provider) *SkillInstallCommand {
 	// Log proxy settings
-	if httpProxy := common.GetEnv(common.EnvHttpHTTPProxy); httpProxy != "" {
+	if httpProxy := common.GetEnv(common.EnvHTTPProxy); httpProxy != "" {
 		fmt.Printf("Using HTTP proxy: %s\n", httpProxy)
 	}
-	if httpsProxy := common.GetEnv(common.EnvHttpHTTPSProxy); httpsProxy != "" {
+	if httpsProxy := common.GetEnv(common.EnvHTTPSProxy); httpsProxy != "" {
 		fmt.Printf("Using HTTPS proxy: %s\n", httpsProxy)
 	}
 

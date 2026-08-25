@@ -35,6 +35,7 @@ from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
+    get_composite_model_name_by_id,
     get_first_provider_model_name,
     resolve_model_config,
     get_tenant_default_model_by_type,
@@ -113,8 +114,6 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
-    callback = callback
-    binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
     sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
 
@@ -122,6 +121,7 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
         tbls=tables,
         sections=sections,
         callback=callback,
+        lang=lang,
         **kwargs,
     )
     return sections, tables, pdf_parser
@@ -394,6 +394,7 @@ def by_mistral_ocr(
                     parse_method=parse_method,
                     from_page=from_page,
                     to_page=to_page,
+                    lang=lang,
                     **kwargs,
                 )
                 return sections, tables, pdf_parser
@@ -891,7 +892,7 @@ class Markdown(MarkdownParser):
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
-        if binary:
+        if binary is not None:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
@@ -899,7 +900,7 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        parsing_text = remainder if separate_tables else txt
+        parsing_text = remainder
         extractor = MarkdownElementExtractor(parsing_text)
         image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
@@ -922,8 +923,9 @@ class Markdown(MarkdownParser):
             section_images.append(combined_image)
 
         tbls = []
-        for table in tables:
-            tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
+        if separate_tables:
+            for table in tables:
+                tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
         if return_section_images:
             return sections, tbls, section_images
         return sections, tbls
@@ -1025,7 +1027,13 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         # images list - index of image chunk in chunks
         chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
 
-        vision_figure_parser_docx_wrapper_naive(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
+        vision_figure_parser_docx_wrapper_naive(
+            chunks=chunks,
+            idx_lst=images,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
 
         callback(0.8, "Finish parsing.")
         st = timer()
@@ -1037,7 +1045,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
         if layout_recognizer == "OpenDataLoader" and parser_model_name:
             opendataloader_llm_name = parser_model_name
@@ -1051,6 +1066,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
+        if name == "mineru":
+            kwargs["parse_method"] = "naive"
 
         sections, tables, pdf_parser = parser(
             filename=filename,
@@ -1117,9 +1134,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
-        print("\n", "-" * 150, "\n")
-        print(sections)
-        print("\n", "-" * 150, "\n")
+        logging.info("TxtParser produced %d sections for %s", len(sections), filename)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -1128,7 +1143,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=True,
+            separate_tables=False,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )
@@ -1138,7 +1153,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         try:
             vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
-            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, lang=lang)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:
             logging.warning(f"Failed to detect figure extraction: {e}")
@@ -1159,7 +1174,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     else:
                         section_images = [None] * len(sections)
                         section_images[idx] = combined_image
-                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                    markdown_vision_parser = VisionFigureParser(
+                        vision_model=vision_model,
+                        figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])],
+                        lang=lang,
+                        **kwargs,
+                    )
                     boosted_figures = markdown_vision_parser(callback=callback)
                     sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
 

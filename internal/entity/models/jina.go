@@ -36,7 +36,7 @@ func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
 	// Embed/Rerank/ListModels issue requests without a per-call context
 	// deadline, so keep an explicit 90s client-level timeout to bound them.
 	// Built on the shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient()
+	client := NewDriverHTTPClient(false)
 	client.Timeout = 90 * time.Second
 	return &JinaModel{
 		baseModel: BaseModel{
@@ -53,6 +53,41 @@ func (j *JinaModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (j *JinaModel) Name() string {
 	return "jina"
+}
+
+// JinaEmbeddingResponse mirrors Jina's embeddings response. Embeddings is
+// populated by multivector models such as jina-embeddings-v4.
+type JinaEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object     string      `json:"object"`
+		Embedding  []float64   `json:"embedding"`
+		Embeddings [][]float64 `json:"embeddings"`
+		Index      int         `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// JinaRerankResponse mirrors Jina's rerank response.
+type JinaRerankResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -75,83 +110,67 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	jsonData, err := json.Marshal(reqBody)
+	if chatModelConfig != nil {
+		if chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		}
+	}
+
+	body, err := j.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := j.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Jina chat API error: status %d, body: %s", resp.StatusCode, string(body))
-	}
-
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	toolCalls := extractToolCalls(messageMap)
-	content, hasContent := messageMap["content"].(string)
-	if !hasContent && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	reasonContent := ""
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
-func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	//TODO implement me: https://api.jina.ai/docs#/Search%20Foundation%20Models/chat_completions_v1_chat_completions_post
-	return fmt.Errorf("jina does not implement ChatStreamlyWithSender(not available for now)")
+func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	if modelName == "" {
+		return fmt.Errorf("model name is required")
+	}
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
+	}
+
+	baseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
+
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
+
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
+		if chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		}
+	}
+
+	return j.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
-func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (j *JinaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
@@ -162,7 +181,7 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -170,7 +189,10 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -193,12 +215,7 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 		return nil, fmt.Errorf("Jina embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var parsedResponse struct {
-		Data []struct {
-			Embedding []float64 `json:"embedding"`
-			Index     int       `json:"index"`
-		} `json:"data"`
-	}
+	var parsedResponse JinaEmbeddingResponse
 
 	if err = json.Unmarshal(body, &parsedResponse); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -207,11 +224,37 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 	if len(parsedResponse.Data) == 0 {
 		return nil, fmt.Errorf("Jina embedding response contains no data: %s", string(body))
 	}
+	recordResponseUsage(modelUsage, parsedResponse.ID, &TokenUsage{
+		PromptTokens: parsedResponse.Usage.PromptTokens,
+		TotalTokens:  parsedResponse.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, dataElem := range parsedResponse.Data {
+		embedding := dataElem.Embedding
+		if len(embedding) == 0 && len(dataElem.Embeddings) > 0 {
+			dimensions := len(dataElem.Embeddings[0])
+			if dimensions == 0 {
+				return nil, fmt.Errorf("Jina embedding response contains an empty multivector at index %d", dataElem.Index)
+			}
+			embedding = make([]float64, dimensions)
+			for _, vector := range dataElem.Embeddings {
+				if len(vector) != dimensions {
+					return nil, fmt.Errorf("Jina embedding response contains inconsistent multivector dimensions at index %d", dataElem.Index)
+				}
+				for i, value := range vector {
+					embedding[i] += value
+				}
+			}
+			for i := range embedding {
+				embedding[i] /= float64(len(dataElem.Embeddings))
+			}
+		}
+		if len(embedding) == 0 {
+			return nil, fmt.Errorf("Jina embedding response contains an empty vector at index %d", dataElem.Index)
+		}
 		embeddings = append(embeddings, EmbeddingData{
-			Embedding: dataElem.Embedding,
+			Embedding: embedding,
 			Index:     dataElem.Index,
 		})
 	}
@@ -219,13 +262,17 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 	return embeddings, nil
 }
 
-func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (j *JinaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
@@ -251,7 +298,10 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -274,16 +324,15 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string,
 		return nil, fmt.Errorf("Jina Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var rerankResp struct {
-		Results []struct {
-			Index          int     `json:"index"`
-			RelevanceScore float64 `json:"relevance_score"`
-		} `json:"results"`
-	}
+	var rerankResp JinaRerankResponse
 
 	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	recordResponseUsage(modelUsage, rerankResp.ID, &TokenUsage{
+		PromptTokens: rerankResp.Usage.PromptTokens,
+		TotalTokens:  rerankResp.Usage.TotalTokens,
+	}, "rerank")
 
 	var rerankResponse RerankResponse
 	for _, result := range rerankResp.Results {
@@ -336,7 +385,7 @@ func (j *JinaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 	// convert result["data"] to []map[string]interface{}
 	models := make([]ModelListItem, 0, len(result["data"].([]interface{})))
 	for _, model := range result["data"].([]interface{}) {
-		modelName := model.(map[string]interface{})["name"].(string)
+		modelName := model.(map[string]interface{})["id"].(string)
 		models = append(models, ModelListItem{
 			ID:      modelName,
 			OwnedBy: "",

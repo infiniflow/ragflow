@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -56,7 +55,7 @@ func TestSwitch_AndMatches(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["x"] = "yes"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -69,7 +68,7 @@ func TestSwitch_AndMatches(t *testing.T) {
 		},
 		"default": "fallback",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -87,7 +86,7 @@ func TestSwitch_OrMatches(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Sys["score"] = "85"
 	state.Sys["flag"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -113,7 +112,7 @@ func TestSwitch_OrMatches(t *testing.T) {
 		},
 		"default": "fallback",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -129,7 +128,7 @@ func TestSwitch_DefaultFallback(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-3", "task-3")
 	state.Sys["x"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -142,7 +141,7 @@ func TestSwitch_DefaultFallback(t *testing.T) {
 		},
 		"default": "fallback_0",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -156,7 +155,7 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-end-cpn", "task-end-cpn")
 	state.Sys["x"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -169,7 +168,7 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 		},
 		"end_cpn_ids": []any{"legacy_fallback"},
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -186,7 +185,7 @@ func TestSwitch_ContainsAndEmpty(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	state.Sys["body"] = "hello world"
 	state.Sys["opt"] = ""
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -200,7 +199,7 @@ func TestSwitch_ContainsAndEmpty(t *testing.T) {
 		},
 		"default": "x",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -229,9 +228,9 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-legacy", "task-legacy")
 	state.SetVar("UserFillUp:Menu", "demo", "loop")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
-	out, err := s.Invoke(ctx, nil)
+	out, err := s.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -253,7 +252,7 @@ func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-contains", "task-nil-contains")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -267,7 +266,7 @@ func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -284,7 +283,7 @@ func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-needle", "task-nil-needle")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -298,7 +297,7 @@ func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -316,7 +315,7 @@ func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-value", "task-nil-value")
 	state.Sys["answer"] = "foobar"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -330,7 +329,7 @@ func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -350,7 +349,7 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-start-end", "task-nil-start-end")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	for _, tc := range []struct {
 		name string
@@ -372,7 +371,7 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 				},
 				"default": "else_target",
 			}
-			out, err := s.Invoke(ctx, inputs)
+			out, err := s.Invoke(ctx, nil, inputs)
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
@@ -393,7 +392,7 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-multi", "task-multi")
 	state.SetVar("UserFillUp:Menu", "demo", "data_ops")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -411,7 +410,7 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 		},
 		"default": "Message:Help",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -430,7 +429,7 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-empty-and", "task-1")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	// Empty clauses: must not match. Should fall through to default.
 	inputs := map[string]any{
@@ -443,7 +442,7 @@ func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
 		},
 		"default": "DEFAULT",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -462,7 +461,7 @@ func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
 func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-legacy-empty", "task-1")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -476,7 +475,7 @@ func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
 		},
 		"default": "DEFAULT",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -496,7 +495,7 @@ func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-and-ok", "task-1")
 	state.Sys["greeting"] = "hello world"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -510,7 +509,7 @@ func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
 		},
 		"default": "DEFAULT",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

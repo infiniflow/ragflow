@@ -97,7 +97,7 @@ const uploadTestDatasetID = "123e4567-e89b-12d3-a456-426614174000"
 func (f *fakeDocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
 	return nil, common.CodeSuccess, nil
 }
-func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.DocumentMetadataSelector, updates []document.DocumentMetadataUpdate, deletes []document.DocumentMetadataDelete) (*document.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
+func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error) {
 	return nil, common.CodeSuccess, nil
 }
 
@@ -329,7 +329,7 @@ func TestSetMetaHandler_NotAccessible(t *testing.T) {
 	if resp["code"] != float64(common.CodeAuthenticationError) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.setMetaCalled {
@@ -397,7 +397,7 @@ func TestDeleteDocumentHandler_NotAccessible(t *testing.T) {
 	if resp["code"] != float64(common.CodeAuthenticationError) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.deleteCalled {
@@ -463,7 +463,7 @@ func TestUpdateDocumentHandler_NotAccessible(t *testing.T) {
 	if resp["code"] != float64(common.CodeAuthenticationError) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.updateCalled {
@@ -931,7 +931,7 @@ func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
 
 	fake := &fakeDocumentService{
 		ingestCode: common.CodeAuthenticationError,
-		ingestErr:  fmt.Errorf("No authorization."),
+		ingestErr:  fmt.Errorf("no authorization"),
 	}
 	h := &DocumentHandler{
 		documentService: fake,
@@ -952,7 +952,7 @@ func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
 	if resp["code"] != float64(common.CodeAuthenticationError) {
 		t.Fatalf("expected auth error code, got %v", resp["code"])
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if resp["data"] != nil {

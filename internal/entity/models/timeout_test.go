@@ -59,6 +59,7 @@ func newTimeoutTestGroq(baseURL string) *GroqModel {
 // nonStreamCallTimeout (the old 120s-wall footgun, just relocated), the
 // context would cancel mid-stream and this test would fail.
 func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// Stream emits for ~240ms, far past the 60ms non-stream deadline but well
 	// inside the 10s stream deadline.
@@ -118,6 +119,7 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 // watchdog so a broken timeout surfaces as a direct test failure
 // rather than relying on the package's global test timeout.
 func TestNonStreamHonorsShortDeadline(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	withTestTimeouts(t, 100*time.Millisecond, 10*time.Second)
 
