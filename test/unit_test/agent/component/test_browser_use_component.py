@@ -496,7 +496,7 @@ def test_prepare_upload_url_file_pins_dns_for_every_hop(monkeypatch, tmp_path):
 
 def test_extract_url_filename_sanitizes_all_content_disposition_forms():
     cases = [
-        ('attachment; filename*=UTF-8\'\'..%2f..%2fstar.txt', "star.txt"),
+        ("attachment; filename*=UTF-8''..%2f..%2fstar.txt", "star.txt"),
         ('attachment; filename="..\\..\\quoted.txt"', "quoted.txt"),
         ("attachment; filename=../../unquoted.txt", "unquoted.txt"),
         ('attachment; filename="..%2F..%2Fmixed.txt"', "mixed.txt"),
