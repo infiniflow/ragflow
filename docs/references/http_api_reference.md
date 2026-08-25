@@ -6438,7 +6438,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: (*Body parameter*), `string`, *Optional*
 
-  The user participating in the conversation with the agent. Defaults to `None`.
+  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. Any other authentication, whether a JWT bearer token or a browser session, ignores it and attributes the message to the authenticated user. Surrounding whitespace is stripped, and a value that is missing, blank or not a string falls back to the API key owner.
 
 - `user_input`: (*Body parameter*), `string`, *Required*
 
