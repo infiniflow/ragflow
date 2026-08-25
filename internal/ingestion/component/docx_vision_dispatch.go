@@ -35,6 +35,7 @@ import (
 	"strings"
 	"sync"
 
+	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -249,7 +250,10 @@ func figureVisionPromptsBaseDir() (string, error) {
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {
-	dataURI := "data:image/png;base64," + imageBase64
+	dataURI := pdflayout.InlinePNGDataURL(imageBase64)
+	if dataURI == "" {
+		dataURI = strings.TrimSpace(imageBase64)
+	}
 	return []modelModule.Message{{
 		Role: "user",
 		Content: []interface{}{

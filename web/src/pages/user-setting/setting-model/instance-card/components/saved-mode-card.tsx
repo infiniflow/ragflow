@@ -64,6 +64,7 @@ export function SavedModeCard({
   instance,
   instanceDetailsLoaded,
   modelInfoRef,
+  onInstanceModelsStatusChange,
   draftName,
   open,
   setOpen,
@@ -235,6 +236,7 @@ export function SavedModeCard({
                   modelInfoRef.current = info;
                 }}
                 onInstanceModelsEdited={handleInstanceModelsEdited}
+                onInstanceModelsStatusChange={onInstanceModelsStatusChange}
               />
             </div>
           )}

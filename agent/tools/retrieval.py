@@ -58,7 +58,7 @@ class RetrievalParam(ToolParamBase):
         self.similarity_threshold = 0.2
         self.keywords_similarity_weight = 0.5
         self.top_n = 8
-        self.prefetch_size = 64
+        self.rerank_candidates_count = 64
         self.top_k = 1024
         self.dataset_ids = []
         self.kb_ids = []  # Deprecated: keep for backward compatibility
@@ -189,12 +189,12 @@ class Retrieval(ToolBase, ABC):
                 self._param.top_n,
                 self._param.similarity_threshold,
                 1 - self._param.keywords_similarity_weight,
-                top=self._param.top_k,
+                knn_top_k=self._param.top_k,
                 doc_ids=doc_ids,
                 aggs=True,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
-                prefetch_size=self._param.prefetch_size,
+                rerank_candidates_count=self._param.rerank_candidates_count,
             )
             if self.check_if_canceled("Retrieval processing"):
                 return

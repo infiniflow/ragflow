@@ -18,7 +18,7 @@ RAGFlow supports many data sources. It is recommended to first select a major ca
 
 **Databases and data warehouses**: Used to synchronize structured records or query results. This category is suitable for business data Q&A, metric knowledge retention, and retrieval of data analysis results. It includes MySQL, PostgreSQL, and BigQuery.
 
-**Code repositories and project management**: Used to synchronize code collaboration, issues, pull requests, tasks, and project records. This category is suitable for technical knowledge retention and project history queries. It includes GitHub, GitLab, Bitbucket, Jira, and Asana.
+**Code repositories and project management**: Used to synchronize code collaboration, issues, pull requests, tasks, and project records. This category is suitable for technical knowledge retention and project history queries. It includes GitHub, GitLab, Bitbucket, Azure DevOps, Jira, and Asana.
 
 **Email, messages, and collaborative communication**: Used to synchronize emails, channel messages, and team discussion content. This category is suitable for customer service communication, business correspondence, and collaborative record queries. It includes Gmail, Outlook, IMAP, Microsoft Teams, Slack, and Discord.
 

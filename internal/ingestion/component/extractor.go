@@ -638,6 +638,40 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}, nil
 }
 
+// extractorLLMCacheKey builds a Redis key for textual extractions.
+func extractorLLMCacheKey(taskType, modelID, systemPrompt, text string) string {
+	h := xxhash.New()
+	h.WriteString(taskType)
+	h.WriteString("\x00")
+	h.WriteString(modelID)
+	h.WriteString("\x00")
+	h.WriteString(systemPrompt)
+	h.WriteString("\x00")
+	h.WriteString(text)
+	return fmt.Sprintf("kc:extractor:%s:%x", taskType, h.Sum64())
+}
+
+// callTextCached wraps callText with a 24-hour Redis cache.
+func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in extractorInputs, taskType, systemPrompt, chunkText string) (string, error) {
+	key := extractorLLMCacheKey(taskType, in.llmID, systemPrompt, chunkText)
+	if client := redis.Get(); client != nil {
+		if data, err := client.Get(ctx, key); err == nil && data != "" {
+			return data, nil
+		}
+	}
+	res, err := c.callText(ctx, db, in, systemPrompt, chunkText)
+	if err != nil {
+		return "", err
+	}
+	res = cleanExtractionResult(res)
+	if res != "" && !strings.Contains(res, "**ERROR**") {
+		if client := redis.Get(); client != nil {
+			client.Set(ctx, key, res, 24*time.Hour)
+		}
+	}
+	return res, nil
+}
+
 // runAutoKeywords extracts keywords for the current chunk and stores
 // them on ck["important_kwd"]. Keyword extraction pins
 // temperature to extractorTemperature (0.2) to mirror generator.py.
@@ -659,11 +693,10 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 		llmID:       in.llmID,
 		temperature: &kwTemp,
 	}
-	resultStr, err := c.callText(ctx, db, kwIn, systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, kwIn, "keywords", systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
-	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
 	}
@@ -700,11 +733,10 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 		llmID:       in.llmID,
 		temperature: &qTemp,
 	}
-	resultStr, err := c.callText(ctx, db, qIn, systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, qIn, "questions", systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
-	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
 	}
@@ -747,11 +779,10 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 		llmID:       in.llmID,
 		temperature: &sumTemp,
 	}
-	resultStr, err := c.callText(ctx, db, sumIn, systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, sumIn, "summary", systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}
-	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
 	}

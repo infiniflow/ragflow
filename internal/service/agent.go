@@ -328,19 +328,11 @@ var ErrAgentNotOwner = errors.New("agent not owned by user")
 // same Agent session before the current run reaches a terminal state.
 var ErrAgentSessionBusy = errors.New("agent session is already running")
 
-// ErrAgentStorageError is returned by RunAgent when the underlying
-// version / canvas / tenant DAO surfaces a non-sentinel error (DB
-// connectivity, schema drift, deadlock, etc.). The handler's
-// mapAgentError recognises this sentinel and maps it to
-// common.CodeServerError (500) with a SANITIZED message — the raw
-// DAO error string is never echoed to the client, so internal
-// connection-string / table-name leaks are avoided.
-//
-// v3.5.2 follow-up: the prior af2ac2eda commit claimed "DB error ->
-// 500" in the branch table, but the handler's mapAgentError did not
-// actually classify those errors as CodeServerError — every DAO
-// failure fell through to CodeDataError with the raw err.Error()
-// string. This sentinel closes that gap.
+// ErrAgentStorageError identifies internal Agent service failures such as
+// database connectivity, schema drift, or persistence errors. Synchronous
+// callers map this sentinel to a sanitized 500 response; failures raised after
+// streaming starts are wrapped with canvas.NewInternalRunError so Runner emits
+// the same safe message in its terminal event.
 var ErrAgentStorageError = errors.New("agent storage error")
 
 // AgentService agent service
@@ -1464,6 +1456,10 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
 	lockToken := utility.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
+	// Keep workflow cancellation separate from event-consumer cancellation.
+	// An explicit session cancellation should still reach an attached client,
+	// while a disconnected HTTP request must stop event delivery promptly.
+	runCtx = canvas.WithEventContext(runCtx, ctx)
 	active := &activeAgentRun{
 		userID:     userID,
 		canvasID:   canvasID,
@@ -1899,7 +1895,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if events == nil {
 				return
 			}
-			canvas.PushEvent(events, canvas.RunEvent{
+			canvas.PushEvent(ctx, events, canvas.RunEvent{
 				Type: typ, Data: data,
 				MessageID: messageID,
 				CreatedAt: time.Now().Unix(),
@@ -2095,7 +2091,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
-			return nil, fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err)
+			return nil, canvas.NewInternalRunError(
+				fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err),
+			)
 		}
 
 		cpID := ""
@@ -2194,7 +2192,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
 				}
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
-					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
 				}
 				if answer != "" && shouldEmitMessage {
 					if !messageEventsEmitted {
@@ -2212,7 +2212,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				appendAssistantHistory(state, assistantOutput)
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
 				}
 				if !messageEventsEmitted && shouldEmitMessage {
 					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
@@ -2248,7 +2250,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		appendAssistantHistory(state, assistantOutput)
 		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+			return nil, canvas.NewInternalRunError(
+				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+			)
 		}
 		if !messageEventsEmitted && shouldEmitMessage {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)

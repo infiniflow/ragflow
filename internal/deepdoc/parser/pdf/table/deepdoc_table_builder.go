@@ -128,7 +128,14 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 				}
 			}
 		}
-		if len(covered) < 2 {
+		// A span box that covers only a single grid cell (e.g. a TSR
+		// spanning cell whose box only reaches one row's center because the
+		// model's box edge missed the neighbour row) is still a real TSR
+		// span and must be labelled, not silently dropped. A 1-cell span
+		// renders as rowspan=1/colspan=1 (harmless) but keeps the TSR
+		// recognition visible downstream. Only skip when the box overlaps
+		// no grid cell at all (genuine coordinate mismatch).
+		if len(covered) == 0 {
 			continue
 		}
 		sort.Slice(covered, func(a, b int) bool {
