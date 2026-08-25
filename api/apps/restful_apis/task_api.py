@@ -59,9 +59,9 @@ async def _cancel_task(task_id):
     if not exists:
         return get_json_result(data=True)
 
-    # Verify the caller owns the dataset the task belongs to before touching
-    # anything. Canvas-debug and graph-raptor tasks use sentinel doc ids that
-    # have no Document row, so they keep the previous behaviour.
+    # Verify the caller has access to the dataset the task belongs to before
+    # touching anything. Canvas-debug and graph-raptor tasks use sentinel doc
+    # ids that have no Document row, so they are not scope-checked.
     if task.doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
         from api.db.services.document_service import DocumentService
 
