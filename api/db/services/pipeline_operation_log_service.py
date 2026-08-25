@@ -74,7 +74,26 @@ _PARSER_SETUP_KEY_BY_SUFFIX = {
 }
 
 
-def _parser_for_document_from_dsl(dsl_str: str, document_suffix: str) -> str | None:
+def _load_dsl_mapping(dsl_str) -> dict | None:
+    """Decode + validate a pipeline DSL string into a mapping.
+
+    Returns None for missing, empty, malformed, or non-mapping input so
+    callers can fall back to ``document.parser_id`` (issue #18306). The
+    PipelineOperationLog create path decodes the DSL exactly once and
+    reuses the parsed mapping for both parser extraction and the
+    persisted ``dsl`` column — avoids a second ``json.loads`` that would
+    re-raise on the same malformed input.
+    """
+    if not dsl_str or dsl_str in ("{}", ""):
+        return None
+    try:
+        parsed = json.loads(dsl_str)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _parser_for_document_from_dsl(dsl_mapping: dict | None, document_suffix: str) -> str | None:
     """Return the parse_method the flow Parser would use for this document.
 
     The Pipeline's Parser component configures ``parse_method`` per file
@@ -83,23 +102,31 @@ def _parser_for_document_from_dsl(dsl_str: str, document_suffix: str) -> str | N
     not ``document.parser_id`` which may carry the KB default (e.g.
     "DeepDOC") even when the Pipeline Parser component is set to
     "Docling" — see issue #18306.
+
+    ``dsl_mapping`` must already be a decoded JSON object — callers
+    should run the raw DSL through :func:`_load_dsl_mapping` first so
+    malformed input is handled in one place.
     """
-    if not dsl_str or dsl_str in ("{}", ""):
+    if not isinstance(dsl_mapping, dict):
         return None
-    try:
-        dsl = json.loads(dsl_str)
-    except (TypeError, ValueError):
+    components = dsl_mapping.get("components") or {}
+    if not isinstance(components, dict):
         return None
-    components = dsl.get("components") or {}
     setup_key = _PARSER_SETUP_KEY_BY_SUFFIX.get((document_suffix or "").lower())
     if not setup_key:
         return None
     for cpn in components.values():
-        obj = cpn.get("obj") if isinstance(cpn, dict) else None
+        if not isinstance(cpn, dict):
+            continue
+        obj = cpn.get("obj")
         if not isinstance(obj, dict) or obj.get("component_name") != "Parser":
             continue
-        params = obj.get("params") or {}
-        setups = params.get("setups") or {}
+        params = obj.get("params")
+        if not isinstance(params, dict):
+            continue
+        setups = params.get("setups")
+        if not isinstance(setups, dict):
+            continue
         cfg = setups.get(setup_key)
         if isinstance(cfg, dict):
             method = cfg.get("parse_method")
@@ -253,14 +280,33 @@ class PipelineOperationLogService(CommonService):
             # Closes #18306: when the dataflow task is a PARSE, the operator's
             # chosen Pipeline Parser component (e.g. Docling) is what actually
             # ran — log that instead of document.parser_id which may carry
-            # the KB default (DeepDOC).
+            # the KB default (DeepDOC). Decode the DSL exactly once and reuse
+            # the parsed mapping for both parser extraction and the persisted
+            # ``dsl`` column; if the DSL is malformed we fall back to
+            # ``document.parser_id`` instead of crashing.
+            dsl_mapping = _load_dsl_mapping(dsl)
             if task_type == PipelineTaskType.PARSE:
                 pipeline_parser = _parser_for_document_from_dsl(
-                    dsl,
+                    dsl_mapping,
                     document.suffix or "",
                 )
                 if pipeline_parser:
                     parser_id = pipeline_parser
+                elif dsl and dsl not in ("{}", ""):
+                    logging.warning(
+                        "[PipelineOperationLog] Could not resolve pipeline parser from DSL "
+                        "for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
+                        document_id,
+                        document.suffix,
+                        parser_id,
+                    )
+            # Persist a sanitized copy of the DSL we just validated, instead of
+            # re-running json.loads on the raw string (which would re-raise on
+            # malformed input we already handled gracefully above).
+            if dsl_mapping is not None:
+                dsl_for_log = _remove_embedding_vectors(dsl_mapping)
+            else:
+                dsl_for_log = {}
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not kb_info:
@@ -312,7 +358,7 @@ class PipelineOperationLogService(CommonService):
             progress_msg=progress_msg,
             process_begin_at=process_begin_at,
             process_duration=process_duration,
-            dsl=_remove_embedding_vectors(json.loads(dsl)),
+            dsl=dsl_for_log,
             task_type=task_type,
             operation_status=operation_status,
             avatar=avatar,
