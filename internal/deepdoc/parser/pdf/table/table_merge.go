@@ -103,18 +103,20 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 					mh = h
 				}
 			}
+			// page-local yDis (Y resets to 0 on each page). A genuine
+			// cross-page continuation sits at the TOP of the next page, which
+			// in page-local coordinates is "above" the anchor, so yDis is
+			// NEGATIVE — merge it as-is. Two separate tables that merely
+			// repeat their page-local Y every page have a POSITIVE yDis; only
+			// then shift into the page-absolute frame (by the anchor page
+			// height) so the over-merge is rejected. This restates the
+			// icbccs-crosspage-table-overmerge guard from #18688 without also
+			// rejecting legitimate continuations.
 			yDis := (bp.Top + bp.Bottom - anchorBtm - ap.Bottom) / 2
-			// Tables carry page-LOCAL coordinates (each page resets Y to 0),
-			// so comparing bp.Top against anchorBtm as if they shared one
-			// continuous frame underestimates the inter-page gap and wrongly
-			// merges two tables that merely repeat their Y every page. Python
-			// measures _y_dis in a page-absolute frame, so shift the
-			// continuation into the anchor's page-absolute frame by the anchor
-			// page's height when we know it (see rule icbccs-crosspage-table-
-			// overmerge). Without pageHeights the legacy page-local formula is
-			// kept for backward compatibility.
-			if anchorPageH, ok := pageHeights[anchorPg]; ok && anchorPageH > 0 {
-				yDis += anchorPageH
+			if yDis >= 0 {
+				if anchorPageH, ok := pageHeights[anchorPg]; ok && anchorPageH > 0 {
+					yDis += anchorPageH
+				}
 			}
 			if yDis > mh*23 {
 				continue
