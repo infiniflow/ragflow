@@ -274,6 +274,17 @@ func TestSectionsToMarkdown_FigureWithoutImage(t *testing.T) {
 	}
 }
 
+func TestSectionsToMarkdown_FigureWithWhitespaceImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "   \t\n"},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "图1\n"
+	if got != want {
+		t.Errorf("got %q, want %q (whitespace image should not emit empty image tag or drop text)", got, want)
+	}
+}
+
 func TestSectionsToMarkdown_Text(t *testing.T) {
 	sections := []pdf.Section{
 		{LayoutType: pdf.LayoutTypeText, Text: "普通内容", Image: ""},

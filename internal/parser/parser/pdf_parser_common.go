@@ -443,9 +443,10 @@ func sectionsToMarkdown(sections []deepdoctype.Section) string {
 		if layoutType == deepdoctype.LayoutTypeTitle {
 			b.WriteString("\n## ")
 		}
-		if (layoutType == deepdoctype.LayoutTypeFigure || layoutType == "image" || section.DocTypeKwd == "image" || (layoutType == deepdoctype.LayoutTypeTable && section.Text == "")) && section.Image != "" {
+		imgURL := pdflayout.InlinePNGDataURL(section.Image)
+		if (layoutType == deepdoctype.LayoutTypeFigure || layoutType == "image" || section.DocTypeKwd == "image" || (layoutType == deepdoctype.LayoutTypeTable && section.Text == "")) && imgURL != "" {
 			b.WriteString("\n![Image](")
-			b.WriteString(pdflayout.InlinePNGDataURL(section.Image))
+			b.WriteString(imgURL)
 			b.WriteString(")")
 			continue
 		}
@@ -491,7 +492,7 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 
 	for i := range result.Sections {
 		sec := &result.Sections[i]
-		if sec.Image != "" {
+		if strings.TrimSpace(sec.Image) != "" {
 			continue
 		}
 		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&

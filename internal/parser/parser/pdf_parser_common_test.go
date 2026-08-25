@@ -330,6 +330,7 @@ func TestPDFParseResultToMarkdownWithOptions_RendersLikePython(t *testing.T) {
 		Sections: []deepdoctype.Section{
 			{Text: "Title", LayoutType: deepdoctype.LayoutTypeTitle},
 			{Text: "Figure", LayoutType: deepdoctype.LayoutTypeFigure, Image: "aGVsbG8="},
+			{Text: "WhitespaceFigureText", LayoutType: deepdoctype.LayoutTypeFigure, Image: "   \t\n"},
 			{Text: "<table><tr><td>cell</td></tr></table>", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVpbWc="},
 			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVvbmx5"},
 			{Text: "ImageCaption", LayoutType: "image", Image: "aW1hZ2Vvbmx5"},
@@ -352,6 +353,12 @@ func TestPDFParseResultToMarkdownWithOptions_RendersLikePython(t *testing.T) {
 	}
 	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aGVsbG8=)") {
 		t.Fatalf("Markdown = %q, want inline figure image", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "WhitespaceFigureText") {
+		t.Fatalf("Markdown = %q, want whitespace figure text preserved", res.Markdown)
+	}
+	if strings.Contains(res.Markdown, "![Image]()") {
+		t.Fatalf("Markdown = %q, unexpected empty image tag", res.Markdown)
 	}
 	if !strings.Contains(res.Markdown, "<table><tr><td>cell</td></tr></table>") {
 		t.Fatalf("Markdown = %q, want table text", res.Markdown)
