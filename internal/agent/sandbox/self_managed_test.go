@@ -662,3 +662,52 @@ func TestSelfManaged_ExecuteCode_TokenFromCanonicalSettingsPropagation(t *testin
 		t.Errorf("Authorization header = %q (seen=%v), want Bearer settings-shared-secret", capturedAuth, authSeen)
 	}
 }
+
+// TestNewSelfManagedProvider_EnvOnlyFallbacks pins the environment-only
+// configuration path: with an empty settings map, every SANDBOX_* variable
+// (including the pool size, which previously lost its env fallback) reaches
+// the provider. Cannot use t.Parallel() with t.Setenv.
+func TestNewSelfManagedProvider_EnvOnlyFallbacks(t *testing.T) {
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_URL", "https://env.example:9385")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "15s")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES", "6")
+	t.Setenv("SANDBOX_BASE_PYTHON_IMAGE", "reg.example.com/envpy:2")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "env-only-secret")
+
+	p := newSelfManagedProviderFromEnv()
+	if p.endpoint != "https://env.example:9385" {
+		t.Errorf("endpoint = %q, want env value", p.endpoint)
+	}
+	if p.timeout != 15*time.Second {
+		t.Errorf("timeout = %v, want 15s from env", p.timeout)
+	}
+	if p.poolSize != 11 {
+		t.Errorf("poolSize = %d, want 11 from env", p.poolSize)
+	}
+	if p.baseImages["python"] != "reg.example.com/envpy:2" {
+		t.Errorf("python baseImage = %q, want env value", p.baseImages["python"])
+	}
+	if p.apiToken != "env-only-secret" {
+		t.Errorf("apiToken = %q, want env value", p.apiToken)
+	}
+}
+
+// TestNewSelfManagedProviderFromConfig_SettingsBeatEnv pins precedence:
+// persisted settings values win over the environment for the same field.
+// Cannot use t.Parallel() with t.Setenv.
+func TestNewSelfManagedProviderFromConfig_SettingsBeatEnv(t *testing.T) {
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
+	t.Setenv("SANDBOX_BASE_PYTHON_IMAGE", "reg.example.com/envpy:2")
+
+	p := newSelfManagedProviderFromConfig(map[string]any{
+		"pool_size":         float64(4),
+		"base_python_image": "reg.example.com/settingspy:3",
+	})
+	if p.poolSize != 4 {
+		t.Errorf("poolSize = %d, want settings value 4 to beat env 11", p.poolSize)
+	}
+	if p.baseImages["python"] != "reg.example.com/settingspy:3" {
+		t.Errorf("python baseImage = %q, want settings value to beat env", p.baseImages["python"])
+	}
+}

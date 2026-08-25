@@ -212,11 +212,11 @@ func TestNewSelfManagedProviderFromConfig_MinimalConfig(t *testing.T) {
 func TestNewSelfManagedProviderFromConfig_FullConfig(t *testing.T) {
 	t.Parallel()
 	cfg := map[string]any{
-		"EXECUTOR_MANAGER_URL":       "https://custom.example:9999/",
-		"EXECUTOR_MANAGER_TIMEOUT":   float64(45), // JSON-decoded number
-		"EXECUTOR_MANAGER_POOL_SIZE": float64(10),
-		"BASE_PYTHON_IMAGE":          "registry.example.com/py:latest",
-		"BASE_NODEJS_IMAGE":          "registry.example.com/node:20",
+		"endpoint":          "https://custom.example:9999/",
+		"timeout":           float64(45), // JSON-decoded seconds
+		"pool_size":         float64(10),
+		"base_python_image": "registry.example.com/py:latest",
+		"base_nodejs_image": "registry.example.com/node:20",
 	}
 	p := newSelfManagedProviderFromConfig(cfg)
 	if p.endpoint != "https://custom.example:9999" {
@@ -241,7 +241,7 @@ func TestNewSelfManagedProviderFromConfig_FullConfig(t *testing.T) {
 func TestNewSelfManagedProviderFromConfig_TimeoutAsString(t *testing.T) {
 	t.Parallel()
 	cfg := map[string]any{
-		"EXECUTOR_MANAGER_TIMEOUT": "1m30s",
+		"timeout": "1m30s",
 	}
 	p := newSelfManagedProviderFromConfig(cfg)
 	if p.timeout != 90*time.Second {
@@ -437,10 +437,10 @@ func TestLoadFromSettingsWithReader_HappyPath(t *testing.T) {
 		rows: map[string][]entity.SystemSettings{
 			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "self_managed"}},
 			"sandbox.self_managed": {{Name: "sandbox.self_managed", Value: `{
-				"EXECUTOR_MANAGER_URL": "` + srv.URL + `",
-				"EXECUTOR_MANAGER_TIMEOUT": "5s",
-				"EXECUTOR_MANAGER_POOL_SIZE": 7,
-				"BASE_PYTHON_IMAGE": "reg.example.com/py:1"
+				"endpoint": "` + srv.URL + `",
+				"timeout": "5s",
+				"pool_size": 7,
+				"base_python_image": "reg.example.com/py:1"
 			}`}},
 		},
 	}

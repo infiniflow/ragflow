@@ -30,6 +30,7 @@ import threading
 import time
 from collections import deque
 
+from core.logger import logger
 from fastapi import Request
 from limits import parse_many
 from slowapi.errors import RateLimitExceeded
@@ -60,6 +61,9 @@ class PreAuthRateLimiter:
         self._window_seconds = limit.get_expiry()
         self._max_amount = limit.amount
         self._hits: dict[str, deque] = {}
+        # Bounded rejection logging: at most one warning per address per
+        # window, so throttling is observable without unbounded log writes.
+        self._last_logged: dict[str, float] = {}
         self._lock = threading.Lock()
 
     def hit(self, address: str, now: float | None = None) -> None:
@@ -74,17 +78,26 @@ class PreAuthRateLimiter:
             while window and window[0] <= cutoff:
                 window.popleft()
             if len(window) >= self._max_amount:
+                if timestamp - self._last_logged.get(address, float("-inf")) >= self._window_seconds:
+                    self._last_logged[address] = timestamp
+                    logger.warning(
+                        "Pre-auth rate limit exceeded for %s on /run (%s); further rejections from this address are throttled silently for this window",
+                        address,
+                        self._limit,
+                    )
                 raise RateLimitExceeded(_LimitDescriptor(self._limit))
             window.append(timestamp)
-            # Opportunistic cleanup keeps the address map bounded under scans.
+            # Opportunistic cleanup keeps the address maps bounded under scans.
             if len(self._hits) > 10_000:
                 stale = [key for key, hits in self._hits.items() if not hits or hits[-1] <= cutoff]
                 for key in stale:
                     del self._hits[key]
+                    self._last_logged.pop(key, None)
 
     def reset(self) -> None:
         with self._lock:
             self._hits.clear()
+            self._last_logged.clear()
 
 
 _preauth_limit_item = _parse_rate_limit(PRE_AUTH_RATE_LIMIT)
