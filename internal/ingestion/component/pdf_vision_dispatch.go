@@ -216,17 +216,18 @@ func dispatchMinerUPDF(
 // resolvePaddleOCRModelForDispatch resolves the OCR model used by the
 // PaddleOCR PDF dispatch. modelID is the raw layout_recognizer value: a bare
 // tenant model UUID (no "@") selects that exact model regardless of provider
-// spelling ("PaddleOCR" or "PaddleOCR.Net"); a composite name or empty value
+// spelling ("PaddleOCR" or "PaddleOCR.local"); a composite name or empty value
 // falls back to the tenant's first PaddleOCR OCR model, mirroring Python's
 // by_paddleocr which uses get_first_provider_model_name(tenant, "PaddleOCR").
 //
-// Known limitation: composite names such as "some-model@instance@PaddleOCR.Net"
-// (an explicit cloud selection) are not recognized here. Any value containing
+// Known limitation: composite names such as "some-model@instance@PaddleOCR.local"
+// (an explicit local selection) are not recognized here. Any value containing
 // "@" falls through to resolveTenantOCRModelByProvider("PaddleOCR"), which
 // returns the tenant's first active PaddleOCR OCR model — potentially the
-// local one — when both the local and the cloud (".Net") providers are
-// configured. The Python path behaves the same way; if exact cloud selection
-// is required, pass the model's tenant-model UUID instead.
+// local one — when both the local ("PaddleOCR.local") and the cloud
+// ("PaddleOCR") providers are configured. The Python path behaves the same
+// way; if exact selection is required, pass the model's tenant-model UUID
+// instead.
 var resolvePaddleOCRModelForDispatch = defaultResolvePaddleOCRModelForDispatch
 
 func defaultResolvePaddleOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
@@ -240,8 +241,8 @@ func defaultResolvePaddleOCRModelForDispatch(ctx context.Context, db *gorm.DB, t
 
 // dispatchPaddleOCRPdf submits a PDF to the tenant's PaddleOCR OCR model and
 // returns parsed sections. The resolved driver runs the protocol it knows:
-// the cloud "PaddleOCR.Net" driver submits a job and polls the
-// v2/ocr/jobs endpoint, the local "PaddleOCR" driver POSTs synchronously to
+// the cloud "PaddleOCR" driver submits a job and polls the v2/ocr/jobs
+// endpoint, the local "PaddleOCR.local" driver POSTs synchronously to
 // layout-parsing — both mirror the Python paddleocr_parser paths.
 func dispatchPaddleOCRPdf(
 	ctx context.Context,
@@ -261,9 +262,23 @@ func dispatchPaddleOCRPdf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
+	// Align with Python's PaddleOCROcrModel: the tenant api_key for the cloud
+	// PaddleOCR provider is a JSON payload carrying paddleocr_base_url /
+	// paddleocr_api_url, paddleocr_access_token and paddleocr_algorithm, while
+	// the instance base_url field stays empty. PaddleOCR.local keeps a
+	// plain-text bearer token in api_key and its base url in the instance
+	// extra, so a non-JSON api_key passes through untouched.
+	keyBaseURL, keyAccessToken, keyAlgorithm := "", "", ""
+	if apiConfig.ApiKey != nil {
+		keyBaseURL, keyAccessToken, keyAlgorithm = modelModule.PaddleOCRConfigFromAPIKey(*apiConfig.ApiKey)
+	}
+
 	baseURL := ""
 	if apiConfig.BaseURL != nil {
 		baseURL = *apiConfig.BaseURL
+	}
+	if baseURL == "" {
+		baseURL = keyBaseURL
 	}
 	if baseURL == "" {
 		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
@@ -280,7 +295,13 @@ func dispatchPaddleOCRPdf(
 	if apiConfig.ApiKey != nil {
 		apiKey = *apiConfig.ApiKey
 	}
+	if keyAccessToken != "" {
+		apiKey = keyAccessToken
+	}
 	algorithm := strings.TrimSpace(getStringOr(setup, "paddleocr_algorithm", ""))
+	if algorithm == "" {
+		algorithm = keyAlgorithm
+	}
 	if algorithm == "" {
 		algorithm = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAlgorithm))
 	}
@@ -726,10 +747,10 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 }
 
 // isPaddleOCRDriver reports whether the model driver is a PaddleOCR variant
-// (remote paddle_ocr.net or local paddleocr).
+// (cloud "paddleocr" or local "paddleocr.local").
 func isPaddleOCRDriver(driver modelModule.ModelDriver) bool {
 	switch strings.ToLower(driver.Name()) {
-	case "paddleocr", "paddle_ocr.net":
+	case "paddleocr", "paddleocr.local":
 		return true
 	}
 	return false
@@ -737,8 +758,8 @@ func isPaddleOCRDriver(driver modelModule.ModelDriver) bool {
 
 // isPaddleOCRLayoutModelID reports whether layout — a bare tenant model UUID
 // with no "model@instance@provider" composite hint — resolves to an active
-// OCR model driven by a PaddleOCR provider (local "PaddleOCR" or cloud
-// "PaddleOCR.Net"). The web UI stores the tenant model UUID directly in
+// OCR model driven by a PaddleOCR provider (cloud "PaddleOCR" or local
+// "PaddleOCR.local"). The web UI stores the tenant model UUID directly in
 // layout_recognizer, so the raw value carries no provider spelling; this
 // mirrors Python's get_composite_model_name_by_id resolution of the same
 // UUID before the PaddleOCR path is chosen.

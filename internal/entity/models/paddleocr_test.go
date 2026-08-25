@@ -1,12 +1,117 @@
 package models
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
 
+// TestPaddleOCRLocalListModels verifies that the local PaddleOCR driver lists
+// the default models shipped in conf/models/paddleocr_local.json, so that the
+// "add model by selection" flow can pick them up.
+func TestPaddleOCRLocalListModels(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "paddleocr_local.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	driver := NewPaddleOCRLocalModel(map[string]string{"default": "http://127.0.0.1:9000"}, URLSuffix{OCR: "layout-parsing"})
+	models, err := driver.ListModels(context.Background(), &APIConfig{})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+
+	want := []string{"PaddleOCR-VL-1.6", "PaddleOCR-VL-1.5", "PP-OCRv6", "PP-OCRv5", "PP-StructureV3"}
+	if len(models) != len(want) {
+		t.Fatalf("len(models) = %d, want %d", len(models), len(want))
+	}
+	for i, name := range want {
+		if models[i].Name != name {
+			t.Errorf("models[%d].Name = %q, want %q", i, models[i].Name, name)
+		}
+		if len(models[i].ModelTypes) != 1 || models[i].ModelTypes[0] != "ocr" {
+			t.Errorf("models[%d].ModelTypes = %v, want [ocr]", i, models[i].ModelTypes)
+		}
+	}
+}
+
+// TestPaddleOCRConfigFromAPIKey pins the api_key JSON contract shared with
+// Python's PaddleOCROcrModel: the cloud provider stores
+// paddleocr_base_url / paddleocr_api_url, paddleocr_access_token and
+// paddleocr_algorithm in the api_key payload, while a plain-text api_key
+// (PaddleOCR.local bearer token) yields zero values.
+func TestPaddleOCRConfigFromAPIKey(t *testing.T) {
+	cases := []struct {
+		name      string
+		apiKey    string
+		wantURL   string
+		wantToken string
+		wantAlgo  string
+	}{
+		{
+			name:      "empty",
+			apiKey:    "",
+			wantURL:   "",
+			wantToken: "",
+			wantAlgo:  "",
+		},
+		{
+			name:      "plain token (PaddleOCR.local)",
+			apiKey:    "tok-123",
+			wantURL:   "",
+			wantToken: "",
+			wantAlgo:  "",
+		},
+		{
+			name:      "api_url payload",
+			apiKey:    `{"paddleocr_api_url":"http://ocr.test/api","paddleocr_access_token":"tok-456","paddleocr_algorithm":"PaddleOCR-VL"}`,
+			wantURL:   "http://ocr.test/api",
+			wantToken: "tok-456",
+			wantAlgo:  "PaddleOCR-VL",
+		},
+		{
+			name:      "base_url wins over api_url",
+			apiKey:    `{"paddleocr_base_url":"http://base.test","paddleocr_api_url":"http://api.test","paddleocr_access_token":"tok-789"}`,
+			wantURL:   "http://base.test",
+			wantToken: "tok-789",
+			wantAlgo:  "",
+		},
+		{
+			name:      "nested api_key key",
+			apiKey:    `{"api_key":{"paddleocr_api_url":"http://nested.test","paddleocr_access_token":"tok-nested"}}`,
+			wantURL:   "http://nested.test",
+			wantToken: "tok-nested",
+			wantAlgo:  "",
+		},
+		{
+			name:      "unrelated json ignored",
+			apiKey:    `{"openai_api_key":"sk-xxx"}`,
+			wantURL:   "",
+			wantToken: "",
+			wantAlgo:  "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			url, token, algo := PaddleOCRConfigFromAPIKey(tc.apiKey)
+			if url != tc.wantURL {
+				t.Errorf("baseURL = %q, want %q", url, tc.wantURL)
+			}
+			if token != tc.wantToken {
+				t.Errorf("accessToken = %q, want %q", token, tc.wantToken)
+			}
+			if algo != tc.wantAlgo {
+				t.Errorf("algorithm = %q, want %q", algo, tc.wantAlgo)
+			}
+		})
+	}
+}
+
 // sampleArrayResult mirrors the actual response shape observed from the
-// paddle_ocr.net online service: a JSON array of page objects where each
+// PaddleOCR online service: a JSON array of page objects where each
 // element carries result.layoutParsingResults[].markdown.text plus
 // logId/errorCode/errorMsg at the top level.
 const sampleArrayResult = `[
