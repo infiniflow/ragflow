@@ -466,7 +466,6 @@ async def retrieval_test_embedded(tenant_id=None):
             enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ranks["labels"] = labels
-        ranks["total"] = len(ranks["chunks"])
 
         return get_json_result(data=ranks)
 
