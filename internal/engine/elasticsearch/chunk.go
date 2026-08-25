@@ -1175,12 +1175,16 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if k <= 0 {
 			k = 1024
 		}
-		numCandidates := k * 2
+		k = min(k, 10000)
+		numCandidates := min(k*2, 10000)
 
 		similarity := 0.0
 		if matchDense.ExtraOptions != nil {
 			if sim, ok := matchDense.ExtraOptions["similarity"].(float64); ok {
 				similarity = sim
+			}
+			if n, ok := common.GetInt(matchDense.ExtraOptions["num_candidates"]); ok {
+				numCandidates = max(k, min(n, 10000))
 			}
 		}
 

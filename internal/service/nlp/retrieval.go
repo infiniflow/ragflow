@@ -55,6 +55,7 @@ type RetrievalRequest struct {
 	PageSize               int
 	RerankCandidatesCount  *int
 	Top                    *int
+	KNNNumCandidates       *int
 	SimilarityThreshold    *float64
 	VectorSimilarityWeight *float64
 	RankFeature            *map[string]float64
@@ -90,6 +91,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	// Apply default values
 	if req.Top == nil {
 		req.Top = func() *int { v := 1024; return &v }()
+	}
+	if req.KNNNumCandidates == nil {
+		req.KNNNumCandidates = func() *int { v := 2048; return &v }()
 	}
 	if req.SimilarityThreshold == nil {
 		req.SimilarityThreshold = func() *float64 { v := 0.2; return &v }()
@@ -133,6 +137,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		Page:                   1,
 		PageSize:               rerankCandidatesCount,
 		Top:                    *req.Top,
+		KNNNumCandidates:       *req.KNNNumCandidates,
 		RankFeature:            *req.RankFeature,
 		EmbeddingModel:         req.EmbeddingModel,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
@@ -494,6 +499,7 @@ type RetrievalSearchRequest struct {
 	KbIDs                  []string
 	DocIDs                 []string
 	Top                    int
+	KNNNumCandidates       int
 	Page                   int
 	PageSize               int
 	Sort                   bool
@@ -565,9 +571,13 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	if topk <= 0 {
 		topk = 1024
 	}
+	numCandidates := req.KNNNumCandidates
+	if numCandidates <= 0 {
+		numCandidates = 2048
+	}
 	pageSize := req.PageSize
 	if pageSize <= 0 {
-		pageSize = topk
+		pageSize = 30
 	}
 	limit := pageSize
 
@@ -637,7 +647,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			if similarityForGetVector <= 0 {
 				similarityForGetVector = 0.1
 			}
-			matchDense, err := s.GetVector(ctx, req.Question, req.EmbeddingModel, topk, similarityForGetVector)
+			matchDense, err := s.GetVector(ctx, req.Question, req.EmbeddingModel, topk, numCandidates, similarityForGetVector)
 			if err != nil {
 				return nil, fmt.Errorf("GetVector failed: %w", err)
 			}
@@ -762,7 +772,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 }
 
 // GetVector computes query vector and returns MatchDenseExpr for hybrid search
-func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, topk int, similarity float64) (*types.MatchDenseExpr, error) {
+func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, topk, numCandidates int, similarity float64) (*types.MatchDenseExpr, error) {
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
@@ -781,7 +791,7 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 		EmbeddingDataType: "float",
 		DistanceType:      "cosine",
 		TopN:              topk,
-		ExtraOptions:      map[string]interface{}{"similarity": similarity},
+		ExtraOptions:      map[string]interface{}{"similarity": similarity, "num_candidates": numCandidates},
 	}, nil
 }
 
