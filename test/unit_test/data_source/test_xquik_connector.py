@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -68,6 +69,17 @@ def test_xquik_validation_fetches_at_most_one_post(_dns):
     assert connector.pagination_type == PaginationType.NONE
     assert connector.max_pages == 1
     assert connector._explicit_query_params["limit"] == "1"
+
+
+@patch("common.data_source.rest_api_connector.socket.getaddrinfo", return_value=_MOCK_DNS)
+def test_xquik_logs_safe_resolved_config(_dns, caplog):
+    caplog.set_level(logging.INFO, logger="common.data_source.xquik_connector")
+
+    XquikConnector.from_config(_config())
+
+    assert "query_type=Top page_size=50 max_pages=4 batch_size=8 request_delay=0.0 validation=False" in caplog.text
+    assert "ragflow lang:en" not in caplog.text
+    assert "xq_test_key" not in caplog.text
 
 
 @patch("common.data_source.rest_api_connector.socket.getaddrinfo", return_value=_MOCK_DNS)

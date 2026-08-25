@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Mapping
 from datetime import datetime
@@ -16,6 +17,8 @@ XQUIK_SEARCH_URL = "https://xquik.com/api/v1/x/tweets/search"
 XQUIK_DEFAULT_PAGE_SIZE = 100
 XQUIK_DEFAULT_MAX_PAGES = 10
 XQUIK_DEFAULT_BATCH_SIZE = 32
+
+logger = logging.getLogger(__name__)
 
 
 def _positive_int(value: Any, default: int, field: str, maximum: int | None = None) -> int:
@@ -78,6 +81,16 @@ class XquikConnector(RestAPIConnector):
         api_key = str(credentials.get("xquik_api_key") or "").strip()
         if not api_key:
             raise ConnectorMissingCredentialError("Xquik connector requires 'xquik_api_key' in credentials")
+
+        logger.info(
+            "Building Xquik connector: query_type=%s page_size=%d max_pages=%d batch_size=%d request_delay=%s validation=%s",
+            query_type,
+            page_size,
+            max_pages,
+            batch_size,
+            request_delay,
+            validation,
+        )
 
         query_params = {
             "q": query,
