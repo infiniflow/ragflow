@@ -102,15 +102,17 @@ logs:
 clean:
 	@echo "🧹 Cleaning all containers and volumes..."
 	@docker compose down -v || true
-	@if [ -f .env ]; then \
-		source .env && \
-		SANDBOX_EXECUTOR_MANAGER_POOL_SIZE="$${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-5}" && \
-		for i in $$(seq 0 $$((SANDBOX_EXECUTOR_MANAGER_POOL_SIZE - 1))); do \
-			echo "🧹 Deleting sandbox_python_$$i..." && \
-			docker rm -f sandbox_python_$$i 2>/dev/null || true && \
-			echo "🧹 Deleting sandbox_nodejs_$$i..." && \
-			docker rm -f sandbox_nodejs_$$i 2>/dev/null || true; \
-		done; \
+	@# Same discovery as scripts/stop.sh: the containers that exist, not a range derived from
+	@# SANDBOX_EXECUTOR_MANAGER_POOL_SIZE, which misses a pool created at a different size, skips
+	@# cleanup entirely when .env is gone, and never covers a container that failed to join the
+	@# executor-manager queue.
+	@sandbox_containers="$$(docker ps -a --format '{{.Names}}' 2>/dev/null | \
+		grep -E '^sandbox_(python|nodejs)_[0-9]+$$' || true)"; \
+	if [ -n "$$sandbox_containers" ]; then \
+		while IFS= read -r container; do \
+			echo "🧹 Deleting $$container..."; \
+			docker rm -f "$$container" >/dev/null 2>&1 || true; \
+		done <<<"$$sandbox_containers"; \
 	else \
-		echo "⚠️ .env not found, skipping container cleanup"; \
+		echo "✅ No sandbox containers found"; \
 	fi
