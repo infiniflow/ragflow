@@ -24,11 +24,11 @@ from http import HTTPStatus
 
 import numpy as np
 import requests
-from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.mws_utils import mws_api_url, require_mws_token
+from rag.utils.url_utils import append_api_path, ensure_v1
 
 
 class Base(ABC):
@@ -642,7 +642,6 @@ class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
     def __init__(self, key, model_name="gte-rerank-v2", **kwargs):
-
         self.api_key = key
         self.model_name = model_name if model_name else "gte-rerank-v2"
         # Remove invalid global timeout, use official SDK per-request timeout parameter
@@ -721,6 +720,8 @@ class HuggingfaceRerank(Base):
 
 
 class GPUStackRerank(Base):
+    """GPUStack reranking adapter."""
+
     _FACTORY_NAME = "GPUStack"
 
     def __init__(self, key, model_name, base_url):
@@ -728,7 +729,7 @@ class GPUStackRerank(Base):
             raise ValueError("url cannot be None")
 
         self.model_name = model_name
-        self.base_url = str(URL(base_url) / "v1" / "rerank")
+        self.base_url = append_api_path(ensure_v1(base_url), "rerank")
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",

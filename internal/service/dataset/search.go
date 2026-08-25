@@ -54,14 +54,20 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if req.VectorSimilarityWeight != nil {
 		vectorSimilarityWeight = *req.VectorSimilarityWeight
 	}
-	topK := 1024
-	if req.TopK != nil {
-		topK = *req.TopK
+	knnTopK := 1024
+	if req.KNNTopK != nil {
+		knnTopK = *req.KNNTopK
+	} else if req.TopK != nil {
+		knnTopK = *req.TopK
 	}
-	if topK < 1 {
-		topK = 1
-	} else if topK > 2048 {
-		topK = 2048
+	if knnTopK < 1 {
+		knnTopK = 1
+	} else if knnTopK > 2048 {
+		knnTopK = 2048
+	}
+	knnNumCandidates := 2048
+	if req.KNNNumCandidates != nil {
+		knnNumCandidates = *req.KNNNumCandidates
 	}
 	keyword := false
 	if req.Keyword != nil {
@@ -142,11 +148,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 				vectorSimilarityWeight = scVSW
 			}
 			if scTopK, ok := searchConfig["top_k"].(float64); ok {
-				topK = int(scTopK)
-				if topK < 1 {
-					topK = 1
-				} else if topK > 2048 {
-					topK = 2048
+				knnTopK = int(scTopK)
+				if knnTopK < 1 {
+					knnTopK = 1
+				} else if knnTopK > 2048 {
+					knnTopK = 2048
 				}
 			}
 			if scRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
@@ -175,6 +181,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			return nil, fmt.Errorf("invalid search_id")
 		}
 	}
+	knnNumCandidates = max(knnNumCandidates, knnTopK)
 
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var chatModelForFilter *modelModule.ChatModel
@@ -272,7 +279,8 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Page:                   page,
 		PageSize:               pageSize,
 		RerankCandidatesCount:  &rerankCandidatesCount,
-		Top:                    &topK,
+		KNNTopK:                &knnTopK,
+		KNNNumCandidates:       &knnNumCandidates,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		RerankModel:            rerankModel,
