@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -839,5 +840,17 @@ func TestCountOriginalChunkIDs(t *testing.T) {
 	}
 	if n := countOriginalChunkIDs(chunks); n != 2 {
 		t.Fatalf("compiler products: got %d, want 2", n)
+	}
+}
+
+func TestMergeCompiledVariants(t *testing.T) {
+	if got := mergeCompiledVariants(nil, nil); got != nil {
+		t.Fatalf("empty variants = %v, want nil", got)
+	}
+
+	got := mergeCompiledVariants([]string{"wiki", "structure"}, []string{"wiki", "tree"})
+	want := []string{"structure", "tree", "wiki"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("merged variants = %v, want %v", got, want)
 	}
 }
