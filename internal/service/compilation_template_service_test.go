@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -67,6 +68,37 @@ func TestValidateTemplatePayload_AcceptsJSONMapConfig(t *testing.T) {
 	bad["config"] = "not-a-map"
 	if err := ValidateTemplatePayload(bad, true); err == nil {
 		t.Fatal("non-map config should be rejected")
+	}
+}
+
+func TestValidateTemplatePayloadCountsTextLimitsByRune(t *testing.T) {
+	valid := map[string]interface{}{
+		"name":        "模板",
+		"description": strings.Repeat("描", 1024),
+		"kind":        "graph",
+		"config": map[string]interface{}{
+			"global_rules": strings.Repeat("规", 4096),
+			"entity": map[string]interface{}{
+				"fields": []interface{}{map[string]interface{}{
+					"type": "person", "description": strings.Repeat("人", 1024), "rule": strings.Repeat("则", 1024),
+				}},
+			},
+			"relation": map[string]interface{}{"fields": []interface{}{}},
+		},
+	}
+	if err := ValidateTemplatePayload(valid, true); err != nil {
+		t.Fatalf("valid Unicode lengths rejected: %v", err)
+	}
+
+	invalid := map[string]interface{}{
+		"name": "模板",
+		"kind": "graph",
+		"config": map[string]interface{}{
+			"global_rules": strings.Repeat("规", 4097),
+		},
+	}
+	if err := ValidateTemplatePayload(invalid, true); err == nil {
+		t.Fatal("global_rules over 4096 Unicode characters should be rejected")
 	}
 }
 
