@@ -106,7 +106,13 @@ clean:
 	@# SANDBOX_EXECUTOR_MANAGER_POOL_SIZE, which misses a pool created at a different size, skips
 	@# cleanup entirely when .env is gone, and never covers a container that failed to join the
 	@# executor-manager queue.
-	@sandbox_containers="$$(docker ps -a --format '{{.Names}}' 2>/dev/null | \
+	@# A failed `docker ps` and an empty result both collapse to an empty string, and only the
+	@# first means the containers are still running. Tolerate grep's no-match exit, not docker's.
+	@if ! all_containers="$$(docker ps -a --format '{{.Names}}')"; then \
+		echo "❌ Could not list Docker containers; sandbox containers were NOT removed" >&2; \
+		exit 1; \
+	fi; \
+	sandbox_containers="$$(printf '%s\n' "$$all_containers" | \
 		grep -E '^sandbox_(python|nodejs)_[0-9]+$$' || true)"; \
 	if [ -n "$$sandbox_containers" ]; then \
 		while IFS= read -r container; do \

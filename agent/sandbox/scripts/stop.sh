@@ -30,7 +30,14 @@ echo "🧹 Deleting sandbox containers..."
 # container that never joined the executor-manager queue was never in the range to begin with.
 # The pattern is anchored to the generated pool names, so an unrelated container that merely
 # contains "sandbox_python_" in its name is not touched.
-sandbox_containers="$(docker ps -a --format '{{.Names}}' 2>/dev/null |
+# `docker ps` failing and finding nothing look identical once both become an empty string, and
+# the difference matters: the first leaves every sandbox container running while reporting
+# success. Only grep's no-match exit is tolerated here.
+if ! all_containers="$(docker ps -a --format '{{.Names}}')"; then
+  echo "❌ Could not list Docker containers; sandbox containers were NOT removed" >&2
+  exit 1
+fi
+sandbox_containers="$(printf '%s\n' "$all_containers" |
   grep -E '^sandbox_(python|nodejs)_[0-9]+$' || true)"
 if [ -n "$sandbox_containers" ]; then
   while IFS= read -r container; do
