@@ -118,18 +118,18 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 		t.Errorf("MinerU.Net doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
 	}
 
-	paddleOCR := pm.FindProvider("PaddleOCR.Net")
+	paddleOCR := pm.FindProvider("PaddleOCR")
 	if paddleOCR == nil {
-		t.Fatal("PaddleOCR.Net provider not found")
+		t.Fatal("PaddleOCR provider not found")
 	}
 	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRModel); !ok {
-		t.Fatalf("PaddleOCR.Net ModelDriver=%T, want *models.PaddleOCRModel", paddleOCR.ModelDriver)
+		t.Fatalf("PaddleOCR ModelDriver=%T, want *models.PaddleOCRModel", paddleOCR.ModelDriver)
 	}
-	if paddleOCR.Class != "paddleocr.net" {
-		t.Errorf("PaddleOCR.Net class=%q", paddleOCR.Class)
+	if paddleOCR.Class != "paddleocr" {
+		t.Errorf("PaddleOCR class=%q", paddleOCR.Class)
 	}
 	if paddleOCR.URLSuffix.OCR != "v2/ocr/jobs" {
-		t.Errorf("PaddleOCR.Net OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+		t.Errorf("PaddleOCR OCR suffix=%q", paddleOCR.URLSuffix.OCR)
 	}
 }
 
@@ -172,15 +172,15 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 		t.Errorf("MinerU doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
 	}
 
-	paddleOCR := pm.FindProvider("PaddleOCR")
+	paddleOCR := pm.FindProvider("PaddleOCR.local")
 	if paddleOCR == nil {
-		t.Fatal("PaddleOCR provider not found")
+		t.Fatal("PaddleOCR.local provider not found")
 	}
 	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRLocalModel); !ok {
-		t.Fatalf("PaddleOCR ModelDriver=%T, want *models.PaddleOCRLocalModel", paddleOCR.ModelDriver)
+		t.Fatalf("PaddleOCR.local ModelDriver=%T, want *models.PaddleOCRLocalModel", paddleOCR.ModelDriver)
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
-		t.Errorf("PaddleOCR OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+		t.Errorf("PaddleOCR.local OCR suffix=%q", paddleOCR.URLSuffix.OCR)
 	}
 }
 

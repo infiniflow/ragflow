@@ -50,7 +50,7 @@ func (p *PaddleOCRLocalModel) NewInstance(baseURL map[string]string) ModelDriver
 }
 
 func (p *PaddleOCRLocalModel) Name() string {
-	return "paddleocr"
+	return "paddleocr.local"
 }
 
 func (p *PaddleOCRLocalModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -232,7 +232,30 @@ func (p *PaddleOCRLocalModel) ParseFile(ctx context.Context, modelName *string, 
 }
 
 func (p *PaddleOCRLocalModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	provider := GetProviderManager().FindProvider(p.Name())
+	if provider == nil {
+		return nil, fmt.Errorf("provider '%s' not found", p.Name())
+	}
+
+	var modelList []ListModelResponse
+	for _, model := range provider.Models {
+		modelList = append(modelList, ListModelResponse{
+			Name:          model.Name,
+			ContentLength: model.ContentLength,
+			MaxOutput:     model.MaxOutput,
+			ModelTypes:    model.ModelTypes,
+			Thinking:      model.Thinking,
+			MaxDimension:  model.MaxDimension,
+			MaxBatchSize:  model.MaxBatchSize,
+			Dimensions:    model.Dimensions,
+		})
+	}
+
+	if len(modelList) == 0 {
+		return nil, fmt.Errorf("no models found for provider '%s'", p.Name())
+	}
+
+	return modelList, nil
 }
 
 func (p *PaddleOCRLocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {

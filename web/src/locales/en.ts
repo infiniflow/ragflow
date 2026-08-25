@@ -2718,7 +2718,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComSearchDescription:
         "A web search component powered by You.com's own index. Each result carries extracted passages from the page rather than a single snippet. Works without an API Key by default (keyless free tier); add a key to lift rate limits.",
       youComFreshness: 'Freshness',
-      youComFreshnessTip: 'Restrict results by how recently they were published.',
+      youComFreshnessTip:
+        'Restrict results by how recently they were published.',
       youComFreshnessAny: 'Any time',
       youComFreshnessDay: 'Past day',
       youComFreshnessWeek: 'Past week',

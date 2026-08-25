@@ -1007,6 +1007,20 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		BaseURL: &baseURL,
 	}
 
+	// The cloud PaddleOCR provider carries its config inside the api_key JSON
+	// payload (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm),
+	// mirroring Python's PaddleOCROcrModel. Unwrap the access token and base url
+	// so the OCR driver authenticates with a plain bearer token. Non-JSON
+	// api_keys (e.g. PaddleOCR.local) pass through untouched.
+	if keyBaseURL, keyAccessToken, _ := modelModule.PaddleOCRConfigFromAPIKey(apiKey); keyAccessToken != "" {
+		apiKey = keyAccessToken
+		if baseURL == "" {
+			baseURL = keyBaseURL
+		}
+		apiConfig.ApiKey = &apiKey
+		apiConfig.BaseURL = &baseURL
+	}
+
 	// Mirror Python verify_api_key: verify each model by making a real
 	// lightweight API request.  Returns per-model verify results.
 	modelVerifyResult, verifyErr := verifyProviderModel(ctx, driver, providerInfo.Models, apiConfig, modelInfo)
