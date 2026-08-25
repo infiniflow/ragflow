@@ -872,24 +872,37 @@ func (c *AzureDevOpsConnector) buildAzureDevOpsPullRequestDocument(repo azureDev
 }
 
 // azureDevOpsSyncCursor is the resume position persisted between batches.
+// azureDevOpsSyncCursor is the resume position persisted between batches.
+//
+// SourceID is the anchor: offsets alone are positions in a remote listing that
+// shifts whenever a file or pull request is added or removed, so resuming on an
+// offset can silently skip or repeat an item. The offset is kept only as a fast
+// lookup hint, and correctness is decided by the anchor.
 type azureDevOpsSyncCursor struct {
 	RepoKey    string `json:"repo_key"`
 	Stage      string `json:"stage"`
-	FileOffset int    `json:"file_offset"`
-	PRSkip     int    `json:"pr_skip"`
+	FileOffset int    `json:"file_offset,omitempty"`
+	PRSkip     int    `json:"pr_skip,omitempty"`
+	SourceID   string `json:"source_id,omitempty"`
 }
 
 type azureDevOpsSyncSession struct {
-	connector  *AzureDevOpsConnector
-	repos      []azureDevOpsRepository
-	repoIndex  int
-	stage      string
-	fileOffset int
-	prSkip     int
-	items      []azureDevOpsItem
-	itemsRepo  string
-	batchSize  int
-	request    SyncRequest
+	connector    *AzureDevOpsConnector
+	repos        []azureDevOpsRepository
+	repoIndex    int
+	stage        string
+	fileOffset   int
+	prSkip       int
+	items        []azureDevOpsItem
+	itemsRepo    string
+	batchSize    int
+	request      SyncRequest
+	lastSourceID string
+
+	// Resume anchor, consumed by the first batch produced after a resume.
+	resumeRepoKey  string
+	resumeStage    string
+	resumeSourceID string
 }
 
 // NextBatch returns the next Azure DevOps document batch.
@@ -923,6 +936,7 @@ func (s *azureDevOpsSyncSession) NextBatch(ctx context.Context) (SyncBatch, erro
 	if len(documents) == 0 {
 		return SyncBatch{}, io.EOF
 	}
+	s.lastSourceID = documents[len(documents)-1].SourceID
 	return SyncBatch{Documents: documents, Checkpoint: s.checkpoint()}, nil
 }
 
@@ -940,12 +954,13 @@ func (s *azureDevOpsSyncSession) checkpoint() *SyncCheckpoint {
 		Stage:      s.stage,
 		FileOffset: s.fileOffset,
 		PRSkip:     s.prSkip,
+		SourceID:   s.lastSourceID,
 	}
 	encoded, err := json.Marshal(cursor)
 	if err != nil {
 		return nil
 	}
-	return &SyncCheckpoint{Cursor: string(encoded)}
+	return &SyncCheckpoint{Cursor: string(encoded), SourceID: s.lastSourceID}
 }
 
 // nextCodeDocuments emits up to limit files, advancing the stage when the
@@ -958,6 +973,7 @@ func (s *azureDevOpsSyncSession) nextCodeDocuments(ctx context.Context, repo azu
 		}
 		s.items = items
 		s.itemsRepo = repo.Key()
+		s.applyFileAnchor(repo)
 	}
 
 	documents := make([]SourceDocument, 0, limit)
@@ -985,6 +1001,59 @@ func (s *azureDevOpsSyncSession) nextCodeDocuments(ctx context.Context, repo azu
 	return documents, nil
 }
 
+// applyFileAnchor positions the file walk after the last committed document.
+//
+// The listing is re-fetched on every resume and can have shifted since the
+// checkpoint was written, so the stored offset is treated as a hint: it is
+// checked first, then the whole listing is searched for the anchor. Only when
+// the anchor is gone — the file was deleted or renamed — does the offset stand
+// on its own.
+func (s *azureDevOpsSyncSession) applyFileAnchor(repo azureDevOpsRepository) {
+	if s.resumeSourceID == "" || s.resumeRepoKey != repo.Key() || s.resumeStage != azureDevOpsStageCode {
+		return
+	}
+	defer s.clearResume()
+
+	if s.fileOffset > 0 && s.fileOffset <= len(s.items) {
+		previous := s.items[s.fileOffset-1]
+		if azureDevOpsCodeSourceID(s.connector.organization, repo, strings.TrimPrefix(previous.Path, "/")) == s.resumeSourceID {
+			return
+		}
+	}
+
+	for index, item := range s.items {
+		if azureDevOpsCodeSourceID(s.connector.organization, repo, strings.TrimPrefix(item.Path, "/")) == s.resumeSourceID {
+			s.fileOffset = index + 1
+			return
+		}
+	}
+}
+
+// filterResumedPullRequests drops the pull requests already committed.
+//
+// $skip indexes into a listing that shifts as pull requests are opened, so the
+// anchor decides where the page really resumes; the skip value only positions
+// the request.
+func (s *azureDevOpsSyncSession) filterResumedPullRequests(repo azureDevOpsRepository, pullRequests []azureDevOpsPullRequest) []azureDevOpsPullRequest {
+	if s.resumeSourceID == "" || s.resumeRepoKey != repo.Key() || s.resumeStage != azureDevOpsStagePullRequests {
+		return pullRequests
+	}
+	defer s.clearResume()
+
+	for index, pullRequest := range pullRequests {
+		if azureDevOpsPullRequestSourceID(s.connector.organization, repo, pullRequest.PullRequestID) == s.resumeSourceID {
+			return pullRequests[index+1:]
+		}
+	}
+	return pullRequests
+}
+
+func (s *azureDevOpsSyncSession) clearResume() {
+	s.resumeRepoKey = ""
+	s.resumeStage = ""
+	s.resumeSourceID = ""
+}
+
 // nextPullRequestDocuments emits one pull request page, advancing to the next
 // repository once the last page is consumed.
 func (s *azureDevOpsSyncSession) nextPullRequestDocuments(ctx context.Context, repo azureDevOpsRepository) ([]SourceDocument, error) {
@@ -992,6 +1061,8 @@ func (s *azureDevOpsSyncSession) nextPullRequestDocuments(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
+	pageSize := len(pullRequests)
+	pullRequests = s.filterResumedPullRequests(repo, pullRequests)
 
 	documents := make([]SourceDocument, 0, len(pullRequests))
 	for _, pullRequest := range pullRequests {
@@ -1009,7 +1080,7 @@ func (s *azureDevOpsSyncSession) nextPullRequestDocuments(ctx context.Context, r
 		documents = append(documents, s.connector.buildAzureDevOpsPullRequestDocument(repo, pullRequest))
 	}
 
-	if len(pullRequests) < azureDevOpsPRPageSize {
+	if pageSize < azureDevOpsPRPageSize {
 		s.advanceRepo()
 	} else {
 		s.prSkip += azureDevOpsPRPageSize
@@ -1056,6 +1127,9 @@ func (s *azureDevOpsSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		}
 		s.fileOffset = cursor.FileOffset
 		s.prSkip = cursor.PRSkip
+		s.resumeRepoKey = cursor.RepoKey
+		s.resumeStage = s.stage
+		s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
 		return
 	}
 }

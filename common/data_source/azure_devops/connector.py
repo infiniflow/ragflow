@@ -72,8 +72,15 @@ class AzureDevOpsConnectorCheckpoint(ConnectorCheckpoint):
         repos_queue: Repositories to visit, each as ``{project, name, branch}``.
         current_repo_index: Repository currently being processed.
         stage: Which document family is being indexed for that repository.
-        file_offset: Resume position within the repository file listing.
-        pr_skip: Resume position within pull request pagination.
+        file_offset: Fast lookup hint into the repository file listing.
+        pr_skip: Pagination hint for pull requests.
+        last_source_id: Anchor identifying the last item handled in this stage.
+        retry_paths: Files that failed once and are retried before the stage ends.
+
+    Offsets are positions in a remote listing that shifts whenever a file or a
+    pull request is added or removed, so resuming on an offset alone can skip or
+    repeat an item. The anchor decides where the walk continues; the offset only
+    makes finding it cheap.
     """
 
     repos_queue: list[dict[str, str]] = []
@@ -81,6 +88,8 @@ class AzureDevOpsConnectorCheckpoint(ConnectorCheckpoint):
     stage: str = STAGE_CODE
     file_offset: int = 0
     pr_skip: int = 0
+    last_source_id: str | None = None
+    retry_paths: list[str] = []
 
 
 class AzureDevOpsConnector(
@@ -265,6 +274,58 @@ class AzureDevOpsConnector(
 
         return new_checkpoint
 
+    def _resolve_file_start(
+        self,
+        items: list[dict[str, Any]],
+        checkpoint: AzureDevOpsConnectorCheckpoint,
+        project: str,
+        repo_name: str,
+    ) -> int:
+        """Position the file walk just after the anchored item.
+
+        The stored offset is checked first because it is right in the common
+        case; otherwise the listing is searched. Only when the anchor is gone —
+        the file was deleted or renamed — does the offset stand on its own.
+        """
+        anchor = checkpoint.last_source_id
+        if not anchor:
+            return checkpoint.file_offset
+
+        def source_id_of(item: dict[str, Any]) -> str:
+            return code_document_id(self.organization, project, repo_name, item.get("path", "").lstrip("/"))
+
+        hint = checkpoint.file_offset
+        if 0 < hint <= len(items) and source_id_of(items[hint - 1]) == anchor:
+            return hint
+
+        for index, item in enumerate(items):
+            if source_id_of(item) == anchor:
+                return index + 1
+
+        logging.warning(
+            "[AzureDevOps] %s/%s resume anchor %s is gone from the listing; falling back to offset %d",
+            project, repo_name, anchor, checkpoint.file_offset,
+        )
+        return checkpoint.file_offset
+
+    def _filter_resumed_pull_requests(
+        self,
+        pull_requests: list[dict[str, Any]],
+        checkpoint: AzureDevOpsConnectorCheckpoint,
+        project: str,
+        repo_name: str,
+    ) -> list[dict[str, Any]]:
+        """Drop the pull requests already committed, using the anchor."""
+        anchor = checkpoint.last_source_id
+        if not anchor:
+            return pull_requests
+
+        for index, pull_request in enumerate(pull_requests):
+            source_id = pull_request_document_id(self.organization, project, repo_name, pull_request.get("pullRequestId"))
+            if source_id == anchor:
+                return pull_requests[index + 1 :]
+        return pull_requests
+
     def _load_code(
         self,
         client: "httpx.Client",
@@ -275,48 +336,114 @@ class AzureDevOpsConnector(
         window_start: datetime,
         window_end: datetime,
     ) -> Iterator[Any]:
-        """Yield source files, resuming from ``checkpoint.file_offset``."""
+        """Yield source files, continuing after the anchored item."""
         repo_api_url = self._repo_api_url(project, repo_name)
         items = list_items(client, repo_api_url, branch)
-        window = items[checkpoint.file_offset : checkpoint.file_offset + MAX_FILES_PER_CALL]
+        start = self._resolve_file_start(items, checkpoint, project, repo_name)
+        window = items[start : start + MAX_FILES_PER_CALL]
 
         for item in window:
             path = item.get("path", "")
+            source_id = code_document_id(self.organization, project, repo_name, path.lstrip("/"))
             try:
-                change = item.get("latestProcessedChange") or {}
-                committer = change.get("committer") or change.get("author") or {}
-                changed_at = committer.get("date")
-                if isinstance(changed_at, str):
-                    changed = datetime.fromisoformat(changed_at.replace("Z", "+00:00")).astimezone(timezone.utc)
-                    if not (window_start <= changed <= window_end):
-                        continue
-
-                content = fetch_file_content(client, repo_api_url, path, branch)
-                if content is None:
-                    continue
-
-                yield map_item_to_document(item, content, self.organization, self._org_url, project, repo_name, branch)
+                yield from self._emit_file(client, repo_api_url, item, project, repo_name, branch, window_start, window_end)
             except Exception as e:
-                yield ConnectorFailure(
-                    failed_document=DocumentFailure(
-                        document_id=code_document_id(self.organization, project, repo_name, path.lstrip("/")),
-                        document_link=f"{self._org_url}/{project}/_git/{repo_name}?path={path}",
-                    ),
-                    failure_message=f"Failed to process Azure DevOps file {path}: {e}",
-                    exception=e,
-                )
+                # The item is queued for one retry before the stage ends, so a
+                # transient failure does not quietly drop the file from the run.
+                if path not in checkpoint.retry_paths:
+                    checkpoint.retry_paths.append(path)
+                yield self._file_failure(path, source_id, project, repo_name, e)
+            finally:
+                checkpoint.last_source_id = source_id
 
-        checkpoint.file_offset += len(window)
+        checkpoint.file_offset = start + len(window)
         logging.info(
             "[AzureDevOps] %s/%s indexed files %d/%d",
             project, repo_name, checkpoint.file_offset, len(items),
         )
-        if checkpoint.file_offset >= len(items):
-            checkpoint.file_offset = 0
-            if self._indexes_pull_requests():
-                checkpoint.stage = STAGE_PULL_REQUESTS
-            else:
-                self._advance_repo(checkpoint)
+
+        if checkpoint.file_offset < len(items):
+            return
+
+        if checkpoint.retry_paths:
+            yield from self._retry_failed_files(client, repo_api_url, items, checkpoint, project, repo_name, branch, window_start, window_end)
+
+        checkpoint.file_offset = 0
+        checkpoint.last_source_id = None
+        if self._indexes_pull_requests():
+            checkpoint.stage = STAGE_PULL_REQUESTS
+        else:
+            self._advance_repo(checkpoint)
+
+    def _emit_file(
+        self,
+        client: "httpx.Client",
+        repo_api_url: str,
+        item: dict[str, Any],
+        project: str,
+        repo_name: str,
+        branch: str,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> Iterator[Any]:
+        """Yield the document for one file, or nothing when it is out of scope."""
+        path = item.get("path", "")
+        change = item.get("latestProcessedChange") or {}
+        committer = change.get("committer") or change.get("author") or {}
+        changed_at = committer.get("date")
+
+        if isinstance(changed_at, str):
+            changed = datetime.fromisoformat(changed_at.replace("Z", "+00:00")).astimezone(timezone.utc)
+            if not (window_start <= changed <= window_end):
+                return
+
+        content = fetch_file_content(client, repo_api_url, path, branch)
+        if content is None:
+            return
+
+        yield map_item_to_document(item, content, self.organization, self._org_url, project, repo_name, branch)
+
+    def _file_failure(self, path: str, source_id: str, project: str, repo_name: str, error: Exception) -> ConnectorFailure:
+        return ConnectorFailure(
+            failed_document=DocumentFailure(
+                document_id=source_id,
+                document_link=f"{self._org_url}/{project}/_git/{repo_name}?path={path}",
+            ),
+            failure_message=f"Failed to process Azure DevOps file {path}: {error}",
+            exception=error,
+        )
+
+    def _retry_failed_files(
+        self,
+        client: "httpx.Client",
+        repo_api_url: str,
+        items: list[dict[str, Any]],
+        checkpoint: AzureDevOpsConnectorCheckpoint,
+        project: str,
+        repo_name: str,
+        branch: str,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> Iterator[Any]:
+        """Re-attempt the files that failed earlier in this repository, once.
+
+        Advancing past a failed file without another attempt would drop it from
+        the run entirely. Retrying exactly once keeps a deterministic failure
+        from stalling the sync.
+        """
+        pending, checkpoint.retry_paths = checkpoint.retry_paths, []
+        by_path = {item.get("path", ""): item for item in items}
+        logging.info("[AzureDevOps] %s/%s retrying %d failed file(s)", project, repo_name, len(pending))
+
+        for path in pending:
+            item = by_path.get(path)
+            if item is None:
+                continue
+            try:
+                yield from self._emit_file(client, repo_api_url, item, project, repo_name, branch, window_start, window_end)
+            except Exception as e:
+                source_id = code_document_id(self.organization, project, repo_name, path.lstrip("/"))
+                yield self._file_failure(path, source_id, project, repo_name, e)
 
     def _load_pull_requests(
         self,
@@ -332,7 +459,9 @@ class AzureDevOpsConnector(
         Azure DevOps has no reliable "updated since" filter on this endpoint, so
         the time window is applied client-side.
         """
-        pull_requests = self._iter_pull_request_page(client, project, repo_name, checkpoint.pr_skip)
+        page = self._iter_pull_request_page(client, project, repo_name, checkpoint.pr_skip)
+        page_size = len(page)
+        pull_requests = self._filter_resumed_pull_requests(page, checkpoint, project, repo_name)
 
         for pull_request in pull_requests:
             pr_id = pull_request.get("pullRequestId")
@@ -351,8 +480,10 @@ class AzureDevOpsConnector(
                     failure_message=f"Failed to process Azure DevOps pull request {pr_id}: {e}",
                     exception=e,
                 )
+            finally:
+                checkpoint.last_source_id = pull_request_document_id(self.organization, project, repo_name, pr_id)
 
-        if len(pull_requests) < PR_PAGE_SIZE:
+        if page_size < PR_PAGE_SIZE:
             self._advance_repo(checkpoint)
         else:
             checkpoint.pr_skip += PR_PAGE_SIZE
@@ -363,6 +494,8 @@ class AzureDevOpsConnector(
         checkpoint.stage = STAGE_CODE
         checkpoint.file_offset = 0
         checkpoint.pr_skip = 0
+        checkpoint.last_source_id = None
+        checkpoint.retry_paths = []
 
     @override
     def build_dummy_checkpoint(self) -> AzureDevOpsConnectorCheckpoint:

@@ -651,6 +651,87 @@ def test_checkpoint_walks_files_then_pull_requests_then_next_repo(monkeypatch):
     assert checkpoint.has_more is False
 
 
+def _drain(connector, checkpoint):
+    """Run the connector to completion, collecting documents and failures."""
+    produced = []
+    while checkpoint.has_more:
+        generator = connector.load_from_checkpoint(start=0.0, end=datetime.now(timezone.utc).timestamp(), checkpoint=checkpoint)
+        while True:
+            try:
+                produced.append(next(generator))
+            except StopIteration as stop:
+                checkpoint = stop.value
+                break
+    return produced
+
+
+@pytest.mark.p2
+def test_resume_follows_the_anchor_when_the_listing_shifts(monkeypatch):
+    """An offset points into a listing that shifts; the anchor does not."""
+    client = _FakeClient(
+        {
+            # "added.cs" did not exist when the checkpoint was written, so every
+            # index after it has moved by one.
+            "/items": {"value": [
+                {"path": "/added.cs", "gitObjectType": "blob"},
+                {"path": "/a.cs", "gitObjectType": "blob"},
+                {"path": "/b.cs", "gitObjectType": "blob"},
+            ]},
+            "/pullrequests": {"value": []},
+            "_apis/git/repositories": {"value": [{"name": "repo-a", "project": {"name": "iddaa"}, "defaultBranch": "refs/heads/master"}]},
+        }
+    )
+    connector = _build_connector(content_types="code")
+    monkeypatch.setattr(connector, "_client", lambda: client)
+    monkeypatch.setattr(azure_connector, "fetch_file_content", lambda *args, **kwargs: b"code")
+
+    checkpoint = connector.build_dummy_checkpoint()
+    checkpoint.repos_queue = [{"project": "iddaa", "name": "repo-a", "branch": "master"}]
+    checkpoint.file_offset = 1
+    checkpoint.last_source_id = "azure_devops:contoso:iddaa:repo-a:file:a.cs"
+
+    produced = _drain(connector, checkpoint)
+
+    # Offset 1 now points at a.cs, which was already committed. Following the
+    # anchor continues at b.cs instead.
+    assert [document.id for document in produced] == ["azure_devops:contoso:iddaa:repo-a:file:b.cs"]
+
+
+@pytest.mark.p2
+def test_failed_file_is_retried_once_before_the_stage_ends(monkeypatch):
+    """Advancing past a failure without a retry would drop the file silently."""
+    attempts: list[str] = []
+
+    def flaky_fetch(client, repo_api_url, path, branch):
+        attempts.append(path)
+        if path == "/b.cs" and attempts.count("/b.cs") == 1:
+            raise RuntimeError("transient failure")
+        return b"code"
+
+    client = _FakeClient(
+        {
+            "/items": {"value": [
+                {"path": "/a.cs", "gitObjectType": "blob"},
+                {"path": "/b.cs", "gitObjectType": "blob"},
+            ]},
+            "/pullrequests": {"value": []},
+            "_apis/git/repositories": {"value": [{"name": "repo-a", "project": {"name": "iddaa"}, "defaultBranch": "refs/heads/master"}]},
+        }
+    )
+    connector = _build_connector(content_types="code")
+    monkeypatch.setattr(connector, "_client", lambda: client)
+    monkeypatch.setattr(azure_connector, "fetch_file_content", flaky_fetch)
+
+    produced = _drain(connector, connector.build_dummy_checkpoint())
+
+    failures = [item for item in produced if hasattr(item, "failure_message")]
+    documents = [item for item in produced if hasattr(item, "id")]
+
+    assert len(failures) == 1
+    assert attempts.count("/b.cs") == 2, "the failed file must be attempted exactly twice"
+    assert "azure_devops:contoso:iddaa:repo-a:file:b.cs" in [document.id for document in documents]
+
+
 @pytest.mark.p2
 def test_checkpoint_round_trips_through_json():
     connector = _build_connector()

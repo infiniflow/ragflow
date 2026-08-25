@@ -724,3 +724,114 @@ func TestAzureDevOpsRetryAfterIsClamped(t *testing.T) {
 		t.Fatalf("an overflowing Retry-After must be clamped, got %s", got)
 	}
 }
+
+// The remote listing shifts between runs, so an offset alone points at the
+// wrong item. The anchor has to decide where the walk continues.
+func TestAzureDevOpsResumeFollowsTheAnchorWhenTheListingShifts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/pullrequests"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{}})
+		case strings.Contains(r.URL.Path, "/items") && r.URL.Query().Get("includeContent") == "true":
+			_, _ = io.WriteString(w, "content")
+		case strings.Contains(r.URL.Path, "/items"):
+			// "added.cs" did not exist when the checkpoint was written, so every
+			// index after it has moved by one.
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"path": "/added.cs", "gitObjectType": "blob"},
+				map[string]any{"path": "/a.cs", "gitObjectType": "blob"},
+				map[string]any{"path": "/b.cs", "gitObjectType": "blob"},
+			}})
+		default:
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"name": "repo-a", "defaultBranch": "refs/heads/master", "project": map[string]any{"name": "iddaa"}},
+			}})
+		}
+	}))
+	defer server.Close()
+
+	// Written when the listing was [a.cs, b.cs] and a.cs had been committed.
+	cursor, _ := json.Marshal(azureDevOpsSyncCursor{
+		RepoKey:    "iddaa/repo-a",
+		Stage:      azureDevOpsStageCode,
+		FileOffset: 1,
+		SourceID:   "azure_devops:contoso:iddaa:repo-a:file:a.cs",
+	})
+
+	connector := newTestAzureDevOpsConnector(t, server.URL, map[string]any{"batch_size": 1})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     time.Now().UTC(),
+		Resume:        &SyncCheckpoint{Cursor: string(cursor)},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync returned error: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch returned error: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("expected one document, got %d", len(batch.Documents))
+	}
+	// Offset 1 now points at a.cs, which was already committed. Following the
+	// anchor continues at b.cs instead.
+	if got := batch.Documents[0].SourceID; got != "azure_devops:contoso:iddaa:repo-a:file:b.cs" {
+		t.Fatalf("resume must continue after the anchor, got %s", got)
+	}
+	if batch.Checkpoint == nil || batch.Checkpoint.SourceID != batch.Documents[0].SourceID {
+		t.Fatalf("the checkpoint must carry the last emitted source id, got %#v", batch.Checkpoint)
+	}
+}
+
+// Pull request pages shift as new pull requests are opened, so $skip alone is
+// not a safe resume position either.
+func TestAzureDevOpsPullRequestResumeFollowsTheAnchor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/pullrequests"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"pullRequestId": 3, "title": "newest", "status": "active"},
+				map[string]any{"pullRequestId": 2, "title": "committed", "status": "active"},
+				map[string]any{"pullRequestId": 1, "title": "pending", "status": "active"},
+			}})
+		case strings.Contains(r.URL.Path, "/items"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{}})
+		default:
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"name": "repo-a", "defaultBranch": "refs/heads/master", "project": map[string]any{"name": "iddaa"}},
+			}})
+		}
+	}))
+	defer server.Close()
+
+	cursor, _ := json.Marshal(azureDevOpsSyncCursor{
+		RepoKey:  "iddaa/repo-a",
+		Stage:    azureDevOpsStagePullRequests,
+		SourceID: "azure_devops:contoso:iddaa:repo-a:pr:2",
+	})
+
+	connector := newTestAzureDevOpsConnector(t, server.URL, map[string]any{"content_types": azureDevOpsContentPullRequests})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     time.Now().UTC(),
+		Resume:        &SyncCheckpoint{Cursor: string(cursor)},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync returned error: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch returned error: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("only the pull request after the anchor should be emitted, got %d", len(batch.Documents))
+	}
+	if got := batch.Documents[0].SourceID; got != "azure_devops:contoso:iddaa:repo-a:pr:1" {
+		t.Fatalf("unexpected document: %s", got)
+	}
+}
