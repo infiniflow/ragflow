@@ -153,7 +153,7 @@ func SectionsToMarkdown(sections []pdf.Section) string {
 			b.WriteString("\n## ")
 		}
 		imgURL := InlinePNGDataURL(s.Image)
-		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && s.Text == "")) && imgURL != "" {
+		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && strings.TrimSpace(s.Text) == "")) && imgURL != "" {
 			b.WriteString("\n![Image](")
 			b.WriteString(imgURL)
 			b.WriteString(")")

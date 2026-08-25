@@ -344,9 +344,8 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
 	applyPDFPostProcess(&processed, opts)
-
+	defer processed.Close()
 	cropMediaSections(&processed)
-	processed.Close()
 
 	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
@@ -390,8 +389,8 @@ func pdfParseResultToMarkdownWithOptions(filename string, parsed *deepdoctype.Pa
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
 	applyPDFPostProcess(&processed, opts)
+	defer processed.Close()
 	cropMediaSections(&processed)
-	processed.Close()
 
 	return ParseResult{
 		OutputFormat: "markdown",
@@ -437,23 +436,7 @@ func firstPageNumber(raw any) int {
 }
 
 func sectionsToMarkdown(sections []deepdoctype.Section) string {
-	var b strings.Builder
-	for _, section := range sections {
-		layoutType := strings.TrimSpace(section.LayoutType)
-		if layoutType == deepdoctype.LayoutTypeTitle {
-			b.WriteString("\n## ")
-		}
-		imgURL := pdflayout.InlinePNGDataURL(section.Image)
-		if (layoutType == deepdoctype.LayoutTypeFigure || layoutType == "image" || section.DocTypeKwd == "image" || (layoutType == deepdoctype.LayoutTypeTable && section.Text == "")) && imgURL != "" {
-			b.WriteString("\n![Image](")
-			b.WriteString(imgURL)
-			b.WriteString(")")
-			continue
-		}
-		b.WriteString(section.Text)
-		b.WriteByte('\n')
-	}
-	return b.String()
+	return pdflayout.SectionsToMarkdown(sections)
 }
 
 // cropMediaSections crops figure and table sections from rendered PDF page
@@ -497,6 +480,7 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 		}
 		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&
 			sec.LayoutType != deepdoctype.LayoutTypeTable &&
+			strings.TrimSpace(sec.LayoutType) != "image" &&
 			sec.DocTypeKwd != "image" && sec.DocTypeKwd != "table" {
 			continue
 		}
