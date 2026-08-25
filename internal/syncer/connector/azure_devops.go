@@ -432,11 +432,13 @@ func (c *AzureDevOpsConnector) getJSON(ctx context.Context, apiURL string, out a
 func azureDevOpsRetryAfter(response *http.Response, fallback time.Duration) time.Duration {
 	if value := response.Header.Get("Retry-After"); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
-			wait := time.Duration(seconds) * time.Second
-			if wait > azureDevOpsRetryMaxDelay {
+			// Clamp before the multiplication: a large enough value overflows
+			// int64, and the negative result would slip past the cap and make
+			// the timer fire immediately.
+			if seconds >= int(azureDevOpsRetryMaxDelay/time.Second) {
 				return azureDevOpsRetryMaxDelay
 			}
-			return wait
+			return time.Duration(seconds) * time.Second
 		}
 	}
 	return fallback

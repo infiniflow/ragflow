@@ -21,8 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -713,5 +715,12 @@ func TestAzureDevOpsRetryAfterIsClamped(t *testing.T) {
 	response.Header.Set("Retry-After", "not-a-number")
 	if got := azureDevOpsRetryAfter(response, 2*time.Second); got != 2*time.Second {
 		t.Fatalf("an unparsable Retry-After must fall back, got %s", got)
+	}
+
+	// Multiplying this by time.Second overflows int64; the negative result would
+	// slip past the cap and make the retry fire immediately.
+	response.Header.Set("Retry-After", strconv.Itoa(math.MaxInt64/int(time.Millisecond)))
+	if got := azureDevOpsRetryAfter(response, time.Second); got != azureDevOpsRetryMaxDelay {
+		t.Fatalf("an overflowing Retry-After must be clamped, got %s", got)
 	}
 }
