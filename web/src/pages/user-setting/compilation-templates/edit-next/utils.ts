@@ -29,7 +29,6 @@ import { CompilationTemplateKind } from '@/constants/compilation';
 
 import { FormSchemaType, TemplateSchemaType } from './schema';
 import {
-  DefaultFieldKeys,
   DefaultTemplateValues,
   FieldKeyOrders,
   SectionPriority,
@@ -66,14 +65,11 @@ export const normalizeSection = (
   const fields = section?.fields ?? [];
   return {
     description: section?.description ?? '',
-    fields:
-      fields.length > 0
-        ? fields.map((field) =>
-            Object.fromEntries(
-              Object.entries(field).map(([key, value]) => [key, value ?? '']),
-            ),
-          )
-        : [createEmptyField(DefaultFieldKeys)],
+    fields: fields.map((field) =>
+      Object.fromEntries(
+        Object.entries(field).map(([key, value]) => [key, value ?? '']),
+      ),
+    ),
   };
 };
 
@@ -264,7 +260,7 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
       return;
     }
     if (key === 'mode') {
-      config[key] = value as ICompilationTemplateConfigRequest[string];
+      config.mode = value as ICompilationTemplateConfigRequest['mode'];
       return;
     }
     if (isConfigMetaKey(key)) {
