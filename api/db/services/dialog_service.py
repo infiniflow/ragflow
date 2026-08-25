@@ -523,6 +523,11 @@ def convert_last_user_msg_to_multimodal(msg: list[dict], image_data_uris: list[s
         return
 
 
+# Keys the chat-completions message schema defines. Stored messages also carry
+# RAGFlow bookkeeping such as id, created_at and doc_ids, plus the conversationId
+# the web client stamps on every turn, and strict providers reject those.
+LLM_MESSAGE_FIELDS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"})
+
 BAD_CITATION_PATTERNS = [
     re.compile(r"\(\s*ID\s*[: ]*\s*(\d+)\s*\)"),  # (ID: 12)
     re.compile(r"\[\s*ID\s*[: ]*\s*(\d+)\s*\]"),  # [ID: 12]
@@ -1949,7 +1954,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     model_type = chat_mdl.model_config["model_type"]
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
-    agent_messages = deepcopy(messages)
+    agent_messages = [{k: deepcopy(v) for k, v in m.items() if k in LLM_MESSAGE_FIELDS} for m in messages]
     if text_attachments_content and agent_messages:
         agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:
