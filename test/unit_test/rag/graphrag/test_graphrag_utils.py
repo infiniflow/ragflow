@@ -601,6 +601,11 @@ class TestValidNHopEdges:
         assert "weight_type=str" in caplog.text
         assert invalid_weight not in caplog.text
 
+    def test_overflowing_weight_is_ignored(self):
+        n_hop_ents = [{"path": ["A", "B"], "weights": [10**400]}]
+
+        assert list(_iter_valid_n_hop_edges(n_hop_ents, "ROOT")) == []
+
 
 @pytest.mark.p1
 class TestGraphNodeToChunk:

@@ -888,7 +888,7 @@ def _iter_valid_n_hop_edges(n_hop_ents, entity_name):
                 break
             try:
                 normalized_weight = float(weight)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 logger.warning(
                     "Skipping n-hop path with invalid weight for entity %s at edge %s: weight_type=%s",
                     entity_name,
