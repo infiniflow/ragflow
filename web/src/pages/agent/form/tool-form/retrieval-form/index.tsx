@@ -4,7 +4,7 @@ import { FormContainer } from '@/components/form-container';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
-import { PrefetchSizeFormField } from '@/components/prefetch-size-item';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
@@ -68,7 +68,7 @@ const RetrievalForm = () => {
               similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
-            <PrefetchSizeFormField></PrefetchSizeFormField>
+            <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
