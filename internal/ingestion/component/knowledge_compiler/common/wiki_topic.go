@@ -3,7 +3,6 @@ package common
 import "strings"
 
 const wikiTopicPathSeparator = "/"
-const maxWikiTopicPathDepth = 3
 
 // GeneralWikiTopic is the fallback topic for pages that cannot be assigned to
 // a topic emitted by the MAP stage.
@@ -20,9 +19,6 @@ func NormalizeWikiTopicPath(topic string) string {
 		if part != "" {
 			normalized = append(normalized, part)
 		}
-	}
-	if len(normalized) > maxWikiTopicPathDepth {
-		normalized = append(normalized[:maxWikiTopicPathDepth-1], strings.Join(normalized[maxWikiTopicPathDepth-1:], " · "))
 	}
 	return strings.Join(normalized, wikiTopicPathSeparator)
 }

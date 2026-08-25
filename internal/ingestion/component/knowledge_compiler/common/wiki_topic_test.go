@@ -12,7 +12,7 @@ func TestNormalizeWikiTopicPath(t *testing.T) {
 		{name: "nested", input: " 三国演义 / 人物 / 蜀汉人物 ", want: "三国演义/人物/蜀汉人物"},
 		{name: "empty segments", input: "三国演义//人物/", want: "三国演义/人物"},
 		{name: "spaces", input: "Three   Kingdoms / Major  Figures", want: "Three Kingdoms/Major Figures"},
-		{name: "depth", input: "History/China/Three Kingdoms/People", want: "History/China/Three Kingdoms · People"},
+		{name: "depth", input: "History/China/Three Kingdoms/People", want: "History/China/Three Kingdoms/People"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
