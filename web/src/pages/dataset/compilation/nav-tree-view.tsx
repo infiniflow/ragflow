@@ -74,7 +74,8 @@ export function NavTreeView() {
                     {t('knowledgeCompilation.description')}
                   </h4>
                   <p className="whitespace-pre-wrap">
-                    {selectedNode.description || t('knowledgeCompilation.navNoDescription')}
+                    {selectedNode.description ||
+                      t('knowledgeCompilation.navNoDescription')}
                   </p>
                 </div>
                 {selectedNode.keywords && selectedNode.keywords.length > 0 && (

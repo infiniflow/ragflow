@@ -1,16 +1,12 @@
-import { DatasetNavNode } from '@/interfaces/database/dataset-nav';
-
 import { buildNavTreeData } from './nav-tree';
 
 jest.mock('@/components/structure-graph/adapters', () => ({
   adaptPageIndexToTreeData: jest.fn(() => []),
   adaptTreeToTreeData: jest.fn(() => []),
-  getEntityDisplayName: jest.fn(
-    (entity: { name?: string }) => entity.name ?? '',
-  ),
+  getEntityDisplayName: jest.fn((entity) => entity.name ?? ''),
 }));
 
-function cluster(name: string): DatasetNavNode {
+function cluster(name: string) {
   return {
     name,
     description: '',

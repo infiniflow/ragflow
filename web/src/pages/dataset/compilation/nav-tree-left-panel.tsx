@@ -147,7 +147,9 @@ export function NavTreeLeftPanel({
         {treeData.length > 0 && (
           <ConfirmDeleteDialog
             title={t('knowledgeCompilation.navDeleteAllTitle')}
-            content={{ title: t('knowledgeCompilation.navDeleteAllDescription') }}
+            content={{
+              title: t('knowledgeCompilation.navDeleteAllDescription'),
+            }}
             onOk={onDeleteAll}
           >
             <Button

@@ -42,9 +42,7 @@ function isDatasetNavList(payload: unknown): payload is DatasetNavList {
     return false;
   }
   const candidate = payload as DatasetNavList;
-  return (
-    typeof candidate.total === 'number' && Array.isArray(candidate.items)
-  );
+  return typeof candidate.total === 'number' && Array.isArray(candidate.items);
 }
 
 function unwrapDatasetNavResponse(
@@ -63,9 +61,13 @@ export function useFetchDatasetNav(keywords = '') {
   const kbId = useKnowledgeBaseId();
   const trimmedKeywords = trim(keywords);
 
-  const { data, isFetching: loading, isError, error, refetch } = useQuery<
-    DatasetNavList | null
-  >({
+  const {
+    data,
+    isFetching: loading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<DatasetNavList | null>({
     queryKey: DatasetNavKeys.list(kbId, trimmedKeywords),
     initialData: null,
     enabled: !!kbId,
@@ -87,9 +89,13 @@ export function useFetchDatasetNavChildren(parentName: string | null) {
   const kbId = useKnowledgeBaseId();
   const enabled = !!kbId && !!parentName;
 
-  const { data, isFetching: loading, isError, error, refetch } = useQuery<
-    DatasetNavList | null
-  >({
+  const {
+    data,
+    isFetching: loading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<DatasetNavList | null>({
     queryKey: DatasetNavKeys.children(kbId, parentName ?? ''),
     initialData: null,
     enabled,
