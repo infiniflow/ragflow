@@ -575,6 +575,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	if numCandidates <= 0 {
 		numCandidates = 2048
 	}
+	// Result pagination is independent of the KNN candidate pool size.
 	pageSize := req.PageSize
 	if pageSize <= 0 {
 		pageSize = 30

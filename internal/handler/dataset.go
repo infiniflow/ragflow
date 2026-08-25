@@ -1276,13 +1276,15 @@ func validateSearchParams(page, size, knnTopK, topK, knnNumCandidates *int, simi
 		return fmt.Errorf("size must be greater than or equal to 1")
 	}
 	effectiveKNNTopK := 1024
+	knnTopKName := "knn_top_k"
 	if knnTopK != nil {
 		effectiveKNNTopK = *knnTopK
 	} else if topK != nil {
 		effectiveKNNTopK = *topK
+		knnTopKName = "top_k (alias for knn_top_k)"
 	}
 	if effectiveKNNTopK < 1 || effectiveKNNTopK > 2048 {
-		return fmt.Errorf("knn_top_k must be between 1 and 2048")
+		return fmt.Errorf("%s must be between 1 and 2048", knnTopKName)
 	}
 	effectiveKNNNumCandidates := 2048
 	if knnNumCandidates != nil {

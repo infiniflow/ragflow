@@ -197,6 +197,7 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *tes
 		{name: "missing dataset ids", body: `{"question":"hello"}`},
 		{name: "empty dataset ids", body: `{"question":"hello","dataset_ids":[]}`},
 		{name: "invalid top k", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":0}`},
+		{name: "legacy top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":2049}`},
 		{name: "knn top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":2049}`},
 		{name: "invalid knn candidates", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":0}`},
 		{name: "knn candidates below default top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":10}`},
@@ -226,6 +227,19 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *tes
 				t.Fatalf("code=%v want=%d body=%s", body["code"], common.CodeArgumentError, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestValidateSearchParamsKNNBounds(t *testing.T) {
+	knnTopK := 2048
+	if err := validateSearchParams(nil, nil, &knnTopK, nil, nil, nil, nil); err != nil {
+		t.Fatalf("knn_top_k=2048 with default knn_num_candidates should be valid: %v", err)
+	}
+
+	legacyTopK := 2049
+	err := validateSearchParams(nil, nil, nil, &legacyTopK, nil, nil, nil)
+	if err == nil || err.Error() != "top_k (alias for knn_top_k) must be between 1 and 2048" {
+		t.Fatalf("legacy top_k error = %v", err)
 	}
 }
 

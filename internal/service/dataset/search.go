@@ -181,6 +181,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			return nil, fmt.Errorf("invalid search_id")
 		}
 	}
+	knnNumCandidates = max(knnNumCandidates, knnTopK)
 
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var chatModelForFilter *modelModule.ChatModel
