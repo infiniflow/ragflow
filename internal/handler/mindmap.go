@@ -72,14 +72,14 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	// composite-name parsing which fails for bare IDs. If the configured
 	// model can't be resolved, fall back to the tenant's default chat model
 	// (mirrors Python's gen_mindmap get_tenant_default_model_by_type).
-	ch, streamErrs, streamErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
-	if streamErr != nil && config.TenantSvc != nil {
+	ch, streamErrs, findChatModelErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
+	if findChatModelErr != nil && config.TenantSvc != nil {
 		if defaultModel, err := config.TenantSvc.GetDefaultModelName(streamCtx, modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
-			ch, streamErrs, streamErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
+			ch, streamErrs, findChatModelErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
 		}
 	}
-	if streamErr != nil {
-		return mindMapNode{}, streamErr
+	if findChatModelErr != nil {
+		return mindMapNode{}, findChatModelErr
 	}
 	fullText, err := collectMindMapStream(streamCtx, ch, streamErrs)
 	if err != nil {
