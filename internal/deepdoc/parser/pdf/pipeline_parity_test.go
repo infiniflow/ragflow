@@ -228,14 +228,14 @@ func TestPipelineParity(t *testing.T) {
 			contentMatch := gridSim >= 100.0 && structureSim >= 100.0
 			if contentMatch {
 				// Cells + structure match Python, but the full text still
-				// diverges — the gap is OUTSIDE table cells: HTML-emitter
-				// formatting (header <th> vs <td>, whitespace/newline). Label
-				// it noncell-text (not
-				// "html-divergent", which wrongly implies content matches)
-				// so the divergence is named and not hidden.
+				// diverges — the gap is OUTSIDE table cells: emitter
+				// markup/whitespace OR an omitted caption/body paragraph
+				// (not a table-cell-assembly bug). Label it noncell-text
+				// (not "html-divergent", which wrongly implies content
+				// matches) so the divergence is named and not hidden.
 				noncellText++
 				status = "NONCELL_TEXT"
-				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (non-cell-text divergence: HTML emitter formatting outside table cells, e.g. <th> vs <td> / whitespace — not cell content)", gridSim, structureSim, shapeDetail, sim)
+				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (non-cell-text divergence outside table-cell content: emitter markup/whitespace or omitted caption/body text)", gridSim, structureSim, shapeDetail, sim)
 			} else if intentionalPDF(name) {
 				// go_intentional rule covers this PDF: the divergence (cell
 				// content and/or structure) is a documented, deliberate one

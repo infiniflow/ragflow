@@ -1,7 +1,7 @@
 package table
 
 // These tests expose the row0 residual of real_pdfs/1.pdf tracked as
-// table-1pdf-colspan-assembly-loss (known_diffs.json, status resolved_partial):
+// table-1pdf-colspan-assembly-loss (known_diffs.json, status resolved):
 // Go's header row keeps one extra empty cell (4 vs Python's 3) because
 // cellPosFromBox ignores the span bounds (HLeft/HRight/HTop/HBott) copied onto
 // a pure-SP box (H==0, SP>0) by AnnotateTableBoxes (PR #18707). CalSpans then
@@ -82,21 +82,23 @@ func TestGroupBoxesByRCSpanHeaderRowCellCount(t *testing.T) {
 
 // TestCellPosFromBoxSpanUsesSpanBounds pins the root cause directly: a pure-SP
 // box (H==0, SP>0) with propagated span bounds must rebuild its cell from those
-// bounds, not from the box's own narrow text bounds. (HLeft/HRight/HTop/HBott
-// use 0 as the "not set" sentinel, matching the header branch, so the synthetic
-// box uses non-zero span bounds here.)
+// bounds, not from the box's own narrow text bounds. HLeft/HRight (and
+// HTop/HBott) are set together by AnnotateTableBoxes, so an axis with a zero
+// edge is still propagated when the opposite edge is set — a real span edge at
+// coordinate 0 must not be mistaken for "unset". The synthetic box uses a
+// nonzero text box (X0=200) and a zero left/top propagated edge to lock this in.
 func TestCellPosFromBoxSpanUsesSpanBounds(t *testing.T) {
 	b := pdf.TextBox{
 		X0: 200, X1: 300, Top: 0, Bottom: 20,
-		H: 0, SP: 1, HLeft: 10, HRight: 600, HTop: 5, HBott: 25,
+		H: 0, SP: 1, HLeft: 0, HRight: 600, HTop: 0, HBott: 25,
 	}
 	x0, y0, x1, y1, _ := cellPosFromBox(b)
-	if x0 != 10 || x1 != 600 {
-		t.Errorf("pure-SP box must use propagated span bounds (HLeft/HRight), "+
-			"got x0=%v x1=%v; cellPosFromBox ignores them for SP-only boxes", x0, x1)
+	if x0 != 0 || x1 != 600 {
+		t.Errorf("pure-SP box must use propagated span bounds even when HLeft=0 "+
+			"(span edge at coord 0), got x0=%v x1=%v", x0, x1)
 	}
-	if y0 != 5 || y1 != 25 {
-		t.Errorf("pure-SP box must use propagated span bounds (HTop/HBott), "+
-			"got y0=%v y1=%v", y0, y1)
+	if y0 != 0 || y1 != 25 {
+		t.Errorf("pure-SP box must use propagated span bounds even when HTop=0 "+
+			"(span edge at coord 0), got y0=%v y1=%v", y0, y1)
 	}
 }

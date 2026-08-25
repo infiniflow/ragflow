@@ -18,17 +18,25 @@ import (
 // cmpBox is a bbox in PDF page-point space (1pt = 1/72in).
 type cmpBox struct{ x0, y0, x1, y1 float64 }
 
+// MarshalJSON emits the corner coordinates explicitly: the struct fields are
+// unexported, so the default json marshaler would skip them and write `{}`.
+func (b cmpBox) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		X0, Y0, X1, Y1 float64
+	}{b.x0, b.y0, b.x1, b.y1})
+}
+
 // TestDLATSRGeomCompareReal measures the geometric divergence between Go's
 // PRODUCTION TSR (pdfium render -> DEEPDOC_URL) and Python's production TSR
 // (dumped by dump_py_results.py into tsr_raw/) for ONE real PDF, so we can
 // answer "do the two sides feed the assembly layer different geometry, and by
 // how much?" with measured numbers instead of code-path inference.
 //
-// Usage:
+// Usage (needs a live DEEPDOC_URL inference service; see AGENTS.md `integration` tier):
 //
 //	TSR_CMP_PDF=/abs/path/to.pdf \
 //	TSR_CMP_PY_TSR=/abs/path/to/py_tsr_raw.json \
-//	go test -v -tags "cgo integration" -run TestDLATSRGeomCompareReal ./internal/deepdoc/parser/pdf/
+//	bash build.sh --test-integration ./internal/deepdoc/parser/pdf/ -run TestDLATSRGeomCompareReal
 //
 // Both sides are mapped into PDF page-point space and matched greedily by
 // cell-center proximity. We report cell-count delta, mean/max center offset
@@ -138,7 +146,7 @@ func TestDLATSRGeomCompareReal(t *testing.T) {
 	goB := bboxOf(goBoxes)
 	pyB := bboxOf(pyBoxes)
 	t.Logf("Go table extent (pt)    = %.0f x %.0f", goB.x1-goB.x0, goB.y1-goB.y0)
-	t.Logf("Py table extent (pt)    = %.0f x %.0f", pyB.x1-pyB.y0, pyB.y1-pyB.y0)
+	t.Logf("Py table extent (pt)    = %.0f x %.0f", pyB.x1-pyB.x0, pyB.y1-pyB.y0)
 	shiftX, shiftY := pyB.x0-goB.x0, pyB.y0-goB.y0
 	var goNorm []cmpBox
 	for _, b := range goBoxes {
@@ -173,9 +181,13 @@ func TestDLATSRGeomCompareReal(t *testing.T) {
 	if outDir == "" {
 		outDir = filepath.Join("testdata", "output", "render_compare")
 	}
-	os.MkdirAll(outDir, 0755)
-	if b, err := json.MarshalIndent(goBoxes, "", "  "); err == nil {
-		_ = os.WriteFile(filepath.Join(outDir, "go_tsr_real_points.json"), b, 0644)
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		t.Logf("warn: mkdir %s: %v", outDir, err)
+	}
+	if b, err := json.MarshalIndent(goBoxes, "", "  "); err != nil {
+		t.Logf("warn: marshal go boxes: %v", err)
+	} else if err := os.WriteFile(filepath.Join(outDir, "go_tsr_real_points.json"), b, 0644); err != nil {
+		t.Logf("warn: write go_tsr_real_points.json: %v", err)
 	}
 }
 
@@ -189,10 +201,10 @@ func TestDLATSRGeomCompareReal(t *testing.T) {
 // TSR gap therefore comes from the INPUT IMAGE differing (pdfium vs
 // pdfplumber), not from the service treating callers differently.
 //
-// Usage:
+// Usage (needs a live DEEPDOC_URL inference service; see AGENTS.md `integration` tier):
 //
 //	TSR_CMP_PDF=/abs/path/to.pdf \
-//	go test -v -tags "cgo integration" -run TestSameImageTSRConsistency ./internal/deepdoc/parser/pdf/
+//	bash build.sh --test-integration ./internal/deepdoc/parser/pdf/ -run TestSameImageTSRConsistency
 //
 // then run tools-py/cmp_same_image_tsr.py (reads the saved PNG + go json).
 func TestSameImageTSRConsistency(t *testing.T) {
@@ -238,7 +250,9 @@ func TestSameImageTSRConsistency(t *testing.T) {
 	if outDir == "" {
 		outDir = filepath.Join("testdata", "output", "render_compare")
 	}
-	os.MkdirAll(outDir, 0755)
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		t.Logf("warn: mkdir %s: %v", outDir, err)
+	}
 
 	// The exact bytes Go's client.TSR sends to the service.
 	pngBytes, err := util.EncodePNG(cropped)
