@@ -111,7 +111,7 @@ export default function Chat() {
 
           <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
             <CardContent className="flex p-0 h-full">
-              <Card className="flex flex-col flex-1 bg-transparent min-w-0">
+              <Card className="flex flex-col flex-1 bg-transparent min-w-0 overflow-hidden">
                 <CardHeader
                   className={cn('p-5', {
                     'border-b-0.5 border-border-button': hasSingleChatBox,
