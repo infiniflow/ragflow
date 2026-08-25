@@ -34,7 +34,7 @@ func writeCitySenseTestAudio(t *testing.T, name string, content string) string {
 func TestCitySenseTranscribeAudioRequiresAPIKey(t *testing.T) {
 	withSSRFBypass(t)
 	file := writeCitySenseTestAudio(t, "a.wav", "data")
-	model := "general"
+	model := "citysense-speech-kit-v1"
 	_, err := newCitySenseForTest("http://unused").TranscribeAudio(context.Background(), &model, &file, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api key error, got %v", err)
@@ -76,7 +76,7 @@ func TestCitySenseTranscribeAudioMultipart(t *testing.T) {
 	defer srv.Close()
 
 	file := writeCitySenseTestAudio(t, "audio.wav", "fake wav")
-	model := "general"
+	model := "citysense-speech-kit-v1"
 	key := "secret"
 	resp, err := newCitySenseForTest(srv.URL).TranscribeAudio(context.Background(), &model, &file, &APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
@@ -88,8 +88,8 @@ func TestCitySenseTranscribeAudioMultipart(t *testing.T) {
 	if gotToken != "secret" {
 		t.Errorf("X-Service-Token=%q want secret", gotToken)
 	}
-	if gotModel != "general" {
-		t.Errorf("model=%q want general", gotModel)
+	if gotModel != "citysense-speech-kit-v1" {
+		t.Errorf("model=%q want citysense-speech-kit-v1", gotModel)
 	}
 	if !strings.Contains(gotCT, "multipart/form-data") {
 		t.Errorf("Content-Type=%q want multipart", gotCT)
@@ -118,7 +118,7 @@ func TestCitySenseTranscribeAudioViaURL(t *testing.T) {
 	defer srv.Close()
 
 	urlFile := "https://example.com/a.mp3"
-	model := "general"
+	model := "citysense-speech-kit-v1"
 	key := "tok"
 	resp, err := newCitySenseForTest(srv.URL).TranscribeAudio(context.Background(), &model, &urlFile, &APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestCitySenseListModelsLiveAndFallback(t *testing.T) {
 		if r.Header.Get("X-Service-Token") != "k" {
 			t.Errorf("token=%q", r.Header.Get("X-Service-Token"))
 		}
-		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"general","owned_by":"citysense"}]}`)
+		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"citysense-speech-kit-v1","owned_by":"CitySense-SpeechKit"}]}`)
 	}))
 	defer srv.Close()
 	key := "k"
@@ -144,7 +144,7 @@ func TestCitySenseListModelsLiveAndFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels live: %v", err)
 	}
-	if len(models) != 1 || models[0].Name != "general" {
+	if len(models) != 1 || models[0].Name != "citysense-speech-kit-v1" {
 		t.Fatalf("models=%v", models)
 	}
 	// fallback: server returns 500 -> ListModels should fallback to synthetic, CheckConnection should fail
@@ -156,7 +156,7 @@ func TestCitySenseListModelsLiveAndFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels fallback should not error, got %v", err)
 	}
-	if len(models) != 1 || models[0].Name != "general" {
+	if len(models) != 1 || models[0].Name != "citysense-speech-kit-v1" {
 		t.Fatalf("fallback models=%v", models)
 	}
 	if err := newCitySenseForTest(srv2.URL).CheckConnection(context.Background(), &APIConfig{ApiKey: &key}); err == nil {
@@ -170,7 +170,7 @@ func TestCitySenseUnsupportedMethods(t *testing.T) {
 	ctx := context.Background()
 	key := "k"
 	api := &APIConfig{ApiKey: &key}
-	model := "general"
+	model := "citysense-speech-kit-v1"
 	text := "hi"
 	checks := []struct {
 		name string

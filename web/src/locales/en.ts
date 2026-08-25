@@ -1249,6 +1249,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       Verify: 'Verify',
       keyValid: 'Your API Key is valid.',
       keyInvalid: 'Your API Key is invalid.',
+      citySenseBaseUrlPlaceholder: 'https://media-speech.ai.citysense.ru',
+      citySenseBaseUrlTip: 'Base URL for CitySense media-speech-mcp (Yandex SpeechKit hybrid, 4h/1GB)',
+      citySenseApiKeyInvalid: 'CitySense API key is invalid (X-Service-Token mismatch)',
+      citySenseConnectionFailed: 'Failed to connect to CitySense at {url}',
+      citySenseTranscriptionFailed: 'CitySense transcription failed',
+      citySenseModelListFailed: 'Failed to fetch CitySense model list',
       enableToolCall: 'Enable tool call',
       enableToolCallTip:
         'Allow this model to call tools when the selected model type supports tool calling.',

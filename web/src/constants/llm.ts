@@ -106,6 +106,7 @@ export enum LLMFactory {
   FunASR = 'FunASR',
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
+  CitySenseSpeechKit = 'CitySense-SpeechKit',
 }
 
 // Please lowercase the file name

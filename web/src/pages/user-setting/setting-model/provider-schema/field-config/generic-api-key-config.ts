@@ -103,4 +103,5 @@ export const FACTORIES_WITH_BASE_URL = [
   LLMFactory.MiniMax,
   LLMFactory.SILICONFLOW,
   LLMFactory.TencentHunYuan,
+  LLMFactory.CitySenseSpeechKit,
 ];

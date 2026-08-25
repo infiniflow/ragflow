@@ -706,9 +706,9 @@ class CitySenseSpeechKitSeq2txt(Base):
 
     _FACTORY_NAME = "CitySense-SpeechKit"
 
-    def __init__(self, key, model_name="general", base_url="", **kwargs):
-        # URL и ключ задаются только через UI (base_url инстанса) или env MEDIA_SPEECH_BASE_URL / MEDIA_SPEECH_API_KEY — хардкода нет
-        env_base = (os.getenv("MEDIA_SPEECH_BASE_URL") or "").strip()
+    def __init__(self, key, model_name="citysense-speech-kit-v1", base_url="https://media-speech.ai.citysense.ru", **kwargs):
+        # URL и ключ задаются через UI (base_url инстанса) или env MEDIA_SPEECH_BASE_URL / MEDIA_SPEECH_API_KEY
+        env_base = (os.getenv("MEDIA_SPEECH_BASE_URL") or "https://media-speech.ai.citysense.ru").strip()
         env_key = (os.getenv("MEDIA_SPEECH_API_KEY") or "").strip()
         if not base_url and env_base:
             base_url = env_base

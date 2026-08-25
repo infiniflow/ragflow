@@ -7747,13 +7747,13 @@
             "logo": "",
             "tags": "SPEECH2TEXT",
             "status": "1",
-            "url": "http://media-speech-mcp:8080",
+            "url": "https://media-speech.ai.citysense.ru",
             "llm": [
                 {
-                    "llm_name": "general",
+                    "llm_name": "citysense-speech-kit-v1",
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 0,
-                    "model_type": "speech2text",
+                    "model_type": "asr",
                     "is_tools": false
                 }
             ]

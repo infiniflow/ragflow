@@ -290,15 +290,15 @@ func (m *CitySenseSpeechKit) ParseFile(ctx context.Context, modelName *string, c
 }
 
 func (m *CitySenseSpeechKit) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	// Гибрид: пробуем живой GET, при любой ошибке — fallback на synthetic general с warning.
+	// Гибрид: пробуем живой GET, при любой ошибке — fallback на synthetic citysense-speech-kit-v1 с warning.
 	// Это не блокирует сохранение инстанса в UI когда media-speech-mcp перезапускается
 	// или недоступен по DNS из хоста. Реальная верификация с X-Service-Token происходит в TranscribeAudio.
 	models, err := m.listModelsLive(ctx, apiConfig)
 	if err == nil {
 		return models, nil
 	}
-	common.Warn("CitySense SpeechKit: ListModels live check failed, fallback to synthetic general", zap.Error(err))
-	return []ListModelResponse{{Name: "general", ModelTypes: []string{"asr"}}}, nil
+	common.Warn("CitySense SpeechKit: ListModels live check failed, fallback to synthetic citysense-speech-kit-v1", zap.Error(err))
+	return []ListModelResponse{{Name: "citysense-speech-kit-v1", ModelTypes: []string{"asr"}}}, nil
 }
 
 func (m *CitySenseSpeechKit) listModelsLive(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {

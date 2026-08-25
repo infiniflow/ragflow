@@ -1,7 +1,7 @@
 {
   "name": "CitySense-SpeechKit",
   "url": {
-    "default": "http://media-speech-mcp:8080"
+    "default": "https://media-speech.ai.citysense.ru"
   },
   "url_suffix": {
     "asr": "api/v1/transcription/upload",
@@ -9,7 +9,7 @@
   },
   "models": [
     {
-      "name": "general",
+      "name": "citysense-speech-kit-v1",
       "model_types": [
         "asr"
       ]

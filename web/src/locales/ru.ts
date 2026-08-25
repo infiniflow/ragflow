@@ -976,6 +976,12 @@ export default {
       Verify: 'Проверить',
       keyValid: 'Ваш API ключ действителен.',
       keyInvalid: 'Ваш API ключ недействителен.',
+      citySenseBaseUrlPlaceholder: 'https://media-speech.ai.citysense.ru',
+      citySenseBaseUrlTip: 'Базовый URL для CitySense media-speech-mcp (гибрид Yandex SpeechKit, 4ч/1ГБ)',
+      citySenseApiKeyInvalid: 'Ключ CitySense недействителен (несовпадение X-Service-Token)',
+      citySenseConnectionFailed: 'Не удалось подключиться к CitySense по адресу {url}',
+      citySenseTranscriptionFailed: 'Ошибка транскрибации CitySense',
+      citySenseModelListFailed: 'Не удалось получить список моделей CitySense',
       deleteModel: 'Удалить модель',
       bedrockCredentialsHint:
         'Подсказка: оставьте ACCESS KEY / SECRET KEY пустыми для аутентификации AWS IAM.',

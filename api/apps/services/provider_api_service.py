@@ -696,18 +696,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found", {}
 
-    # CitySense-SpeechKit: skip live verification, always allow save. Real error surfaces at transcription.
-    if target_factory_name == "CitySense-SpeechKit":
-        model_verify_result = {}
-        for llm in (factory_info[0].get("llm") or []):
-            model_verify_result[_factory_llm_name(llm)] = ModelVerifyStatusEnum.SUCCESS.value
-        # also handle explicit model_info case
-        if model_info:
-            for m in model_info:
-                if m and m.get("model_name"):
-                    model_verify_result[m["model_name"]] = ModelVerifyStatusEnum.SUCCESS.value
-        return True, "success", model_verify_result
-
     if model_info:
         factory_llms = [
             {
