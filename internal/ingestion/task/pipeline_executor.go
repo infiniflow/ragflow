@@ -263,7 +263,16 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// Ordinary source chunks stay available_int=1 (the index default) unless the
 	// document itself is disabled (status=0).
 	markCompiledProductsHidden(chunks)
-	applyDocumentAvailability(chunks, s.taskCtx.Doc.Status)
+	// Reload status immediately before write: LoadFromIngestionTask copied a
+	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
+	docStatus := s.taskCtx.Doc.Status
+	if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
+		docStatus = persisted.Status
+		s.taskCtx.Doc.Status = persisted.Status
+	} else if err != nil {
+		common.Warn(fmt.Sprintf("failed to reload document %s status before availability stamp: %v", s.taskCtx.Doc.ID, err))
+	}
+	applyDocumentAvailability(chunks, docStatus)
 
 	oldCompiledProductIDs, err := s.loadDocumentCompiledProductIDs(ctx)
 	if err != nil {
