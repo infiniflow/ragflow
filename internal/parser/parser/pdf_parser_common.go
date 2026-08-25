@@ -457,7 +457,7 @@ func sectionsToMarkdown(sections []deepdoctype.Section) string {
 		if layoutType == deepdoctype.LayoutTypeTitle {
 			b.WriteString("\n## ")
 		}
-		if layoutType == deepdoctype.LayoutTypeFigure && section.Image != "" {
+		if (layoutType == deepdoctype.LayoutTypeFigure || layoutType == "image" || section.DocTypeKwd == "image" || (layoutType == deepdoctype.LayoutTypeTable && section.Text == "")) && section.Image != "" {
 			b.WriteString("\n![Image](")
 			b.WriteString(inlinePNGDataURL(section.Image))
 			b.WriteString(")")

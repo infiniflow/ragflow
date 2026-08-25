@@ -129,7 +129,7 @@ func SectionsToMarkdown(sections []pdf.Section) string {
 		if s.LayoutType == pdf.LayoutTypeTitle {
 			b.WriteString("\n## ")
 		}
-		if s.LayoutType == pdf.LayoutTypeFigure && s.Image != "" {
+		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && s.Text == "")) && s.Image != "" {
 			b.WriteString("\n![Image](data:image/png;base64,")
 			b.WriteString(s.Image)
 			b.WriteString(")")

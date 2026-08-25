@@ -330,6 +330,9 @@ func TestPDFParseResultToMarkdownWithOptions_RendersLikePython(t *testing.T) {
 		Sections: []deepdoctype.Section{
 			{Text: "Title", LayoutType: deepdoctype.LayoutTypeTitle},
 			{Text: "Figure", LayoutType: deepdoctype.LayoutTypeFigure, Image: "aGVsbG8="},
+			{Text: "<table><tr><td>cell</td></tr></table>", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVpbWc="},
+			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVvbmx5"},
+			{Text: "ImageCaption", LayoutType: "image", Image: "aW1hZ2Vvbmx5"},
 			{Text: "Body", LayoutType: deepdoctype.LayoutTypeText},
 		},
 	}
@@ -348,7 +351,16 @@ func TestPDFParseResultToMarkdownWithOptions_RendersLikePython(t *testing.T) {
 		t.Fatalf("Markdown = %q, want title heading", res.Markdown)
 	}
 	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aGVsbG8=)") {
-		t.Fatalf("Markdown = %q, want inline image", res.Markdown)
+		t.Fatalf("Markdown = %q, want inline figure image", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "<table><tr><td>cell</td></tr></table>") {
+		t.Fatalf("Markdown = %q, want table text", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,dGFibGVvbmx5)") {
+		t.Fatalf("Markdown = %q, want fallback table image when text is empty", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aW1hZ2Vvbmx5)") {
+		t.Fatalf("Markdown = %q, want image section", res.Markdown)
 	}
 	if !strings.Contains(res.Markdown, "Body") {
 		t.Fatalf("Markdown = %q, want body text", res.Markdown)
@@ -506,4 +518,3 @@ func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
 }
-
