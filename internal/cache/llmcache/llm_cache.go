@@ -26,10 +26,6 @@
 //   - Task-aware quality gate: a caller-supplied Validator decides whether a
 //     computed value is worth caching (allows legitimate empty results,
 //     rejects ERROR / truncated payloads).
-//   - SingleFlight: concurrent identical requests (same tenant+task+hash) are
-//     collapsed into a single upstream LLM call via DoChan with context cancellation
-//     safety, with a double-check to avoid redundant recompute after a peer has
-//     already written back.
 //   - Observable: an optional MetricsHook receives hit/miss/compute/skip/purge
 //     events for Prometheus instrumentation without hard-coupling the package.
 package llmcache
@@ -39,23 +35,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	randv2 "math/rand/v2"
 	"sync"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
-)
-
-// Standard sentinel errors.
-var (
-	// ErrTypeAssertion indicates an internal type assertion failure.
-	ErrTypeAssertion = errors.New("llmcache: internal type assertion failed")
 )
 
 var xxhashPool = sync.Pool{
@@ -66,9 +54,6 @@ var xxhashPool = sync.Pool{
 
 // KeyPrefix is the Redis namespace for all entries managed by this engine.
 const KeyPrefix = "kc:llm"
-
-// DefaultTTL mirrors the legacy Python get_llm_cache/set_llm_cache 24h window.
-const DefaultTTL = 24 * time.Hour
 
 // Validator reports whether a computed value should be cached.
 // Return true to keep it (including legitimate empty results), false to drop
@@ -90,21 +75,14 @@ type MetricsHook func(Event)
 
 // Engine is a generic, multi-tenant LLM-result cache.
 type Engine[T any] struct {
-	ttl       time.Duration
 	validate  Validator[T]
 	hook      MetricsHook
-	group     singleflight.Group
 	redisCli  *redis.Client
 	rawClient goredis.UniversalClient
 }
 
 // Option configures an Engine.
 type Option[T any] func(*Engine[T])
-
-// WithTTL overrides the cache entry TTL (default DefaultTTL).
-func WithTTL[T any](d time.Duration) Option[T] {
-	return func(e *Engine[T]) { e.ttl = d }
-}
 
 // WithValidator sets the task-aware quality gate.
 func WithValidator[T any](v Validator[T]) Option[T] {
@@ -128,7 +106,7 @@ func WithUniversalClient[T any](client goredis.UniversalClient) Option[T] {
 
 // New constructs an Engine with the given options.
 func New[T any](opts ...Option[T]) *Engine[T] {
-	e := &Engine[T]{ttl: DefaultTTL}
+	e := &Engine[T]{}
 	for _, o := range opts {
 		o(e)
 	}
@@ -152,23 +130,6 @@ func BuildKey(tenantID, taskType string, keyParts ...string) string {
 	h.Reset()
 	xxhashPool.Put(h)
 	return key
-}
-
-// ApplyJitter returns the base duration with ±10% random jitter applied.
-// If base <= 0, it returns base unmodified.
-func ApplyJitter(base time.Duration) time.Duration {
-	return applyJitter(base)
-}
-
-func applyJitter(base time.Duration) time.Duration {
-	if base <= 0 {
-		return base
-	}
-	// ±10% jitter: range is [base * 0.90, base * 1.10]
-	delta := float64(base) * 0.10
-	factor := (randv2.Float64() * 2.0) - 1.0
-	jitter := time.Duration(delta * factor)
-	return base + jitter
 }
 
 func (e *Engine[T]) getRedis() *redis.Client {
@@ -230,29 +191,23 @@ func (e *Engine[T]) set(ctx context.Context, tenantID, key string, v T) {
 	setCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 
-	ttl := applyJitter(e.ttl)
 	if e.rawClient != nil {
 		data, err := json.Marshal(v)
 		if err != nil {
 			return
 		}
-		e.rawClient.Set(setCtx, key, data, ttl)
+		e.rawClient.Set(setCtx, key, data, 0)
 		return
 	}
 	client := e.getRedis()
 	if client == nil {
 		return
 	}
-	client.SetObj(setCtx, key, v, ttl)
+	client.SetObj(setCtx, key, v, 0)
 }
 
 // GetOrCompute returns the cached value for (tenantID, taskType, keyParts), or
 // computes it via computeFn on a cache miss / invalid entry.
-//
-// Concurrency: requests sharing the exact key are merged through SingleFlight DoChan,
-// and respect context cancellation/timeout immediately without leaking goroutines.
-// A double-check re-reads Redis inside the merged call in case a peer already wrote
-// the value back. The winning result is written back only after passing the Validator.
 //
 // Fail-Open (bypass): execute computeFn directly without caching when tenantID is empty to ensure business continuity without polluting global namespace.
 func (e *Engine[T]) GetOrCompute(
@@ -263,7 +218,6 @@ func (e *Engine[T]) GetOrCompute(
 ) (T, error) {
 	var zero T
 	if tenantID == "" {
-		// Fail-Open (bypass): execute computeFn directly without caching when tenantID is empty to ensure business continuity without polluting global namespace
 		return computeFn(ctx)
 	}
 
@@ -277,50 +231,19 @@ func (e *Engine[T]) GetOrCompute(
 	}
 	e.emit(Event{Kind: "miss", TenantID: tenantID, TaskType: taskType, Key: key})
 
-	ch := e.group.DoChan(key, func() (any, error) {
-		// Double-check: a concurrent writer may have populated Redis while we
-		// were queued.
-		getCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 500*time.Millisecond)
-		defer cancel()
-		if v, ok := e.get(getCtx, key); ok && (e.validate == nil || e.validate(v)) {
-			return v, nil
-		}
-		computeCtx := context.WithoutCancel(ctx)
-		v, cerr := computeFn(computeCtx)
-		if cerr != nil {
-			return zero, cerr
-		}
-		if e.validate == nil || e.validate(v) {
-			e.set(ctx, tenantID, key, v)
-			e.emit(Event{Kind: "compute", TenantID: tenantID, TaskType: taskType, Key: key})
-		} else {
-			e.emit(Event{Kind: "skip_invalid", TenantID: tenantID, TaskType: taskType, Key: key})
-			common.Warn("llmcache: dropping invalid computed value",
-				zap.String("task_type", taskType), zap.String("tenant_id", tenantID))
-		}
-		return v, nil
-	})
-
-	select {
-	case <-ctx.Done():
-		// Unblock retries to start a fresh flight immediately; drain the original
-		// flight asynchronously without a second Forget to avoid evicting a newer flight
-		// registered by a concurrent retry.
-		e.group.Forget(key)
-		go func() {
-			<-ch
-		}()
-		return zero, ctx.Err()
-	case res := <-ch:
-		if res.Err != nil {
-			return zero, res.Err
-		}
-		out, ok := res.Val.(T)
-		if !ok {
-			return zero, ErrTypeAssertion
-		}
-		return out, nil
+	v, cerr := computeFn(ctx)
+	if cerr != nil {
+		return zero, cerr
 	}
+	if e.validate == nil || e.validate(v) {
+		e.set(ctx, tenantID, key, v)
+		e.emit(Event{Kind: "compute", TenantID: tenantID, TaskType: taskType, Key: key})
+	} else {
+		e.emit(Event{Kind: "skip_invalid", TenantID: tenantID, TaskType: taskType, Key: key})
+		common.Warn("llmcache: dropping invalid computed value",
+			zap.String("task_type", taskType), zap.String("tenant_id", tenantID))
+	}
+	return v, nil
 }
 
 // FlushTenant purges every cache entry for a tenant (GDPR erasure / tenant teardown).

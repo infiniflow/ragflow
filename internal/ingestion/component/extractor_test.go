@@ -2518,67 +2518,6 @@ func TestExtractor_Cache_LegitimateEmptyValues(t *testing.T) {
 	}
 }
 
-func TestExtractor_Cache_ConcurrentSingleFlight(t *testing.T) {
-	setupTestRedis(t)
-	// Stub LLM with 50ms simulated latency
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "SingleFlight Summary Result", Delay: 50 * time.Millisecond},
-	)
-
-	params := map[string]any{
-		"llm_id": "llm-sf-test",
-		"summary": map[string]any{
-			"enabled": true,
-		},
-	}
-	comp, err := NewExtractorComponent(params)
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-
-	const concurrency = 10
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
-	errCh := make(chan error, concurrency)
-	results := make([]string, concurrency)
-
-	for i := 0; i < concurrency; i++ {
-		go func(idx int) {
-			defer wg.Done()
-			in := map[string]any{
-				"tenant_id": "tenant-sf-1",
-				"chunks":    []map[string]any{{"text": "Concurrent SingleFlight test chunk."}},
-			}
-			out, err := comp.Invoke(t.Context(), nil, in)
-			if err != nil {
-				errCh <- err
-				return
-			}
-			ck := out["chunks"].([]map[string]any)[0]
-			if sum, ok := ck["summary"].(string); ok {
-				results[idx] = sum
-			}
-		}(i)
-	}
-
-	wg.Wait()
-	close(errCh)
-	for err := range errCh {
-		t.Fatalf("concurrent invoke failed: %v", err)
-	}
-
-	// Verify LLM was called exactly ONCE due to SingleFlight collapsing
-	if calls := stub.Calls(); calls != 1 {
-		t.Fatalf("SingleFlight expected 1 LLM call across %d concurrent requests, got %d", concurrency, calls)
-	}
-
-	for i, res := range results {
-		if res != "SingleFlight Summary Result" {
-			t.Errorf("goroutine %d got summary %q, want 'SingleFlight Summary Result'", i, res)
-		}
-	}
-}
-
 func TestSetExtractorCachesForTest_Restore(t *testing.T) {
 	origText := getTextExtractCache()
 	origMeta := getMetadataCache()

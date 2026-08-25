@@ -23,7 +23,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -72,17 +71,10 @@ func TestBuildKey(t *testing.T) {
 	}
 }
 
-func TestSentinelErrors(t *testing.T) {
-	if ErrTypeAssertion == nil {
-		t.Error("ErrTypeAssertion must not be nil")
-	}
-}
-
 func TestEngine_GetOrCompute_NoRedis(t *testing.T) {
 	// In unit-test environment without Redis running, GetOrCompute should fall back
 	// gracefully to computeFn (Fail-Open behavior).
 	engine := New[string](
-		WithTTL[string](time.Hour),
 		WithValidator(func(v string) bool { return len(v) > 0 }),
 	)
 
@@ -123,138 +115,39 @@ func TestEngine_GetOrCompute_ValidatorAllowsLegitimateEmpty(t *testing.T) {
 	}
 }
 
-func TestEngine_GetOrCompute_SingleFlightDeduplication(t *testing.T) {
-	engine := New[string]()
+func TestEngine_GetOrCompute_BasicCaching(t *testing.T) {
+	engine, _, _ := newTestEngineWithRedis[string](t)
+	ctx := context.Background()
 
 	var computeCount int32
-	var wg sync.WaitGroup
-	concurrentReqs := 10
-	results := make([]string, concurrentReqs)
-
-	for i := 0; i < concurrentReqs; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			res, err := engine.GetOrCompute(context.Background(), "t1", "summary", []string{"same_model", "same_text"}, func(ctx context.Context) (string, error) {
-				time.Sleep(50 * time.Millisecond) // Simulate slow LLM
-				atomic.AddInt32(&computeCount, 1)
-				return "computed_value", nil
-			})
-			if err == nil {
-				results[idx] = res
-			}
-		}(i)
+	computeFn := func(ctx context.Context) (string, error) {
+		atomic.AddInt32(&computeCount, 1)
+		return "computed_value", nil
 	}
 
-	wg.Wait()
-
+	// 1. First call computes and caches
+	res1, err := engine.GetOrCompute(ctx, "tenant1", "summary", []string{"m1", "p1"}, computeFn)
+	if err != nil {
+		t.Fatalf("first call failed: %v", err)
+	}
+	if res1 != "computed_value" {
+		t.Errorf("res1 = %q, want 'computed_value'", res1)
+	}
 	if computeCount != 1 {
-		t.Errorf("SingleFlight failed: computeCount = %d, want 1", computeCount)
+		t.Errorf("computeCount = %d, want 1", computeCount)
 	}
-	for i, r := range results {
-		if r != "computed_value" {
-			t.Errorf("result[%d] = %q, want 'computed_value'", i, r)
-		}
+
+	// 2. Second call hits cache
+	res2, err := engine.GetOrCompute(ctx, "tenant1", "summary", []string{"m1", "p1"}, computeFn)
+	if err != nil {
+		t.Fatalf("second call failed: %v", err)
 	}
-}
-
-func TestEngine_GetOrCompute_ContextTimeout(t *testing.T) {
-	engine := New[string]()
-
-	// Compute blocks for 300ms, but context times out in 30ms.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-
-	start := time.Now()
-	_, err := engine.GetOrCompute(ctx, "t1", "summary", []string{"m1", "slow_prompt"}, func(computeCtx context.Context) (string, error) {
-		time.Sleep(300 * time.Millisecond)
-		return "should_not_wait", nil
-	})
-	elapsed := time.Since(start)
-
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("expected context.DeadlineExceeded, got: %v", err)
+	if res2 != "computed_value" {
+		t.Errorf("res2 = %q, want 'computed_value'", res2)
 	}
-	if elapsed >= 250*time.Millisecond {
-		t.Fatalf("GetOrCompute should return immediately on timeout, but elapsed %v", elapsed)
+	if computeCount != 1 {
+		t.Errorf("second call should hit cache, computeCount = %d, want 1", computeCount)
 	}
-}
-
-func TestEngine_GetOrCompute_ContextCancellation(t *testing.T) {
-	engine := New[string]()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Cancel context asynchronously after 20ms
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		cancel()
-	}()
-
-	start := time.Now()
-	_, err := engine.GetOrCompute(ctx, "t1", "summary", []string{"m1", "cancel_prompt"}, func(computeCtx context.Context) (string, error) {
-		time.Sleep(300 * time.Millisecond)
-		return "should_be_cancelled", nil
-	})
-	elapsed := time.Since(start)
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got: %v", err)
-	}
-	if elapsed >= 250*time.Millisecond {
-		t.Fatalf("GetOrCompute should return immediately on cancellation, but elapsed %v", elapsed)
-	}
-}
-
-func TestEngine_JitterRange(t *testing.T) {
-	t.Run("100s base duration", func(t *testing.T) {
-		base := 100 * time.Second
-		minExpected := 90 * time.Second
-		maxExpected := 110 * time.Second
-
-		var minObserved time.Duration = 1000 * time.Second
-		var maxObserved time.Duration = 0
-
-		for i := 0; i < 1000; i++ {
-			jittered := ApplyJitter(base)
-			if jittered < minExpected || jittered > maxExpected {
-				t.Fatalf("jittered value %v out of bounds [%v, %v]", jittered, minExpected, maxExpected)
-			}
-			if jittered < minObserved {
-				minObserved = jittered
-			}
-			if jittered > maxObserved {
-				maxObserved = jittered
-			}
-		}
-
-		// Verify variance across 1000 runs
-		if minObserved > 95*time.Second || maxObserved < 105*time.Second {
-			t.Fatalf("expected substantial jitter spread, got min=%v, max=%v", minObserved, maxObserved)
-		}
-	})
-
-	t.Run("24h base duration", func(t *testing.T) {
-		base := 24 * time.Hour
-		minExpected := time.Duration(float64(base) * 0.90)
-		maxExpected := time.Duration(float64(base) * 1.10)
-
-		for i := 0; i < 500; i++ {
-			jittered := ApplyJitter(base)
-			if jittered < minExpected || jittered > maxExpected {
-				t.Fatalf("jittered value %v out of bounds [%v, %v]", jittered, minExpected, maxExpected)
-			}
-		}
-	})
-
-	t.Run("non-positive durations", func(t *testing.T) {
-		if got := ApplyJitter(0); got != 0 {
-			t.Errorf("ApplyJitter(0) = %v, want 0", got)
-		}
-		if got := ApplyJitter(-5 * time.Second); got != -5*time.Second {
-			t.Errorf("ApplyJitter(-5s) = %v, want -5s", got)
-		}
-	})
 }
 
 func TestEngine_FailClosed_EmptyTenantID(t *testing.T) {
@@ -385,7 +278,7 @@ func TestEngine_FlushTenant_ScanPipeline(t *testing.T) {
 		pipe := rdb.Pipeline()
 		for i := 0; i < totalKeys; i++ {
 			k := BuildKey("tenant_large", "task", fmt.Sprintf("key_%d", i))
-			pipe.Set(ctx, k, fmt.Sprintf(`"val_%d"`, i), time.Hour)
+			pipe.Set(ctx, k, fmt.Sprintf(`"val_%d"`, i), 0)
 		}
 		if _, err := pipe.Exec(ctx); err != nil {
 			t.Fatalf("Pipeline setup error: %v", err)
@@ -444,45 +337,6 @@ func TestEngine_MetricsHook(t *testing.T) {
 	}
 }
 
-func TestEngine_GetOrCompute_ContextCancellation_AllowsImmediateRetry(t *testing.T) {
-	engine := New[string]()
-
-	// 1. Slow flight with quick timeout
-	ctx1, cancel1 := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel1()
-
-	computeStarted := make(chan struct{})
-	computeFinish := make(chan struct{})
-
-	go func() {
-		_, _ = engine.GetOrCompute(ctx1, "tenant1", "summary", []string{"retry_key"}, func(ctx context.Context) (string, error) {
-			close(computeStarted)
-			<-computeFinish // Hold until we allow it to finish
-			return "slow_result", nil
-		})
-	}()
-
-	<-computeStarted
-	// Wait for ctx1 to time out
-	time.Sleep(35 * time.Millisecond)
-
-	// 2. Immediate retry by a new caller should not hang or fail due to the slow first request
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel2()
-
-	res2, err2 := engine.GetOrCompute(ctx2, "tenant1", "summary", []string{"retry_key"}, func(ctx context.Context) (string, error) {
-		return "fast_result", nil
-	})
-	close(computeFinish)
-
-	if err2 != nil {
-		t.Fatalf("retry GetOrCompute failed: %v", err2)
-	}
-	if res2 != "fast_result" {
-		t.Errorf("got %q, want 'fast_result'", res2)
-	}
-}
-
 func TestEngine_FlushTenant_ScanError(t *testing.T) {
 	engine, mr, _ := newTestEngineWithRedis[string](t)
 	ctx := context.Background()
@@ -531,140 +385,6 @@ func TestEngine_GetOrCompute_ComplexTypes_NoReflect(t *testing.T) {
 	}
 }
 
-func TestEngine_GetOrCompute_WriteBack_ContextCancelled(t *testing.T) {
-	engine, _, _ := newTestEngineWithRedis[string](t)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	computeDone := make(chan struct{})
-
-	go func() {
-		_, _ = engine.GetOrCompute(ctx, "tenant1", "summary", []string{"slow_key"}, func(c context.Context) (string, error) {
-			cancel() // Cancel caller context while computing
-			time.Sleep(20 * time.Millisecond)
-			return "computed_despite_cancel", nil
-		})
-		close(computeDone)
-	}()
-
-	<-computeDone
-	// Allow a moment for background singleflight goroutine to finish set
-	time.Sleep(30 * time.Millisecond)
-
-	// Now check if a new request hits the cache
-	newCtx := context.Background()
-	var computeCalled bool
-	val, err := engine.GetOrCompute(newCtx, "tenant1", "summary", []string{"slow_key"}, func(c context.Context) (string, error) {
-		computeCalled = true
-		return "should_not_recompute", nil
-	})
-	if err != nil {
-		t.Fatalf("unexpected error on cache read: %v", err)
-	}
-	if computeCalled {
-		t.Errorf("expected cache hit after previous cancelled request wrote back, but computeFn was called")
-	}
-	if val != "computed_despite_cancel" {
-		t.Errorf("got %q, want 'computed_despite_cancel'", val)
-	}
-}
-
-func TestEngine_GetOrCompute_Cancellation_SingleForgetNoRace(t *testing.T) {
-	missC := make(chan struct{}, 10)
-	engine, _, _ := newTestEngineWithRedis[string](t,
-		WithValidator[string](func(s string) bool {
-			return s != "resultA" && s != "resultB" // Never cache so C strictly tests SingleFlight deduplication with B
-		}),
-		WithMetrics[string](func(ev Event) {
-			if ev.Kind == "miss" {
-				missC <- struct{}{}
-			}
-		}),
-	)
-
-	// 1. Caller A starts a slow flight
-	ctxA, cancelA := context.WithCancel(context.Background())
-	startedA := make(chan struct{})
-	finishA := make(chan struct{})
-	completedFnA := make(chan struct{})
-	doneA := make(chan struct{})
-
-	go func() {
-		defer close(doneA)
-		_, _ = engine.GetOrCompute(ctxA, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
-			close(startedA)
-			<-finishA
-			close(completedFnA)
-			return "resultA", nil
-		})
-	}()
-
-	<-startedA
-	<-missC // Drain A's cache miss event
-
-	// Cancel Caller A's context, triggering Forget(key) and waiting for GetOrCompute to return
-	cancelA()
-	<-doneA
-
-	// 2. Caller B starts a new flight for the same key while A is still running in background
-	ctxB := context.Background()
-	startedB := make(chan struct{})
-	finishB := make(chan struct{})
-	var computeCountB atomic.Int32
-
-	var resB string
-	var errB error
-	doneB := make(chan struct{})
-	go func() {
-		defer close(doneB)
-		resB, errB = engine.GetOrCompute(ctxB, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
-			computeCountB.Add(1)
-			close(startedB)
-			<-finishB
-			return "resultB", nil
-		})
-	}()
-
-	<-startedB
-	<-missC // Drain B's cache miss event
-
-	// 3. Now let Caller A's original background compute finish and wait for it to complete.
-	// If there was a double-forget bug, A completing would evict B's flight from singleflight map!
-	close(finishA)
-	<-completedFnA
-
-	// 4. Caller C arrives while Caller B is still computing.
-	// Caller C MUST merge into Caller B's existing flight and NOT start a new computation.
-	ctxC := context.Background()
-	var resC string
-	var errC error
-	doneC := make(chan struct{})
-	go func() {
-		defer close(doneC)
-		resC, errC = engine.GetOrCompute(ctxC, "tenant1", "summary", []string{"race_key"}, func(c context.Context) (string, error) {
-			computeCountB.Add(1) // Should NOT be called
-			return "resultC_unwanted", nil
-		})
-	}()
-
-	// Wait for Caller C to reach DoChan before releasing B
-	<-missC
-
-	// 5. Allow Caller B's computation to finish
-	close(finishB)
-	<-doneB
-	<-doneC
-
-	if errB != nil || errC != nil {
-		t.Fatalf("unexpected error: B=%v, C=%v", errB, errC)
-	}
-	if computeCountB.Load() != 1 {
-		t.Errorf("compute count = %d, want 1 (SingleFlight dedup was defeated by double forget race)", computeCountB.Load())
-	}
-	if resB != "resultB" || resC != "resultB" {
-		t.Errorf("resB = %q, resC = %q, both want 'resultB'", resB, resC)
-	}
-}
-
 func BenchmarkBuildKey(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -672,11 +392,3 @@ func BenchmarkBuildKey(b *testing.B) {
 	}
 }
 
-func BenchmarkEngine_ApplyJitter(b *testing.B) {
-	base := 24 * time.Hour
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			_ = ApplyJitter(base)
-		}
-	})
-}

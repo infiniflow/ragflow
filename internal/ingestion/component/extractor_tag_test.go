@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/xuri/excelize/v2"
 
@@ -1618,42 +1616,6 @@ func TestTagger_Cache_LegitimateEmptyDictCached(t *testing.T) {
 	llmTagChunk(t.Context(), nil, stub, chunk2, allTags, nil, "tenant-empty", "test@model", "driver", "model", "key", "", 3, nil)
 	if calls := stub.Calls(); calls != 1 {
 		t.Fatalf("second call expected 1 call (cache hit for empty dict), got %d", calls)
-	}
-}
-
-func TestTagger_Cache_ConcurrentSingleFlight(t *testing.T) {
-	setupTestRedis(t)
-	// Stub LLM with 50ms simulated latency
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: `{"SingleFlightTag": 9}`, Delay: 50 * time.Millisecond},
-	)
-
-	allTags := map[string]float64{"SingleFlightTag": 1.0}
-	const concurrency = 10
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
-	chunks := make([]map[string]any, concurrency)
-
-	for i := 0; i < concurrency; i++ {
-		chunks[i] = map[string]any{"content_with_weight": "Concurrent tagger chunk content."}
-		go func(idx int) {
-			defer wg.Done()
-			llmTagChunk(t.Context(), nil, stub, chunks[idx], allTags, nil, "tenant-sf-tag", "test@model", "driver", "model", "key", "", 3, nil)
-		}(i)
-	}
-
-	wg.Wait()
-
-	// Verify LLM was called exactly ONCE due to SingleFlight collapsing
-	if calls := stub.Calls(); calls != 1 {
-		t.Fatalf("SingleFlight expected 1 LLM call across %d concurrent requests, got %d", concurrency, calls)
-	}
-
-	for i, ck := range chunks {
-		k, ok := ck["tag_kwd"].([]string)
-		if !ok || len(k) != 1 || k[0] != "SingleFlightTag" {
-			t.Errorf("chunk %d got tag_kwd %v, want ['SingleFlightTag']", i, ck["tag_kwd"])
-		}
 	}
 }
 
