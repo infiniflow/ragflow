@@ -189,7 +189,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 				"slug":             slug,
 				"title":            title,
 				"page_type":        pageType,
-				"topic":            strings.TrimSpace(page.Topic),
+				"topic":            common.NormalizeWikiTopicPath(page.Topic),
 				"summary":          summary,
 				"entity_names":     uniqueStrings(page.EntityNames),
 				"related_kb_pages": uniqueStrings(page.RelatedKBPages),
