@@ -378,6 +378,23 @@ async def retrieval_test_embedded(tenant_id=None):
         local_doc_ids = list(doc_ids) if doc_ids else []
         _question = question
 
+        # Authorize every kb (and fetch their rows) BEFORE any metadata read:
+        # apply_meta_data_filter and its metas_loader must never touch a
+        # dataset the caller cannot access.
+        for kb_id in kb_ids:
+            if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=tenant_id):
+                logging.warning("Access denied: user=%s resource=%s", tenant_id, kb_id)
+                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        kbs = await thread_pool_exec(KnowledgebaseService.get_by_ids, kb_ids)
+        # Everything that passed the accessible loop above must still be here;
+        # a short result means a kb vanished between check and fetch.
+        kbs_by_id = {kb.id: kb for kb in kbs}
+        if len(kbs_by_id) != len(set(kb_ids)):
+            logging.warning("Retrieval test: knowledgebases vanished after the access check. requested=%d fetched=%d", len(set(kb_ids)), len(kbs_by_id))
+            return get_error_data_result(message="Knowledgebase not found!")
+        tenant_ids = list({kb.tenant_id for kb in kbs})
+        kb = kbs_by_id[kb_ids[0]]
+
         meta_data_filter = {}
         chat_mdl = None
         if req.get("search_id", ""):
@@ -420,19 +437,6 @@ async def retrieval_test_embedded(tenant_id=None):
                 kb_ids=kb_ids,
                 metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
             )
-
-        for kb_id in kb_ids:
-            if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=tenant_id):
-                logging.warning("Access denied: user=%s resource=%s", tenant_id, kb_id)
-                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-        kbs = await thread_pool_exec(KnowledgebaseService.get_by_ids, kb_ids)
-        # Everything that passed the accessible loop above must still be here;
-        # a short result means a kb vanished between check and fetch.
-        kbs_by_id = {kb.id: kb for kb in kbs}
-        if len(kbs_by_id) != len(set(kb_ids)):
-            return get_error_data_result(message="Knowledgebase not found!")
-        tenant_ids = list({kb.tenant_id for kb in kbs})
-        kb = kbs_by_id[kb_ids[0]]
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)

@@ -227,7 +227,15 @@ def _load_bot_api(monkeypatch, *, kb_accessible, search_accessible, search_detai
         UserTenantService=SimpleNamespace(),
     )
     _stub(monkeypatch, "api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=lambda *_a, **_k: {}, resolve_model_config=lambda *_a, **_k: {})
-    _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=lambda *_a, **_k: None)
+    def _apply_meta_data_filter(*_args, **kwargs):
+        calls.setdefault("apply_meta_data_filter", []).append(sorted(kwargs.get("kb_ids") or []))
+        loader = kwargs.get("metas_loader")
+        if loader is not None:
+            loader()
+            calls.setdefault("metas_loaded", []).append(True)
+        return None
+
+    _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=_apply_meta_data_filter)
     _stub(monkeypatch, "common.misc_utils", get_uuid=lambda: "uuid", thread_pool_exec=_thread_pool_exec)
     _stub(monkeypatch, "api.utils.api_utils", **_api_utils_attrs(request_payload))
     _stub(monkeypatch, "rag.app.tag", label_question=lambda *_a, **_k: None)
@@ -537,6 +545,29 @@ class TestRetrievalTestTenantChecks:
         assert res["code"] == module.RetCode.OPERATING_ERROR, res
         assert res["message"] == "Only owner of dataset authorized for this operation.", res
         assert calls["kb_accessible"] == [("kb-private-of-joined-tenant", "tenant-1")]
+
+    def test_inaccessible_kb_denied_before_metadata_read(self, monkeypatch):
+        """Authorization must run before apply_meta_data_filter loads kb metadata."""
+        calls = {}
+        module = _load_bot_api(
+            monkeypatch,
+            kb_accessible=set(),
+            search_accessible=set(),
+            search_detail={},
+            request_payload={
+                "question": "q",
+                "kb_id": ["kb-foreign"],
+                "meta_data_filter": {"method": "manual", "conditions": []},
+            },
+            calls=calls,
+        )
+
+        res = asyncio.run(module.retrieval_test_embedded(tenant_id="tenant-1"))
+
+        assert res["code"] == module.RetCode.OPERATING_ERROR, res
+        assert calls["kb_accessible"] == [("kb-foreign", "tenant-1")]
+        assert "apply_meta_data_filter" not in calls
+        assert "metas_loaded" not in calls
 
 
 class _Cond:
