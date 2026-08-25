@@ -94,10 +94,9 @@ func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location 
 }
 
 // GetFileContents fetches file contents (text + image) from storage
-// for the given file dicts. Images are always returned as base64 data
-// URIs so the multimodal conversion layer (parseDataURIOrB64) accepts
-// them; Python's raw-blob mode is re-encoded to the same form by the
-// vision model layer (rag/llm/cv_model.py _normalize_image).
+// for the given file dicts. Images are always returned as MIME-preserving
+// base64 data URIs so the multimodal conversion layer (parseDataURIOrB64)
+// accepts them.
 //
 // File dicts are the descriptors returned by the upload_info endpoint
 // (UploadInfos / storeUploadInfoBlob). They contain:

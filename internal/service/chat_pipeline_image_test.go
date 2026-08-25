@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/base64"
 	"strings"
 	"testing"
@@ -48,13 +49,13 @@ var chatImageFileDict = map[string]interface{}{
 
 // Regression (no-KB chat path): the chat UI uploads attachments as file
 // dicts; AsyncChatSolo must resolve them to base64 data URIs for
-// vision-capable models. extractRawImageURLs used to return nil for file
-// dicts, so the attached image never reached the model.
-func TestExtractImageFiles_FileDictModeReturnsDataURIs(t *testing.T) {
+// vision-capable models. The previous implementation returned no images
+// for file dicts, so the attached image never reached the model.
+func TestSplitChatAttachments_FileDictModeReturnsDataURIs(t *testing.T) {
 	seedChatImageStorage(t)
 
 	svc := NewChatPipelineService()
-	images := svc.extractImageFiles(t.Context(), "user-1", []interface{}{chatImageFileDict})
+	texts, images := svc.splitChatAttachments(t.Context(), "user-1", []interface{}{chatImageFileDict})
 	if len(images) != 1 {
 		t.Fatalf("expected 1 image, got %v", images)
 	}
@@ -62,17 +63,67 @@ func TestExtractImageFiles_FileDictModeReturnsDataURIs(t *testing.T) {
 	if images[0] != want {
 		t.Fatalf("image = %q, want data URI %q", images[0], want)
 	}
+	if texts != "" {
+		t.Fatalf("expected no text attachments for an image-only upload, got %q", texts)
+	}
 }
 
-// String-mode files keep only data:-prefixed entries as images, matching
-// Python's split_file_attachments (dialog_service.py:425-433).
-func TestExtractImageFiles_StringModeKeepsDataURIsOnly(t *testing.T) {
+// String-mode files keep only data:-prefixed entries as images; every
+// other non-empty entry stays in the text attachments.
+func TestSplitChatAttachments_StringModeKeepsDataURIsOnly(t *testing.T) {
 	svc := NewChatPipelineService()
-	images := svc.extractImageFiles(t.Context(), "user-1", []interface{}{
-		"data:image/png;base64,AAA", "https://example.com/a.png", "plain text",
+	texts, images := svc.splitChatAttachments(t.Context(), "user-1", []interface{}{
+		"data:image/png;base64,AAA", "https://example.com/a.png", "plain text", "  ",
 	})
 	if len(images) != 1 || images[0] != "data:image/png;base64,AAA" {
 		t.Fatalf("unexpected images: %v", images)
+	}
+	if texts != "https://example.com/a.png\n\nplain text" {
+		t.Fatalf("unexpected text attachments: %q", texts)
+	}
+}
+
+// countingStorage wraps a Storage and counts Get calls, pinning the
+// single-fetch contract of splitChatAttachments in file-dict mode.
+type countingStorage struct {
+	storage.Storage
+	gets int
+}
+
+func (c *countingStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
+	c.gets++
+	return c.Storage.Get(ctx, bucket, fnm, tenantID...)
+}
+
+// Resolving file-dict attachments must read every blob from storage exactly
+// once: the text/image split happens on a single fetch, so a vision-model
+// chat does not double-read attachment blobs.
+func TestSplitChatAttachments_FetchesStorageOnce(t *testing.T) {
+	memory := storage.NewMemoryStorage()
+	for _, id := range []string{"img-1", "img-2"} {
+		if err := memory.Put(t.Context(), "user-1-downloads", id, []byte("jpeg-bytes")); err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+	counter := &countingStorage{Storage: memory}
+	factory := storage.GetStorageFactory()
+	original := factory.GetStorage()
+	factory.SetStorage(counter)
+	t.Cleanup(func() { factory.SetStorage(original) })
+
+	svc := NewChatPipelineService()
+	texts, images := svc.splitChatAttachments(t.Context(), "user-1", []interface{}{
+		chatImageFileDict,
+		map[string]interface{}{"id": "img-2", "name": "photo2.jpeg", "mime_type": "image/jpeg", "created_by": "user-1"},
+	})
+	if len(images) != 2 {
+		t.Fatalf("expected 2 images, got %v", images)
+	}
+	if texts != "" {
+		t.Fatalf("expected no text attachments, got %q", texts)
+	}
+	if counter.gets != 2 {
+		t.Fatalf("storage Get called %d times for 2 files, want exactly 2", counter.gets)
 	}
 }
 
