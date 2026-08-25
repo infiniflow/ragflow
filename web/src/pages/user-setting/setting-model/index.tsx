@@ -15,6 +15,7 @@
  */
 
 import Spotlight from '@/components/spotlight';
+import message from '@/components/ui/message';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   LlmKeys,
@@ -180,6 +181,21 @@ const SettingModelV2: FC = () => {
       .filter((e) => e.payload !== null);
     if (dirty.length === 0) return;
 
+    // Reject duplicate instance names before any API call: a draft may
+    // not reuse the name of a persisted instance, nor of another draft
+    // in the same batch. Without this the backend would either error or
+    // silently create a second instance sharing the name.
+    const takenNames = new Set(instances.map((i) => i.instance_name));
+    for (const { payload } of dirty) {
+      if (!payload) continue;
+      const name = payload.instanceName.trim();
+      if (payload.isDraft && takenNames.has(name)) {
+        message.error(tSetting('instanceNameExists'));
+        return;
+      }
+      takenNames.add(name);
+    }
+
     const validations = await Promise.all(
       dirty.map(async (e) => ({ ...e, valid: await e.ref.validate() })),
     );
@@ -237,6 +253,8 @@ const SettingModelV2: FC = () => {
     updateProviderInstance,
     queryClient,
     providerQueryName,
+    instances,
+    tSetting,
   ]);
 
   // Whether the Save button should be enabled. We avoid an O(n) ref

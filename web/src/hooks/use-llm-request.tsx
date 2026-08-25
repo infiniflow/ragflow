@@ -299,19 +299,8 @@ export const useAddProviderInstance = () => {
     ) => {
       try {
         await addProvider({ provider_name: params.llm_factory });
-
-        const { data: instancesRes } = await llmService.listProviderInstances(
-          { provider_name: params.llm_factory },
-          true,
-        );
-        const instanceExists = instancesRes?.data?.some(
-          (i: IProviderInstance) => i.instance_name === params.instance_name,
-        );
-        if (instanceExists && !params.verify) {
-          return { code: 0, data: null };
-        }
       } catch {
-        // ignore list failure and proceed to add
+        // ignore and proceed to add
       }
 
       // The provider is carried in the URL path
