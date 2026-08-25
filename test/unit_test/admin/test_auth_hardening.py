@@ -379,11 +379,13 @@ class TestConcurrentLoginBurst:
 
 class TestDecryptFailuresCountAsCredentialRejections:
     def test_undecryptable_password_keeps_the_reserved_slot(self):
+        from api.utils.crypt import CryptPayloadError
+
         registered = mock.MagicMock()
         with (
             mock.patch.object(auth, "_client_key", return_value="10.0.0.7"),
             mock.patch.object(auth, "UserService") as user_service,
-            mock.patch.object(auth, "decrypt", side_effect=ValueError("bad payload")),
+            mock.patch.object(auth, "decrypt", side_effect=CryptPayloadError("bad payload")),
         ):
             user_service.query.return_value = [registered]
             for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
@@ -391,3 +393,18 @@ class TestDecryptFailuresCountAsCredentialRejections:
                     auth.login_admin("admin@ragflow.io", "not-valid-base64")
             with pytest.raises(auth.AdminException, match="Too many failed login attempts"):
                 auth.login_admin("admin@ragflow.io", "not-valid-base64")
+
+    def test_server_side_decrypt_fault_releases_the_reserved_slot(self):
+        registered = mock.MagicMock()
+        with (
+            mock.patch.object(auth, "_client_key", return_value="10.0.0.6"),
+            mock.patch.object(auth, "UserService") as user_service,
+            mock.patch.object(auth, "decrypt", side_effect=RuntimeError("private key file missing")),
+        ):
+            user_service.query.return_value = [registered]
+            for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES + 3):
+                with pytest.raises(RuntimeError, match="private key file missing"):
+                    auth.login_admin("admin@ragflow.io", "anything")
+            # Server faults never consume the budget: no lockout is armed.
+            assert auth._login_block_until.get("10.0.0.6") is None
+            assert auth._login_failures.get("10.0.0.6") is None

@@ -23,6 +23,15 @@ from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from common.file_utils import get_project_base_directory
 
 
+class CryptPayloadError(ValueError):
+    """Raised when a client-supplied ciphertext payload is malformed.
+
+    Distinguished from server-side faults (missing or invalid private-key
+    file, key import failures), which propagate unchanged so callers can
+    treat them as server errors rather than bad credentials.
+    """
+
+
 def crypt(line):
     """
     decrypt(crypt(input_string)) == base64(input_string), which frontend and ragflow_cli use.
@@ -37,9 +46,26 @@ def crypt(line):
 
 def decrypt(line):
     file_path = os.path.join(get_project_base_directory(), "conf", "private.pem")
+    # Key-file read/import failures are server faults and propagate as-is.
     rsa_key = RSA.importKey(Path(file_path).read_text(), "Welcome")
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    return cipher.decrypt(base64.b64decode(line), "Fail to decrypt password!").decode("utf-8")
+    # Everything below concerns the client-supplied payload.
+    try:
+        ciphertext = base64.b64decode(line, validate=True)
+    except ValueError as e:
+        raise CryptPayloadError("password payload is not valid base64") from e
+    try:
+        plaintext = cipher.decrypt(ciphertext, None)
+    except ValueError as e:
+        # e.g. pycryptodome's "Ciphertext with incorrect length" for
+        # well-formed base64 that is not a valid ciphertext block.
+        raise CryptPayloadError("password payload failed RSA decryption") from e
+    if plaintext is None:
+        raise CryptPayloadError("password payload failed RSA decryption")
+    try:
+        return plaintext.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise CryptPayloadError("decrypted password payload is not valid UTF-8") from e
 
 
 def decrypt2(crypt_text):

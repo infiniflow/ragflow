@@ -33,7 +33,7 @@ from api.db.services import UserService
 from api.db import UserTenantRole
 from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import ActiveEnum, StatusEnum
-from api.utils.crypt import decrypt
+from api.utils.crypt import CryptPayloadError, decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.connection_utils import sync_construct_response
@@ -306,10 +306,12 @@ def login_admin(email: str, password: str):
             raise UserNotFoundError(email)
         try:
             decrypted = decrypt(password)
-        except Exception:
+        except CryptPayloadError:
             # A payload the client could not encode correctly is the
             # client's failure, not a server fault: it keeps the reserved
-            # slot like any other credential rejection.
+            # slot like any other credential rejection. Server-side faults
+            # (missing/invalid private key) propagate to the outer handler
+            # and release the reservation instead.
             logging.info("Admin login with undecryptable password payload.")
             raise AdminException("Email and password do not match!")
         user = UserService.query_user(email, decrypted)
