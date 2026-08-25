@@ -450,7 +450,7 @@ func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 2 * 60 * time.Second
+	t.ResponseHeaderTimeout = 5 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
 
 	var rt http.RoundTripper = t
@@ -568,11 +568,23 @@ func buildChatMessages(messages []Message) []map[string]any {
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.Name != nil {
+			apiMsg["name"] = msg.Name
+		}
 		if msg.ToolCallID != "" {
 			apiMsg["tool_call_id"] = msg.ToolCallID
 		}
 		if len(msg.ToolCalls) > 0 {
 			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		if msg.FunctionCall != nil {
+			apiMsg["function_call"] = msg.FunctionCall
+		}
+		if msg.Refusal != nil {
+			apiMsg["refusal"] = msg.Refusal
+		}
+		if msg.Audio != nil {
+			apiMsg["audio"] = msg.Audio
 		}
 		apiMessages[i] = apiMsg
 	}

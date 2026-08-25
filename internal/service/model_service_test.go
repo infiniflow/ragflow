@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,6 +20,8 @@ type remoteModelProbeDriver struct {
 	*modelModule.DummyModel
 	remoteModels []modelModule.ListModelResponse
 	embedCalls   int
+	checkCalls   int
+	checkErr     error
 }
 
 func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
@@ -28,6 +31,56 @@ func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APICon
 func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.EmbedRequest, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	d.embedCalls++
 	return nil, nil
+}
+
+func (d *remoteModelProbeDriver) CheckConnection(context.Context, *modelModule.APIConfig) error {
+	d.checkCalls++
+	return d.checkErr
+}
+
+func TestValidateBedrockAPIKeyAuth(t *testing.T) {
+	tests := []struct {
+		name    string
+		apiKey  string
+		wantErr string
+	}{
+		{
+			name:    "rejects non-string API key",
+			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":[],"bedrock_region":"us-east-1"}`,
+			wantErr: "invalid Bedrock API-key configuration",
+		},
+		{
+			name:    "rejects invalid region",
+			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":"test-key","bedrock_region":"us east 1"}`,
+			wantErr: "invalid region",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			authenticated, _, err := validateBedrockAPIKeyAuth("Bedrock", test.apiKey)
+			if !authenticated || err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateBedrockAPIKeyAuth() = (%v, %v), want API-key mode error containing %q", authenticated, err, test.wantErr)
+			}
+		})
+	}
+
+	nonAPIKey := `{"auth_mode":"access_key_secret","bedrock_region":"us-east-1"}`
+	authenticated, normalized, err := validateBedrockAPIKeyAuth("Bedrock", nonAPIKey)
+	if authenticated || err != nil || normalized != nonAPIKey {
+		t.Fatalf("non-API-key mode = (%v, %q, %v), want unchanged", authenticated, normalized, err)
+	}
+
+	authenticated, normalized, err = validateBedrockAPIKeyAuth("Bedrock", `{"auth_mode":"bedrock_api_key","bedrock_api_key":" test-key ","bedrock_region":" us-east-1 ","custom":"value"}`)
+	if !authenticated || err != nil {
+		t.Fatalf("valid API-key mode = (%v, %v), want success", authenticated, err)
+	}
+	var config map[string]string
+	if err = json.Unmarshal([]byte(normalized), &config); err != nil {
+		t.Fatalf("decode normalized API key: %v", err)
+	}
+	if config["bedrock_api_key"] != "test-key" || config["bedrock_region"] != "us-east-1" || config["custom"] != "value" {
+		t.Fatalf("normalized API key = %#v", config)
+	}
 }
 
 func TestValidateEmbeddingModel(t *testing.T) {
@@ -269,6 +322,124 @@ func seedModelProviderServiceScope(t *testing.T, db *gorm.DB) {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("failed to seed %T: %v", row, err)
 		}
+	}
+}
+
+func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	for _, row := range []interface{}{
+		&entity.UserTenant{ID: "user-tenant-bedrock", UserID: "user-1", TenantID: "tenant-bedrock", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-bedrock", TenantID: "tenant-bedrock", ProviderName: "Bedrock"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("Bedrock")
+	if provider == nil {
+		t.Fatal("Bedrock provider is not configured")
+	}
+	probe := &remoteModelProbeDriver{
+		DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+		checkErr:   errors.New("runtime verification must not run"),
+	}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_api_key":"test-key","bedrock_region":"us-east-1"}`
+	code, err := NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Bedrock",
+		"api-key-instance",
+		apiKey,
+		"",
+		"default",
+		"user-1",
+		[]CreateInstanceModelInfo{{
+			ModelName:  "amazon.nova-lite-v1:0",
+			ModelTypes: []string{"chat", "vision"},
+			MaxTokens:  8192,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("CreateProviderInstance() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+	if probe.checkCalls != 0 {
+		t.Fatalf("CheckConnection calls = %d, want 0", probe.checkCalls)
+	}
+
+	var models []*entity.TenantModel
+	if err = db.Find(&models).Error; err != nil {
+		t.Fatalf("list models: %v", err)
+	}
+	if len(models) != 1 || models[0].ModelName != "amazon.nova-lite-v1:0" {
+		t.Fatalf("models = %#v, want persisted Bedrock model", models)
+	}
+	code, err = NewModelProviderService().AlterProviderInstance(
+		t.Context(),
+		"user-1",
+		"Bedrock",
+		"api-key-instance",
+		"api-key-instance",
+		apiKey,
+		"",
+		"default",
+		[]CreateInstanceModelInfo{{
+			ModelName:  "amazon.nova-lite-v1:0",
+			ModelTypes: []string{"chat", "vision"},
+			MaxTokens:  8192,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("AlterProviderInstance() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("alter code = %v, want %v", code, common.CodeSuccess)
+	}
+	if probe.checkCalls != 0 {
+		t.Fatalf("CheckConnection calls after alter = %d, want 0", probe.checkCalls)
+	}
+
+	code, err = NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Bedrock",
+		"empty-api-key-instance",
+		apiKey,
+		"",
+		"default",
+		"user-1",
+		nil,
+	)
+	if code != common.CodeBadRequest || err == nil {
+		t.Fatalf("empty model list returned (%v, %v), want bad request", code, err)
+	}
+
+	code, err = NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Bedrock",
+		"empty-model-name-instance",
+		apiKey,
+		"",
+		"default",
+		"user-1",
+		[]CreateInstanceModelInfo{{}},
+	)
+	if code != common.CodeBadRequest || err == nil {
+		t.Fatalf("empty model name returned (%v, %v), want bad request", code, err)
+	}
+	var instanceCount int64
+	if err = db.Model(&entity.TenantModelInstance{}).Where("instance_name = ?", "empty-model-name-instance").Count(&instanceCount).Error; err != nil {
+		t.Fatalf("count instances: %v", err)
+	}
+	if instanceCount != 0 {
+		t.Fatalf("empty model name created %d instances, want 0", instanceCount)
 	}
 }
 

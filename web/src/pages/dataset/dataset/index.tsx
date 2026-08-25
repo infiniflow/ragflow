@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import {
   useRowSelection,
   useSelectedIds,
@@ -54,6 +55,8 @@ export default function Dataset() {
     loading,
     checkValue,
   } = useFetchDocumentList();
+
+  useGoToPreviousPageOnEmpty(documents?.length, loading);
 
   const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
 

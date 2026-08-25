@@ -78,6 +78,7 @@ class DocumentSource(str, Enum):
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
     YANDEX_DISK = "yandex_disk"
+    AZURE_DEVOPS = "azure_devops"
 
 
 class FileOrigin(str, Enum):

@@ -33,7 +33,7 @@ func TestMergeTablesAcrossPages_PostMergeCleanup(t *testing.T) {
 		},
 	}
 
-	out := MergeTablesAcrossPages([]pdf.TableItem{anchor, continuation}, nil)
+	out := MergeTablesAcrossPages([]pdf.TableItem{anchor, continuation}, nil, map[int]float64{0: 190})
 	if len(out) != 1 {
 		t.Fatalf("expected 1 merged table, got %d", len(out))
 	}

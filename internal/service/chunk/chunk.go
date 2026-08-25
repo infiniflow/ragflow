@@ -208,9 +208,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var chatID string
 	var chatModelForFilter *models.ChatModel
 	filter := req.Filter
-	prefetchSize := 64
-	if req.PrefetchSize != nil {
-		prefetchSize = *req.PrefetchSize
+	rerankCandidatesCount := 64
+	if req.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *req.RerankCandidatesCount
 	}
 
 	if req.SearchID != nil && *req.SearchID != "" {
@@ -219,10 +219,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if err != nil {
 			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
 		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
-			if req.PrefetchSize == nil || *req.PrefetchSize == 0 {
-				prefetchSize = 100
-				if configuredPrefetchSize, ok := common.GetInt(searchConfig["prefetch_size"]); ok {
-					prefetchSize = configuredPrefetchSize
+			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
+				rerankCandidatesCount = 100
+				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
+					rerankCandidatesCount = configuredRerankCandidatesCount
 				}
 			}
 			if searchMetaFilter, ok := searchConfigMap(searchConfig["meta_data_filter"]); ok {
@@ -417,8 +417,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		DocIDs:                 docIDs,
 		Page:                   common.CoalesceInt(req.Page, 1),
 		PageSize:               common.CoalesceInt(req.Size, 30),
-		PrefetchSize:           &prefetchSize,
-		Top:                    req.TopK,
+		RerankCandidatesCount:  &rerankCandidatesCount,
+		KNNTopK:                req.TopK,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
 		RerankModel:            rerankModel,

@@ -675,8 +675,12 @@ class Canvas(Graph):
                 cpn_obj = self.get_component_obj(self.path[i])
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
-                        tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
-                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        try:
+                            tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
+                            tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        except Exception as e:
+                            _logger.warning("Auto play skipped: default TTS model is not available: %s", e)
+                            tts_mdl = None
                     _thinking = bool(cpn_obj.get_param("thinking"))
                     raw_content = cpn_obj.output("content")
                     areas = raw_content if isinstance(raw_content, list) else [raw_content]

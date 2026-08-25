@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Unit tests for prefetch-based pagination in Dealer.retrieval."""
+"""Unit tests for rerank-candidate pagination in Dealer.retrieval."""
 
 import sys
 import types
@@ -55,13 +55,13 @@ def _search_result(total):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("page", "page_size", "prefetch_size"), [(1, 10, 64), (6, 10, 64), (7, 10, 70)])
-async def test_retrieval_prefetches_once_and_slices_requested_page(monkeypatch, page, page_size, prefetch_size):
+@pytest.mark.parametrize(("page", "page_size", "rerank_candidates_count"), [(1, 10, 64), (6, 10, 64), (7, 10, 70)])
+async def test_retrieval_fetches_rerank_candidates_once_and_slices_requested_page(monkeypatch, page, page_size, rerank_candidates_count):
     requests = []
 
     async def fake_search(self, req, *args, **kwargs):
         requests.append(req)
-        return _search_result(prefetch_size)
+        return _search_result(rerank_candidates_count)
 
     async def keep_all_chunks(self, search_result):
         return search_result
@@ -82,19 +82,19 @@ async def test_retrieval_prefetches_once_and_slices_requested_page(monkeypatch, 
         page_size=page_size,
         similarity_threshold=0.0,
         aggs=False,
-        prefetch_size=prefetch_size,
+        rerank_candidates_count=rerank_candidates_count,
     )
 
     assert len(requests) == 1
     assert requests[0]["page"] == 1
-    assert requests[0]["size"] == prefetch_size
+    assert requests[0]["size"] == rerank_candidates_count
     begin = (page - 1) * page_size
     assert [chunk["chunk_id"] for chunk in ranks["chunks"]] == [f"chunk-{i}" for i in range(begin, begin + page_size)]
 
 
 @pytest.mark.asyncio
-async def test_retrieval_rejects_page_beyond_prefetch_size():
-    with pytest.raises(Exception, match=r"prefetch_size\(64\) must be greater than page \* page_size\(70\)"):
+async def test_retrieval_rejects_page_beyond_rerank_candidates_count():
+    with pytest.raises(Exception, match=r"rerank_candidates_count\(64\) must be greater than page \* page_size\(70\)"):
         await Dealer.__new__(Dealer).retrieval(
             question="question",
             embd_mdl=object(),
@@ -102,7 +102,7 @@ async def test_retrieval_rejects_page_beyond_prefetch_size():
             kb_ids=["kb-1"],
             page=7,
             page_size=10,
-            prefetch_size=64,
+            rerank_candidates_count=64,
         )
 
 
@@ -117,5 +117,5 @@ async def test_retrieval_rejects_pagination_with_reranker():
             page=2,
             page_size=10,
             rerank_mdl=object(),
-            prefetch_size=64,
+            rerank_candidates_count=64,
         )

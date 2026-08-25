@@ -25,6 +25,7 @@ import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
@@ -45,6 +46,7 @@ export enum DataSourceKey {
   BOX = 'box',
   DROPBOX = 'dropbox',
   BITBUCKET = 'bitbucket',
+  AZURE_DEVOPS = 'azure_devops',
   GITLAB = 'gitlab',
   GITHUB = 'github',
   MOODLE = 'moodle',
@@ -129,6 +131,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.BITBUCKET]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AZURE_DEVOPS]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.AIRTABLE]: {
@@ -342,6 +347,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Bitbucket',
       description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
       icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
+    },
+    [DataSourceKey.AZURE_DEVOPS]: {
+      name: 'Azure DevOps',
+      description: t(`setting.${DataSourceKey.AZURE_DEVOPS}Description`),
+      icon: <SvgIcon name={'data-source/azure-devops'} width={38} />,
     },
     [DataSourceKey.ZENDESK]: {
       name: 'Zendesk',
@@ -1353,6 +1363,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
+  [DataSourceKey.AZURE_DEVOPS]: azureDevOpsConstant(t),
   [DataSourceKey.ZENDESK]: [
     {
       label: t('setting.dataSourceFieldZendeskDomain'),
@@ -2299,6 +2310,20 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.AZURE_DEVOPS]: {
+    name: '',
+    source: DataSourceKey.AZURE_DEVOPS,
+    config: {
+      organization: '',
+      index_mode: 'organization',
+      projects: '',
+      repositories: '',
+      content_types: 'both',
+      credentials: {
+        azure_devops_pat: '',
       },
     },
   },
