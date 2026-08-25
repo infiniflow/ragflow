@@ -426,11 +426,13 @@ async def retrieval_test_embedded(tenant_id=None):
                 logging.warning("Access denied: user=%s resource=%s", tenant_id, kb_id)
                 return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
         kbs = await thread_pool_exec(KnowledgebaseService.get_by_ids, kb_ids)
-        tenant_ids = list({kb.tenant_id for kb in kbs})
-
-        e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
-        if not e:
+        # Everything that passed the accessible loop above must still be here;
+        # a short result means a kb vanished between check and fetch.
+        kbs_by_id = {kb.id: kb for kb in kbs}
+        if len(kbs_by_id) != len(set(kb_ids)):
             return get_error_data_result(message="Knowledgebase not found!")
+        tenant_ids = list({kb.tenant_id for kb in kbs})
+        kb = kbs_by_id[kb_ids[0]]
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
