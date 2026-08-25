@@ -169,8 +169,8 @@ class KGSearch(Dealer):
         ents_from_types = self.get_relevant_ents_by_types(ty_kwds, filters, idxnms, kb_ids, 10000)
         rels_from_txt = await self.get_relevant_relations_by_txt(qst, filters, idxnms, kb_ids, emb_mdl, rel_sim_threshold)
         nhop_pathes = defaultdict(dict)
-        for _, ent in ents_from_query.items():
-            for i, f, t, weight in _iter_valid_n_hop_edges(ent.get("n_hop_ents", []), ent.get("entity_kwd")):
+        for entity_name, ent in ents_from_query.items():
+            for i, f, t, weight in _iter_valid_n_hop_edges(ent.get("n_hop_ents", []), entity_name):
                 if (f, t) in nhop_pathes:
                     nhop_pathes[(f, t)]["sim"] += ent["sim"] / (2 + i)
                 else:

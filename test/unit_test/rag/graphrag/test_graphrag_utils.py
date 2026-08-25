@@ -593,6 +593,14 @@ class TestValidNHopEdges:
     def test_non_list_metadata_is_ignored(self):
         assert list(_iter_valid_n_hop_edges({"path": ["A", "B"]}, "ROOT")) == []
 
+    def test_warning_uses_entity_context_without_raw_payload(self, caplog):
+        invalid_weight = "do-not-log-this-persisted-value"
+
+        assert list(_iter_valid_n_hop_edges([{"path": ["A", "B"], "weights": [invalid_weight]}], "ROOT")) == []
+        assert "entity ROOT" in caplog.text
+        assert "weight_type=str" in caplog.text
+        assert invalid_weight not in caplog.text
+
 
 @pytest.mark.p1
 class TestGraphNodeToChunk:

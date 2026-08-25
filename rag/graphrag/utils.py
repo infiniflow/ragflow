@@ -846,32 +846,62 @@ def _iter_valid_n_hop_edges(n_hop_ents, entity_name):
     paths from the same result set.
     """
     if not isinstance(n_hop_ents, list):
-        logger.warning("Abnormal n_hop_ents for entity %s: %r", entity_name, n_hop_ents)
+        logger.warning(
+            "Abnormal n_hop_ents for entity %s: expected list, got %s",
+            entity_name,
+            type(n_hop_ents).__name__,
+        )
         return
 
     for neighbor in n_hop_ents:
         if not isinstance(neighbor, dict):
-            logger.warning("Skipping malformed n-hop entry for entity %s: %r", entity_name, neighbor)
+            logger.warning(
+                "Skipping malformed n-hop entry for entity %s: expected dict, got %s",
+                entity_name,
+                type(neighbor).__name__,
+            )
             continue
 
         path = neighbor.get("path")
         weights = neighbor.get("weights")
         if not isinstance(path, list) or not isinstance(weights, list) or len(path) < 2 or len(weights) != len(path) - 1:
-            logger.warning("Skipping malformed n-hop path for entity %s: %r", entity_name, neighbor)
+            logger.warning(
+                "Skipping malformed n-hop path for entity %s: path_type=%s, path_len=%s, weights_type=%s, weights_len=%s",
+                entity_name,
+                type(path).__name__,
+                len(path) if isinstance(path, list) else "n/a",
+                type(weights).__name__,
+                len(weights) if isinstance(weights, list) else "n/a",
+            )
             continue
 
         edges = []
         for edge_index, (source, target, weight) in enumerate(zip(path, path[1:], weights)):
             if not isinstance(source, str) or not isinstance(target, str) or not source or not target:
-                logger.warning("Skipping n-hop path with invalid entities for %s: %r", entity_name, neighbor)
+                logger.warning(
+                    "Skipping n-hop path with invalid entities for entity %s at edge %s: source_type=%s, target_type=%s",
+                    entity_name,
+                    edge_index,
+                    type(source).__name__,
+                    type(target).__name__,
+                )
                 break
             try:
                 normalized_weight = float(weight)
             except (TypeError, ValueError):
-                logger.warning("Skipping n-hop path with invalid weight for %s: %r", entity_name, neighbor)
+                logger.warning(
+                    "Skipping n-hop path with invalid weight for entity %s at edge %s: weight_type=%s",
+                    entity_name,
+                    edge_index,
+                    type(weight).__name__,
+                )
                 break
             if not math.isfinite(normalized_weight):
-                logger.warning("Skipping n-hop path with non-finite weight for %s: %r", entity_name, neighbor)
+                logger.warning(
+                    "Skipping n-hop path with non-finite weight for entity %s at edge %s",
+                    entity_name,
+                    edge_index,
+                )
                 break
             edges.append((edge_index, source, target, normalized_weight))
         else:
