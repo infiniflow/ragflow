@@ -1152,9 +1152,13 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		defaultSize := 30
 		req.Size = &defaultSize
 	}
-	if req.TopK == nil {
+	if req.KNNTopK == nil && req.TopK == nil {
 		defaultTopK := 1024
-		req.TopK = &defaultTopK
+		req.KNNTopK = &defaultTopK
+	}
+	if req.KNNNumCandidates == nil {
+		defaultNumCandidates := 2048
+		req.KNNNumCandidates = &defaultNumCandidates
 	}
 	if req.UseKG == nil {
 		defaultUseKG := false
@@ -1257,22 +1261,40 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
-	return validateSearchParams(req.Page, req.Size, req.TopK, req.SimilarityThreshold, req.VectorSimilarityWeight)
+	return validateSearchParams(req.Page, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
-	return validateSearchParams(req.Page, req.Size, req.TopK, req.SimilarityThreshold, req.VectorSimilarityWeight)
+	return validateSearchParams(req.Page, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
-func validateSearchParams(page, size, topK *int, similarityThreshold, vectorSimilarityWeight *float64) error {
+func validateSearchParams(page, size, knnTopK, topK, knnNumCandidates *int, similarityThreshold, vectorSimilarityWeight *float64) error {
 	if page != nil && *page < 1 {
 		return fmt.Errorf("page must be greater than or equal to 1")
 	}
 	if size != nil && *size < 1 {
 		return fmt.Errorf("size must be greater than or equal to 1")
 	}
-	if topK != nil && *topK < 1 {
-		return fmt.Errorf("top_k must be greater than or equal to 1")
+	effectiveKNNTopK := 1024
+	knnTopKName := "knn_top_k"
+	if knnTopK != nil {
+		effectiveKNNTopK = *knnTopK
+	} else if topK != nil {
+		effectiveKNNTopK = *topK
+		knnTopKName = "top_k (alias for knn_top_k)"
+	}
+	if effectiveKNNTopK < 1 || effectiveKNNTopK > 2048 {
+		return fmt.Errorf("%s must be between 1 and 2048", knnTopKName)
+	}
+	effectiveKNNNumCandidates := 2048
+	if knnNumCandidates != nil {
+		effectiveKNNNumCandidates = *knnNumCandidates
+	}
+	if effectiveKNNNumCandidates < 1 || effectiveKNNNumCandidates > 10000 {
+		return fmt.Errorf("knn_num_candidates must be between 1 and 10000")
+	}
+	if effectiveKNNNumCandidates < effectiveKNNTopK {
+		return fmt.Errorf("knn_num_candidates must be greater than or equal to knn_top_k")
 	}
 	if similarityThreshold != nil && (*similarityThreshold < 0 || *similarityThreshold > 1) {
 		return fmt.Errorf("similarity_threshold must be between 0 and 1")
