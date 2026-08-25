@@ -266,11 +266,13 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// Reload status immediately before write: LoadFromIngestionTask copied a
 	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
 	docStatus := s.taskCtx.Doc.Status
-	if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
-		docStatus = persisted.Status
-		s.taskCtx.Doc.Status = persisted.Status
-	} else if err != nil {
-		common.Warn(fmt.Sprintf("failed to reload document %s status before availability stamp: %v", s.taskCtx.Doc.ID, err))
+	if dao.DB != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
+			docStatus = persisted.Status
+			s.taskCtx.Doc.Status = persisted.Status
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s status before availability stamp: %v", s.taskCtx.Doc.ID, err))
+		}
 	}
 	applyDocumentAvailability(chunks, docStatus)
 
