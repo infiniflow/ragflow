@@ -1060,12 +1060,6 @@ class Canvas(Graph):
             return False
         return bool(ref.get("chunks") or ref.get("doc_aggs"))
 
-    def _area_downloads(self, cpn_obj, area_idx=None) -> list:
-        downloads = cpn_obj.output("downloads")
-        if isinstance(downloads, list):
-            return downloads
-        return []
-
     def _is_terminal_message(self, cpn_obj) -> bool:
         terminal = getattr(self, "_run_terminal_id", None)
         if terminal is not None:
@@ -1073,14 +1067,14 @@ class Canvas(Graph):
         comp = self.components.get(cpn_obj._id)
         return comp is None or not comp.get("downstream")
 
-    def _build_message_end(self, cpn_obj, area_idx=None) -> dict:
+    def _build_message_end(self, cpn_obj) -> dict:
         message_end = {}
         if cpn_obj.get_param("status"):
             message_end["status"] = cpn_obj.get_param("status")
         if isinstance(cpn_obj.output("attachment"), dict):
             message_end["attachment"] = cpn_obj.output("attachment")
-        downloads = self._area_downloads(cpn_obj, area_idx)
-        if downloads:
+        downloads = cpn_obj.output("downloads")
+        if isinstance(downloads, list) and downloads:
             message_end["downloads"] = downloads
         if self._has_reference():
             message_end["reference"] = self.get_reference()
