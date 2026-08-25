@@ -278,7 +278,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Page:                   page,
 		PageSize:               pageSize,
 		RerankCandidatesCount:  &rerankCandidatesCount,
-		Top:                    &knnTopK,
+		KNNTopK:                &knnTopK,
 		KNNNumCandidates:       &knnNumCandidates,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,

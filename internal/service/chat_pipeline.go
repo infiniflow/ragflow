@@ -708,7 +708,7 @@ func (s *ChatPipelineService) AsyncChat(
 							Page:                   1,
 							PageSize:               topN,
 							RerankCandidatesCount:  &rerankCandidatesCount,
-							Top:                    &top,
+							KNNTopK:                &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,
 							RankFeature:            &rankFeature,
