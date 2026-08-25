@@ -25,23 +25,61 @@ API_VERSION = "7.1"
 # Azure DevOps returns binary blobs for these; indexing them adds noise, not signal.
 BINARY_EXTENSIONS: frozenset[str] = frozenset(
     {
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp", ".pdf",
-        ".zip", ".gz", ".tar", ".7z", ".rar", ".jar", ".war", ".dll", ".exe",
-        ".so", ".dylib", ".pdb", ".class", ".pyc", ".woff", ".woff2", ".ttf",
-        ".eot", ".otf", ".mp3", ".mp4", ".avi", ".mov", ".psd", ".xlsx", ".docx",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".svg",
+        ".webp",
+        ".pdf",
+        ".zip",
+        ".gz",
+        ".tar",
+        ".7z",
+        ".rar",
+        ".jar",
+        ".war",
+        ".dll",
+        ".exe",
+        ".so",
+        ".dylib",
+        ".pdb",
+        ".class",
+        ".pyc",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".otf",
+        ".mp3",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".psd",
+        ".xlsx",
+        ".docx",
     }
 )
 
 # Directories that are build output or vendored dependencies.
 EXCLUDED_PATH_SEGMENTS: tuple[str, ...] = (
-    "/node_modules/", "/bin/", "/obj/", "/dist/", "/build/", "/target/",
-    "/vendor/", "/packages/", "/.git/", "/__pycache__/", "/.venv/",
+    "/node_modules/",
+    "/bin/",
+    "/obj/",
+    "/dist/",
+    "/build/",
+    "/target/",
+    "/vendor/",
+    "/packages/",
+    "/.git/",
+    "/__pycache__/",
+    "/.venv/",
 )
 
 # Version-control metadata: present in every repository, no retrievable signal.
-SKIPPED_FILENAMES: frozenset[str] = frozenset(
-    {".gitattributes", ".gitignore", ".gitkeep", ".gitmodules", ".dockerignore", ".editorconfig"}
-)
+SKIPPED_FILENAMES: frozenset[str] = frozenset({".gitattributes", ".gitignore", ".gitkeep", ".gitmodules", ".dockerignore", ".editorconfig"})
 
 MAX_FILE_BYTES = 1_000_000
 
@@ -71,9 +109,7 @@ def organization_url(organization: str) -> str:
     Azure DevOps Server.
     """
     if organization.startswith("http://"):
-        raise UnexpectedValidationError(
-            "Azure DevOps collection URLs must use HTTPS; the personal access token is sent in the Authorization header."
-        )
+        raise UnexpectedValidationError("Azure DevOps collection URLs must use HTTPS; the personal access token is sent in the Authorization header.")
     if organization.startswith("https://"):
         return organization.rstrip("/")
     return f"https://dev.azure.com/{quote(organization, safe='')}"
@@ -233,11 +269,7 @@ def list_items(client: httpx.Client, repo_api_url: str, branch: str) -> list[dic
             "versionDescriptor.version": branch,
         },
     )
-    return [
-        item
-        for item in (payload.get("value") or [])
-        if item.get("gitObjectType") == "blob" and not item.get("isFolder") and not should_skip_path(item.get("path", ""))
-    ]
+    return [item for item in (payload.get("value") or []) if item.get("gitObjectType") == "blob" and not item.get("isFolder") and not should_skip_path(item.get("path", ""))]
 
 
 @retry_builder(
@@ -279,7 +311,8 @@ def azure_devops_get_bytes(
             if size > max_bytes:
                 logging.warning(
                     "[AzureDevOps] skipping %s: larger than the %d byte limit",
-                    params.get("path") or url, max_bytes,
+                    params.get("path") or url,
+                    max_bytes,
                 )
                 return None
             chunks.append(chunk)

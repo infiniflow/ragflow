@@ -116,9 +116,9 @@ def _install_dependency_stubs():
     cross_module = ModuleType("common.data_source.cross_connector_utils")
     cross_module.__path__ = []
     retry_module = ModuleType("common.data_source.cross_connector_utils.retry_wrapper")
-    retry_module.retry_builder = lambda **kwargs: (lambda func: func)
+    retry_module.retry_builder = lambda **kwargs: lambda func: func
     rate_limit_module = ModuleType("common.data_source.cross_connector_utils.rate_limit_wrapper")
-    rate_limit_module.rate_limit_builder = lambda **kwargs: (lambda func: func)
+    rate_limit_module.rate_limit_builder = lambda **kwargs: lambda func: func
 
     sys.modules["common.data_source.config"] = config_module
     sys.modules["common.data_source.exceptions"] = exceptions_module
@@ -520,9 +520,7 @@ def test_map_item_to_document_carries_path_commit_and_web_url():
 
 @pytest.mark.p2
 def test_map_item_to_document_survives_missing_commit_metadata():
-    document = azure_utils.map_item_to_document(
-        {"path": "/README.md"}, b"# readme", "contoso", "https://dev.azure.com/contoso", "iddaa", "repo", "master"
-    )
+    document = azure_utils.map_item_to_document({"path": "/README.md"}, b"# readme", "contoso", "https://dev.azure.com/contoso", "iddaa", "repo", "master")
     assert document.doc_updated_at is not None
     assert document.primary_owners == []
 
@@ -541,9 +539,7 @@ def test_map_pull_request_to_document_summarises_review_metadata():
         "creationDate": "2025-11-18T06:20:07.836003Z",
         "closedDate": "2025-11-20T06:20:07.836003Z",
     }
-    document = azure_utils.map_pull_request_to_document(
-        pull_request, "contoso", "https://dev.azure.com/contoso", "iddaa", "Bayi-Portal"
-    )
+    document = azure_utils.map_pull_request_to_document(pull_request, "contoso", "https://dev.azure.com/contoso", "iddaa", "Bayi-Portal")
 
     assert document.id == "azure_devops:contoso:iddaa:Bayi-Portal:pr:4225"
     assert document.semantic_identifier.startswith("PR #4225:")
@@ -600,9 +596,7 @@ def test_long_pull_request_description_is_refetched_in_full(monkeypatch):
 
 @pytest.mark.p2
 def test_pull_request_updated_at_prefers_closed_date():
-    assert azure_utils.pull_request_updated_at({"creationDate": "2025-01-01T00:00:00Z", "closedDate": "2025-02-01T00:00:00Z"}) == datetime(
-        2025, 2, 1, tzinfo=timezone.utc
-    )
+    assert azure_utils.pull_request_updated_at({"creationDate": "2025-01-01T00:00:00Z", "closedDate": "2025-02-01T00:00:00Z"}) == datetime(2025, 2, 1, tzinfo=timezone.utc)
     assert azure_utils.pull_request_updated_at({}) is None
 
 
@@ -672,11 +666,13 @@ def test_resume_follows_the_anchor_when_the_listing_shifts(monkeypatch):
         {
             # "added.cs" did not exist when the checkpoint was written, so every
             # index after it has moved by one.
-            "/items": {"value": [
-                {"path": "/added.cs", "gitObjectType": "blob"},
-                {"path": "/a.cs", "gitObjectType": "blob"},
-                {"path": "/b.cs", "gitObjectType": "blob"},
-            ]},
+            "/items": {
+                "value": [
+                    {"path": "/added.cs", "gitObjectType": "blob"},
+                    {"path": "/a.cs", "gitObjectType": "blob"},
+                    {"path": "/b.cs", "gitObjectType": "blob"},
+                ]
+            },
             "/pullrequests": {"value": []},
             "_apis/git/repositories": {"value": [{"name": "repo-a", "project": {"name": "iddaa"}, "defaultBranch": "refs/heads/master"}]},
         }
@@ -710,10 +706,12 @@ def test_failed_file_is_retried_once_before_the_stage_ends(monkeypatch):
 
     client = _FakeClient(
         {
-            "/items": {"value": [
-                {"path": "/a.cs", "gitObjectType": "blob"},
-                {"path": "/b.cs", "gitObjectType": "blob"},
-            ]},
+            "/items": {
+                "value": [
+                    {"path": "/a.cs", "gitObjectType": "blob"},
+                    {"path": "/b.cs", "gitObjectType": "blob"},
+                ]
+            },
             "/pullrequests": {"value": []},
             "_apis/git/repositories": {"value": [{"name": "repo-a", "project": {"name": "iddaa"}, "defaultBranch": "refs/heads/master"}]},
         }

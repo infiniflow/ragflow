@@ -239,7 +239,10 @@ class AzureDevOpsConnector(
                 new_checkpoint.repos_queue = self._discover_repositories(client)
                 logging.info(
                     "[AzureDevOps] discovered %d repositories (organization=%s, index_mode=%s, content_types=%s)",
-                    len(new_checkpoint.repos_queue), self.organization, self.index_mode, self.content_types,
+                    len(new_checkpoint.repos_queue),
+                    self.organization,
+                    self.index_mode,
+                    self.content_types,
                 )
                 new_checkpoint.current_repo_index = 0
                 new_checkpoint.stage = STAGE_CODE
@@ -255,8 +258,13 @@ class AzureDevOpsConnector(
             project, repo_name, branch = repo["project"], repo["name"], repo["branch"]
             logging.info(
                 "[AzureDevOps] %s/%s stage=%s file_offset=%d pr_skip=%d (repo %d/%d)",
-                project, repo_name, new_checkpoint.stage, new_checkpoint.file_offset,
-                new_checkpoint.pr_skip, new_checkpoint.current_repo_index + 1, len(repos),
+                project,
+                repo_name,
+                new_checkpoint.stage,
+                new_checkpoint.file_offset,
+                new_checkpoint.pr_skip,
+                new_checkpoint.current_repo_index + 1,
+                len(repos),
             )
 
             if new_checkpoint.stage == STAGE_CODE:
@@ -304,7 +312,10 @@ class AzureDevOpsConnector(
 
         logging.warning(
             "[AzureDevOps] %s/%s resume anchor %s is gone from the listing; falling back to offset %d",
-            project, repo_name, anchor, checkpoint.file_offset,
+            project,
+            repo_name,
+            anchor,
+            checkpoint.file_offset,
         )
         return checkpoint.file_offset
 
@@ -359,7 +370,10 @@ class AzureDevOpsConnector(
         checkpoint.file_offset = start + len(window)
         logging.info(
             "[AzureDevOps] %s/%s indexed files %d/%d",
-            project, repo_name, checkpoint.file_offset, len(items),
+            project,
+            repo_name,
+            checkpoint.file_offset,
+            len(items),
         )
 
         if checkpoint.file_offset < len(items):
@@ -537,13 +551,7 @@ class AzureDevOpsConnector(
                     while True:
                         pull_requests = self._iter_pull_request_page(client, project, repo_name, skip)
                         for pull_request in pull_requests:
-                            batch.append(
-                                SlimDocument(
-                                    id=pull_request_document_id(
-                                        self.organization, project, repo_name, pull_request.get("pullRequestId")
-                                    )
-                                )
-                            )
+                            batch.append(SlimDocument(id=pull_request_document_id(self.organization, project, repo_name, pull_request.get("pullRequestId"))))
                             if len(batch) >= self.batch_size:
                                 yield batch
                                 emitted = len(batch)
