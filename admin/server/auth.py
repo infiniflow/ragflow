@@ -16,9 +16,19 @@
 
 
 import logging
+import os
 import uuid
 from functools import wraps
 from datetime import datetime
+
+# The admin server surfaces ``DEFAULT_SUPERUSER_EMAIL`` and
+# ``DEFAULT_SUPERUSER_PASSWORD`` as if they were effective, but the
+# bootstrap paths historically hardcoded the values. Read the env vars
+# at module load and use them as the single source of truth so the
+# surfaced env list and the actual bootstrap stay in sync. The
+# default ``admin@ragflow.io`` / ``admin`` pair is preserved.
+_DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+_DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 from flask import jsonify, request
 from flask_login import current_user, login_user
@@ -91,10 +101,10 @@ def init_default_admin():
     if not users:
         default_admin = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
+            "password": encode_to_base64(_DEFAULT_SUPERUSER_PASSWORD),
             "nickname": "admin",
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": _DEFAULT_SUPERUSER_EMAIL,
             "creator": "system",
             "status": "1",
         }
@@ -104,7 +114,7 @@ def init_default_admin():
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
-        default_admin_rows = [u for u in users if u.email == "admin@ragflow.io"]
+        default_admin_rows = [u for u in users if u.email == _DEFAULT_SUPERUSER_EMAIL]
         if default_admin_rows:
             default_admin = default_admin_rows[0].to_dict()
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
@@ -183,10 +193,10 @@ def check_admin(username: str, password: str):
         logging.info(f"Username: {username} is not registered!")
         user_info = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
+            "password": encode_to_base64(_DEFAULT_SUPERUSER_PASSWORD),
             "nickname": "admin",
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": _DEFAULT_SUPERUSER_EMAIL,
             "creator": "system",
             "status": "1",
         }
