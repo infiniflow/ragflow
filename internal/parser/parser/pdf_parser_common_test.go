@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"image"
 	"strings"
 	"testing"
 
@@ -329,6 +330,10 @@ func TestPDFParseResultToMarkdownWithOptions_RendersLikePython(t *testing.T) {
 		Sections: []deepdoctype.Section{
 			{Text: "Title", LayoutType: deepdoctype.LayoutTypeTitle},
 			{Text: "Figure", LayoutType: deepdoctype.LayoutTypeFigure, Image: "aGVsbG8="},
+			{Text: "WhitespaceFigureText", LayoutType: deepdoctype.LayoutTypeFigure, Image: "   \t\n"},
+			{Text: "<table><tr><td>cell</td></tr></table>", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVpbWc="},
+			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVvbmx5"},
+			{Text: "ImageCaption", LayoutType: "image", Image: "aW1hZ2Vvbmx5"},
 			{Text: "Body", LayoutType: deepdoctype.LayoutTypeText},
 		},
 	}
@@ -347,13 +352,115 @@ func TestPDFParseResultToMarkdownWithOptions_RendersLikePython(t *testing.T) {
 		t.Fatalf("Markdown = %q, want title heading", res.Markdown)
 	}
 	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aGVsbG8=)") {
-		t.Fatalf("Markdown = %q, want inline image", res.Markdown)
+		t.Fatalf("Markdown = %q, want inline figure image", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "WhitespaceFigureText") {
+		t.Fatalf("Markdown = %q, want whitespace figure text preserved", res.Markdown)
+	}
+	if strings.Contains(res.Markdown, "![Image]()") {
+		t.Fatalf("Markdown = %q, unexpected empty image tag", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "<table><tr><td>cell</td></tr></table>") {
+		t.Fatalf("Markdown = %q, want table text", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,dGFibGVvbmx5)") {
+		t.Fatalf("Markdown = %q, want fallback table image when text is empty", res.Markdown)
+	}
+	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aW1hZ2Vvbmx5)") {
+		t.Fatalf("Markdown = %q, want image section", res.Markdown)
 	}
 	if !strings.Contains(res.Markdown, "Body") {
 		t.Fatalf("Markdown = %q, want body text", res.Markdown)
 	}
 	if len(res.JSON) != 0 {
 		t.Fatalf("JSON len = %d, want 0 for markdown output", len(res.JSON))
+	}
+}
+
+func TestPDFParseResultToMarkdownWithOptions_TableFallback(t *testing.T) {
+	// 1. Table with text + image -> renders table text
+	withText := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "<table><tr><td>content</td></tr></table>", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVpbWc="},
+		},
+	}
+	resText := pdfParseResultToMarkdownWithOptions("table.pdf", withText, pdfPostProcessOptions{})
+	if !strings.Contains(resText.Markdown, "<table><tr><td>content</td></tr></table>") {
+		t.Fatalf("Markdown = %q, want table text", resText.Markdown)
+	}
+	if strings.Contains(resText.Markdown, "![Image]") {
+		t.Fatalf("Markdown = %q, unexpected image tag when table text is present", resText.Markdown)
+	}
+
+	// 2. Table with empty text + image -> falls back to image tag
+	emptyText := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVvbmx5"},
+		},
+	}
+	resFallback := pdfParseResultToMarkdownWithOptions("table.pdf", emptyText, pdfPostProcessOptions{})
+	if !strings.Contains(resFallback.Markdown, "![Image](data:image/png;base64,dGFibGVvbmx5)") {
+		t.Fatalf("Markdown = %q, want fallback table image tag", resFallback.Markdown)
+	}
+
+	// 3. Table with empty text + whitespace-only image -> empty string, no broken tags
+	wsImg := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "   \t\n"},
+		},
+	}
+	resWS := pdfParseResultToMarkdownWithOptions("table.pdf", wsImg, pdfPostProcessOptions{})
+	if strings.TrimSpace(resWS.Markdown) != "" {
+		t.Fatalf("Markdown = %q, want empty output for empty text + whitespace image", resWS.Markdown)
+	}
+}
+
+func TestSectionsToMarkdown_DocTypeKwdImage(t *testing.T) {
+	// LayoutType is not figure/image, but DocTypeKwd == "image"
+	sections := []deepdoctype.Section{
+		{Text: "Caption", LayoutType: "custom_block", DocTypeKwd: "image", Image: "aW1hZ2Vvbmx5"},
+	}
+	got := sectionsToMarkdown(sections)
+	want := "\n![Image](data:image/png;base64,aW1hZ2Vvbmx5)"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+
+	// DocTypeKwd == "image" with whitespace image preserves text and drops empty tag
+	sectionsWS := []deepdoctype.Section{
+		{Text: "Caption", LayoutType: "custom_block", DocTypeKwd: "image", Image: "   \t\n"},
+	}
+	gotWS := sectionsToMarkdown(sectionsWS)
+	wantWS := "Caption\n"
+	if gotWS != wantWS {
+		t.Fatalf("got %q, want %q", gotWS, wantWS)
+	}
+}
+
+func TestPDFParseResultToMarkdownWithOptions_ImageSection(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "Caption", LayoutType: "image", Image: "aW1hZ2Vvbmx5"},
+		},
+	}
+	res := pdfParseResultToMarkdownWithOptions("doc.pdf", parsed, pdfPostProcessOptions{})
+	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aW1hZ2Vvbmx5)") {
+		t.Fatalf("Markdown = %q, want image embed for LayoutType == 'image'", res.Markdown)
+	}
+}
+
+func TestPDFParseResultToMarkdownWithOptions_WhitespaceOnlyImage(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "Figure Caption", LayoutType: deepdoctype.LayoutTypeFigure, Image: "   \r\n\t "},
+		},
+	}
+	res := pdfParseResultToMarkdownWithOptions("doc.pdf", parsed, pdfPostProcessOptions{})
+	if !strings.Contains(res.Markdown, "Figure Caption") {
+		t.Fatalf("Markdown = %q, want figure caption preserved", res.Markdown)
+	}
+	if strings.Contains(res.Markdown, "![Image]") {
+		t.Fatalf("Markdown = %q, unexpected image tag for whitespace-only image", res.Markdown)
 	}
 }
 
@@ -387,5 +494,121 @@ func TestPDFParser_ValidateParseMethod(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "IMAGE2TEXT") {
 		t.Fatalf("validateParseMethod error = %q, want IMAGE2TEXT/VLM guidance", err.Error())
+	}
+}
+
+type mockPDFEngineForCommonTest struct {
+	closed bool
+}
+
+func (m *mockPDFEngineForCommonTest) ExtractChars(pageNum int) ([]deepdoctype.TextChar, error) {
+	return nil, nil
+}
+func (m *mockPDFEngineForCommonTest) RenderPage(pageNum int, dpi float64) ([]byte, error) {
+	return nil, nil
+}
+func (m *mockPDFEngineForCommonTest) RenderPageImage(pageNum int, dpi float64) (image.Image, error) {
+	return image.NewRGBA(image.Rect(0, 0, 100, 100)), nil
+}
+func (m *mockPDFEngineForCommonTest) RawData() []byte { return nil }
+func (m *mockPDFEngineForCommonTest) PageCount() (int, error) {
+	return 1, nil
+}
+func (m *mockPDFEngineForCommonTest) Outlines() ([]deepdoctype.Outline, error) { return nil, nil }
+func (m *mockPDFEngineForCommonTest) Close() error {
+	m.closed = true
+	return nil
+}
+
+func TestPDFParseResultToJSON_CropsMediaSectionsWithEngine(t *testing.T) {
+	mockEngine := &mockPDFEngineForCommonTest{}
+	parsed := &deepdoctype.ParseResult{
+		Engine:     mockEngine,
+		PageHeight: map[int]float64{0: 100},
+		Sections: []deepdoctype.Section{
+			{
+				Text:        "Figure caption",
+				LayoutType:  deepdoctype.LayoutTypeFigure,
+				PositionTag: "@@0\t10\t50\t10\t50##",
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+				},
+			},
+			{
+				Text:        "Table body",
+				LayoutType:  deepdoctype.LayoutTypeTable,
+				PositionTag: "@@0\t20\t60\t20\t60##",
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 20, Right: 60, Top: 20, Bottom: 60},
+				},
+			},
+			{
+				Text:        "Plain text paragraph",
+				LayoutType:  deepdoctype.LayoutTypeText,
+				PositionTag: "@@0\t0\t100\t70\t90##",
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 70, Bottom: 90},
+				},
+			},
+		},
+	}
+
+	res := pdfParseResultToJSON("media.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
+	}
+	if !mockEngine.closed {
+		t.Fatal("Engine should be closed after pdfParseResultToJSON")
+	}
+	if len(res.JSON) != 3 {
+		t.Fatalf("JSON len = %d, want 3", len(res.JSON))
+	}
+
+	// Figure should have cropped image populated
+	figImg, ok := res.JSON[0]["image"].(string)
+	if !ok || figImg == "" {
+		t.Fatalf("Figure JSON[0].image should be non-empty base64 data url, got %v", res.JSON[0]["image"])
+	}
+	if !strings.HasPrefix(figImg, "data:image/png;base64,") {
+		t.Fatalf("Figure JSON[0].image prefix mismatch, got %q", figImg)
+	}
+
+	// Table should have cropped image populated
+	tblImg, ok := res.JSON[1]["image"].(string)
+	if !ok || tblImg == "" {
+		t.Fatalf("Table JSON[1].image should be non-empty base64 data url, got %v", res.JSON[1]["image"])
+	}
+	if !strings.HasPrefix(tblImg, "data:image/png;base64,") {
+		t.Fatalf("Table JSON[1].image prefix mismatch, got %q", tblImg)
+	}
+
+	// Plain text should NOT have cropped image
+	textImg, _ := res.JSON[2]["image"].(string)
+	if textImg != "" {
+		t.Fatalf("Text JSON[2].image should be empty, got %q", textImg)
+	}
+}
+
+func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Engine:     nil,
+		PageHeight: map[int]float64{0: 100},
+		Sections: []deepdoctype.Section{
+			{
+				Text:       "Figure caption",
+				LayoutType: deepdoctype.LayoutTypeFigure,
+				Positions: []deepdoctype.Position{
+					{PageNumbers: []int{0}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+				},
+			},
+		},
+	}
+
+	res := pdfParseResultToJSON("nil_engine.pdf", parsed)
+	if res.Err != nil {
+		t.Fatalf("pdfParseResultToJSON with nil engine returned err: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
 }
