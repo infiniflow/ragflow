@@ -326,8 +326,13 @@ func openAICompatUsageForCompletion(promptTokens, completionTokens int) *openAIC
 
 func openAICompatRunEventMessage(ev canvas.RunEvent, fallback string) string {
 	var payload canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Message != "" {
-		return payload.Message
+	if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil {
+		if payload.Kind == canvas.RunErrorKindInternal {
+			return canvas.InternalRunErrorMessage
+		}
+		if payload.Message != "" {
+			return payload.Message
+		}
 	}
 	if message := strings.TrimSpace(ev.Data); message != "" {
 		return message
