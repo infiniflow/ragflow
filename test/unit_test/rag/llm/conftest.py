@@ -27,6 +27,7 @@ works without triggering the full init.
 import os
 import sys
 import types
+from enum import StrEnum
 
 # Resolve the real path to rag/llm/ so sub-module imports can find files
 _RAGFLOW_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
@@ -55,6 +56,24 @@ def _install_rag_llm_stub():
     llm_pkg.Seq2txtModel = {}
     llm_pkg.TTSModel = {}
     llm_pkg.OcrModel = {}
+
+    class SupportedLiteLLMProvider(StrEnum):
+        Tongyi_Qianwen = "Tongyi-Qianwen"
+        Dashscope = "Dashscope"
+        Moonshot = "Moonshot"
+        Nvidia = "NVIDIA"
+        Bedrock = "Bedrock"
+        Ollama = "Ollama"
+        OpenRouter = "OpenRouter"
+        MiniMax = "MiniMax"
+        ZHIPU_AI = "ZHIPU-AI"
+        OpenAI = "OpenAI"
+        Azure_OpenAI = "Azure-OpenAI"
+        HunYuan = "Tencent Hunyuan"
+
+    llm_pkg.SupportedLiteLLMProvider = SupportedLiteLLMProvider
+    llm_pkg.FACTORY_DEFAULT_BASE_URL = {}
+    llm_pkg.LITELLM_PROVIDER_PREFIX = {SupportedLiteLLMProvider.Bedrock: "bedrock/"}
     sys.modules["rag.llm"] = llm_pkg
 
 

@@ -16,6 +16,7 @@ import PdfPreview from '@/components/document-preview/pdf-preview';
 import { PptPreviewer } from '@/components/document-preview/ppt-preview';
 import { TxtPreviewer } from '@/components/document-preview/txt-preview';
 import { previewHtmlFile } from '@/utils/file-util';
+import CSVFileViewer from '@/components/document-preview/csv-preview';
 // import styles from './index.less';
 
 // TODO: The interface returns an incorrect content-type for the SVG.
@@ -55,6 +56,11 @@ const DocumentViewer = () => {
       )}
       {(ext === 'xlsx' || ext === 'xls') && (
         <ExcelCsvPreviewer url={api}></ExcelCsvPreviewer>
+      )}
+      {ext === 'csv' && (
+        <section className="m-1">
+          <CSVFileViewer url={api} />
+        </section>
       )}
 
       {ext === 'docx' && <DocPreviewer url={api}></DocPreviewer>}

@@ -116,13 +116,13 @@ export const util = {
           description: item.description,
           values: item.enum || [],
           restrictDefinedValues: !!item.enum?.length,
-          valueType: DEFAULT_VALUE_TYPE,
+          valueType: item.type || DEFAULT_VALUE_TYPE,
         } as IMetaDataTableData;
       });
     }
     const properties = data.properties || {};
     return Object.entries(properties).map(([key, property]) => {
-      const valueType = 'string';
+      const valueType = property.type || 'string';
       const values = property.enum || property.items?.enum || [];
       return {
         field: key,
@@ -289,6 +289,7 @@ export const useManageMetaDataModal = (
   type: MetadataType = MetadataType.Manage,
   otherData?: Record<string, any>,
   documentIds?: string[],
+  isLocalSave = false,
 ) => {
   const { id } = useParams();
   const { t } = useTranslation();
@@ -415,21 +416,24 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbUpdateMetaData(id || '', {
-        metadata: data,
-        builtInMetadata: builtInMetadata || [],
-      });
-      if (res.code === 0) {
-        message.success(t('message.operated'));
+      if (isLocalSave) {
         callback?.();
+      } else {
+        const { data: res } = await kbUpdateMetaData(id || '', {
+          metadata: data,
+          builtInMetadata: builtInMetadata || [],
+        });
+        if (res.code === 0) {
+          message.success(t('message.operated'));
+          callback?.();
+        }
       }
-      // callback?.();
       return {
         metadata: data,
         builtInMetadata: builtInMetadata || [],
       };
     },
-    [tableData, t, id],
+    [tableData, t, id, isLocalSave],
   );
 
   const handleSaveSingleFileSettings = useCallback(
@@ -475,7 +479,7 @@ export const useManageMetaDataModal = (
           return handleSaveSettings(callback, builtInMetadata);
 
         case MetadataType.SingleFileSetting:
-          return handleSaveSingleFileSettings(callback);
+          return handleSaveSingleFileSettings(callback, builtInMetadata);
         default:
           handleSaveManage(callback);
           break;

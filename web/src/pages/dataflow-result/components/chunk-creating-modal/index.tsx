@@ -98,7 +98,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   return (
     <Modal
-      title={`${chunkId ? t('common.edit') : t('common.create')} ${t('chunk.chunk')}`}
+      title={t(chunkId ? 'chunk.editChunk' : 'chunk.createChunk')}
       open={true}
       onOk={handleOk}
       onCancel={hideModal}

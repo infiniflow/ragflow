@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import { memo } from 'react';
 import { Operator } from '../../constant';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 interface IProps {
   id: string;
   label: string;

@@ -5,37 +5,50 @@ import { formatBytes } from '@/utils/file-util';
 import { useCallback, useMemo, useState } from 'react';
 import { ILogInfo } from '../process-log-modal';
 import { RunningStatus } from './constant';
+import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
+
+const PollIntervalMs = 5000;
 
 export const useShowLog = (documents: IDocumentInfo[]) => {
   const { showModal, hideModal, visible } = useSetModalState();
   const [record, setRecord] = useState<IDocumentInfo>();
+
+  // When the modal is visible, poll the document directly by ID so progress_msg
+  // updates (e.g. "Indexing done") are captured even if the parent list no longer
+  // polls (isLoop became false before the final message) or the record fell off
+  // the current paginated page.
+  const { documents: liveDocs } = useFetchDocumentsByIds(
+    record?.id ? [record.id] : [],
+    { enabled: visible, refetchInterval: PollIntervalMs },
+  );
+  const liveDoc = liveDocs?.[0];
+
   const logInfo = useMemo(() => {
-    const findRecord = documents.find(
-      (item: IDocumentInfo) => item.id === record?.id,
-    );
+    const source =
+      liveDoc ??
+      documents.find((item: IDocumentInfo) => item.id === record?.id) ??
+      record;
     let log: ILogInfo = {
-      taskId: record?.id,
-      fileName: record?.name || '-',
-      details: record?.progress_msg || '-',
+      taskId: source?.id,
+      fileName: source?.name || '-',
+      details: source?.progress_msg || '-',
     };
-    if (findRecord) {
+    if (source) {
       log = {
-        fileType: findRecord?.suffix,
-        uploadedBy: findRecord?.nickname,
-        fileName: findRecord?.name,
-        uploadDate: formatDate(findRecord.create_date),
-        fileSize: formatBytes(findRecord.size || 0),
-        processBeginAt: formatDate(findRecord.process_begin_at),
-        chunkNumber: findRecord.chunk_count,
-        duration: formatSecondsToHumanReadable(
-          findRecord.process_duration || 0,
-        ),
-        status: findRecord.run as RunningStatus,
-        details: findRecord.progress_msg,
+        fileType: source?.suffix,
+        uploadedBy: source?.nickname,
+        fileName: source?.name,
+        uploadDate: formatDate(source.create_date),
+        fileSize: formatBytes(source.size || 0),
+        processBeginAt: formatDate(source.process_begin_at),
+        chunkNumber: source.chunk_count,
+        duration: formatSecondsToHumanReadable(source.process_duration || 0),
+        status: source.run as RunningStatus,
+        details: source.progress_msg,
       };
     }
     return log;
-  }, [record, documents]);
+  }, [record, documents, liveDoc]);
   const showLog = useCallback(
     (data: IDocumentInfo) => {
       setRecord(data);

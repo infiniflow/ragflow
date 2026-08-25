@@ -1,5 +1,7 @@
 export interface ITestRetrievalRequestBody {
   question: string;
+  size: number;
+  rerank_candidates_count: number;
   similarity_threshold: number;
   vector_similarity_weight: number;
   rerank_id?: string;
@@ -39,4 +41,37 @@ export interface IFetchDocumentListRequestBody {
   run_status?: string[];
   return_empty_metadata?: boolean;
   metadata?: Record<string, string[]>;
+  ids?: string[];
+}
+
+export interface IFetchArtifactListRequestParams {
+  page?: number;
+  page_size?: number;
+  keywords?: string;
+  page_type?: string;
+  topic?: string;
+}
+
+export interface IFetchArtifactTopicListRequestParams {
+  page?: number;
+  page_size?: number;
+  keywords?: string;
+}
+
+export interface IFetchArtifactGraphRequestParams {
+  node?: string;
+  keywords?: string;
+  top_n?: number;
+}
+
+export interface IUpdateArtifactPageRequestBody {
+  content_md: string;
+  comments: string;
+  title?: string;
+}
+
+export interface IUpdateArtifactPageRequestParams {
+  pageType: string;
+  slug: string;
+  body: IUpdateArtifactPageRequestBody;
 }

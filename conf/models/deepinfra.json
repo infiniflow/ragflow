@@ -7,6 +7,7 @@
     "chat": "v1/chat/completions",
     "models": "models/list",
     "balance": "payment/checklist",
+    "rerank": "v1/inference",
     "embedding": "v1/embeddings",
     "tts": "v1/text-to-speech",
     "asr": "v1/audio/transcriptions"
@@ -15,13 +16,17 @@
   "models": [
     {
       "name": "deepseek-ai/DeepSeek-V3.2",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -29,7 +34,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 1024
     },
     {
       "name": "hexgrad/Kokoro-82M",

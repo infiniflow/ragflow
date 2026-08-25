@@ -108,17 +108,10 @@ class SelfManagedProvider(SandboxProvider):
                 "language": language,
                 "endpoint": self.endpoint,
                 "pool_size": self.pool_size,
-            }
+            },
         )
 
-    def execute_code(
-        self,
-        instance_id: str,
-        code: str,
-        language: str,
-        timeout: int = 10,
-        arguments: Optional[Dict[str, Any]] = None
-    ) -> ExecutionResult:
+    def execute_code(self, instance_id: str, code: str, language: str, timeout: int = 10, arguments: Optional[Dict[str, Any]] = None) -> ExecutionResult:
         """
         Execute code in the sandbox.
 
@@ -144,11 +137,7 @@ class SelfManagedProvider(SandboxProvider):
 
         # Prepare request
         code_b64 = base64.b64encode(code.encode("utf-8")).decode("utf-8")
-        payload = {
-            "code_b64": code_b64,
-            "language": normalized_lang,
-            "arguments": arguments or {}
-        }
+        payload = {"code_b64": code_b64, "language": normalized_lang, "arguments": arguments or {}}
 
         url = f"{self.endpoint}/run"
         exec_timeout = timeout or self.timeout
@@ -156,19 +145,12 @@ class SelfManagedProvider(SandboxProvider):
         start_time = time.time()
 
         try:
-            response = requests.post(
-                url,
-                json=payload,
-                timeout=exec_timeout,
-                headers={"Content-Type": "application/json"}
-            )
+            response = requests.post(url, json=payload, timeout=exec_timeout, headers={"Content-Type": "application/json"})
 
             execution_time = time.time() - start_time
 
             if response.status_code != 200:
-                raise RuntimeError(
-                    f"HTTP {response.status_code}: {response.text}"
-                )
+                raise RuntimeError(f"HTTP {response.status_code}: {response.text}")
 
             result = response.json()
             structured_result = result.get("result") or {}
@@ -188,14 +170,12 @@ class SelfManagedProvider(SandboxProvider):
                     "result_present": structured_result.get("present", False),
                     "result_value": structured_result.get("value"),
                     "result_type": structured_result.get("type"),
-                }
+                },
             )
 
         except requests.Timeout:
             execution_time = time.time() - start_time
-            raise TimeoutError(
-                f"Execution timed out after {exec_timeout} seconds"
-            )
+            raise TimeoutError(f"Execution timed out after {exec_timeout} seconds")
 
         except requests.RequestException as e:
             raise RuntimeError(f"HTTP request failed: {str(e)}")
@@ -388,7 +368,8 @@ class SelfManagedProvider(SandboxProvider):
         if endpoint:
             # Check if it's a valid HTTP/HTTPS URL or localhost
             import re
-            url_pattern = r'^(https?://|http://localhost|http://[\d\.]+:[a-z]+:[/]|http://[\w\.]+:)'
+
+            url_pattern = r"^(https?://|http://localhost|http://[\d\.]+:[a-z]+:[/]|http://[\w\.]+:)"
             if not re.match(url_pattern, endpoint):
                 return False, f"Invalid endpoint format: {endpoint}. Must start with http:// or https://"
 

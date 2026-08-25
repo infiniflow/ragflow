@@ -47,8 +47,13 @@ class MigrationVerifier:
 
     # Fields to compare for verification
     VERIFY_FIELDS = [
-        "id", "kb_id", "doc_id", "docnm_kwd", "content_with_weight",
-        "available_int", "create_time",
+        "id",
+        "kb_id",
+        "doc_id",
+        "docnm_kwd",
+        "content_with_weight",
+        "available_int",
+        "create_time",
     ]
 
     def __init__(
@@ -88,7 +93,7 @@ class MigrationVerifier:
             VerificationResult with details
         """
         result = VerificationResult(
-            es_index=es_index, 
+            es_index=es_index,
             ob_table=ob_table,
         )
 
@@ -97,26 +102,21 @@ class MigrationVerifier:
 
         # Step 1: Verify document counts
         logger.info("Verifying document counts...")
-        
+
         result.es_count = self.es_client.count_documents(es_index)
         result.ob_count = self.ob_client.count_rows(ob_table)
-        
+
         result.count_diff = abs(result.es_count - result.ob_count)
         result.count_match = result.count_diff == 0
 
-        logger.info(
-            f"Document counts - ES: {result.es_count}, OB: {result.ob_count}, "
-            f"Diff: {result.count_diff}"
-        )
+        logger.info(f"Document counts - ES: {result.es_count}, OB: {result.ob_count}, Diff: {result.count_diff}")
 
         # Step 2: Sample verification
         result.sample_size = min(sample_size, result.es_count)
-        
+
         if result.sample_size > 0:
             logger.info(f"Verifying {result.sample_size} sample documents...")
-            self._verify_samples(
-                es_index, ob_table, result, primary_key, verify_fields
-            )
+            self._verify_samples(es_index, ob_table, result, primary_key, verify_fields)
 
         # Step 3: Determine overall result
         self._determine_result(result)
@@ -134,9 +134,7 @@ class MigrationVerifier:
     ):
         """Verify sample documents."""
         # Get sample documents from ES
-        es_samples = self.es_client.get_sample_documents(
-            es_index, result.sample_size
-        )
+        es_samples = self.es_client.get_sample_documents(es_index, result.sample_size)
 
         for es_doc in es_samples:
             result.samples_verified += 1
@@ -154,17 +152,17 @@ class MigrationVerifier:
                 continue
 
             # Compare documents
-            match, differences = self._compare_documents(
-                es_doc, ob_doc, verify_fields
-            )
-            
+            match, differences = self._compare_documents(es_doc, ob_doc, verify_fields)
+
             if match:
                 result.samples_matched += 1
             else:
-                result.data_mismatches.append({
-                    "id": doc_id,
-                    "differences": differences,
-                })
+                result.data_mismatches.append(
+                    {
+                        "id": doc_id,
+                        "differences": differences,
+                    }
+                )
 
         # Calculate match rate
         if result.samples_verified > 0:
@@ -178,7 +176,7 @@ class MigrationVerifier:
     ) -> tuple[bool, list[dict[str, Any]]]:
         """
         Compare ES document with OceanBase row.
-        
+
         Returns:
             Tuple of (match: bool, differences: list)
         """
@@ -194,20 +192,17 @@ class MigrationVerifier:
 
             # Handle special comparisons
             if not self._values_equal(field_name, es_value, ob_value):
-                differences.append({
-                    "field": field_name,
-                    "es_value": es_value,
-                    "ob_value": ob_value,
-                })
+                differences.append(
+                    {
+                        "field": field_name,
+                        "es_value": es_value,
+                        "ob_value": ob_value,
+                    }
+                )
 
         return len(differences) == 0, differences
 
-    def _values_equal(
-        self, 
-        field_name: str, 
-        es_value: Any, 
-        ob_value: Any
-    ) -> bool:
+    def _values_equal(self, field_name: str, es_value: Any, ob_value: Any) -> bool:
         """Compare two values with type-aware logic."""
         if es_value is None and ob_value is None:
             return True
@@ -261,32 +256,19 @@ class MigrationVerifier:
         """Determine overall verification result."""
         # Allow small count differences (e.g., documents added during migration)
         count_tolerance = 0.01  # 1% tolerance
-        count_ok = (
-            result.count_match or 
-            (result.es_count > 0 and result.count_diff / result.es_count <= count_tolerance)
-        )
+        count_ok = result.count_match or (result.es_count > 0 and result.count_diff / result.es_count <= count_tolerance)
 
         if count_ok and result.sample_match_rate >= 0.99:
             result.passed = True
-            result.message = (
-                f"Verification PASSED. "
-                f"ES: {result.es_count:,}, OB: {result.ob_count:,}. "
-                f"Sample match rate: {result.sample_match_rate:.2%}"
-            )
+            result.message = f"Verification PASSED. ES: {result.es_count:,}, OB: {result.ob_count:,}. Sample match rate: {result.sample_match_rate:.2%}"
         elif count_ok and result.sample_match_rate >= 0.95:
             result.passed = True
-            result.message = (
-                f"Verification PASSED with warnings. "
-                f"ES: {result.es_count:,}, OB: {result.ob_count:,}. "
-                f"Sample match rate: {result.sample_match_rate:.2%}"
-            )
+            result.message = f"Verification PASSED with warnings. ES: {result.es_count:,}, OB: {result.ob_count:,}. Sample match rate: {result.sample_match_rate:.2%}"
         else:
             result.passed = False
             issues = []
             if not count_ok:
-                issues.append(
-                    f"Count mismatch (ES: {result.es_count}, OB: {result.ob_count}, diff: {result.count_diff})"
-                )
+                issues.append(f"Count mismatch (ES: {result.es_count}, OB: {result.ob_count}, diff: {result.count_diff})")
             if result.sample_match_rate < 0.95:
                 issues.append(f"Low sample match rate: {result.sample_match_rate:.2%}")
             if result.missing_in_ob:
@@ -303,22 +285,24 @@ class MigrationVerifier:
             f"ES Index:  {result.es_index}",
             f"OB Table:  {result.ob_table}",
         ]
-        
-        lines.extend([
-            "",
-            "Document Counts:",
-            f"  Elasticsearch: {result.es_count:,}",
-            f"  OceanBase:     {result.ob_count:,}",
-            f"  Difference:    {result.count_diff:,}",
-            f"  Match:         {'Yes' if result.count_match else 'No'}",
-            "",
-            "Sample Verification:",
-            f"  Sample Size:   {result.sample_size}",
-            f"  Verified:      {result.samples_verified}",
-            f"  Matched:       {result.samples_matched}",
-            f"  Match Rate:    {result.sample_match_rate:.2%}",
-            "",
-        ])
+
+        lines.extend(
+            [
+                "",
+                "Document Counts:",
+                f"  Elasticsearch: {result.es_count:,}",
+                f"  OceanBase:     {result.ob_count:,}",
+                f"  Difference:    {result.count_diff:,}",
+                f"  Match:         {'Yes' if result.count_match else 'No'}",
+                "",
+                "Sample Verification:",
+                f"  Sample Size:   {result.sample_size}",
+                f"  Verified:      {result.samples_verified}",
+                f"  Matched:       {result.samples_matched}",
+                f"  Match Rate:    {result.sample_match_rate:.2%}",
+                "",
+            ]
+        )
 
         if result.missing_in_ob:
             lines.append(f"Missing in OceanBase ({len(result.missing_in_ob)}):")
@@ -338,12 +322,14 @@ class MigrationVerifier:
                 lines.append(f"  ... and {len(result.data_mismatches) - 3} more")
             lines.append("")
 
-        lines.extend([
-            "=" * 60,
-            f"Result: {'PASSED' if result.passed else 'FAILED'}",
-            result.message,
-            "=" * 60,
-            "",
-        ])
+        lines.extend(
+            [
+                "=" * 60,
+                f"Result: {'PASSED' if result.passed else 'FAILED'}",
+                result.message,
+                "=" * 60,
+                "",
+            ]
+        )
 
         return "\n".join(lines)

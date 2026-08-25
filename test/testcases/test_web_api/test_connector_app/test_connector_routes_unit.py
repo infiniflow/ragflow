@@ -18,6 +18,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -241,7 +242,7 @@ def _load_connector_app(monkeypatch):
         "message": message,
         "data": data,
     }
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     constants_mod = ModuleType("common.constants")
@@ -253,6 +254,12 @@ def _load_connector_app(monkeypatch):
         AUTHENTICATION_ERROR=109,
     )
     constants_mod.TaskStatus = SimpleNamespace(SCHEDULE="schedule", CANCEL="cancel")
+
+    class _FileSource(StrEnum):
+        LOCAL = ""
+        RSS = "rss"
+
+    constants_mod.FileSource = _FileSource
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     config_mod = ModuleType("common.data_source.config")
@@ -264,14 +271,33 @@ def _load_connector_app(monkeypatch):
 
     google_constants_mod = ModuleType("common.data_source.google_util.constant")
     google_constants_mod.WEB_OAUTH_POPUP_TEMPLATE = (
-        "<html><head><title>{title}</title></head>"
-        "<body><h1>{heading}</h1><p>{message}</p><script>{payload_json}</script><script>{auto_close}</script></body></html>"
+        "<html><head><title>{title}</title></head><body><h1>{heading}</h1><p>{message}</p><script>{payload_json}</script><script>{auto_close}</script></body></html>"
     )
     google_constants_mod.GOOGLE_SCOPES = {
         config_mod.DocumentSource.GMAIL: ["scope-gmail"],
         config_mod.DocumentSource.GOOGLE_DRIVE: ["scope-drive"],
     }
     monkeypatch.setitem(sys.modules, "common.data_source.google_util.constant", google_constants_mod)
+
+    data_source_mod = ModuleType("common.data_source")
+
+    def _stub_build_connector_for_source(_source, _config):
+        raise NotImplementedError("patch build_connector_for_source in test")
+
+    data_source_mod.build_connector_for_source = _stub_build_connector_for_source
+    monkeypatch.setitem(sys.modules, "common.data_source", data_source_mod)
+
+    data_source_exceptions_mod = ModuleType("common.data_source.exceptions")
+
+    class _ConnectorMissingCredentialError(Exception):
+        pass
+
+    class _ConnectorValidationError(Exception):
+        pass
+
+    data_source_exceptions_mod.ConnectorMissingCredentialError = _ConnectorMissingCredentialError
+    data_source_exceptions_mod.ConnectorValidationError = _ConnectorValidationError
+    monkeypatch.setitem(sys.modules, "common.data_source.exceptions", data_source_exceptions_mod)
 
     misc_mod = ModuleType("common.misc_utils")
     misc_mod.get_uuid = lambda: "uuid-from-helper"
@@ -372,7 +398,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         lambda: _AwaitableValue({"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}}),
     )
     res = _run(module.update_connector("conn-1"))
-    assert update_calls == [("conn-1", {'id': 'conn-1', "refresh_freq": 7, "config": {"x": 1}})]
+    assert update_calls == [("conn-1", {"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}})]
     assert res["data"]["id"] == "conn-1"
 
     monkeypatch.setattr(
@@ -447,9 +473,36 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     ]
 
     assert all(res["code"] == module.RetCode.AUTHENTICATION_ERROR for res in responses)
-    assert all(res["message"] == "No authorization." for res in responses)
+    assert all(res["message"] == "no authorization" for res in responses)
     assert all(res["data"] is False for res in responses)
     assert touched == []
+
+    class _FakeConnector:
+        def validate_connector_settings(self):
+            return None
+
+    monkeypatch.setattr(
+        sys.modules["common.data_source"],
+        "build_connector_for_source",
+        lambda source, config: _FakeConnector(),
+    )
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda _connector_id: (False, None))
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": {"feed_url": "https://example.com"}}),
+    )
+    ok_res = _run(module.test_connector("rss"))
+    assert ok_res["data"] is True
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": "bad"}),
+    )
+    bad_config_res = _run(module.test_connector("rss"))
+    assert bad_config_res["code"] == module.RetCode.ARGUMENT_ERROR
 
 
 @pytest.mark.p2
@@ -604,27 +657,33 @@ def test_google_web_oauth_callbacks_matrix(monkeypatch):
         assert "Authorization session was invalid" in invalid_state.body
         assert module._web_state_cache_key("sid", source) in redis.deleted
 
-        redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
-            "user_id": "tenant-1",
-            "client_config": {"web": {"client_id": "cid"}},
-        })
+        redis.store[module._web_state_cache_key("sid", source)] = json.dumps(
+            {
+                "user_id": "tenant-1",
+                "client_config": {"web": {"client_id": "cid"}},
+            }
+        )
         _set_request(module, args={"state": "sid", "error": "denied", "error_description": "permission denied"})
         oauth_error = _run(callback())
         assert "permission denied" in oauth_error.body
 
-        redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
-            "user_id": "tenant-1",
-            "client_config": {"web": {"client_id": "cid"}},
-        })
+        redis.store[module._web_state_cache_key("sid", source)] = json.dumps(
+            {
+                "user_id": "tenant-1",
+                "client_config": {"web": {"client_id": "cid"}},
+            }
+        )
         _set_request(module, args={"state": "sid"})
         missing_code = _run(callback())
         assert "Missing authorization code" in missing_code.body
 
-        redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
-            "user_id": "tenant-1",
-            "client_config": {"web": {"client_id": "cid"}},
-            "code_verifier": "state-code-verifier",
-        })
+        redis.store[module._web_state_cache_key("sid", source)] = json.dumps(
+            {
+                "user_id": "tenant-1",
+                "client_config": {"web": {"client_id": "cid"}},
+                "code_verifier": "state-code-verifier",
+            }
+        )
         _set_request(module, args={"state": "sid", "code": "code-123"})
         success = _run(callback())
         assert "Authorization completed successfully." in success.body
@@ -653,16 +712,12 @@ def test_poll_google_web_result_matrix(monkeypatch):
     pending = _run(module.poll_google_web_result())
     assert pending["code"] == module.RetCode.RUNNING
 
-    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps(
-        {"user_id": "another-user", "credentials": "token-x"}
-    )
+    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps({"user_id": "another-user", "credentials": "token-x"})
     _set_request(module, args={"type": "gmail"}, json_body={"flow_id": "flow-1"})
     permission_error = _run(module.poll_google_web_result())
     assert permission_error["code"] == module.RetCode.PERMISSION_ERROR
 
-    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps(
-        {"user_id": "tenant-1", "credentials": "token-ok"}
-    )
+    redis.store[module._web_result_cache_key("flow-1", "gmail")] = json.dumps({"user_id": "tenant-1", "credentials": "token-ok"})
     _set_request(module, args={"type": "gmail"}, json_body={"flow_id": "flow-1"})
     success = _run(module.poll_google_web_result())
     assert success["code"] == 0
@@ -715,16 +770,12 @@ def test_box_oauth_start_callback_and_poll_matrix(monkeypatch):
     invalid_session = _run(module.box_web_oauth_callback())
     assert invalid_session["code"] == module.RetCode.ARGUMENT_ERROR
 
-    redis.store[module._web_state_cache_key("flow-box", "box")] = json.dumps(
-        {"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"}
-    )
+    redis.store[module._web_state_cache_key("flow-box", "box")] = json.dumps({"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"})
     _set_request(module, args={"state": "flow-box", "code": "abc", "error": "access_denied", "error_description": "denied"})
     callback_error = _run(module.box_web_oauth_callback())
     assert "denied" in callback_error.body
 
-    redis.store[module._web_state_cache_key("flow-ok", "box")] = json.dumps(
-        {"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"}
-    )
+    redis.store[module._web_state_cache_key("flow-ok", "box")] = json.dumps({"user_id": "tenant-1", "client_id": "cid", "client_secret": "sec"})
     _set_request(module, args={"state": "flow-ok", "code": "code-ok"})
     callback_success = _run(module.box_web_oauth_callback())
     assert "Authorization completed successfully." in callback_success.body
@@ -741,9 +792,7 @@ def test_box_oauth_start_callback_and_poll_matrix(monkeypatch):
     permission_error = _run(module.poll_box_web_result())
     assert permission_error["code"] == module.RetCode.PERMISSION_ERROR
 
-    redis.store[module._web_result_cache_key("flow-ok", "box")] = json.dumps(
-        {"user_id": "tenant-1", "access_token": "at", "refresh_token": "rt"}
-    )
+    redis.store[module._web_result_cache_key("flow-ok", "box")] = json.dumps({"user_id": "tenant-1", "access_token": "at", "refresh_token": "rt"})
     poll_success = _run(module.poll_box_web_result())
     assert poll_success["code"] == 0
     assert poll_success["data"]["credentials"]["access_token"] == "at"

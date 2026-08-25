@@ -65,6 +65,7 @@ def _run(coro):
 # End-to-End Tests
 # ============================================================================
 
+
 @pytest.mark.p2
 class TestUploadInfoE2E:
     """End-to-end tests for the /api/v1/documents/upload endpoint"""

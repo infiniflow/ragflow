@@ -15,10 +15,16 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { useSelectKnowledgeOptions } from '@/hooks/use-knowledge-request';
+import {
+  useFetchDatasetsByIds,
+  useFetchKnowledgeList,
+} from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
+import { IDataset } from '@/interfaces/database/dataset';
+import { useDebounce } from 'ahooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -47,10 +53,56 @@ function LinkToDatasetForm({
     },
   });
 
-  const options = useSelectKnowledgeOptions();
+  const [searchString, setSearchString] = useState('');
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { list, loading, handleScroll, hasNextPage } = useFetchKnowledgeList(
+    false,
+    debouncedSearchString,
+  );
+
+  const selectedIds = form.watch('knowledgeIds');
+
+  // Cache all datasets the user has seen so names survive across searches
+  // and scroll. The paginated list may not contain every selected dataset
+  // (e.g. initially-connected ones), so resolve the rest by ID.
+  const datasetCacheRef = useRef(new Map<string, IDataset>());
+
+  const missingIds = useMemo(() => {
+    const loadedIds = new Set(list.map((d) => d.id));
+    return selectedIds.filter(
+      (id) => !loadedIds.has(id) && !datasetCacheRef.current.has(id),
+    );
+  }, [list, selectedIds]);
+
+  const { data: missingDatasets } = useFetchDatasetsByIds(missingIds);
+
+  useEffect(() => {
+    list.forEach((item) => {
+      datasetCacheRef.current.set(item.id, item);
+    });
+    missingDatasets?.forEach((item) => {
+      datasetCacheRef.current.set(item.id, item);
+    });
+  }, [list, missingDatasets]);
+
+  const options = useMemo(
+    () =>
+      list.map((item) => ({
+        label: item.name,
+        value: item.id,
+      })),
+    [list],
+  );
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    onConnectToKnowledgeOk(data.knowledgeIds);
+    const kbsInfo = data.knowledgeIds.map((id) => {
+      const dataset = datasetCacheRef.current.get(id);
+      return {
+        kb_id: id,
+        kb_name: dataset?.name ?? id,
+      };
+    });
+    onConnectToKnowledgeOk(kbsInfo);
   }
 
   //   useEffect(() => {
@@ -77,6 +129,11 @@ function LinkToDatasetForm({
                   defaultValue={field.value}
                   placeholder={t('fileManager.pleaseSelect')}
                   maxCount={100}
+                  searchValue={searchString}
+                  onSearchChange={setSearchString}
+                  isSearching={loading}
+                  shouldFilter={false}
+                  onListScroll={hasNextPage ? handleScroll : undefined}
                   //   {...field}
                   modalPopover
                 />

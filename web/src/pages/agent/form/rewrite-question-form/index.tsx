@@ -1,5 +1,5 @@
-import { NextLLMSelect } from '@/components/llm-select/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
+import { ModelTreeSelectFormField } from '@/components/model-tree-select';
 import {
   Form,
   FormControl,
@@ -11,10 +11,12 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslation } from 'react-i18next';
 import { INextOperatorForm } from '../../interface';
+import { useOwnerTenantId } from '../../context';
 import { GoogleLanguageOptions } from '../../options';
 
 const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   return (
     <Form {...form}>
@@ -24,20 +26,11 @@ const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
           e.preventDefault();
         }}
       >
-        <FormField
-          control={form.control}
+        <ModelTreeSelectFormField
           name="llm_id"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('chat.modelTip')}>
-                {t('chat.model')}
-              </FormLabel>
-              <FormControl>
-                <NextLLMSelect {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+          label={t('chat.model')}
+          tooltip={t('chat.modelTip')}
+          ownerTenantId={ownerTenantId}
         />
         <FormField
           control={form.control}

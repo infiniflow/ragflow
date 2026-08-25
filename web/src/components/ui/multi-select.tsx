@@ -5,6 +5,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import {
   CheckIcon,
   ChevronDown,
+  TriangleAlert,
   WandSparkles,
   XCircle,
   XIcon,
@@ -192,6 +193,7 @@ interface MultiSelectProps
   onSearchChange?: (value: string) => void;
   isSearching?: boolean;
   shouldFilter?: boolean;
+  onListScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -217,6 +219,7 @@ export const MultiSelect = React.forwardRef<
       onSearchChange,
       isSearching = false,
       shouldFilter,
+      onListScroll,
       ...props
     },
     ref,
@@ -375,8 +378,20 @@ export const MultiSelect = React.forwardRef<
                           {IconComponent && (
                             <IconComponent className="h-4 w-4" />
                           )}
-                          <div className="max-w-28 text-ellipsis overflow-hidden">
-                            {option?.label}
+                          {/* A selected value with no matching option (e.g. the
+                              entity no longer exists) gets a warning marker and
+                              falls back to the raw value so the badge stays
+                              readable and removable. */}
+                          {!option && (
+                            <TriangleAlert className="h-4 w-4 flex-shrink-0 text-text-disabled" />
+                          )}
+                          <div
+                            className={cn(
+                              'max-w-28 text-ellipsis overflow-hidden',
+                              { 'text-text-disabled': !option },
+                            )}
+                          >
+                            {option?.label ?? value}
                           </div>
                           {canRemoveValue(value) && (
                             <XCircle
@@ -440,6 +455,7 @@ export const MultiSelect = React.forwardRef<
           className="w-auto p-0"
           align="start"
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
+          onFocusOutside={(event) => event.preventDefault()}
           data-testid={popoverTestId}
         >
           <Command className="p-5 pb-8" shouldFilter={shouldFilter}>
@@ -451,7 +467,7 @@ export const MultiSelect = React.forwardRef<
                 onValueChange={onSearchChange}
               />
             )}
-            <CommandList className="mt-2">
+            <CommandList className="mt-2" onScroll={onListScroll}>
               <CommandEmpty>
                 {isSearching ? t('common.searching') : t('common.noDataFound')}
               </CommandEmpty>
@@ -526,7 +542,7 @@ export const MultiSelect = React.forwardRef<
                         onSelect={handleClear}
                         className="flex-1 justify-center cursor-pointer"
                       >
-                        Clear
+                        {t('common.clear')}
                       </CommandItem>
                       <Separator
                         orientation="vertical"

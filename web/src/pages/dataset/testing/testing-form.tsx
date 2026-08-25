@@ -7,6 +7,10 @@ import { z } from 'zod';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import {
+  RerankCandidatesCountFormField,
+  rerankCandidatesCountSchema,
+} from '@/components/rerank-candidates-count-item';
+import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
@@ -22,6 +26,7 @@ import {
   similarityThresholdSchema,
   vectorSimilarityWeightSchema,
 } from '@/components/similarity-slider';
+import { TopSelectFormItem } from '@/components/top-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
@@ -31,7 +36,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import { trim } from 'lodash';
@@ -39,6 +44,7 @@ import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -54,17 +60,23 @@ export default function TestingForm({
   const { id } = useParams();
   const knowledgeBaseId = id;
 
-  const formSchema = z.object({
-    question: z.string().min(1, {
-      message: t('knowledgeDetails.testTextPlaceholder'),
-    }),
-    ...similarityThresholdSchema,
-    ...vectorSimilarityWeightSchema,
-    ...topKSchema,
-    use_kg: z.boolean().optional(),
-    dataset_ids: z.array(z.string()).optional(),
-    ...MetadataFilterSchema,
-  });
+  const formSchema = z
+    .object({
+      question: z.string().min(1, {
+        message: t('knowledgeDetails.testTextPlaceholder'),
+      }),
+      ...similarityThresholdSchema,
+      ...vectorSimilarityWeightSchema,
+      ...topKSchema,
+      dataset_ids: z.array(z.string()).optional(),
+      ...MetadataFilterSchema,
+      size: z.number().int().min(1).max(100),
+      ...rerankCandidatesCountSchema,
+    })
+    .refine((values) => values.rerank_candidates_count >= values.size, {
+      message: t('chat.rerankCandidatesCountValidation'),
+      path: ['rerank_candidates_count'],
+    });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -72,8 +84,9 @@ export default function TestingForm({
       ...initialSimilarityThresholdValue,
       ...initialVectorSimilarityWeightValue,
       ...initialTopKValue,
-      use_kg: false,
       dataset_ids: [knowledgeBaseId],
+      size: 10,
+      rerank_candidates_count: 64,
     },
   });
 
@@ -100,12 +113,15 @@ export default function TestingForm({
             <SimilaritySliderFormField
               isTooltipShown={true}
             ></SimilaritySliderFormField>
-            <RerankFormFields></RerankFormFields>
-            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+            <RerankFormFields
+              ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
+            ></RerankFormFields>
             <CrossLanguageFormField
               name={'cross_languages'}
             ></CrossLanguageFormField>
             <MetadataFilter prefix=""></MetadataFilter>
+            <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
+            <TopSelectFormItem></TopSelectFormItem>
           </FormContainer>
         </div>
 
@@ -115,9 +131,16 @@ export default function TestingForm({
             name="question"
             render={({ field }) => (
               <FormItem>
-                {/* <FormLabel>{t('knowledgeDetails.testText')}</FormLabel> */}
                 <FormControl>
-                  <Textarea {...field}></Textarea>
+                  <Textarea
+                    {...field}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        form.handleSubmit(onSubmit)();
+                      }
+                    }}
+                  ></Textarea>
                 </FormControl>
 
                 <FormMessage />

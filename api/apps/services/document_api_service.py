@@ -15,6 +15,7 @@
 #
 import logging
 
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -39,7 +40,8 @@ def update_document_name_only(document_id, req_doc_name):
     informs = File2DocumentService.get_by_document_id(document_id)
     if informs:
         e, file = FileService.get_by_id(informs[0].file_id)
-        FileService.update_by_id(file.id, {"name": req_doc_name})
+        if e and file:
+            FileService.update_by_id(file.id, {"name": req_doc_name})
     # Add logic to update index - refer to rename method in document_app.py
     tenant_id = DocumentService.get_tenant_id(document_id)
     title_tks = rag_tokenizer.tokenize(req_doc_name)
@@ -60,6 +62,7 @@ def update_document_name_only(document_id, req_doc_name):
         )
     return None
 
+
 def update_chunk_method(req, doc, tenant_id):
     """
     Update chunk method only (without validation).
@@ -78,7 +81,13 @@ def update_chunk_method(req, doc, tenant_id):
     """
     if doc.parser_id.lower() != req["chunk_method"].lower():
         # if chunk method changed, reset document for reparse
-        result = reset_document_for_reparse(doc, tenant_id, parser_id=req["chunk_method"])
+        result = reset_document_for_reparse(doc, tenant_id, parser_id=req["chunk_method"], pipeline_id="")
+        if result:
+            return result
+    elif doc.pipeline_id:
+        # An explicit chunk method selects the direct parser path. Clear the
+        # previous pipeline even when the parser method itself is unchanged.
+        result = reset_document_for_reparse(doc, tenant_id, pipeline_id="")
         if result:
             return result
     if not req.get("parser_config"):
@@ -118,23 +127,17 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     # Update document
     e = DocumentService.update_by_id(doc.id, update_fields)
     if not e:
-        return get_error_data_result(message="Document not found!")
+        return get_error_data_result(message="document not found")
 
-    # Delete chunks from document store
-    if doc.token_num > 0:
-        try:
-            e = DocumentService.increment_chunk_num(
-                doc.id,
-                doc.kb_id,
-                doc.token_num * -1,
-                doc.chunk_num * -1,
-                doc.process_duration * -1,
-            )
-        except LookupError:
-            return get_error_data_result(message="Document not found!")
-        if not e:
-            return get_error_data_result(message="Document not found!")
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+    # Release the document's chunk/token/duration counters from the knowledgebase
+    # aggregate under a row lock before clearing the chunks. release_reparse_counters
+    # guards the zero case internally, so the doc-store cleanup below still runs for
+    # pipeline compilation rows that exist even when token_num is zero.
+    try:
+        release_reparse_counters(doc.id)
+    except LookupError:
+        return get_error_data_result(message="Document not found!")
+    settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     # Delete chunk images
     try:
@@ -145,7 +148,7 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     return None
 
 
-def update_document_status_only(status:int, doc, kb):
+def update_document_status_only(status: int, doc, kb):
     """
     Update document status only (without validation).
 
@@ -164,13 +167,18 @@ def update_document_status_only(status:int, doc, kb):
         try:
             if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                 return get_error_data_result(message="Database error (Document update)!")
-            settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
+            settings.docStoreConn.update(
+                {"doc_id": doc.id, "must_not": {"exists": "compile_kwd"}},
+                {"available_int": status},
+                search.index_name(kb.tenant_id),
+                doc.kb_id,
+            )
         except Exception as e:
             return server_error_response(e)
     return None
 
 
-def validate_document_update_fields(update_doc_req:UpdateDocumentReq, doc, req):
+def validate_document_update_fields(update_doc_req: UpdateDocumentReq, doc, req):
     """
     Validate document update fields in a single method.
 
@@ -268,7 +276,7 @@ def _process_key_mappings(doc):
     }
 
     # Handle both dict and model input
-    items = doc.to_dict().items() if hasattr(doc, 'to_dict') else doc.items()
+    items = doc.to_dict().items() if hasattr(doc, "to_dict") else doc.items()
 
     renamed_doc = {}
     for key, value in items:

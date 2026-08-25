@@ -5,9 +5,7 @@ from test.playwright.helpers.auth_selectors import EMAIL_INPUT, SUBMIT_BUTTON
 from test.playwright.helpers.flow_steps import flow_params, require
 
 
-def step_01_open_login(
-    flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click
-):
+def step_01_open_login(flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click):
     page = flow_page
     with step("open login page"):
         page.goto(login_url, wait_until="domcontentloaded")
@@ -15,9 +13,7 @@ def step_01_open_login(
     snap("open")
 
 
-def step_02_submit_empty(
-    flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click
-):
+def step_02_submit_empty(flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click):
     require(flow_state, "login_opened")
     form, _ = active_auth_context()
     expect(form.locator(EMAIL_INPUT)).to_have_count(1)
@@ -30,9 +26,7 @@ def step_02_submit_empty(
     snap("submitted_empty")
 
 
-def step_03_assert_validation(
-    flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click
-):
+def step_03_assert_validation(flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click):
     require(flow_state, "login_opened", "submitted_empty")
     form, _ = active_auth_context()
     invalid_inputs = form.locator("input[aria-invalid='true']")
@@ -52,11 +46,7 @@ def step_03_assert_validation(
     except AssertionError:
         pass
 
-    raise AssertionError(
-        "No validation feedback detected after submitting an empty login form. "
-        "Expected aria-invalid inputs or visible error containers. "
-        "See artifacts for DOM evidence."
-    )
+    raise AssertionError("No validation feedback detected after submitting an empty login form. Expected aria-invalid inputs or visible error containers. See artifacts for DOM evidence.")
 
 
 STEPS = [
@@ -69,7 +59,5 @@ STEPS = [
 @pytest.mark.p1
 @pytest.mark.auth
 @pytest.mark.parametrize("step_fn", flow_params(STEPS))
-def test_validation_presence_flow(
-    step_fn, flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click
-):
+def test_validation_presence_flow(step_fn, flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click):
     step_fn(flow_page, flow_state, login_url, active_auth_context, step, snap, auth_click)

@@ -1,5 +1,20 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
-import { Modal } from '@/components/ui/modal/modal';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/dataset';
@@ -11,7 +26,7 @@ import {
 } from '@/interfaces/database/user-setting';
 import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
-import { Routes } from '@/routes';
+import kbService from '@/services/knowledge-service';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -19,12 +34,11 @@ import userService, {
   listTenant,
   listTenantUser,
 } from '@/services/user-service';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import DOMPurify from 'dompurify';
-import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useFetchDefaultModelDictionary } from './use-llm-request';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -41,6 +55,7 @@ export const enum UserSettingApiAction {
   AgreeTenant = 'agreeTenant',
   SetLangfuseConfig = 'setLangfuseConfig',
   DeleteLangfuseConfig = 'deleteLangfuseConfig',
+  ListPipelines = 'listPipelines',
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
 
@@ -69,61 +84,47 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
   return { data, loading };
 };
 
-export const useFetchTenantInfo = (
-  showEmptyModelWarn = false,
-): ResponseGetType<ITenantInfo> => {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
+export const useFetchTenantData = (): ResponseGetType<ITenantInfo> => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: [UserSettingApiAction.TenantInfo, showEmptyModelWarn],
+    queryKey: [UserSettingApiAction.TenantInfo],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
       const { data: res } = await userService.getTenantInfo();
       if (res.code === 0) {
-        // llm_id is chat_id
-        // asr_id is speech2txt
-        const { data } = res;
-        if (
-          showEmptyModelWarn &&
-          (isEmpty(data.embd_id) || isEmpty(data.llm_id))
-        ) {
-          Modal.warning({
-            title: t('common.warn'),
-            content: (
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(t('setting.modelProvidersWarn')),
-                }}
-              ></div>
-            ),
-            closable: false,
-            showCancel: false,
-            onOk() {
-              // window.open('/user-setting/model', '_self');
-              navigate(`${Routes.UserSetting}${Routes.Model}`);
-            },
-          });
-        }
-        data.chat_id = data.llm_id;
-        data.speech2text_id = data.asr_id;
-
-        return data;
+        return res.data ?? {};
       }
 
       return res;
     },
   });
-
   return { data, loading };
 };
+
+export const useFetchTenantInfo = useFetchTenantData;
 
 export const useSelectParserList = (): Array<{
   value: string;
   label: string;
 }> => {
-  const { data: tenantInfo } = useFetchTenantInfo(true);
+  const { data: tenantInfo } = useFetchTenantInfo();
   const { t } = useTranslation();
+
+  // Detect backend runtime language (Go vs Python) so we can choose
+  // the matching parser-list code path at runtime.
+  const isGo = useIsGoBackend();
+
+  // Go backend: fetch pipeline catalog dynamically.
+  const { data: pipelineListData } = useQuery({
+    queryKey: [UserSettingApiAction.ListPipelines],
+    queryFn: async () => {
+      const { data } = await kbService.listPipelines();
+      return data;
+    },
+    staleTime: Infinity,
+    enabled: isGo,
+  });
+  useFetchDefaultModelDictionary(true);
 
   const defaultParsers = useMemo(
     () => [
@@ -158,6 +159,60 @@ export const useSelectParserList = (): Array<{
   );
 
   const parserList = useMemo(() => {
+    // Go backend: prefer the dynamic pipeline catalog from the API.
+    // GET /api/v1/pipelines?type=builtin responds with
+    // { code, data: { canvas: [{ id, title, description, filename }], total } }.
+    if (isGo) {
+      const pipelineList: Array<{
+        id: string;
+        title: string;
+        description?: string;
+        filename?: string;
+      }> = pipelineListData?.data?.canvas ?? [];
+      if (pipelineList.length > 0) {
+        const labelFromAPI = (parserId: string, title: string) => {
+          const key = `knowledgeConfiguration.parserLabel.${parserId}`;
+          const translated = t(key);
+          return translated !== key ? translated : title;
+        };
+        // Order the Go pipeline catalog the same way as the Python
+        // backend's parser_ids (settings.PARSERS), so the chunk-method
+        // dropdown lists commonly used methods first. The Python "naive"
+        // slot corresponds to the Go "general" pipeline. Go-only pipelines
+        // (e.g. knowledge_compiler) keep their API order at the end.
+        const pythonParserOrder = [
+          'general', // "naive" in Python parser_ids
+          'qa',
+          'resume',
+          'manual',
+          'table',
+          'paper',
+          'book',
+          'laws',
+          'presentation',
+          'picture',
+          'one',
+          'audio',
+          'email',
+          'tag',
+        ];
+        const order = new Map(
+          pythonParserOrder.map((id, index) => [id, index]),
+        );
+        const sortedList = [...pipelineList].sort(
+          (a, b) =>
+            (order.get(a.id) ?? pythonParserOrder.length) -
+            (order.get(b.id) ?? pythonParserOrder.length),
+        );
+        return sortedList.map((item) => ({
+          value: item.id,
+          label: labelFromAPI(item.id, item.title),
+        }));
+      }
+    }
+
+    // Python backend (or fallback): use tenant-level parser_ids or
+    // the hardcoded default parsers.
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     const filteredArray = parserArray.filter((x) => x.trim() !== '');
 
@@ -169,7 +224,7 @@ export const useSelectParserList = (): Array<{
       const arr = x.split(':');
       return { value: arr[0], label: arr[1] };
     });
-  }, [tenantInfo, defaultParsers]);
+  }, [tenantInfo, defaultParsers, isGo, pipelineListData, t]);
 
   return parserList;
 };
@@ -466,7 +521,11 @@ export const useDeleteLangfuseConfig = () => {
     mutationFn: async () => {
       const { data } = await userService.deleteLangfuseConfig();
       if (data.code === 0) {
-        message.success(t('message.deleted'));
+        if (data.data) {
+          message.success(t('message.deleted'));
+        } else {
+          message.warning(t('message.noLangfuseConfigToDelete'));
+        }
       }
       return data?.code;
     },

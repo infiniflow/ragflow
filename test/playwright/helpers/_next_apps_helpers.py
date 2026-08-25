@@ -15,10 +15,7 @@ def _unique_name(prefix: str) -> str:
 
 def _assert_not_on_login(page) -> None:
     if "/login" in page.url or page.locator("input[autocomplete='email']").count() > 0:
-        raise AssertionError(
-            "Expected authenticated session; landed on /login. "
-            "Ensure ensure_authed(...) was called and credentials are set."
-        )
+        raise AssertionError("Expected authenticated session; landed on /login. Ensure ensure_authed(...) was called and credentials are set.")
 
 
 def _goto_home(page, base_url: str) -> None:
@@ -71,9 +68,7 @@ def _nav_click(page, testid: str) -> None:
             else:
                 fallback = page.get_by_text(pattern)
         if fallback.count() == 0:
-            fallback = page.locator("button, [role='button'], a, span, div").filter(
-                has_text=pattern
-            )
+            fallback = page.locator("button, [role='button'], a, span, div").filter(has_text=pattern)
         expect(fallback.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         fallback.first.click()
         _ensure_expected_path()
@@ -107,9 +102,7 @@ def _open_create_from_list(
             pattern = create_text_map.get(create_btn_testid)
             clicked = False
             if pattern:
-                fallback_btn = page.get_by_role(
-                    "button", name=re.compile(pattern, re.I)
-                )
+                fallback_btn = page.get_by_role("button", name=re.compile(pattern, re.I))
                 if fallback_btn.count() > 0 and fallback_btn.first.is_visible():
                     fallback_btn.first.click()
                     clicked = True
@@ -122,17 +115,13 @@ def _open_create_from_list(
                 }
                 empty_pattern = empty_text_map.get(empty_testid)
                 if empty_pattern:
-                    empty_state = page.locator("div, section, article").filter(
-                        has_text=re.compile(empty_pattern, re.I)
-                    )
+                    empty_state = page.locator("div, section, article").filter(has_text=re.compile(empty_pattern, re.I))
                     if empty_state.count() > 0 and empty_state.first.is_visible():
                         empty_state.first.click()
                         clicked = True
 
             if not clicked:
-                fallback_card = page.locator(
-                    ".border-dashed, [class*='border-dashed']"
-                ).first
+                fallback_card = page.locator(".border-dashed, [class*='border-dashed']").first
                 expect(fallback_card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
                 fallback_card.click()
     if modal_testid == "agent-create-modal":
@@ -215,9 +204,7 @@ def _select_first_dataset_and_save(
         combo = search_scope.locator(f"[data-testid='{combobox_testid}']")
         if combo.count() > 0:
             return combo
-        combo = search_scope.locator("[role='combobox']").filter(
-            has_text=re.compile(r"select|dataset|please", re.I)
-        )
+        combo = search_scope.locator("[role='combobox']").filter(has_text=re.compile(r"select|dataset|please", re.I))
         if combo.count() > 0:
             return combo
         return search_scope.locator("[role='combobox']")
@@ -242,9 +229,7 @@ def _select_first_dataset_and_save(
             settings_button.first.click()
             break
 
-        settings_dialog = page.locator("[role='dialog']").filter(
-            has_text=re.compile(r"settings", re.I)
-        )
+        settings_dialog = page.locator("[role='dialog']").filter(has_text=re.compile(r"settings", re.I))
         if settings_dialog.count() > 0 and settings_dialog.first.is_visible():
             scope_root = settings_dialog.first
         combobox = _find_dataset_combobox(scope_root)
@@ -261,13 +246,9 @@ def _select_first_dataset_and_save(
 
     save_button = scope_root.locator(f"[data-testid='{save_testid}']")
     if save_button.count() == 0:
-        save_button = scope_root.get_by_role(
-            "button", name=re.compile(r"^save$", re.I)
-        )
+        save_button = scope_root.get_by_role("button", name=re.compile(r"^save$", re.I))
     if save_button.count() == 0:
-        save_button = scope_root.locator(
-            "button[type='submit']", has_text=re.compile(r"^save$", re.I)
-        ).first
+        save_button = scope_root.locator("button[type='submit']", has_text=re.compile(r"^save$", re.I)).first
     save_button = save_button.first
     expect(save_button).to_be_visible(timeout=timeout_ms)
 
@@ -294,10 +275,7 @@ def _select_first_dataset_and_save(
                     last_list_text = list_locator.inner_text() or ""
                 except Exception:
                     last_list_text = ""
-        raise AssertionError(
-            "Dataset option popover did not open. "
-            f"combobox_testid={combobox_testid!r} last_list_text={last_list_text[:200]!r}"
-        )
+        raise AssertionError(f"Dataset option popover did not open. combobox_testid={combobox_testid!r} last_list_text={last_list_text[:200]!r}")
 
     def _pick_first_dataset_option(options_root) -> bool:
         search_input = options_root.locator("[cmdk-input], input[placeholder*='Search']").first
@@ -327,12 +305,7 @@ def _select_first_dataset_and_save(
                     text = (candidate.inner_text() or "").strip().lower()
                 except Exception:
                     continue
-                if (
-                    not text
-                    or "no results found" in text
-                    or text == "close"
-                    or text == "clear"
-                ):
+                if not text or "no results found" in text or text == "close" or text == "clear":
                     continue
                 for _ in range(3):
                     try:
@@ -378,9 +351,7 @@ def _select_first_dataset_and_save(
         kb_ids = payload.get("kb_ids")
         return isinstance(kb_ids, list) and len(kb_ids) > 0
 
-    response_url_pattern = (
-        "/api/v1/chats" if save_testid == "chat-settings-save" else "/api/v1/searches/"
-    )
+    response_url_pattern = "/api/v1/chats" if save_testid == "chat-settings-save" else "/api/v1/searches/"
     last_payload = {}
     last_combobox_text = ""
     last_list_text = ""
@@ -388,10 +359,7 @@ def _select_first_dataset_and_save(
         options, last_list_text = _open_dataset_options()
         clicked = _pick_first_dataset_option(options)
         if not clicked:
-            raise AssertionError(
-                "Failed to select dataset option after retries. "
-                f"list_text={last_list_text[:200]!r}"
-            )
+            raise AssertionError(f"Failed to select dataset option after retries. list_text={last_list_text[:200]!r}")
 
         page.wait_for_timeout(120)
         try:
@@ -404,8 +372,7 @@ def _select_first_dataset_and_save(
             response = capture_response(
                 page,
                 lambda: save_button.click(),
-                lambda resp: response_url_pattern in resp.url
-                and resp.request.method in ("POST", "PUT", "PATCH"),
+                lambda resp: response_url_pattern in resp.url and resp.request.method in ("POST", "PUT", "PATCH"),
                 timeout_ms=response_timeout_ms,
             )
         except Exception:
@@ -432,15 +399,11 @@ def _select_first_dataset_and_save(
         page.wait_for_timeout(200 * (attempt + 1))
 
     raise AssertionError(
-        "Dataset selection did not persist in save payload. "
-        f"save_testid={save_testid!r} payload={last_payload!r} "
-        f"combobox_text={last_combobox_text!r} list_text={last_list_text[:200]!r}"
+        f"Dataset selection did not persist in save payload. save_testid={save_testid!r} payload={last_payload!r} combobox_text={last_combobox_text!r} list_text={last_list_text[:200]!r}"
     )
 
 
-def _send_chat_and_wait_done(
-    page, text: str, timeout_ms: int = 60000
-) -> None:
+def _send_chat_and_wait_done(page, text: str, timeout_ms: int = 60000) -> None:
     textarea = page.locator("[data-testid='chat-textarea']")
     expect(textarea).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     tag_name = ""
@@ -457,10 +420,7 @@ def _send_chat_and_wait_done(
     is_input = tag_name in ("INPUT", "TEXTAREA")
     is_editable = is_input or contenteditable == "true"
     if not is_editable:
-        raise AssertionError(
-            "chat-textarea is not an editable element. "
-            f"url={page.url} tag={tag_name!r} contenteditable={contenteditable!r}"
-        )
+        raise AssertionError(f"chat-textarea is not an editable element. url={page.url} tag={tag_name!r} contenteditable={contenteditable!r}")
 
     textarea.fill(text)
     typed_value = ""
@@ -484,11 +444,7 @@ def _send_chat_and_wait_done(
         except Exception:
             typed_value = ""
         if text not in (typed_value or ""):
-            raise AssertionError(
-                "Failed to type prompt into chat-textarea. "
-                f"url={page.url} tag={tag_name!r} contenteditable={contenteditable!r} "
-                f"typed_value={typed_value!r}"
-            )
+            raise AssertionError(f"Failed to type prompt into chat-textarea. url={page.url} tag={tag_name!r} contenteditable={contenteditable!r} typed_value={typed_value!r}")
 
     composer = textarea.locator("xpath=ancestor::form[1]")
     if composer.count() == 0:
@@ -496,13 +452,9 @@ def _send_chat_and_wait_done(
     send_button = None
     if composer.count() > 0:
         if hasattr(composer, "get_by_role"):
-            send_button = composer.get_by_role(
-                "button", name=re.compile(r"send message", re.I)
-            )
+            send_button = composer.get_by_role("button", name=re.compile(r"send message", re.I))
         if send_button is None or send_button.count() == 0:
-            send_button = composer.locator(
-                "button", has_text=re.compile(r"send message", re.I)
-            )
+            send_button = composer.locator("button", has_text=re.compile(r"send message", re.I))
     if send_button is not None and send_button.count() > 0:
         send_button.first.click()
         send_used = True
@@ -512,15 +464,11 @@ def _send_chat_and_wait_done(
 
     status_marker = page.locator("[data-testid='chat-stream-status']").first
     try:
-        expect(status_marker).to_have_attribute(
-            "data-status", "idle", timeout=timeout_ms
-        )
+        expect(status_marker).to_have_attribute("data-status", "idle", timeout=timeout_ms)
     except Exception as exc:
         try:
             # Some UI builds remove the stream-status marker when generation finishes.
-            expect(page.locator("[data-testid='chat-stream-status']")).to_have_count(
-                0, timeout=timeout_ms
-            )
+            expect(page.locator("[data-testid='chat-stream-status']")).to_have_count(0, timeout=timeout_ms)
             return
         except Exception:
             pass
@@ -545,9 +493,7 @@ def _wait_for_url_regex(page, pattern: str, timeout_ms: int = RESULT_TIMEOUT_MS)
     page.wait_for_url(regex, wait_until="commit", timeout=timeout_ms)
 
 
-def _wait_for_url_or_testid(
-    page, url_regex: str, testid: str, timeout_ms: int = RESULT_TIMEOUT_MS
-) -> str:
+def _wait_for_url_or_testid(page, url_regex: str, testid: str, timeout_ms: int = RESULT_TIMEOUT_MS) -> str:
     end_time = time.time() + (timeout_ms / 1000)
     regex = re.compile(url_regex)
     locator = page.locator(f"[data-testid='{testid}']")
@@ -563,6 +509,4 @@ def _wait_for_url_or_testid(
         except Exception:
             pass
         page.wait_for_timeout(100)
-    raise AssertionError(
-        f"Timed out waiting for url {url_regex!r} or testid {testid!r}. url={page.url}"
-    )
+    raise AssertionError(f"Timed out waiting for url {url_regex!r} or testid {testid!r}. url={page.url}")
