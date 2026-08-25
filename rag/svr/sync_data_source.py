@@ -37,8 +37,7 @@ from typing import Any
 
 from flask import json
 
-from api.utils.common import hash128
-from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.connector_service import ConnectorService, SyncLogsService, resolve_connector_doc_id
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
@@ -232,10 +231,8 @@ class SyncBase:
 
             docs = []
             for doc in document_batch:
-                legacy_doc_id = hash128(f"{task['connector_id']}:{doc.id}")
-                new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{doc.id}")
                 d = {
-                    "id": legacy_doc_id if legacy_doc_id in existing_doc_ids else new_doc_id,
+                    "id": resolve_connector_doc_id(task["kb_id"], task["connector_id"], doc.id, existing_doc_ids),
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -392,9 +389,8 @@ class _BlobLikeBase(SyncBase):
             if key_record.deleted:
                 continue
 
-            legacy_doc_id = hash128(f"{task['connector_id']}:{key_record.key}")
-            new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{key_record.key}")
-            stored = existing_fingerprints.get(legacy_doc_id, "") or existing_fingerprints.get(new_doc_id, "")
+            doc_id = resolve_connector_doc_id(task["kb_id"], task["connector_id"], key_record.key, existing_fingerprints)
+            stored = existing_fingerprints.get(doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
                 bypass_count += 1
                 continue
