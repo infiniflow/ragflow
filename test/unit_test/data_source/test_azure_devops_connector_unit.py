@@ -157,7 +157,10 @@ def _load_azure_devops_modules():
     try:
         utils = _load(f"{package_name}.azure_devops.utils", "common/data_source/azure_devops/utils.py")
         connector = _load(f"{package_name}.azure_devops.connector", "common/data_source/azure_devops/connector.py")
-        return utils, connector
+        # The connector raises these exact stub classes, so they are captured
+        # before sys.modules is restored.
+        exceptions = sys.modules[f"{package_name}.exceptions"]
+        return utils, connector, exceptions
     finally:
         for name in list(sys.modules):
             if name == package_name or name.startswith(f"{package_name}."):
@@ -167,7 +170,12 @@ def _load_azure_devops_modules():
                     sys.modules.pop(name, None)
 
 
-azure_utils, azure_connector = _load_azure_devops_modules()
+azure_utils, azure_connector, azure_exceptions = _load_azure_devops_modules()
+
+ConnectorMissingCredentialError = azure_exceptions.ConnectorMissingCredentialError
+CredentialExpiredError = azure_exceptions.CredentialExpiredError
+InsufficientPermissionsError = azure_exceptions.InsufficientPermissionsError
+UnexpectedValidationError = azure_exceptions.UnexpectedValidationError
 
 AzureDevOpsConnector = azure_connector.AzureDevOpsConnector
 INDEX_MODE_ORGANIZATION = azure_connector.INDEX_MODE_ORGANIZATION
@@ -207,6 +215,33 @@ class _FakeClient:
         return None
 
 
+class _FakeStreamResponse:
+    """Minimal stand-in for a streamed httpx response."""
+
+    def __init__(self, chunks: list[bytes], status_code: int = 200, content_type: str = "text/plain"):
+        self._chunks = chunks
+        self.status_code = status_code
+        self.headers = {"content-type": content_type}
+
+    def iter_bytes(self):
+        yield from self._chunks
+
+    def __enter__(self) -> "_FakeStreamResponse":
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+
+class _FakeStreamClient:
+    def __init__(self, response: _FakeStreamResponse):
+        self._response = response
+        self.consumed = 0
+
+    def stream(self, method: str, url: str, params=None, timeout=None) -> _FakeStreamResponse:
+        return self._response
+
+
 def _build_connector(**kwargs) -> AzureDevOpsConnector:
     connector = AzureDevOpsConnector(organization=kwargs.pop("organization", "contoso"), **kwargs)
     connector.load_credentials({"azure_devops_pat": "token"})
@@ -230,20 +265,20 @@ def test_invalid_token_returns_203_sign_in_page_not_401():
 
     Without this mapping the failure surfaces as an unrelated JSON parse error.
     """
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(CredentialExpiredError) as excinfo:
         azure_utils.raise_for_auth(_FakeResponse(status_code=203, content_type="text/html"))
     assert "personal access token" in str(excinfo.value).lower()
 
 
 @pytest.mark.p2
 def test_html_response_with_200_is_still_treated_as_sign_in_page():
-    with pytest.raises(Exception):
+    with pytest.raises(CredentialExpiredError):
         azure_utils.raise_for_auth(_FakeResponse(status_code=200, content_type="text/html; charset=utf-8"))
 
 
 @pytest.mark.p2
 def test_forbidden_response_reports_missing_code_read_scope():
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(InsufficientPermissionsError) as excinfo:
         azure_utils.raise_for_auth(_FakeResponse(status_code=403))
     assert "Code (Read)" in str(excinfo.value)
 
@@ -301,6 +336,24 @@ def test_document_extension_falls_back_to_txt_for_extensionless_files():
 
 
 @pytest.mark.p2
+def test_oversized_file_is_abandoned_mid_download():
+    """The limit is enforced while reading, not after the body is in memory."""
+    chunk = b"x" * 64_000
+    chunks = [chunk] * (azure_utils.MAX_FILE_BYTES // len(chunk) + 4)
+    client = _FakeStreamClient(_FakeStreamResponse(chunks))
+
+    content = azure_utils.fetch_file_content(client, "https://dev.azure.com/contoso/p/_apis/git/repositories/r", "/huge.bin", "master")
+    assert content is None
+
+
+@pytest.mark.p2
+def test_file_within_limit_is_returned():
+    client = _FakeStreamClient(_FakeStreamResponse([b"public class ", b"App {}"]))
+    content = azure_utils.fetch_file_content(client, "https://dev.azure.com/contoso/p/_apis/git/repositories/r", "/src/App.cs", "master")
+    assert content == b"public class App {}"
+
+
+@pytest.mark.p2
 def test_default_branch_strips_ref_prefix():
     assert azure_utils.default_branch_of({"defaultBranch": "refs/heads/master"}) == "master"
     assert azure_utils.default_branch_of({}) == "main"
@@ -309,7 +362,7 @@ def test_default_branch_strips_ref_prefix():
 @pytest.mark.p2
 def test_cleartext_collection_url_is_rejected():
     """The PAT travels in the Authorization header, so HTTP is refused."""
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(UnexpectedValidationError) as excinfo:
         azure_utils.organization_url("http://tfs.contoso.com/DefaultCollection")
     assert "HTTPS" in str(excinfo.value)
 
@@ -332,7 +385,7 @@ def test_html_body_is_not_an_auth_failure_for_raw_content():
 )
 def test_unusable_settings_are_rejected_before_any_request(overrides):
     connector = _build_connector(**overrides)
-    with pytest.raises(Exception):
+    with pytest.raises(UnexpectedValidationError, match="(?i)unsupported|required"):
         connector._validate_settings()
 
 
@@ -355,7 +408,7 @@ def test_active_pull_request_is_always_reindexed():
 @pytest.mark.p2
 def test_load_credentials_requires_personal_access_token():
     connector = AzureDevOpsConnector(organization="contoso")
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectorMissingCredentialError):
         connector.load_credentials({})
 
 

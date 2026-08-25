@@ -613,3 +613,52 @@ func TestAzureDevOpsActivePullRequestIsAlwaysReindexed(t *testing.T) {
 		t.Fatal("a pull request closed before the window must be skipped")
 	}
 }
+
+// A single oversized repository file must never be allocated in full.
+func TestAzureDevOpsOversizedFileIsSkippedWithoutFullRead(t *testing.T) {
+	served := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served++
+		w.Header().Set("Content-Type", "text/plain")
+		chunk := strings.Repeat("x", 64*1024)
+		for written := 0; written < azureDevOpsMaxFileBytes+256*1024; written += len(chunk) {
+			if _, err := io.WriteString(w, chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	connector := newTestAzureDevOpsConnector(t, server.URL, nil)
+	repo := azureDevOpsRepository{Project: "iddaa", Name: "repo-a", Branch: "master"}
+
+	content, err := connector.fetchFile(context.Background(), repo, "/huge.bin")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content != nil {
+		t.Fatalf("an oversized file must be skipped, got %d bytes", len(content))
+	}
+	if served != 1 {
+		t.Fatalf("expected exactly one request, got %d", served)
+	}
+}
+
+func TestAzureDevOpsFileWithinLimitIsReturned(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, "public class App {}")
+	}))
+	defer server.Close()
+
+	connector := newTestAzureDevOpsConnector(t, server.URL, nil)
+	repo := azureDevOpsRepository{Project: "iddaa", Name: "repo-a", Branch: "master"}
+
+	content, err := connector.fetchFile(context.Background(), repo, "/src/App.cs")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(content) != "public class App {}" {
+		t.Fatalf("unexpected content: %q", string(content))
+	}
+}

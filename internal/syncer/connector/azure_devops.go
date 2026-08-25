@@ -346,7 +346,10 @@ func (c *AzureDevOpsConnector) repoAPIURL(repo azureDevOpsRepository) string {
 // HTTP 203 and an HTML sign-in page rather than 401, so a naive status check
 // treats the sign-in page as a successful response and fails later while
 // decoding JSON. That case is detected here and surfaced as an auth error.
-func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string, expectJSON bool) ([]byte, error) {
+// A maxBytes of zero reads the whole response; a positive value stops one byte
+// past the limit so the caller can tell an oversized payload apart without ever
+// allocating it in full.
+func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string, expectJSON bool, maxBytes int64) ([]byte, error) {
 	delay := azureDevOpsRetryBaseDelay
 	var lastErr error
 
@@ -368,7 +371,11 @@ func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string, expectJSO
 			continue
 		}
 
-		body, readErr := io.ReadAll(response.Body)
+		var reader io.Reader = response.Body
+		if maxBytes > 0 {
+			reader = io.LimitReader(response.Body, maxBytes+1)
+		}
+		body, readErr := io.ReadAll(reader)
 		_ = response.Body.Close()
 		if readErr != nil {
 			return nil, readErr
@@ -409,7 +416,7 @@ func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string, expectJSO
 }
 
 func (c *AzureDevOpsConnector) getJSON(ctx context.Context, apiURL string, out any) error {
-	body, err := c.get(ctx, apiURL, true)
+	body, err := c.get(ctx, apiURL, true, 0)
 	if err != nil {
 		return err
 	}
@@ -593,11 +600,11 @@ func (c *AzureDevOpsConnector) fetchFile(ctx context.Context, repo azureDevOpsRe
 		"versionDescriptor.versionType": {"branch"},
 		"versionDescriptor.version":     {repo.Branch},
 	}
-	body, err := c.get(ctx, c.apiURL(c.repoAPIURL(repo)+"/items", query), false)
+	body, err := c.get(ctx, c.apiURL(c.repoAPIURL(repo)+"/items", query), false, azureDevOpsMaxFileBytes)
 	if err != nil {
 		return nil, err
 	}
-	if len(body) > azureDevOpsMaxFileBytes {
+	if int64(len(body)) > azureDevOpsMaxFileBytes {
 		return nil, nil
 	}
 	return body, nil

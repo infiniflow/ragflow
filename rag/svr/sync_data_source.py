@@ -1916,7 +1916,9 @@ class AzureDevOps(SyncBase):
                 iterations += 1
                 if iterations > iteration_limit:
                     logging.error("Azure DevOps sync exceeded %d iterations; aborting to avoid an endless loop.", iteration_limit)
-                    break
+                    # Breaking here would end the generator normally and the task
+                    # would be recorded as a successful, complete sync.
+                    raise RuntimeError(f"Azure DevOps sync exceeded {iteration_limit} iterations before completing.")
 
                 gen = self.connector.load_from_checkpoint(start=start_time.timestamp(), end=end_time.timestamp(), checkpoint=checkpoint)
 

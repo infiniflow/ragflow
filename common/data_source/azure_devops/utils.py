@@ -229,9 +229,57 @@ def list_items(client: httpx.Client, repo_api_url: str, branch: str) -> list[dic
     ]
 
 
+@retry_builder(
+    tries=6,
+    delay=1,
+    backoff=2,
+    max_delay=30,
+    exceptions=(AzureDevOpsRetriableError, httpx.RequestError),
+)
+@rate_limit_builder(max_calls=120, period=60)
+def azure_devops_get_bytes(
+    client: httpx.Client,
+    url: str,
+    params: dict[str, Any],
+    max_bytes: int,
+) -> bytes | None:
+    """Stream a raw response, stopping once it exceeds ``max_bytes``.
+
+    Reading the whole body first and checking the size afterwards would let a
+    single oversized repository file allocate unbounded memory, so the limit is
+    enforced while the body is still being read.
+    """
+    with client.stream("GET", url, params=params, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        raise_for_auth(response, expect_json=False)
+
+        status = response.status_code
+        if status == 429:
+            retry_after = response.headers.get("Retry-After")
+            if retry_after is not None:
+                try:
+                    time.sleep(int(retry_after))
+                except (TypeError, ValueError):
+                    pass
+            raise AzureDevOpsRetriableError("Azure DevOps rate limit exceeded (429).")
+        if 500 <= status < 600:
+            raise AzureDevOpsRetriableError(f"Azure DevOps server error: {status}")
+        if 400 <= status < 500:
+            raise AzureDevOpsNonRetriableError(f"Azure DevOps client error: {status} for {url}")
+
+        chunks: list[bytes] = []
+        size = 0
+        for chunk in response.iter_bytes():
+            size += len(chunk)
+            if size > max_bytes:
+                return None
+            chunks.append(chunk)
+
+    return b"".join(chunks)
+
+
 def fetch_file_content(client: httpx.Client, repo_api_url: str, path: str, branch: str) -> bytes | None:
     """Download a single file, or return ``None`` when it is too large to index."""
-    response = azure_devops_get(
+    return azure_devops_get_bytes(
         client,
         f"{repo_api_url}/items",
         {
@@ -242,13 +290,8 @@ def fetch_file_content(client: httpx.Client, repo_api_url: str, path: str, branc
             "versionDescriptor.versionType": "branch",
             "versionDescriptor.version": branch,
         },
-        expect_json=False,
+        MAX_FILE_BYTES,
     )
-    if response.status_code < 200 or response.status_code >= 300:
-        raise UnexpectedValidationError(f"Failed to read {path} (status={response.status_code}).")
-
-    content = response.content
-    return None if len(content) > MAX_FILE_BYTES else content
 
 
 def pull_request_may_be_truncated(pull_request: dict[str, Any]) -> bool:
