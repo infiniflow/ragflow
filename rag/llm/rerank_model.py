@@ -24,7 +24,6 @@ from http import HTTPStatus
 
 import numpy as np
 import requests
-from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
@@ -628,7 +627,6 @@ class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
     def __init__(self, key, model_name="gte-rerank-v2", **kwargs):
-
         self.api_key = key
         self.model_name = model_name if model_name else "gte-rerank-v2"
         # Remove invalid global timeout, use official SDK per-request timeout parameter

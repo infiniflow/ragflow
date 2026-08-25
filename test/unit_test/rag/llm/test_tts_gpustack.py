@@ -68,7 +68,11 @@ def test_gpustack_tts_logs_stream_completion_after_audio_consumption():
     def record_info(message, *args):
         events.append(message)
 
-    with patch.object(provider, "_send_request", return_value=response), patch.object(provider, "_process_response", return_value=audio_iterator()), patch("rag.llm.tts_model.logger.info", side_effect=record_info):
+    with (
+        patch.object(provider, "_send_request", return_value=response),
+        patch.object(provider, "_process_response", return_value=audio_iterator()),
+        patch("rag.llm.tts_model.logger.info", side_effect=record_info),
+    ):
         stream = provider.tts("hello", voice="aiden")
         assert "GPUStack TTS response received for model %s with status %s" in events
         assert "GPUStack TTS audio stream completed for model %s with status %s" not in events
