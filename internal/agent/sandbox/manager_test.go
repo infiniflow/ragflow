@@ -381,7 +381,7 @@ func TestBuildProviderFromConfig_UnknownType(t *testing.T) {
 func TestBuildProviderFromConfig_SelfManaged_HappyPath(t *testing.T) {
 	t.Parallel()
 	p, err := buildProviderFromConfig(ProviderSelfManaged, map[string]any{
-		"EXECUTOR_MANAGER_URL": "http://example.invalid:9999",
+		"endpoint": "http://example.invalid:9999",
 	})
 	if err != nil {
 		t.Fatalf("buildProviderFromConfig: %v", err)
@@ -649,8 +649,8 @@ func TestReloadFromSettingsWithReader(t *testing.T) {
 		rows: map[string][]entity.SystemSettings{
 			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "self_managed"}},
 			"sandbox.self_managed": {{Name: "sandbox.self_managed", Value: `{
-				"EXECUTOR_MANAGER_URL": "` + srv.URL + `",
-				"EXECUTOR_MANAGER_TIMEOUT": "5s"
+				"endpoint": "` + srv.URL + `",
+				"timeout": "5s"
 			}`}},
 		},
 	}

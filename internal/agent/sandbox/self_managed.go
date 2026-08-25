@@ -131,7 +131,10 @@ func newSelfManagedProviderFromEnv() *SelfManagedProvider {
 // environment variables configures Python and Go identically.
 func configStringEnv(cfg map[string]any, envName string, keys ...string) string {
 	for _, key := range keys {
-		if value := configString(cfg, key); value != "" {
+		// Blank-after-trim values count as absent so they fall through to
+		// the environment, matching the Python provider's
+		// `config.get(...) or env` resolution.
+		if value := strings.TrimSpace(configString(cfg, key)); value != "" {
 			return value
 		}
 	}
