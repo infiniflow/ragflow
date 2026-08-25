@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRetrievalUsesPrefetchSizeAsCandidateSet(t *testing.T) {
+func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
@@ -34,7 +34,7 @@ func TestRetrievalUsesPrefetchSizeAsCandidateSet(t *testing.T) {
 	threshold := 0.5
 	vectorWeight := 1.0
 	aggs := false
-	prefetchSize := 70
+	rerankCandidatesCount := 70
 
 	result, err := service.Retrieval(context.Background(), &RetrievalRequest{
 		Question:               "alpha",
@@ -46,7 +46,7 @@ func TestRetrievalUsesPrefetchSizeAsCandidateSet(t *testing.T) {
 		VectorSimilarityWeight: &vectorWeight,
 		Aggs:                   &aggs,
 		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
-		PrefetchSize:           &prefetchSize,
+		RerankCandidatesCount:  &rerankCandidatesCount,
 	})
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
@@ -57,8 +57,8 @@ func TestRetrievalUsesPrefetchSizeAsCandidateSet(t *testing.T) {
 	if result.Total != 70 {
 		t.Fatalf("total = %d, want 70", result.Total)
 	}
-	if len(engine.searchLimits) != 1 || engine.searchLimits[0] != prefetchSize {
-		t.Fatalf("search limits = %v, want [%d]", engine.searchLimits, prefetchSize)
+	if len(engine.searchLimits) != 1 || engine.searchLimits[0] != rerankCandidatesCount {
+		t.Fatalf("search limits = %v, want [%d]", engine.searchLimits, rerankCandidatesCount)
 	}
 	for _, filters := range engine.searchFilters {
 		mustNot, ok := filters["must_not"].(map[string]interface{})

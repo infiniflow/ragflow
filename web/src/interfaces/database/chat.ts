@@ -80,7 +80,7 @@ export interface IDialog {
   similarity_threshold: number;
   top_k: number;
   top_n: number;
-  prefetch_size: number;
+  rerank_candidates_count: number;
   rerank_id?: string;
   tenant_rerank_id?: string;
   meta_data_filter: MetaDataFilter;

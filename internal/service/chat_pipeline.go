@@ -613,9 +613,9 @@ func (s *ChatPipelineService) AsyncChat(
 			"doc_aggs": []interface{}{},
 		}
 		var knowledges []string
-		prefetchSize := int(chat.PrefetchSize)
-		if prefetchSize <= 0 {
-			prefetchSize = 64
+		rerankCandidatesCount := int(chat.RerankCandidatesCount)
+		if rerankCandidatesCount <= 0 {
+			rerankCandidatesCount = 64
 		}
 
 		// When hasKnowledgeParam is true, runs (mutually exclusive):
@@ -640,14 +640,14 @@ func (s *ChatPipelineService) AsyncChat(
 					// KB retrieval callback for the deep researcher
 					kbRetrieve := func(ctx context.Context, q string) (*nlp.RetrievalResult, error) {
 						return retSvc.Retrieval(ctx, &nlp.RetrievalRequest{
-							Question:       q,
-							TenantIDs:      tenantIDs,
-							KbIDs:          kbIDs,
-							DocIDs:         docIDs,
-							Page:           1,
-							PageSize:       int(chat.TopN),
-							PrefetchSize:   &prefetchSize,
-							EmbeddingModel: embModel,
+							Question:              q,
+							TenantIDs:             tenantIDs,
+							KbIDs:                 kbIDs,
+							DocIDs:                docIDs,
+							Page:                  1,
+							PageSize:              int(chat.TopN),
+							RerankCandidatesCount: &rerankCandidatesCount,
+							EmbeddingModel:        embModel,
 						})
 					}
 
@@ -702,7 +702,7 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:                 docIDs,
 							Page:                   1,
 							PageSize:               topN,
-							PrefetchSize:           &prefetchSize,
+							RerankCandidatesCount:  &rerankCandidatesCount,
 							Top:                    &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,

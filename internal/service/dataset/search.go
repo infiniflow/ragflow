@@ -38,9 +38,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if req.Size != nil {
 		pageSize = *req.Size
 	}
-	prefetchSize := 64
-	if req.PrefetchSize != nil {
-		prefetchSize = *req.PrefetchSize
+	rerankCandidatesCount := 64
+	if req.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *req.RerankCandidatesCount
 	}
 	useKG := false
 	if req.UseKG != nil {
@@ -131,7 +131,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
-			prefetchSize = 100
+			rerankCandidatesCount = 100
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
 			}
@@ -149,8 +149,8 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 					topK = 2048
 				}
 			}
-			if scPrefetchSize, ok := common.GetInt(searchConfig["prefetch_size"]); ok {
-				prefetchSize = scPrefetchSize
+			if scRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
+				rerankCandidatesCount = scRerankCandidatesCount
 			}
 			if scUseKG, ok := searchConfig["use_kg"].(bool); ok {
 				useKG = scUseKG
@@ -271,7 +271,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		DocIDs:                 docIDs,
 		Page:                   page,
 		PageSize:               pageSize,
-		PrefetchSize:           &prefetchSize,
+		RerankCandidatesCount:  &rerankCandidatesCount,
 		Top:                    &topK,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,

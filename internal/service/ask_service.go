@@ -30,7 +30,7 @@ import (
 const (
 	DefaultAskPage                   = 1
 	DefaultAskPageSize               = 12
-	DefaultAskPrefetchSize           = 100
+	DefaultAskRerankCandidatesCount  = 100
 	DefaultAskTopK                   = 1024
 	DefaultAskSimilarityThreshold    = 0.1
 	DefaultAskVectorSimilarityWeight = 0.3
@@ -66,7 +66,7 @@ type AskStreamOptions struct {
 	DocIDs                 []string
 	UseKG                  *bool
 	TopK                   *int
-	PrefetchSize           *int
+	RerankCandidatesCount  *int
 	CrossLanguages         []string
 	Filter                 map[string]interface{}
 	TenantRerankID         *string
@@ -161,9 +161,9 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	if opts.VectorSimilarityWeight != nil {
 		vectorSimilarityWeight = *opts.VectorSimilarityWeight
 	}
-	prefetchSize := DefaultAskPrefetchSize
-	if opts.PrefetchSize != nil {
-		prefetchSize = *opts.PrefetchSize
+	rerankCandidatesCount := DefaultAskRerankCandidatesCount
+	if opts.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *opts.RerankCandidatesCount
 	}
 
 	req := &RetrievalTestRequest{
@@ -172,7 +172,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 		DocIDs:                 opts.DocIDs,
 		UseKG:                  opts.UseKG,
 		TopK:                   ptrInt(topK),
-		PrefetchSize:           ptrInt(prefetchSize),
+		RerankCandidatesCount:  ptrInt(rerankCandidatesCount),
 		CrossLanguages:         opts.CrossLanguages,
 		Filter:                 opts.Filter,
 		TenantRerankID:         opts.TenantRerankID,

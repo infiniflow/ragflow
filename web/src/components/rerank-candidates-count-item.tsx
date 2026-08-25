@@ -19,26 +19,26 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { SliderInputFormField } from './slider-input-form-field';
 
-export const prefetchSizeSchema = {
-  prefetch_size: z.number().int().min(64).max(256),
+export const rerankCandidatesCountSchema = {
+  rerank_candidates_count: z.number().int().min(64).max(256),
 };
 
-interface PrefetchSizeFormFieldProps {
+interface RerankCandidatesCountFormFieldProps {
   defaultValue?: number;
   name?: string;
 }
 
-export function PrefetchSizeFormField({
+export function RerankCandidatesCountFormField({
   defaultValue = 64,
-  name = 'prefetch_size',
-}: PrefetchSizeFormFieldProps) {
+  name = 'rerank_candidates_count',
+}: RerankCandidatesCountFormFieldProps) {
   const { t } = useTranslation();
 
   return (
     <SliderInputFormField
       name={name}
-      label={t('chat.prefetchSize')}
-      tooltip={t('chat.prefetchSizeTip')}
+      label={t('chat.rerankCandidatesCount')}
+      tooltip={t('chat.rerankCandidatesCountTip')}
       min={64}
       max={256}
       defaultValue={defaultValue}

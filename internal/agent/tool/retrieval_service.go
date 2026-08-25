@@ -52,7 +52,7 @@ type RetrievalRequest struct {
 	DatasetIDs               []string
 	MemoryIDs                []string
 	TopN                     int
-	PrefetchSize             int
+	RerankCandidatesCount    int
 	TopK                     int
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
