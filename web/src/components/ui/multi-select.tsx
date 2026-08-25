@@ -46,6 +46,16 @@ export type MultiSelectGroupOptionType = {
   options: MultiSelectOptionType[];
 };
 
+/**
+ * cmdk's default filter scores matches fuzzily and re-sorts the list by
+ * score, which shuffles options out of their declared order as the user
+ * types. A plain substring match scores every hit equally, so cmdk's
+ * stable sort leaves the original order intact.
+ */
+function filterBySubstring(value: string, search: string) {
+  return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
+}
+
 function MultiCommandItem({
   option,
   isSelected,
@@ -485,7 +495,11 @@ export const MultiSelect = React.forwardRef<
           onFocusOutside={(event) => event.preventDefault()}
           data-testid={popoverTestId}
         >
-          <Command className="p-5 pb-8" shouldFilter={shouldFilter}>
+          <Command
+            className="p-5 pb-8"
+            shouldFilter={shouldFilter}
+            filter={filterBySubstring}
+          >
             {((options && options.length > 0) || onSearchChange) && (
               <CommandInput
                 placeholder={t('common.search') + '...'}
