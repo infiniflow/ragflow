@@ -10,6 +10,7 @@ import {
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { ConfigurationFormContainer } from '../configuration-form-container';
+import { GlobalIndexModelItem } from './common-item';
 
 const ROLE_OPTIONS = [
   { value: 'both', labelKey: 'tableColumnRoleBoth' },
@@ -68,6 +69,7 @@ export function TableConfiguration() {
 
   return (
     <ConfigurationFormContainer>
+      <GlobalIndexModelItem />
       <FormItem className="space-y-2">
         <FormLabel className="text-sm font-medium">
           {t('tableColumnMode')}
