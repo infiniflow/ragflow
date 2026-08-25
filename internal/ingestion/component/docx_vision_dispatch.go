@@ -249,7 +249,12 @@ func figureVisionPromptsBaseDir() (string, error) {
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {
-	dataURI := "data:image/png;base64," + imageBase64
+	dataURI := strings.TrimSpace(imageBase64)
+	if !strings.HasPrefix(dataURI, "data:image/") &&
+		!strings.HasPrefix(dataURI, "http://") &&
+		!strings.HasPrefix(dataURI, "https://") {
+		dataURI = "data:image/png;base64," + dataURI
+	}
 	return []modelModule.Message{{
 		Role: "user",
 		Content: []interface{}{

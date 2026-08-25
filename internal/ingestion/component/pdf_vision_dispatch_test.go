@@ -156,6 +156,12 @@ func TestMaybeDispatchPDFVisionEnhancementForwardsDatasetLanguage(t *testing.T) 
 	if got := res.JSON[0]["text"]; got != "caption\na diagram of a pipeline" {
 		t.Fatalf("enhanced text = %q", got)
 	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("vision invoker called %d times, want 1", len(invoker.images))
+	}
+	if want := "data:image/png;base64,aW1hZ2U="; invoker.images[0] != want {
+		t.Fatalf("vision image data URI = %q, want %q (no double data: prefix)", invoker.images[0], want)
+	}
 }
 
 // TestIsNamedPDFParseMethodWhitelistAligned verifies that the runtime
