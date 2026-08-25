@@ -76,7 +76,7 @@ func TestProcessMessage_BurstNoTaskLossUnderBackpressure(t *testing.T) {
 
 	taskIDs := seedBurstTasks(t, db, burstTaskCount)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Slow worker: model a saturated pipeline so the channel is full during
 	// the burst, forcing the backpressure path.
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {

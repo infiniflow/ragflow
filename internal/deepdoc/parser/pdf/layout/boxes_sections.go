@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"encoding/base64"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -57,18 +58,33 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 		if t == "" {
 			continue
 		}
-		toPage, bottom := ResolvePageSpan(b.PageNumber, b.Bottom, pageHeights)
 
 		var posTag string
 		var pageNums []int
-		if b.PageNumber == toPage {
-			posTag = util.FormatPositionTag(b.PageNumber, b.X0, b.X1, b.Top, bottom)
-			pageNums = []int{b.PageNumber}
+		var bottom float64
+		if len(b.Pages) > 0 {
+			// Box carries an explicit page span (e.g. a cross-page merged
+			// table). Use it directly instead of inferring from geometry, so
+			// the section records every page the box occupies.
+			pageNums = b.Pages
+			bottom = b.Bottom
+			if len(pageNums) == 1 {
+				posTag = util.FormatPositionTag(pageNums[0], b.X0, b.X1, b.Top, bottom)
+			} else {
+				posTag = util.FormatPositionTagRange(pageNums[0], pageNums[len(pageNums)-1], b.X0, b.X1, b.Top, bottom)
+			}
 		} else {
-			posTag = util.FormatPositionTagRange(b.PageNumber, toPage, b.X0, b.X1, b.Top, bottom)
-			pageNums = make([]int, 0, toPage-b.PageNumber+1)
-			for p := b.PageNumber; p <= toPage; p++ {
-				pageNums = append(pageNums, p)
+			toPage, resolved := ResolvePageSpan(b.PageNumber, b.Bottom, pageHeights)
+			bottom = resolved
+			if b.PageNumber == toPage {
+				posTag = util.FormatPositionTag(b.PageNumber, b.X0, b.X1, b.Top, bottom)
+				pageNums = []int{b.PageNumber}
+			} else {
+				posTag = util.FormatPositionTagRange(b.PageNumber, toPage, b.X0, b.X1, b.Top, bottom)
+				pageNums = make([]int, 0, toPage-b.PageNumber+1)
+				for p := b.PageNumber; p <= toPage; p++ {
+					pageNums = append(pageNums, p)
+				}
 			}
 		}
 		sections = append(sections, pdf.Section{
@@ -101,22 +117,45 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 	}
 }
 
-// SectionsToMarkdown converts Sections to a Markdown string.
-//
-// Title sections get a "## " prefix.
-// Figure sections produce an "![Image](data:image/png;base64,...)" tag.
-// Text and all other sections are appended verbatim.
-//
-// This mirrors the Python parser.py:665-671 Markdown output path.
+// InlinePNGDataURL ensures a raw base64 or Data URI string has a valid
+// "data:image/png;base64," prefix. It trims surrounding whitespace, preserves
+// pre-formatted data/http URIs, normalizes line-wrapped base64 by stripping
+// CR/LF/whitespace, and validates raw base64 before prefixing.
+func InlinePNGDataURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "data:image/") || strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return raw
+	}
+	cleaned := strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, raw)
+	if cleaned == "" {
+		return ""
+	}
+	if _, err := base64.StdEncoding.DecodeString(cleaned); err != nil {
+		if _, rerr := base64.RawStdEncoding.DecodeString(cleaned); rerr != nil {
+			return raw
+		}
+	}
+	return "data:image/png;base64," + cleaned
+}
+
 func SectionsToMarkdown(sections []pdf.Section) string {
 	var b strings.Builder
 	for _, s := range sections {
 		if s.LayoutType == pdf.LayoutTypeTitle {
 			b.WriteString("\n## ")
 		}
-		if s.LayoutType == pdf.LayoutTypeFigure && s.Image != "" {
-			b.WriteString("\n![Image](data:image/png;base64,")
-			b.WriteString(s.Image)
+		imgURL := InlinePNGDataURL(s.Image)
+		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && strings.TrimSpace(s.Text) == "")) && imgURL != "" {
+			b.WriteString("\n![Image](")
+			b.WriteString(imgURL)
 			b.WriteString(")")
 			continue
 		}

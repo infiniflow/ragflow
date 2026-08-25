@@ -198,7 +198,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "")
 	}
 
 	return result, nil
@@ -274,7 +274,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	applyDocumentAvailability(chunks, docStatus)
 
-	oldCompiledProductIDs, err := s.loadDocumentCompiledProductIDs(ctx)
+	oldCompiledProductIDs, oldCompiledVariants, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -299,13 +299,17 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// and is best-effort / non-fatal — a delivery failure is logged but does not
 	// fail the pipeline task.
 	//
-	// The variants passed to PublishCompleted are the compile types this document
-	// produced, derived from the authoritative `compilation_template_kind_kwd` the
-	// KnowledgeCompiler component stamps on each compiled product (the resolved
-	// template's kind → KindToVariant, O2a whitelist). This is the compiler's
-	// runtime inference surfaced here, NOT a re-derivation from `compile_kwd`.
-	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, compiledVariants(chunks)); err != nil {
-		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
+	// The variants passed to PublishCompleted are the union of the compile types
+	// in the previous and current document generations. They are derived from the
+	// authoritative `compilation_template_kind_kwd` the KnowledgeCompiler
+	// component stamps on each compiled product (the resolved template's kind →
+	// KindToVariant, O2a whitelist). Keeping the previous types lets the dataset
+	// consumer retract stale merged products when a template is removed.
+	eventVariants := mergeCompiledVariants(oldCompiledVariants, compiledVariants(chunks))
+	if len(eventVariants) > 0 {
+		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants); err != nil {
+			common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
+		}
 	}
 
 	// Compilation products are derived artifacts and must not inflate the
@@ -434,28 +438,29 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 	}
 }
 
-// loadDocumentCompiledProductIDs snapshots the previous successful document
+// loadDocumentCompiledState snapshots the previous successful document
 // compiler generation before the new pipeline output is written. Reading first
 // avoids relying on immediate search visibility after a bulk index write.
-func (s *PipelineExecutor) loadDocumentCompiledProductIDs(ctx context.Context) ([]string, error) {
+func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, error) {
 	docEngine := engine.Get()
 	if docEngine == nil || s == nil || s.taskCtx == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	const pageSize = 1000
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
 	oldIDs := make([]string, 0)
+	oldProducts := make([]map[string]any, 0)
 	for offset := 0; ; offset += pageSize {
 		result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{s.taskCtx.Doc.KbID},
 			Offset:       offset,
 			Limit:        pageSize,
-			SelectFields: []string{"id", "compile_kwd"},
+			SelectFields: []string{"id", "compile_kwd", "compilation_template_kind_kwd"},
 			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("load document compiler products: %w", err)
+			return nil, nil, fmt.Errorf("load document compiler products: %w", err)
 		}
 		if result == nil || len(result.Chunks) == 0 {
 			break
@@ -464,6 +469,7 @@ func (s *PipelineExecutor) loadDocumentCompiledProductIDs(ctx context.Context) (
 			if strings.TrimSpace(asCompiledKwd(row)) == "" {
 				continue
 			}
+			oldProducts = append(oldProducts, row)
 			if id := strings.TrimSpace(anyString(row["id"])); id != "" {
 				oldIDs = append(oldIDs, id)
 			}
@@ -472,7 +478,7 @@ func (s *PipelineExecutor) loadDocumentCompiledProductIDs(ctx context.Context) (
 			break
 		}
 	}
-	return oldIDs, nil
+	return oldIDs, compiledVariants(oldProducts), nil
 }
 
 // reconcileDocumentCompiledProducts advances the document-level compiler
@@ -577,6 +583,32 @@ func compiledVariants(chunks []map[string]any) []string {
 	return out
 }
 
+// mergeCompiledVariants returns the union of the previous and current
+// document-level compiler variants. A reparse that removes a compiler template
+// still needs to notify the dataset consumer so it can retract stale merged
+// products; a document that never had compiler products produces an empty set
+// and does not wake the dataset consumer at all.
+func mergeCompiledVariants(previous, current []string) []string {
+	seen := make(map[string]struct{}, len(previous)+len(current))
+	for _, variants := range [][]string{previous, current} {
+		for _, variant := range variants {
+			variant = strings.TrimSpace(variant)
+			if variant != "" {
+				seen[variant] = struct{}{}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	merged := make([]string, 0, len(seen))
+	for variant := range seen {
+		merged = append(merged, variant)
+	}
+	sort.Strings(merged)
+	return merged
+}
+
 // asCompiledKwd extracts the compile_kwd keyword value from a chunk map,
 // tolerating both a bare string and a list-wrapped keyword column from the
 // engine. It returns "" when absent.
@@ -655,22 +687,65 @@ func wikiActiveStates(output map[string]any) ([]kccommon.WikiMapActiveState, err
 	}
 }
 
-func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+// PipelineLogInput contains the identifiers and optional snapshots needed to
+// persist a pipeline operation log without constructing a PipelineExecutor.
+type PipelineLogInput struct {
+	TenantID   string
+	KbID       string
+	DocumentID string
+	PipelineID string
+	DSL        string
+	Status     string
+	Document   entity.Document
+}
+
+// RecordPipelineLog persists a pipeline operation log without requiring
+// executor setup. Callers that already know a terminal state should pass it in
+// Status; otherwise the writer falls back to the latest document.run value.
+func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
+	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
+}
+
+func recordPipelineLog(
+	ctx context.Context,
+	db *gorm.DB,
+	input PipelineLogInput,
+	createFunc func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error,
+) error {
 	var dslMap entity.JSONMap
-	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
-		dslMap = entity.JSONMap{"raw": dsl}
+	if strings.TrimSpace(input.DSL) == "" {
+		dslMap = entity.JSONMap{}
+	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
+		dslMap = entity.JSONMap{"raw": input.DSL}
 	}
 
 	// The task context contains the document snapshot loaded when the task
 	// started. Reload it here so the operation log reflects the final progress
 	// state written by the progress sink, matching the Python operation-log
 	// creation path.
-	doc := s.taskCtx.Doc
+	doc := input.Document
+	if doc.ID == "" {
+		doc.ID = input.DocumentID
+		doc.KbID = input.KbID
+	}
 	if db != nil {
-		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, docID); err == nil && persisted != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, input.DocumentID); err == nil && persisted != nil {
 			doc = *persisted
 		} else if err != nil {
-			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", docID, err))
+			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", input.DocumentID, err))
+		}
+	}
+	if input.KbID == "" {
+		input.KbID = doc.KbID
+	}
+	if input.PipelineID == "" && doc.PipelineID != nil {
+		input.PipelineID = strings.TrimSpace(*doc.PipelineID)
+	}
+	if input.TenantID == "" && db != nil && input.KbID != "" {
+		if kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, input.KbID); err == nil && kb != nil {
+			input.TenantID = kb.TenantID
+		} else if err != nil {
+			return fmt.Errorf("load knowledgebase %s for pipeline log: %w", input.KbID, err)
 		}
 	}
 
@@ -682,22 +757,22 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
-	if s.taskCtx.PipelineID != "" {
-		pipelineID = &s.canvasID
-		if db != nil {
-			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+	if input.PipelineID != "" {
+		pipelineID = &input.PipelineID
+		if db != nil && strings.TrimSpace(input.DSL) != "" {
+			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil {
 					pipelineTitle = *canvas.Title
 				}
 				pipelineAvatar = canvas.Avatar
 			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
-				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
+				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", input.PipelineID, err))
 			}
 		}
 	}
 
-	operationStatus := status
-	if doc.Run != nil && *doc.Run != "" {
+	operationStatus := input.Status
+	if operationStatus == "" && doc.Run != nil && *doc.Run != "" {
 		operationStatus = *doc.Run
 	}
 	statusValue := "1"
@@ -714,9 +789,9 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
-		TenantID:        s.Tenant().ID,
-		KbID:            s.KB().ID,
-		DocumentID:      docID,
+		TenantID:        input.TenantID,
+		KbID:            input.KbID,
+		DocumentID:      input.DocumentID,
 		PipelineID:      pipelineID,
 		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
@@ -734,7 +809,23 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		Avatar:          pipelineAvatar,
 		Status:          &statusValue,
 	}
-	if err := s.logCreateFunc(ctx, db, log); err != nil {
+	return createFunc(ctx, db, log)
+}
+
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+	pipelineID := ""
+	if s.taskCtx.PipelineID != "" {
+		pipelineID = s.canvasID
+	}
+	if err := recordPipelineLog(ctx, db, PipelineLogInput{
+		TenantID:   s.Tenant().ID,
+		KbID:       s.KB().ID,
+		DocumentID: docID,
+		PipelineID: pipelineID,
+		DSL:        dsl,
+		Status:     status,
+		Document:   s.taskCtx.Doc,
+	}, s.logCreateFunc); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
 }

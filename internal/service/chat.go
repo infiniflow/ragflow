@@ -200,6 +200,7 @@ type CreateChatRequest struct {
 	PromptConfig           map[string]interface{} `json:"prompt_config"`
 	Description            *string
 	TopN                   *int
+	RerankCandidatesCount  *int
 	TopK                   *int
 	SimilarityThreshold    *float64
 	VectorSimilarityWeight *float64
@@ -298,6 +299,9 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	}
 	if _, ok := req["top_n"]; !ok {
 		req["top_n"] = 6
+	}
+	if _, ok := req["rerank_candidates_count"]; !ok {
+		req["rerank_candidates_count"] = 64
 	}
 	if _, ok := req["top_k"]; !ok {
 		req["top_k"] = 1024
@@ -501,7 +505,7 @@ func filterCreateChatPersistedFields(req map[string]interface{}) {
 	persisted := map[string]struct{}{
 		"name": {}, "description": {}, "icon": {}, "language": {}, "llm_id": {}, "tenant_llm_id": {},
 		"llm_setting": {}, "prompt_type": {}, "prompt_config": {}, "meta_data_filter": {},
-		"similarity_threshold": {}, "vector_similarity_weight": {}, "top_n": {}, "top_k": {},
+		"similarity_threshold": {}, "vector_similarity_weight": {}, "top_n": {}, "rerank_candidates_count": {}, "top_k": {},
 		"do_refer": {}, "rerank_id": {}, "tenant_rerank_id": {}, "kb_ids": {}, "status": {},
 	}
 	for key := range req {
@@ -549,6 +553,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		SimilarityThreshold:    floatFromValue(req["similarity_threshold"]),
 		VectorSimilarityWeight: floatFromValue(req["vector_similarity_weight"]),
 		TopN:                   int64FromValue(req["top_n"]),
+		RerankCandidatesCount:  int64FromValue(req["rerank_candidates_count"]),
 		TopK:                   int64FromValue(req["top_k"]),
 		DoRefer:                stringFromValue(req["do_refer"]),
 		RerankID:               rerankID,
@@ -799,6 +804,7 @@ var chatPersistedFields = map[string]struct{}{
 	"similarity_threshold":     {},
 	"vector_similarity_weight": {},
 	"top_n":                    {},
+	"rerank_candidates_count":  {},
 	"top_k":                    {},
 	"do_refer":                 {},
 	"rerank_id":                {},
@@ -1156,6 +1162,7 @@ func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Ch
 		"similarity_threshold":     chat.SimilarityThreshold,
 		"vector_similarity_weight": chat.VectorSimilarityWeight,
 		"top_n":                    chat.TopN,
+		"rerank_candidates_count":  chat.RerankCandidatesCount,
 		"top_k":                    chat.TopK,
 		"do_refer":                 chat.DoRefer,
 		"rerank_id":                chat.RerankID,

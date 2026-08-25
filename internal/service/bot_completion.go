@@ -219,7 +219,9 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	if ev.Type == "error" {
 		msg := "an internal error occurred"
 		if m, ok := data.(map[string]any); ok {
-			if s, _ := m["message"].(string); s != "" {
+			if kind, _ := m["kind"].(string); kind == canvas.RunErrorKindInternal {
+				msg = canvas.InternalRunErrorMessage
+			} else if s, _ := m["message"].(string); s != "" {
 				msg = s
 			}
 		}
@@ -434,14 +436,46 @@ func (s *BotService) ChatbotCompletion(
 	// Sending accumulated full text on every frame interacts badly with
 	// the front-end's start_to_think/end_to_think marker append, causing
 	// reasoning content to leak into the visible answer.
+	return s.streamChatbotTurn(ctx, session, req.Question, messageID, results), common.CodeSuccess, nil
+}
+
+// streamChatbotTurn translates pipeline results into python-shaped
+// chatbot SSE frames and persists the finished turn. It mirrors
+// conversation_service.py structure_answer:
+//
+//   - Every non-final frame forwards only its own delta with an empty
+//     reference object; only the final frame carries the retrieval
+//     reference.
+//   - The final frame's `answer` is empty whenever text was already
+//     streamed as deltas (python async_chat sets final["answer"] = ""),
+//     so accumulating consumers do not double the text. The full text
+//     is sent when nothing was streamed (single-shot results such as
+//     the structured-SQL path) and on error finals, so a mid-stream
+//     pipeline failure still reaches the wire after partial deltas.
+//   - The persisted assistant turn is the raw streamed text, NOT the
+//     decorated final answer. The decorated text carries server-side
+//     [ID:n] citation markers; persisting it feeds fabricated markers
+//     back into the next turn's prompt, and models that imitate the
+//     history format then emit markers for turns whose retrieval
+//     returned nothing — which the widget renders as a citation icon
+//     with "Reference unavailable".
+func (s *BotService) streamChatbotTurn(
+	ctx context.Context,
+	session *entity.API4Conversation,
+	question, messageID string,
+	results <-chan AsyncChatResult,
+) <-chan ChatbotSSEFrame {
 	out := make(chan ChatbotSSEFrame, 16)
 	go func() {
 		defer close(out)
-		var (
-			fullAnswer string
-			finalRef   map[string]any
-			errored    bool
-		)
+		// rawAnswer is the accumulated wire text (deltas plus the
+		// <think>/</think> tags the marker frames stand for), i.e. what
+		// the client already rendered. fullAnswer additionally tracks
+		// the decorated final answer for error detection and the
+		// no-delta fallback.
+		var rawAnswer, fullAnswer string
+		var finalRef map[string]any
+		var errored bool
 		for res := range results {
 			if res.Final {
 				if res.Answer != "" {
@@ -459,8 +493,17 @@ func (s *BotService) ChatbotCompletion(
 				if strings.HasPrefix(fullAnswer, "**ERROR**") {
 					errored = true
 				}
+				finalData := ""
+				if rawAnswer == "" || errored {
+					// The final frame is the only carrier of the text
+					// when nothing was streamed as deltas; on a
+					// pipeline-level error it must still carry the
+					// error text even after partial deltas, or the
+					// client would see a silently truncated answer.
+					finalData = fullAnswer
+				}
 				out <- ChatbotSSEFrame{
-					Data:      fullAnswer,
+					Data:      finalData,
 					Reference: referenceOrEmpty(finalRef),
 					SessionID: session.ID,
 					Final:     true,
@@ -470,6 +513,11 @@ func (s *BotService) ChatbotCompletion(
 			if res.StartToThink || res.EndToThink {
 				// Marker frames carry no text; the front-end appends
 				// <think> / </think> to the accumulated answer.
+				if res.StartToThink {
+					rawAnswer += "<think>"
+				} else {
+					rawAnswer += "</think>"
+				}
 				out <- ChatbotSSEFrame{
 					Data:         "",
 					Reference:    map[string]any{},
@@ -479,7 +527,24 @@ func (s *BotService) ChatbotCompletion(
 				}
 				continue
 			}
-			fullAnswer += res.Answer
+			// Reasoning text arrives through two delivery modes: the
+			// plain streaming path emits it as Answer deltas between
+			// the StartToThink/EndToThink markers (chat_pipeline.go
+			// think-state machine), while the tool path
+			// (chat_pipeline.go ChatStreamlyWithTools callback) routes
+			// in-think text through the Reasoning field so the
+			// OpenAI-compat SSE handler can map it to
+			// delta.reasoning_content. Python delivers reasoning as
+			// <think>-wrapped answer stream text in both modes
+			// (rag/llm/chat_model.py), so forward it as stream text
+			// here; dropping it would leave the widget's think block
+			// empty and persist history without the reasoning.
+			delta := res.Answer
+			if delta == "" {
+				delta = res.Reasoning
+			}
+			rawAnswer += delta
+			fullAnswer += delta
 			if len(res.Reference) > 0 {
 				// The pipeline only populates Reference on the final
 				// result today; tracking it here keeps finalRef
@@ -491,7 +556,7 @@ func (s *BotService) ChatbotCompletion(
 				finalRef = res.Reference
 			}
 			out <- ChatbotSSEFrame{
-				Data:      res.Answer,
+				Data:      delta,
 				Reference: map[string]any{},
 				SessionID: session.ID,
 			}
@@ -504,18 +569,32 @@ func (s *BotService) ChatbotCompletion(
 		// stream — the answer has already been produced. On a
 		// pipeline-level error ("**ERROR**" answer) nothing is
 		// persisted, matching the python exception path.
+		persisted := rawAnswer
+		if persisted == "" {
+			// No-delta finals never carry server-inserted [ID:n]
+			// citation markers: the structured-SQL path returns its
+			// markdown table (with ##N$$ source markers the frontend
+			// resolves client-side, same as python use_sql) before
+			// decorateAnswer runs, the empty_response fallback yields
+			// the user-configured text undecorated, and the streaming
+			// path always streams the full visible text as deltas
+			// before its decorated final (so rawAnswer is non-empty
+			// whenever the final was decorated). Falling back to
+			// fullAnswer here is therefore marker-free.
+			persisted = fullAnswer
+		}
 		if !errored {
-			if pErr := s.persistChatbotTurn(ctx, session, req.Question, fullAnswer, messageID, finalRef); pErr != nil {
+			if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef); pErr != nil {
 				common.Error("bot: ChatbotCompletion session update failed",
 					pErr,
-					zap.String("dialog_id", dialogID),
+					zap.String("dialog_id", session.DialogID),
 					zap.String("session_id", session.ID),
 				)
 			}
 		}
 		out <- ChatbotSSEFrame{Done: true}
 	}()
-	return out, common.CodeSuccess, nil
+	return out
 }
 
 // buildChatbotPipelineMessages projects the session.Message JSON

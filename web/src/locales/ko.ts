@@ -1252,6 +1252,7 @@ export default {
         'Microsoft Graph를 통해 SharePoint 사이트를 연결하여 문서 라이브러리를 동기화합니다.',
       sharepointSiteUrlTip:
         '인덱싱할 SharePoint 사이트의 전체 URL (예: https://contoso.sharepoint.com/sites/MySite). Sites.Read.All 및 Files.Read.All 애플리케이션 권한이 있는 Azure AD 앱이 필요합니다 (관리자 동의).',
+      azure_devopsDescription: 'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
       bitbucketDescription: 'Bitbucket을 연결하여 PR 콘텐츠를 동기화합니다.',
       bitbucketTopWorkspaceTip:
         '인덱싱할 Bitbucket 워크스페이스 (예: https://bitbucket.org/atlassian/workspace 의 "atlassian").',
@@ -1760,6 +1761,8 @@ export default {
       listModelsEmpty: '사용 가능한 모델 없음',
       listModelsLoading: '모델 로딩 중…',
       selectModelBeforeVerify: '검증 전 모델을 최소 하나 이상 선택해 주세요.',
+      selectModelBeforeSave:
+        '저장하기 전에 모델을 하나 이상 검색하고 선택해 주세요.',
       addCustomModel: '커스텀 모델 추가',
       addCustomModelTitle: '커스텀 모델 추가',
       editCustomModelTitle: '모델 편집',
@@ -2679,7 +2682,7 @@ Task
 Extract the most important keywords/phrases of a given piece of text content.
 
 Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`,
@@ -2687,10 +2690,10 @@ Requirements
 You are a text analyzer.
 
 Task
-Propose 3 questions about a given piece of text content.
+Propose {{ topn }} questions about a given piece of text content.
 
 Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.

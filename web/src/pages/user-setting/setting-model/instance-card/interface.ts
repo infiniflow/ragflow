@@ -76,11 +76,8 @@ export interface InstanceSavePayload {
   isDraft: boolean;
   /**
    * Which save endpoint the parent should dispatch to:
-   *  - `'add'`: call `addProviderInstance` (drafts of any provider, plus
-   *    Bedrock saved cards which carry an `id` inside the
-   *    `addProviderInstance` body).
-   *  - `'update'`: call `updateProviderInstance` (generic saved cards,
-   *    whose payload matches `IUpdateProviderInstanceRequestBody`).
+   *  - `'add'`: call `addProviderInstance` for drafts.
+   *  - `'update'`: call `updateProviderInstance` for saved cards.
    */
   apiKind: 'add' | 'update';
 }
@@ -119,16 +116,23 @@ export interface ProviderInstanceCardProps {
 /**
  * Provider-specific credential fields that the backend expects bundled
  * *inside* `api_key` as an object rather than as top-level keys:
- *   api_key: { api_key, group_id?, api_version?, provider_order? }
+ *   api_key: { api_key?, ...providerCredentials }
  * - MiniMax        → group_id
  * - Azure OpenAI   → api_version
  * - OpenRouter     → provider_order
+ * - Bedrock        → auth_mode / AWS credentials / region
  * When none of these are present the api_key stays a bare string.
  */
 export const API_KEY_NESTED_FIELDS = [
   'group_id',
   'api_version',
   'provider_order',
+  'auth_mode',
+  'bedrock_ak',
+  'bedrock_sk',
+  'aws_role_arn',
+  'bedrock_api_key',
+  'bedrock_region',
 ] as const;
 
 export type ApiKeyNestedField = (typeof API_KEY_NESTED_FIELDS)[number];
@@ -162,6 +166,7 @@ export interface SavedModeCardProps {
   instance: IProviderInstance;
   instanceDetailsLoaded: boolean;
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
+  onInstanceModelsStatusChange: (ready: boolean) => void;
   draftName: string;
   open: boolean;
   setOpen: (open: boolean) => void;

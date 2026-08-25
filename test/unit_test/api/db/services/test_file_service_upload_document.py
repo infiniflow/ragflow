@@ -70,21 +70,40 @@ from api.db.services.file_service import FileService  # noqa: E402
 
 
 class _DummyUploadFile:
-    def __init__(self, filename, doc_id):
+    def __init__(self, filename, doc_id, blob=None):
         self.filename = filename
         self.id = doc_id
+        self._blob = blob
 
     def read(self):
-        raise AssertionError("read() should not be called for cross-KB collision path")
+        if self._blob is None:
+            raise AssertionError("read() should not be called for cross-KB collision path")
+        return self._blob
+
+
+class _DummyStorage:
+    """Storage double recording writes without touching MinIO."""
+
+    def __init__(self):
+        self.written = {}
+        self.removed = []
+
+    def obj_exist(self, _bucket, _location):
+        return False
+
+    def put(self, bucket, location, blob, *_args):
+        self.written[(bucket, location)] = blob
+
+    def rm(self, bucket, location):
+        self.removed.append((bucket, location))
 
 
 def _unwrapped_upload_document():
     return FileService.upload_document.__func__.__wrapped__
 
 
-@pytest.mark.p2
-def test_upload_document_skips_cross_kb_document_id_collision(monkeypatch):
-    kb = SimpleNamespace(
+def _target_kb():
+    return SimpleNamespace(
         id="kb-target",
         tenant_id="tenant-1",
         name="Target KB",
@@ -92,14 +111,9 @@ def test_upload_document_skips_cross_kb_document_id_collision(monkeypatch):
         pipeline_id=None,
         parser_config={},
     )
-    existing_doc = SimpleNamespace(
-        id="doc-1",
-        kb_id="kb-other",
-        location="old-location.txt",
-        content_hash="old-hash",
-        to_dict=lambda: {"id": "doc-1"},
-    )
 
+
+def _stub_folder_lookups(monkeypatch):
     monkeypatch.setattr(FileService, "get_root_folder", classmethod(lambda cls, _uid: {"id": "root"}))
     monkeypatch.setattr(FileService, "init_knowledgebase_docs", classmethod(lambda cls, _pf_id, _uid: None))
     monkeypatch.setattr(FileService, "get_kb_folder", classmethod(lambda cls, _uid: {"id": "kb-root"}))
@@ -108,7 +122,26 @@ def test_upload_document_skips_cross_kb_document_id_collision(monkeypatch):
         "new_a_file_from_kb",
         classmethod(lambda cls, _tenant_id, _name, _parent_id: {"id": "kb-folder"}),
     )
+
+
+@pytest.mark.p2
+def test_upload_document_skips_cross_kb_document_id_collision(monkeypatch):
+    kb = _target_kb()
+    existing_doc = SimpleNamespace(
+        id="doc-1",
+        kb_id="kb-other",
+        location="old-location.txt",
+        content_hash="old-hash",
+        to_dict=lambda: {"id": "doc-1"},
+    )
+
+    _stub_folder_lookups(monkeypatch)
     monkeypatch.setattr(file_service_module.DocumentService, "get_by_id", lambda _doc_id: (True, existing_doc))
+    monkeypatch.setattr(
+        file_service_module.KnowledgebaseService,
+        "get_or_none",
+        classmethod(lambda cls, **_kwargs: SimpleNamespace(id="kb-other")),
+    )
 
     err, files = _unwrapped_upload_document()(
         FileService,
@@ -120,7 +153,98 @@ def test_upload_document_skips_cross_kb_document_id_collision(monkeypatch):
     assert files == []
     assert len(err) == 1
     assert err[0].startswith("collision.txt: ")
-    assert "Existing document id collision with another knowledge base; skipping update." in err[0]
+    # The owning knowledge base is named so the conflict can actually be found.
+    assert "Existing document id collision with knowledge base 'kb-other'; skipping update." in err[0]
+
+
+@pytest.mark.p2
+def test_upload_document_reclaims_document_stranded_by_deleted_kb(monkeypatch):
+    """A row whose knowledge base is gone must not block ingestion forever.
+
+    Regression test for #18116: the stranded row is unreachable through the UI
+    and the API, so treating it as a live conflict permanently blocked the
+    document from syncing anywhere.
+    """
+    kb = _target_kb()
+    stranded_doc = SimpleNamespace(
+        id="doc-1",
+        kb_id="kb-deleted",
+        location="old-location.txt",
+        content_hash="old-hash",
+        to_dict=lambda: {"id": "doc-1"},
+    )
+    storage = _DummyStorage()
+    discarded = []
+    inserted = []
+    tasks_deleted = []
+    files_deleted = []
+    mappings_deleted = []
+
+    _stub_folder_lookups(monkeypatch)
+    monkeypatch.setattr(file_service_module.DocumentService, "get_by_id", lambda _doc_id: (True, stranded_doc))
+    monkeypatch.setattr(
+        file_service_module.KnowledgebaseService,
+        "get_or_none",
+        classmethod(lambda cls, **kwargs: None if kwargs.get("id") == "kb-deleted" else SimpleNamespace(id=kwargs.get("id"))),
+    )
+    monkeypatch.setattr(
+        file_service_module.DocumentService,
+        "delete_by_id",
+        classmethod(lambda cls, doc_id: discarded.append(doc_id)),
+    )
+    monkeypatch.setattr(
+        file_service_module.File2DocumentService,
+        "delete_by_document_id",
+        classmethod(lambda cls, doc_id: mappings_deleted.append(doc_id)),
+    )
+    monkeypatch.setattr(
+        file_service_module.File2DocumentService,
+        "get_storage_address",
+        classmethod(lambda cls, **_kwargs: ("kb-deleted", "old-location.txt")),
+    )
+    monkeypatch.setattr(
+        file_service_module.File2DocumentService,
+        "get_by_document_id",
+        classmethod(lambda cls, _doc_id: [SimpleNamespace(file_id="file-1")]),
+    )
+    monkeypatch.setattr(
+        file_service_module.TaskService,
+        "filter_delete",
+        classmethod(lambda cls, _filters: tasks_deleted.append("doc-1")),
+    )
+    monkeypatch.setattr(
+        FileService,
+        "filter_delete",
+        classmethod(lambda cls, _filters: files_deleted.append("file-1") or 1),
+    )
+    monkeypatch.setattr(file_service_module.DocumentService, "check_doc_health", classmethod(lambda cls, _tid, _name: None))
+    monkeypatch.setattr(file_service_module.DocumentService, "query", classmethod(lambda cls, **_kwargs: []))
+    monkeypatch.setattr(file_service_module.DocumentService, "insert", classmethod(lambda cls, doc: inserted.append(doc)))
+    monkeypatch.setattr(FileService, "add_file_from_kb", classmethod(lambda cls, _doc, _folder_id, _tenant_id: None))
+    monkeypatch.setattr(file_service_module, "thumbnail_img", lambda _name, _blob: None)
+    monkeypatch.setattr(file_service_module.settings, "STORAGE_IMPL", storage)
+
+    err, files = _unwrapped_upload_document()(
+        FileService,
+        kb,
+        [_DummyUploadFile(filename="collision.txt", doc_id="doc-1", blob=b"payload")],
+        "user-1",
+    )
+
+    assert err == []
+    assert discarded == ["doc-1"]
+    # The stranded row's debris goes with it, matching what delete_docs would
+    # have removed had the dataset deletion reached this document.
+    assert tasks_deleted == ["doc-1"]
+    assert files_deleted == ["file-1"]
+    assert mappings_deleted == ["doc-1"]
+    assert storage.removed == [("kb-deleted", "old-location.txt")]
+    assert len(inserted) == 1
+    assert inserted[0]["id"] == "doc-1"
+    assert inserted[0]["kb_id"] == "kb-target"
+    assert len(files) == 1
+    assert files[0][1] == b"payload"
+    assert storage.written[("kb-target", "collision.txt")] == b"payload"
 
 
 # ---------------------------------------------------------------------------

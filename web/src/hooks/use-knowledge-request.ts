@@ -312,6 +312,9 @@ export const useDeleteKnowledge = () => {
         queryClient.invalidateQueries({
           queryKey: [KnowledgeApiAction.FetchKnowledgeListByPage],
         });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchDatasetFilter],
+        });
       }
       return data?.data ?? [];
     },

@@ -3,6 +3,7 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { MetadataFilter } from '@/components/metadata-filter';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { SwitchFormField } from '@/components/switch-fom-field';
@@ -207,6 +208,9 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
           similarityName={prefixName(prefix, 'similarity_threshold')}
           similarityWeightName={prefixName(prefix, 'vector_similarity_weight')}
         ></SimilaritySliderFormField>
+        <RerankCandidatesCountFormField
+          name={prefixName(prefix, 'rerank_candidates_count')}
+        ></RerankCandidatesCountFormField>
         <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
 
         <SwitchFormField

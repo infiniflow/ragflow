@@ -1063,6 +1063,7 @@ export default {
         'Загрузите OAuth JSON, сгенерированный в Google Console. Если он содержит только учетные данные клиента, выполните одноразовое подтверждение в браузере, чтобы получить долгоживущие токены обновления.',
       dropboxDescription:
         'Подключите ваш Dropbox для синхронизации файлов и папок из выбранного аккаунта.',
+      azure_devopsDescription: "Подключите Azure DevOps для синхронизации файлов репозитория и pull request'ов.",
       bitbucketDescription:
         'Подключите Bitbucket для синхронизации содержимого PR.',
       bitbucketTopWorkspaceTip:
