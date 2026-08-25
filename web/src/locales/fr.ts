@@ -1077,7 +1077,6 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       messagePlaceholder: 'Saisissez votre message ici...',
       exit: 'Quitter',
       multipleModels: 'Plusieurs modèles',
-      applyModelConfigs: 'Appliquer la configuration du modèle',
       conversations: 'Conversations',
       chatApps: 'Applications de chat',
       emptyResponsePlaceholder:

@@ -913,7 +913,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
-      applyModelConfigs: '应用模型配置',
       conversations: '会话',
       chatApps: '聊天',
       createChat: '创建聊天',

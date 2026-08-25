@@ -956,7 +956,6 @@ export default {
       messagePlaceholder: '여기에 메시지를 입력하세요...',
       exit: '나가기',
       multipleModels: '다중 모델',
-      applyModelConfigs: '모델 설정 적용',
       conversations: '대화 목록',
       chatApps: '채팅 앱',
       newConversation: '새 대화',

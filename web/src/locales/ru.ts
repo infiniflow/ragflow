@@ -780,7 +780,6 @@ export default {
       messagePlaceholder: 'Введите ваше сообщение здесь...',
       exit: 'Выход',
       multipleModels: 'Несколько моделей',
-      applyModelConfigs: 'Применить настройки моделей',
       conversations: 'Диалоги',
       chatApps: 'Чат-приложения',
       newConversation: 'Новый диалог',

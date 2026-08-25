@@ -772,7 +772,6 @@ export default {
       messagePlaceholder: 'メッセージを入力してください...',
       exit: '終了',
       multipleModels: '複数モデル',
-      applyModelConfigs: 'モデル設定を適用',
       conversations: '会話一覧',
       chatApps: 'チャットアプリ',
       newConversation: '新しい会話',

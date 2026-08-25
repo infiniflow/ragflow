@@ -579,28 +579,8 @@ def mm_step_10_select_models_for_two_cards(ctx: FlowContext, step, snap):
     snap("chat_mm_models_selected")
 
 
-def mm_step_11_apply_multimodel_config(ctx: FlowContext, step, snap):
-    require(ctx.state, "mm_models_selected")
-    page = ctx.page
-    with step("apply multi-model config"):
-        mm_grid = page.get_by_test_id("chat-detail-multimodel-grid")
-        expect(mm_grid).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        _mm_dismiss_open_popovers(page)
-
-        apply_btn = mm_grid.locator("[data-testid='chat-detail-multimodel-card-apply'][data-card-index='0']").first
-        expect(apply_btn).to_be_enabled(timeout=RESULT_TIMEOUT_MS)
-        with page.expect_request(_mm_settings_save_request, timeout=RESULT_TIMEOUT_MS) as req_info:
-            apply_btn.click()
-        payload = _mm_payload_from_request(req_info.value)
-        assert payload.get("llm_id"), "missing llm_id in apply-config payload"
-        assert "llm_setting" in payload, "missing llm_setting in apply-config payload"
-
-    ctx.state["mm_cards_configured"] = True
-    snap("chat_mm_cards_configured")
-
-
-def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
-    require(ctx.state, "mm_cards_configured", "mm_selected_option_testids", "mm_option_prefix")
+def mm_step_11_composer_and_single_send(ctx: FlowContext, step, snap):
+    require(ctx.state, "mm_models_selected", "mm_selected_option_testids", "mm_option_prefix")
     page = ctx.page
     selected_option_testids = ctx.state["mm_selected_option_testids"]
     option_prefix = ctx.state["mm_option_prefix"]
@@ -697,7 +677,7 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
     snap("chat_mm_single_send_done")
 
 
-def mm_step_13_remove_extra_card_and_exit(ctx: FlowContext, step, snap):
+def mm_step_12_remove_extra_card_and_exit(ctx: FlowContext, step, snap):
     require(ctx.state, "mm_single_send_done")
     page = ctx.page
     with step("remove extra card and exit multi-model"):
@@ -730,9 +710,8 @@ MM_STEPS = [
     ("08_enter_multimodel_view", mm_step_08_enter_multimodel_view),
     ("09_add_second_multimodel_card", mm_step_09_add_second_multimodel_card),
     ("10_select_models_for_two_cards", mm_step_10_select_models_for_two_cards),
-    ("11_apply_multimodel_config", mm_step_11_apply_multimodel_config),
-    ("12_composer_and_single_send", mm_step_12_composer_and_single_send),
-    ("13_remove_extra_card_and_exit", mm_step_13_remove_extra_card_and_exit),
+    ("11_composer_and_single_send", mm_step_11_composer_and_single_send),
+    ("12_remove_extra_card_and_exit", mm_step_12_remove_extra_card_and_exit),
 ]
 
 

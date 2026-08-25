@@ -657,7 +657,6 @@ export default {
       messagePlaceholder: 'اكتب رسالتك هنا...',
       exit: 'مخرج',
       multipleModels: 'نماذج متعددة',
-      applyModelConfigs: 'تطبيق تكوينات النموذج',
       conversations: 'المحادثات',
       chatApps: 'تطبيقات الدردشة',
       newConversation: 'محادثة جديدة',

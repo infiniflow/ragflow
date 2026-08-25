@@ -978,7 +978,6 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       messagePlaceholder: 'Scrivi il tuo messaggio qui...',
       exit: 'Esci',
       multipleModels: 'Modelli multipli',
-      applyModelConfigs: 'Applica configurazioni modello',
       conversations: 'Conversazioni',
       chatApps: 'App chat',
       newConversation: 'Nuova conversazione',

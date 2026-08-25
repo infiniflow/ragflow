@@ -749,7 +749,6 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       messagePlaceholder: 'Geben Sie hier Ihre Nachricht ein...',
       exit: 'Verlassen',
       multipleModels: 'Mehrere Modelle',
-      applyModelConfigs: 'Modellkonfigurationen anwenden',
       conversations: 'Unterhaltungen',
       chatApps: 'Chat-Apps',
       newConversation: 'Neue Unterhaltung',

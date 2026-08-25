@@ -10,11 +10,6 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -24,16 +19,13 @@ import {
 import {
   useFetchChat,
   useGetChatSearchParams,
-  usePatchChat,
 } from '@/hooks/use-chat-request';
-import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation, IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from 'i18next';
-import { isEmpty, omit, trim } from 'lodash';
-import { ListCheck, Plus, Trash2 } from 'lucide-react';
+import { trim } from 'lodash';
+import { Plus, Trash2 } from 'lucide-react';
 import {
   forwardRef,
   useCallback,
@@ -43,7 +35,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { useParams } from 'react-router';
 import { z } from 'zod';
 import {
@@ -103,7 +95,6 @@ const ChatCard = forwardRef(function ChatCard(
   ref,
 ) {
   const { id: dialogId } = useParams();
-  const { patchChat } = usePatchChat();
 
   const {
     removeMessageById,
@@ -138,8 +129,6 @@ const ChatCard = forwardRef(function ChatCard(
     },
   });
 
-  const llmId = useWatch({ control: form.control, name: 'llm_id' });
-
   // Regenerate is triggered from the transcript, which has no access to the
   // input box's thinking / internet toggles. Remember what the last send used so
   // a retry keeps the same options instead of silently dropping them.
@@ -168,14 +157,11 @@ const ChatCard = forwardRef(function ChatCard(
 
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
-  const findLlmByUuid = useFindLlmByUuid();
 
   // Each card must keep its own independently selected model after the initial
-  // sync. Without this guard, clicking "Apply" in one card patches the dialog
-  // (which invalidates [FetchChat] and refetches currentDialog), and the
-  // changed currentDialog.llm_id would then overwrite every other card's
-  // llm_id via this effect. Sync only when dialogId changes (initial load or
-  // conversation switch), not when currentDialog.llm_id changes due to Apply.
+  // sync: a refetch of currentDialog (e.g. after the settings panel saves)
+  // must not overwrite the card's selection. Sync only when dialogId changes
+  // (initial load or conversation switch), not on every currentDialog change.
   const syncedDialogIdRef = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (syncedDialogIdRef.current !== dialogId && currentDialog?.llm_id) {
@@ -189,23 +175,6 @@ const ChatCard = forwardRef(function ChatCard(
   const handleRemoveChatBox = useCallback(() => {
     removeChatBox(id);
   }, [id, removeChatBox]);
-
-  const handleApplyConfig = useCallback(() => {
-    const values = form.getValues();
-    const llmId = values.llm_id;
-    patchChat({
-      chatId: dialogId!,
-      params: {
-        ...currentDialog,
-        llm_id: llmId,
-        tenant_llm_id: llmId,
-        llm_setting: {
-          ...omit(values, 'llm_id'),
-          model_type: findLlmByUuid(llmId)?.model_type || 'chat',
-        },
-      },
-    });
-  }, [currentDialog, dialogId, form, patchChat, findLlmByUuid]);
 
   useImperativeHandle(
     ref,
@@ -244,23 +213,6 @@ const ChatCard = forwardRef(function ChatCard(
             </Form>
           </div>
           <div className="space-x-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={isEmpty(llmId)}
-                  onClick={handleApplyConfig}
-                  data-testid="chat-detail-multimodel-card-apply"
-                  data-card-index={idx}
-                >
-                  <ListCheck />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{t('chat.applyModelConfigs')}</p>
-              </TooltipContent>
-            </Tooltip>
             {chatBoxIds.length > 1 && (
               <Button
                 variant="ghost"

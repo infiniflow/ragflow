@@ -939,7 +939,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       messagePlaceholder: 'Mesajınızı buraya yazın...',
       exit: 'Çıkış',
       multipleModels: 'Birden fazla model',
-      applyModelConfigs: 'Model yapılandırmalarını uygula',
       conversations: 'Konuşmalar',
       chatApps: 'Sohbet uygulamaları',
       newConversation: 'Yeni konuşma',
