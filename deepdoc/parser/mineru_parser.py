@@ -1000,7 +1000,7 @@ class MinerUParser(RAGFlowPdfParser):
         pdf_file_name = file_path.stem.replace(" ", "") + ".pdf"
         pdf_file_path_valid = os.path.join(file_path.parent, pdf_file_name)
 
-        if binary:
+        if binary is not None:
             temp_dir = Path(tempfile.mkdtemp(prefix="mineru_bin_pdf_"))
             temp_pdf = temp_dir / pdf_file_name
             with open(temp_pdf, "wb") as f:
