@@ -83,20 +83,25 @@ def _client_key() -> str:
     return last_hop or (request.remote_addr or "").strip() or "unknown"
 
 
-def _login_block_remaining(key: str) -> int:
-    """Return the seconds left in the lockout for ``key``; 0 when not blocked."""
-    with _login_state_lock:
-        deadline = _login_block_until.get(key, 0.0)
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            _login_block_until.pop(key, None)
-            return 0
-        return int(remaining) + 1
+def _reserve_login_attempt(key: str) -> int:
+    """Atomically admit one login attempt for ``key``.
 
-
-def _record_login_failure(key: str) -> None:
+    Returns the remaining lockout seconds when the key is blocked, or 0 when
+    the attempt is admitted. Admission records a failure slot under the same
+    state lock that checks the lockout, so concurrent requests cannot all
+    observe "not blocked" and run credential verification before any of them
+    records the failure that should have locked the key. Callers keep the
+    reservation when verification fails, release it via
+    ``_release_login_attempt`` on verification errors, and clear all state
+    via ``_reset_login_failures`` on success.
+    """
     now = time.monotonic()
     with _login_state_lock:
+        deadline = _login_block_until.get(key, 0.0)
+        remaining = deadline - now
+        if remaining > 0:
+            return int(remaining) + 1
+        _login_block_until.pop(key, None)
         failures = [ts for ts in _login_failures.get(key, []) if now - ts < ADMIN_LOGIN_FAILURE_WINDOW]
         failures.append(now)
         _login_failures[key] = failures
@@ -104,6 +109,25 @@ def _record_login_failure(key: str) -> None:
             _login_block_until[key] = now + ADMIN_LOGIN_LOCKOUT_SECONDS
             _login_failures[key] = []
             logging.warning(f"Admin login from {key} blocked for {ADMIN_LOGIN_LOCKOUT_SECONDS}s after {ADMIN_LOGIN_MAX_FAILURES} failed attempts within {ADMIN_LOGIN_FAILURE_WINDOW}s.")
+        return 0
+
+
+def _release_login_attempt(key: str) -> None:
+    """Undo the most recent reserved attempt for ``key``.
+
+    Used when verification could not evaluate the credentials (an internal
+    error) or rejected the caller before credential evaluation, so a
+    non-credential failure does not consume the failure budget. A lockout
+    set only by reservations is lifted with the release.
+    """
+    with _login_state_lock:
+        failures = _login_failures.get(key)
+        if failures:
+            failures.pop()
+            if not failures:
+                _login_failures.pop(key, None)
+        if len(_login_failures.get(key, [])) < ADMIN_LOGIN_MAX_FAILURES:
+            _login_block_until.pop(key, None)
 
 
 def _reset_login_failures(key: str) -> None:
@@ -258,23 +282,38 @@ def login_admin(email: str, password: str):
     :param password: string before decrypt (RSA encrypted + base64 encoded)
     """
     key = _client_key()
-    remaining = _login_block_remaining(key)
+    # Admission and the failure record are one atomic step: the attempt slot
+    # is consumed before credential verification, so a concurrent burst from
+    # one client cannot exceed ADMIN_LOGIN_MAX_FAILURES verifications.
+    remaining = _reserve_login_attempt(key)
     if remaining > 0:
         raise AdminException(f"Too many failed login attempts. Retry in {remaining}s.", 429)
 
-    users = UserService.query(email=email)
-    if not users:
-        _record_login_failure(key)
-        raise UserNotFoundError(email)
-    decrypted = decrypt(password)
-    user = UserService.query_user(email, decrypted)
-    if not user:
-        _record_login_failure(key)
-        raise AdminException("Email and password do not match!")
-    if not user.is_superuser:
-        raise AdminException("Not admin", 403)
-    if user.is_active == ActiveEnum.INACTIVE.value:
-        raise AdminException(f"User {email} inactive", 403)
+    try:
+        users = UserService.query(email=email)
+        if not users:
+            raise UserNotFoundError(email)
+        decrypted = decrypt(password)
+        user = UserService.query_user(email, decrypted)
+        if not user:
+            raise AdminException("Email and password do not match!")
+        if not user.is_superuser:
+            # Valid credentials, but not an admin account: reject without
+            # consuming the client's failure budget.
+            _release_login_attempt(key)
+            raise AdminException("Not admin", 403)
+        if user.is_active == ActiveEnum.INACTIVE.value:
+            _release_login_attempt(key)
+            raise AdminException(f"User {email} inactive", 403)
+    except (UserNotFoundError, AdminException):
+        # Deliberate rejections keep the reserved failure slot (the 403
+        # branches released theirs above).
+        raise
+    except Exception:
+        # Verification errors (unexpected exceptions) release the slot so a
+        # server-side fault does not consume the client's failure budget.
+        _release_login_attempt(key)
+        raise
 
     _reset_login_failures(key)
     resp = user.to_json()
@@ -316,7 +355,10 @@ def login_verify(f):
             return jsonify({"code": 401, "message": "Authentication required", "data": None}), 200
 
         key = _client_key()
-        remaining = _login_block_remaining(key)
+        # Same atomic admission as login_admin: the failure slot is consumed
+        # before credential verification so concurrent bursts cannot exceed
+        # ADMIN_LOGIN_MAX_FAILURES verifications from one client.
+        remaining = _reserve_login_attempt(key)
         if remaining > 0:
             logging.warning(f"Admin basic-auth verification from {key} throttled, retry in {remaining}s.")
             return jsonify({"code": 429, "message": f"Too many failed login attempts. Retry in {remaining}s.", "data": None}), 200
@@ -324,12 +366,14 @@ def login_verify(f):
         username = auth.parameters["username"]
         password = auth.parameters["password"]
         try:
-            if not check_admin(username, password):
-                _record_login_failure(key)
-                return jsonify({"code": 500, "message": "Access denied", "data": None}), 200
+            verified = check_admin(username, password)
         except Exception:
             logging.exception("An error occurred during admin login verification.")
+            _release_login_attempt(key)
             return jsonify({"code": 500, "message": "An internal server error occurred."}), 200
+        if not verified:
+            # The reserved slot already records this failure.
+            return jsonify({"code": 500, "message": "Access denied", "data": None}), 200
 
         _reset_login_failures(key)
         return f(*args, **kwargs)

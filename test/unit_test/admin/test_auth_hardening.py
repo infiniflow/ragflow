@@ -32,41 +32,16 @@ chain:
 
 import base64
 import logging
-import sys
-import types
+import threading
+import time
 from unittest import mock
 
-import pytest
-
 # The admin conftest (test/unit_test/admin/conftest.py) already prepends
-# admin/server to sys.path. auth.py pulls in heavy transitive dependencies
-# (common.settings -> rag.utils -> search/storage SDKs, api.db.services ->
-# peewee/psycopg2, quart, pycryptodomex). In the full CI environment those are
-# installed and the real import below succeeds; in minimal environments we
-# install lightweight stubs for exactly the modules that are missing so the
-# security logic stays unit-testable everywhere.
-try:
-    import auth
-except ImportError:  # pragma: no cover - exercised only in minimal envs
-
-    def _stub(mod_name: str, **attrs):
-        if mod_name in sys.modules:
-            return sys.modules[mod_name]
-        mod = types.ModuleType(mod_name)
-        for key, value in attrs.items():
-            setattr(mod, key, value)
-        sys.modules[mod_name] = mod
-        return mod
-
-    _stub("flask", jsonify=lambda *a, **kw: (kw if kw else a, 200), request=mock.MagicMock(headers={}, remote_addr="127.0.0.7"))
-    _stub("flask_login", current_user=mock.MagicMock(), login_user=mock.MagicMock())
-    _stub("api.db.services", UserService=mock.MagicMock())
-    _stub("api.db.services.user_service", TenantService=mock.MagicMock(), UserTenantService=mock.MagicMock())
-    _stub("api.utils.crypt", decrypt=lambda value: value)
-    _stub("common.connection_utils", sync_construct_response=lambda **kw: kw)
-    _stub("common.settings", CHAT_MDL="", EMBEDDING_MDL="", ASR_MDL="", PARSERS=[], VISION_MDL="", RERANK_MDL="", get_secret_key=lambda: "test-secret")
-
-    import auth
+# admin/server to sys.path. The full dependency graph must be importable;
+# an import failure fails test setup rather than silently stubbing the
+# modules under test.
+import auth
+import pytest
 
 assert auth.__file__.endswith("admin/server/auth.py"), f"unexpected auth module resolved: {auth.__file__}"
 
@@ -193,18 +168,50 @@ class TestInitDefaultAdminPassword:
 
 class TestLoginThrottling:
     def test_failures_lock_out_client_key(self):
-        assert auth._login_block_remaining("1.2.3.4") == 0
-        for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES - 1):
-            auth._record_login_failure("1.2.3.4")
-        assert auth._login_block_remaining("1.2.3.4") == 0
-        auth._record_login_failure("1.2.3.4")
-        assert auth._login_block_remaining("1.2.3.4") > 0
+        # Each admitted attempt reserves a failure slot atomically; the
+        # attempt that reaches ADMIN_LOGIN_MAX_FAILURES is still admitted
+        # (it is the one that trips the lockout) and everything after it
+        # is blocked.
+        for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
+            assert auth._reserve_login_attempt("1.2.3.4") == 0
+        assert auth._reserve_login_attempt("1.2.3.4") > 0
 
     def test_success_resets_failures(self):
         for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES - 1):
-            auth._record_login_failure("1.2.3.4")
+            assert auth._reserve_login_attempt("1.2.3.4") == 0
         auth._reset_login_failures("1.2.3.4")
-        assert auth._login_block_remaining("1.2.3.4") == 0
+        assert auth._reserve_login_attempt("1.2.3.4") == 0
+
+    def test_release_undo_reserves_a_slot(self):
+        for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
+            auth._reserve_login_attempt("1.2.3.4")
+        auth._release_login_attempt("1.2.3.4")
+        # The released attempt no longer counts, and a lockout set only by
+        # reservations is lifted with it.
+        assert auth._reserve_login_attempt("1.2.3.4") == 0
+
+    def test_concurrent_reservations_cannot_exceed_max_admissions(self):
+        """Atomic admission: a simultaneous burst gets at most MAX verifications."""
+        workers = 32
+        barrier = threading.Barrier(workers)
+        admitted = []
+        blocked = []
+        lock = threading.Lock()
+
+        def attempt():
+            barrier.wait()
+            was_admitted = auth._reserve_login_attempt("10.0.0.9") == 0
+            with lock:
+                (admitted if was_admitted else blocked).append(1)
+
+        threads = [threading.Thread(target=attempt) for _ in range(workers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert len(admitted) == auth.ADMIN_LOGIN_MAX_FAILURES
+        assert len(blocked) == workers - auth.ADMIN_LOGIN_MAX_FAILURES
 
     def test_login_admin_locks_out_after_repeated_failures(self):
         registered = mock.MagicMock()
@@ -240,11 +247,12 @@ class TestLoginThrottling:
             user_service.query_user.return_value = user  # then correct password
             assert auth.login_admin("admin@ragflow.io", "encrypted") is response_marker
 
-        assert auth._login_block_remaining("1.2.3.4") == 0
+        # A fresh reservation is admitted immediately after the success reset.
+        assert auth._reserve_login_attempt("1.2.3.4") == 0
 
     def test_login_verify_returns_429_when_throttled(self):
         for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
-            auth._record_login_failure("1.2.3.4")
+            auth._reserve_login_attempt("1.2.3.4")
 
         fake_request = mock.MagicMock()
         fake_request.headers = {}
@@ -285,9 +293,10 @@ class TestLoginThrottling:
 
         assert status == 200
         assert payload["code"] == 500
-        assert auth._login_block_remaining("1.2.3.4") == 0
-        # The recorded failure is visible to the counter.
+        # The reserved failure slot is visible to the counter but does not
+        # block the very next attempt.
         assert auth._login_failures.get("1.2.3.4") is not None
+        assert auth._reserve_login_attempt("1.2.3.4") == 0
 
 
 def test_throttle_client_key_uses_last_forwarded_hop():
@@ -303,3 +312,51 @@ def test_throttle_client_key_uses_last_forwarded_hop():
         assert _client_key() == "5.6.7.8"
     with app.test_request_context("/", environ_base={"REMOTE_ADDR": "9.9.9.9"}):
         assert _client_key() == "9.9.9.9"
+
+
+class TestConcurrentLoginBurst:
+    def test_concurrent_login_admin_burst_limits_credential_verifications(self):
+        """A simultaneous wrong-password burst from one client may run at most
+        ADMIN_LOGIN_MAX_FAILURES credential verifications; the rest get 429."""
+        verification_calls = []
+        call_lock = threading.Lock()
+
+        def slow_query_user(email, password):
+            with call_lock:
+                verification_calls.append(email)
+            time.sleep(0.02)  # keep the race window open
+
+        registered = mock.MagicMock()
+        workers = 16
+        barrier = threading.Barrier(workers)
+        outcomes = []
+        outcome_lock = threading.Lock()
+
+        def worker():
+            barrier.wait()
+            try:
+                auth.login_admin("admin@ragflow.io", "encrypted-wrong")
+            except auth.AdminException as exc:
+                with outcome_lock:
+                    outcomes.append(exc.code)
+
+        with (
+            mock.patch.object(auth, "_client_key", return_value="10.0.0.8"),
+            mock.patch.object(auth, "UserService") as user_service,
+            mock.patch.object(auth, "decrypt", return_value="wrong"),
+        ):
+            user_service.query.return_value = [registered]
+            user_service.query_user.side_effect = slow_query_user
+            threads = [threading.Thread(target=worker) for _ in range(workers)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        assert len(verification_calls) == auth.ADMIN_LOGIN_MAX_FAILURES
+        # Exactly ADMIN_LOGIN_MAX_FAILURES verifications ran (all rejected as
+        # wrong password, AdminException code 400 by default); the remainder
+        # were rejected by the throttle with 429 without reaching the
+        # credential check.
+        assert outcomes.count(429) == workers - auth.ADMIN_LOGIN_MAX_FAILURES
+        assert len(verification_calls) == auth.ADMIN_LOGIN_MAX_FAILURES
