@@ -307,6 +307,61 @@ func TestSectionsToMarkdown_Table(t *testing.T) {
 	}
 }
 
+func TestSectionsToMarkdown_TableWithImageAndText(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeTable, Text: "<table><tr><td>1</td></tr></table>", Image: "dGFibGVpbWc="},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "<table><tr><td>1</td></tr></table>\n"
+	if got != want {
+		t.Errorf("got %q, want %q (table with text should render table text)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_TableFallbackWhenEmptyText(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeTable, Text: "", Image: "dGFibGVpbWc="},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n![Image](data:image/png;base64,dGFibGVpbWc=)"
+	if got != want {
+		t.Errorf("got %q, want %q (table with empty text should fallback to image)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_TableFallbackWhitespaceImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeTable, Text: "", Image: "   \t\n"},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n"
+	if got != want {
+		t.Errorf("got %q, want %q (table with empty text and whitespace image should render empty text newline, no empty tag)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_DocTypeKwdImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: "custom_block", DocTypeKwd: "image", Text: "caption", Image: "aGVsbG8="},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n![Image](data:image/png;base64,aGVsbG8=)"
+	if got != want {
+		t.Errorf("got %q, want %q (DocTypeKwd == 'image' should render image)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_DocTypeKwdImage_Whitespace(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: "custom_block", DocTypeKwd: "image", Text: "caption", Image: "   "},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "caption\n"
+	if got != want {
+		t.Errorf("got %q, want %q (DocTypeKwd == 'image' with whitespace image should keep text)", got, want)
+	}
+}
+
 func TestSectionsToMarkdown_Mixed(t *testing.T) {
 	sections := []pdf.Section{
 		{LayoutType: pdf.LayoutTypeTitle, Text: "标题", Image: ""},
