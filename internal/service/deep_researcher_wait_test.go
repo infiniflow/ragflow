@@ -21,14 +21,50 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
-func TestWaitForDeepResearchWorkersWhenCanceledAndWorkersAlreadyComplete(t *testing.T) {
+func TestWaitForDeepResearchWorkersReturnsCanceledAfterWorkersComplete(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var workers sync.WaitGroup
 
 	if err := waitForDeepResearchWorkers(ctx, &workers); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestWaitForDeepResearchWorkersWhenCanceledWaitsForActiveWorker(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var workers sync.WaitGroup
+	releaseWorker := make(chan struct{})
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		<-releaseWorker
+	}()
+
+	result := make(chan error, 1)
+	cancel()
+	go func() {
+		result <- waitForDeepResearchWorkers(ctx, &workers)
+	}()
+
+	select {
+	case err := <-result:
+		close(releaseWorker)
+		t.Fatalf("returned before worker completed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseWorker)
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("waitForDeepResearchWorkers did not return after worker completed")
 	}
 }

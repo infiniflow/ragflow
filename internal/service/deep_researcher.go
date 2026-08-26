@@ -333,6 +333,14 @@ func (dr *DeepResearcher) _research(
 	return strings.Join(results, "\n"), nil
 }
 
+func waitForDeepResearchWorkers(ctx context.Context, workers *sync.WaitGroup) error {
+	// Sub-research goroutines invoke the progress callback, which
+	// writes to the caller's channel; do not orphan them. Draining
+	// here guarantees no callback fires after Research returns.
+	workers.Wait()
+	return ctx.Err()
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Retrieval (KB + optional Web)
 // ──────────────────────────────────────────────────────────────────────
