@@ -233,8 +233,10 @@ def compare_fields(model_fields: dict, db_columns: dict) -> dict:
         "removed": {},
     }
 
-    # Skip auto-generated fields like id, create_time, etc.
-    skip_fields = {"id"}
+    # Skip auto-generated fields like id, create_time, etc. These must match the
+    # set the callers strip from model_fields, or the removed-field detection
+    # below reports them as columns to drop.
+    skip_fields = {"id", "create_time", "create_date", "update_time", "update_date"}
 
     for field_name, field in model_fields.items():
         if field_name in skip_fields:
