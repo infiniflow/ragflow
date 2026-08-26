@@ -32,46 +32,24 @@ from common.constants import PipelineTaskType, TaskStatus
 
 
 # Map document suffixes to the DSL "setups" key the flow Parser uses to
-# pick the per-type parser config (issue #18306).
-_PARSER_SETUP_KEY_BY_SUFFIX = {
-    "pdf": "pdf",
-    "xls": "spreadsheet",
-    "xlsx": "spreadsheet",
-    "csv": "spreadsheet",
-    "doc": "doc",
-    "docx": "docx",
-    "ppt": "slides",
-    "pptx": "slides",
-    "pages": "slides",
-    "md": "markdown",
-    "markdown": "markdown",
-    "html": "html",
-    "htm": "html",
-    "jpg": "image",
-    "jpeg": "image",
-    "png": "image",
-    "bmp": "image",
-    "tif": "image",
-    "tiff": "image",
-    "webp": "image",
-    "gif": "image",
-    "mp3": "audio",
-    "wav": "audio",
-    "m4a": "audio",
-    "flac": "audio",
-    "ogg": "audio",
-    "opus": "audio",
-    "mp4": "video",
-    "mov": "video",
-    "avi": "video",
-    "webm": "video",
-    "mkv": "video",
-    "eml": "email",
-    "epub": "epub",
-    "txt": "text&code",
-    "json": "text&code",
-    "log": "text&code",
-}
+# pick the per-type parser config (issue #18306). Derived from
+# ``ParserParam().setups`` (the source of truth used by the runtime
+# dispatch loop at rag/flow/parser/parser.py:1425-1426) so the map can
+# never diverge from the runtime — adding a new family or suffix in
+# ``ParserParam.setups`` flows through automatically.
+def _build_suffix_to_setup_key() -> dict[str, str]:
+    # Import lazily so this module can still be imported in test
+    # contexts that don't have the full rag.flow stack available.
+    from rag.flow.parser.parser import ParserParam
+
+    mapping: dict[str, str] = {}
+    for setup_key, conf in ParserParam().setups.items():
+        for suffix in conf.get("suffix", []):
+            mapping[suffix] = setup_key
+    return mapping
+
+
+_PARSER_SETUP_KEY_BY_SUFFIX: dict[str, str] = _build_suffix_to_setup_key()
 
 
 def _load_dsl_mapping(dsl_str) -> dict | None:
@@ -316,7 +294,14 @@ class PipelineOperationLogService(CommonService):
                         parser_id,
                     )
                 elif dsl and dsl != "":
-                    logging.warning(
+                    # This is not necessarily an error — many pipelines
+                    # legitimately have no Parser component (e.g. they
+                    # process already-chunked text from a prior stage).
+                    # Demoted to DEBUG so the warning channel isn't noisy
+                    # on every PARSE task where the pipeline just doesn't
+                    # happen to configure a Parser component (issue #18306
+                    # review follow-up).
+                    logging.debug(
                         "[PipelineOperationLog] Could not resolve pipeline parser from DSL "
                         "for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
                         document_id,
@@ -325,7 +310,7 @@ class PipelineOperationLogService(CommonService):
                     )
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
-            if not kb_info:
+            if not ok:
                 raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
             tenant_id = kb_info.tenant_id
 

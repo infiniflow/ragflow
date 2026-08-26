@@ -302,54 +302,39 @@ def test_extracts_docling_when_multiple_components_present():
 # --------------------------------------------------------------------------- #
 
 
-def test_setup_key_map_covers_common_families():
-    """Guards against accidentally dropping a family from the suffix map
-    (which would silently re-introduce #18306 for that family), and
-    against a suffix being mapped to the wrong setup key (which would
-    record the parser for a different file family)."""
-    expected = {
-        "pdf": "pdf",
-        "xls": "spreadsheet",
-        "xlsx": "spreadsheet",
-        "csv": "spreadsheet",
-        "doc": "doc",
-        "docx": "docx",
-        "ppt": "slides",
-        "pptx": "slides",
-        "pages": "slides",
-        "md": "markdown",
-        "markdown": "markdown",
-        "html": "html",
-        "htm": "html",
-        "jpg": "image",
-        "jpeg": "image",
-        "png": "image",
-        "bmp": "image",
-        "tif": "image",
-        "tiff": "image",
-        "webp": "image",
-        "gif": "image",
-        "mp3": "audio",
-        "wav": "audio",
-        "m4a": "audio",
-        "flac": "audio",
-        "ogg": "audio",
-        "opus": "audio",
-        "mp4": "video",
-        "mov": "video",
-        "avi": "video",
-        "webm": "video",
-        "mkv": "video",
-        "eml": "email",
-        "epub": "epub",
-        "txt": "text&code",
-        "json": "text&code",
-        "log": "text&code",
-    }
-    # Verify both keys AND values — a suffix mapped to the wrong setup
-    # key would silently log the parser for a different file family.
-    for suffix, expected_setup_key in expected.items():
-        assert _PARSER_SETUP_KEY_BY_SUFFIX[suffix] == expected_setup_key, (
-            f"suffix {suffix!r} maps to {_PARSER_SETUP_KEY_BY_SUFFIX[suffix]!r}, "
-            f"expected {expected_setup_key!r}"
-        )
+def test_setup_key_map_matches_parser_param_setups():
+    """The runtime source of truth is ``rag.flow.parser.parser.ParserParam().setups``.
+
+    This test iterates that source directly so it cannot diverge from
+    the runtime dispatch loop at rag/flow/parser/parser.py:1425-1426.
+    Each suffix listed in ParserParam.setups must appear in the map AND
+    must point to the correct setup key — a mismatch in either
+    direction silently regresses #18306 for that file family.
+    """
+    # Import inside the test so the parser module isn't required at
+    # collection time (the surrounding conftest pulls heavy deps).
+    from rag.flow.parser.parser import ParserParam
+
+    runtime_setups = ParserParam().setups
+
+    # Every runtime suffix must appear in the map with the correct setup key.
+    for setup_key, conf in runtime_setups.items():
+        for suffix in conf.get("suffix", []):
+            assert _PARSER_SETUP_KEY_BY_SUFFIX[suffix] == setup_key, (
+                f"suffix {suffix!r} in ParserParam.setups[{setup_key!r}] is "
+                f"mapped to {_PARSER_SETUP_KEY_BY_SUFFIX.get(suffix)!r}; "
+                f"the runtime dispatch at parser.py:1425-1426 will route "
+                f"{suffix!r} to {setup_key!r}."
+            )
+
+    # The map must contain ONLY suffixes that exist in ParserParam.setups.
+    # A stale map entry pointing at a setup that no longer lists the
+    # suffix would log the parser for a file family the runtime would
+    # reject — that would be a silent regression.
+    allowed = {suffix for conf in runtime_setups.values() for suffix in conf.get("suffix", [])}
+    stale = set(_PARSER_SETUP_KEY_BY_SUFFIX.keys()) - allowed
+    assert not stale, (
+        f"_PARSER_SETUP_KEY_BY_SUFFIX has stale entries (not in "
+        f"ParserParam.setups): {sorted(stale)}. Remove them so we never "
+        f"log a parse_method for a suffix the runtime would reject."
+    )
