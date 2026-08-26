@@ -28,12 +28,16 @@ type Connector struct {
 	ValidateConnectorSettingErr error
 	SyncBatches                 []syncerconnector.SyncBatch
 	SyncErrAt                   int
+	NextBatchResumeInvalidAt    int
 	PruneBatches                []syncerconnector.PruneBatch
 	PruneErrAt                  int
 	FetchBlobs                  map[string][]byte
 	OnSyncBatch                 func(index int)
 	OnPruneBatch                func(index int)
 	SyncRequests                []syncerconnector.SyncRequest
+	OpenSyncResumeInvalidAt     int
+	OpenSyncResumeInvalidAlways bool
+	openCount                   int
 }
 
 // Validate returns the configured validation error.
@@ -48,6 +52,10 @@ func (c *Connector) ValidateConnectorSetting(ctx context.Context, request map[st
 
 // OpenSync opens a mock sync session.
 func (c *Connector) OpenSync(ctx context.Context, request syncerconnector.SyncRequest) (syncerconnector.SyncSession, error) {
+	c.openCount++
+	if c.OpenSyncResumeInvalidAlways || (c.OpenSyncResumeInvalidAt > 0 && c.openCount == c.OpenSyncResumeInvalidAt) {
+		return nil, syncerconnector.ErrSyncResumeInvalid
+	}
 	c.SyncRequests = append(c.SyncRequests, request)
 	return &SyncSession{connector: c}, nil
 }
@@ -67,6 +75,9 @@ type SyncSession struct {
 func (s *SyncSession) NextBatch(ctx context.Context) (syncerconnector.SyncBatch, error) {
 	if s.connector.SyncErrAt > 0 && s.index+1 == s.connector.SyncErrAt {
 		return syncerconnector.SyncBatch{}, io.ErrUnexpectedEOF
+	}
+	if s.connector.NextBatchResumeInvalidAt > 0 && s.index+1 == s.connector.NextBatchResumeInvalidAt {
+		return syncerconnector.SyncBatch{}, syncerconnector.ErrSyncResumeInvalid
 	}
 	if s.index >= len(s.connector.SyncBatches) {
 		return syncerconnector.SyncBatch{}, io.EOF
