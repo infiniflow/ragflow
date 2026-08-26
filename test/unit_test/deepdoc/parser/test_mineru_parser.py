@@ -955,39 +955,38 @@ def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
 
 
 # --------------------------------------------------------------------------- #
-# Review follow-ups (issue #16978): naive/manual/paper modes + parse_pdf log line
+# App-media modes (issue #16978): naive/manual/paper coverage invariants
 # --------------------------------------------------------------------------- #
 #
-# xugangqiang's review flagged that the previous tests only covered
-# parse_method="raw" — exactly the mode where the coverage tracking was
-# already working. The naive/manual/paper modes use a separate
-# _transfer_to_tables path and the early-skip branch above the
-# match/case block, so the original `images_detected += 1` increment
-# (inside the IMAGE case) was never reached and these modes silently
-# reported images_detected=0.
-#
-# The fix moves `images_detected += 1` above the early-skip branch.
-# These tests pin the new behavior for every parse_method.
+# Naive/manual/paper route IMAGE blocks through _transfer_to_tables and
+# skip them in _transfer_to_sections. The coverage stamp must still
+# report every IMAGE block the parser saw as `images_detected` so
+# operators can spot the gap between detection and chunking.
 
 
 @pytest.mark.parametrize(
     "parse_method",
     ["naive", "manual", "paper"],
 )
-def test_transfer_to_sections_counts_images_detected_for_app_media_modes(monkeypatch, parse_method):
-    """Regression for xugangqiang's review on #16978: naive, manual,
-    and paper all route IMAGE blocks through _transfer_to_tables and
-    skip them in _transfer_to_sections. The image_coverage stamp must
-    still report images_detected correctly for these modes so operators
-    can see how many images the parser saw."""
+def test_transfer_to_sections_counts_images_detected_for_app_media_modes(monkeypatch, tmp_path, parse_method):
+    """App-media modes (issue #16978): naive, manual, and paper all
+    route IMAGE blocks through _transfer_to_tables and skip them in
+    _transfer_to_sections. The image_coverage stamp must still report
+    images_detected correctly for these modes so operators can see how
+    many images the parser saw."""
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
+    a_path = tmp_path / "a.jpg"
+    b_path = tmp_path / "b.jpg"
+    module.Image.new("RGB", (2, 2), "red").save(a_path)
+    module.Image.new("RGB", (2, 2), "blue").save(b_path)
+
     outputs = [
         {
             "type": module.MinerUContentType.IMAGE,
             "image_caption": ["A"],
             "image_footnote": [],
-            "img_path": "/tmp/a.jpg",
+            "img_path": str(a_path),
             "page_idx": 0,
             "bbox": (0, 0, 10, 10),
         },
@@ -995,7 +994,7 @@ def test_transfer_to_sections_counts_images_detected_for_app_media_modes(monkeyp
             "type": module.MinerUContentType.IMAGE,
             "image_caption": ["B"],
             "image_footnote": [],
-            "img_path": "/tmp/b.jpg",
+            "img_path": str(b_path),
             "page_idx": 1,
             "bbox": (0, 0, 10, 10),
         },
@@ -1006,15 +1005,13 @@ def test_transfer_to_sections_counts_images_detected_for_app_media_modes(monkeyp
     sections = parser._transfer_to_sections(outputs, parse_method=parse_method)
     assert sections == []
 
-    # But the coverage stamp must still report both images detected so
-    # operators can spot the gap between detection and chunking.
+    # The coverage stamp must report every IMAGE block the parser saw
+    # and emitted via the table path. We invoke _transfer_to_tables to
+    # mirror what parse_pdf does for naive/manual/paper.
+    parser._transfer_to_tables(outputs, table_enable=True)
     coverage = parser.last_image_coverage
     assert coverage["images_detected"] == 2
-    # The IMAGE blocks produced no section because the parser skipped
-    # them — they are not "dropped_no_text" (that count tracks images
-    # that reached the section-building branch with no caption/footnote),
-    # they are simply not chunked via _transfer_to_sections.
-    assert coverage["images_chunked"] == 0
+    assert coverage["images_chunked"] == 2
     assert coverage["images_dropped_no_text"] == 0
 
 
@@ -1092,9 +1089,52 @@ def test_transfer_to_sections_app_media_image_with_only_vlm_description(monkeypa
     assert sections == []
 
     coverage = parser.last_image_coverage
-    # The VLM description is still counted because the IMAGE block was
-    # observed (detected=1). The describe/chunked counters are not
-    # incremented for app-media modes because _transfer_to_sections
-    # skipped the section-building branch — the vlm_description is
-    # consumed by _transfer_to_tables instead.
+    # _transfer_to_sections skips app-media IMAGE blocks entirely, so
+    # it doesn't touch the counters — the IMAGE block has only been
+    # observed (detected=1) so far. _transfer_to_tables (which would
+    # count chunked=1 and described=1) is exercised end-to-end via
+    # test_parse_pdf_emits_image_coverage_final_log_with_vlm_configured_flag.
     assert coverage["images_detected"] == 1
+
+
+def test_transfer_to_tables_counts_chunked_and_described(monkeypatch, tmp_path):
+    """Regression for the #16978 review follow-up: _transfer_to_tables
+    is the path that emits IMAGE blocks for naive/manual/paper. The
+    final coverage stamp must reflect that emission (chunked += 1,
+    described += 1 when vlm_description is set) so operators can see
+    the full pipeline outcome — not just the section path."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    # Create real image files on disk so PIL.Image.open succeeds.
+    a_path = tmp_path / "a.jpg"
+    b_path = tmp_path / "b.jpg"
+    module.Image.new("RGB", (2, 2), "red").save(a_path)
+    module.Image.new("RGB", (2, 2), "blue").save(b_path)
+
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption A"],
+            "image_footnote": [],
+            "img_path": str(a_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "VLM description for A.",
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": str(b_path),
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+        },
+    ]
+
+    tables = parser._transfer_to_tables(outputs, table_enable=True)
+    assert len(tables) == 2
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_chunked"] == 2
+    assert coverage["images_described"] == 1  # only the first had a vlm_description
+    assert coverage["images_dropped_no_text"] == 0

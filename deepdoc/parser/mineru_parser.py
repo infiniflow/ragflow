@@ -147,10 +147,8 @@ class MinerUParser(RAGFlowPdfParser):
         self.mineru_server_url = mineru_server_url.rstrip("/")
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
-        # Initialize the coverage stamp so callers don't need a
-        # getattr(self, "last_image_coverage", None) fallback — the
-        # attribute exists from construction regardless of whether
-        # parse_pdf has run yet (issue #16978 review follow-up).
+        # Initialize the coverage stamp so the attribute exists from
+        # construction regardless of whether parse_pdf has run yet.
         self.last_image_coverage: dict = {
             "images_detected": 0,
             "images_chunked": 0,
@@ -858,9 +856,7 @@ class MinerUParser(RAGFlowPdfParser):
             # Count every IMAGE block we see — including those routed
             # through naive/manual/paper's separate _transfer_to_tables
             # path below — so the image_coverage stamp accurately reports
-            # "detected" regardless of parse_method (issue #16978 review
-            # follow-up: previously the increment lived below this skip
-            # and naive/manual/paper reported images_detected=0).
+            # "detected" regardless of parse_method.
             if output_type == MinerUContentType.IMAGE:
                 image_coverage["images_detected"] += 1
             # These chunkers consume tables and images separately, so exclude
@@ -968,10 +964,16 @@ class MinerUParser(RAGFlowPdfParser):
                 tables.append(((None, text), positions))
                 continue
 
+            # Mirror the chunked/described counters from
+            # _transfer_to_sections so the final image_coverage stamp
+            # reflects what app-media modes actually returned — not just
+            # what the text-section path saw (issue #16978 review).
+            self.last_image_coverage["images_chunked"] += 1
             texts = [*output.get("image_caption", []), *output.get("image_footnote", [])]
             vlm_description = (output.get("vlm_description") or "").strip()
             if vlm_description:
                 texts.append(vlm_description)
+                self.last_image_coverage["images_described"] += 1
 
             image = None
             image_path = output.get("img_path")
@@ -984,6 +986,10 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.warning(f"[MinerU] Failed to load image '{image_path}': {e}")
             if image is None:
                 self.logger.warning("[MinerU] Skip image without a readable resource: %s", image_path)
+                # An IMAGE block that was detected but produced no readable
+                # resource counts as dropped — surface it explicitly.
+                self.last_image_coverage["images_chunked"] -= 1
+                self.last_image_coverage["images_dropped_no_text"] += 1
                 continue
 
             tables.append(((image, texts or [""]), positions))
