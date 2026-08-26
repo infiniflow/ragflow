@@ -26,6 +26,7 @@ import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
+import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { getWebSearchProvider } from '../web-search-api-key';
 
 type ChatSettingsProps = { hasSingleChatBox: boolean };
@@ -45,6 +46,15 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
   const { visible: settingVisible, switchVisible: switchSettingVisible } =
     useSetModalState(false);
+
+  const {
+    formContainerRef,
+    handleInvalidSubmit,
+    modelSettingOpen,
+    onModelSettingOpenChange,
+    advancedSettingOpen,
+    onAdvancedSettingOpenChange,
+  } = useRevealSubmitErrors();
 
   type FormSchemaType = z.infer<typeof formSchema>;
 
@@ -125,10 +135,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     });
   }
 
-  function onInvalid(errors: any) {
-    void errors;
-  }
-
   useEffect(() => {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
@@ -202,13 +208,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+                ref={formContainerRef}
+                onSubmit={form.handleSubmit(onSubmit, handleInvalidSubmit)}
                 className="flex-1 flex flex-col min-h-0"
               >
                 <ScrollArea viewportClassName="[&>div]:!block">
                   <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
-                    <ChatBasicSetting></ChatBasicSetting>
-                    <ChatPromptEngine></ChatPromptEngine>
+                    <ChatBasicSetting
+                      collapseOpen={modelSettingOpen}
+                      onCollapseOpenChange={onModelSettingOpenChange}
+                    ></ChatBasicSetting>
+                    <ChatPromptEngine
+                      collapseOpen={advancedSettingOpen}
+                      onCollapseOpenChange={onAdvancedSettingOpenChange}
+                    ></ChatPromptEngine>
                   </section>
                 </ScrollArea>
 
