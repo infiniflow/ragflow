@@ -26,6 +26,10 @@ from collections.abc import Mapping, Sequence
 from typing import ClassVar
 from urllib.parse import urlparse
 
+import concurrent.futures
+import threading
+import time
+
 import requests
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
@@ -789,22 +793,39 @@ class CitySenseSpeechKitSeq2txt(Base):
         except Exception as e:
             return False, f"Не удалось подключиться к CitySense по адресу {self.base_url}: {e}"
 
-    def transcription(self, audio_path, **kwargs):
-        # media-speech-mcp multipart: POST /api/v1/transcription/upload
-        # Фолбэк на JSON URL, если audio_path — это http(s) ссылка и multipart эндпоинт отсутствует
+    def _try_cancel_remote(self, task_id: str):
+        if not task_id or not self.base_url or not self.api_key:
+            return
+        headers = {"X-Service-Token": self.api_key, "X-Task-Id": task_id}
+        for path in [f"/api/v1/transcription/task/{task_id}", f"/api/v1/transcription/ops/{task_id}"]:
+            try:
+                requests.delete(f"{self.base_url}{path}", headers=headers, timeout=3)
+            except Exception:
+                pass
+
+    def _transcription_sync(self, audio_path, session_holder, **kwargs):
+        # синхронная реализация, вызывается в отдельном потоке
         if not self.api_key:
             return "**ERROR**: API ключ не задан — укажите MEDIA_SPEECH_API_KEY в UI или env", 0
         if not self.base_url:
             return "**ERROR**: base_url не задан — укажите Base URL в UI или env MEDIA_SPEECH_BASE_URL", 0
         url = f"{self.base_url}/api/v1/transcription/upload"
+        task_id = kwargs.get("task_id") or kwargs.get("taskId") or ""
         headers = {"X-Service-Token": self.api_key}
+        if task_id:
+            headers["X-Task-Id"] = task_id
         # remote url passthrough: use JSON transcribe endpoint
         if isinstance(audio_path, str) and audio_path.startswith(("http://", "https://")):
+            session = requests.Session()
+            session_holder.append(session)
             try:
-                resp = requests.post(
+                payload = {"mediaFileUrl": audio_path, "fileName": os.path.basename(audio_path), "language": kwargs.get("language", "")}
+                if task_id:
+                    payload["taskId"] = task_id
+                resp = session.post(
                     f"{self.base_url}/api/v1/transcription/transcribe",
                     headers={**headers, "Content-Type": "application/json"},
-                    json={"mediaFileUrl": audio_path, "fileName": os.path.basename(audio_path), "language": kwargs.get("language", "")},
+                    json=payload,
                     timeout=600,
                 )
                 resp.raise_for_status()
@@ -818,7 +839,17 @@ class CitySenseSpeechKitSeq2txt(Base):
                 text = resp.text.strip()
                 return text, num_tokens_from_string(text)
             except Exception as e:
+                if "canceled" in str(e).lower() or "cancel" in str(e).lower():
+                    raise
                 return f"**ERROR**: {e}", 0
+            finally:
+                try:
+                    session.close()
+                except Exception:
+                    pass
+        # multipart upload
+        session = requests.Session()
+        session_holder.append(session)
         try:
             ext = os.path.splitext(audio_path)[1].lower()
             mime_map = {".wav": "audio/wav", ".flac": "audio/flac", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm", ".mp3": "audio/mpeg"}
@@ -828,7 +859,9 @@ class CitySenseSpeechKitSeq2txt(Base):
                 data = {"model": self.model_name}
                 if kwargs.get("language"):
                     data["language"] = kwargs.get("language")
-                resp = requests.post(url, headers=headers, files=files, data=data, timeout=600)
+                if task_id:
+                    data["taskId"] = task_id
+                resp = session.post(url, headers=headers, files=files, data=data, timeout=600)
             resp.raise_for_status()
             try:
                 j = resp.json()
@@ -842,3 +875,76 @@ class CitySenseSpeechKitSeq2txt(Base):
         except Exception as e:
             logging.exception("Транскрибация CitySense-SpeechKit не удалась для модели %s", self.model_name)
             return f"**ERROR**: {e}", 0
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+    def transcription(self, audio_path, **kwargs):
+        # Обёртка с проверкой отмены ragflow (Redis has_canceled) и отправкой DELETE на mcp
+        task_id = kwargs.get("task_id") or kwargs.get("taskId") or ""
+        cancel_fn = kwargs.get("cancel_fn")
+        if cancel_fn is None and task_id:
+            try:
+                from api.db.services.task_service import has_canceled as _has_canceled
+
+                def _fn():
+                    try:
+                        return _has_canceled(task_id)
+                    except Exception:
+                        return False
+
+                cancel_fn = _fn
+            except Exception:
+                cancel_fn = lambda: False
+        if cancel_fn is None:
+            # без task_id просто синхронно
+            return self._transcription_sync(audio_path, [], **kwargs)
+
+        # быстрый выход если уже отменено
+        try:
+            if cancel_fn():
+                self._try_cancel_remote(task_id)
+                from common.exceptions import TaskCanceledException
+
+                raise TaskCanceledException("Task has been canceled")
+        except Exception as e:
+            if "canceled" in str(e).lower():
+                raise
+
+        session_holder: list = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self._transcription_sync, audio_path, session_holder, **kwargs)
+            while True:
+                try:
+                    return future.result(timeout=1.0)
+                except concurrent.futures.TimeoutError:
+                    try:
+                        is_canceled = cancel_fn()
+                    except Exception:
+                        is_canceled = False
+                    if is_canceled:
+                        logging.info(f"CitySenseSpeechKit: task {task_id} canceled detected, sending DELETE to mcp and closing session")
+                        self._try_cancel_remote(task_id)
+                        # закрываем HTTP сессию чтобы разорвать TCP и вызвать Reactor cancel на mcp
+                        # сессия может ещё не создаться (гонка) — ждём до 1s
+                        for _ in range(10):
+                            if session_holder:
+                                try:
+                                    session_holder[0].close()
+                                    break
+                                except Exception:
+                                    pass
+                            time.sleep(0.1)
+                        # ждём немного чтобы mcp успел прервать Yandex polling (2s) + cancel (5s), но результат игнорируем
+                        try:
+                            future.result(timeout=6.0)
+                        except Exception:
+                            pass
+                        from common.exceptions import TaskCanceledException
+
+                        raise TaskCanceledException("Task has been canceled")
+                    continue
+                except Exception:
+                    raise

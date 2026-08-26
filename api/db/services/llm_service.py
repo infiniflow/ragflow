@@ -279,11 +279,11 @@ class LLMBundle(LLM4Tenant):
 
         return txt
 
-    def transcription(self, audio):
+    def transcription(self, audio, **kwargs):
         if self.langfuse:
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="transcription", metadata={"model": self.model_config["llm_name"]})
 
-        txt, used_tokens = self.mdl.transcription(audio)
+        txt, used_tokens = self.mdl.transcription(audio, **kwargs)
         logging.info("LLMBundle.transcription used_tokens: %d", used_tokens)
 
         if self.langfuse:

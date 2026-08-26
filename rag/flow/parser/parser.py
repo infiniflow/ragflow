@@ -1218,7 +1218,12 @@ class Parser(ProcessBase):
             tmp_path = os.path.abspath(tmpf.name)
             seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.ASR, vlm["llm_id"])
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
-            txt = seq2txt_mdl.transcription(tmp_path)
+            # Пробрасываем task_id для отмены (pipeline.py:29 task_id, иначе _task_id)
+            task_id = getattr(self._canvas, "task_id", None) or getattr(self._canvas, "_task_id", None) or getattr(self._param, "task_id", None)
+            if task_id:
+                txt = seq2txt_mdl.transcription(tmp_path, task_id=task_id)
+            else:
+                txt = seq2txt_mdl.transcription(tmp_path)
 
             self.set_output("text", txt)
 

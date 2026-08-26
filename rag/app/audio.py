@@ -47,12 +47,28 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         callback(0.1, "USE Sequence2Txt LLM to transcription the audio")
         seq2txt_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.ASR)
         seq2txt_mdl = LLMBundle(tenant_id, seq2txt_model_config, lang=lang)
-        ans = seq2txt_mdl.transcription(tmp_path)
+        # Пробрасываем task_id для отмены: chunk_builder / task_executor передают task_id в kwargs
+        task_id = kwargs.get("task_id") or kwargs.get("taskId")
+        if task_id:
+            ans = seq2txt_mdl.transcription(tmp_path, task_id=task_id)
+        else:
+            ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
         tokenize(doc, ans, is_english, language=lang)
         return [doc]
     except Exception as e:
+        # Пробрасываем отмену как TaskCanceledException для корректной обработки в task_executor
+        try:
+            from common.exceptions import TaskCanceledException
+
+            if isinstance(e, TaskCanceledException) or "canceled" in str(e).lower():
+                callback(prog=-1, msg="Task has been canceled")
+                raise TaskCanceledException("Task has been canceled")
+        except TaskCanceledException:
+            raise
+        except Exception:
+            pass
         callback(prog=-1, msg=str(e))
     finally:
         if tmp_path and os.path.exists(tmp_path):
