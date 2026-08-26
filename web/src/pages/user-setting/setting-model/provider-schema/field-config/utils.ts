@@ -24,9 +24,9 @@ export function capitalize(s: string): string {
 }
 
 /**
- * When model_type contains chat and vision=true, automatically add image2text
+ * When model_type contains chat and vision=true, automatically add vision.
  */
-export function applyChatToImage2Text(
+export function applyChatToVision(
   modelType: string[] | string | undefined,
   vision?: boolean,
 ): string[] {
@@ -36,7 +36,7 @@ export function applyChatToImage2Text(
       ? [modelType]
       : [];
   if (arr.includes('chat') && vision) {
-    return [...arr, 'image2text'];
+    return [...arr, 'vision'];
   }
   return arr;
 }

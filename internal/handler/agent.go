@@ -669,23 +669,6 @@ func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[str
 	return name, data
 }
 
-// sanitiseRunEventError passes through the error event payload
-// unchanged. The runner serialises canvas.ErrorEvent ({"message": ...})
-// before push, so when the payload round-trips through JSON the
-// message field is already preserved. Heuristic sanitisation is
-// disabled until the runner tags error events with a "kind"
-// field — without that, blanket rewriting every error to
-// "Internal storage error while accessing the agent." hides the
-// real failure from the front-end and the user (v3.6.1 diagnostic
-// regression: every canvas run failure surfaced as the same opaque
-// string).
-func sanitiseRunEventError(data string) string {
-	if data == "" {
-		return `{"message":"Unknown agent runtime error"}`
-	}
-	return data
-}
-
 // CancelSessionRun cancels one ordinary Agent run by session id.
 // @Summary Cancel Agent Session Run
 // @Tags agents

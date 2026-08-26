@@ -437,7 +437,7 @@ async def _search_compiled_rows(
         embd_mdl = getattr(tools, "embed_mdl", None)
         if embd_mdl:
             try:
-                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_n, 0.1))
+                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_k=top_n, num_candidates=top_n * 2, similarity=0.1))
             except Exception:
                 _LOG.exception("[Compiled expand] vector build failed; using keyword match")
         if not exprs:
@@ -681,7 +681,7 @@ async def _search_synthesis_pages(
         embd_mdl = getattr(tools, "embed_mdl", None)
         if embd_mdl:
             try:
-                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_n, 0.1))
+                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_k=top_n, num_candidates=top_n * 2, similarity=0.1))
             except Exception:
                 _LOG.exception("[Wiki expand] vector build failed; using keyword match")
         if not exprs:

@@ -151,11 +151,16 @@ func TestMergeCaptions_ReadingOrderByTop(t *testing.T) {
 func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 	table := pdf.Section{
 		Text: "<table><tr><th >Month</th><th >Revenue</th></tr></table>", LayoutType: pdf.LayoutTypeTable,
-		// Cross-page merged table: Positions[0] keeps ONLY the first page's
-		// geometry (pages=[0], the page-0 band), exactly like 13's real merged
-		// table. A caption on a LATER page of the same table lands inside this
-		// band in page-local coordinates (gapY=0) and must still attach.
-		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777}},
+		// Cross-page merged table: table_merge.go appends one Position entry
+		// PER spanned page, so a real merged table carries MULTIPLE Position
+		// entries (here pages 0 and 2), each with that page's local geometry.
+		// A caption on a LATER page of the same table lands inside that page's
+		// band in page-local coordinates (gapY=0) and must still attach — this
+		// is the 13/14 cross-page caption continuation case.
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777},
+			{PageNumbers: []int{2}, Left: 82, Right: 513, Top: 98, Bottom: 777},
+		},
 	}
 	for _, c := range []struct {
 		name    string
@@ -239,5 +244,39 @@ func TestMergeCaptions_FigureCaptionRawText(t *testing.T) {
 	}
 	if strings.Contains(got.Text, "<caption>") {
 		t.Errorf("figure section must NOT be wrapped in a <caption> element (table-specific): %q", got.Text)
+	}
+}
+
+// TestMergeCaptions_NarrowCaptionAttachesWideTable locks the fix for the
+// icbccs '请求参数' caption: a NARROW caption (short label, small horizontal
+// extent) sitting directly above a much WIDER table has a large horizontal
+// offset dx to the table's center. Before the fix, findTables rejected the
+// match because dx² alone exceeded maxCaptionGap, so MergeCaptions dropped
+// the caption (no table target) — losing the text. Vertical adjacency
+// (small gapY) is the real signal that the caption belongs to that table, so
+// the fix attaches it when gapY <= maxCaptionVGap regardless of dx.
+//
+// Geometry mirrors icbccs: caption x∈[28,100] (center 64) above a full-width
+// table x∈[30,565] (center ~297); dx≈233 → dx²≈54k > maxCaptionGap(40k), but
+// gapY=19 ≤ maxCaptionVGap(200) → must attach.
+func TestMergeCaptions_NarrowCaptionAttachesWideTable(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td >名称</td><td >位置</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 30, Right: 565, Top: 197, Bottom: 314}}},
+		{Text: "请求参数", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 28, Right: 100, Top: 157, Bottom: 178}}},
+	}
+	figures := pdf.CollectFigures(sections)
+	result := MergeCaptions(sections, figures)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (table with caption, standalone caption removed), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0].Text
+	if !strings.Contains(got, "<caption>请求参数</caption>") {
+		t.Errorf("narrow caption not injected as <caption>; got %q", got)
+	}
+	if strings.Count(got, "请求参数") != 1 {
+		t.Errorf("caption text should appear exactly once (inside <caption>), got %q", got)
 	}
 }

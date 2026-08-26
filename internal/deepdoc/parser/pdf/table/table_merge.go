@@ -10,7 +10,13 @@ import (
 // MergeTablesAcrossPages merges TableItems on consecutive pages with
 // overlapping X and close Y proximity.  Matches Python's
 // _extract_table_figure table merge (pdf_parser.py:1061-1080).
-func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float64) []pdf.TableItem {
+//
+// pageHeights maps each 0-based page number to its PDF-point page height. It
+// is required to measure the cross-page Y gap in a page-absolute frame: the
+// continuation table's page-local Top must be offset by the anchor page's
+// height, otherwise two tables whose page-local Y merely repeats every page
+// look adjacent and get wrongly merged.
+func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights map[int]float64) []pdf.TableItem {
 	if len(tables) <= 1 {
 		return tables
 	}
@@ -97,7 +103,21 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 					mh = h
 				}
 			}
+			// page-local yDis (Y resets to 0 on each page). A genuine
+			// cross-page continuation sits at the TOP of the next page, which
+			// in page-local coordinates is "above" the anchor, so yDis is
+			// NEGATIVE — merge it as-is. Two separate tables that merely
+			// repeat their page-local Y every page have a POSITIVE yDis; only
+			// then shift into the page-absolute frame (by the anchor page
+			// height) so the over-merge is rejected. This restates the
+			// icbccs-crosspage-table-overmerge guard from #18688 without also
+			// rejecting legitimate continuations.
 			yDis := (bp.Top + bp.Bottom - anchorBtm - ap.Bottom) / 2
+			if yDis >= 0 {
+				if anchorPageH, ok := pageHeights[anchorPg]; ok && anchorPageH > 0 {
+					yDis += anchorPageH
+				}
+			}
 			if yDis > mh*23 {
 				continue
 			}

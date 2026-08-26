@@ -76,6 +76,63 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 	return resolveModelConfig(ctx, db, tenantID, modelType, modelID)
 }
 
+// resolveTenantOCRModelByProvider resolves the tenant's first active OCR
+// model under the named provider (e.g. "PaddleOCR"), mirroring Python's
+// get_first_provider_model_name(tenant_id, provider_name, LLMType.OCR).
+// It walks provider -> instances -> models and returns the first model whose
+// model_type includes the OCR bit, resolved through resolveModelConfigByID.
+var resolveTenantOCRModelByProvider = defaultResolveTenantOCRModelByProvider
+
+func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	providerDAO := dao.NewTenantModelProviderDAO()
+	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	if err != nil {
+		// Some OCR providers are registered under sibling names: the cloud
+		// "PaddleOCR" provider and the local "PaddleOCR.local" provider expose
+		// the same OCR capability. Tolerate the alternate spelling before
+		// giving up so a tenant configured with either name resolves.
+		for _, alias := range paddleOCRProviderAliases() {
+			if alias == providerName {
+				continue
+			}
+			if p, aerr := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, alias); aerr == nil {
+				provider, err = p, nil
+				break
+			}
+		}
+		if err != nil {
+			return nil, "", nil, 0, fmt.Errorf("tenant %s has no %s provider: %w", tenantID, providerName, err)
+		}
+	}
+	instanceDAO := dao.NewTenantModelInstanceDAO()
+	instances, err := instanceDAO.GetAllInstancesByProviderID(ctx, db, provider.ID)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	modelDAO := dao.NewTenantModelDAO()
+	for _, instance := range instances {
+		models, err := modelDAO.GetModelsByInstanceID(ctx, db, instance.ID)
+		if err != nil {
+			return nil, "", nil, 0, err
+		}
+		for _, model := range models {
+			if model.Status != "active" || !entity.ModelType(model.ModelType).Has(entity.ModelTypeOCR) {
+				continue
+			}
+			return resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, model.ID)
+		}
+	}
+	return nil, "", nil, 0, fmt.Errorf("tenant %s has no active %s OCR model", tenantID, providerName)
+}
+
+// paddleOCRProviderAliases returns the registered provider names that expose
+// PaddleOCR OCR models: the cloud "PaddleOCR" provider and the local
+// "PaddleOCR.local" provider. Both carry OCR-typed models and route through
+// the PaddleOCR PDF dispatch regardless of which spelling a tenant configured.
+func paddleOCRProviderAliases() []string {
+	return []string{"PaddleOCR", "PaddleOCR.local"}
+}
+
 func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
 	if tenant == nil {
 		return ""

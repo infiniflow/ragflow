@@ -2010,6 +2010,16 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "deepseek-v4-flash-vision-exp",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-v4-pro",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 1000000,
