@@ -565,6 +565,7 @@ class Dealer:
         similarity_threshold=0.2,
         vector_similarity_weight=0.3,
         doc_ids=None,
+        doc_ids_as_filter=False,
         aggs=True,
         rerank_mdl=None,
         highlight=False,
@@ -596,9 +597,12 @@ class Dealer:
             raise Exception(f"Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top {page_size} results.")
 
         rerank_candidates_page = 1
+        # doc_ids_as_filter keeps the engine query unscoped so the candidate
+        # window matches the unfiltered run; doc_ids narrow valid_idx later.
+        engine_doc_ids = None if (doc_ids_as_filter and doc_ids) else doc_ids
         req = {
             "kb_ids": kb_ids,
-            "doc_ids": doc_ids,
+            "doc_ids": engine_doc_ids,
             "page": rerank_candidates_page,
             "size": rerank_candidates_count,
             "question": question,
@@ -698,10 +702,17 @@ class Dealer:
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
 
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
+        # doc_aggs describe the unfiltered candidate window; a doc_ids filter
+        # only narrows the returned page and total so the per-file counts the
+        # file filter showed before submitting stay correct afterwards.
+        aggs_idx = valid_idx
+        if doc_ids_as_filter and doc_ids:
+            wanted_doc_ids = set(doc_ids)
+            valid_idx = [i for i in valid_idx if sres.field.get(sres.ids[i], {}).get("doc_id") in wanted_doc_ids]
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
 
-        if filtered_count == 0:
+        if filtered_count == 0 and not aggs_idx:
             ranks["doc_aggs"] = []
             return ranks
 
@@ -752,7 +763,7 @@ class Dealer:
             ranks["chunks"].append(d)
 
         if aggs:
-            for i in valid_idx:
+            for i in aggs_idx:
                 id = sres.ids[i]
                 chunk = sres.field[id]
                 dnm = chunk.get("docnm_kwd", "")

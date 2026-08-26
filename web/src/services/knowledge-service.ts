@@ -158,7 +158,14 @@ const chunkService = {
     delete rest.kb_id;
     delete rest.knowledge_id;
     return request.post(api.retrievalTest, {
-      data: { ...rest, dataset_ids: datasetIds },
+      data: {
+        ...rest,
+        dataset_ids: datasetIds,
+        // Treat doc_ids as a filter over the current retrieval results (not a
+        // re-scoped search) so the per-file counts shown in the File filter
+        // match the totals returned after applying it.
+        doc_ids_as_filter: true,
+      },
     });
   },
   chunkList: async (params: Record<string, any>) => {

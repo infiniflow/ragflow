@@ -1058,6 +1058,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
+    doc_ids_as_filter = bool(req.get("doc_ids_as_filter", False))
     use_kg = req.get("use_kg", False)
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
@@ -1168,6 +1169,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         similarity_threshold,
         vector_similarity_weight,
         doc_ids=local_doc_ids,
+        doc_ids_as_filter=doc_ids_as_filter,
         knn_top_k=knn_top_k,
         knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,
@@ -1444,6 +1446,7 @@ async def search_datasets(tenant_id: str, req: dict):
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
+    doc_ids_as_filter = bool(req.get("doc_ids_as_filter", False))
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     knn_top_k = max(1, min(int(req.get("knn_top_k", 1024)), 2048))
@@ -1569,6 +1572,7 @@ async def search_datasets(tenant_id: str, req: dict):
         similarity_threshold,
         vector_similarity_weight,
         doc_ids=local_doc_ids,
+        doc_ids_as_filter=doc_ids_as_filter,
         knn_top_k=knn_top_k,
         knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,

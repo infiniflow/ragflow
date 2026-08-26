@@ -276,6 +276,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Question:               modifiedQuestion,
 		KbIDs:                  datasetIDs,
 		DocIDs:                 docIDs,
+		DocIDsAsFilter:         req.DocIDsAsFilter != nil && *req.DocIDsAsFilter,
 		Page:                   page,
 		PageSize:               pageSize,
 		RerankCandidatesCount:  &rerankCandidatesCount,

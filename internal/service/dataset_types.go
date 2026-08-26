@@ -43,6 +43,7 @@ type SearchDatasetsRequest struct {
 	Size                   *int                   `json:"size,omitempty"`
 	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	DocIDsAsFilter         *bool                  `json:"doc_ids_as_filter,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
@@ -73,6 +74,7 @@ type SearchDatasetRequest struct {
 	Size                   *int                   `json:"size,omitempty"`
 	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	DocIDsAsFilter         *bool                  `json:"doc_ids_as_filter,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
@@ -99,6 +101,7 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Size:                   req.Size,
 		RerankCandidatesCount:  req.RerankCandidatesCount,
 		DocIDs:                 req.DocIDs,
+		DocIDsAsFilter:         req.DocIDsAsFilter,
 		UseKG:                  req.UseKG,
 		KNNTopK:                req.KNNTopK,
 		TopK:                   req.TopK,

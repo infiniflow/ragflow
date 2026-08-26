@@ -9,9 +9,12 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
@@ -65,6 +68,130 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 		if !ok || mustNot["exists"] != "compile_kwd" {
 			t.Fatalf("must_not filter = %#v", filters["must_not"])
 		}
+	}
+}
+
+func TestRetrievalDocIDsAsFilterKeepsCountsConsistent(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	for _, docID := range []string{"doc-a", "doc-b"} {
+		if err := db.Create(&entity.Document{ID: docID, ParserConfig: entity.JSONMap{}}).Error; err != nil {
+			t.Fatalf("seed %s: %v", docID, err)
+		}
+	}
+	oldDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = oldDB })
+
+	rows := make([]map[string]interface{}, 0, 60)
+	for i := 0; i < 60; i++ {
+		docID, docName := "doc-a", "a.pdf"
+		if i >= 30 {
+			docID, docName = "doc-b", "b.pdf"
+		}
+		rows = append(rows, map[string]interface{}{
+			"id":                  fmt.Sprintf("chunk-%02d", i),
+			"content_ltks":        "alpha",
+			"content_with_weight": "alpha",
+			"doc_id":              docID,
+			"docnm_kwd":           docName,
+			"_score":              0.9,
+		})
+	}
+
+	top := 100
+	threshold := 0.5
+	vectorWeight := 1.0
+	rerankCandidatesCount := 70
+	newReq := func() *RetrievalRequest {
+		return &RetrievalRequest{
+			Question:               "alpha",
+			TenantIDs:              []string{"tenant-1"},
+			Page:                   1,
+			PageSize:               10,
+			KNNTopK:                &top,
+			SimilarityThreshold:    &threshold,
+			VectorSimilarityWeight: &vectorWeight,
+			RerankCandidatesCount:  &rerankCandidatesCount,
+		}
+	}
+	aggCount := func(aggs []map[string]interface{}, docID string) int {
+		for _, agg := range aggs {
+			if agg["doc_id"] == docID {
+				count, _ := agg["count"].(int)
+				return count
+			}
+		}
+		return 0
+	}
+
+	unfilteredEngine := &retrievalCountEngine{rows: rows}
+	unfiltered, err := NewRetrievalService(unfilteredEngine, &dao.DocumentDAO{}).Retrieval(context.Background(), newReq())
+	if err != nil {
+		t.Fatalf("unfiltered Retrieval failed: %v", err)
+	}
+	if unfiltered.Total != 60 {
+		t.Fatalf("unfiltered total = %d, want 60", unfiltered.Total)
+	}
+	if got := aggCount(unfiltered.DocAggs, "doc-a"); got != 30 {
+		t.Fatalf("unfiltered doc-a count = %d, want 30", got)
+	}
+	if got := aggCount(unfiltered.DocAggs, "doc-b"); got != 30 {
+		t.Fatalf("unfiltered doc-b count = %d, want 30", got)
+	}
+
+	filteredReq := newReq()
+	filteredReq.DocIDs = []string{"doc-a"}
+	filteredReq.DocIDsAsFilter = true
+	filteredEngine := &retrievalCountEngine{rows: rows}
+	filtered, err := NewRetrievalService(filteredEngine, &dao.DocumentDAO{}).Retrieval(context.Background(), filteredReq)
+	if err != nil {
+		t.Fatalf("filtered Retrieval failed: %v", err)
+	}
+	if len(filteredEngine.searchFilters) == 0 {
+		t.Fatal("expected an engine search call")
+	}
+	for _, filters := range filteredEngine.searchFilters {
+		if _, scoped := filters["doc_id"]; scoped {
+			t.Fatalf("engine query was scoped by doc_id despite doc_ids_as_filter: %#v", filters["doc_id"])
+		}
+	}
+	if filtered.Total != 30 {
+		t.Fatalf("filtered total = %d, want 30 (the count doc_aggs showed for doc-a)", filtered.Total)
+	}
+	for _, chunk := range filtered.Chunks {
+		if chunk["doc_id"] != "doc-a" {
+			t.Fatalf("filtered chunk from %v, want doc-a", chunk["doc_id"])
+		}
+	}
+	if got := aggCount(filtered.DocAggs, "doc-a"); got != 30 {
+		t.Fatalf("filtered doc-a agg count = %d, want 30", got)
+	}
+	if got := aggCount(filtered.DocAggs, "doc-b"); got != 30 {
+		t.Fatalf("filtered doc-b agg count = %d, want 30 (doc_aggs must describe the unfiltered window)", got)
+	}
+
+	scopedReq := newReq()
+	scopedReq.DocIDs = []string{"doc-a"}
+	scopedEngine := &retrievalCountEngine{rows: rows}
+	if _, err := NewRetrievalService(scopedEngine, &dao.DocumentDAO{}).Retrieval(context.Background(), scopedReq); err != nil {
+		t.Fatalf("scoped Retrieval failed: %v", err)
+	}
+	if len(scopedEngine.searchFilters) == 0 {
+		t.Fatal("expected an engine search call")
+	}
+	scopedDocIDs, _ := scopedEngine.searchFilters[0]["doc_id"].([]string)
+	if len(scopedDocIDs) != 1 || scopedDocIDs[0] != "doc-a" {
+		t.Fatalf("scoped engine query missing doc_id filter: %#v", scopedEngine.searchFilters[0]["doc_id"])
 	}
 }
 

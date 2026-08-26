@@ -47,10 +47,15 @@ func NewRetrievalService(docEngine engine.DocEngine, documentDAO *dao.DocumentDA
 
 // RetrievalRequest request for retrieval search
 type RetrievalRequest struct {
-	Question               string
-	TenantIDs              []string
-	KbIDs                  []string
-	DocIDs                 []string
+	Question  string
+	TenantIDs []string
+	KbIDs     []string
+	DocIDs    []string
+	// DocIDsAsFilter narrows the threshold-valid candidate set by DocIDs
+	// after retrieval instead of pushing DocIDs into the engine query. UI
+	// file filters set it so the per-file doc_aggs counts shown before
+	// filtering match the totals returned after filtering.
+	DocIDsAsFilter         bool
 	Page                   int
 	PageSize               int
 	RerankCandidatesCount  *int
@@ -128,12 +133,19 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}
 	common.Debug("Retrieval rerank candidate params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("rerankCandidatesCount", rerankCandidatesCount))
 
+	// With DocIDsAsFilter the engine query stays unscoped so the candidate
+	// window matches the unfiltered run; DocIDs narrow the valid set later.
+	searchDocIDs := req.DocIDs
+	if req.DocIDsAsFilter && len(req.DocIDs) > 0 {
+		searchDocIDs = nil
+	}
+
 	// Execute search via Search()
 	searchReq := &RetrievalSearchRequest{
 		TenantIDs:              req.TenantIDs,
 		Question:               req.Question,
 		KbIDs:                  req.KbIDs,
-		DocIDs:                 req.DocIDs,
+		DocIDs:                 searchDocIDs,
 		Page:                   1,
 		PageSize:               rerankCandidatesCount,
 		KNNTopK:                *req.KNNTopK,
@@ -191,6 +203,33 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}
 	if len(validIdx) == 0 {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
+	}
+
+	// doc_aggs describe the unfiltered candidate window; a doc_ids filter
+	// only narrows the returned page and total so the per-file counts the
+	// file filter showed before submitting stay correct afterwards.
+	aggsIdx := validIdx
+	if req.DocIDsAsFilter && len(req.DocIDs) > 0 {
+		docIDSet := make(map[string]struct{}, len(req.DocIDs))
+		for _, id := range req.DocIDs {
+			docIDSet[id] = struct{}{}
+		}
+		filteredIdx := make([]int, 0, len(validIdx))
+		for _, i := range validIdx {
+			if i < 0 || i >= len(searchResult.IDs) {
+				continue
+			}
+			chunk, ok := searchResult.Field[searchResult.IDs[i]]
+			if !ok {
+				continue
+			}
+			if docID, _ := chunk["doc_id"].(string); docID != "" {
+				if _, wanted := docIDSet[docID]; wanted {
+					filteredIdx = append(filteredIdx, i)
+				}
+			}
+		}
+		validIdx = filteredIdx
 	}
 
 	// Calculate pagination
@@ -347,7 +386,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			docID string
 			count int
 		})
-		for _, i := range validIdx {
+		for _, i := range aggsIdx {
 			if i < 0 || i >= len(searchResult.IDs) {
 				continue
 			}
