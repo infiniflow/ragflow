@@ -9,10 +9,18 @@ from common import settings
 def test_migrate_tenant_model_type_column_skips_integer(monkeypatch):
     executed = []
 
+    class FakeDB:
+        @staticmethod
+        def table_exists(_name):
+            return True
+
+        @staticmethod
+        def execute_sql(sql, params=None):
+            executed.append("sql")
+
     monkeypatch.setattr(db_models, "_get_column_data_type", lambda *_args: "integer")
-    monkeypatch.setattr(db_models, "DB", type("DB", (), {"table_exists": staticmethod(lambda _name: True)})())
+    monkeypatch.setattr(db_models, "DB", FakeDB)
     monkeypatch.setattr(db_models, "alter_db_add_column", lambda *_args: executed.append("add"))
-    monkeypatch.setattr(db_models.DB, "execute_sql", lambda *_args, **_kwargs: executed.append("sql"))
 
     db_models.migrate_tenant_model_type_column(object())
 
