@@ -894,6 +894,9 @@ export default {
       created: '作成日',
       action: 'アクション',
       embedModalTitle: 'ウェブサイトに埋め込む',
+      embedUserIdPlaceholder: '例: user-001',
+      embedUserIdTooltip:
+        '埋め込みページのエンドユーザーを識別する文字列（最大255文字）です。埋め込みURLに userId パラメータとして付加されます。',
       comingSoon: '近日公開',
       fullScreenTitle: '全画面埋め込み',
 
