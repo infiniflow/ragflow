@@ -67,6 +67,38 @@ The Google Drive data source is used to synchronize files or folders in Google D
 
 ![Google Drive](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Google_Drive.jpg)
 
+## Feishu Wiki
+
+The Feishu Wiki data source synchronizes approved attachment files from a Wiki subtree into a RAGFlow dataset. It supports an immediate manual rebuild and incremental automatic synchronization through the existing connector scheduler. Screening rules are evaluated before file bodies are downloaded.
+
+**Permission requirements**: The Feishu custom app requires read-only Wiki and Drive permissions, and the app must be added to the target Wiki as a member with sufficient access to list nodes and download files.
+
+**Supported content**: The first release imports downloadable Wiki `file` nodes. Native Feishu Docs, Sheets, and Slides require export APIs and are not imported directly. Their descendants are still traversed so nested attachment files can be discovered.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify the Feishu Wiki connection.
+- **Feishu App ID**: Enter the App ID of the Feishu custom app.
+- **Feishu App Secret**: Enter the App Secret. The field is masked and must not be copied into logs or documentation.
+- **Wiki Space ID**: Enter the numeric ID of the target Wiki space.
+- **Wiki root node token**: Enter the token from the root Wiki URL. The connector recursively scans descendants of this node.
+- **Allowed file extensions**: Optional allow-list such as `pdf`, `docx`, `xlsx`, `pptx`, `jpg`, and `png`. Leave it empty to accept every file extension supported by the connector.
+- **Required filename keywords**: Optional list. When configured, a filename must contain at least one keyword.
+- **Excluded filename keywords**: Optional list. Any matching filename is skipped before download.
+- **Batch size**: Number of files emitted to the RAGFlow synchronization pipeline in one batch.
+- **Refresh interval**: On the connection details page, set how often RAGFlow scans for changed files.
+
+**Operation**:
+
+1. Open **User settings > Data source > Feishu Wiki**, enter the configuration, and select **Test connection**.
+2. Open the target dataset settings and link the new data source.
+3. Keep **Auto parse** enabled so matching files enter the dataset's configured parser and chunking pipeline after upload.
+4. Select the rebuild action beside the linked source to run a full manual scan.
+5. Keep the connector running to perform incremental scans at the configured refresh interval.
+6. Check the data-source sync log and the dataset file status. A successful ingestion has a completed sync task, a parsed document, and at least one chunk.
+
+This connector never synchronizes source deletion. Removing a file from Feishu does not delete the corresponding RAGFlow document.
+
 ## OneDrive
 
 The OneDrive data source is used to synchronize files in OneDrive or OneDrive for Business to a RAGFlow knowledge base. After configuration, personal or department cloud files can be queried in a unified way.
