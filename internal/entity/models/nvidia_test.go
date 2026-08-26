@@ -41,7 +41,7 @@ func TestNvidiaListModelsUsesExactEndpointIDs(t *testing.T) {
 		URLSuffix{Models: "models"},
 	)
 	region := "default"
-	models, err := driver.ListModels(context.Background(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
+	models, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
 	if err != nil {
 		t.Fatalf("ListModels() error = %v", err)
 	}
@@ -133,7 +133,7 @@ func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
 	serverURL, _ := url.Parse(server.URL)
 	driver.hostedAPIHost = serverURL.Hostname()
 	region := "default"
-	models, err := driver.ListModels(context.Background(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
+	models, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
 	if err != nil {
 		t.Fatalf("ListModels() error = %v", err)
 	}
@@ -213,7 +213,7 @@ func TestNvidiaListModelsRejectsPartialHostedCatalog(t *testing.T) {
 	serverURL, _ := url.Parse(server.URL)
 	driver.hostedAPIHost = serverURL.Hostname()
 	region := "default"
-	if _, err := driver.ListModels(context.Background(), &APIConfig{ApiKey: ptr("nvapi-test"), Region: &region}); err == nil {
+	if _, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: ptr("nvapi-test"), Region: &region}); err == nil {
 		t.Fatal("ListModels() error = nil, want partial catalog rejection")
 	}
 }
@@ -331,7 +331,7 @@ func TestNvidiaChatUsesModelSpecificURL(t *testing.T) {
 		URLSuffix{Chat: "chat/completions"},
 	)
 	resp, err := driver.ChatWithMessages(
-		context.Background(),
+		t.Context(),
 		modelName,
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: ptr(apiKey)},
@@ -370,7 +370,7 @@ func TestNvidiaEmbedUsesModelSpecificURL(t *testing.T) {
 	)
 	namePtr := modelName
 	got, err := driver.Embed(
-		context.Background(),
+		t.Context(),
 		&namePtr,
 		EmbedRequest{Texts: []string{"hello"}},
 		&APIConfig{ApiKey: ptr(apiKey)},

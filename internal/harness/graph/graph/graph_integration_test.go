@@ -34,7 +34,7 @@ func TestGraphIntegration_SimpleInvoke(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{"value": ""})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{"value": ""})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestGraphIntegration_ConditionalEdge(t *testing.T) {
 	}
 
 	// Route A
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{"route": "a"})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{"route": "a"})
 	if err != nil {
 		t.Fatalf("Invoke(a): %v", err)
 	}
@@ -89,7 +89,7 @@ func TestGraphIntegration_ConditionalEdge(t *testing.T) {
 	}
 
 	// Route B
-	result, err = cg.Invoke(context.Background(), map[string]interface{}{"route": "b"})
+	result, err = cg.Invoke(t.Context(), map[string]interface{}{"route": "b"})
 	if err != nil {
 		t.Fatalf("Invoke(b): %v", err)
 	}
@@ -132,7 +132,7 @@ func TestGraphIntegration_DAGMode(t *testing.T) {
 		t.Skipf("DAG mode compile: %v (expected during validation)", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestGraphIntegration_FieldMapping(t *testing.T) {
 		t.Skipf("FieldMapping compile: %v (expected feature not fully wired)", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestGraphIntegration_CheckpointInterruptResume(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	config := &types.RunnableConfig{ThreadID: "graph-integration-cp-001"}
 
 	// Phase 1: Invoke — should interrupt before step_two
@@ -262,7 +262,7 @@ func TestGraphIntegration_Streaming(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	outCh, errCh := cg.Stream(ctx, map[string]interface{}{"value": ""}, types.StreamModeValues)
 
 	events := 0

@@ -23,7 +23,7 @@ func TestBeforeModelRewrite_InsertsPlaceholders(t *testing.T) {
 		schema.UserMessage("Tell me more"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestBeforeModelRewrite_CompleteToolCall(t *testing.T) {
 		schema.ToolMessage("Search result", "call_1"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestBeforeModelRewrite_NoToolCalls(t *testing.T) {
 		{Role: schema.RoleAssistant, Content: "Just a response"},
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
 		schema.UserMessage("User follow-up"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
 func TestBeforeModelRewrite_EmptyState(t *testing.T) {
 	mw := New[*schema.Message](nil)
 	state := core.NewReActAgentState[*schema.Message](nil, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}

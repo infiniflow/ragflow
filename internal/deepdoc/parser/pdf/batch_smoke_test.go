@@ -231,7 +231,7 @@ func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer) (*parseOneResult, er
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
 	t0 := time.Now()
-	parsed, err := p.ParseRaw(context.Background(), eng, deepDoc)
+	parsed, err := p.ParseRaw(t.Context(), eng, deepDoc)
 	elapsed := time.Since(t0).Seconds()
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)

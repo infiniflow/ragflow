@@ -11,7 +11,7 @@ import (
 // ======================== Session Values Tests ========================
 
 func TestSessionValues_Basic(t *testing.T) {
-	ctx, rc := initRunCtx(context.Background(), "test", &AgentInput{})
+	ctx, rc := initRunCtx(t.Context(), "test", &AgentInput{})
 	AddSessionValues(ctx, map[string]any{"key1": "val1", "key2": 42})
 
 	rc.mu.Lock()
@@ -28,18 +28,18 @@ func TestSessionValues_Basic(t *testing.T) {
 }
 
 func TestSessionValues_EmptyContext(t *testing.T) {
-	AddSessionValues(context.Background(), map[string]any{"key": "val"})
+	AddSessionValues(t.Context(), map[string]any{"key": "val"})
 	// Should not panic
 }
 
 func TestSessionValues_NilValues(t *testing.T) {
-	ctx, _ := initRunCtx(context.Background(), "test", &AgentInput{})
+	ctx, _ := initRunCtx(t.Context(), "test", &AgentInput{})
 	AddSessionValues(ctx, nil)
 	// Should not panic
 }
 
 func TestSessionValues_EmptyMap(t *testing.T) {
-	ctx, rc := initRunCtx(context.Background(), "test", &AgentInput{})
+	ctx, rc := initRunCtx(t.Context(), "test", &AgentInput{})
 	AddSessionValues(ctx, map[string]any{})
 	rc.mu.Lock()
 	l := len(rc.Session.Values)
@@ -50,7 +50,7 @@ func TestSessionValues_EmptyMap(t *testing.T) {
 }
 
 func TestSessionValues_ComplexTypes(t *testing.T) {
-	ctx, _ := initRunCtx(context.Background(), "test", &AgentInput{})
+	ctx, _ := initRunCtx(t.Context(), "test", &AgentInput{})
 	AddSessionValues(ctx, map[string]any{
 		"str":   "hello",
 		"int":   42,
@@ -77,7 +77,7 @@ func TestSessionValues_ComplexTypes(t *testing.T) {
 }
 
 func TestSessionValues_Overwrite(t *testing.T) {
-	ctx, rc := initRunCtx(context.Background(), "test", &AgentInput{})
+	ctx, rc := initRunCtx(t.Context(), "test", &AgentInput{})
 	AddSessionValues(ctx, map[string]any{"a": 1, "b": 2})
 	AddSessionValues(ctx, map[string]any{"b": 99, "c": 3})
 
@@ -96,7 +96,7 @@ func TestSessionValues_Overwrite(t *testing.T) {
 }
 
 func TestSessionValues_Concurrent(t *testing.T) {
-	ctx, rc := initRunCtx(context.Background(), "test", &AgentInput{})
+	ctx, rc := initRunCtx(t.Context(), "test", &AgentInput{})
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
@@ -120,7 +120,7 @@ func TestSessionValues_Concurrent(t *testing.T) {
 // ======================== RunPath Tests ========================
 
 func TestRunPath_Append(t *testing.T) {
-	_, rc := initRunCtx(context.Background(), "agent_a", &AgentInput{})
+	_, rc := initRunCtx(t.Context(), "agent_a", &AgentInput{})
 	rc.appendRunPath(RunStep{agentName: "agent_b"})
 
 	path := rc.getRunPath()
@@ -136,7 +136,7 @@ func TestRunPath_Append(t *testing.T) {
 }
 
 func TestRunPath_InitRunCtx(t *testing.T) {
-	_, rc := initRunCtx(context.Background(), "root", &AgentInput{})
+	_, rc := initRunCtx(t.Context(), "root", &AgentInput{})
 	if rc == nil {
 		t.Fatal("expected non-nil runContext")
 	}
@@ -150,7 +150,7 @@ func TestRunPath_InitRunCtx(t *testing.T) {
 }
 
 func TestRunPath_SharedParentSession(t *testing.T) {
-	ctx, _ := initRunCtx(context.Background(), "parent", &AgentInput{})
+	ctx, _ := initRunCtx(t.Context(), "parent", &AgentInput{})
 	AddSessionValues(ctx, map[string]any{"shared": true})
 
 	childCtxA := forkRunCtx(ctx)
@@ -173,7 +173,7 @@ func TestRunPath_SharedParentSession(t *testing.T) {
 // ======================== Fork/Join Tests ========================
 
 func TestForkJoinRunCtx_Basic(t *testing.T) {
-	ctx, rc := initRunCtx(context.Background(), "root", &AgentInput{})
+	ctx, rc := initRunCtx(t.Context(), "root", &AgentInput{})
 
 	childCtx := forkRunCtx(ctx)
 	child := getRunCtx(childCtx)
@@ -202,7 +202,7 @@ func TestForkJoinRunCtx_Basic(t *testing.T) {
 }
 
 func TestForkJoinRunCtx_Nested(t *testing.T) {
-	ctx, rc := initRunCtx(context.Background(), "A", &AgentInput{})
+	ctx, rc := initRunCtx(t.Context(), "A", &AgentInput{})
 
 	ctxB := forkRunCtx(ctx)
 	ctxC := forkRunCtx(ctx)
@@ -283,7 +283,7 @@ func TestEventWrapEntry_ConsumeStreamNilEvent(t *testing.T) {
 // ======================== Integration Tests ========================
 
 func TestRunCtx_IntegrationWithRunPath(t *testing.T) {
-	ctx, rc := initRunCtx(context.Background(), "first", &AgentInput{})
+	ctx, rc := initRunCtx(t.Context(), "first", &AgentInput{})
 	AddSessionValues(ctx, map[string]any{"user_id": "u-123"})
 
 	ctx2, _ := initRunCtx(ctx, "second", &AgentInput{})

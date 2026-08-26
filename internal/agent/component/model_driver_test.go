@@ -35,7 +35,7 @@ func TestNewChatModelDriverPreservesProviderChatSuffix(t *testing.T) {
 		models.NewChatModel(driver, &modelName, &models.APIConfig{ApiKey: &apiKey}),
 		nil,
 	)
-	response, err := chatModel.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	response, err := chatModel.Generate(t.Context(), []*schema.Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}

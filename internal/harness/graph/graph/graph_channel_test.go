@@ -69,7 +69,7 @@ func (b *chainBuilder) invoke(input interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Compile: %w", err)
 	}
-	return cg.Invoke(context.Background(), input)
+	return cg.Invoke(t.Context(), input)
 }
 
 // ============================================================
@@ -188,7 +188,7 @@ func TestGraphChannel_BinaryOperator_MultipleSteps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{"total": 0})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{"total": 0})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -471,7 +471,7 @@ func TestGraphChannel_Race_ConcurrentGraphInvocations(t *testing.T) {
 
 	for i := 0; i < concurrency; i++ {
 		wg.Go(func() {
-			_, err := cg.Invoke(context.Background(), map[string]interface{}{"val": ""})
+			_, err := cg.Invoke(t.Context(), map[string]interface{}{"val": ""})
 			if err != nil {
 				errs <- err
 			}
@@ -535,7 +535,7 @@ func TestGraphChannel_TimeoutCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	_, err = cg.Invoke(ctx, map[string]interface{}{"val": ""})
 	if err == nil {
