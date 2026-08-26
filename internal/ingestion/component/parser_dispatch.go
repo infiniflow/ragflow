@@ -87,9 +87,10 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 //
 //  1. setups[fileType].output_format (or "" when absent),
 //  2. if absent and the family has an allowed_output_format entry,
-//     use the first allowed value as the default (mirrors Python's
-//     per-family explicit default in ParserParam.__init__ setups,
-//     e.g. "image" → "json", "pdf" → "json"),
+//     use the Python per-family default (mirrors ParserParam.__init__
+//     setups, e.g. "image" → "json", "pdf" → "json", "spreadsheet" →
+//     "html"), falling back to allowed[0] only when no explicit default
+//     is known,
 //  3. if absent and the family has no allowed_output_format entry,
 //     return "" (the component falls back to text-page mode
 //     without validating).
@@ -99,6 +100,10 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // via check_empty / check_valid_value, surfaced as an error so the
 // component short-circuits with _ERROR rather than emitting a
 // payload the downstream chunker cannot consume.
+//
+// Strict mode: explicit legacy image:text is NOT coerced. Old canvases
+// must be re-saved/migrated; this keeps the contract tight and makes
+// the breakage explicit rather than silently fixing.
 func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, allowed map[string][]string) (string, error) {
 	setup, ok := setups[family]
 	if !ok {
@@ -116,9 +121,13 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 		return format, nil
 	}
 	if format == "" {
-		// No explicit format: use the first entry from the whitelist,
-		// which matches the Python per-family default declared in
-		// ParserParam.__init__ (e.g. image → json, pdf → json).
+		// No explicit format: use the Python per-family default declared
+		// in ParserParam.__init__ / defaultSetups(). This is not always
+		// allowed[0] (e.g. spreadsheet default is "html" but allowed[0]
+		// is "json"; markdown default is "json" but allowed[0] is "text").
+		if def, ok := defaultOutputFormatForFamily(family); ok {
+			return def, nil
+		}
 		return allowedList[0], nil
 	}
 	for _, candidate := range allowedList {
@@ -130,6 +139,27 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 		"parser: output_format %q for %q is not in allowed_output_format %v",
 		format, family, allowedList,
 	)
+}
+
+// defaultOutputFormatForFamily returns the Python/Go canonical default
+// output_format for a family, as declared in rag/flow/parser/parser.py
+// ParserParam.setups and mirrored in parser.go:defaultSetups(). Used when
+// setups[family] exists but output_format is empty.
+func defaultOutputFormatForFamily(family string) (string, bool) {
+	switch family {
+	case "pdf":
+		return "json", true
+	case "spreadsheet":
+		return "html", true
+	case "doc", "docx", "slides", "image", "markdown", "text&code", "html", "epub", "json":
+		return "json", true
+	case "email":
+		return "json", true
+	case "audio", "video":
+		return "text", true
+	default:
+		return "", false
+	}
 }
 
 // dispatchParse resolves the parser for the given fileType and invokes

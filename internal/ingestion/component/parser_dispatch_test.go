@@ -223,13 +223,16 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 
 // TestResolveOutputFormat_DefaultsAndWhitelist pins the two-layer
 // behavior of resolveOutputFormat: it returns the setup's
-// output_format when present (or "text" when absent), and
-// rejects values not in the allowed_output_format list.
+// output_format when present (or the per-family default when absent,
+// e.g. markdown→json, spreadsheet→html), and rejects values not in
+// the allowed_output_format list. Legacy image:text is coerced to json.
 func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	allowed := map[string][]string{
-		"pdf":      {"json", "markdown"},
-		"markdown": {"text", "json"},
-		"image":    {"json"},
+		"pdf":         {"json", "markdown"},
+		"markdown":    {"text", "json"},
+		"image":       {"json"},
+		"spreadsheet": {"json", "markdown", "html"},
+		"email":       {"text", "json"},
 	}
 	cases := []struct {
 		name    string
@@ -257,10 +260,34 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			want:   "markdown",
 		},
 		{
-			name:   "setup without output_format → default text",
+			name:   "setup without output_format → per-family default (markdown→json)",
 			setups: map[string]schema.ParserSetup{"markdown": {}},
 			family: "markdown",
-			want:   "text",
+			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (spreadsheet→html)",
+			setups: map[string]schema.ParserSetup{"spreadsheet": {}},
+			family: "spreadsheet",
+			want:   "html",
+		},
+		{
+			name:   "setup without output_format → per-family default (image→json)",
+			setups: map[string]schema.ParserSetup{"image": {}},
+			family: "image",
+			want:   "json",
+		},
+		{
+			name:    "image explicit text (legacy) → strict reject",
+			setups:  map[string]schema.ParserSetup{"image": {"output_format": "text"}},
+			family:  "image",
+			wantErr: true,
+		},
+		{
+			name:    "image explicit TEXT uppercase → strict reject",
+			setups:  map[string]schema.ParserSetup{"image": {"output_format": "TEXT"}},
+			family:  "image",
+			wantErr: true,
 		},
 		{
 			name:    "pdf asking for html (not allowed) → reject",
@@ -273,6 +300,12 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"video": {"output_format": "json"}},
 			family: "video",
 			want:   "json",
+		},
+		{
+			name:   "family with no whitelist empty → default text",
+			setups: map[string]schema.ParserSetup{"video": {}},
+			family: "video",
+			want:   "text",
 		},
 	}
 	for _, tc := range cases {
