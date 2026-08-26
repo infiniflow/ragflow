@@ -78,17 +78,24 @@ is_kb_scoped_chunk = _search.is_kb_scoped_chunk
 
 
 def test_is_kb_scoped_chunk_missing_or_empty_doc_id():
-    assert is_kb_scoped_chunk({"kb_id": "kb1"}) is True
-    assert is_kb_scoped_chunk({"kb_id": "kb1", "doc_id": ""}) is True
+    assert is_kb_scoped_chunk({"kb_id": "kb1"}) is False
+    assert is_kb_scoped_chunk({"kb_id": "kb1", "doc_id": ""}) is False
+
+
+def test_is_kb_scoped_chunk_compilation_row_without_doc_id():
+    assert is_kb_scoped_chunk({"kb_id": "kb1", "compile_kwd": "wiki_page"}) is True
+    assert is_kb_scoped_chunk({"kb_id": "kb1", "doc_id": "", "compile_kwd": ["wiki_canonical_entity"]}) is True
 
 
 def test_is_kb_scoped_chunk_sentinel_matches_kb():
     assert is_kb_scoped_chunk({"kb_id": "kb1", "doc_id": "kb1"}) is True
     assert is_kb_scoped_chunk({"kb_id": ["kb1"], "doc_id": ["kb1"]}) is True
+    assert is_kb_scoped_chunk({"kb_id": "kb1", "doc_id": "kb1", "compile_kwd": "wiki_page"}) is True
 
 
 def test_is_kb_scoped_chunk_real_document():
     assert is_kb_scoped_chunk({"kb_id": "kb1", "doc_id": "doc1"}) is False
+    assert is_kb_scoped_chunk({"kb_id": "kb1", "doc_id": "doc1", "compile_kwd": "wiki_doc_page_source"}) is False
     assert is_kb_scoped_chunk(None) is False
 
 
@@ -133,6 +140,67 @@ def test_prune_keeps_wiki_pages_that_omit_doc_id():
     )
     out = asyncio.run(dealer._prune_deleted_chunks(sres))
     assert out.ids == ["src-live", "wiki-page"]
+
+
+def test_prune_drops_ordinary_chunks_that_omit_doc_id():
+    dealer = Dealer(dataStore=None)
+    called = []
+
+    async def existing(doc_ids):
+        called.append(list(doc_ids))
+        return {d for d in doc_ids if d == "doc-live"}
+
+    dealer._existing_doc_ids = existing
+    sres = _result(
+        ["src-live", "src-orphan", "wiki-page"],
+        {
+            "src-live": {"doc_id": "doc-live", "kb_id": "kb1"},
+            "src-orphan": {"kb_id": "kb1"},
+            "wiki-page": {"kb_id": "kb1", "compile_kwd": "wiki_page"},
+        },
+    )
+    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    assert out.ids == ["src-live", "wiki-page"]
+    assert "src-orphan" not in out.field
+    assert called == [["doc-live"]]
+
+
+def test_prune_drops_orphan_chunks_when_every_hit_omits_doc_id():
+    dealer = Dealer(dataStore=None)
+    called = []
+
+    async def existing(doc_ids):
+        called.append(list(doc_ids))
+        return set()
+
+    dealer._existing_doc_ids = existing
+    sres = _result(
+        ["src-orphan", "wiki-page"],
+        {
+            "src-orphan": {"kb_id": "kb1", "doc_id": ""},
+            "wiki-page": {"kb_id": "kb1", "compile_kwd": "wiki_page"},
+        },
+    )
+    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    assert out.ids == ["wiki-page"]
+    assert "src-orphan" not in out.field
+    assert called == []
+
+
+def test_prune_drops_all_ordinary_chunks_without_doc_id():
+    dealer = Dealer(dataStore=None)
+    called = []
+
+    async def existing(doc_ids):
+        called.append(list(doc_ids))
+        return set()
+
+    dealer._existing_doc_ids = existing
+    sres = _result(["src-orphan"], {"src-orphan": {"kb_id": "kb1"}})
+    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    assert out.ids == []
+    assert out.field == {}
+    assert called == []
 
 
 def test_prune_skips_lookup_when_all_hits_are_kb_scoped():
