@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"slices"
 	"testing"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -116,6 +117,122 @@ func TestApplyPDFPostProcess_RemoveTOCByOutlines(t *testing.T) {
 	}
 	if got, want := result.Sections[0].Text, "正文"; got != want {
 		t.Fatalf("remaining section = %q, want %q", got, want)
+	}
+}
+
+// TestApplyPDFPostProcess_RemoveTOCEntryLines covers TOC pages that carry no
+// "目录"/"contents" heading: the removal must still drop the leader+page
+// number entry lines while keeping regular content, and only when removeTOC
+// is enabled.
+func TestApplyPDFPostProcess_RemoveTOCEntryLines(t *testing.T) {
+	sections := []deepdoctype.Section{
+		makePDFSection("《道德经》全文及翻译", "text", 1, 50, 550, 100, 120),
+		makePDFSection("木瓜树 更多的书籍免费下载 http://forum.law58.cn/?fromuid=381879", "text", 1, 50, 550, 120, 140),
+		makePDFSection("前言：……………………………………………………………………1", "text", 2, 50, 550, 100, 120),
+		makePDFSection("第1章 “道”…………………………………………………………3", "text", 2, 50, 550, 120, 140),
+		makePDFSection("第2章 圣人居无为之事，行不言之教…………………………4", "text", 2, 50, 550, 140, 160),
+		makePDFSection("第13章 以身为天下，可寄/托天下……………………………18 I", "text", 3, 50, 550, 100, 120),
+		makePDFSection("第17章 太上，不知有之；功成事遂，百姓皆谓“我自然”..25", "text", 3, 50, 550, 120, 140),
+		makePDFSection("Introduction to the Dao ....... 12", "text", 3, 50, 550, 140, 160),
+		makePDFSection("II", "text", 3, 50, 550, 160, 180),
+		makePDFSection("前言：本文是《道德经》的白话翻译，供读者参考。", "text", 4, 50, 550, 100, 120),
+		makePDFSection("道可道，非常道。名可名，非常名。", "text", 4, 50, 550, 120, 140),
+	}
+
+	untouched := &deepdoctype.ParseResult{Sections: append([]deepdoctype.Section(nil), sections...)}
+	applyPDFPostProcess(untouched, pdfPostProcessOptions{removeTOC: false})
+	if len(untouched.Sections) != len(sections) {
+		t.Fatalf("len(Sections) = %d, want %d when removeTOC is false", len(untouched.Sections), len(sections))
+	}
+
+	result := &deepdoctype.ParseResult{Sections: append([]deepdoctype.Section(nil), sections...)}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	want := []string{
+		"《道德经》全文及翻译",
+		"木瓜树 更多的书籍免费下载 http://forum.law58.cn/?fromuid=381879",
+		"II",
+		"前言：本文是《道德经》的白话翻译，供读者参考。",
+		"道可道，非常道。名可名，非常名。",
+	}
+	if len(result.Sections) != len(want) {
+		t.Fatalf("len(Sections) = %d, want %d; got %v", len(result.Sections), len(want), sectionTexts(result.Sections))
+	}
+	for i := range want {
+		if got := result.Sections[i].Text; got != want[i] {
+			t.Fatalf("Sections[%d].Text = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func sectionTexts(sections []deepdoctype.Section) []string {
+	texts := make([]string, 0, len(sections))
+	for _, s := range sections {
+		texts = append(texts, s.Text)
+	}
+	return texts
+}
+
+// TestFilterPDFTOCEntries_MergedBlockTrailingNonEntry covers a TOC page that
+// DeepDoc merges into ONE section whose trailing text is not an entry (a
+// footer watermark), so the anchored entry pattern alone never fires. The
+// block must still be dropped because it is dominated by leader+page-number
+// runs (issue: agent workflow PDF "remove original table of contents" not
+// taking effect).
+func TestFilterPDFTOCEntries_MergedBlockTrailingNonEntry(t *testing.T) {
+	sections := []deepdoctype.Section{
+		makePDFSection("《道德经》全文及翻译", "text", 1, 50, 550, 100, 120),
+		makePDFSection("前言：………………………………………………1 第1章 “道”………………………………………………3 第2章 圣人居无为之事，行不言之教……………………4 第3章 无为而治…………………………………………6 木瓜树 更多的书籍免费下载 http://forum.law58.cn/?fromuid=381879", "text", 1, 50, 550, 120, 300),
+		makePDFSection("道可道，非常道。名可名，非常名。", "text", 3, 50, 550, 100, 120),
+	}
+	got := filterPDFTOCEntries(sections)
+	want := []string{"《道德经》全文及翻译", "道可道，非常道。名可名，非常名。"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCEntries_WrappedEntryTitlePairsPageRef covers wrapped TOC
+// entries whose leader+page number is split onto its own line/section: the
+// bare page reference drops the preceding title line, but a preceding
+// non-title line (prose, watermark) is kept, and a lone leader run inside
+// prose is not enough to drop anything.
+func TestFilterPDFTOCEntries_WrappedEntryTitlePairsPageRef(t *testing.T) {
+	sections := []deepdoctype.Section{
+		makePDFSection("第27章 不贵其师，不爱其资，虽智大迷，是谓要妙", "text", 2, 50, 550, 100, 120),
+		makePDFSection("…………………………………………………………………………………………39", "text", 2, 50, 550, 120, 140),
+		makePDFSection("木瓜树 更多的书籍免费下载 http://forum.law58.cn/?fromuid=381879", "text", 2, 50, 550, 140, 160),
+		makePDFSection("第28章 朴散则为器，圣人用之，则为官长，故大制不割？？", "text", 2, 50, 550, 160, 180),
+		makePDFSection("………39 II", "text", 2, 50, 550, 180, 200),
+		makePDFSection("第1章", "text", 3, 50, 550, 100, 120),
+		makePDFSection("道可道，非常道。名可名，非常名。", "text", 3, 50, 550, 120, 140),
+	}
+	got := filterPDFTOCEntries(sections)
+	want := []string{
+		"木瓜树 更多的书籍免费下载 http://forum.law58.cn/?fromuid=381879",
+		"第1章",
+		"道可道，非常道。名可名，非常名。",
+	}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCEntries_KeepsProseWithSingleLeaderRun pins the guard rails:
+// prose containing one leader+number mention stays, and a bare page
+// reference preceded by prose (no chapter/section title) keeps the prose.
+func TestFilterPDFTOCEntries_KeepsProseWithSingleLeaderRun(t *testing.T) {
+	sections := []deepdoctype.Section{
+		makePDFSection("更多说明见第三章……12 的表格。", "text", 1, 50, 550, 100, 120),
+		makePDFSection("………34", "text", 1, 50, 550, 120, 140),
+		makePDFSection("天下皆知美之为美，斯恶已。", "text", 2, 50, 550, 100, 120),
+	}
+	got := filterPDFTOCEntries(sections)
+	want := []string{
+		"更多说明见第三章……12 的表格。",
+		"天下皆知美之为美，斯恶已。",
+	}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
 	}
 }
 

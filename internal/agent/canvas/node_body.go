@@ -104,10 +104,14 @@ func overrideParamsFromContext(ctx context.Context) map[string]any {
 
 // applyOverrideParams returns a clone of params with the per-component
 // override (already resolved for this cpnID by the caller) merged into
-// params. The override wins on top-level key collisions. The original
-// params map is never mutated — the merge result is a fresh map —
-// because the params come from the shared *Canvas and a per-run override
-// must not leak into the next Run on the same Pipeline.
+// params. Nested maps are merged recursively so an override that targets a
+// single leaf key (e.g. the debug page cap ParserConfig[cpnID]["pdf"]
+// ["pages"]) does not replace the whole family map and silently drop
+// sibling keys configured in the DSL (remove_toc, parse_method, ...). The
+// override wins on leaf-key collisions. The original params map is never
+// mutated — the merge result is a fresh map — because the params come from
+// the shared *Canvas and a per-run override must not leak into the next Run
+// on the same Pipeline.
 func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	if len(cpnOverride) == 0 {
 		return params
@@ -117,6 +121,12 @@ func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 		out[k] = v
 	}
 	for k, v := range cpnOverride {
+		if existing, ok := out[k].(map[string]any); ok {
+			if incoming, ok := v.(map[string]any); ok {
+				out[k] = applyOverrideParams(existing, incoming)
+				continue
+			}
+		}
 		out[k] = v
 	}
 	return out
