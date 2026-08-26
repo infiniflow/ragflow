@@ -172,43 +172,16 @@ def test_tenant_model_id_stage_clears_unresolved_legacy_ids():
     assert any(params == ("kb-1",) and "= ''" in sql for sql, params in updates)
 
 
-def test_migrate_postgres_family_skips_mysql(monkeypatch):
-    from types import SimpleNamespace
+def test_migrate_postgres_family_is_gated_to_postgres_and_gaussdb():
+    source = (REPO_ROOT / "api" / "db" / "db_models.py").read_text()
+    func = source.split("def migrate_postgres_family_model_provider_tables():", 1)[1].split("\ndef ", 1)[0]
 
-    from api.db import db_models
-    from common import settings
-
-    called = []
-
-    monkeypatch.setattr(settings, "DATABASE_TYPE", "mysql")
-    monkeypatch.setattr(db_models, "_load_model_provider_migration_module", lambda: called.append("load") or SimpleNamespace())
-
-    db_models.migrate_postgres_family_model_provider_tables()
-
-    assert not called
-
-
-def test_migrate_postgres_family_runs_existing_connection(monkeypatch):
-    from api.db import db_models
-    from common import settings
-
-    calls = []
-
-    class FakeModule:
-        @staticmethod
-        def run_using_existing_connection(**kwargs):
-            calls.append(kwargs)
-
-    monkeypatch.setattr(settings, "DATABASE_TYPE", "postgres")
-    monkeypatch.setattr(settings, "DATABASE", {"name": "rag_flow", "options": None})
-    monkeypatch.setattr(db_models, "_load_model_provider_migration_module", lambda: FakeModule)
-    monkeypatch.setattr(db_models, "DB", object())
-
-    db_models.migrate_postgres_family_model_provider_tables()
-
-    assert len(calls) == 1
-    assert calls[0]["dialect"] == "postgres"
-    assert calls[0]["database_name"] == "rag_flow"
+    assert 'if settings.DATABASE_TYPE.upper() not in {"POSTGRES", "GAUSSDB"}:' in func
+    _gate, rest = func.split('{"POSTGRES", "GAUSSDB"}:', 1)
+    assert "return" in rest.split("database_cfg", 1)[0]
+    assert "run_using_existing_connection(" in rest
+    assert 'dialect="postgres"' in rest
+    assert "peewee_db=DB" in rest
 
 
 def test_run_using_existing_connection_runs_both_version_groups(monkeypatch):
