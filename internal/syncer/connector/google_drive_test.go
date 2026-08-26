@@ -208,6 +208,25 @@ func TestGoogleDriveConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	}
 }
 
+func TestGoogleDriveConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails": "admin@example.com",
+		"batch_size":      2,
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 // TestGoogleDriveSharedFolderScopesRecurse verifies shared folders walk child folders.
 func TestGoogleDriveSharedFolderScopesRecurse(t *testing.T) {
 	connector, err := NewGoogleDriveConnector(map[string]any{

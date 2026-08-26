@@ -103,6 +103,15 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
+func TestGmailConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newFixtureGmailConnector()
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 // TestGmailConnectorResumeRejectsMissingRemoteAnchor verifies a deleted list item invalidates the saved anchor.
 func TestGmailConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	connector := newFixtureGmailConnector()
