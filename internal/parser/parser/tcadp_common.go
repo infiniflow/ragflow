@@ -34,10 +34,18 @@ func parseWithTCADP(
 	}
 	baseURL := strings.TrimSpace(tcadpAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("TCADP_APISERVER"))
+		// Try the legacy TCADP_APISERVER_URL first so existing PDF
+		// deployments that set it for the old parsePDFWithTCADP helper
+		// keep working — then fall back to the canonical TCADP_APISERVER
+		// used by the other two families.
+		if v := strings.TrimSpace(os.Getenv("TCADP_APISERVER_URL")); v != "" {
+			baseURL = v
+		} else {
+			baseURL = strings.TrimSpace(os.Getenv("TCADP_APISERVER"))
+		}
 	}
 	if baseURL == "" {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver or TCADP_APISERVER")}
+		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver, TCADP_APISERVER_URL, or TCADP_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(tcadpAPIKey)
 	if apiKey == "" {
