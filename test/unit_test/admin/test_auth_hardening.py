@@ -321,12 +321,16 @@ def test_throttle_client_key_uses_last_forwarded_hop():
     from admin.server.auth import _client_key
 
     app = Flask(__name__)
-    with app.test_request_context(
-        "/", headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, environ_base={"REMOTE_ADDR": "9.9.9.9"}
-    ):
+    # Proxied through the in-container nginx: the peer is loopback, so the
+    # XFF last hop (the address our nginx appended) keys the limiter.
+    with app.test_request_context("/", headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, environ_base={"REMOTE_ADDR": "127.0.0.1"}):
         assert _client_key() == "5.6.7.8"
-    with app.test_request_context("/", environ_base={"REMOTE_ADDR": "9.9.9.9"}):
+    # Direct hit on the externally published port: the peer keys the limiter
+    # and a client-supplied XFF cannot rotate throttle buckets.
+    with app.test_request_context("/", headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, environ_base={"REMOTE_ADDR": "9.9.9.9"}):
         assert _client_key() == "9.9.9.9"
+    with app.test_request_context("/", environ_base={"REMOTE_ADDR": "127.0.0.1"}):
+        assert _client_key() == "127.0.0.1"
 
 
 class TestConcurrentLoginBurst:

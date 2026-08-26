@@ -66,21 +66,29 @@ _login_failures: dict[str, list[float]] = {}  # client key -> recent failure tim
 _login_block_until: dict[str, float] = {}  # client key -> monotonic lockout deadline
 
 
+_TRUSTED_PROXY_PEERS = frozenset({"127.0.0.1", "::1"})
+
+
 def _client_key() -> str:
     """Identify the client for login throttling.
 
-    Uses the LAST hop of X-Forwarded-For: the bundled nginx appends the real
-    client address to any client-supplied value, so the rightmost entry is
-    the one our own proxy added and cannot be spoofed. Earlier hops are
-    attacker-controlled — using the first hop would let a caller rotate
-    fake XFF values and get a fresh throttle bucket per request. The header
-    is only trustworthy when port 9381 is not directly reachable from
-    untrusted networks; keep the published port bound to 127.0.0.1 (see
-    docker/docker-compose.yml).
+    X-Forwarded-For is trusted only when the TCP peer is loopback: the admin
+    server and the bundled nginx run in the same container, so proxied
+    requests arrive from 127.0.0.1 and nginx appends the real client address
+    to any client-supplied value — the rightmost entry is then the one our
+    own proxy added and cannot be spoofed. Everything else (the admin API is
+    designed to be reachable externally, so requests may hit the published
+    port directly) is keyed by its TCP peer address, and a client-supplied
+    X-Forwarded-For cannot rotate throttle buckets. Deployments fronting the
+    admin server with an external reverse proxy share that proxy's peer key
+    until it is added to the trusted set.
     """
+    peer = (request.remote_addr or "").strip()
     forwarded_for = request.headers.get("X-Forwarded-For", "")
     last_hop = forwarded_for.split(",")[-1].strip() if forwarded_for else ""
-    return last_hop or (request.remote_addr or "").strip() or "unknown"
+    if peer in _TRUSTED_PROXY_PEERS and last_hop:
+        return last_hop
+    return peer or "unknown"
 
 
 def _reserve_login_attempt(key: str) -> tuple[int, float | None]:
