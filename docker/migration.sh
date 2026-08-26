@@ -257,7 +257,7 @@ perform_restore() {
         echo "   reproduce a faithful copy of the backup and avoid silent merges of old"
         echo "   and new state across restore cycles. This operation is irreversible."
         echo ""
-        echo "💡 Recommendation: Snapshot the current volumes first (e.g. with"
+        echo "� Recommendation: Snapshot the current volumes first (e.g. with"
         echo "   'docker volume create --name <snapshot>' + a tar backup, or stop and"
         echo "   copy the volume via a helper container):"
         echo "   $0 -p $PROJECT_NAME backup current_backup_$(date +%Y%m%d_%H%M%S)"
@@ -266,6 +266,48 @@ perform_restore() {
         if ! confirm_action "Continue with the restore? (type 'y' to permanently overwrite these volumes)"; then
             echo "❌ Restore operation cancelled by user"
             exit 0
+        fi
+    fi
+
+    # Preflight: POSIX-compatible volume inspection (Alpine BusyBox
+    # `sh` does not support `shopt`, so we use plain shell globs). Must
+    # happen BEFORE creating or clearing any volume so a single dirty
+    # volume aborts the whole restore cleanly, instead of partially
+    # clearing some and reporting success. Per #18393 review.
+    local dirty_volumes=()
+    if [ "$RESTORE_FORCE" != "true" ]; then
+        for volume in "${VOLUMES[@]}"; do
+            if ! volume_exists "$volume"; then
+                continue
+            fi
+            local has_state=0
+            for pattern in '/target/*' '/target/.[!.]*' '/target/..?*'; do
+                if docker run --rm -v "$volume":/target alpine \
+                    sh -c "for f in $pattern; do [ -e \"\$f\" ] && exit 0; done; exit 1"; then
+                    has_state=1
+                    break
+                fi
+            done
+            if [ "$has_state" -eq 1 ]; then
+                dirty_volumes+=("$volume")
+            fi
+        done
+        if [ ${#dirty_volumes[@]} -gt 0 ]; then
+            echo ""
+            echo "🔴 The following target volumes are NOT empty — refusing to restore:"
+            for volume in "${dirty_volumes[@]}"; do
+                echo "   - $volume"
+                docker run --rm -v "$volume":/target alpine \
+                    sh -c "for f in /target/* /target/.[!.]* /target/..?*; do [ -e \"\$f\" ] && printf '       %s\\n' \"\$f\"; done" | head -n 20
+            done
+            echo ""
+            echo "To restore, choose one of:"
+            echo "  a) Clean up the target volumes yourself, then re-run:"
+            echo "       docker compose down && docker volume rm <volume> && docker volume create <volume>"
+            echo "  b) Re-run with --force to accept the destructive auto-clear (legacy behavior)."
+            echo ""
+            echo "❌ Restore aborted before any volume was touched."
+            exit 1
         fi
     fi
 
@@ -304,40 +346,8 @@ perform_restore() {
         #                     second character being ".", which leaves
         #                     names like ".example" and "...state"
         #                     unremoved under the two-character pattern.
-        #
-        # Per the #18393 review feedback: this script will NOT
-        # automatically destroy a non-empty volume. It inspects the
-        # target first via an alpine ls, and if any state is present it
-        # prompts the operator to either (a) clean up the target volume
-        # manually (e.g. `docker volume rm <name> && docker volume create
-        # <name>`) or (b) point this script at a different (empty)
-        # volume via the -v flag, unless --force is set to preserve the
-        # prior auto-clear behavior for automation.
         # Regression for #18354.
         echo "  📥 Restoring data from $backup_file..."
-        if [ "$RESTORE_FORCE" != "true" ]; then
-            local target_contents
-            target_contents=$(docker run --rm \
-                -v "$volume":/target \
-                alpine sh -c "shopt -s dotglob nullglob; printf '%s\\n' /target/* /target/.[!.]* /target/..?* 2>/dev/null" | sort -u | head -n 1)
-            if [ -n "$target_contents" ]; then
-                echo ""
-                echo "  🔴 REFUSING TO AUTO-CLEAR target volume: $volume"
-                echo "     The current restore would silently destroy the following state:"
-                docker run --rm \
-                    -v "$volume":/target \
-                    alpine sh -c "shopt -s dotglob nullglob; for f in /target/* /target/.[!.]* /target/..?*; do [ -e \"\$f\" ] && printf '       %s\\n' \"\$f\"; done" | head -n 20
-                echo ""
-                echo "     To restore, choose one of:"
-                echo "       a) Clean up the target volume yourself, then re-run:"
-                echo "          docker compose down && docker volume rm $volume && docker volume create $volume"
-                echo "       b) Point this script at a fresh, empty volume (override with a custom -v path)."
-                echo "       c) Re-run with --force to accept the destructive auto-clear (legacy behavior)."
-                echo ""
-                echo "❌ Restore aborted for $volume."
-                continue
-            fi
-        fi
         docker run --rm \
             -v "$volume":/target \
             -v "$(pwd)/$backup_folder":/backup \
