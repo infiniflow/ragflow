@@ -133,12 +133,18 @@ Wraps the existing executor_manager implementation. The implementation file is l
   docker pull infiniflow/sandbox-base-nodejs:latest
   ```
 
-**Configuration**: Docker API endpoint, pool size, resource limits:
+**Configuration**: Docker API endpoint, request behavior, resource limits:
 
 - `endpoint`: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
-- `pool_size`: Container pool size (default: 10)
+
+The container pool is **not** sized from this configuration. sandbox-executor-manager reads
+`SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` from its environment once at startup
+(`agent/sandbox/executor_manager/core/config.py`), so changing the pool size is a deployment
+change that requires restarting that service. A `pool_size` key passed to the provider is carried
+for reporting only — `get_info()` echoes it back — and reloading `sandbox.self_managed` recreates
+the RAGFlow-side client without resizing anything.
 
 **Languages**:
 - Python
@@ -162,7 +168,7 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - Pool exhaustion causes "Container pool is busy" errors
 
 **Common issues**:
-- `"Container pool is busy"`: Increase `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` (default: 1 in .env, should be 5+)
+- `"Container pool is busy"`: Raise `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` above the baseline your deployment already applies — 5 with the standalone compose file, 3 in the main RAGFlow stack
 - `Container creation fails`: Ensure gVisor is installed and accessible at `/usr/local/bin/runsc`
 
 #### 2.2.2 Aliyun code interpreter provider
@@ -507,7 +513,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
   "name": "sandbox.self_managed",
   "source": "variable",
   "data_type": "json",
-  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 10, \"max_memory\": \"256m\", \"timeout\": 30}"
+  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"max_memory\": \"256m\", \"timeout\": 30}"
 }
 ```
 
@@ -608,12 +614,19 @@ class SelfManagedProvider(SandboxProvider):
                 "label": "API Endpoint",
                 "placeholder": "http://sandbox-executor-manager:9385"
             },
-            "pool_size": {
+            # Deployment-level: the pool is sized by SANDBOX_EXECUTOR_MANAGER_POOL_SIZE in the
+            # sandbox-executor-manager environment, not by this field, and the UI renders it
+            # read-only. The default below is read from the RAGFlow server's own environment and
+            # falls back to 3, so it can disagree with the manager's actual pool. The standalone
+            # compose file starts that service with 5, and the manager's own in-code fallback is 1.
+            "executor_manager_pool_size": {
                 "type": "integer",
-                "default": 10,
+                "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "3")),
                 "label": "Container Pool Size",
                 "min": 1,
-                "max": 100
+                "max": 100,
+                "scope": "deployment",
+                "readonly": True
             },
             "max_memory": {
                 "type": "string",
@@ -1538,7 +1551,7 @@ PROVIDER_CLASSES = {
       "name": "sandbox.self_managed",
       "source": "variable",
       "data_type": "json",
-      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 20, \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
+      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
     },
     {
       "name": "sandbox.aliyun_codeinterpreter",
@@ -1563,7 +1576,6 @@ PROVIDER_CLASSES = {
   "provider_type": "self_managed",
   "config": {
     "endpoint": "http://sandbox-executor-manager:9385",
-    "pool_size": 20,
     "max_memory": "512m",
     "timeout": 60,
     "enable_seccomp": true,
@@ -1584,7 +1596,6 @@ PROVIDER_CLASSES = {
     "active": "self_managed",
     "self_managed": {
       "endpoint": "http://sandbox-executor-manager:9385",
-      "pool_size": 20,
       "max_memory": "512m",
       "timeout": 60,
       "enable_seccomp": true,

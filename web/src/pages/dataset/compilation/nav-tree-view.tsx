@@ -14,8 +14,10 @@ export function NavTreeView() {
   const {
     navList,
     navLoading,
+    navError,
     keywords,
     childrenMap,
+    childrenErrorParents,
     structureMap,
     selectedNode,
     deleteNavLoading,
@@ -35,8 +37,10 @@ export function NavTreeView() {
           <NavTreeLeftPanel
             navList={navList}
             navLoading={navLoading}
+            navError={navError}
             keywords={keywords}
             childrenMap={childrenMap}
+            childrenErrorParents={childrenErrorParents}
             structureMap={structureMap}
             deleteNavLoading={deleteNavLoading}
             deleteNodeLoading={deleteNodeLoading}
@@ -70,7 +74,8 @@ export function NavTreeView() {
                     {t('knowledgeCompilation.description')}
                   </h4>
                   <p className="whitespace-pre-wrap">
-                    {selectedNode.description || t('knowledgeCompilation.navNoDescription')}
+                    {selectedNode.description ||
+                      t('knowledgeCompilation.navNoDescription')}
                   </p>
                 </div>
                 {selectedNode.keywords && selectedNode.keywords.length > 0 && (
