@@ -25,7 +25,7 @@ while [ $# -gt 0 ]; do
             # database=rag_flow, and this script also passes --execute, so an
             # empty, whitespace, flag-shaped or missing path would silently
             # migrate the default database instead of failing.
-            if [ $# -lt 2 ] || [ ! -f "$2" ] || [ "${2#-}" != "$2" ]; then
+            if [ $# -lt 2 ] || [ -z "${2//[[:space:]]/}" ] || [ ! -f "$2" ] || [ "${2#-}" != "$2" ]; then
                 echo "Error: --config requires the path of an existing file" >&2
                 exit 1
             fi
