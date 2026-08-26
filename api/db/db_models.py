@@ -2112,6 +2112,39 @@ def migrate_tenant_model_id_column_types(migrator):
             )
 
 
+def _load_model_provider_migration_module():
+    import importlib.util
+
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tools", "scripts", "mysql_migration.py")
+    spec = importlib.util.spec_from_file_location("ragflow_mysql_migration", script_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def migrate_postgres_family_model_provider_tables():
+    """Run table-init and data-backfill stages on postgres/gaussdb upgrades.
+
+    Mirrors tools/scripts/mysql_migration.py, including TenantModelIdMigrationStage
+    (populate tenant_*_id from llm_id/embd_id) and ModelTypeMergeStage. MySQL
+    still uses the docker entrypoint script; postgres/gaussdb never ran that
+    path, so in-place upgrades left integer tenant_*_id values that match no
+    tenant_model.id.
+    """
+    if settings.DATABASE_TYPE.upper() not in {"POSTGRES", "GAUSSDB"}:
+        return
+
+    database_cfg = settings.DATABASE or {}
+    database_name = database_cfg.get("name") or database_cfg.get("database") or "rag_flow"
+    module = _load_model_provider_migration_module()
+    module.run_using_existing_connection(
+        peewee_db=DB,
+        dialect="postgres",
+        database_name=database_name,
+        options=database_cfg.get("options"),
+    )
+
+
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
     try:
         migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
@@ -2652,6 +2685,7 @@ def migrate_db():
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
     ensure_model_indexes(migrator)
+    migrate_postgres_family_model_provider_tables()
 
 
 def migrate_model_type_names():

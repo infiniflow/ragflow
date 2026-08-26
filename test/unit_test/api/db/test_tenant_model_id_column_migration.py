@@ -190,3 +190,26 @@ def test_migrate_db_invokes_tenant_model_id_column_migration(monkeypatch):
 
     assert "tenant_model_id_types" in events
     assert events.index("tenant_model_id_types") > events.index("add")
+
+
+def test_migrate_db_invokes_postgres_model_provider_data_migration(monkeypatch):
+    events = []
+
+    monkeypatch.setattr(settings, "DATABASE_TYPE", "postgres")
+    monkeypatch.setattr(db_models, "alter_db_add_column", lambda *_args: events.append("add"))
+    monkeypatch.setattr(db_models, "alter_db_column_type", lambda *_args: events.append("alter_type"))
+    monkeypatch.setattr(db_models, "alter_db_rename_column", lambda *_args: events.append("rename"))
+    monkeypatch.setattr(db_models, "alter_db_drop_index", lambda *_args: events.append("drop_index"))
+    monkeypatch.setattr(db_models, "migrate_tenant_model_id_column_types", lambda _migrator: events.append("tenant_model_id_types"))
+    monkeypatch.setattr(db_models, "relax_gaussdb_empty_string_compatible_columns", lambda: events.append("relax"))
+    monkeypatch.setattr(db_models, "migrate", lambda *_operations: None)
+    monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
+    monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: None)
+    monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: None)
+    monkeypatch.setattr(db_models, "migrate_postgres_family_model_provider_tables", lambda: events.append("pg_model_provider"))
+
+    db_models.migrate_db()
+
+    assert "pg_model_provider" in events
+    assert events.index("pg_model_provider") > events.index("tenant_model_id_types")
+    assert events.index("pg_model_provider") > events.index("relax")

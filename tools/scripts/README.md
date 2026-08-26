@@ -2,7 +2,8 @@
 
 This directory contains database-related utility scripts for RAGFlow.
 
-- **mysql_migration.py**: Data migration between tables with stage-based execution
+- **mysql_migration.py**: Data migration between tables with stage-based execution (MySQL / OceanBase)
+- **postgres_migration.py**: Same stages as mysql_migration.py for PostgreSQL and GaussDB
 - **db_schema_sync.py**: Database schema synchronization using peewee-migrate
 
 ---
@@ -163,6 +164,27 @@ python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,t
 
 # Use config file with command line password override
 python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --password mypassword --execute
+```
+
+## postgres_migration.py
+
+PostgreSQL / GaussDB counterpart to `mysql_migration.py`. It runs the same stages
+(`tenant_model_provider` through `tenant_model_id_migration`) with Postgres SQL
+(`TO_TIMESTAMP`, `USING …::text`, `ON CONFLICT`). `run_migrations.sh` selects
+this script when `DB_TYPE` is `postgres`, `postgresql`, `gaussdb`, or `gauss`.
+
+For GaussDB metadata, connection settings come from `GAUSSDB_METADATA_*`
+environment variables (not the `gaussdb:` DOC_ENGINE section in
+`service_conf.yaml`).
+
+In-place upgrades also invoke these stages from `migrate_db()` so postgres
+installs backfill `tenant_*_id` from `llm_id` / `embd_id` instead of only
+retyping integer columns.
+
+```bash
+python postgres_migration.py --list-stages
+python postgres_migration.py --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
+    --config /path/to/config.yaml --execute --database-version v0.27.0 --mark-database-version-on-success
 ```
 
 ## Output Interpretation
