@@ -47,7 +47,7 @@ try:
     elapsed = 0
     while elapsed < MAX_WAIT:
         doc_status = dataset.list_documents(id=doc.id)[0]
-        if doc_status.run == "1" and doc_status.progress >= 1.0:
+        if doc_status.run == "DONE" and doc_status.progress >= 1.0:
             break
         print(f"Parsing progress: {doc_status.progress:.2f}")
         time.sleep(2)
