@@ -367,6 +367,83 @@ func TestKnowledgeCompiler_Wiki_EndToEnd(t *testing.T) {
 	}
 }
 
+// strictScopeWikiMapVersions mimics the production DocStore-backed Wiki MAP
+// version cache (knowledge_compile.wikiMapVersionStore): any load with an
+// empty tenant or dataset scope fails loudly instead of degrading.
+type strictScopeWikiMapVersions struct{}
+
+func (strictScopeWikiMapVersions) GetWikiMapVersions(_ context.Context, tenantID, datasetID string, _ []string) (map[string][]byte, error) {
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(datasetID) == "" {
+		return nil, errors.New("load Wiki MAP versions: tenant_id and dataset_id are required")
+	}
+	return map[string][]byte{}, nil
+}
+
+func (strictScopeWikiMapVersions) PutWikiMapVersions(_ context.Context, versions []common.WikiMapVersion) error {
+	for _, version := range versions {
+		if version.TenantID == "" || version.DatasetID == "" {
+			return errors.New("save Wiki MAP version: key, tenant_id, and dataset_id are required")
+		}
+	}
+	return nil
+}
+
+// TestKnowledgeCompiler_Wiki_DebugRunWithoutDataset reproduces the canvas
+// debug (dry-run) scenario from the field report: a dataflow canvas run
+// (File → Parser → Chunker → Compiler/wiki) executes with tenant_id but no
+// kb_id, because the debug TaskContext deliberately carries no KB. The wiki
+// variant must run cache-less there instead of failing on the DocStore-backed
+// MAP version cache, keeping debug runs side-effect free (same contract as
+// the tokenizer skipping embedding and the executor skipping persistence).
+func TestKnowledgeCompiler_Wiki_DebugRunWithoutDataset(t *testing.T) {
+	common.SetDepsResolver(func(tenantID, _, _ string) (common.Deps, error) {
+		return common.Deps{
+			Chat:            proseChat{},
+			Embed:           mockEmbedder{dim: 8},
+			WikiMapVersions: strictScopeWikiMapVersions{},
+			TenantID:        tenantID,
+		}, nil
+	})
+	t.Cleanup(func() { common.SetDepsResolver(nil) })
+	installVariantTemplateResolver(t, "wiki")
+
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+	})
+	if err != nil {
+		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
+	}
+	// Inputs mirror a canvas debug run: tenant_id present, no dataset_id/kb_id.
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"chunks": []any{
+			map[string]any{"id": "c1", "text": "The quick brown fox jumps over the lazy dog near the river bank."},
+			map[string]any{"id": "c2", "text": "A red fox and a lazy dog rest beside a calm river at dawn."},
+		},
+		"doc_id":    "d1",
+		"tenant_id": "t1",
+	})
+	if err != nil {
+		t.Fatalf("Invoke (debug, dataset-less): %v", err)
+	}
+	raw, ok := out["chunks"].([]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []any", out["chunks"])
+	}
+	foundPage := false
+	for _, r := range raw {
+		cm, ok := r.(map[string]any)
+		if !ok {
+			continue
+		}
+		if kind, _ := cm["kc_kind"].(string); kind == "page" {
+			foundPage = true
+		}
+	}
+	if !foundPage {
+		t.Fatalf("debug wiki run: no 'page' chunk; got %d chunks", len(raw))
+	}
+}
+
 func TestKnowledgeCompiler_Tree_EndToEnd(t *testing.T) {
 	installProseDeps(t)
 	// watershed (default tree_order): zero external clustering dependency.
