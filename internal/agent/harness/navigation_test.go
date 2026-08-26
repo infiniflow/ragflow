@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"context"
 	"strings"
 	"testing"
 )

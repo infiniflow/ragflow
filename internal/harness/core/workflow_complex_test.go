@@ -99,7 +99,7 @@ func buildSequentialWorkflow(numNodes int, executionOrder *[]string, mu *sync.Mu
 		}).WithName(nodeID)
 		agents[i] = agent
 	}
-	wf, err := NewSequential(t.Context(), &SequentialConfig{
+	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "complex_wf", Description: fmt.Sprintf("%d-node workflow", numNodes),
 		SubAgents: agents,
 	})
@@ -233,7 +233,7 @@ func buildTypedWorkflow(numNodes int, executed *[]string, mu *sync.Mutex) (Resum
 			Tools: []Tool{tool},
 		}).WithName(nodeID)
 	}
-	wf, err := NewSequential(t.Context(), &SequentialConfig{
+	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "typed_wf", Description: fmt.Sprintf("%d-node typed workflow", numNodes),
 		SubAgents: agents,
 	})
@@ -260,7 +260,7 @@ func buildDelayedWorkflow(numNodes int, delay time.Duration) (ResumableAgent, er
 			Tools: []Tool{tool},
 		}).WithName(nodeID)
 	}
-	wf, err := NewSequential(t.Context(), &SequentialConfig{
+	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "slow_wf", Description: fmt.Sprintf("%d-node slow workflow", numNodes),
 		SubAgents: agents,
 	})
@@ -296,7 +296,7 @@ func buildTrackedDelayedWorkflow(numNodes int, delay time.Duration) (ResumableAg
 			Tools: []Tool{tool},
 		}).WithName(nodeID)
 	}
-	wf, err := NewSequential(t.Context(), &SequentialConfig{
+	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "slow_wf", Description: fmt.Sprintf("%d-node slow workflow", numNodes),
 		SubAgents: agents,
 	})

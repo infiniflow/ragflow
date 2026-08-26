@@ -17,7 +17,6 @@
 package models
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"

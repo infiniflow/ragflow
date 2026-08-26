@@ -17,7 +17,6 @@
 package oceanbase
 
 import (
-	"context"
 	"regexp"
 	"strings"
 	"testing"

@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net"

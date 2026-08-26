@@ -53,11 +53,11 @@ func (f *fakeInvokableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{Name: f.name}, nil
 }
 
-func (f *fakeInvokableTool) InvokableRun(_ context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
+func (f *fakeInvokableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
 	f.mu.Lock()
 	f.lastArgs = argsJSON
 	f.mu.Unlock()
-	return f.fn(t.Context(), argsJSON), nil
+	return f.fn(ctx, argsJSON), nil
 }
 
 func (f *fakeInvokableTool) args() string {

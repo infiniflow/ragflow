@@ -17,7 +17,6 @@
 package dao
 
 import (
-	"context"
 	"testing"
 
 	"github.com/glebarez/sqlite"

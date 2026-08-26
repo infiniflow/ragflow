@@ -69,7 +69,7 @@ func (b *chainBuilder) invoke(input interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Compile: %w", err)
 	}
-	return cg.Invoke(t.Context(), input)
+	return cg.Invoke(context.Background(), input)
 }
 
 // ============================================================

@@ -1,7 +1,6 @@
 package component
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"

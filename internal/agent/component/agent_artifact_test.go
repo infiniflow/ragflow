@@ -178,7 +178,7 @@ func newSliceFuture(messages []*schema.Message) *sliceFuture {
 	}
 
 	model := &replayModel{messages: messages}
-	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
+	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
 		ToolCallingModel: model,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: []tool.BaseTool{&passthroughTool{name: toolName}},
@@ -188,7 +188,7 @@ func newSliceFuture(messages []*schema.Message) *sliceFuture {
 	if err != nil {
 		panic(err)
 	}
-	_, err = agent.Generate(t.Context(), []*schema.Message{
+	_, err = agent.Generate(context.Background(), []*schema.Message{
 		schema.UserMessage("replay"),
 	}, opt)
 	if err != nil {

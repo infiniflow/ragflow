@@ -644,7 +644,7 @@ func TestCategorizeRegistered_ExplicitCategoriesKeepCategoryDescriptionMetadata(
 func stateWithTenant(tenantID string) context.Context {
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = tenantID
-	return canvas.WithState(t.Context(), state)
+	return canvas.WithState(context.Background(), state)
 }
 
 func setupComponentTestDB(t *testing.T) *gorm.DB {
