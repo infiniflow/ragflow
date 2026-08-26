@@ -300,7 +300,10 @@ class FeishuWikiConnector(LoadConnector, PollConnector):
             raise ConnectorValidationError("Feishu Wiki file node is missing a node token or object token")
 
         blob = self._download_file(object_token)
-        fingerprint = hashlib.sha256(blob).hexdigest()
+        content_sha256 = hashlib.sha256(blob).hexdigest()
+        # Document.content_hash is a 32-character column. Keep the complete
+        # SHA-256 for auditing, and use a stable prefix for change detection.
+        fingerprint = content_sha256[:32]
         updated_at = _parse_timestamp(node.get("obj_edit_time")) or fallback_updated_at
         metadata = {
             "source": DocumentSource.FEISHU_WIKI.value,
@@ -311,7 +314,7 @@ class FeishuWikiConnector(LoadConnector, PollConnector):
             "wiki_parent_node_token": str(node.get("parent_node_token") or self.root_node_token),
             "wiki_url": f"https://feishu.cn/wiki/{node_token}",
             "source_updated_at": updated_at.isoformat(),
-            "content_sha256": fingerprint,
+            "content_sha256": content_sha256,
         }
         return Document(
             id=f"feishu_wiki:{self.space_id}:{node_token}",
@@ -370,4 +373,3 @@ class FeishuWikiConnector(LoadConnector, PollConnector):
         end: SecondsSinceUnixEpoch,
     ) -> GenerateDocumentsOutput:
         yield from self._yield_documents(start=start, end=end)
-

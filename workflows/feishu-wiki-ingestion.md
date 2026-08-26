@@ -58,7 +58,8 @@ The connector configuration contains:
    cannot be silently lost.
 6. Download the file by object token.
 7. Emit a normalized RAGFlow document with a stable source ID based on the Wiki
-   node token, a SHA-256 fingerprint, and source metadata.
+   node token, the full SHA-256 in metadata, and a 32-character SHA-256-derived
+   fingerprint compatible with RAGFlow's `content_hash` column.
 8. Let the existing RAGFlow sink skip identical fingerprints, update changed
    documents, copy metadata, and start parsing when `auto_parse` is enabled.
 
@@ -105,4 +106,3 @@ Each emitted document contains:
 6. A changed file updates the stable document and its fingerprint.
 7. Filtered files are not downloaded or imported.
 8. Removing a file from Feishu does not delete it from RAGFlow.
-

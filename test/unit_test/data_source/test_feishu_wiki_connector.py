@@ -305,7 +305,8 @@ def test_pagination_incremental_window_metadata_and_fingerprint_are_preserved():
     assert document.id == "feishu_wiki:space-1:current-node"
     assert document.doc_updated_at == datetime(2026, 1, 3, tzinfo=timezone.utc)
     assert document.extension == ".docx"
-    assert document.fingerprint == hashlib.sha256(b"current body").hexdigest()
+    assert document.fingerprint == hashlib.sha256(b"current body").hexdigest()[:32]
+    assert len(document.fingerprint) == 32
     assert document.metadata == {
         "source": "feishu_wiki",
         "wiki_space_id": "space-1",

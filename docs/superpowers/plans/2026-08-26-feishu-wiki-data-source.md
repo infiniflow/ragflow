@@ -18,7 +18,9 @@
 - Support downloadable Feishu Wiki `file` nodes only in the first release.
 - Traverse non-file folder/native-document nodes so nested files remain discoverable.
 - Filter nodes before downloading their file bodies.
-- Use `(space_id, node_token)` as stable source identity and SHA-256 as content fingerprint.
+- Use `(space_id, node_token)` as stable source identity, store the full
+  SHA-256 in metadata, and use its first 32 hex characters as the RAGFlow
+  `content_hash` fingerprint to fit the existing database column.
 - Never log App Secret, tenant access token, or authorization headers.
 - Preserve all unrelated changes in `/Users/edy/Desktop/ragflow`.
 
