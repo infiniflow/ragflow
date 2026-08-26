@@ -61,6 +61,10 @@ services:
       - ${SVR_MCP_PORT}:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
       - ${GO_HTTP_PORT}:9384
       - ${GO_ADMIN_PORT}:9383
+    environment:
+      # Shared secret used to authenticate towards sandbox-executor-manager.
+      # Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on that service.
+      - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
     volumes:
       - ./ragflow-logs:/ragflow/logs
       # - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
@@ -124,11 +128,15 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
+    environment:
+      # Shared secret used to authenticate towards sandbox-executor-manager.
+      # Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on that service.
+      - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
     env_file: .env
     networks:
       - ragflow
     restart: unless-stopped
-    # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
+    # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-scrape-configuration
     # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"

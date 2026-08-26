@@ -105,18 +105,21 @@ const TokenChunkerForm = ({
               name="chunk_token_size"
               max={2048}
               min={1}
+              integer
               label={t('knowledgeConfiguration.chunkTokenNumber')}
             />
             <SliderInputFormField
               name="overlapped_percent"
               max={30}
               min={0}
+              integer
               label={t('flow.overlappedPercent')}
             />
             <SliderInputFormField
               name="image_table_context_window"
               max={256}
               min={0}
+              integer
               label={t('knowledgeConfiguration.imageTableContextWindow')}
               tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
             />

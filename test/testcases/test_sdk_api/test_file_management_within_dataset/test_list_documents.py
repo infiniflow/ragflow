@@ -200,6 +200,35 @@ class TestDocumentsList:
             if params["id"] not in [None, ""]:
                 assert documents[0].id == params["id"], str(documents)
 
+    @pytest.mark.p1
+    def test_ids(self, add_documents):
+        dataset, fixture_documents = add_documents
+        expected_ids = {document.id for document in fixture_documents[:2]}
+
+        documents = dataset.list_documents(ids=list(expected_ids))
+
+        assert len(documents) == 2, str(documents)
+        assert {document.id for document in documents} == expected_ids, str(documents)
+
+    @pytest.mark.p1
+    def test_empty_ids_is_unfiltered(self, add_documents):
+        dataset, fixture_documents = add_documents
+        expected_ids = {document.id for document in fixture_documents}
+
+        documents = dataset.list_documents(ids=[])
+
+        assert len(documents) == 5, str(documents)
+        assert {document.id for document in documents} == expected_ids, str(documents)
+
+    @pytest.mark.p1
+    def test_id_and_ids_raise_value_error(self, add_documents):
+        dataset, documents = add_documents
+
+        with pytest.raises(ValueError) as exception_info:
+            dataset.list_documents(id=documents[0].id, ids=[documents[1].id])
+
+        assert str(exception_info.value) == "Cannot use both 'id' and 'ids' parameters at the same time."
+
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, name, expected_num, expected_message",

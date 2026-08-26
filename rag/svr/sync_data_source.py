@@ -62,6 +62,7 @@ from common.data_source import (
     BigQueryConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    XquikConnector,
     OneDriveConnector,
     OutlookConnector,
     AzureBlobConnector,
@@ -2197,6 +2198,24 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class Xquik(SyncBase):
+    SOURCE_NAME: str = FileSource.XQUIK
+
+    async def _generate(self, task: dict):
+        poll_start = task.get("poll_range_start")
+        end_time = datetime.now(timezone.utc)
+        incremental = task.get("reindex") != "1" and poll_start is not None
+
+        self.connector = XquikConnector.from_config(
+            self.conf,
+            since_time=poll_start if incremental else None,
+            until_time=end_time,
+        )
+        document_generator = self.connector.poll_source(poll_start.timestamp(), end_time.timestamp()) if incremental else self.connector.load_from_state()
+        self.log_connection("Xquik", "X search", task)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
     FileSource.S3: S3,
@@ -2234,6 +2253,7 @@ func_factory = {
     FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.XQUIK: Xquik,
 }
 
 

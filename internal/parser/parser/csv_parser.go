@@ -110,8 +110,8 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "CSV",
+		return parseWithTCADP(
+			ctx, filename, data, "CSV",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,

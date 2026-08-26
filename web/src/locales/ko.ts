@@ -1069,6 +1069,9 @@ export default {
       created: '생성됨',
       action: '작업',
       embedModalTitle: '웹페이지에 삽입',
+      embedUserIdPlaceholder: '예: user-001',
+      embedUserIdTooltip:
+        '임베드 페이지의 최종 사용자를 식별하는 문자열(최대 255자)입니다. 임베드 URL에 userId 매개변수로 추가됩니다.',
       published: '게시됨',
       publishedTooltip:
         '이 삽입에 게시된 버전을 사용합니다. 활성화하면 생성된 URL에 release=true가 포함됩니다.',
