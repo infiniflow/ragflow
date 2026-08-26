@@ -21,6 +21,21 @@ interface NumberInputProps {
   max?: number;
   hideIcons?: boolean;
   inputClassName?: string;
+  precision?: number;
+}
+
+// Truncate on the decimal string instead of `Math.trunc(v * 10 ** decimals)`,
+// which loses precision on values such as 0.29 (0.29 * 100 === 28.999...).
+function limitDecimals(value: number, decimals: number) {
+  const [integerPart, fractionPart = ''] = String(value).split('.');
+  if (fractionPart.length <= decimals) {
+    return value;
+  }
+  return Number(
+    decimals === 0
+      ? integerPart
+      : `${integerPart}.${fractionPart.slice(0, decimals)}`,
+  );
 }
 
 const NumberInput = forwardRef<
@@ -37,6 +52,7 @@ const NumberInput = forwardRef<
     max = Infinity,
     hideIcons = false,
     inputClassName,
+    precision,
     ...props
   },
   ref,
@@ -84,13 +100,23 @@ const NumberInput = forwardRef<
     }
 
     if (!isNaN(newValue)) {
+      const limitedValue =
+        precision === undefined ? newValue : limitDecimals(newValue, precision);
+
+      // The state below may not change when extra decimals are dropped
+      // (0.12 -> 0.123 -> 0.12), so React would not re-render and the browser
+      // would keep showing the rejected digits. Write the DOM value directly.
+      if (limitedValue !== newValue) {
+        e.target.value = String(limitedValue);
+      }
+
       // Show the raw typed value as-is, even when it falls outside [min, max]
       // (e.g. deleting "1024" → "102" when min=512), so the controlled input
       // never snaps back mid-edit. Out-of-range values are not propagated to
       // the form; handleBlur clamps them into range on focus loss.
-      setValue(newValue);
-      if (newValue >= min && newValue <= max) {
-        onChange?.(newValue);
+      setValue(limitedValue);
+      if (limitedValue >= min && limitedValue <= max) {
+        onChange?.(limitedValue);
       }
     }
   };
