@@ -39,6 +39,17 @@ export function getOperatorType(operatorId: string): Operator {
   return (operatorId.split(':')[0] || operatorId) as Operator;
 }
 
+// The dataset-level modular metadata object stored at parser_config.metadata.
+// A flat legacy "metadata" field is an array of fields, which distinguishes
+// it from the group object {enabled, metadata, built_in_metadata}.
+function isDatasetMetadataGroup(value: any): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
 export function transformParserConfigSetups(
   setups: Record<string, any> | undefined,
 ): any[] {
@@ -397,10 +408,24 @@ export function buildOperatorNode(
   };
 
   if (!isEmpty(pipelineParserConfig)) {
+    let apiConfig = pipelineParserConfig[operatorId];
+    // Dataset-level auto-metadata lives at parser_config.metadata; the
+    // backend preserves that object and re-scopes it into every Extractor
+    // node on write, so it is the authoritative source for the metadata
+    // toggle's initial state — prefer it over a possibly stale per-node copy.
+    if (
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(pipelineParserConfig.metadata)
+    ) {
+      apiConfig = {
+        ...apiConfig,
+        metadata: pipelineParserConfig.metadata,
+      };
+    }
     // user overrides from API (now also form format)
     Object.assign(
       rawForm,
-      transformApiConfigToForm(operatorType, pipelineParserConfig[operatorId]), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
+      transformApiConfigToForm(operatorType, apiConfig), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
     );
   }
 
