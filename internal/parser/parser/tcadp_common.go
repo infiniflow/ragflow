@@ -13,16 +13,39 @@ import (
 	models "ragflow/internal/entity/models"
 )
 
-func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tcadpAPIServer, tcadpAPIKey, tableResultType, markdownImageResponseType string, outputFormat string) ParseResult {
+// parseWithTCADP submits binary data to the TCADP cloud reconstruction service
+// and returns the structured parse result.
+//
+// Shared by all three TCADP-using parser families (PDF, spreadsheet,
+// presentation). Each family wraps this with its own thin function that
+// supplies its parameters (env-fallbacks, fileType, table/format config)
+// so the TCADP API contract lives in one place.
+func parseWithTCADP(
+	ctx context.Context,
+	filename string,
+	data []byte,
+	fileType string,
+	tcadpAPIServer, tcadpAPIKey string,
+	tableResultType, markdownImageResponseType string,
+	outputFormat string,
+) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
 	baseURL := strings.TrimSpace(tcadpAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("TCADP_APISERVER"))
+		// Try the legacy TCADP_APISERVER_URL first so existing PDF
+		// deployments that set it for the old parsePDFWithTCADP helper
+		// keep working — then fall back to the canonical TCADP_APISERVER
+		// used by the other two families.
+		if v := strings.TrimSpace(os.Getenv("TCADP_APISERVER_URL")); v != "" {
+			baseURL = v
+		} else {
+			baseURL = strings.TrimSpace(os.Getenv("TCADP_APISERVER"))
+		}
 	}
 	if baseURL == "" {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver or TCADP_APISERVER")}
+		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver, TCADP_APISERVER_URL, or TCADP_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(tcadpAPIKey)
 	if apiKey == "" {
@@ -38,7 +61,8 @@ func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tc
 			"MarkdownImageResponseType": markdownImageResponseType,
 		},
 	}
-	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(false), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
+	resp, err := models.PostJSONRequest(ctx, models.NewDriverHTTPClient(false),
+		strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP submit: %w", err)}
 	}
@@ -59,7 +83,8 @@ func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tc
 	if payload.DocumentRecognizeResultURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP returned no DocumentRecognizeResultUrl")}
 	}
-	downloadReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, payload.DocumentRecognizeResultURL, nil)
+	downloadReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		payload.DocumentRecognizeResultURL, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download request: %w", err)}
 	}
