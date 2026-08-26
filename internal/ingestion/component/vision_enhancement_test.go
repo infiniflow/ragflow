@@ -456,6 +456,139 @@ func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
 	}
 }
 
+// TestVisionEnhancement_PromptBuilderErrorSkipped verifies that a prompt build
+// failure skips enhancement silently (best-effort, nilerr is intentional).
+func TestVisionEnhancement_PromptBuilderErrorSkipped(t *testing.T) {
+	swapVisionGlobals(t,
+		fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			t.Error("invoker should not be called when prompt builder fails")
+			return nil, nil
+		},
+		func(_ string) (string, error) {
+			return "", errors.New("prompt load failed")
+		},
+	)
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		},
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when prompt builder fails")
+	}
+	if got, _ := res.JSON[0]["text"].(string); got != "" {
+		t.Errorf("text = %q, want empty", got)
+	}
+}
+
+// TestVisionEnhancement_ModelResolveFailureSkipped verifies that a resolver error
+// (e.g., tenant has no IMAGE2TEXT model) skips enhancement silently.
+func TestVisionEnhancement_ModelResolveFailureSkipped(t *testing.T) {
+	swapVisionGlobals(t,
+		func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+			return nil, "", nil, 0, errors.New("no model")
+		},
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			t.Error("invoker should not be called when model resolve fails")
+			return nil, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		},
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when model resolve fails")
+	}
+	if got, _ := res.JSON[0]["text"].(string); got != "" {
+		t.Errorf("text = %q, want empty", got)
+	}
+}
+
+// TestVisionEnhancement_CancellationStopsSchedulingWithManyItems verifies that
+// cancellation stops scheduling when N > visionEnhancementConcurrency, without deadlock.
+func TestVisionEnhancement_CancellationStopsSchedulingWithManyItems(t *testing.T) {
+	n := visionEnhancementConcurrency + 5
+	swapVisionGlobals(t, fakeResolver,
+		func(ctx context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			// Simulate work that respects ctx.
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+			ans := "desc"
+			return &modelModule.ChatResponse{Answer: &ans}, nil
+		},
+		fakePrompt,
+	)
+
+	items := make([]map[string]any, n)
+	for i := range items {
+		items[i] = map[string]any{
+			"text":         fmt.Sprintf("item%d", i),
+			"image":        "aGVsbG8=",
+			"doc_type_kwd": "image",
+		}
+	}
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON:         items,
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // pre-cancel — dispatch loop should break immediately
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		ctx,
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true with cancelled context, want false")
+	}
+	// No item should be modified when dispatch is cancelled before scheduling.
+	for i, item := range res.JSON {
+		if got, _ := item["text"].(string); got != fmt.Sprintf("item%d", i) {
+			t.Errorf("item[%d] text = %q, want untouched after cancellation", i, got)
+		}
+	}
+}
+
 func TestBuildVisionMessages_PreventsDoublePrefix(t *testing.T) {
 	cases := []struct {
 		name    string

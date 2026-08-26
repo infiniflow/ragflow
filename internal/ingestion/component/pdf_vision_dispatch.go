@@ -654,7 +654,6 @@ func buildPDFVisionMessages(prompt string, imageURL string) []modelModule.Messag
 	}}
 }
 
-
 func defaultPDFVisionModelResolver(
 	ctx context.Context,
 	db *gorm.DB,

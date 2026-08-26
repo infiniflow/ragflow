@@ -139,19 +139,29 @@ func maybeDispatchVisionEnhancement(
 	// Hoist prompt once: language is invariant across items.
 	prompt, perr := figureVisionPromptBuilder(language)
 	if perr != nil {
+		//nolint:nilerr // Vision enhancement is best-effort.
 		return dispatched, false, nil
 	}
 
 	// 3. Concurrently invoke VLM — acquire semaphore before launching goroutine
 	// so live goroutine count is bounded by visionEnhancementConcurrency.
-	// Cancellation propagates via ctx through visionChatInvoker; no separate
-	// select-on-Done is needed for N ≤ visionEnhancementConcurrency items.
+	// Stop scheduling new VLM calls after cancellation; already-running calls
+	// finish via wg.Wait() and cancellation propagates via ctx through
+	// visionChatInvoker.
 	descriptions := make([]string, len(targets))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
 
+dispatch:
 	for slot, tg := range targets {
-		sem <- struct{}{}
+		if ctx.Err() != nil {
+			break dispatch
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break dispatch
+		}
 		wg.Add(1)
 		go func(slot int, itemIdx int) {
 			defer wg.Done()
@@ -170,6 +180,9 @@ func maybeDispatchVisionEnhancement(
 		}(slot, tg.idx)
 	}
 	wg.Wait()
+	if ctx.Err() != nil {
+		return dispatched, false, nil
+	}
 
 	// 4. Append descriptions to item text (single newline \n, matching Python).
 	modified := false
