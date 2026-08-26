@@ -223,11 +223,7 @@ def test_manual_mineru_preserves_global_page_position(monkeypatch):
             return re.sub(r"@@[\t0-9.-]+?##", "", text)
 
         def crop(self, text, need_position=False):
-            positions = [
-                (pages[0] + self.page_from, left, right, top, bottom)
-                for pages, left, right, top, bottom in self.extract_positions(text)
-                if pages and pages[0] >= 0
-            ]
+            positions = [(pages[0] + self.page_from, left, right, top, bottom) for pages, left, right, top, bottom in self.extract_positions(text) if pages and pages[0] >= 0]
             return (None, positions) if need_position else None
 
     parser = _MinerUParser()
