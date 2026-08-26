@@ -15,25 +15,30 @@ func envelopedDSL(components string) []byte {
 	return []byte(`{"dsl": {"components": ` + components + `}}`)
 }
 
-// TestExtractParserCpnID verifies the Parser cpnID is discovered from both
-// enveloped and raw DSL, and "" is returned when no Parser component exists.
-func TestExtractParserCpnID(t *testing.T) {
-	// enveloped DSL with a Parser component.
-	dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {}}}}`)
-	if got := ExtractParserCpnID(dsl, testParserComponentName); got != "Parser:Abc" {
-		t.Fatalf("enveloped: want Parser:Abc, got %q", got)
+// TestParserComponentParams verifies the Parser cpnID and params are
+// discovered from both enveloped and raw DSL, and ("", nil) is returned when
+// no Parser component exists.
+func TestParserComponentParams(t *testing.T) {
+	// enveloped DSL with a Parser component carrying params.
+	dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "DeepDOC"}}}}}`)
+	cpnID, params := parserComponentParams(dsl, testParserComponentName)
+	if cpnID != "Parser:Abc" {
+		t.Fatalf("enveloped: want Parser:Abc, got %q", cpnID)
+	}
+	if pdf, ok := params["pdf"].(map[string]any); !ok || pdf["parse_method"] != "DeepDOC" {
+		t.Fatalf("params not extracted: %#v", params)
 	}
 
-	// no Parser component -> "".
+	// no Parser component -> ("", nil).
 	dslNo := envelopedDSL(`{"Tokenizer:X": {"obj": {"component_name": "Tokenizer", "params": {}}}}`)
-	if got := ExtractParserCpnID(dslNo, testParserComponentName); got != "" {
-		t.Fatalf("no parser: want empty, got %q", got)
+	if cpnID, params := parserComponentParams(dslNo, testParserComponentName); cpnID != "" || params != nil {
+		t.Fatalf("no parser: want (\"\", nil), got (%q, %#v)", cpnID, params)
 	}
 
 	// raw (non-enveloped) inner DSL is also accepted.
 	raw := []byte(`{"components": {"Parser:Z": {"obj": {"component_name": "Parser", "params": {}}}}}`)
-	if got := ExtractParserCpnID(raw, testParserComponentName); got != "Parser:Z" {
-		t.Fatalf("raw: want Parser:Z, got %q", got)
+	if cpnID, _ := parserComponentParams(raw, testParserComponentName); cpnID != "Parser:Z" {
+		t.Fatalf("raw: want Parser:Z, got %q", cpnID)
 	}
 }
 
@@ -84,6 +89,98 @@ func TestBuildParserPageCapOverride(t *testing.T) {
 	if len(out4) != 0 {
 		t.Fatalf("no Parser should be no-op, got %#v", out4)
 	}
+}
+
+// TestBuildParserPageCapOverrideRespectsDSLPages is the regression test for
+// the canvas page-range bug: a dataflow dry-run carries an empty
+// parserConfig, and the canvas saves the user's explicit page range on the
+// Parser component's own DSL params (params[family]["pages"]). The injected
+// cap must not replace that explicit range via the override-wins merge.
+func TestBuildParserPageCapOverrideRespectsDSLPages(t *testing.T) {
+	familyOf := func(ext string) string {
+		if ext == "pdf" {
+			return "pdf"
+		}
+		return ""
+	}
+	const docType = "pdf"
+
+	t.Run("explicit DSL pages -> cap not injected", func(t *testing.T) {
+		// The default canvas setup: pages [[1, 100000]] covers the whole
+		// document, so the debug cap must leave it untouched.
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "DeepDOC", "pages": [[1, 100000]]}}}}}`)
+		out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
+		if len(out) != 0 {
+			t.Fatalf("explicit DSL pages must be respected, got override %#v", out)
+		}
+	})
+
+	t.Run("empty DSL pages -> cap injected, family settings preserved", func(t *testing.T) {
+		// pages [] means "parse all pages" — not an explicit range, so the
+		// cap still applies, but the DSL family settings must survive the
+		// override merge (it replaces the whole family entry).
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "Plain Text", "remove_header_footer": true, "pages": []}}}}}`)
+		out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
+		fam, ok := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+		if !ok {
+			t.Fatalf("missing cpnID/family entry: %#v", out)
+		}
+		if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+			t.Fatalf("pages cap shape wrong: %#v", fam["pages"])
+		}
+		if fam["parse_method"] != "Plain Text" {
+			t.Fatalf("parse_method must survive the cap injection: %#v", fam)
+		}
+		if fam["remove_header_footer"] != true {
+			t.Fatalf("remove_header_footer must survive the cap injection: %#v", fam)
+		}
+	})
+
+	t.Run("no pages key in DSL -> cap injected, family settings preserved", func(t *testing.T) {
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "DeepDOC"}}}}}`)
+		out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
+		fam, ok := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+		if !ok {
+			t.Fatalf("missing cpnID/family entry: %#v", out)
+		}
+		if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+			t.Fatalf("pages cap shape wrong: %#v", fam["pages"])
+		}
+		if fam["parse_method"] != "DeepDOC" {
+			t.Fatalf("parse_method must survive the cap injection: %#v", fam)
+		}
+	})
+
+	t.Run("explicit DSL pages for another family do not block the cap", func(t *testing.T) {
+		// pages configured under a family other than the document's own must
+		// not disable the cap for this document's family.
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"docx": {"pages": [[1, 50]]}, "pdf": {"parse_method": "DeepDOC"}}}}}`)
+		out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
+		fam, ok := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+		if !ok {
+			t.Fatalf("missing cpnID/family entry: %#v", out)
+		}
+		if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+			t.Fatalf("pages cap shape wrong: %#v", fam["pages"])
+		}
+	})
+
+	t.Run("parserConfig keys win over seeded DSL keys", func(t *testing.T) {
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "DeepDOC"}}}}}`)
+		pc := map[string]any{
+			"Parser:Abc": map[string]any{
+				"pdf": map[string]any{"parse_method": "Plain Text"},
+			},
+		}
+		out := BuildParserPageCapOverride(pc, dsl, docType, 2, testParserComponentName, familyOf)
+		fam := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+		if fam["parse_method"] != "Plain Text" {
+			t.Fatalf("existing parserConfig value must win over the seeded DSL value: %#v", fam)
+		}
+		if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+			t.Fatalf("pages cap shape wrong: %#v", fam["pages"])
+		}
+	})
 }
 
 // TestUnwrapCanvasDSL verifies the envelope is stripped and a raw DSL passes

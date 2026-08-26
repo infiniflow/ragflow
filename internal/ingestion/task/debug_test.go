@@ -151,6 +151,10 @@ func TestInjectDebugPageCap(t *testing.T) {
 		t.Fatalf("unmarshal template envelope: %v", err)
 	}
 	dsl := string(envelope.DSL)
+	// The shipped general template carries an explicit pdf pages range
+	// ([[1, 100000]]), which the cap must respect. Strip it to exercise the
+	// fallback-injection path on a DSL without explicit pages.
+	noPagesDSL := dslWithoutPDFPages(t, envelope.DSL)
 
 	// Discover the Parser cpnID the same way the executor does.
 	schemas, err := pipeline.ExtractAllComponentParams(envelope.DSL)
@@ -173,9 +177,19 @@ func TestInjectDebugPageCap(t *testing.T) {
 			component.ComponentNameParser, component.ParserFileFamily)
 	}
 
-	t.Run("pdf injects [1,2] under cpnID+family", func(t *testing.T) {
+	t.Run("template pdf explicit pages are respected", func(t *testing.T) {
+		// The template ships pdf pages [[1, 100000]] — an explicit range, so
+		// the debug cap (a fallback only) must NOT be injected over it.
 		parserConfig := map[string]any{}
 		apply(parserConfig, dsl, "pdf")
+		if len(parserConfig) != 0 {
+			t.Fatalf("parserConfig = %v, want empty (the DSL's explicit pdf pages must be respected)", parserConfig)
+		}
+	})
+
+	t.Run("pdf injects [1,2] under cpnID+family when DSL has no explicit pages", func(t *testing.T) {
+		parserConfig := map[string]any{}
+		apply(parserConfig, noPagesDSL, "pdf")
 		famEntry, ok := parserConfig[parserCpnID].(map[string]any)
 		if !ok {
 			t.Fatalf("parserConfig[%q] = %T, want map[string]any", parserCpnID, parserConfig[parserCpnID])
@@ -219,7 +233,7 @@ func TestInjectDebugPageCap(t *testing.T) {
 				"pdf": map[string]any{"parse_method": "deepdoc"},
 			},
 		}
-		apply(parserConfig, dsl, "pdf")
+		apply(parserConfig, noPagesDSL, "pdf")
 		famEntry := parserConfig[parserCpnID].(map[string]any)
 		pdf := famEntry["pdf"].(map[string]any)
 		if pdf["parse_method"] != "deepdoc" {
@@ -234,7 +248,7 @@ func TestInjectDebugPageCap(t *testing.T) {
 		// In production dsl is the canvas envelope {"dsl": {"components": ...}},
 		// not the bare components map. The helper must still find the Parser
 		// cpnID after unwrapping.
-		wrapped := fmt.Sprintf(`{"dsl":%s}`, string(envelope.DSL))
+		wrapped := fmt.Sprintf(`{"dsl":%s}`, noPagesDSL)
 		parserConfig := map[string]any{}
 		apply(parserConfig, wrapped, "pdf")
 		famEntry, ok := parserConfig[parserCpnID].(map[string]any)
@@ -265,6 +279,35 @@ func TestInjectDebugPageCap(t *testing.T) {
 			t.Errorf("parserConfig[%q][\"pdf\"][\"pages\"] = %v, want [[1, 1000000]] (explicit cap must be respected, not overridden by debug default)", parserCpnID, pdf["pages"])
 		}
 	})
+}
+
+// dslWithoutPDFPages returns a copy of the template inner DSL with the Parser
+// component's explicit pdf "pages" range removed. The shipped general template
+// carries pages [[1, 100000]], which the debug cap must respect; stripping it
+// lets tests exercise the fallback-injection path on a DSL without explicit
+// pages.
+func dslWithoutPDFPages(t *testing.T, inner json.RawMessage) string {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(inner, &doc); err != nil {
+		t.Fatalf("unmarshal template dsl: %v", err)
+	}
+	comps, _ := doc["components"].(map[string]any)
+	for _, c := range comps {
+		obj, _ := c.(map[string]any)["obj"].(map[string]any)
+		if obj["component_name"] != component.ComponentNameParser {
+			continue
+		}
+		params, _ := obj["params"].(map[string]any)
+		if pdf, ok := params["pdf"].(map[string]any); ok {
+			delete(pdf, "pages")
+		}
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("remarshal template dsl: %v", err)
+	}
+	return string(out)
 }
 
 // TestWarnUnknownComponentParamsDetectsUnknownCPNFromEnvelope pins the fix for
