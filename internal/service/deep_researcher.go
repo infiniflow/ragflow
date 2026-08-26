@@ -325,26 +325,20 @@ func (dr *DeepResearcher) _research(
 		}(i, qp)
 	}
 
-	// Wait with context cancellation support.
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		// Sub-research goroutines invoke the progress callback, which
-		// writes to the caller's channel; do not orphan them. Draining
-		// here guarantees no callback fires after Research returns
-		// (mirrors Python's asyncio.gather cancellation semantics).
-		wg.Wait()
-		return retContent, ctx.Err()
+	if err := waitForDeepResearchWorkers(ctx, &wg); err != nil {
+		return retContent, err
 	}
 
 	// 7. Join results
 	return strings.Join(results, "\n"), nil
+}
+
+func waitForDeepResearchWorkers(ctx context.Context, workers *sync.WaitGroup) error {
+	// Sub-research goroutines invoke the progress callback, which
+	// writes to the caller's channel; do not orphan them. Draining
+	// here guarantees no callback fires after Research returns.
+	workers.Wait()
+	return ctx.Err()
 }
 
 // ──────────────────────────────────────────────────────────────────────
