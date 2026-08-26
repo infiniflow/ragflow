@@ -115,7 +115,9 @@ func (c *DingTalkAITableConnector) OpenSync(ctx context.Context, request SyncReq
 		return nil, err
 	}
 	session := &dingTalkAITableSyncSession{documents: documents, batchSize: c.batchSize}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -469,20 +471,21 @@ func (s *dingTalkAITableSyncSession) Close() error {
 	return nil
 }
 
-func (s *dingTalkAITableSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *dingTalkAITableSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	if sourceID == "" {
-		return
+		return fmt.Errorf("dingtalk AI table sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, doc := range s.documents {
 		if doc.SourceID == sourceID {
 			s.index = index + 1
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("dingtalk AI table resume anchor %q was not found in the current listing: %w", sourceID, ErrSyncResumeInvalid)
 }
 
 func dingTalkAITableCheckpoint(doc SourceDocument) *SyncCheckpoint {
