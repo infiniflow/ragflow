@@ -2042,7 +2042,7 @@ def _tenant_model_type_postgres_using_sql() -> str:
     bits = " | ".join(f"CASE WHEN '{name}' = ANY({token_list}) THEN {value} ELSE 0 END" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
     return (
         'CASE WHEN "model_type" IS NULL OR btrim("model_type") = \'\' THEN 1 '
-        'WHEN "model_type" ~ \'^[0-9]+$\' THEN "model_type"::integer '
+        'WHEN btrim("model_type") ~ \'^[0-9]+$\' THEN btrim("model_type")::integer '
         f"ELSE COALESCE(NULLIF(({bits}), 0), 1) END"
     )
 
@@ -2052,7 +2052,7 @@ def _tenant_model_type_mysql_update_sql() -> str:
     bits = " | ".join(f"IF(FIND_IN_SET('{name}', {tokens}), {value}, 0)" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
     return (
         "UPDATE `tenant_model` SET `model_type` = CASE "
-        "WHEN `model_type` REGEXP '^[0-9]+$' THEN `model_type` "
+        "WHEN TRIM(`model_type`) REGEXP '^[0-9]+$' THEN TRIM(`model_type`) "
         "WHEN `model_type` IS NULL OR TRIM(`model_type`) = '' THEN '1' "
         f"ELSE CAST(IFNULL(NULLIF(({bits}), 0), 1) AS CHAR) END"
     )

@@ -63,7 +63,7 @@ def test_migrate_tenant_model_type_column_converts_postgres_varchar(monkeypatch)
     assert len(queries) == 1
     sql = queries[0]
     assert 'ALTER TABLE "tenant_model" ALTER COLUMN "model_type" TYPE integer USING' in sql
-    assert "WHEN \"model_type\" ~ '^[0-9]+$' THEN \"model_type\"::integer" in sql
+    assert "WHEN btrim(\"model_type\") ~ '^[0-9]+$' THEN btrim(\"model_type\")::integer" in sql
     assert "string_to_array" in sql
     assert "WHEN 'chat' = ANY(" in sql
     assert "WHEN 'vision' = ANY(" in sql
@@ -98,7 +98,7 @@ def test_migrate_tenant_model_type_column_converts_mysql_varchar(monkeypatch):
     assert len(queries) == 1
     sql = queries[0]
     assert "UPDATE `tenant_model` SET `model_type` = CASE" in sql
-    assert "WHEN `model_type` REGEXP '^[0-9]+$' THEN `model_type`" in sql
+    assert "WHEN TRIM(`model_type`) REGEXP '^[0-9]+$' THEN TRIM(`model_type`)" in sql
     assert "WHEN `model_type` IS NULL OR TRIM(`model_type`) = '' THEN '1'" in sql
     assert "FIND_IN_SET('chat'" in sql
     assert "FIND_IN_SET('vision'" in sql
