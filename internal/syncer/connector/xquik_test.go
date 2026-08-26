@@ -201,8 +201,8 @@ func TestXquikOpenSyncUsesWindowAndResumesCursor(t *testing.T) {
 	mu.Lock()
 	gotRequests := append([]url.Values(nil), requests...)
 	mu.Unlock()
-	if len(gotRequests) != 2 {
-		t.Fatalf("request count = %d, want 2", len(gotRequests))
+	if len(gotRequests) != 3 {
+		t.Fatalf("request count = %d, want 3", len(gotRequests))
 	}
 	for _, query := range gotRequests {
 		if query.Get("q") != "ragflow lang:en" || query.Get("queryType") != "Top" || query.Get("limit") != "2" {
@@ -212,8 +212,8 @@ func TestXquikOpenSyncUsesWindowAndResumesCursor(t *testing.T) {
 			t.Fatalf("window query = %v", query)
 		}
 	}
-	if gotRequests[0].Get("cursor") != "" || gotRequests[1].Get("cursor") != "cursor-2" {
-		t.Fatalf("cursor sequence = [%q %q]", gotRequests[0].Get("cursor"), gotRequests[1].Get("cursor"))
+	if gotRequests[0].Get("cursor") != "" || gotRequests[1].Get("cursor") != "" || gotRequests[2].Get("cursor") != "cursor-2" {
+		t.Fatalf("cursor sequence = [%q %q %q]", gotRequests[0].Get("cursor"), gotRequests[1].Get("cursor"), gotRequests[2].Get("cursor"))
 	}
 }
 

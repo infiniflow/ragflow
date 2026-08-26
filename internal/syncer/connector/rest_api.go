@@ -1107,16 +1107,16 @@ func (c *RestAPIConnector) applyCursorPagination(params map[string]any, cursor s
 // restAPIItemIterator mirrors _iter_items: it walks pages applying the
 // configured pagination and stopping when the source reports no more items.
 type restAPIItemIterator struct {
-	c         *RestAPIConnector
-	pageCount int
-	page      int
-	offset    int
-	limit     int
-	perPage   int
-	cursor    string
-	finished  bool
-	lastPos   *restAPISync
-  CursorseenCursors map[string]struct{}
+	c           *RestAPIConnector
+	pageCount   int
+	page        int
+	offset      int
+	limit       int
+	perPage     int
+	cursor      string
+	finished    bool
+	lastPos     *restAPISyncCursor
+	seenCursors map[string]struct{}
 }
 
 func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
