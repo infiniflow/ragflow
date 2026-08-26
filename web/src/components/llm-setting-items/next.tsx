@@ -262,7 +262,7 @@ export function LlmSettingFieldItems({
           render={({ field }) => (
             <FormItem className="flex justify-between items-center">
               <FormLabel className="flex-1" tooltip={t('thinkingTip')}>
-                {t('thinking')}
+                {t('thinkingMode')}
               </FormLabel>
               <FormControl>
                 <Select
