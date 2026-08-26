@@ -1296,6 +1296,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldClientSecret: 'Client Secret',
       dataSourceFieldFolderPathOptional: 'Folder Path (optional)',
       dataSourceFieldBatchSize: 'Batch Size',
+      dataSourceFieldFeishuAppId: 'Feishu App ID',
+      dataSourceFieldFeishuAppSecret: 'Feishu App Secret',
+      dataSourceFieldWikiSpaceId: 'Wiki Space ID',
+      dataSourceFieldRootNodeToken: 'Wiki Root Node Token',
+      dataSourceFieldIncludeExtensions: 'Allowed File Extensions',
+      dataSourceFieldIncludeKeywords: 'Required Filename Keywords',
+      dataSourceFieldExcludeKeywords: 'Excluded Filename Keywords',
       dataSourceFieldMailFolder: 'Mail Folder',
       dataSourceFieldMailboxUserIds: 'Mailbox User IDs (optional)',
       dataSourceFieldInstanceUrl: 'Instance URL',
@@ -1564,6 +1571,8 @@ Example: Virtual Hosted Style`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      feishu_wikiDescription:
+        'Sync approved attachments from Feishu Wiki with manual rebuilds, scheduled increments, and pre-download screening.',
       gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
