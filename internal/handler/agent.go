@@ -104,6 +104,9 @@ type AgentHandler struct {
 	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
 	// live Redis.
 	redisStore task.DebugLogStore
+	// webhookTraceAppender records webhook test-run events. Production uses
+	// appendWebhookTrace; tests inject a recorder without mutating global Redis.
+	webhookTraceAppender func(context.Context, string, time.Time, canvas.RunEvent)
 	// newExecutor builds the pipeline executor for a debug run. Defaults to
 	// task.NewPipelineExecutor; tests inject a fake so the debug path can be
 	// driven without a real canvas/DSL.
