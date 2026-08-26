@@ -139,27 +139,30 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 	)
 }
 
-// defaultOutputFormatForFamily returns the Python/Go canonical default
-// output_format for a family, as declared in rag/flow/parser/parser.py
-// ParserParam.setups and mirrored in parser.go:defaultSetups(). Used when
-// setups[family] exists but output_format is empty.
+// defaultOutputFormatForFamily returns the per-family default
+// output_format used when setups[family] exists but output_format is
+// empty. For most families it is the value in defaultSetups()
+// (which mirrors rag/flow/parser/parser.py ParserParam.setups).
+// Two families diverge intentionally and are overridden here:
+//   - email: defaultSetups is "json" (Python), but dispatch defaults
+//     to "text" to match frontend InitialOutputFormatMap, EmailParser
+//     text fallback, and ingestion_pipeline_email.json.
+//   - audio: defaultSetups is "text" (Python), but dispatch defaults
+//     to "json" to match media_dispatch json fallback and Python
+//     whitelist [json] (audio:text would be rejected if validated).
 func defaultOutputFormatForFamily(family string) (string, bool) {
-	switch family {
-	case "pdf":
-		return "json", true
-	case "spreadsheet":
-		return "html", true
-	case "doc", "docx", "slides", "image", "markdown", "text&code", "html", "epub", "json":
-		return "json", true
-	case "email":
+	if family == "email" {
 		return "text", true
-	case "audio":
-		return "json", true
-	case "video":
-		return "text", true
-	default:
-		return "", false
 	}
+	if family == "audio" {
+		return "json", true
+	}
+	if s, ok := defaultSetups()[family]; ok {
+		if v, ok := s["output_format"].(string); ok && v != "" {
+			return v, true
+		}
+	}
+	return "", false
 }
 
 // dispatchParse resolves the parser for the given fileType and invokes
