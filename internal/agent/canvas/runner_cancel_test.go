@@ -104,7 +104,7 @@ func TestRunnerEmitsCancelledEvent(t *testing.T) {
 // event context prevents delivery even when the destination buffer is writable.
 func TestPushEventSkipsCancelledConsumer(t *testing.T) {
 	eventCtx, cancelEvents := context.WithCancel(context.Background())
-	workflowCtx := WithEventContext(context.Background(), eventCtx)
+	workflowCtx := WithEventContext(t.Context(), eventCtx)
 	events := make(chan RunEvent, 1)
 	cancelEvents()
 
@@ -118,7 +118,7 @@ func TestPushEventSkipsCancelledConsumer(t *testing.T) {
 // producer is released when the event consumer cancels its context.
 func TestRunnerDropsEventsAfterConsumerCancellation(t *testing.T) {
 	r := NewRunner()
-	runCtx := context.Background()
+	runCtx := t.Context()
 	eventCtx, cancelEvents := context.WithCancel(context.Background())
 	runCtx = WithEventContext(runCtx, eventCtx)
 	started := make(chan struct{})

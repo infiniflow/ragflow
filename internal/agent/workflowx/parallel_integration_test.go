@@ -130,7 +130,7 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 			calls.Add(1)
 			if in == 7 && !interrupted {
 				interrupted = true
-				return 0, compose.StatefulInterrupt(context.Background(), "only-7", in)
+				return 0, compose.StatefulInterrupt(t.Context(), "only-7", in)
 			}
 			return in + 1, nil
 		},
@@ -336,7 +336,7 @@ func TestIntegration_WithForceNewRun_ResetsState(t *testing.T) {
 			fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
 				if in == 0 {
 					interruptCount.Add(1)
-					return 0, compose.StatefulInterrupt(context.Background(), "force-new", in)
+					return 0, compose.StatefulInterrupt(t.Context(), "force-new", in)
 				}
 				return in, nil
 			},

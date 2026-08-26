@@ -46,7 +46,7 @@ func TestQueritBuildsMinimalRequest(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 	querit := newQueritTool(helper, func() string { return "" }, queritParams{APIKey: "key-test"}, nil)
-	out, err := querit.InvokableRun(context.Background(), `{"query":"ragflow"}`)
+	out, err := querit.InvokableRun(t.Context(), `{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestQueritBuildsFiltersAndMergesRuntimeOverrides(t *testing.T) {
 	}
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 	querit := newQueritTool(helper, func() string { return "" }, defaults, func(context.Context, int) bool { return true })
-	_, err := querit.InvokableRun(context.Background(), `{"query":"ragflow","count":5,"site_include":[],"language_include":["en"]}`)
+	_, err := querit.InvokableRun(t.Context(), `{"query":"ragflow","count":5,"site_include":[],"language_include":["en"]}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestQueritUsesNodeQueryWhenRuntimeQueryIsOmitted(t *testing.T) {
 		queritParams{APIKey: "stored-key", Query: "node query"},
 		nil,
 	)
-	out, err := querit.InvokableRun(context.Background(), `{}`)
+	out, err := querit.InvokableRun(t.Context(), `{}`)
 	if err != nil || strings.Contains(out, "_ERROR") {
 		t.Fatalf("InvokableRun = %s, %v", out, err)
 	}
@@ -151,13 +151,13 @@ func TestQueritAPIKeyResolutionAndEmptyQuery(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 	querit := NewQueritToolWithEnvKey(helper, func() string { return "environment-secret" })
-	if _, err := querit.InvokableRun(context.Background(), `{"query":"ragflow"}`); err != nil {
+	if _, err := querit.InvokableRun(t.Context(), `{"query":"ragflow"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if authorization != "Bearer environment-secret" {
 		t.Fatalf("Authorization = %q", authorization)
 	}
-	emptyOut, err := querit.InvokableRun(context.Background(), `{"query":""}`)
+	emptyOut, err := querit.InvokableRun(t.Context(), `{"query":""}`)
 	if err != nil {
 		t.Fatalf("empty query: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestQueritAPIKeyResolutionAndEmptyQuery(t *testing.T) {
 	}
 
 	missing := NewQueritToolWithEnvKey(helper, func() string { return "" })
-	out, err := missing.InvokableRun(context.Background(), `{"query":"ragflow"}`)
+	out, err := missing.InvokableRun(t.Context(), `{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("missing key returned Go error: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestQueritRuntimeAPIKeyCannotOverrideNodeConfiguration(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 	querit := newQueritTool(helper, func() string { return "" }, queritParams{APIKey: "stored-key"}, nil)
-	out, err := querit.InvokableRun(context.Background(), `{"query":"ragflow","api_key":"runtime-key"}`)
+	out, err := querit.InvokableRun(t.Context(), `{"query":"ragflow","api_key":"runtime-key"}`)
 	if err != nil || strings.Contains(out, "_ERROR") {
 		t.Fatalf("InvokableRun = %s, %v", out, err)
 	}
@@ -203,7 +203,7 @@ func TestQueritRejectsMissingNullAndNonStringQueries(t *testing.T) {
 	querit := NewQueritToolWith(helper)
 	for _, args := range []string{`{}`, `{"query":null}`, `{"query":123}`} {
 		t.Run(args, func(t *testing.T) {
-			out, err := querit.InvokableRun(context.Background(), args)
+			out, err := querit.InvokableRun(t.Context(), args)
 			if err != nil || !strings.Contains(out, "_ERROR") || !strings.Contains(out, "query") {
 				t.Fatalf("InvokableRun(%s) = %s, %v", args, out, err)
 			}
@@ -223,7 +223,7 @@ func TestQueritExplicitNullChunksPerDocIsOmitted(t *testing.T) {
 	defer server.Close()
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 	querit := NewQueritToolWithEnvKey(helper, func() string { return "k" })
-	out, err := querit.InvokableRun(context.Background(), `{"query":"x","chunks_per_doc":null}`)
+	out, err := querit.InvokableRun(t.Context(), `{"query":"x","chunks_per_doc":null}`)
 	if err != nil || strings.Contains(out, "_ERROR") {
 		t.Fatalf("InvokableRun = %s, %v", out, err)
 	}
@@ -242,7 +242,7 @@ func TestQueritValidatesParametersBeforeRequest(t *testing.T) {
 	}
 	for _, args := range tests {
 		t.Run(args, func(t *testing.T) {
-			out, err := NewQueritTool().InvokableRun(context.Background(), args)
+			out, err := NewQueritTool().InvokableRun(t.Context(), args)
 			if err != nil || !strings.Contains(out, "_ERROR") {
 				t.Fatalf("InvokableRun(%s) = %s, %v", args, out, err)
 			}
@@ -296,7 +296,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 		defer server.Close()
 		helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 		querit := NewQueritToolWithEnvKey(helper, func() string { return "secret-key" })
-		out, err := querit.InvokableRun(context.Background(), `{"query":"x"}`)
+		out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
 		if err != nil || calls.Load() != 1 || !strings.Contains(out, "401") || strings.Contains(out, "secret-key") {
 			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
 		}
@@ -311,7 +311,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 		defer server.Close()
 		helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 		querit := newQueritTool(helper, nil, queritParams{APIKey: "secret-key"}, func(context.Context, int) bool { return true })
-		out, err := querit.InvokableRun(context.Background(), `{"query":"x"}`)
+		out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
 		if err != nil || calls.Load() != queritMaxAttempts || !strings.Contains(out, "429") || strings.Contains(out, "secret-key") {
 			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
 		}
@@ -333,7 +333,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 			BaseBackoff: time.Nanosecond,
 			MaxBackoff:  time.Nanosecond,
 		}).WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
-		out, err := NewQueritToolWithEnvKey(helper, func() string { return "k" }).InvokableRun(context.Background(), `{"query":"x"}`)
+		out, err := NewQueritToolWithEnvKey(helper, func() string { return "k" }).InvokableRun(t.Context(), `{"query":"x"}`)
 		if err != nil || calls.Load() != 3 || strings.Contains(out, "_ERROR") {
 			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
 		}
@@ -352,7 +352,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 			MaxBackoff:  time.Nanosecond,
 		}).WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 		querit := NewQueritToolWithEnvKey(helper, func() string { return "environment-secret" })
-		out, err := querit.InvokableRun(context.Background(), `{"query":"x"}`)
+		out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
 		if err != nil || calls.Load() != 3 || !strings.Contains(out, "_ERROR") || !strings.Contains(out, "500") {
 			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
 		}
@@ -378,7 +378,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 			if test.node {
 				querit = newQueritTool(helper, func() string { return "" }, queritParams{APIKey: test.secret}, nil)
 			}
-			out, err := querit.InvokableRun(context.Background(), `{"query":"x"}`)
+			out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
 			if err != nil || !strings.Contains(out, "_ERROR") || !strings.Contains(out, "[REDACTED]") {
 				t.Fatalf("result = %s, err = %v", out, err)
 			}
@@ -398,7 +398,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 			calls.Add(1)
 			return errors.New("offline")
 		})})
-		out, err := NewQueritToolWithEnvKey(helper, func() string { return "k" }).InvokableRun(context.Background(), `{"query":"x"}`)
+		out, err := NewQueritToolWithEnvKey(helper, func() string { return "k" }).InvokableRun(t.Context(), `{"query":"x"}`)
 		if err != nil || calls.Load() != 3 || !strings.Contains(out, "_ERROR") {
 			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
 		}
@@ -412,7 +412,7 @@ func TestQueritRejectsInvalidJSONResponse(t *testing.T) {
 	defer server.Close()
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 	querit := NewQueritToolWithEnvKey(helper, func() string { return "k" })
-	out, err := querit.InvokableRun(context.Background(), `{"query":"x"}`)
+	out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
 	if err != nil || !strings.Contains(out, "decode response") {
 		t.Fatalf("result = %s, err = %v", out, err)
 	}
@@ -439,7 +439,7 @@ func TestQueritRejectsMalformedResponseShapes(t *testing.T) {
 			defer server.Close()
 			helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 			querit := NewQueritToolWithEnvKey(helper, func() string { return "k" })
-			out, err := querit.InvokableRun(context.Background(), `{"query":"x"}`)
+			out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
 			if err != nil || !strings.Contains(out, "_ERROR") || !strings.Contains(out, test.want) {
 				t.Fatalf("result = %s, err = %v", out, err)
 			}
@@ -456,7 +456,7 @@ func TestQueritAcceptsMissingResultContainers(t *testing.T) {
 			defer server.Close()
 			helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 			querit := NewQueritToolWithEnvKey(helper, func() string { return "k" })
-			out, err := querit.InvokableRun(context.Background(), `{"query":"x"}`)
+			out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
 			if err != nil || strings.Contains(out, "_ERROR") {
 				t.Fatalf("result = %s, err = %v", out, err)
 			}
@@ -475,7 +475,7 @@ func TestQueritReferencesAndCompleteComponentOutput(t *testing.T) {
 		}},
 	}
 	querit := NewQueritTool()
-	chunks, docAggs := querit.BuildReferences(context.Background(), response)
+	chunks, docAggs := querit.BuildReferences(t.Context(), response)
 	if len(chunks) != 1 || len(docAggs) != 1 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
@@ -492,7 +492,7 @@ func TestQueritReferencesAndCompleteComponentOutput(t *testing.T) {
 			t.Fatalf("formalized_content missing %q: %s", expected, formatted)
 		}
 	}
-	if chunks, docAggs := querit.BuildReferences(context.Background(), map[string]any{"results": nil}); len(chunks) != 0 || len(docAggs) != 0 {
+	if chunks, docAggs := querit.BuildReferences(t.Context(), map[string]any{"results": nil}); len(chunks) != 0 || len(docAggs) != 0 {
 		t.Fatalf("malformed response references = %#v / %#v", chunks, docAggs)
 	}
 }
@@ -505,7 +505,7 @@ func TestQueritReferencesSanitizeAndLimitSnippets(t *testing.T) {
 		map[string]any{"title": "cleaned", "snippet": "before ![img](data:image/png;base64,AAAA) after"},
 		map[string]any{"title": "limited", "snippet": longSnippet},
 	}}}
-	chunks, docAggs := NewQueritTool().BuildReferences(context.Background(), response)
+	chunks, docAggs := NewQueritTool().BuildReferences(t.Context(), response)
 	if len(chunks) != 2 || len(docAggs) != 2 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

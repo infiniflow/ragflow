@@ -196,7 +196,7 @@ func TestDocAnalyzerCache_MissThenHit(t *testing.T) {
 
 	img := newImage(0x20)
 
-	out1, err := c.DLA(context.Background(), img)
+	out1, err := c.DLA(t.Context(), img)
 	if err != nil {
 		t.Fatalf("DLA #1: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestDocAnalyzerCache_MissThenHit(t *testing.T) {
 		t.Fatalf("store.SetObj called %d times after first DLA, want 1", got)
 	}
 
-	out2, err := c.DLA(context.Background(), img)
+	out2, err := c.DLA(t.Context(), img)
 	if err != nil {
 		t.Fatalf("DLA #2: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestDocAnalyzerCache_StoreDisabledPassthrough(t *testing.T) {
 
 	img := newImage(0x30)
 	for i := 0; i < 3; i++ {
-		if _, err := c.DLA(context.Background(), img); err != nil {
+		if _, err := c.DLA(t.Context(), img); err != nil {
 			t.Fatalf("DLA #%d: %v", i, err)
 		}
 	}
@@ -253,7 +253,7 @@ func TestDocAnalyzerCache_NilImageBypassesCache(t *testing.T) {
 	c := newDocAnalyzerCacheWithStore(inner, s, DefaultCacheTTL)
 
 	for i := 0; i < 2; i++ {
-		if _, err := c.DLA(context.Background(), nil); err != nil {
+		if _, err := c.DLA(t.Context(), nil); err != nil {
 			t.Fatalf("DLA nil #%d: %v", i, err)
 		}
 	}
@@ -279,16 +279,16 @@ func TestDocAnalyzerCache_AllMethods(t *testing.T) {
 
 	img := newImage(0x40)
 
-	if _, err := c.DLA(context.Background(), img); err != nil {
+	if _, err := c.DLA(t.Context(), img); err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
-	if _, err := c.TSR(context.Background(), img); err != nil {
+	if _, err := c.TSR(t.Context(), img); err != nil {
 		t.Fatalf("TSR: %v", err)
 	}
-	if _, err := c.OCRDetect(context.Background(), img); err != nil {
+	if _, err := c.OCRDetect(t.Context(), img); err != nil {
 		t.Fatalf("OCRDetect: %v", err)
 	}
-	if _, err := c.OCRRecognize(context.Background(), img); err != nil {
+	if _, err := c.OCRRecognize(t.Context(), img); err != nil {
 		t.Fatalf("OCRRecognize: %v", err)
 	}
 
@@ -296,16 +296,16 @@ func TestDocAnalyzerCache_AllMethods(t *testing.T) {
 		t.Fatalf("store.SetObj called %d times, want 4", got)
 	}
 
-	if _, err := c.DLA(context.Background(), img); err != nil {
+	if _, err := c.DLA(t.Context(), img); err != nil {
 		t.Fatalf("DLA #2: %v", err)
 	}
-	if _, err := c.TSR(context.Background(), img); err != nil {
+	if _, err := c.TSR(t.Context(), img); err != nil {
 		t.Fatalf("TSR #2: %v", err)
 	}
-	if _, err := c.OCRDetect(context.Background(), img); err != nil {
+	if _, err := c.OCRDetect(t.Context(), img); err != nil {
 		t.Fatalf("OCRDetect #2: %v", err)
 	}
-	if _, err := c.OCRRecognize(context.Background(), img); err != nil {
+	if _, err := c.OCRRecognize(t.Context(), img); err != nil {
 		t.Fatalf("OCRRecognize #2: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func TestDocAnalyzerCache_InnerErrorNotCached(t *testing.T) {
 	c := newDocAnalyzerCacheWithStore(inner, s, DefaultCacheTTL)
 
 	img := newImage(0x50)
-	if _, err := c.DLA(context.Background(), img); err == nil {
+	if _, err := c.DLA(t.Context(), img); err == nil {
 		t.Fatal("want error, got nil")
 	}
 	if got := atomic.LoadInt32(&s.sets); got != 0 {
@@ -363,10 +363,10 @@ func TestDocAnalyzerCache_DifferentImagesBypassCache(t *testing.T) {
 	s := newFakeStore()
 	c := newDocAnalyzerCacheWithStore(inner, s, DefaultCacheTTL)
 
-	if _, err := c.DLA(context.Background(), newImage(0x80)); err != nil {
+	if _, err := c.DLA(t.Context(), newImage(0x80)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.DLA(context.Background(), newImage(0x81)); err != nil {
+	if _, err := c.DLA(t.Context(), newImage(0x81)); err != nil {
 		t.Fatal(err)
 	}
 	if got := atomic.LoadInt32(&inner.dlaCount); got != 2 {
