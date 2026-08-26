@@ -319,9 +319,8 @@ func TestVisionEnhancement_ContextCancellation(t *testing.T) {
 		dispatched,
 		map[string]any{"tenant_id": "t1"},
 	)
-	// Enhancement is best-effort; ctx.Err is not propagated to caller.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	if handled {
 		t.Error("handled = true with cancelled context, want false")
@@ -575,8 +574,8 @@ func TestVisionEnhancement_CancellationStopsSchedulingWithManyItems(t *testing.T
 		dispatched,
 		map[string]any{"tenant_id": "t1"},
 	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	if handled {
 		t.Error("handled = true with cancelled context, want false")

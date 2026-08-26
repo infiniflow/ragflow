@@ -180,9 +180,8 @@ dispatch:
 		}(slot, tg.idx)
 	}
 	wg.Wait()
-	if ctx.Err() != nil {
-		//nolint:nilerr // Vision enhancement is best-effort.
-		return dispatched, false, nil
+	if err := ctx.Err(); err != nil {
+		return dispatched, false, err
 	}
 
 	// 4. Append descriptions to item text (single newline \n, matching Python).
