@@ -148,3 +148,19 @@ def test_prune_skips_lookup_when_all_hits_are_kb_scoped():
     out = asyncio.run(dealer._prune_deleted_chunks(sres))
     assert out.ids == ["wiki"]
     assert called == []
+
+
+def test_prune_drops_ids_missing_from_fields_when_all_hits_are_kb_scoped():
+    dealer = Dealer(dataStore=None)
+    called = []
+
+    async def existing(doc_ids):
+        called.append(list(doc_ids))
+        return set()
+
+    dealer._existing_doc_ids = existing
+    sres = _result(["wiki", "ghost"], {"wiki": {"doc_id": "kb1", "kb_id": "kb1"}})
+    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    assert out.ids == ["wiki"]
+    assert "ghost" not in out.field
+    assert called == []
