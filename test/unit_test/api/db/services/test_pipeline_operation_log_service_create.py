@@ -29,6 +29,7 @@ import importlib.util
 import json
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -161,12 +162,23 @@ def _install_stubs(monkeypatch):
         PipelineTaskType.PARSE, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG,
     }
 
-    # Load the actual module under test.
+    # Load the actual module under test. Build the path from this test
+    # file's location so the test works regardless of the developer's
+    # checkout layout — never chdir() the process (that affects later
+    # tests and breaks for checkouts outside /tmp/opencode/repos/ragflow).
+    # Layout: <repo>/test/unit_test/api/db/services/<this_file>
+    #         ^^^^^^^^ ^^^^^^                  ^^^^^^
+    #         parents[5]   parents[4]            parents[0]
     import importlib.util
-    import os
-    os.chdir("/tmp/opencode/repos/ragflow")
+    service_path = (
+        Path(__file__).resolve().parents[5]
+        / "api"
+        / "db"
+        / "services"
+        / "pipeline_operation_log_service.py"
+    )
     spec = importlib.util.spec_from_file_location(
-        "_pol_test", "api/db/services/pipeline_operation_log_service.py",
+        "_pol_test", str(service_path),
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -279,8 +291,8 @@ def test_create_prefers_pipeline_parser_for_parse_task(pol_module, captured_log,
 
 def test_create_uses_document_parser_id_when_dsl_has_no_parser(pol_module, captured_log, monkeypatch):
     """If the pipeline DSL has no Parser component, create() must fall
-    back to document.parser_id (the previous behavior). The #18306
-    fix only changes the path where a Parser is configured."""
+    back to document.parser_id. The #18306 fix only changes the path
+    where a Parser is configured."""
     document = _make_document(suffix="pdf", parser_id="DeepDOC")
     user_pipeline = _make_user_pipeline()
     monkeypatch.setattr(

@@ -38,8 +38,6 @@ from common.constants import PipelineTaskType, TaskStatus
 # never diverge from the runtime — adding a new family or suffix in
 # ``ParserParam.setups`` flows through automatically.
 def _build_suffix_to_setup_key() -> dict[str, str]:
-    # Import lazily so this module can still be imported in test
-    # contexts that don't have the full rag.flow stack available.
     from rag.flow.parser.parser import ParserParam
 
     mapping: dict[str, str] = {}
