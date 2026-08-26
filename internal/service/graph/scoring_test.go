@@ -8,6 +8,10 @@ import "testing"
 //
 // Regression test for #15695 — PageRank must use max-wins to match the
 // Python equivalent in rag/graphrag/search.py:186.
+//
+// The two paths deliberately share the (src, mid) edge so the test
+// actually exercises the max-wins branch; disjoint paths would only
+// exercise first-write-wins semantics and silently pass either way.
 func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 	ents := map[string]*KGEntity{
 		"src": {
@@ -16,11 +20,11 @@ func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 			NhopEnts: []NhopEntity{
 				{
 					Path:    []string{"src", "mid", "dst"},
-					Weights: []float64{0.3, 0.7}, // weak first hop, strong second hop
+					Weights: []float64{0.3, 0.7}, // shared edge src->mid at weight 0.3
 				},
 				{
-					Path:    []string{"src", "alt", "dst"},
-					Weights: []float64{0.9, 0.1}, // strong first hop, weak second hop
+					Path:    []string{"src", "mid", "other"},
+					Weights: []float64{0.9, 0.2}, // shared edge src->mid at weight 0.9
 				},
 			},
 		},
@@ -28,32 +32,34 @@ func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 
 	got := AnalyzeNHopPaths(ents)
 
-	// Edge src->mid: weights 0.3 (first path) and 0.9 (second path, via alt->dst)
-	// Max should win: 0.9, not 0.1 (last-wins).
+	// Edge src->mid: contributions 0.3 and 0.9 — max-wins must keep 0.9.
+	// Old last-wins code would overwrite to 0.2 (last seen) or 0.3
+	// depending on iteration order; either way it would lose the 0.9.
 	if v, ok := got[Edge{"src", "mid"}]; !ok {
 		t.Fatalf("missing edge src->mid; got map keys: %v", mapKeys(got))
 	} else if v.PageRank != 0.9 {
 		t.Errorf("edge src->mid PageRank = %v, want 0.9 (max-wins)", v.PageRank)
 	}
 
-	// Edge src->alt: only appears once, weight 0.9.
-	if v, ok := got[Edge{"src", "alt"}]; !ok {
-		t.Fatalf("missing edge src->alt")
-	} else if v.PageRank != 0.9 {
-		t.Errorf("edge src->alt PageRank = %v, want 0.9", v.PageRank)
-	}
-
-	// Edge mid->dst: weight 0.7 (first path only).
+	// Edge mid->dst: weight 0.7 from the first path only.
 	if v, ok := got[Edge{"mid", "dst"}]; !ok {
 		t.Fatalf("missing edge mid->dst")
 	} else if v.PageRank != 0.7 {
 		t.Errorf("edge mid->dst PageRank = %v, want 0.7", v.PageRank)
 	}
+
+	// Edge mid->other: weight 0.2 from the second path only.
+	if v, ok := got[Edge{"mid", "other"}]; !ok {
+		t.Fatalf("missing edge mid->other")
+	} else if v.PageRank != 0.2 {
+		t.Errorf("edge mid->other PageRank = %v, want 0.2", v.PageRank)
+	}
 }
 
 // TestAnalyzeNHopPathsPageRankGoOrderingIndependent is the same scenario but
-// with the second (stronger) path encountered first — under the old last-wins
-// code this would overwrite to 0.1 and lose the 0.9.
+// with the two paths supplied in the opposite order. Under the old last-wins
+// code, the value of the shared edge (src, mid) would depend on which path
+// was processed last; max-wins makes the result ordering-independent.
 func TestAnalyzeNHopPathsPageRankGoOrderingIndependent(t *testing.T) {
 	ents := map[string]*KGEntity{
 		"src": {
@@ -61,23 +67,38 @@ func TestAnalyzeNHopPathsPageRankGoOrderingIndependent(t *testing.T) {
 			Similarity: 0.5,
 			NhopEnts: []NhopEntity{
 				{
-					Path:    []string{"src", "alt", "dst"},
-					Weights: []float64{0.9, 0.1}, // processed first
+					// Stronger src->mid contribution processed first.
+					Path:    []string{"src", "mid", "other"},
+					Weights: []float64{0.9, 0.2},
 				},
 				{
+					// Weaker src->mid contribution processed second.
 					Path:    []string{"src", "mid", "dst"},
-					Weights: []float64{0.3, 0.7}, // processed second; old code would keep 0.3
+					Weights: []float64{0.3, 0.7},
 				},
 			},
 		},
 	}
 
 	got := AnalyzeNHopPaths(ents)
-	if v := got[Edge{"src", "mid"}]; v.PageRank != 0.7 {
-		t.Errorf("edge src->mid PageRank = %v, want 0.7 (max-wins across orderings)", v.PageRank)
+
+	// Shared edge must still be 0.9 regardless of which path ran first.
+	if v, ok := got[Edge{"src", "mid"}]; !ok {
+		t.Fatalf("missing edge src->mid")
+	} else if v.PageRank != 0.9 {
+		t.Errorf("edge src->mid PageRank = %v, want 0.9 (max-wins across orderings)", v.PageRank)
 	}
-	if v := got[Edge{"src", "alt"}]; v.PageRank != 0.9 {
-		t.Errorf("edge src->alt PageRank = %v, want 0.9", v.PageRank)
+
+	// Edges unique to each path keep their own weights.
+	if v, ok := got[Edge{"mid", "other"}]; !ok {
+		t.Fatalf("missing edge mid->other")
+	} else if v.PageRank != 0.2 {
+		t.Errorf("edge mid->other PageRank = %v, want 0.2", v.PageRank)
+	}
+	if v, ok := got[Edge{"mid", "dst"}]; !ok {
+		t.Fatalf("missing edge mid->dst")
+	} else if v.PageRank != 0.7 {
+		t.Errorf("edge mid->dst PageRank = %v, want 0.7", v.PageRank)
 	}
 }
 
