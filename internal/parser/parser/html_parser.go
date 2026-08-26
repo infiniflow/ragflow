@@ -23,6 +23,13 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/charset"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/encoding/korean"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
 )
 
 type HTMLParser struct {
@@ -67,6 +74,11 @@ func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
 // separate ck_type — the python HtmlParser collapses inline
 // formatting into the parent block's text.
 func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	// x/net/html assumes UTF-8 input, so a GBK/Big5/Shift-JIS page would
+	// otherwise surface as U+FFFD mojibake. Decode first, mirroring the
+	// Python dataflow path (RAGFlowHtmlParser decodes the blob via
+	// rag.nlp.find_codec before parsing). See decodeHTMLToUTF8.
+	data, encName := decodeHTMLToUTF8(data)
 	// remove_header_footer: pre-parse strip of <header>/<footer> tags
 	// and ARIA role=banner/contentinfo elements (mirrors Python
 	// parser.py:1083-1084 remove_header_footer_html_blob).
@@ -95,10 +107,59 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
-			"encoding": "utf-8",
+			"encoding": encName,
 		},
 		JSON: items,
 	}
+}
+
+// htmlCharsetFallback is one brute-force decode candidate for HTML bytes
+// that are neither valid UTF-8 nor carrying a BOM / <meta charset>
+// declaration.
+type htmlCharsetFallback struct {
+	label string
+	enc   encoding.Encoding
+}
+
+// htmlCharsetFallbackChain mirrors the pragmatic core of Python's find_codec
+// (rag/nlp/__init__.py): legacy pages that omit a charset declaration are
+// overwhelmingly GBK-family (saved-by-browser Chinese finance/gov pages), so
+// GB18030 (the GBK superset) leads. Big5 / Shift-JIS / EUC-KR pages virtually
+// always declare their charset and are caught by the meta prescan; they only
+// reach this chain when the declaration is missing. ISO8859-1 terminates the
+// chain the way latin1 terminates Python's codec loop: it decodes any byte
+// sequence, so Western pages without a declaration still yield readable text
+// instead of U+FFFD soup.
+var htmlCharsetFallbackChain = []htmlCharsetFallback{
+	{"gb18030", simplifiedchinese.GB18030},
+	{"big5", traditionalchinese.Big5},
+	{"shift_jis", japanese.ShiftJIS},
+	{"euc-kr", korean.EUCKR},
+	{"iso-8859-1", charmap.ISO8859_1},
+}
+
+// decodeHTMLToUTF8 converts non-UTF-8 HTML bytes to UTF-8 and reports the
+// encoding label used. Valid UTF-8 passes through untouched. Otherwise the
+// document's own BOM or <meta charset> declaration (HTML5 prescan via
+// charset.DetermineEncoding) wins; documents without a declaration walk the
+// fallback chain, where each candidate must decode the whole blob without
+// producing replacement runes. If everything fails the original bytes are
+// returned so behavior never regresses below the previous UTF-8-only parse.
+func decodeHTMLToUTF8(data []byte) ([]byte, string) {
+	if len(data) == 0 || utf8Valid(data) {
+		return data, "utf-8"
+	}
+	if enc, name, certain := charset.DetermineEncoding(data, ""); certain && enc != nil {
+		if decoded, err := decodeTransform(data, enc.NewDecoder()); err == nil {
+			return []byte(decoded), name
+		}
+	}
+	for _, cand := range htmlCharsetFallbackChain {
+		if decoded, err := decodeTransform(data, cand.enc.NewDecoder()); err == nil {
+			return []byte(decoded), cand.label
+		}
+	}
+	return data, "utf-8"
 }
 
 // walkHTMLBlocks emits one normalized item per block-level
