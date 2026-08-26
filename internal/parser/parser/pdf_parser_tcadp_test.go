@@ -79,6 +79,10 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_TCADPRequiresAPIServer(t *testing.T) {
+	// Clear both env vars so this test is independent of CI env state —
+	// otherwise an accidentally-set TCADP_APISERVER would silently turn
+	// this test into a real dial rather than the required-error check.
+	unsetTCADPEnv(t)
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "TCADP parser"})
 	ctx := t.Context()
@@ -86,6 +90,15 @@ func TestPDFParser_ParseWithResult_TCADPRequiresAPIServer(t *testing.T) {
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "tcadp_apiserver") {
 		t.Fatalf("error = %v, want tcadp_apiserver context", res.Err)
 	}
+}
+
+// unsetTCADPEnv removes both legacy TCADP_APISERVER_URL and canonical
+// TCADP_APISERVER for the duration of a test, so the test environment
+// matches the empty-config case the helper guards against.
+func unsetTCADPEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("TCADP_APISERVER_URL", "")
+	t.Setenv("TCADP_APISERVER", "")
 }
 
 // TestTCADPAnyToItems_PropagatesPageNumber verifies the fix for migration

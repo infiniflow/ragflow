@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
+
+	"ragflow/internal/common"
 
 	models "ragflow/internal/entity/models"
 )
@@ -37,11 +38,13 @@ func parseWithTCADP(
 		// Try the legacy TCADP_APISERVER_URL first so existing PDF
 		// deployments that set it for the old parsePDFWithTCADP helper
 		// keep working — then fall back to the canonical TCADP_APISERVER
-		// used by the other two families.
-		if v := strings.TrimSpace(os.Getenv("TCADP_APISERVER_URL")); v != "" {
+		// used by the other two families. Both env names live in
+		// internal/common/environments.go so the source of truth is in
+		// one place.
+		if v := strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIServerURL)); v != "" {
 			baseURL = v
 		} else {
-			baseURL = strings.TrimSpace(os.Getenv("TCADP_APISERVER"))
+			baseURL = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIServer))
 		}
 	}
 	if baseURL == "" {
@@ -49,7 +52,7 @@ func parseWithTCADP(
 	}
 	apiKey := strings.TrimSpace(tcadpAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("TCADP_API_KEY"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIKey))
 	}
 	requestBody := map[string]any{
 		"file_type":              fileType,
