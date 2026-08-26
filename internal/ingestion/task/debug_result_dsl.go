@@ -48,6 +48,12 @@ type ResultSink interface {
 // mirroring NormalizeChunks (chunk_utils.go:27).
 var outputFormats = []string{"chunks", "json", "text", "html", "markdown"}
 
+// bookkeepingKeys are the TrackElapsed stamps every component's run output
+// carries. They are copied into the outputs wrapper (as plain {value, type}
+// entries) so the front-end timeline can render per-node elapsed times even
+// for components with no recognized payload format (e.g. File).
+var bookkeepingKeys = []string{"_elapsed_time", "_created_time"}
+
 // vectorKeys are dropped from payloads while copying. The front-end never
 // renders raw vectors and Python's serialized component obj excludes them;
 // stripping keeps the Redis-stored debug log at Python-scale size.
@@ -126,14 +132,30 @@ func BuildDebugResultDSL(dsl string, output map[string]any) (map[string]any, err
 		for k, v := range staticParams {
 			mergedParams[k] = deepCopy(v, false)
 		}
-		if format, payload := detectFormat(lookupComponentOutput(output, id)); format != "" {
-			mergedParams["outputs"] = map[string]any{
-				format: map[string]any{
-					"value": deepCopy(payload, true),
-					"type":  "",
-				},
-				"output_format": map[string]any{"value": format},
+		runOut, _ := lookupComponentOutput(output, id).(map[string]any)
+		outputsWrapper := map[string]any{}
+		if format, payload := detectFormat(runOut); format != "" {
+			outputsWrapper[format] = map[string]any{
+				"value": deepCopy(payload, true),
+				"type":  "",
 			}
+			outputsWrapper["output_format"] = map[string]any{"value": format}
+		}
+		// TrackElapsed stamps the bookkeeping pair into every component's run
+		// output (internal/agent/canvas/node_body.go). Carry them into the
+		// outputs wrapper as plain {value, type} entries so the front-end
+		// timeline renders per-node elapsed times — it reads exactly
+		// params.outputs._elapsed_time.value
+		// (web/src/pages/dataflow-result/hooks.ts) — matching Python, where
+		// the component base class set_output's the same keys
+		// (agent/component/base.py invoke).
+		for _, k := range bookkeepingKeys {
+			if v, ok := runOut[k]; ok && v != nil {
+				outputsWrapper[k] = map[string]any{"value": v, "type": ""}
+			}
+		}
+		if len(outputsWrapper) > 0 {
+			mergedParams["outputs"] = outputsWrapper
 		}
 
 		built[id] = map[string]any{

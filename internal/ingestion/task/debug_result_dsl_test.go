@@ -50,14 +50,19 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	}`
 
 	// Run output: keyed by component id (state.go:284 `out[ref]=v`). `a` emits
-	// chunks, `b` emits plain text, `begin` has no recognized output key.
+	// chunks, `b` emits plain text, `begin` carries only the TrackElapsed
+	// bookkeeping pair — the shape real no-payload components (e.g. File)
+	// produce, since the canvas wraps every component body in TrackElapsed.
 	output := map[string]any{
 		"a": map[string]any{
 			"chunks": []any{
 				map[string]any{"text": "hello", "vector": []float64{0.1, 0.2}},
 			},
+			"_elapsed_time": 0.35,
+			"_created_time": 100.0,
 		},
-		"b": map[string]any{"text": "plain"},
+		"b":     map[string]any{"text": "plain", "_elapsed_time": 0.02},
+		"begin": map[string]any{"_elapsed_time": 0.01, "_created_time": 99.0},
 	}
 
 	result, err := BuildDebugResultDSL(dsl, output)
@@ -105,6 +110,14 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	if !ok || of["value"] != "chunks" {
 		t.Errorf("components.a output_format=%#v want {value:\"chunks\"}", aOutputs["output_format"])
 	}
+	// TrackElapsed bookkeeping rides along as plain {value, type} entries so
+	// the front-end timeline renders per-node elapsed times.
+	if et, _ := aOutputs["_elapsed_time"].(map[string]any); et["value"] != 0.35 {
+		t.Errorf("components.a outputs._elapsed_time=%#v want {value:0.35}", aOutputs["_elapsed_time"])
+	}
+	if ct, _ := aOutputs["_created_time"].(map[string]any); ct["value"] != 100.0 {
+		t.Errorf("components.a outputs._created_time=%#v want {value:100}", aOutputs["_created_time"])
+	}
 	chunksOut, ok := aOutputs["chunks"].(map[string]any)
 	if !ok {
 		t.Fatalf("components.a outputs.chunks wrong type: %#v", aOutputs["chunks"])
@@ -139,12 +152,21 @@ func TestBuildDebugResultDSL(t *testing.T) {
 		t.Errorf("components.b params.field_name=%v want content", fn)
 	}
 
-	// --- component "begin": no recognized output -> outputs empty, safe ---
+	// --- component "begin": no recognized payload format, so no output_format
+	// is invented — but the TrackElapsed bookkeeping keys must still surface
+	// as outputs so the timeline shows its elapsed time. ---
 	begin, _ := components["begin"].(map[string]any)
 	beginObj, _ := begin["obj"].(map[string]any)
 	beginParams, _ := beginObj["params"].(map[string]any)
-	if _, exists := beginParams["outputs"]; exists {
-		t.Errorf("begin has no run output, outputs must be absent: %#v", beginParams)
+	beginOutputs, ok := beginParams["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("begin (bookkeeping-only output) must still carry params.outputs: %#v", beginParams)
+	}
+	if _, exists := beginOutputs["output_format"]; exists {
+		t.Errorf("begin has no payload format, output_format must be absent: %#v", beginOutputs)
+	}
+	if et, _ := beginOutputs["_elapsed_time"].(map[string]any); et["value"] != 0.01 {
+		t.Errorf("begin outputs._elapsed_time=%#v want {value:0.01}", beginOutputs["_elapsed_time"])
 	}
 
 	// --- graph.nodes copied through ---
@@ -204,7 +226,7 @@ func TestBuildDebugResultDSL_NestedState(t *testing.T) {
 					map[string]any{"text": "hello", "vector": []float64{0.1, 0.2}},
 				},
 			},
-			"b": {"text": "plain"},
+			"b": {"text": "plain", "_elapsed_time": 0.02},
 		},
 	}
 
@@ -250,6 +272,10 @@ func TestBuildDebugResultDSL_NestedState(t *testing.T) {
 	}
 	if of, _ := bOutputs["output_format"].(map[string]any); of["value"] != "text" {
 		t.Errorf("components.b output_format=%#v want {value:\"text\"}", bOutputs["output_format"])
+	}
+	// Bookkeeping keys must resolve through the SAME nested-state lookup.
+	if et, _ := bOutputs["_elapsed_time"].(map[string]any); et["value"] != 0.02 {
+		t.Errorf("components.b outputs._elapsed_time=%#v want {value:0.02}", bOutputs["_elapsed_time"])
 	}
 }
 
