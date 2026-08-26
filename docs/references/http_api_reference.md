@@ -1522,10 +1522,6 @@ Failure:
 
 Updates configurations for a specified document.
 
-:::caution DEPRECATED
-`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}` is deprecated. Use this endpoint instead.
-:::
-
 #### Request
 
 - Method: PATCH
