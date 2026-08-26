@@ -97,7 +97,7 @@ def test_migrate_tenant_model_id_column_types_converts_mysql_integer(monkeypatch
 
     db_models.migrate_tenant_model_id_column_types(Migrator())
 
-    converted = [(table, column) for table, column, _field in altered if table != "migrate"]
+    converted = [(table, column) for table, column, *_rest in altered if table != "migrate"]
     assert converted == [("knowledgebase", "tenant_embd_id")]
     assert ("migrate", "alter knowledgebase.tenant_embd_id") in altered
 
