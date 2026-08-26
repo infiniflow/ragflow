@@ -382,7 +382,10 @@ def _build_canonical_entity_doc(
     source_chunk_ids: list[str] | None = None,
 ) -> dict:
     """Build a canonical entity row for insert or update."""
+    from rag.nlp import rag_tokenizer
+
     dim = len(embedding) if embedding else 768
+    content_ltks = rag_tokenizer.tokenize(entity_name) if entity_name else ""
     doc = {
         "id": _stable_row_id(WIKI_CANONICAL_ENTITY_COMPILE_KWD, kb_id, entity_name),
         "entity_kwd": entity_name,
@@ -396,6 +399,8 @@ def _build_canonical_entity_doc(
         "doc_id": kb_id,  # KB-scoped sentinel; real provenance is source_doc_ids
         "available_int": 1,
         "content_with_weight": entity_name,
+        "content_ltks": content_ltks,
+        "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks) if content_ltks else "",
     }
     if embedding is not None:
         vec_col = f"q_{dim}_vec"

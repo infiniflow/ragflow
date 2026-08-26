@@ -112,6 +112,23 @@ class Dealer:
         # chunks here so chat/retrieval does not surface content from deleted docs.
         # Keep this as a fallback, not as the primary delete mechanism.
         fields = sres.field or {}
+        aligned_ids = [chunk_id for chunk_id in sres.ids if fields.get(chunk_id)]
+        if len(aligned_ids) != len(sres.ids):
+            fields = {chunk_id: fields[chunk_id] for chunk_id in aligned_ids}
+            highlight = sres.highlight
+            if highlight:
+                highlight = {chunk_id: highlight[chunk_id] for chunk_id in aligned_ids if chunk_id in highlight}
+            sres = self.SearchResult(
+                total=len(aligned_ids),
+                ids=aligned_ids,
+                query_vector=sres.query_vector,
+                field=fields,
+                highlight=highlight,
+                aggregation=sres.aggregation,
+                keywords=sres.keywords,
+                group_docs=sres.group_docs,
+            )
+
         chunk_doc_ids = []
         for chunk in fields.values():
             if not chunk or is_kb_scoped_chunk(chunk):

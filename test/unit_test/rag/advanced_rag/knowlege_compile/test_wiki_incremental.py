@@ -1966,21 +1966,27 @@ async def test_reduce_entity_deletes_page_when_last_chunk_is_removed():
 
 
 def test_canonical_entity_doc_stamps_retrieval_fields():
-    doc = _wiki._build_canonical_entity_doc(
-        tenant_id="t1",
-        kb_id="kb1",
-        entity_name="Apple",
-        entity_type="org",
-        aliases=["Apple Inc."],
-        source_doc_ids=["doc_1"],
-        claim_count=2,
-        embedding=[0.1, 0.2],
-    )
+    tokenizer = MagicMock()
+    tokenizer.tokenize.side_effect = lambda text: text
+    tokenizer.fine_grained_tokenize.side_effect = lambda text: text
+    with patch("rag.nlp.rag_tokenizer", tokenizer, create=True):
+        doc = _wiki._build_canonical_entity_doc(
+            tenant_id="t1",
+            kb_id="kb1",
+            entity_name="Apple",
+            entity_type="org",
+            aliases=["Apple Inc."],
+            source_doc_ids=["doc_1"],
+            claim_count=2,
+            embedding=[0.1, 0.2],
+        )
 
     assert doc["available_int"] == 1
     assert doc["doc_id"] == "kb1"
     assert doc["kb_id"] == "kb1"
     assert doc["content_with_weight"] == "Apple"
+    assert doc["content_ltks"] == "Apple"
+    assert doc["content_sm_ltks"] == "Apple"
     assert doc["q_2_vec"] == [0.1, 0.2]
 
 
