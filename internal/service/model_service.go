@@ -1332,7 +1332,7 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	if err != nil {
 		return err
 	}
-	if resp == nil || resp.Text == "" {
+	if resp == nil {
 		return fmt.Errorf("ASR model %s returned no transcription", modelName)
 	}
 	return nil
