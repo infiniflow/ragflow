@@ -285,7 +285,7 @@ func TestXquikContinuesAfterEmptyPageWhenResponseHasMore(t *testing.T) {
 	}
 }
 
-func TestXquikStopsAfterRepeatedCursor(t *testing.T) {
+func TestXquikRejectsRepeatedCursor(t *testing.T) {
 	config := validXquikConfig()
 	config["batch_size"] = 1
 	connector := newXquikTestConnector(t, config)
@@ -311,17 +311,14 @@ func TestXquikStopsAfterRepeatedCursor(t *testing.T) {
 		t.Fatalf("OpenSync: %v", err)
 	}
 	defer func() { _ = session.Close() }()
-	for {
-		_, err = session.NextBatch(context.Background())
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("NextBatch: %v", err)
-		}
+	if _, err = session.NextBatch(context.Background()); err != nil {
+		t.Fatalf("first NextBatch: %v", err)
+	}
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("second NextBatch err = %v, want ErrSyncResumeInvalid", err)
 	}
 	if requests != 2 {
-		t.Fatalf("requests = %d, want 2 before repeated cursor stops pagination", requests)
+		t.Fatalf("requests = %d, want 2 before repeated cursor aborts pagination", requests)
 	}
 }
 

@@ -1217,7 +1217,7 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 		if next == "" {
 			it.finished = true
 		} else if _, repeated := it.seenCursors[next]; repeated {
-			it.finished = true
+			return nil, fmt.Errorf("rest api pagination repeated cursor %q: %w", next, ErrSyncResumeInvalid)
 		} else {
 			it.seenCursors[next] = struct{}{}
 			it.cursor = next
