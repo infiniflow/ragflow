@@ -2054,6 +2054,7 @@ def migrate_tenant_model_id_column_types(migrator):
 
         col_type = _get_column_data_type(table_name, column_name)
         if col_type is None:
+            logging.info("Adding missing %s.%s tenant_model.id reference column", table_name, column_name)
             alter_db_add_column(migrator, table_name, column_name, target_field)
             continue
 
@@ -2062,12 +2063,18 @@ def migrate_tenant_model_id_column_types(migrator):
 
         try:
             if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+                # Legacy integers were tenant_llm row ids, never 32-char tenant_model.id
+                # values. Cast them away rather than leaving strings such as "42".
                 DB.execute_sql(
                     f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" '
-                    f'TYPE varchar(32) USING CASE WHEN "{column_name}" IS NULL THEN NULL ELSE "{column_name}"::text END'
+                    f"TYPE varchar(32) USING CAST(NULL AS varchar(32))"
                 )
             else:
                 migrate(migrator.alter_column_type(table_name, column_name, target_field))
+                DB.execute_sql(
+                    f"UPDATE `{table_name}` SET `{column_name}` = NULL "
+                    f"WHERE `{column_name}` IS NOT NULL AND CHAR_LENGTH(`{column_name}`) <> 32"
+                )
             logging.info(
                 "Converted %s.%s from %s to varchar(32) for tenant_model.id references",
                 table_name,

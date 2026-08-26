@@ -72,11 +72,22 @@ def test_migrate_tenant_model_id_column_types_converts_postgres_integer(monkeypa
     sql, _params = queries[0]
     assert 'ALTER TABLE "tenant" ALTER COLUMN "tenant_llm_id"' in sql
     assert "TYPE varchar(32)" in sql
-    assert 'USING CASE WHEN "tenant_llm_id" IS NULL THEN NULL ELSE "tenant_llm_id"::text END' in sql
+    assert "USING CAST(NULL AS varchar(32))" in sql
+    assert "::text" not in sql
 
 
 def test_migrate_tenant_model_id_column_types_converts_mysql_integer(monkeypatch):
     altered = []
+    queries = []
+
+    class FakeDB:
+        @staticmethod
+        def table_exists(_name):
+            return True
+
+        @staticmethod
+        def execute_sql(sql, params=None):
+            queries.append(sql)
 
     class Migrator:
         def alter_column_type(self, table_name, column_name, field):
@@ -86,7 +97,7 @@ def test_migrate_tenant_model_id_column_types_converts_mysql_integer(monkeypatch
     def fake_migrate(operation):
         altered.append(("migrate", operation))
 
-    monkeypatch.setattr(db_models, "DB", type("DB", (), {"table_exists": staticmethod(lambda _name: True)})())
+    monkeypatch.setattr(db_models, "DB", FakeDB)
     monkeypatch.setattr(settings, "DATABASE_TYPE", "mysql")
     monkeypatch.setattr(
         db_models,
@@ -100,6 +111,7 @@ def test_migrate_tenant_model_id_column_types_converts_mysql_integer(monkeypatch
     converted = [(table, column) for table, column, *_rest in altered if table != "migrate"]
     assert converted == [("knowledgebase", "tenant_embd_id")]
     assert ("migrate", "alter knowledgebase.tenant_embd_id") in altered
+    assert any("CHAR_LENGTH(`tenant_embd_id`) <> 32" in sql for sql in queries)
 
 
 def test_migrate_db_invokes_tenant_model_id_column_migration(monkeypatch):
