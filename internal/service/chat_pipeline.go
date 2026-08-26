@@ -708,7 +708,7 @@ func (s *ChatPipelineService) AsyncChat(
 							Page:                   1,
 							PageSize:               topN,
 							RerankCandidatesCount:  &rerankCandidatesCount,
-							Top:                    &top,
+							KNNTopK:                &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,
 							RankFeature:            &rankFeature,
@@ -1367,13 +1367,18 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(ctx, userID, files)
+				var images []string
+				attachmentsStr, images = s.splitChatAttachments(ctx, userID, files)
 				if isImage2Text {
-					imageFiles = s.extractRawImageURLs(files)
+					imageFiles = images
 				} else {
 					common.Debug("AsyncChatSolo: dropping image attachments for text-only chat model",
 						zap.String("llm_id", chat.LLMID))
 				}
+				common.Info("AsyncChatSolo: file attachments resolved",
+					zap.Bool("vision_model", isImage2Text),
+					zap.Int("image_files", len(imageFiles)),
+					zap.Int("text_attachment_bytes", len(attachmentsStr)))
 			}
 		}
 
@@ -1623,53 +1628,71 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	return out, nil
 }
 
-// extractRawImageURLs extracts image references as raw URLs/data-URIs from
-// the string-mode files list, WITHOUT fetching blobs and WITHOUT filtering
-// to data: prefixes. Used for image2text models that expect URLs in the
-// multimodal content (matches Python's `image_files` from
-// `split_file_attachments(files, raw=True)` at
-// dialog_service.py:371-392).
+// splitChatAttachments resolves the last message's file attachments into
+// text content (entries joined by "\n\n") and image data URIs, reading
+// each blob from storage at most once.
 //
-// The downstream ConvertLastUserMsgToMultimodal calls parseDataURIOrB64
-// (multimodal.go:63-92) which correctly handles all three forms:
-//   - data: URI → base64 source
-//   - http:// or https:// URL → URL source
-//   - raw base64 → base64 source (default media type)
+//   - File-dict mode (the chat UI's upload_info flow): FileService.
+//     GetFileContents fetches the blobs; non-visual files are parsed to
+//     text, visual files come back as base64 data URIs.
+//   - String mode (pre-resolved content): data:-prefixed entries become
+//     images; the remaining non-empty entries become text.
 //
-// File-dict mode is a known limitation: returns empty for now. A future
-// FileService.GetFileURLsForChat (mirror of GetFileContents with
-// raw=true) would be needed to fully cover the file-dict + image2text
-// combination. The Python equivalent has the same limitation
-// (split_file_attachments calls FileService.get_files which doesn't
-// fetch blobs in raw mode).
-func (s *ChatPipelineService) extractRawImageURLs(files interface{}) []string {
+// Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
+// returned data URIs directly.
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, userID string, files interface{}) (string, []string) {
+	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		_ = fileDicts // see file-dict limitation comment above
-		common.Debug("AsyncChatSolo: file-dict + image2text not yet supported; image refs dropped",
-			zap.Int("file_dict_count", len(fileDicts)))
-		return nil
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
+		if err != nil {
+			common.Warn("GetFileContents failed in splitChatAttachments",
+				zap.Error(err))
+			return "", nil
+		}
+		if len(texts) == 0 {
+			return "", images
+		}
+		return strings.Join(texts, "\n\n"), images
 	}
 
-	// String-mode: return all entries as-is. The downstream
-	// ConvertLastUserMsgToMultimodal + parseDataURIOrB64 will
-	// dispatch on prefix (data: → base64, http(s): → url, else →
-	// raw base64).
-	var urls []string
+	// ── String mode ──
+	var texts []string
+	var images []string
 	switch v := files.(type) {
 	case []string:
 		for _, f := range v {
-			if f != "" {
-				urls = append(urls, f)
+			if f = strings.TrimSpace(f); f == "" {
+				continue
+			}
+			if strings.HasPrefix(f, "data:") {
+				images = append(images, f)
+			} else {
+				texts = append(texts, f)
 			}
 		}
 	case []interface{}:
 		for _, f := range v {
-			if s, ok := f.(string); ok && s != "" {
-				urls = append(urls, s)
+			str, ok := f.(string)
+			if !ok {
+				continue
+			}
+			if str = strings.TrimSpace(str); str == "" {
+				continue
+			}
+			if strings.HasPrefix(str, "data:") {
+				images = append(images, str)
+			} else {
+				texts = append(texts, str)
 			}
 		}
 	}
-	return urls
+	if len(texts) == 0 {
+		return "", images
+	}
+	return strings.Join(texts, "\n\n"), images
 }
 
 // ---------------------------------------------------------------------------
@@ -2070,53 +2093,6 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 	return ""
 }
 
-// processFileAttachments extracts text content from file attachments.
-// Mirrors Python's split_file_attachments (dialog_service.py:371-392)
-// in raw=false mode: returns text attachments joined by "\n\n",
-// filtering out data-URI image attachments.
-//
-// When files are file dicts (Python-compatible format), calls
-// FileService.GetFileContents to fetch actual blobs from storage.
-func (s *ChatPipelineService) processFileAttachments(ctx context.Context, userID string, files interface{}) string {
-	// ── File-dict mode ──
-	if fileDicts, ok := parseFileDicts(files); ok {
-		// Only used for GetFileContents (read-only); nil DocRemover means
-		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, _, err := fileSvc.GetFileContents(ctx, userID, fileDicts, false)
-		if err != nil {
-			common.Warn("GetFileContents failed in processFileAttachments",
-				zap.Error(err))
-			return ""
-		}
-		if len(texts) == 0 {
-			return ""
-		}
-		return strings.Join(texts, "\n\n")
-	}
-
-	// ── String fallback ──
-	var texts []string
-	switch v := files.(type) {
-	case []string:
-		for _, f := range v {
-			if s := strings.TrimSpace(f); s != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	case []interface{}:
-		for _, f := range v {
-			if s, ok := f.(string); ok && strings.TrimSpace(s) != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	}
-	if len(texts) == 0 {
-		return ""
-	}
-	return strings.Join(texts, "\n\n")
-}
-
 // splitFileAttachments mirrors Python's `split_file_attachments` at
 // dialog_service.py:371-392. It separates `messages[-1]["files"]`
 // into text-file content and image attachments.
@@ -2125,8 +2101,8 @@ func (s *ChatPipelineService) processFileAttachments(ctx context.Context, userID
 //
 //  1. File-dict mode: When `files` is `[]map[string]interface{}` (each dict
 //     with keys "id", "created_by", "mime_type", "name"), the method calls
-//     FileService.GetFileContents to fetch actual file blobs from
-//     storage, mirroring Python's FileService.get_files().
+//     FileService.GetFileContents to fetch actual file blobs from storage;
+//     images come back as base64 data URIs.
 //
 //  2. String-fallback mode: When `files` is `[]string` or `[]interface{}` of
 //     strings (pre-resolved content), the method does simple string splitting:
@@ -2140,7 +2116,7 @@ func splitFileAttachments(ctx context.Context, userID string, files interface{},
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
 		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts, raw)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))

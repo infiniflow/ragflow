@@ -618,6 +618,9 @@ export default {
       rebuildTip: '从所有已关联的数据源重新下载文件并再次解析。',
       baseInfo: '基础信息',
       globalIndex: '全局索引',
+      globalIndexModel: '索引模型',
+      globalIndexModelTip:
+        '用于生成自动元数据、自动关键词和自动问题。模型性能会影响生成质量。',
       dataSource: '数据源',
       linkSourceSetTip: '管理与此知识库的数据源链接',
       linkDataSource: '链接数据源',
@@ -1097,7 +1100,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入你的 Querit API Key',
-      serplyApiKeyTip: '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
+      serplyApiKeyTip:
+        '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入你的 Serply API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
@@ -1254,6 +1258,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sharepointSiteUrlTip:
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      azureDevOpsPatTip: '需要具有 Code (Read) 权限的个人访问令牌。',
+      azureDevOpsOrganizationTip: '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
+      azureDevOpsProjectsTip: '以逗号分隔的团队项目名称。例如：Project1,Project2',
+      azureDevOpsRepositoriesTip: '以逗号分隔的仓库。可使用 project/repo 形式以区分同名仓库。',
+      azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
+      azureDevOpsContentTypesTip: '选择要索引的内容：源文件、拉取请求，或两者。',
+      azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
         '要索引的 Bitbucket 工作区（例如：https://bitbucket.org/atlassian/workspace 中的 "atlassian"）',
@@ -1382,6 +1393,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldWikiBaseUrl: 'Wiki 基础 URL',
       dataSourceFieldIsCloud: '是否为云版本',
       dataSourceFieldIndexMode: '索引模式',
+      dataSourceFieldAzureDevOpsPat: 'Azure DevOps 个人访问令牌',
+      dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps 组织',
+      dataSourceFieldAzureDevOpsRepositories: '仓库',
+      dataSourceFieldAzureDevOpsContentTypes: '内容类型',
+      dataSourceOptionOrganization: '组织',
+      dataSourceOptionCode: '代码',
+      dataSourceOptionPullRequests: '拉取请求',
+      dataSourceOptionBoth: '两者',
       dataSourceFieldPageId: '页面 ID',
       dataSourceFieldSpaceKey: '空间标识（Space Key）',
       dataSourceFieldIndexRecursively: '递归索引',
@@ -2011,6 +2030,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       skillDeleteDescription: '确定要删除该 Skill 吗？',
       navTitle: 'PageIndex',
       navEmpty: '暂无导航节点',
+      navLoadFailed: '加载目录树失败',
+      navChildLoadFailed: '加载子节点失败',
       navLoading: '加载中...',
       navSelectNode: '选择子节点以查看详情',
       navNoDescription: '暂无描述',

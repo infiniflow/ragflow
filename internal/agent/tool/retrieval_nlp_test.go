@@ -260,8 +260,8 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	if got.Page != 1 || got.PageSize != 3 {
 		t.Fatalf("Page/PageSize=%d/%d want 1/3", got.Page, got.PageSize)
 	}
-	if got.Top == nil || *got.Top != 99 {
-		t.Fatalf("Top=%v want 99", got.Top)
+	if got.KNNTopK == nil || *got.KNNTopK != 99 {
+		t.Fatalf("KNNTopK=%v want 99", got.KNNTopK)
 	}
 	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != 0.42 {
 		t.Fatalf("SimilarityThreshold=%v want 0.42", got.SimilarityThreshold)
@@ -281,8 +281,8 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 		TopN:       3,
 	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
 
-	if got.Top == nil || *got.Top != 12 {
-		t.Fatalf("Top=%v want 12", got.Top)
+	if got.KNNTopK == nil || *got.KNNTopK != 12 {
+		t.Fatalf("KNNTopK=%v want 12", got.KNNTopK)
 	}
 	if got.VectorSimilarityWeight != nil {
 		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)

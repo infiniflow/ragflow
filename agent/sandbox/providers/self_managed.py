@@ -56,7 +56,7 @@ class SelfManagedProvider(SandboxProvider):
                 - endpoint: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
                 - timeout: Request timeout in seconds (default: 30)
                 - max_retries: Maximum retry attempts (default: 3)
-                - pool_size: Container pool size for info (default: 10)
+                - pool_size: Container pool size for info (default: 3)
 
         Returns:
             True if initialization successful, False otherwise

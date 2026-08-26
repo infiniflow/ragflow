@@ -61,14 +61,14 @@ class Dealer:
         keywords: list[str] | None = None
         group_docs: list[list] | None = None
 
-    async def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
+    async def get_vector(self, txt, emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
         qv, _ = await thread_pool_exec(emb_mdl.encode_queries, txt)
         shape = np.array(qv).shape
         if len(shape) > 1:
             raise Exception(f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
         embedding_data = [get_float(v) for v in qv]
         vector_column_name = f"q_{len(embedding_data)}_vec"
-        return MatchDenseExpr(vector_column_name, embedding_data, "float", "cosine", topk, {"similarity": similarity})
+        return MatchDenseExpr(vector_column_name, embedding_data, "float", "cosine", top_k, {"similarity": similarity, "num_candidates": num_candidates})
 
     async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
         if not doc_ids:
@@ -148,9 +148,12 @@ class Dealer:
         orderBy = OrderByExpr()
 
         pg = int(req.get("page", 1)) - 1
-        topk = int(req.get("topk", 1024))
-        ps = int(req.get("size", topk))
+        # Result pagination is independent of the KNN candidate pool size.
+        ps = int(req.get("size", 30))
         offset, limit = pg * ps, ps
+
+        knn_top_k = int(req.get("knn_top_k", 1024))
+        knn_num_candidates = int(req.get("knn_num_candidates", 2048))
 
         src = req.get(
             "fields",
@@ -205,7 +208,7 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
-                matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
+                matchDense = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
                 # ES path no longer fetches chunk vectors here. The clean
                 # cosine score is recovered later via a second KNN-only call
@@ -219,16 +222,16 @@ class Dealer:
                 if settings.DOC_ENGINE_INFINITY:
                     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
                     logging.debug(
-                        "Dealer.search fusion: topk=%s vector_similarity_weight=%s",
-                        topk,
+                        "Dealer.search fusion: knn_top_k=%s vector_similarity_weight=%s",
+                        knn_top_k,
                         vector_similarity_weight,
                     )
-                    fusionExpr = build_fusion_expr(topk, vector_similarity_weight)
+                    fusionExpr = build_fusion_expr(knn_top_k, vector_similarity_weight)
                 elif settings.DOC_ENGINE_GAUSSDB:
                     vector_weight = req.get("vector_similarity_weight", 0.3)
-                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
+                    fusionExpr = FusionExpr("weighted_sum", knn_top_k, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
                 else:
-                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
+                    fusionExpr = FusionExpr("weighted_sum", knn_top_k, {"weights": "0.001,1"})
                 matchExprs = [matchText, matchDense, fusionExpr] if matchText else [matchDense]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
@@ -561,7 +564,6 @@ class Dealer:
         page_size,  # it is topn when rerank_mdl is specified
         similarity_threshold=0.2,
         vector_similarity_weight=0.3,
-        top=1024,  # for knn, no need to let user pass in.
         doc_ids=None,
         aggs=True,
         rerank_mdl=None,
@@ -570,6 +572,8 @@ class Dealer:
         trace_id=None,
         must_not: dict | None = None,
         rerank_candidates_count=64,
+        knn_top_k=1024,  # Advanced knn parameter
+        knn_num_candidates=2048,  # Advanced knn parameter
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
@@ -599,10 +603,11 @@ class Dealer:
             "size": rerank_candidates_count,
             "question": question,
             "vector": True,
-            "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
             "vector_similarity_weight": vector_similarity_weight,
+            "knn_top_k": knn_top_k,
+            "knn_num_candidates": knn_num_candidates,
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not

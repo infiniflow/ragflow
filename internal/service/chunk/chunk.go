@@ -418,7 +418,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Page:                   common.CoalesceInt(req.Page, 1),
 		PageSize:               common.CoalesceInt(req.Size, 30),
 		RerankCandidatesCount:  &rerankCandidatesCount,
-		Top:                    req.TopK,
+		KNNTopK:                req.TopK,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
 		RerankModel:            rerankModel,

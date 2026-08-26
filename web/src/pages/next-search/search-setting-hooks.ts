@@ -44,7 +44,6 @@ export const SearchSettingFormSchema = z
       use_kg: z.boolean(),
       rerank_id: z.string(),
       use_rerank: z.boolean(),
-      top_k: z.number(),
       ...rerankCandidatesCountSchema,
       summary: z.boolean(),
       llm_setting: z.object({ ...LlmSettingFieldSchema, ...LLMIdFormField }),

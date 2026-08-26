@@ -193,3 +193,62 @@ func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 		t.Errorf("markdown mutated: %q", res.Markdown)
 	}
 }
+
+func TestBuildVisionMessages_PreventsDoublePrefix(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantURL string
+	}{
+		{
+			name:    "raw base64 gets png prefix",
+			input:   "aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already png data uri is preserved without double prefix",
+			input:   "data:image/png;base64,aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "jpeg data uri is preserved as jpeg",
+			input:   "data:image/jpeg;base64,/9j/4AAQ",
+			wantURL: "data:image/jpeg;base64,/9j/4AAQ",
+		},
+		{
+			name:    "https url is preserved",
+			input:   "https://example.com/figure.png",
+			wantURL: "https://example.com/figure.png",
+		},
+		{
+			name:    "whitespace trimmed",
+			input:   "  data:image/png;base64,abc  ",
+			wantURL: "data:image/png;base64,abc",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			msgs := buildVisionMessages("describe", tc.input)
+			if len(msgs) != 1 {
+				t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+			}
+			parts, ok := msgs[0].Content.([]interface{})
+			if !ok || len(parts) < 2 {
+				t.Fatalf("Content parts = %+v, want >= 2", msgs[0].Content)
+			}
+			img, ok := parts[1].(map[string]any)
+			if !ok {
+				t.Fatalf("parts[1] = %+v, want map[string]any", parts[1])
+			}
+			imgURL, ok := img["image_url"].(map[string]any)
+			if !ok {
+				t.Fatalf("img[image_url] = %+v, want map[string]any", img["image_url"])
+			}
+			got, _ := imgURL["url"].(string)
+			if got != tc.wantURL {
+				t.Errorf("image_url.url = %q, want %q", got, tc.wantURL)
+			}
+		})
+	}
+}

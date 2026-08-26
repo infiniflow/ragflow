@@ -53,7 +53,7 @@ func (p *PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (p *PaddleOCRModel) Name() string {
-	return "paddle_ocr.net"
+	return "paddleocr"
 }
 
 func (p *PaddleOCRModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -237,7 +237,7 @@ func (p *PaddleOCRModel) parseOCRResultBody(rawBody []byte, fullMarkdown *string
 // logErroredEntry makes an entry with a non-zero errorCode visible instead of
 // silently dropping the page as empty.
 func (p *PaddleOCRModel) logErroredEntry(entry paddleJsonlLine) {
-	common.Warn("paddleocr.net result: entry errored",
+	common.Warn("paddleocr result: entry errored",
 		zap.String("log_id", entry.LogId),
 		zap.Int("error_code", entry.ErrorCode),
 		zap.String("error_msg", entry.ErrorMsg))
@@ -307,7 +307,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 	}
 	req.Header.Set("Client-Platform", "ragflow")
 
-	common.Info("paddleocr.net submit: sending job",
+	common.Info("paddleocr submit: sending job",
 		zap.String("driver", p.Name()),
 		zap.String("url", url),
 		zap.String("model", *modelName),
@@ -316,7 +316,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
-		common.Error("paddleocr.net submit: request failed",
+		common.Error("paddleocr submit: request failed",
 			err,
 			zap.String("driver", p.Name()),
 			zap.String("url", url))
@@ -326,7 +326,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 	if resp.StatusCode != http.StatusOK {
 		errBody := readErrorBody(resp.Body)
-		common.Error("paddleocr.net submit: non-200",
+		common.Error("paddleocr submit: non-200",
 			fmt.Errorf("status %d", resp.StatusCode),
 			zap.String("driver", p.Name()),
 			zap.String("url", url),
@@ -338,7 +338,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 	var submitResp paddleSubmitResponse
 	if err := json.Unmarshal(respBody, &submitResp); err != nil {
-		common.Error("paddleocr.net submit: parse failed",
+		common.Error("paddleocr submit: parse failed",
 			err,
 			zap.String("driver", p.Name()),
 			zap.String("url", url))
@@ -350,7 +350,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		return nil, fmt.Errorf("failed to get jobId from response")
 	}
 
-	common.Info("paddleocr.net submit: ok",
+	common.Info("paddleocr submit: ok",
 		zap.String("driver", p.Name()),
 		zap.String("url", url),
 		zap.String("job_id", jobId))
@@ -376,7 +376,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 		pollResp, err := p.baseModel.httpClient.Do(pollReq)
 		if err != nil {
-			common.Error("paddleocr.net poll: request failed",
+			common.Error("paddleocr poll: request failed",
 				err,
 				zap.String("job_id", jobId),
 				zap.Int("attempt", attempt))
@@ -386,7 +386,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		if pollResp.StatusCode != http.StatusOK {
 			errBody := readErrorBody(pollResp.Body)
 			pollResp.Body.Close()
-			common.Error("paddleocr.net poll: non-200",
+			common.Error("paddleocr poll: non-200",
 				fmt.Errorf("status %d", pollResp.StatusCode),
 				zap.String("job_id", jobId),
 				zap.Int("attempt", attempt),
@@ -399,7 +399,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 		var pollData paddlePollResponse
 		if err = json.Unmarshal(pollBody, &pollData); err != nil {
-			common.Error("paddleocr.net poll: parse failed",
+			common.Error("paddleocr poll: parse failed",
 				err,
 				zap.String("job_id", jobId),
 				zap.Int("attempt", attempt))
@@ -409,14 +409,14 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		// end if 'done' or 'failed'
 		state := pollData.Data.State
 		if state == "done" {
-			common.Info("paddleocr.net poll: done",
+			common.Info("paddleocr poll: done",
 				zap.String("job_id", jobId),
 				zap.Int("attempt", attempt),
 				zap.String("state", state))
 			jsonlUrl = pollData.Data.ResultUrl.JsonUrl
 			break
 		} else if state == "failed" {
-			common.Error("paddleocr.net poll: failed",
+			common.Error("paddleocr poll: failed",
 				fmt.Errorf("job failed on server"),
 				zap.String("job_id", jobId),
 				zap.Int("attempt", attempt),
@@ -425,7 +425,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 			return nil, fmt.Errorf("ocr job failed on server: %s", pollData.Data.ErrorMsg)
 		}
 
-		common.Debug("paddleocr.net poll: in progress",
+		common.Debug("paddleocr poll: in progress",
 			zap.String("job_id", jobId),
 			zap.Int("attempt", attempt),
 			zap.String("state", state),
@@ -437,7 +437,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		select {
 		case <-time.After(pollInterval):
 		case <-ctx.Done():
-			common.Error("paddleocr.net poll: context done while waiting",
+			common.Error("paddleocr poll: context done while waiting",
 				ctx.Err(),
 				zap.String("job_id", jobId),
 				zap.Int("attempt", attempt),
@@ -450,7 +450,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		return nil, fmt.Errorf("job done but jsonl url is empty")
 	}
 
-	common.Info("paddleocr.net result: downloading",
+	common.Info("paddleocr result: downloading",
 		zap.String("job_id", jobId),
 		zap.String("jsonl_url", jsonlUrl))
 
@@ -461,7 +461,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 	resResp, err := p.baseModel.httpClient.Do(resReq)
 	if err != nil {
-		common.Error("paddleocr.net result: download request failed",
+		common.Error("paddleocr result: download request failed",
 			err,
 			zap.String("job_id", jobId),
 			zap.String("jsonl_url", jsonlUrl))
@@ -470,7 +470,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 	defer resResp.Body.Close()
 
 	if resResp.StatusCode != http.StatusOK {
-		common.Error("paddleocr.net result: non-200",
+		common.Error("paddleocr result: non-200",
 			fmt.Errorf("status %d", resResp.StatusCode),
 			zap.String("job_id", jobId),
 			zap.String("jsonl_url", jsonlUrl),
@@ -478,7 +478,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		return nil, fmt.Errorf("failed to download jsonl, status: %d", resResp.StatusCode)
 	}
 
-	common.Info("paddleocr.net result: downloaded",
+	common.Info("paddleocr result: downloaded",
 		zap.String("job_id", jobId),
 		zap.String("jsonl_url", jsonlUrl))
 
@@ -495,7 +495,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 	extractedText := strings.TrimSpace(fullMarkdown.String())
 	if extractedText == "" {
-		common.Warn("paddleocr.net result: parsed empty text",
+		common.Warn("paddleocr result: parsed empty text",
 			zap.String("job_id", jobId),
 			zap.Bool("array_parsed", arrayParsed),
 			zap.Int("body_bytes", len(rawBody)),
@@ -504,10 +504,10 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 			zap.Int("errored_lines", erroredLines),
 			zap.Int("empty_result_lines", emptyResultLines),
 			zap.Int("content_lines", contentLines))
-		return nil, fmt.Errorf("paddleocr.net result: parsed empty text (scanned_lines=%d, skipped_lines=%d, errored_lines=%d, empty_result_lines=%d, content_lines=%d)",
+		return nil, fmt.Errorf("paddleocr result: parsed empty text (scanned_lines=%d, skipped_lines=%d, errored_lines=%d, empty_result_lines=%d, content_lines=%d)",
 			scannedLines, skippedLines, erroredLines, emptyResultLines, contentLines)
 	}
-	common.Info("paddleocr.net result: parsed",
+	common.Info("paddleocr result: parsed",
 		zap.String("job_id", jobId),
 		zap.Bool("array_parsed", arrayParsed),
 		zap.Int("body_bytes", len(rawBody)),
@@ -523,7 +523,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 	if len(preview) > 200 {
 		preview = preview[:200]
 	}
-	common.Debug("paddleocr.net result: text preview",
+	common.Debug("paddleocr result: text preview",
 		zap.String("job_id", jobId),
 		zap.String("text_preview", preview))
 
@@ -552,4 +552,33 @@ func (p *PaddleOCRModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([
 
 func (p *PaddleOCRModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
+}
+
+// PaddleOCRConfigFromAPIKey parses the tenant PaddleOCR api_key payload the
+// same way Python's PaddleOCROcrModel does: the api_key is a JSON object
+// carrying paddleocr_base_url / paddleocr_api_url, paddleocr_access_token and
+// paddleocr_algorithm, optionally nested under an "api_key" key. A non-JSON
+// api_key — the PaddleOCR.local plain bearer token — yields zero values and
+// the caller falls back to plain-text semantics. base_url prefers
+// paddleocr_base_url over paddleocr_api_url, mirroring Python.
+func PaddleOCRConfigFromAPIKey(apiKey string) (baseURL, accessToken, algorithm string) {
+	if strings.TrimSpace(apiKey) == "" {
+		return "", "", ""
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(apiKey), &raw); err != nil {
+		return "", "", ""
+	}
+	if nested, ok := raw["api_key"].(map[string]interface{}); ok {
+		raw = nested
+	}
+	get := func(key string) string {
+		value, _ := raw[key].(string)
+		return strings.TrimSpace(value)
+	}
+	baseURL = get("paddleocr_base_url")
+	if baseURL == "" {
+		baseURL = get("paddleocr_api_url")
+	}
+	return baseURL, get("paddleocr_access_token"), get("paddleocr_algorithm")
 }

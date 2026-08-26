@@ -427,7 +427,7 @@ class TestDifyRetrievalArgumentValidation:
 
         kwargs = module._fake_retriever.last_kwargs
         assert kwargs["page_size"] == 7
-        assert kwargs["top"] == 7
+        assert kwargs["knn_top_k"] == 7
         assert kwargs["similarity_threshold"] == 0.3
 
     @pytest.mark.p1
