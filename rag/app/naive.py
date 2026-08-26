@@ -147,11 +147,7 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     to :func:`by_plaintext`, which would otherwise try to resolve the UUID
     as an IMAGE2TEXT vision model and crash.
     """
-    raw_layout_recognize = (
-        layout_recognize_override
-        if layout_recognize_override is not None
-        else parser_config.get("layout_recognize", "DeepDOC")
-    )
+    raw_layout_recognize = layout_recognize_override if layout_recognize_override is not None else parser_config.get("layout_recognize", "DeepDOC")
     layout_recognizer, parser_model_name = normalize_layout_recognizer(raw_layout_recognize)
     if layout_recognizer == "OpenDataLoader" and parser_model_name:
         opendataloader_llm_name = parser_model_name
@@ -182,9 +178,7 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     # must keep honoring PlainText, not be silently rerouted to MinerU.
     if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
         logging.warning(
-            "[naive] layout_recognize=%r does not match a known parser; "
-            "falling back to MinerU because mineru_* options are set "
-            "(see issue #17114).",
+            "[naive] layout_recognize=%r does not match a known parser; falling back to MinerU because mineru_* options are set (see issue #17114).",
             layout_recognizer,
         )
         parser = by_mineru
@@ -1127,7 +1121,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         # turned a TenantModel UUID into a "<model>@<instance>@<provider>" form)
         # so the dispatch can extract the right parser_model_name.
         parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(
-            parser_config, opendataloader_llm_name, layout_recognize_override=layout_recognize_raw,
+            parser_config,
+            opendataloader_llm_name,
+            layout_recognize_override=layout_recognize_raw,
         )
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
