@@ -1984,6 +1984,106 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
         pass
 
 
+TENANT_MODEL_ID_COLUMNS = (
+    ("tenant", "tenant_llm_id"),
+    ("tenant", "tenant_embd_id"),
+    ("tenant", "tenant_asr_id"),
+    ("tenant", "tenant_img2txt_id"),
+    ("tenant", "tenant_rerank_id"),
+    ("tenant", "tenant_tts_id"),
+    ("tenant", "tenant_ocr_id"),
+    ("knowledgebase", "tenant_embd_id"),
+    ("dialog", "tenant_llm_id"),
+    ("dialog", "tenant_rerank_id"),
+    ("memory", "tenant_llm_id"),
+    ("memory", "tenant_embd_id"),
+)
+
+_INTEGER_COLUMN_TYPES = frozenset({"int", "integer", "bigint", "smallint", "mediumint", "tinyint"})
+
+
+def _get_column_data_type(table_name: str, column_name: str) -> str | None:
+    try:
+        if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+            cursor = DB.execute_sql(
+                """
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = %s
+                  AND column_name = %s
+                """,
+                (table_name, column_name),
+            )
+        else:
+            cursor = DB.execute_sql(
+                """
+                SELECT DATA_TYPE
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = %s
+                  AND column_name = %s
+                """,
+                (table_name, column_name),
+            )
+        row = cursor.fetchone()
+        return row[0].lower() if row else None
+    except Exception as ex:
+        logging.warning("Failed to inspect %s.%s column type: %s", table_name, column_name, ex)
+        return None
+
+
+def migrate_tenant_model_id_column_types(migrator):
+    """Convert legacy IntegerField tenant_*_id columns to VARCHAR(32).
+
+    v0.26.x stored tenant_llm row ids (integers) in these columns. v0.27.0
+    stores tenant_model.id hex strings instead. Upgraded databases that never
+    ran the MySQL-only tenant_model_id_migration stage can still have integer
+    columns, which breaks default-model and dataset embedding updates (#18756).
+    """
+    target_field = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
+
+    for table_name, column_name in TENANT_MODEL_ID_COLUMNS:
+        try:
+            table_present = DB.table_exists(table_name)
+        except Exception as ex:
+            logging.warning("Failed to inspect table %s while migrating tenant_*_id types: %s", table_name, ex)
+            continue
+        if not table_present:
+            continue
+
+        col_type = _get_column_data_type(table_name, column_name)
+        if col_type is None:
+            alter_db_add_column(migrator, table_name, column_name, target_field)
+            continue
+
+        if col_type not in _INTEGER_COLUMN_TYPES:
+            continue
+
+        try:
+            if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+                DB.execute_sql(
+                    f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" '
+                    f'TYPE varchar(32) USING CASE WHEN "{column_name}" IS NULL THEN NULL ELSE "{column_name}"::text END'
+                )
+            else:
+                migrate(migrator.alter_column_type(table_name, column_name, target_field))
+            logging.info(
+                "Converted %s.%s from %s to varchar(32) for tenant_model.id references",
+                table_name,
+                column_name,
+                col_type,
+            )
+        except Exception as ex:
+            logging.critical(
+                "Failed to convert %s.%s from %s to varchar(32): %s",
+                table_name,
+                column_name,
+                col_type,
+                ex,
+            )
+
+
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
     try:
         migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
@@ -2467,6 +2567,7 @@ def migrate_db():
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_ocr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    migrate_tenant_model_id_column_types(migrator)
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
     # ---- FileCommit / FileCommitItem: artifact-page commit extension ----

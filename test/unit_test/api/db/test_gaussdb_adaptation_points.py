@@ -103,6 +103,7 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
     monkeypatch.setattr(db_models, "alter_db_column_type", lambda *_args: events.append(("alter_type",)))
     monkeypatch.setattr(db_models, "alter_db_rename_column", lambda *_args: events.append(("rename",)))
     monkeypatch.setattr(db_models, "alter_db_drop_index", lambda *_args: events.append(("drop_index",)))
+    monkeypatch.setattr(db_models, "migrate_tenant_model_id_column_types", lambda _migrator: events.append(("tenant_model_id_types",)))
     monkeypatch.setattr(db_models, "relax_gaussdb_empty_string_compatible_columns", lambda: events.append(("relax",)))
     monkeypatch.setattr(db_models, "migrate", lambda *_operations: None)
     monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
@@ -115,6 +116,7 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
         assert isinstance(field, db_models.EmptyStringCharField)
         assert field.null is True
     assert set(migrated_fields) == {("document", "suffix"), ("user_canvas", "tags")}
+    assert ("tenant_model_id_types",) in events
     assert events[-1] == ("relax",)
 
 
