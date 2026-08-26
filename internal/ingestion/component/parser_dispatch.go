@@ -101,9 +101,7 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // component short-circuits with _ERROR rather than emitting a
 // payload the downstream chunker cannot consume.
 //
-// Strict mode: explicit legacy image:text is NOT coerced. Old canvases
-// must be re-saved/migrated; this keeps the contract tight and makes
-// the breakage explicit rather than silently fixing.
+// Strict mode: explicit image:text is rejected by the whitelist.
 func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, allowed map[string][]string) (string, error) {
 	setup, ok := setups[family]
 	if !ok {
@@ -114,7 +112,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 	allowedList, ok := allowed[family]
 	if !ok || len(allowedList) == 0 {
 		// No whitelist entry — accept what the setup asked for, or
-		// fall back to "text" for legacy families with no constraint.
+		// fall back to "text" for families without a whitelist.
 		if format == "" {
 			format = "text"
 		}
@@ -154,7 +152,7 @@ func defaultOutputFormatForFamily(family string) (string, bool) {
 	case "doc", "docx", "slides", "image", "markdown", "text&code", "html", "epub", "json":
 		return "json", true
 	case "email":
-		return "json", true
+		return "text", true
 	case "audio", "video":
 		return "text", true
 	default:

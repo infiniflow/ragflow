@@ -225,7 +225,7 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 // behavior of resolveOutputFormat: it returns the setup's
 // output_format when present (or the per-family default when absent,
 // e.g. markdown→json, spreadsheet→html), and rejects values not in
-// the allowed_output_format list. Legacy image:text is coerced to json.
+// the allowed_output_format list. Explicit image:text is rejected.
 func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	allowed := map[string][]string{
 		"pdf":         {"json", "markdown"},
@@ -276,6 +276,12 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"image": {}},
 			family: "image",
 			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (email→text)",
+			setups: map[string]schema.ParserSetup{"email": {}},
+			family: "email",
+			want:   "text",
 		},
 		{
 			name:    "image explicit text (legacy) → strict reject",
