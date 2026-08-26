@@ -16,25 +16,65 @@
 """KB-scoped wiki/compilation rows must survive deleted-document pruning."""
 
 import asyncio
+import importlib.util
 import sys
 import types
+from pathlib import Path
 
-# Stub the heavy / circular-importing dependencies before importing search,
-# mirroring test_search_pagination.py so the module imports in isolation.
-_fake_query = types.ModuleType("rag.nlp.query")
-
-
-class _DummyFulltextQueryer:
-    pass
+_ROOT = Path(__file__).parents[3]
 
 
-_fake_query.FulltextQueryer = _DummyFulltextQueryer
-_fake_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
-sys.modules.setdefault("rag.nlp.query", _fake_query)
-sys.modules.setdefault("rag.nlp.rag_tokenizer", _fake_tokenizer)
-sys.modules.setdefault("common.settings", types.ModuleType("common.settings"))
+def _load_search():
+    fake_rag_nlp = types.ModuleType("rag.nlp")
+    fake_rag_nlp.__path__ = []
 
-from rag.nlp.search import Dealer, is_kb_scoped_chunk  # noqa: E402
+    fake_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
+    fake_rag_nlp.rag_tokenizer = fake_tokenizer
+
+    fake_query = types.ModuleType("rag.nlp.query")
+
+    class _DummyFulltextQueryer:
+        pass
+
+    fake_query.FulltextQueryer = _DummyFulltextQueryer
+    fake_rag_nlp.query = fake_query
+    fake_settings = types.ModuleType("common.settings")
+
+    stub_names = ("rag.nlp", "rag.nlp.rag_tokenizer", "rag.nlp.query", "common.settings")
+    saved = {name: sys.modules.get(name) for name in stub_names}
+    sys.modules["rag.nlp"] = fake_rag_nlp
+    sys.modules["rag.nlp.rag_tokenizer"] = fake_tokenizer
+    sys.modules["rag.nlp.query"] = fake_query
+    sys.modules["common.settings"] = fake_settings
+
+    import common
+
+    saved_common_settings = getattr(common, "settings", None)
+    common.settings = fake_settings
+
+    spec = importlib.util.spec_from_file_location("rag.nlp.search_prune_test", _ROOT / "rag" / "nlp" / "search.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules["rag.nlp.search_prune_test"] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if saved_common_settings is None:
+            if getattr(common, "settings", None) is fake_settings:
+                delattr(common, "settings")
+        else:
+            common.settings = saved_common_settings
+        for name, previous in saved.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
+    return module
+
+
+_search = _load_search()
+Dealer = _search.Dealer
+is_kb_scoped_chunk = _search.is_kb_scoped_chunk
 
 
 def test_is_kb_scoped_chunk_missing_or_empty_doc_id():
