@@ -2030,6 +2030,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       skillDeleteDescription: '确定要删除该 Skill 吗？',
       navTitle: 'PageIndex',
       navEmpty: '暂无导航节点',
+      navLoadFailed: '加载目录树失败',
+      navChildLoadFailed: '加载子节点失败',
       navLoading: '加载中...',
       navSelectNode: '选择子节点以查看详情',
       navNoDescription: '暂无描述',
