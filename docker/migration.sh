@@ -38,6 +38,9 @@ show_help() {
     echo "OPTIONS:"
     echo "  -p project_name  - Docker Compose project name (default: '$DEFAULT_PROJECT_NAME')"
     echo "                     Use this when you started RAGFlow with 'docker compose -p <name>'"
+    echo "  --force           - (restore only) auto-clear a non-empty target volume"
+    echo "                     instead of aborting. Use for automation / CI when"
+    echo "                     you've already verified the volume is expendable."
     echo ""
     echo "PARAMETERS:"
     echo "  backup_folder    - Name of backup folder (default: '$DEFAULT_BACKUP_FOLDER')"
@@ -301,8 +304,40 @@ perform_restore() {
         #                     second character being ".", which leaves
         #                     names like ".example" and "...state"
         #                     unremoved under the two-character pattern.
+        #
+        # Per the #18393 review feedback: this script will NOT
+        # automatically destroy a non-empty volume. It inspects the
+        # target first via an alpine ls, and if any state is present it
+        # prompts the operator to either (a) clean up the target volume
+        # manually (e.g. `docker volume rm <name> && docker volume create
+        # <name>`) or (b) point this script at a different (empty)
+        # volume via the -v flag, unless --force is set to preserve the
+        # prior auto-clear behavior for automation.
         # Regression for #18354.
         echo "  📥 Restoring data from $backup_file..."
+        if [ "$RESTORE_FORCE" != "true" ]; then
+            local target_contents
+            target_contents=$(docker run --rm \
+                -v "$volume":/target \
+                alpine sh -c "shopt -s dotglob nullglob; printf '%s\\n' /target/* /target/.[!.]* /target/..?* 2>/dev/null" | sort -u | head -n 1)
+            if [ -n "$target_contents" ]; then
+                echo ""
+                echo "  🔴 REFUSING TO AUTO-CLEAR target volume: $volume"
+                echo "     The current restore would silently destroy the following state:"
+                docker run --rm \
+                    -v "$volume":/target \
+                    alpine sh -c "shopt -s dotglob nullglob; for f in /target/* /target/.[!.]* /target/..?*; do [ -e \"\$f\" ] && printf '       %s\\n' \"\$f\"; done" | head -n 20
+                echo ""
+                echo "     To restore, choose one of:"
+                echo "       a) Clean up the target volume yourself, then re-run:"
+                echo "          docker compose down && docker volume rm $volume && docker volume create $volume"
+                echo "       b) Point this script at a fresh, empty volume (override with a custom -v path)."
+                echo "       c) Re-run with --force to accept the destructive auto-clear (legacy behavior)."
+                echo ""
+                echo "❌ Restore aborted for $volume."
+                continue
+            fi
+        fi
         docker run --rm \
             -v "$volume":/target \
             -v "$(pwd)/$backup_folder":/backup \
@@ -321,8 +356,9 @@ main() {
     # Check if Docker is available
     check_docker
 
-    # Parse -p flag
+    # Parse -p / --force flags (force preserves the prior auto-clear behavior)
     PROJECT_NAME="$DEFAULT_PROJECT_NAME"
+    RESTORE_FORCE="false"
     while [ $# -gt 0 ]; do
         case "$1" in
             -p)
@@ -332,6 +368,10 @@ main() {
                 fi
                 PROJECT_NAME="$2"
                 shift 2
+                ;;
+            --force)
+                RESTORE_FORCE="true"
+                shift
                 ;;
             *)
                 break
