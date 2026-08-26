@@ -46,12 +46,38 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	}
 }
 
+// oauthAuthCookie is the cookie the callback writes on success, so the SPA
+// can pick up the signed access token after the redirect. The frontend
+// reads it and either re-issues the value as an Authorization header on
+// subsequent API calls or hands it off to its own token store. Not
+// HttpOnly so the SPA's JS can read it.
+const oauthAuthCookie = "ragflow_auth"
+
+// setOAuthAuthCookie writes the signed access token so the SPA can pick it
+// up after the redirect. Not HttpOnly so the SPA can copy it into its
+// Authorization header on subsequent fetches. Lifetime mirrors the
+// access-token TTL used by the rest of the app.
+func setOAuthAuthCookie(c *gin.Context, token string) {
+	// the SPA's bootstrap credential after the OAuth redirect. The
+	// SPA reads it via document.cookie and copies it into the
+	// Authorization header. Setting HttpOnly would break the login
+	// flow. The token is short-lived (7 days) and signed with itsdangerous.
+	// codeql[go/cookie-httponly-not-set] Intentional: this cookie is
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     oauthAuthCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 7,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.Request.TLS != nil,
+	})
+}
+
 // Register user registration
 // @Summary User Registration
 // @Description Create new user
 // @Tags users
-// @Accept json
-// @Produce json
 // @Param request body service.RegisterRequest true "registration info"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users [post]
@@ -63,7 +89,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.Register(&req)
+	user, code, err := h.userService.Register(ctx, &req)
 	if err != nil {
 		var data interface{} = false
 		if code == common.CodeExceptionError {
@@ -73,7 +99,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, redis.Get())
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
@@ -99,8 +125,6 @@ func (h *UserHandler) Register(c *gin.Context) {
 // @Summary User Login
 // @Description User login verification
 // @Tags users
-// @Accept json
-// @Produce json
 // @Param request body service.LoginRequest true "login info"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users/login [post]
@@ -134,7 +158,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 	operationLog.ResourceName = req.Username
 
-	user, code, err := h.userService.Login(&req)
+	user, code, err := h.userService.Login(ctx, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		operationLog.ErrorCode = uint16(code)
@@ -145,7 +169,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	operationLog.UserID = user.ID
 
 	// Sign the access_token using itsdangerous (compatible with Python)
-	secretKey, err := server.GetSecretKey(redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, redis.Get())
 	if err != nil {
 		errMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
 		common.ResponseWithCodeData(c, common.CodeServerError, false, errMessage)
@@ -180,8 +204,6 @@ func (h *UserHandler) Login(c *gin.Context) {
 // @Summary User Login by Email
 // @Description User login verification using email
 // @Tags users
-// @Accept json
-// @Produce json
 // @Param request body service.EmailLoginRequest true "login info with email"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/login [post]
@@ -234,7 +256,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	operationLog.UserID = user.ID
 
-	secretKey, err := server.GetSecretKey(redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, redis.Get())
 	if err != nil {
 		errorMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
 		common.ResponseWithCodeData(c, common.CodeServerError, false, errorMessage)
@@ -266,8 +288,6 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 // @Summary Get User Info
 // @Description Get user details by ID
 // @Tags users
-// @Accept json
-// @Produce json
 // @Param id path int true "user ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users/{id} [get]
@@ -293,8 +313,6 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 // @Summary User Logout
 // @Description Logout user and invalidate access token
 // @Tags users
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/logout [post]
@@ -352,7 +370,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	operationLog.UserID = user.ID
 
 	// Logout user
-	code, err = h.userService.Logout(user)
+	code, err = h.userService.Logout(ctx, user)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		operationLog.ErrorCode = uint16(code)
@@ -368,8 +386,6 @@ func (h *UserHandler) Logout(c *gin.Context) {
 // @Summary Get User Profile
 // @Description Get current user's profile information
 // @Tags users
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/info [get]
@@ -391,8 +407,6 @@ func (h *UserHandler) Info(c *gin.Context) {
 // @Summary Update User Settings
 // @Description Update current user's settings
 // @Tags users
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body service.UpdateSettingsRequest true "user settings"
 // @Success 200 {object} map[string]interface{}
@@ -430,8 +444,6 @@ func (h *UserHandler) Setting(c *gin.Context) {
 // @Summary Change User Password
 // @Description Change current user's password
 // @Tags users
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body service.ChangePasswordRequest true "password change info"
 // @Success 200 {object} map[string]interface{}
@@ -465,11 +477,9 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Summary Get Login Channels
 // @Description Get all supported OAuth authentication channels
 // @Tags users
-// @Accept json
-// @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/login/channels [get]
-func (h *UserHandler) GetLoginChannels(c *gin.Context) {
+func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
 	channels, code, err := h.userService.GetLoginChannels()
 	if err != nil {
 		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
@@ -483,8 +493,6 @@ func (h *UserHandler) GetLoginChannels(c *gin.Context) {
 // @Summary Set Tenant Info
 // @Description Update tenant model configuration
 // @Tags users
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body service.SetTenantInfoRequest true "tenant info"
 // @Success 200 {object} map[string]interface{}
@@ -609,7 +617,8 @@ func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
 		_ = c.ShouldBindJSON(&req)
 	}
 
-	captchaID, captchaImage, errCode, err := h.userService.ForgotIssueCaptcha(req.Email)
+	ctx := c.Request.Context()
+	captchaID, captchaImage, errCode, err := h.userService.ForgotIssueCaptcha(ctx, req.Email)
 	if err != nil {
 		common.ResponseWithCodeData(c, errCode, false, err.Error())
 		return
@@ -632,8 +641,6 @@ type forgotSendOTPRequest struct {
 // mints a one-time code, stores a salted hash in Redis (5 min TTL,
 // attempt cap, resend cooldown), and emails the OTP to the user.
 // @Tags auth
-// @Accept json
-// @Produce json
 // @Param request body forgotSendOTPRequest true "email + captcha_id + captcha"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/auth/password/forgot/otp [post]
@@ -643,7 +650,8 @@ func (h *UserHandler) ForgotSendOTP(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
 		return
 	}
-	errCode, err := h.userService.ForgotSendOTP(req.Email, req.CaptchaID, req.Captcha)
+	ctx := c.Request.Context()
+	errCode, err := h.userService.ForgotSendOTP(ctx, req.Email, req.CaptchaID, req.Captcha)
 	if err != nil {
 		common.ResponseWithCodeData(c, errCode, false, err.Error())
 		return
@@ -662,8 +670,6 @@ type forgotVerifyOTPRequest struct {
 // verified flag the reset endpoint will gate on. Wrong-OTP attempts
 // are counted and a 30-minute lockout kicks in at the limit.
 // @Tags auth
-// @Accept json
-// @Produce json
 // @Param request body forgotVerifyOTPRequest true "email + otp"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/auth/password/forgot/otp/verify [post]
@@ -673,7 +679,8 @@ func (h *UserHandler) ForgotVerifyOTP(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
 		return
 	}
-	errCode, err := h.userService.ForgotVerifyOTP(req.Email, req.OTP)
+	ctx := c.Request.Context()
+	errCode, err := h.userService.ForgotVerifyOTP(ctx, req.Email, req.OTP)
 	if err != nil {
 		common.ResponseWithCodeData(c, errCode, false, err.Error())
 		return
@@ -700,13 +707,13 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.ForgotResetPassword(&req)
+	user, code, err := h.userService.ForgotResetPassword(ctx, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, redis.Get())
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return

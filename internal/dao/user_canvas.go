@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"strings"
@@ -41,6 +42,7 @@ var userCanvasOrderableColumns = map[string]struct{}{
 	"permission":      {},
 	"canvas_type":     {},
 	"canvas_category": {},
+	"tags":            {},
 	"create_time":     {},
 	"create_date":     {},
 	"update_time":     {},
@@ -68,11 +70,6 @@ func userCanvasQualifiedOrderClause(orderby string, desc bool) string {
 	return order + " ASC"
 }
 
-func escapeSQLLike(s string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return replacer.Replace(s)
-}
-
 func splitUserCanvasTags(raw string) []string {
 	parts := strings.Split(raw, ",")
 	tags := make([]string, 0, len(parts))
@@ -85,11 +82,11 @@ func splitUserCanvasTags(raw string) []string {
 	return tags
 }
 
-func applyUserCanvasTagFilter(query *gorm.DB, tags []string) *gorm.DB {
+func applyUserCanvasTagFilter(ctx context.Context, db *gorm.DB, query *gorm.DB, tags []string) *gorm.DB {
 	if len(tags) == 0 {
 		return query
 	}
-	tagQuery := DB.Session(&gorm.Session{NewDB: true})
+	tagQuery := db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
 	hasTag := false
 	for _, tag := range tags {
 		tag = strings.TrimSpace(tag)
@@ -97,7 +94,7 @@ func applyUserCanvasTagFilter(query *gorm.DB, tags []string) *gorm.DB {
 			continue
 		}
 		pattern := "(^|,)[[:space:]]*" + regexp.QuoteMeta(tag) + "[[:space:]]*(,|$)"
-		cond := DB.Where("user_canvas.tags REGEXP ?", pattern)
+		cond := db.WithContext(ctx).Where("user_canvas.tags REGEXP ?", pattern)
 		if !hasTag {
 			tagQuery = tagQuery.Where(cond)
 			hasTag = true
@@ -122,14 +119,14 @@ func NewUserCanvasDAO() *UserCanvasDAO {
 }
 
 // Create user canvas
-func (dao *UserCanvasDAO) Create(userCanvas *entity.UserCanvas) error {
-	return DB.Create(userCanvas).Error
+func (dao *UserCanvasDAO) Create(ctx context.Context, db *gorm.DB, userCanvas *entity.UserCanvas) error {
+	return db.WithContext(ctx).Create(userCanvas).Error
 }
 
 // GetByID get user canvas by ID
-func (dao *UserCanvasDAO) GetByID(id string) (*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.UserCanvas, error) {
 	var canvas entity.UserCanvas
-	err := DB.Where("id = ?", id).First(&canvas).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&canvas).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserCanvasNotFound
@@ -151,7 +148,7 @@ func (dao *UserCanvasDAO) GetByID(id string) (*entity.UserCanvas, error) {
 // canvas — yields ErrUserCanvasNotFound. The single error type stops
 // callers from leaking "exists but not yours" vs "doesn't exist" via the
 // HTTP status code.
-func (dao *UserCanvasDAO) GetByIDForUser(canvasID, userID string, tenantIDs []string) (*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetByIDForUser(ctx context.Context, db *gorm.DB, canvasID, userID string, tenantIDs []string) (*entity.UserCanvas, error) {
 	if canvasID == "" {
 		return nil, ErrUserCanvasNotFound
 	}
@@ -161,7 +158,7 @@ func (dao *UserCanvasDAO) GetByIDForUser(canvasID, userID string, tenantIDs []st
 
 	// owner=userID is allowed regardless of permission, matching the
 	// ListByTenantIDs predicate used by GET /api/v1/agents.
-	ownerOrTeam := DB.Where("user_id = ?", userID)
+	ownerOrTeam := db.WithContext(ctx).Where("user_id = ?", userID)
 	if len(tenantIDs) > 0 {
 		ownerOrTeam = ownerOrTeam.Or(
 			"user_id IN ? AND permission = ?", tenantIDs, "team",
@@ -169,7 +166,7 @@ func (dao *UserCanvasDAO) GetByIDForUser(canvasID, userID string, tenantIDs []st
 	}
 
 	var canvas entity.UserCanvas
-	err := DB.Where("id = ?", canvasID).Where(ownerOrTeam).First(&canvas).Error
+	err := db.WithContext(ctx).Where("id = ?", canvasID).Where(ownerOrTeam).First(&canvas).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserCanvasNotFound
@@ -180,8 +177,8 @@ func (dao *UserCanvasDAO) GetByIDForUser(canvasID, userID string, tenantIDs []st
 }
 
 // Update update user canvas
-func (dao *UserCanvasDAO) Update(userCanvas *entity.UserCanvas) error {
-	return DB.Save(userCanvas).Error
+func (dao *UserCanvasDAO) Update(ctx context.Context, db *gorm.DB, userCanvas *entity.UserCanvas) error {
+	return db.WithContext(ctx).Save(userCanvas).Error
 }
 
 // Accessible reports whether canvasID is reachable by userID under
@@ -204,7 +201,7 @@ func (dao *UserCanvasDAO) Update(userCanvas *entity.UserCanvas) error {
 // Callers that don't have a tenant list handy (rare; most
 // handlers derive it from the user context) should call
 // GetTenantIDsByUserID first and pass the result.
-func (dao *UserCanvasDAO) Accessible(canvasID, userID string, tenantIDs []string) bool {
+func (dao *UserCanvasDAO) Accessible(ctx context.Context, db *gorm.DB, canvasID, userID string, tenantIDs []string) bool {
 	if canvasID == "" || userID == "" {
 		return false
 	}
@@ -212,14 +209,14 @@ func (dao *UserCanvasDAO) Accessible(canvasID, userID string, tenantIDs []string
 	// Team-permission canvases are reachable only when the caller is a
 	// member of one of the owner's tenants — mirrors the predicate in
 	// GetByIDForUser / ListByTenantIDs.
-	ownerOrTeam := DB.Where("user_id = ?", userID)
+	ownerOrTeam := db.WithContext(ctx).Where("user_id = ?", userID)
 	if len(tenantIDs) > 0 {
 		ownerOrTeam = ownerOrTeam.Or(
 			"user_id IN ? AND permission = ?", tenantIDs, "team",
 		)
 	}
 	var canvas entity.UserCanvas
-	err := DB.Select("id").
+	err := db.WithContext(ctx).Select("id").
 		Where("id = ?", canvasID).
 		Where(ownerOrTeam).
 		First(&canvas).Error
@@ -230,27 +227,27 @@ func (dao *UserCanvasDAO) Accessible(canvasID, userID string, tenantIDs []string
 }
 
 // Delete delete user canvas
-func (dao *UserCanvasDAO) Delete(id string) error {
+func (dao *UserCanvasDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
 	// gorm v2 treats the first non-int inline arg as a column name, not a
 	// primary-key value — passing `id` verbatim produced WHERE ID = ?
 	// and made MySQL complain about an unknown "AGENT_ID" column. The
 	// explicit Where+Delete form is the same pattern used by
 	// API4ConversationDAO.Delete (see api_token.go:142-144).
-	return DB.Where("id = ?", id).Delete(&entity.UserCanvas{}).Error
+	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.UserCanvas{}).Error
 }
 
 // UpdateTx is the transactional variant of Update. Callers wrap a sequence
 // of *Tx calls in dao.DB.Transaction(func(tx *gorm.DB) error { ... }) so
 // multi-step writes (e.g. publish-agent, delete-agent) are atomic.
-func (dao *UserCanvasDAO) UpdateTx(tx *gorm.DB, userCanvas *entity.UserCanvas) error {
-	return tx.Save(userCanvas).Error
+func (dao *UserCanvasDAO) UpdateTx(ctx context.Context, tx *gorm.DB, userCanvas *entity.UserCanvas) error {
+	return tx.WithContext(ctx).Save(userCanvas).Error
 }
 
 // DeleteTx is the transactional variant of Delete. The canvas must
 // already be loaded and access-checked by the caller.
-func (dao *UserCanvasDAO) DeleteTx(tx *gorm.DB, id string) error {
+func (dao *UserCanvasDAO) DeleteTx(ctx context.Context, tx *gorm.DB, id string) error {
 	// See Delete() above for the rationale on Where("id = ?", id).
-	return tx.Where("id = ?", id).Delete(&entity.UserCanvas{}).Error
+	return tx.WithContext(ctx).Where("id = ?", id).Delete(&entity.UserCanvas{}).Error
 }
 
 // GetByUserAndTitle returns the canvas matching user_id + title (and
@@ -258,8 +255,8 @@ func (dao *UserCanvasDAO) DeleteTx(tx *gorm.DB, id string) error {
 // Used by service.AgentService.CreateAgent to enforce the "title
 // already exists" rule that the Python agent API mirrors with
 // UserCanvasService.query(user_id=..., title=...).
-func (dao *UserCanvasDAO) GetByUserAndTitle(userID, title, canvasCategory string) (*entity.UserCanvas, error) {
-	q := DB.Where("user_id = ? AND title = ?", userID, title)
+func (dao *UserCanvasDAO) GetByUserAndTitle(ctx context.Context, db *gorm.DB, userID, title, canvasCategory string) (*entity.UserCanvas, error) {
+	q := db.WithContext(ctx).Where("user_id = ? AND title = ?", userID, title)
 	if canvasCategory != "" {
 		q = q.Where("canvas_category = ?", canvasCategory)
 	}
@@ -275,9 +272,9 @@ func (dao *UserCanvasDAO) GetByUserAndTitle(userID, title, canvasCategory string
 
 // GetList get canvases list with pagination and filtering
 // Similar to Python UserCanvasService.get_list
-func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
 
-	query := DB.Model(&entity.UserCanvas{}).
+	query := db.WithContext(ctx).Model(&entity.UserCanvas{}).
 		Where("user_id = ?", tenantID)
 
 	if id != "" {
@@ -315,9 +312,9 @@ func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int,
 
 // GetAllCanvasesByTenantIDs get all permitted canvases by tenant IDs
 // Similar to Python UserCanvasService.get_all_agents_by_tenant_ids
-func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(tenantIDs []string, userID string) ([]*CanvasBasicInfo, error) {
+func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string) ([]*CanvasBasicInfo, error) {
 
-	query := DB.Model(&entity.UserCanvas{}).
+	query := db.WithContext(ctx).Model(&entity.UserCanvas{}).
 		Select("id, avatar, title, permission, canvas_type, canvas_category").
 		Where("user_id IN (?) AND permission = ?", tenantIDs, "team").
 		Or("user_id = ?", userID).
@@ -349,36 +346,32 @@ type UserCanvasListItem struct {
 // ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
 // keyword filter, tag filter, pagination, and ordering.
 // Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
-func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords, canvasCategory, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
+func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords, canvasCategory, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
 	if len(ownerIDs) == 0 {
 		return nil, 0, nil
 	}
 
 	// Canvases owned by any of the ownerIDs that are "team"-permission, plus all owned by userID.
-	base := DB.Model(&entity.UserCanvas{}).
+	base := db.WithContext(ctx).Model(&entity.UserCanvas{}).
 		Select(`user_canvas.id,
-			user_canvas.avatar,
-			user_canvas.title,
-			user_canvas.description,
-			user_canvas.permission,
-			user_canvas.user_id,
-			user_canvas.user_id AS tenant_id,
-			user.nickname,
-			user.avatar AS tenant_avatar,
-			user_canvas.canvas_type,
-			user_canvas.canvas_category,
-			user_canvas.tags,
-			user_canvas.create_time,
-			user_canvas.update_time`).
+		user_canvas.avatar,
+		user_canvas.title,
+		user_canvas.description,
+		user_canvas.permission,
+		user_canvas.user_id,
+		user_canvas.user_id AS tenant_id,
+		user.nickname,
+		user.avatar AS tenant_avatar,
+		user_canvas.canvas_type,
+		user_canvas.canvas_category,
+		user_canvas.tags,
+		user_canvas.create_time,
+		user_canvas.update_time`).
 		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
+		Where("user_canvas.user_id IN ?", ownerIDs).
 		Where(
-			DB.Where("user_canvas.user_id IN ? AND user_canvas.permission = ?", ownerIDs, "team").
-				Or("user_canvas.user_id = ?", userID),
-			"user_canvas.user_id IN ?",
-			ownerIDs,
-		).Where(
-		DB.Where("user_canvas.permission = ?", "team").
-			Or("user_canvas.user_id = ?", userID))
+			db.WithContext(ctx).Where("user_canvas.permission = ?", "team").
+				Or("user_canvas.user_id = ?", userID))
 
 	if canvasCategory != "" {
 		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
@@ -390,9 +383,9 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 
 	if keywords != "" {
 		like := "%" + keywords + "%"
-		base = base.Where("user_canvas.title LIKE ?", like)
+		base = base.Where("user_canvas.title LIKE ? OR user_canvas.tags LIKE ?", like, like)
 	}
-	base = applyUserCanvasTagFilter(base, tags)
+	base = applyUserCanvasTagFilter(ctx, db, base, tags)
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -418,16 +411,71 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 	return canvases, total, nil
 }
 
+// OwnerFilterItem is one row of the owner aggregation backing the
+// ?type=filter branch of the agents list endpoint.
+type OwnerFilterItem struct {
+	ID    string  `gorm:"column:id"`
+	Label *string `gorm:"column:label"`
+	Count int64   `gorm:"column:count"`
+}
+
+// CategoryFilterItem is one row of the canvas_category aggregation backing
+// the ?type=filter branch of the agents list endpoint.
+type CategoryFilterItem struct {
+	ID    string `gorm:"column:id"`
+	Count int64  `gorm:"column:count"`
+}
+
+// visibleToUserScope scopes a user_canvas query to rows the user can see:
+// team-permission canvases owned by ownerIDs plus everything the user owns.
+func visibleToUserScope(db *gorm.DB, ownerIDs []string, userID string) *gorm.DB {
+	return db.Model(&entity.UserCanvas{}).
+		Where("user_canvas.user_id IN ?", ownerIDs).
+		Where(
+			db.Where("user_canvas.permission = ?", "team").
+				Or("user_canvas.user_id = ?", userID))
+}
+
+// GetOwnerFilter aggregates visible canvases by owner, joining the user
+// table for the display label. Mirrors Python
+// UserCanvasService.get_owner_filter.
+func (dao *UserCanvasDAO) GetOwnerFilter(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string) ([]*OwnerFilterItem, error) {
+	if len(ownerIDs) == 0 {
+		return nil, nil
+	}
+	var items []*OwnerFilterItem
+	err := visibleToUserScope(db.WithContext(ctx), ownerIDs, userID).
+		Select("user_canvas.user_id AS id, user.nickname AS label, COUNT(user_canvas.id) AS count").
+		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
+		Group("user_canvas.user_id, user.nickname").
+		Scan(&items).Error
+	return items, err
+}
+
+// GetCategoryFilter aggregates visible canvases by canvas_category.
+// Mirrors Python UserCanvasService.get_category_filter.
+func (dao *UserCanvasDAO) GetCategoryFilter(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string) ([]*CategoryFilterItem, error) {
+	if len(ownerIDs) == 0 {
+		return nil, nil
+	}
+	var items []*CategoryFilterItem
+	err := visibleToUserScope(db.WithContext(ctx), ownerIDs, userID).
+		Select("user_canvas.canvas_category AS id, COUNT(user_canvas.id) AS count").
+		Group("user_canvas.canvas_category").
+		Scan(&items).Error
+	return items, err
+}
+
 // ListTags returns tag usage counts across canvases visible to userID.
-func (dao *UserCanvasDAO) ListTags(ownerIDs []string, userID string, canvasCategory string) (map[string]int, error) {
+func (dao *UserCanvasDAO) ListTags(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, canvasCategory string) (map[string]int, error) {
 	if len(ownerIDs) == 0 {
 		return map[string]int{}, nil
 	}
 
-	query := DB.Model(&entity.UserCanvas{}).
+	query := db.WithContext(ctx).Model(&entity.UserCanvas{}).
 		Select("user_canvas.tags").
 		Where(
-			DB.Where("user_canvas.user_id IN ? AND user_canvas.permission = ?", ownerIDs, "team").
+			db.WithContext(ctx).Where("user_canvas.user_id IN ? AND user_canvas.permission = ?", ownerIDs, "team").
 				Or("user_canvas.user_id = ?", userID),
 		)
 
@@ -452,8 +500,8 @@ func (dao *UserCanvasDAO) ListTags(ownerIDs []string, userID string, canvasCateg
 }
 
 // GetByCanvasID get user canvas by canvas ID (alias for GetByID)
-func (dao *UserCanvasDAO) GetByCanvasID(canvasID string) (*entity.UserCanvas, error) {
-	return dao.GetByID(canvasID)
+func (dao *UserCanvasDAO) GetByCanvasID(ctx context.Context, db *gorm.DB, canvasID string) (*entity.UserCanvas, error) {
+	return dao.GetByID(ctx, db, canvasID)
 }
 
 // CanvasBasicInfo basic canvas information for list responses
@@ -467,34 +515,42 @@ type CanvasBasicInfo struct {
 }
 
 // DeleteByUserID deletes all canvases by user ID (hard delete)
-func (dao *UserCanvasDAO) DeleteByUserID(userID string) (int64, error) {
-	result := DB.Unscoped().Where("user_id = ?", userID).Delete(&entity.UserCanvas{})
+func (dao *UserCanvasDAO) DeleteByUserID(ctx context.Context, db *gorm.DB, userID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("user_id = ?", userID).Delete(&entity.UserCanvas{})
 	return result.RowsAffected, result.Error
 }
 
 // GetAllCanvasIDsByUserID gets all canvas IDs by user ID
-func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(userID string) ([]string, error) {
+func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(ctx context.Context, db *gorm.DB, userID string) ([]string, error) {
 	var canvasIDs []string
-	err := DB.Model(&entity.UserCanvas{}).
+	err := db.WithContext(ctx).Model(&entity.UserCanvas{}).
 		Where("user_id = ?", userID).
 		Pluck("id", &canvasIDs).Error
 	return canvasIDs, err
 }
 
 // UpdateDSL updates a canvas DSL by canvas ID.
-func (dao *UserCanvasDAO) UpdateDSL(canvasID string, dsl entity.JSONMap) (int64, error) {
-	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("dsl", dsl)
+func (dao *UserCanvasDAO) UpdateDSL(ctx context.Context, db *gorm.DB, canvasID string, dsl entity.JSONMap) (int64, error) {
+	result := db.WithContext(ctx).Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("dsl", dsl)
 	return result.RowsAffected, result.Error
 }
 
 // UpdateFields updates only the supplied user_canvas columns.
-func (dao *UserCanvasDAO) UpdateFields(canvasID string, fields map[string]interface{}) (int64, error) {
-	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Updates(fields)
+func (dao *UserCanvasDAO) UpdateFields(ctx context.Context, db *gorm.DB, canvasID string, fields map[string]interface{}) (int64, error) {
+	result := db.WithContext(ctx).Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Updates(fields)
+	return result.RowsAffected, result.Error
+}
+
+// UpdateFieldsTx is the transactional variant of UpdateFields. Used by
+// service.AgentService.UpdateAgent so the canvas row update and the
+// version-row save commit atomically in one transaction.
+func (dao *UserCanvasDAO) UpdateFieldsTx(tx *gorm.DB, canvasID string, fields map[string]interface{}) (int64, error) {
+	result := tx.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Updates(fields)
 	return result.RowsAffected, result.Error
 }
 
 // UpdateTags updates a canvas's comma-separated tags by canvas ID.
-func (dao *UserCanvasDAO) UpdateTags(canvasID, tags string) (int64, error) {
-	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("tags", tags)
+func (dao *UserCanvasDAO) UpdateTags(ctx context.Context, db *gorm.DB, canvasID, tags string) (int64, error) {
+	result := db.WithContext(ctx).Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("tags", tags)
 	return result.RowsAffected, result.Error
 }

@@ -37,15 +37,21 @@
 //     a non-regex text record whose layout flags it as a
 //     section/title/head and whose text passes not_title is promoted to
 //     fallback_level = len(selected_group) + 1. Strategy (1) —
-//     PDF-outline detection — still requires deepdoc/parser binary
-//     access and remains the only parity gap.
+//     PDF-outline detection — is also ported: newLevelContext
+//     (title.go) reads the Parser-supplied file.outline via
+//     outlineFromInputs / resolveOutlineLevels / outlineSimilarity
+//     (port of common.py:_outline_similarity) before falling back to
+//     the regex/layout branch, wired into group.go / hierarchy.go
+//     (Chunker omission 1.5, Gap C closed).
 //
-//   - The Go port has NO hardcoded BULLET_PATTERN fallback. Heading
-//     detection relies entirely on the user-supplied `levels` param
-//     (which templates carry as comprehensive regex families) paired
-//     with the layout-hint fallback. A PDF without matching levels
-//     produces BODY_LEVEL-only records — Python's BULLET_PATTERN-based
-//     tree_merge / hierarchical_merge would still find structure.
+//   - The Go port SHIPS a hardcoded BULLET_PATTERN fallback
+//     (Chunker omission 1.7, Gap C closed): when the regex/layout
+//     branch yields BODY_LEVEL-only records, resolveTitleLevels
+//     (title.go) calls bulletsCategory over bulletPatterns (title.go,
+//     mirroring Python BULLET_PATTERN at rag/nlp/__init__.py:258) to
+//     recover structure from numbered/bulleted list entries, before
+//     the layout-title fallback. It never overrides an existing level
+//     assignment.
 //
 //   - GROUP-TITLE and HIERARCHY-TITLE are separate Go files
 //     (`group.go`, `hierarchy.go`); they share the resolve_levels
@@ -63,6 +69,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameTitleChunker = "TitleChunker"
@@ -83,7 +91,7 @@ func (p *titleChunkerParam) Update(conf map[string]any) {
 	} else if v, ok := conf["levels"].([][]string); ok {
 		p.TitleChunkerParam.Levels = v
 	}
-	if v, ok := numericFromAny(conf["hierarchy"]); ok {
+	if v, ok := schema.NumericFromAny(conf["hierarchy"]); ok {
 		n := int(v)
 		p.TitleChunkerParam.Hierarchy = &n
 	}
@@ -92,6 +100,9 @@ func (p *titleChunkerParam) Update(conf map[string]any) {
 	}
 	if v, ok := conf["root_chunk_as_heading"].(bool); ok {
 		p.TitleChunkerParam.RootChunkAsHeading = v
+	}
+	if v, ok := schema.NumericFromAny(conf["chunk_token_cap"]); ok {
+		p.TitleChunkerParam.ChunkTokenCap = int(v)
 	}
 }
 
@@ -222,6 +233,7 @@ var (
 	notTitleException = regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+条`)
 	notTitlePunct     = regexp.MustCompile(`[,;，。；！!]`)
 	layoutHeadingRe   = regexp.MustCompile(`(?i)(section|title|head)`)
+	bulletLayoutRe    = regexp.MustCompile(`(?i)(title|head)`)
 	numericOnly       = regexp.MustCompile(`^[0-9]+$`)
 )
 
@@ -338,7 +350,122 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 		}
 		out[i] = matchLayoutLevel(rec.text, rec.layout, fallbackLevel)
 	}
+
+	// Fallback 4: bullet-pattern detection (Chunker-1.7).
+	// When frequency-based detection assigns bodyLevel to every record
+	// (no regex matched a single line), use Python's BULLET_PATTERN
+	// heuristic (rag/nlp/__init__.py:303-320 bullets_category +
+	// title_frequency) to recover structure from numbered/bulleted
+	// list entries. This only fires when user levels are empty or
+	// matched nothing — never overrides an existing level assignment.
+	if len(group) == 0 || allBodyLevel(out) {
+		if bull := bulletsCategory(records); bull >= 0 {
+			bulletsSize := len(bulletPatterns[bull])
+			for i, rec := range records {
+				if out[i] != bodyLevel || !rec.isText() {
+					continue
+				}
+				trimmed := strings.TrimSpace(rec.text)
+				matched := false
+				for j, pat := range bulletPatterns[bull] {
+					if pat.MatchString(trimmed) && !notBullet(trimmed) {
+						out[i] = j + 1
+						matched = true
+						break
+					}
+				}
+				if matched {
+					continue
+				}
+				// layout-title fallback: bulletsSize + 1 (mirrors
+				// Python len(BULLET_PATTERN[bull]) + 1).
+				if bulletLayoutRe.MatchString(rec.layout) && !notTitle(beforeAt(rec.text)) {
+					out[i] = bulletsSize + 1
+				}
+			}
+		}
+	}
 	return out
+}
+
+// allBodyLevel returns true when every level equals the bodyLevel
+// sentinel. Used by the bullet fallback guard to detect the "no
+// structure found" state where BULLET_PATTERN should kick in.
+func allBodyLevel(levels []int) bool {
+	for _, l := range levels {
+		if l < bodyLevel {
+			return false
+		}
+	}
+	return true
+}
+
+// bulletPatterns mirrors Python BULLET_PATTERN (rag/nlp/__init__.py:258).
+// Group 4 (markdown headings) is omitted — DSL levels cover that case.
+// Each group is depth-ordered: index 0 is the topmost level.
+var bulletPatterns = [][]*regexp.Regexp{
+	// Group 0 — Chinese legal (编/章/节/条)
+	{
+		regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+(分?编|部分)`),
+		regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+章`),
+		regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+节`),
+		regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+条`),
+		regexp.MustCompile(`^[\(（][零一二三四五六七八九十百]+[\)）]`),
+	},
+	// Group 1 — Numbering (1., 1.1, 1.1.1)
+	{
+		regexp.MustCompile(`^第[0-9]+章`),
+		regexp.MustCompile(`^第[0-9]+节`),
+		regexp.MustCompile(`^[0-9]{0,2}[\. 、]`),
+		regexp.MustCompile(`^[0-9]{0,2}\.[0-9]{0,2}[^a-zA-Z/%~-]`),
+		regexp.MustCompile(`^[0-9]{0,2}\.[0-9]{0,2}\.[0-9]{0,2}`),
+		regexp.MustCompile(`^[0-9]{0,2}\.[0-9]{0,2}\.[0-9]{0,2}\.[0-9]{0,2}`),
+	},
+	// Group 2 — Chinese numbering (一、, (一))
+	{
+		regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+章`),
+		regexp.MustCompile(`^第[零一二三四五六七八九十百0-9]+节`),
+		regexp.MustCompile(`^[零一二三四五六七八九十百]+[ 、]`),
+		regexp.MustCompile(`^[\(（][零一二三四五六七八九十百]+[\)）]`),
+		regexp.MustCompile(`^[\(（][0-9]{0,2}[\)）]`),
+	},
+	// Group 3 — English legal
+	{
+		regexp.MustCompile(`^PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)`),
+		regexp.MustCompile(`^Chapter (I+V?|VI*|XI|IX|X)`),
+		regexp.MustCompile(`^Section [0-9]+`),
+		regexp.MustCompile(`^Article [0-9]+`),
+	},
+}
+
+// bulletsCategory mirrors Python bullets_category (rag/nlp/__init__.py:303).
+// Counts hits per bullet-pattern group across all text records,
+// excluding not-bullet lines. Returns the group index with the highest
+// hit count, or -1 if no group matched any line.
+func bulletsCategory(records []lineRecord) int {
+	hits := make([]int, len(bulletPatterns))
+	for grpIdx, group := range bulletPatterns {
+		for _, rec := range records {
+			if !rec.isText() {
+				continue
+			}
+			txt := strings.TrimSpace(rec.text)
+			for _, pat := range group {
+				if pat.MatchString(txt) && !notBullet(txt) {
+					hits[grpIdx]++
+					break
+				}
+			}
+		}
+	}
+	best, bestHits := -1, 0
+	for i, h := range hits {
+		if h > bestHits {
+			bestHits = h
+			best = i
+		}
+	}
+	return best
 }
 
 // outlineEntry is one PDF bookmark/heading from the parser-supplied
@@ -629,7 +756,7 @@ func (c *TitleChunkerComponent) Inputs() map[string]string { return ChunkerInput
 func (c *TitleChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
 // Invoke delegates to the chosen strategy (group or hierarchy).
-func (c *TitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		inputs = map[string]any{}
 	}
@@ -646,9 +773,9 @@ func (c *TitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]an
 	}
 	switch c.param.Method {
 	case "hierarchy":
-		return invokeHierarchy(ctx, inputs, &c.param)
+		return invokeHierarchy(ctx, db, inputs, &c.param)
 	case "group":
-		return invokeGroup(ctx, inputs, &c.param)
+		return invokeGroup(ctx, db, inputs, &c.param)
 	default:
 		return map[string]any{
 			"output_format": "chunks",

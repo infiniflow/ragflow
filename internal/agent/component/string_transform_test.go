@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -34,9 +33,9 @@ func TestStringTransform_SplitBasic(t *testing.T) {
 		t.Fatalf("NewStringTransformComponent: %v", err)
 	}
 	state := canvas.NewCanvasState("run-1", "task-1")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"line": "a,b;c"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"line": "a,b;c"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -54,9 +53,9 @@ func TestStringTransform_SplitNoDelim(t *testing.T) {
 		"delimiters": []string{","},
 	})
 	state := canvas.NewCanvasState("run-2", "task-2")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"line": "abc"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"line": "abc"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -75,9 +74,9 @@ func TestStringTransform_Merge(t *testing.T) {
 		"script":     "{{x}} and {{y}}",
 	})
 	state := canvas.NewCanvasState("run-3", "task-3")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"x": "foo", "y": "bar"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"x": "foo", "y": "bar"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -95,9 +94,9 @@ func TestStringTransform_MergeIterationAliases(t *testing.T) {
 	state := canvas.NewCanvasState("run-iter", "task-iter")
 	state.Globals["__item__"] = "beta"
 	state.Globals["__index__"] = 1
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{})
+	out, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -116,9 +115,9 @@ func TestStringTransform_SplitFromStateRef(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-4", "task-4")
 	state.Outputs["cpn_0"] = map[string]any{"x": "alpha,beta,gamma"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -138,9 +137,9 @@ func TestStringTransform_MergeMissingPlaceholder(t *testing.T) {
 		"script":     "hello {{name}}",
 	})
 	state := canvas.NewCanvasState("run-5", "task-5")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{})
+	out, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

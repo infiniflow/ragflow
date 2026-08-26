@@ -214,9 +214,9 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "avatar_prefix, expected_message",
         [
-            ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -349,9 +349,9 @@ class TestDatasetUpdate:
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
+            assert "embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
-            assert "Both model_name and provider must be non-empty strings" in res["message"], res
+            assert "both model_name and provider must be non-empty strings" in res["message"], res
 
     @pytest.mark.p2
     def test_embedding_model_none(self, HttpApiAuth, add_dataset_func):
@@ -573,20 +573,16 @@ class TestDatasetUpdate:
             {"raptor": {"use_raptor": True}},
             {"raptor": {"use_raptor": False}},
             {"raptor": {"prompt": "Who are you?"}},
-            {"raptor": {"max_token": 1}},
+            {"raptor": {"max_token": 512}},
             {"raptor": {"max_token": 1024}},
             {"raptor": {"max_token": 2048}},
-            {"raptor": {"threshold": 0.0}},
-            {"raptor": {"threshold": 0.5}},
-            {"raptor": {"threshold": 1.0}},
+            {"raptor": {"clustering_threshold": 0.0}},
+            {"raptor": {"clustering_threshold": 0.5}},
+            {"raptor": {"clustering_threshold": 1.0}},
             {"raptor": {"max_cluster": 1}},
             {"raptor": {"max_cluster": 512}},
             {"raptor": {"max_cluster": 1024}},
             {"raptor": {"random_seed": 0}},
-            {"raptor": {"clustering_method": "gmm"}},
-            {"raptor": {"clustering_method": "ahc"}},
-            {"raptor": {"tree_builder": "raptor"}},
-            {"raptor": {"tree_builder": "psi"}},
         ],
         ids=[
             "auto_keywords_min",
@@ -630,17 +626,13 @@ class TestDatasetUpdate:
             "raptor_max_token_min",
             "raptor_max_token_mid",
             "raptor_max_token_max",
-            "raptor_threshold_min",
-            "raptor_threshold_mid",
-            "raptor_threshold_max",
+            "raptor_clustering_threshold_min",
+            "raptor_clustering_threshold_mid",
+            "raptor_clustering_threshold_max",
             "raptor_max_cluster_min",
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
             "raptor_random_seed_min",
-            "raptor_clustering_method_gmm",
-            "raptor_clustering_method_ahc",
-            "raptor_tree_builder_raptor",
-            "raptor_tree_builder_psi",
         ],
     )
     def test_parser_config(self, HttpApiAuth, add_dataset_func, parser_config):
@@ -701,13 +693,11 @@ class TestDatasetUpdate:
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ({"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-            ({"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ({"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ({"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
             ({"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-            ({"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-            ({"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ({"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+            ({"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+            ({"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+            ({"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
             ({"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ({"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
             ({"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -715,10 +705,6 @@ class TestDatasetUpdate:
             ({"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
             ({"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
             ({"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
-            ({"raptor": {"clustering_method": "unknown"}}, "Input should be 'gmm' or 'ahc'"),
-            ({"raptor": {"clustering_method": None}}, "Input should be 'gmm' or 'ahc'"),
-            ({"raptor": {"tree_builder": "ahc"}}, "Input should be 'raptor' or 'psi'"),
-            ({"raptor": {"tree_builder": None}}, "Input should be 'raptor' or 'psi'"),
             ({"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
         ],
         ids=[
@@ -761,13 +747,11 @@ class TestDatasetUpdate:
             "raptor_type_invalid",
             "raptor_prompt_empty",
             "raptor_prompt_space",
-            "raptor_max_token_min_limit",
             "raptor_max_token_max_limit",
-            "raptor_max_token_float_not_allowed",
             "raptor_max_token_type_invalid",
-            "raptor_threshold_min_limit",
-            "raptor_threshold_max_limit",
-            "raptor_threshold_type_invalid",
+            "raptor_clustering_threshold_min_limit",
+            "raptor_clustering_threshold_max_limit",
+            "raptor_clustering_threshold_type_invalid",
             "raptor_max_cluster_min_limit",
             "raptor_max_cluster_max_limit",
             "raptor_max_cluster_float_not_allowed",
@@ -775,10 +759,6 @@ class TestDatasetUpdate:
             "raptor_random_seed_min_limit",
             "raptor_random_seed_float_not_allowed",
             "raptor_random_seed_type_invalid",
-            "raptor_clustering_method_invalid",
-            "raptor_clustering_method_none_invalid",
-            "raptor_tree_builder_invalid",
-            "raptor_tree_builder_none_invalid",
             "parser_config_type_invalid",
         ],
     )

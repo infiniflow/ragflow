@@ -47,7 +47,6 @@ import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
 } from './interface';
-import { SoMarkInstanceCard } from './somark-instance-card';
 
 /**
  * One inline provider-instance card. The provider name + doc-link arrow
@@ -93,6 +92,7 @@ const GenericProviderInstanceCard = forwardRef<
   // via `setModelInfo`, read by the payload builder.
   const { t } = useTranslation();
   const modelInfoRef = useRef<IModelInfo[]>([]);
+  const modelsLoadedRef = useRef(false);
 
   // Provider-specific config: carries `verifyTransform` / `submitTransform`
   // for providers whose form field names don't map directly onto
@@ -127,7 +127,7 @@ const GenericProviderInstanceCard = forwardRef<
   const { baseUrlOptions } = useProviderBaseUrlOptions(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
     providerName,
-    instance.instance_name,
+    instance.id,
     isDraft,
     open,
   );
@@ -138,6 +138,7 @@ const GenericProviderInstanceCard = forwardRef<
     instanceDetails,
     isDraft,
     baseUrlOptions,
+    providerConfig.echoTransform,
   );
   const { formFields, formDefaultValues } = useFormFields(
     providerName,
@@ -158,6 +159,7 @@ const GenericProviderInstanceCard = forwardRef<
     providerName,
     formRef,
     providerConfig.verifyTransform,
+    modelInfoRef,
   );
   const handleDelete = useDeleteInstance(
     providerName,
@@ -193,6 +195,10 @@ const GenericProviderInstanceCard = forwardRef<
         // catch it). For both drafts and saved cards, run the form's
         // own validation so errors surface in the UI.
         if (isDraft && !draftName.trim()) return false;
+        if (!isDraft && instanceDetails && !modelsLoadedRef.current) {
+          message.error(t('setting.selectModelBeforeSave'));
+          return false;
+        }
         // List-model providers (list picker) require at least one selected model.
         if (
           LIST_MODEL_PROVIDERS.has(providerName) &&
@@ -207,12 +213,20 @@ const GenericProviderInstanceCard = forwardRef<
       getSavePayload,
       markSaved,
     }),
-    [isDraft, draftName, getSavePayload, markSaved, providerName, t],
+    [
+      isDraft,
+      draftName,
+      getSavePayload,
+      markSaved,
+      providerName,
+      t,
+      instanceDetails,
+    ],
   );
 
   return (
     <div
-      className="border-b border-border-button mb-5 pb-5"
+      className="mb-5 pb-5"
       data-testid={`instance-card-${instance.instance_name || 'draft'}`}
     >
       {isDraft ? (
@@ -229,6 +243,7 @@ const GenericProviderInstanceCard = forwardRef<
           modelInfoRef={modelInfoRef}
           draftName={draftName}
           setDraftName={setDraftName}
+          verifyTransform={providerConfig.verifyTransform}
         />
       ) : (
         <SavedModeCard
@@ -245,9 +260,13 @@ const GenericProviderInstanceCard = forwardRef<
           instance={instance}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}
+          onInstanceModelsStatusChange={(ready) => {
+            modelsLoadedRef.current = ready;
+          }}
           draftName={draftName}
           open={open}
           setOpen={setOpen}
+          verifyTransform={providerConfig.verifyTransform}
         />
       )}
     </div>
@@ -281,17 +300,10 @@ export const ProviderInstanceCard = forwardRef<
   // role ARN, model name, max_tokens) that don't fit the generic
   // DynamicForm path. Render its own inline card instead.
   //
-  // SoMark is similar: its many provider-specific fields (image /
-  // formula / table / cs formats + 7 boolean feature toggles) don't
-  // fit the generic DynamicForm path. Render its own inline card too.
-  //
   // Dispatch BEFORE any hooks so each branch component has a stable
   // hook-call order (Rules of Hooks).
   if (props.providerName === 'Bedrock') {
     return <BedrockInstanceCard {...props} ref={ref} />;
-  }
-  if (props.providerName === 'SoMark') {
-    return <SoMarkInstanceCard {...props} ref={ref} />;
   }
   return <GenericProviderInstanceCard {...props} ref={ref} />;
 });

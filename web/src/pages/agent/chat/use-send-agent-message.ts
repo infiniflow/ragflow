@@ -36,7 +36,6 @@ import {
   useIsTaskMode,
   useSelectBeginNodeDataInputs,
 } from '../hooks/use-get-begin-query';
-import { useStopMessage } from '../hooks/use-stop-message';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
@@ -237,6 +236,7 @@ export const useSendAgentMessage = ({
   refetch,
   isTaskMode: isTask,
   releaseMode,
+  activeSessionId,
 }: {
   url?: string;
   addEventList?: (data: IEventList, messageId: string) => void;
@@ -245,6 +245,13 @@ export const useSendAgentMessage = ({
   refetch?: () => void;
   isTaskMode?: boolean;
   releaseMode?: string | null;
+  /**
+   * Session the page is currently displaying. When provided, streamed
+   * frames that belong to another session are not written into the
+   * displayed message list (the user may switch sessions in Explore
+   * while an answer is still streaming).
+   */
+  activeSessionId?: string;
 }) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -253,6 +260,25 @@ export const useSendAgentMessage = ({
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
     useSendMessageBySSE(url || api.agentChatCompletion);
   const firstAnswer = answerList[0];
+  // Session that owns the in-flight stream; every SSE frame carries the
+  // session_id it belongs to.
+  const streamSessionId = firstAnswer?.session_id;
+  // Session the pending request was sent to. It is known before the first
+  // SSE frame arrives, so the stream can already be attributed to its
+  // session during connection setup.
+  const [requestedSessionId, setRequestedSessionId] = useState<
+    string | null | undefined
+  >();
+  // Bumped when derivedMessages is replaced externally (Explore hydrates
+  // persisted messages when a session is re-selected) while a stream
+  // owned by the displayed session is in flight, so the streamed answer
+  // is re-applied on top of the hydrated history — the effect below
+  // otherwise only re-runs when a new frame arrives.
+  const [streamReplayToken, setStreamReplayToken] = useState(0);
+  const reapplyStreamedAnswer = useCallback(
+    () => setStreamReplayToken((token) => token + 1),
+    [],
+  );
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
   }, [firstAnswer]);
@@ -288,15 +314,9 @@ export const useSendAgentMessage = ({
 
   const userId = searchParams.get('userId');
 
-  const { stopMessage } = useStopMessage();
-
   const stopConversation = useCallback(() => {
-    const taskId = firstAnswer?.task_id;
     stopOutputMessage();
-    if (!isShared) {
-      stopMessage(taskId);
-    }
-  }, [firstAnswer, isShared, stopMessage, stopOutputMessage]);
+  }, [stopOutputMessage]);
 
   const sendMessage = useCallback(
     async ({
@@ -333,6 +353,10 @@ export const useSendAgentMessage = ({
         // The hook keeps its own session cache for streamed replies, but that cache
         // can lag behind when the user switches sessions in Explore.
         params.session_id = exploreSessionId || sessionId;
+        // Remember the owner before the first frame arrives so
+        // connection-setup loading states are attributed to the right
+        // session.
+        setRequestedSessionId((exploreSessionId || sessionId) ?? null);
         if (releaseMode) {
           params.release = releaseMode;
         }
@@ -384,6 +408,7 @@ export const useSendAgentMessage = ({
           .join('<br/>'),
         role: MessageType.User,
       });
+      setRequestedSessionId(sessionId ?? null);
       await send({
         ...body,
         ...(isShared ? {} : { agent_id: agentId }),
@@ -468,6 +493,16 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
+    // The stream belongs to the session it was started in. If the user has
+    // switched to a different session while the answer is streaming, do not
+    // write the incoming frames into the message list being displayed.
+    if (
+      activeSessionId !== undefined &&
+      streamSessionId !== undefined &&
+      streamSessionId !== activeSessionId
+    ) {
+      return;
+    }
     const { content, id, attachment, audio_binary, downloads } =
       findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
@@ -500,7 +535,13 @@ export const useSendAgentMessage = ({
         });
       }
     }
-  }, [answerList, addNewestOneAnswer]);
+  }, [
+    activeSessionId,
+    answerList,
+    addNewestOneAnswer,
+    streamSessionId,
+    streamReplayToken,
+  ]);
 
   useEffect(() => {
     if (isTaskMode) {
@@ -553,5 +594,8 @@ export const useSendAgentMessage = ({
     removeFile,
     setDerivedMessages,
     addPrologue,
+    streamSessionId,
+    requestedSessionId,
+    reapplyStreamedAnswer,
   };
 };

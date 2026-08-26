@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 type mockCanvasStage struct {
@@ -37,7 +39,7 @@ type mockCanvasStage struct {
 	calls  int
 }
 
-func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (m *mockCanvasStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	m.called = true
 	m.calls++
 	out := cloneMapOrEmpty(inputs)
@@ -58,12 +60,12 @@ type oneShotErrStage struct {
 	n int
 }
 
-func (s *oneShotErrStage) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *oneShotErrStage) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	s.n++
 	if s.n == 1 {
 		return nil, errors.New("simulated crash")
 	}
-	return s.mockCanvasStage.Invoke(ctx, inputs)
+	return s.mockCanvasStage.Invoke(ctx, db, inputs)
 }
 func (s *oneShotErrStage) Inputs() map[string]string  { return s.mockCanvasStage.Inputs() }
 func (s *oneShotErrStage) Outputs() map[string]string { return s.mockCanvasStage.Outputs() }
@@ -171,7 +173,7 @@ func TestNewPipelineFromDSLUnwrapsTemplateDSL(t *testing.T) {
 
 type errCanvasStage struct{}
 
-func (e *errCanvasStage) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (e *errCanvasStage) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return nil, &stageError{Stage: "p.RunErrStage", Reason: "intentional"}
 }
 func (e *errCanvasStage) Inputs() map[string]string  { return nil }
@@ -181,7 +183,7 @@ type factorySentinelStage struct {
 	marker string
 }
 
-func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *factorySentinelStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	out := cloneMapOrEmpty(inputs)
 	out["marker"] = s.marker
 	return out, nil
@@ -906,5 +908,27 @@ func TestRunPlain_WithTracker_Error(t *testing.T) {
 	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err == nil {
 		t.Fatal("expected stage error, got nil")
+	}
+}
+
+func TestValidatePipeline_DisallowMultipleExtractors(t *testing.T) {
+	dsl := []byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["Extractor:One"]},
+				"Extractor:One": {"obj": {"component_name": "Extractor", "params": {}}, "upstream": ["begin"], "downstream": ["Extractor:Two"]},
+				"Extractor:Two": {"obj": {"component_name": "Extractor", "params": {}}, "upstream": ["Extractor:One"]}
+			},
+			"path": ["begin", "Extractor:One", "Extractor:Two"],
+			"graph": {"nodes": []}
+		}
+	}`)
+
+	_, err := NewPipelineFromDSL(dsl, "test-task-dup-ext")
+	if err == nil {
+		t.Fatal("expected validation error for multiple Extractor components, got nil")
+	}
+	if !strings.Contains(err.Error(), "at most 1 Extractor component is allowed") {
+		t.Errorf("expected at most 1 Extractor error message, got: %v", err)
 	}
 }

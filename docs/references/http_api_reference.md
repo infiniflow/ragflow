@@ -36,7 +36,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
 | **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
 | **POST** `/api/v1/chats/{chat_id}/completions`                                    | **POST** `/api/v1/chat/completions`                                                 |
-| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommandation`                                              |
+| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommendation`                                              |
 | **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
 | **GET** `/v1/system/healthz`                                                      | **GET** `/api/v1/system/healthz`                                                    |
 | **POST** `/v1/document/upload_info`                                               | **POST** `/api/v1/documents/upload`                                                 |
@@ -1518,13 +1518,13 @@ Failure:
 
 ### Update document
 
-**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 
 Updates configurations for a specified document.
 
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
   - `'content-Type: application/json'`
@@ -1538,7 +1538,7 @@ Updates configurations for a specified document.
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --header 'Content-Type: application/json' \
@@ -2069,7 +2069,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 
@@ -2322,7 +2322,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "You don't own the document 5c5999ec7be811ef9cab0242ac12000e5."
+    "message": "you don't own the document 5c5999ec7be811ef9cab0242ac12000e5"
 }
 ```
 
@@ -2636,7 +2636,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 
@@ -2890,7 +2890,7 @@ curl --request POST \
     - `"or"`: Return results that satisfy *any* condition.
   - `"conditions"`: (*Body parameter*), `array`
     A list of metadata filter conditions.
-    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
+    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/metadata_management.md) for details.
     - `comparison_operator`: `string` - The comparison operator. Can be one of:
       - `"contains"`
       - `"not contains"`
@@ -2926,7 +2926,7 @@ Success:
                     ""
                 ],
                 "tag_kwd": [],
-                "kb_id": "c7ee74067a2c11efb21c0242ac120006",
+                "dataset_id": "c7ee74067a2c11efb21c0242ac120006",
                 "positions": [
                     ""
                 ],
@@ -2952,7 +2952,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "`datasets` is required."
+    "message": "`dataset_ids` is required."
 }
 ```
 
@@ -3032,7 +3032,11 @@ curl --request POST \
   - `"use_kg"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"`, `"querit"`, `"serply"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"tavily_api_key"`: `string`
+  - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
+  - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
+  - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
   - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
@@ -3314,7 +3318,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "No authorization."
+    "message": "no authorization"
 }
 ```
 
@@ -3371,7 +3375,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "No authorization."
+    "message": "no authorization"
 }
 ```
 
@@ -3419,7 +3423,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "No authorization."
+    "message": "no authorization"
 }
 ```
 
@@ -4714,7 +4718,7 @@ When `stream=true`, the server sends Server-Sent Events (SSE). A client should h
 The stream terminates with `[DONE]`.
 
 :::info IMPORTANT
-You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_component_reference/begin.md) component first.
+You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_workflow/basic_component.md) component first.
 :::
 
 ##### Request examples
@@ -5421,7 +5425,7 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/api/v1/chat/recommandation`
+**POST** `/api/v1/chat/recommendation`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -5440,7 +5444,7 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chat/recommandation`
+- URL: `/api/v1/chat/recommendation`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -5452,7 +5456,7 @@ The chat model autonomously determines the number of questions to generate based
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chat/recommandation \
+     --url http://{address}/api/v1/chat/recommendation \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{
@@ -6434,7 +6438,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: (*Body parameter*), `string`, *Optional*
 
-  The user participating in the conversation with the agent. Defaults to `None`.
+  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. Any other authentication, whether a JWT bearer token or a browser session, ignores it and attributes the message to the authenticated user. Surrounding whitespace is stripped, and a value that is missing, blank or not a string falls back to the API key owner.
 
 - `user_input`: (*Body parameter*), `string`, *Required*
 
@@ -6955,7 +6959,7 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --form 'file=@./test1.txt' \
      --form 'file=@./test2.pdf' \
-     --form 'parent_id={folder_id}'
+     --form 'parent_id={workspace_id}'
 ```
 
 ##### Request parameters
@@ -7168,7 +7172,7 @@ curl --request POST \
      --data '{
           "name": "New Folder",
           "type": "folder",
-          "parent_id": "{folder_id}"
+          "parent_id": "{workspace_id}"
      }'
 ```
 
@@ -7520,7 +7524,7 @@ Failure:
 ```json
 {
     "code": 404,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 
@@ -7709,17 +7713,16 @@ or
 
 ### Create commit
 
-**POST** `/api/v1/folders/{folder_id}/commits`
+**POST** `/api/v1/workspaces/{workspace_id}/commits`
 
-Creates a new snapshot commit for the specified folder.
+Creates a new snapshot commit for the specified workspace.
 This endpoint also supports:
-- `/api/v1/workspace/{workspace_id}/commits` (alias, workspace_id == folder_id)
-- `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its folder)
+- `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its workspace)
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/folders/{folder_id}/commits`
+- URL: `/api/v1/workspaces/{workspace_id}/commits`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
@@ -7732,7 +7735,7 @@ This endpoint also supports:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/folders/{folder_id}/commits \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
@@ -7797,17 +7800,16 @@ Failure:
 
 ### List commits
 
-**GET** `/api/v1/folders/{folder_id}/commits`
+**GET** `/api/v1/workspaces/{workspace_id}/commits`
 
 Lists all commits for the specified folder with pagination.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits`
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits`
+- URL: `/api/v1/workspaces/{workspace_id}/commits`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
@@ -7820,7 +7822,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/folders/{folder_id}/commits?page=1&page_size=15' \
+     --url 'http://{address}/api/v1/workspaces/{workspace_id}/commits?page=1&page_size=15' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -7865,17 +7867,16 @@ Success:
 
 ### Get commit
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
 Retrieves the details of a specific commit, including its file changes.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -7883,7 +7884,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id} \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -7936,17 +7937,16 @@ Failure:
 
 ### List commit files
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
 Lists the file changes associated with a specific commit.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -7954,7 +7954,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -7985,17 +7985,16 @@ Success:
 
 ### Diff commits
 
-**GET** `/api/v1/folders/{folder_id}/commits/diff?from={commit_id}&to={commit_id}`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
 Compares two commits and returns the differences.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/diff`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/diff`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
@@ -8008,7 +8007,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/folders/{folder_id}/commits/diff?from=from_commit_id&to=to_commit_id' \
+     --url 'http://{address}/api/v1/workspaces/{workspace_id}/commits/diff?from=from_commit_id&to=to_commit_id' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8053,17 +8052,16 @@ Failure:
 
 ### Get uncommitted changes
 
-**GET** `/api/v1/folders/{folder_id}/changes`
+**GET** `/api/v1/workspaces/{workspace_id}/changes`
 
 Returns the uncommitted changes for the specified folder (similar to `git status`).
 Also available at:
-- `/api/v1/workspace/{workspace_id}/changes`
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/changes`
+- URL: `/api/v1/workspaces/{workspace_id}/changes`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8071,7 +8069,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/changes \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/changes \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8106,17 +8104,16 @@ Success:
 
 ### Get commit tree
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
 Retrieves the full folder tree snapshot as it existed at a specific commit.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8124,7 +8121,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/tree \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8174,17 +8171,16 @@ Success:
 
 ### Get commit file content
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
 Retrieves the file content as it existed at a specific commit.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8192,7 +8188,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8220,16 +8216,16 @@ Failure:
 
 ---
 
-### Get file version history
+### Get a workspace file version history
 
-**GET** `/api/v1/files/{file_id}/versions`
+**GET** `/api/v1/workspace-files/{file_id}/versions`
 
 Returns the version history for a specific file across all commits.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/files/{file_id}/versions`
+- URL: `/api/v1/workspace-files/{file_id}/versions`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8237,7 +8233,7 @@ Returns the version history for a specific file across all commits.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/files/{file_id}/versions \
+     --url http://{address}/api/v1/workspace-files/{file_id}/versions \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8517,7 +8513,7 @@ Failure:
 ```json
 {
     "code": 109,
-    "message": "No authorization."
+    "message": "no authorization"
 }
 ```
 
@@ -8565,7 +8561,7 @@ Failure:
 ```json
 {
     "code": 109,
-    "message": "No authorization."
+    "message": "no authorization"
 }
 ```
 
@@ -8624,6 +8620,6 @@ Failure:
 ```json
 {
     "code": 109,
-    "message": "No authorization."
+    "message": "no authorization"
 }
 ```

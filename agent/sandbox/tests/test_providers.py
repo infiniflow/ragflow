@@ -117,10 +117,10 @@ class TestSelfManagedProvider:
         """Test provider initialization."""
         provider = SelfManagedProvider()
 
-        assert provider.endpoint == "http://localhost:9385"
+        assert provider.endpoint == "http://sandbox-executor-manager:9385"
         assert provider.timeout == 30
         assert provider.max_retries == 3
-        assert provider.pool_size == 10
+        assert provider.pool_size == 3
         assert not provider._initialized
 
     @patch("requests.get")
@@ -163,7 +163,7 @@ class TestSelfManagedProvider:
             result = provider.initialize({})
 
             assert result is True
-            assert provider.endpoint == "http://localhost:9385"
+            assert provider.endpoint == "http://sandbox-executor-manager:9385"
             assert provider.timeout == 30
 
     def test_create_instance_python(self):
@@ -176,7 +176,7 @@ class TestSelfManagedProvider:
         assert instance.provider == "self_managed"
         assert instance.status == "running"
         assert instance.metadata["language"] == "python"
-        assert instance.metadata["endpoint"] == "http://localhost:9385"
+        assert instance.metadata["endpoint"] == "http://sandbox-executor-manager:9385"
         assert len(instance.instance_id) > 0  # Verify instance_id exists
 
     def test_create_instance_nodejs(self):
@@ -299,7 +299,7 @@ class TestSelfManagedProvider:
         result = provider.health_check()
 
         assert result is True
-        mock_get.assert_called_once_with("http://localhost:9385/healthz", timeout=5)
+        mock_get.assert_called_once_with("http://sandbox-executor-manager:9385/healthz", timeout=5)
 
     @patch("requests.get")
     def test_health_check_failure(self, mock_get):
@@ -322,24 +322,45 @@ class TestSelfManagedProvider:
         assert "nodejs" in languages
         assert "javascript" in languages
 
-    def test_get_config_schema(self):
+    def test_get_config_schema(self, monkeypatch):
         """Test getting configuration schema."""
+        monkeypatch.delenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", raising=False)
         schema = SelfManagedProvider.get_config_schema()
 
         assert "endpoint" in schema
         assert schema["endpoint"]["type"] == "string"
         assert schema["endpoint"]["required"] is True
-        assert schema["endpoint"]["default"] == "http://localhost:9385"
+        assert schema["endpoint"]["default"] == "http://sandbox-executor-manager:9385"
 
         assert "timeout" in schema
         assert schema["timeout"]["type"] == "integer"
         assert schema["timeout"]["default"] == 30
 
-        assert "max_retries" in schema
-        assert schema["max_retries"]["type"] == "integer"
+        # The pool size is a deployment-level fact, not a writable runtime field, so the schema
+        # exposes it read-only under its real key. The default it reports is read from this
+        # process's own environment and falls back to 3, which can disagree with the pool
+        # sandbox-executor-manager was actually started with. Asserting a writable `pool_size`
+        # pinned a shape the provider has never returned, and the assertion failed rather than
+        # guarding anything.
+        assert "executor_manager_pool_size" in schema
+        assert schema["executor_manager_pool_size"]["type"] == "integer"
+        assert schema["executor_manager_pool_size"]["scope"] == "deployment"
+        assert schema["executor_manager_pool_size"]["readonly"] is True
+        assert schema["executor_manager_pool_size"]["default"] == 3
+        assert isinstance(schema["executor_manager_pool_size"]["default"], int)
+        assert "pool_size" not in schema
 
-        assert "pool_size" in schema
-        assert schema["pool_size"]["type"] == "integer"
+        # `max_retries` is documented, accepted and range-checked by the provider
+        # (`self_managed.py:58`, `:66`, `:386`) but get_config_schema() does not offer it, so the
+        # admin form cannot set it. The assertion here used to require it and had been failing;
+        # recording its absence keeps that gap visible rather than deleting the observation, and
+        # turns red the moment the schema grows the field.
+        assert "max_retries" not in schema
+
+        monkeypatch.setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
+        schema = SelfManagedProvider.get_config_schema()
+        assert schema["executor_manager_pool_size"]["default"] == 11
+        assert isinstance(schema["executor_manager_pool_size"]["default"], int)
 
     def test_normalize_language_python(self):
         """Test normalizing Python language identifier."""

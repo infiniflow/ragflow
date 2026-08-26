@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,17 +10,19 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+
+	"gorm.io/gorm"
 )
 
 // loadCanvasDSLJSON returns the DSL JSON for a custom canvas pipeline. The
 // canvas's dsl column holds the same component-graph structure that built-in
 // templates use, so it can be validated by the same schema extractor. It is a
 // package-level function so both document and knowledge-base updates reuse it.
-func loadCanvasDSLJSON(canvasID string) ([]byte, error) {
+func loadCanvasDSLJSON(ctx context.Context, canvasID string) ([]byte, error) {
 	if strings.TrimSpace(canvasID) == "" {
 		return nil, fmt.Errorf("empty canvas id")
 	}
-	canvas, err := dao.NewUserCanvasDAO().GetByID(canvasID)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			return nil, fmt.Errorf("canvas %s not found", canvasID)
@@ -39,9 +42,9 @@ func loadCanvasDSLJSON(canvasID string) ([]byte, error) {
 // LoadPipelineDSL loads the DSL JSON for a pipeline identified by parserID
 // (built-in) or pipelineID (custom canvas). When both are provided, isPipeline
 // selects which one to use.
-func LoadPipelineDSL(isPipeline bool, parserID string, pipelineID *string) ([]byte, error) {
+func LoadPipelineDSL(ctx context.Context, isPipeline bool, parserID string, pipelineID *string) ([]byte, error) {
 	if isPipeline {
-		return loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
+		return loadCanvasDSLJSON(ctx, strings.TrimSpace(*pipelineID))
 	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil {
@@ -61,12 +64,12 @@ func LoadPipelineDSL(isPipeline bool, parserID string, pipelineID *string) ([]by
 // returns the component params defaults as an entity.JSONMap {cpnID: {param: value}}.
 // For builtin templates the DSL is loaded from the embedded registry; for custom
 // canvas pipelines it is loaded from the canvas row in the database.
-func ResolveComponentParamsDefaults(parserID string, pipelineID *string) (entity.JSONMap, error) {
+func ResolveComponentParamsDefaults(ctx context.Context, parserID string, pipelineID *string) (entity.JSONMap, error) {
 	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
 	var cp map[string]map[string]any
 	var err error
 	if isPipeline {
-		dslJSON, lerr := loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
+		dslJSON, lerr := loadCanvasDSLJSON(ctx, strings.TrimSpace(*pipelineID))
 		if lerr != nil {
 			return nil, fmt.Errorf("load canvas DSL: %w", lerr)
 		}
@@ -96,33 +99,30 @@ func ResolveComponentParamsDefaults(parserID string, pipelineID *string) (entity
 }
 
 // ValidateDatasetEmbeddingModels checks that all knowledge bases in the list
-// either have an embedding model or none do, and that they all use the same model.
-func ValidateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
-	embdIDs := make(map[string]struct{})
+// either have an embedding model or none do, and that they all resolve to the
+// same base embedding model name (e.g. "BAAI/bge-m3"). Embedding references
+// are resolved through tenant_model first, so datasets storing a raw
+// tenant_model id and datasets storing a legacy "model@instance@provider"
+// composite compare equal when they point at the same model.
+func ValidateDatasetEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Knowledgebase) error {
+	embdNames := make(map[string]struct{})
 	hasEmbd := false
 	noEmbd := false
+	cache := make(map[string]string)
+	kbDAO := dao.NewKnowledgebaseDAO()
 	for _, kb := range kbs {
 		if kb.EmbdID != "" {
 			hasEmbd = true
-			baseName := kb.EmbdID
-			if idx := strings.LastIndex(kb.EmbdID, "@"); idx > 0 {
-				baseName = kb.EmbdID[:idx]
-				// Strip the second-to-last @-segment too (instance name),
-				// matching Python's _base_model_name which uses rsplit("@", 2).
-				if idx2 := strings.LastIndex(baseName, "@"); idx2 > 0 {
-					baseName = baseName[:idx2]
-				}
-			}
-			embdIDs[baseName] = struct{}{}
+			embdNames[kbDAO.EmbeddingBaseName(ctx, db, kb, cache)] = struct{}{}
 		} else {
 			noEmbd = true
 		}
 	}
 	if hasEmbd && noEmbd {
-		return fmt.Errorf("Cannot search across datasets where some have embedding models and others do not.")
+		return fmt.Errorf("cannot search across datasets where some have embedding models and others do not")
 	}
-	if len(embdIDs) > 1 {
-		return fmt.Errorf("Datasets use different embedding models: %v", getEmbdIDs(kbs))
+	if len(embdNames) > 1 {
+		return fmt.Errorf("datasets use different embedding models: %v", getEmbdIDs(kbs))
 	}
 	return nil
 }

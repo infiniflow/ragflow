@@ -35,6 +35,8 @@ const crawlerToolName = "web_crawler"
 
 const crawlerToolDescription = "Crawls a web page and returns its extracted text content and links."
 
+const maxCrawlerResponseBytes = 4 << 20
+
 // crawlerArgs is the JSON shape the model sends in. query is the
 // Python-compatible argument name; url is accepted for older Go
 // callers. max_depth and max_pages are accepted for API symmetry with
@@ -205,10 +207,14 @@ func (c *CrawlerTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCrawlerResponseBytes+1))
 	if err != nil {
 		return crawlerStubResult(crawlerResult{URL: targetURL, Status: resp.StatusCode, Error: "read body: " + err.Error()}),
 			fmt.Errorf("crawler: read body: %w", err)
+	}
+	if len(body) > maxCrawlerResponseBytes {
+		err = errors.New("crawler: response too large")
+		return crawlerStubResult(crawlerResult{URL: targetURL, Status: resp.StatusCode, Error: err.Error()}), err
 	}
 
 	page, err := extractPage(body)

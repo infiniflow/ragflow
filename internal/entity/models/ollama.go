@@ -33,26 +33,6 @@ type OllamaModel struct {
 	baseModel BaseModel
 }
 
-// contentToText extracts a plain-text string from a Message.Content value.
-// Content may be a raw string or an OpenAI-style multimodal array
-// ([]interface{} where each element is {"type": "text", "text": "..."}).
-// The first non-empty "text" value found is returned; empty string on no match.
-func contentToText(content interface{}) string {
-	switch c := content.(type) {
-	case string:
-		return c
-	case []interface{}:
-		for _, item := range c {
-			if part, ok := item.(map[string]interface{}); ok {
-				if text, ok := part["text"].(string); ok && text != "" {
-					return text
-				}
-			}
-		}
-	}
-	return ""
-}
-
 // NewOllamaModel creates a new Ollama AI model instance
 func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
 	return &OllamaModel{
@@ -60,7 +40,7 @@ func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(),
+			httpClient:       NewDriverHTTPClient(true),
 		},
 	}
 }
@@ -71,6 +51,92 @@ func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (o *OllamaModel) Name() string {
 	return "Ollama"
+}
+
+func buildOllamaRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	reqBody := buildRequestBody(cfg, modelName, messages, stream)
+	reqBody["messages"] = buildOllamaMessages(messages)
+	return reqBody
+}
+
+func buildOllamaMessages(messages []Message) []map[string]any {
+	apiMessages := buildChatMessages(messages)
+	for i, message := range messages {
+		content, images, ok := ollamaMultimodalContent(message.Content)
+		if !ok {
+			continue
+		}
+		apiMessages[i]["content"] = content
+		if len(images) > 0 {
+			apiMessages[i]["images"] = images
+		}
+	}
+	return apiMessages
+}
+
+func ollamaMultimodalContent(content interface{}) (string, []string, bool) {
+	var parts []interface{}
+	switch value := content.(type) {
+	case []interface{}:
+		parts = value
+	case []map[string]interface{}:
+		parts = make([]interface{}, len(value))
+		for i := range value {
+			parts[i] = value[i]
+		}
+	default:
+		return "", nil, false
+	}
+
+	var textParts []string
+	var images []string
+	for _, part := range parts {
+		partMap, ok := part.(map[string]interface{})
+		if !ok {
+			if text, ok := part.(string); ok {
+				textParts = append(textParts, text)
+			}
+			continue
+		}
+
+		partType, _ := partMap["type"].(string)
+		switch partType {
+		case "text", "input_text":
+			if text, ok := partMap["text"].(string); ok {
+				textParts = append(textParts, text)
+			}
+		case "image_url":
+			if imageURL := ollamaImageURL(partMap["image_url"]); imageURL != "" {
+				images = append(images, cleanOllamaImageData(imageURL))
+			}
+		}
+	}
+
+	return strings.Join(textParts, "\n"), images, true
+}
+
+func ollamaImageURL(value interface{}) string {
+	switch image := value.(type) {
+	case string:
+		return image
+	case map[string]interface{}:
+		url, _ := image["url"].(string)
+		return url
+	case map[string]string:
+		return image["url"]
+	default:
+		return ""
+	}
+}
+
+func cleanOllamaImageData(image string) string {
+	const base64Marker = ";base64,"
+	if strings.HasPrefix(image, "data:") {
+		if marker := strings.Index(image, base64Marker); marker >= 0 {
+			return image[marker+len(base64Marker):]
+		}
+	}
+	return image
 }
 
 func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -91,7 +157,7 @@ func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	// Build request body
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody := buildOllamaRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
@@ -105,60 +171,12 @@ func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := o.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	message, ok := result["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: message not found")
-	}
-
-	content, ok := message["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: content not found")
-	}
-
-	reasonContent, _ := message["thinking"].(string)
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
+	return handleOllamaNonStreamingResponse(body, modelUsage, chatModelConfig)
 }
 
 func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -177,94 +195,137 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	// Build request body with streaming enabled
-	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody := buildOllamaRequestBody(modelConfig, modelName, messages, true)
 
-	if modelConfig.Effort != nil && *modelConfig.Effort != "" {
-		if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
-			reqBody["think"] = *modelConfig.Effort
+	if modelConfig != nil {
+		if modelConfig.Effort != nil && *modelConfig.Effort != "" {
+			if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
+				reqBody["think"] = *modelConfig.Effort
+			}
+		} else if modelConfig.Thinking != nil {
+			if *modelConfig.Thinking {
+				reqBody["think"] = true
+			}
 		}
-	} else if modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			reqBody["think"] = true
+	}
+
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
+
+	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return handleOllamaStreamingResponse(body, modelUsage, modelConfig, sender)
+	})
+}
+
+type ollamaChatMessage struct {
+	Content  string `json:"content"`
+	Thinking string `json:"thinking"`
+}
+
+type ollamaChatResponse struct {
+	Model           string            `json:"model"`
+	Message         ollamaChatMessage `json:"message"`
+	Done            bool              `json:"done"`
+	PromptEvalCount int               `json:"prompt_eval_count"`
+	EvalCount       int               `json:"eval_count"`
+	TotalDuration   int64             `json:"total_duration"`
+	Error           any               `json:"error"`
+}
+
+func handleOllamaNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chatConfig *ChatConfig) (*ChatResponse, error) {
+	var result ollamaChatResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("upstream error: %v", result.Error)
+	}
+	content := result.Message.Content
+	reasonContent := result.Message.Thinking
+	usage := ollamaTokenUsage(result)
+	if usage != nil {
+		recordResponseUsage(modelUsage, "", usage, "chat")
+		if chatConfig != nil {
+			chatConfig.UsageResult = usage
 		}
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	if content == "" && reasonContent == "" {
+		return nil, fmt.Errorf("no message in response")
 	}
+	return &ChatResponse{
+		Answer:        &content,
+		ReasonContent: &reasonContent,
+		Usage:         usage,
+	}, nil
+}
 
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, chatConfig *ChatConfig, sender func(*string, *string) error) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
+	var usage *TokenUsage
+	sawDone := false
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-
-		// ignore the blank
 		if line == "" {
 			continue
 		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(line), &event); err != nil {
-			continue
+		var event ollamaChatResponse
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			return fmt.Errorf("invalid Ollama stream event: %w", err)
 		}
-
-		if messageMap, ok := event["message"].(map[string]interface{}); ok {
-			if reasoningContent, exists := messageMap["thinking"].(string); exists && reasoningContent != "" {
-				if err := sender(nil, &reasoningContent); err != nil {
-					return err
-				}
-			}
-			if content, exists := messageMap["content"].(string); exists && content != "" {
-				if err := sender(&content, nil); err != nil {
-					return err
-				}
+		if event.Error != nil {
+			return fmt.Errorf("upstream stream error: %v", event.Error)
+		}
+		if event.Message.Thinking != "" {
+			if err := sender(nil, &event.Message.Thinking); err != nil {
+				return err
 			}
 		}
-
-		if done, ok := event["done"].(bool); ok && done {
-			break
+		if event.Message.Content != "" {
+			if err := sender(&event.Message.Content, nil); err != nil {
+				return err
+			}
+		}
+		if event.Done {
+			sawDone = true
+			usage = ollamaTokenUsage(event)
 		}
 	}
-
-	// Send [DONE] marker for OpenAI compatibility with RAGFlow frontend
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !sawDone {
+		return fmt.Errorf("stream ended before done")
+	}
+	if usage != nil {
+		recordResponseUsage(modelUsage, "", usage, "chat")
+		if chatConfig != nil {
+			chatConfig.UsageResult = usage
+		}
+	}
 	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return scanner.Err()
+	return sender(&endOfStream, nil)
 }
 
-func (o *OllamaModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func ollamaTokenUsage(result ollamaChatResponse) *TokenUsage {
+	if result.PromptEvalCount == 0 && result.EvalCount == 0 {
+		return nil
+	}
+	return &TokenUsage{
+		PromptTokens:     result.PromptEvalCount,
+		CompletionTokens: result.EvalCount,
+		TotalTokens:      result.PromptEvalCount + result.EvalCount,
+	}
+}
+
+func (o *OllamaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -288,7 +349,7 @@ func (o *OllamaModel) Embed(ctx context.Context, modelName *string, texts []stri
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -356,7 +417,7 @@ func (o *OllamaModel) Embed(ctx context.Context, modelName *string, texts []stri
 	return embeddings, nil
 }
 
-func (o *OllamaModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (o *OllamaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

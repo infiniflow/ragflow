@@ -60,6 +60,7 @@ func TestPerplexityFactory(t *testing.T) {
 }
 
 func TestPerplexityChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/sonar" {
@@ -77,8 +78,8 @@ func TestPerplexityChatHappyPath(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{
-					"content":   "pong",
-					"reasoning": "thinking",
+					"content":           "pong",
+					"reasoning_content": "thinking",
 				},
 			}},
 		})
@@ -111,6 +112,7 @@ func TestPerplexityChatHappyPath(t *testing.T) {
 }
 
 func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "sonar" {
@@ -148,6 +150,7 @@ func TestPerplexityChatSkipsReasoningEffortForNonReasoningModel(t *testing.T) {
 }
 
 func TestPerplexityChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newPerplexityForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -157,6 +160,7 @@ func TestPerplexityChatRequiresModelName(t *testing.T) {
 }
 
 func TestPerplexityChatRequiresApiKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newPerplexityForTest("http://unused").ChatWithMessages(ctx, "sonar", []Message{{Role: "user", Content: "x"}}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
@@ -165,6 +169,7 @@ func TestPerplexityChatRequiresApiKey(t *testing.T) {
 }
 
 func TestPerplexityStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/sonar" {
@@ -174,11 +179,11 @@ func TestPerplexityStreamHappyPath(t *testing.T) {
 			t.Errorf("stream=%v want true", body["stream"])
 		}
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
-			t.Errorf("Accept=%q", got)
+			t.Errorf("Accept=%q, want text/event-stream", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
-			`data: {"choices":[{"delta":{"reasoning":"think "}}]}`+"\n"+
+			`data: {"choices":[{"delta":{"reasoning_content":"think "}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":"Hello"}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n",
 		)
@@ -215,6 +220,7 @@ func TestPerplexityStreamHappyPath(t *testing.T) {
 }
 
 func TestPerplexityStreamStopsOnDoneMarker(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -248,6 +254,7 @@ func TestPerplexityStreamStopsOnDoneMarker(t *testing.T) {
 }
 
 func TestPerplexityListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -281,6 +288,7 @@ func TestPerplexityListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestPerplexityListModelsAcceptsBareArray(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
@@ -301,6 +309,7 @@ func TestPerplexityListModelsAcceptsBareArray(t *testing.T) {
 }
 
 func TestPerplexityEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/embeddings" {
@@ -330,7 +339,7 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 	out, err := newPerplexityForTest(srv.URL).Embed(
 		ctx,
 		&modelName,
-		[]string{"hello", "world"},
+		EmbedRequest{Texts: []string{"hello", "world"}},
 		&APIConfig{ApiKey: &apiKey},
 		&EmbeddingConfig{Dimension: 16},
 		nil,
@@ -350,10 +359,11 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 }
 
 func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	modelName := "pplx-embed-v1-0.6b"
 	apiKey := "test-key"
-	out, err := newPerplexityForTest("http://unused").Embed(ctx, &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	out, err := newPerplexityForTest("http://unused").Embed(ctx, &modelName, EmbedRequest{Texts: nil}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -363,18 +373,20 @@ func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
 }
 
 func TestPerplexityEmbedRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
-	_, err := newPerplexityForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPerplexityForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 }
 
 func TestPerplexityUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newPerplexityForTest("http://unused")
-	if _, err := m.Rerank(ctx, nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{Query: "", Documents: nil}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	if _, err := m.Balance(ctx, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

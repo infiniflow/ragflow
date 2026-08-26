@@ -17,6 +17,7 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import { LLMFactory } from '@/constants/llm';
 import type { ProviderConfig } from '../types';
+import { parseApiKeyAsObject } from './utils';
 
 /**
  * Factory configuration mapping table
@@ -180,6 +181,11 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       google_service_account_key: values.google_service_account_key,
       model_info: [],
     }),
+    echoTransform: (instance) => ({
+      google_project_id: instance.google_project_id ?? '',
+      google_region: instance.google_region ?? '',
+      google_service_account_key: instance.google_service_account_key ?? '',
+    }),
   },
 
   // ============ Tencent Cloud ============
@@ -230,6 +236,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       TencentCloud_sid: values.TencentCloud_sid,
       TencentCloud_sk: values.TencentCloud_sk,
       model_info: [],
+    }),
+    echoTransform: (instance) => ({
+      TencentCloud_sid: instance.TencentCloud_sid ?? '',
+      TencentCloud_sk: instance.TencentCloud_sk ?? '',
     }),
   },
 
@@ -304,6 +314,15 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       },
       model_info: [],
     }),
+    echoTransform: (instance) => {
+      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      return {
+        spark_api_password: obj.spark_api_password ?? '',
+        spark_app_id: obj.spark_app_id ?? '',
+        spark_api_secret: obj.spark_api_secret ?? '',
+        spark_api_key: obj.spark_api_key ?? '',
+      };
+    },
   },
 
   // ============ Baidu YiYan ============
@@ -321,38 +340,23 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'yiyan_ak',
-        label: 'addyiyanAK',
-        type: FormFieldType.Text,
+        name: 'api_key',
+        label: 'apiKey',
+        type: FormFieldType.Password,
         required: true,
-        placeholder: 'yiyanAKMessage',
+        placeholder: 'apiKeyMessage',
         shouldRender: 'hideWhenInstanceExists',
-        validation: { message: 'yiyanAKMessage' },
-      },
-      {
-        name: 'yiyan_sk',
-        label: 'addyiyanSK',
-        type: FormFieldType.Text,
-        required: true,
-        placeholder: 'yiyanSKMessage',
-        shouldRender: 'hideWhenInstanceExists',
-        validation: { message: 'yiyanSKMessage' },
+        validation: { message: 'apiKeyMessage' },
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: {
-        yiyan_ak: values.yiyan_ak,
-        yiyan_sk: values.yiyan_sk,
-      },
+      apiKey: values.api_key,
       modelInfo: [],
     }),
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.BaiduYiYan,
-      api_key: {
-        yiyan_ak: values.yiyan_ak,
-        yiyan_sk: values.yiyan_sk,
-      },
+      api_key: values.api_key,
       model_info: [],
     }),
   },
@@ -405,6 +409,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       fish_audio_ak: values.fish_audio_ak,
       fish_audio_refid: values.fish_audio_refid,
       model_info: [],
+    }),
+    echoTransform: (instance) => ({
+      fish_audio_ak: instance.fish_audio_ak ?? '',
+      fish_audio_refid: instance.fish_audio_refid ?? '',
     }),
   },
 
@@ -466,6 +474,13 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         api_key: cfg,
         base_url: '',
         model_info: [],
+      };
+    },
+    echoTransform: (instance) => {
+      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      return {
+        opendataloader_apiserver: obj.opendataloader_apiserver ?? '',
+        opendataloader_api_key: obj.opendataloader_api_key ?? '',
       };
     },
   },
@@ -547,6 +562,63 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         model_info: [],
       };
     },
+    echoTransform: (instance) => {
+      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      return {
+        paddleocr_api_url: obj.paddleocr_api_url ?? '',
+        paddleocr_access_token: obj.paddleocr_access_token ?? '',
+        paddleocr_algorithm: obj.paddleocr_algorithm ?? 'PaddleOCR-VL',
+      };
+    },
+  },
+
+  // ============ PaddleOCR.local ============
+  [LLMFactory.PaddleOCRLocal]: {
+    llmFactory: LLMFactory.PaddleOCRLocal,
+    title: 'PaddleOCR.local',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'paddleocr_api_url',
+        label: 'paddleocrApiUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'paddleocrApiUrlPlaceholder',
+        validation: { message: 'paddleocrApiUrlMessage' },
+      },
+      {
+        name: 'paddleocr_access_token',
+        label: 'paddleocrAccessToken',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'paddleocrAccessTokenPlaceholder',
+        validation: { message: 'paddleocrAccessTokenMessage' },
+      },
+    ],
+    verifyTransform: (values) => ({
+      apiKey: values.paddleocr_access_token ?? '',
+      baseUrl: values.paddleocr_api_url,
+      modelInfo: [],
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.PaddleOCRLocal,
+      api_key: values.paddleocr_access_token ?? '',
+      base_url: values.paddleocr_api_url,
+      model_info: [],
+    }),
+    echoTransform: (instance) => ({
+      paddleocr_api_url: instance.base_url ?? '',
+      paddleocr_access_token: instance.api_key ?? '',
+    }),
   },
 
   // ============ MinerU ============
@@ -642,5 +714,65 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         model_info: [],
       };
     },
+    echoTransform: (instance) => {
+      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      const rawDelete = obj.mineru_delete_output;
+      return {
+        mineru_apiserver: obj.mineru_apiserver ?? '',
+        mineru_output_dir: obj.mineru_output_dir ?? '',
+        mineru_backend: obj.mineru_backend ?? 'pipeline',
+        mineru_server_url: obj.mineru_server_url ?? '',
+        mineru_delete_output:
+          rawDelete === undefined
+            ? true
+            : rawDelete === '1' || rawDelete === true,
+      };
+    },
+  },
+
+  // ============ SoMark ============
+  [LLMFactory.SoMark]: {
+    llmFactory: LLMFactory.SoMark,
+    title: 'SoMark',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'base_url',
+        label: 'somark.baseUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'somark.baseUrlPlaceholder',
+        shouldRender: 'hideWhenInstanceExists',
+        validation: { message: 'somark.baseUrlMessage' },
+      },
+      {
+        name: 'api_key',
+        label: 'somark.apiKey',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'somark.apiKeyPlaceholder',
+        shouldRender: 'hideWhenInstanceExists',
+      },
+    ],
+    verifyTransform: (values) => ({
+      apiKey: values.api_key ?? '',
+      baseUrl: values.base_url,
+      modelInfo: [],
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.SoMark,
+      api_key: values.api_key ?? '',
+      base_url: values.base_url,
+      model_info: [],
+    }),
   },
 };

@@ -3,11 +3,10 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { MetadataFilter } from '@/components/metadata-filter';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { SwitchFormField } from '@/components/switch-fom-field';
-import { TavilyFormField } from '@/components/tavily-form-field';
-import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import {
   FormControl,
@@ -19,7 +18,7 @@ import {
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+import { WebSearchFormField } from '@/components/web-search-form-field';
 import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import { prefixName } from '@/utils/form';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -127,12 +126,7 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
           label={t('chat.tts')}
           tooltip={t('chat.ttsTip')}
         ></SwitchFormField>
-        <TOCEnhanceFormField
-          name={prefixName(prefix, 'prompt_config.toc_enhance')}
-        ></TOCEnhanceFormField>
-        <TavilyFormField
-          name={prefixName(prefix, 'prompt_config.tavily_api_key')}
-        ></TavilyFormField>
+        <WebSearchFormField prefix={prefix} />
         <MetadataFilter></MetadataFilter>
         <FormField
           control={form.control}
@@ -214,6 +208,9 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
           similarityName={prefixName(prefix, 'similarity_threshold')}
           similarityWeightName={prefixName(prefix, 'vector_similarity_weight')}
         ></SimilaritySliderFormField>
+        <RerankCandidatesCountFormField
+          name={prefixName(prefix, 'rerank_candidates_count')}
+        ></RerankCandidatesCountFormField>
         <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
 
         <SwitchFormField
@@ -221,9 +218,6 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
           label={t('chat.multiTurn')}
           tooltip={t('chat.multiTurnTip')}
         ></SwitchFormField>
-        <UseKnowledgeGraphFormField
-          name={prefixName(prefix, 'prompt_config.use_kg')}
-        ></UseKnowledgeGraphFormField>
         <RerankFormFields prefix={prefix}></RerankFormFields>
         <CrossLanguageFormField
           name={prefixName(prefix, 'prompt_config.cross_languages')}

@@ -1,9 +1,26 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { AgentCategory, AgentGlobals } from '@/constants/agent';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
+  AgentListItem,
   IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
@@ -49,6 +66,7 @@ export const enum AgentApiAction {
   FetchAgentListByPage = 'fetchAgentListByPage',
   FetchAllAgentList = 'fetchAllAgentList',
   FetchAgentList = 'fetchAgentList',
+  FetchAgentFilters = 'fetchAgentFilters',
   UpdateAgentSetting = 'updateAgentSetting',
   DeleteAgent = 'deleteAgent',
   FetchAgentDetail = 'fetchAgentDetail',
@@ -83,9 +101,27 @@ export const enum AgentApiAction {
   FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
 }
 
+const AgentKeys = {
+  templates: () => [AgentApiAction.FetchAgentTemplates] as const,
+  list: (params?: unknown) =>
+    params === undefined
+      ? ([AgentApiAction.FetchAgentListByPage] as const)
+      : ([AgentApiAction.FetchAgentListByPage, params] as const),
+  all: () => [AgentApiAction.FetchAllAgentList] as const,
+  listAll: (canvasCategory?: string) =>
+    [AgentApiAction.FetchAgentList, canvasCategory] as const,
+  filters: () => [AgentApiAction.FetchAgentFilters] as const,
+  tags: (canvasCategory?: string) =>
+    canvasCategory === undefined
+      ? ([AgentApiAction.FetchAgentTags] as const)
+      : ([AgentApiAction.FetchAgentTags, canvasCategory] as const),
+  detail: (agentId?: string) =>
+    [AgentApiAction.FetchAgentDetail, agentId] as const,
+};
+
 export const useFetchAgentTemplates = () => {
   const { data } = useQuery<IFlowTemplate[]>({
-    queryKey: [AgentApiAction.FetchAgentTemplates],
+    queryKey: AgentKeys.templates(),
     initialData: [],
     queryFn: async () => {
       const { data } = await agentService.listAgentTemplate();
@@ -101,14 +137,14 @@ const buildAgentListParams = ({
   page,
   pageSize,
   keywords,
-  canvasCategory,
+  canvasCategoryIds,
   ownerIds,
   tags,
 }: {
   page: number;
   pageSize: number;
   keywords?: string;
-  canvasCategory?: string;
+  canvasCategoryIds?: string[];
   ownerIds?: string[];
   tags?: string[];
 }) => {
@@ -120,8 +156,8 @@ const buildAgentListParams = ({
   if (keywords) {
     params.keywords = keywords;
   }
-  if (canvasCategory) {
-    params.canvas_category = canvasCategory;
+  if (Array.isArray(canvasCategoryIds) && canvasCategoryIds.length > 0) {
+    params.canvas_category = canvasCategoryIds.join(',');
   }
   if (Array.isArray(ownerIds) && ownerIds.length > 0) {
     params.owner_ids = ownerIds.join(',');
@@ -138,9 +174,9 @@ export const useFetchAgentListByPage = () => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
-  const canvasCategory = Array.isArray(filterValue.canvasCategory)
-    ? filterValue.canvasCategory
-    : [];
+  const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
+    ? (filterValue.canvasCategory as string[])
+    : undefined;
   const owner = filterValue.owner;
   const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
 
@@ -148,23 +184,20 @@ export const useFetchAgentListByPage = () => {
     page: pagination.current,
     pageSize: pagination.pageSize,
     keywords: debouncedSearchString,
-    canvasCategory: canvasCategory.length === 1 ? canvasCategory[0] : undefined,
+    canvasCategoryIds,
     ownerIds: Array.isArray(owner) ? owner : undefined,
     tags,
   });
 
   const { data, isFetching: loading } = useQuery<{
-    canvas: IFlow[];
+    canvas: AgentListItem[];
     total: number;
   }>({
-    queryKey: [
-      AgentApiAction.FetchAgentListByPage,
-      {
-        debouncedSearchString,
-        ...pagination,
-        filterValue,
-      },
-    ],
+    queryKey: AgentKeys.list({
+      debouncedSearchString,
+      ...pagination,
+      filterValue,
+    }),
     placeholderData: (previousData) => {
       if (previousData === undefined) {
         return { canvas: [], total: 0 };
@@ -197,7 +230,7 @@ export const useFetchAgentListByPage = () => {
     loading,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
     filterValue,
     handleFilterSubmit,
@@ -205,8 +238,8 @@ export const useFetchAgentListByPage = () => {
 };
 
 export function useFetchAllAgentList() {
-  const { data, isFetching: loading } = useQuery<IFlow[]>({
-    queryKey: [AgentApiAction.FetchAllAgentList],
+  const { data, isFetching: loading } = useQuery<AgentListItem[]>({
+    queryKey: AgentKeys.all(),
     queryFn: async () => {
       const { data } = await agentService.listAgents(
         {
@@ -245,7 +278,7 @@ export const useUpdateAgentSetting = () => {
       if (ret?.data?.code === 0) {
         message.success('success');
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentListByPage],
+          queryKey: AgentKeys.list(),
         });
       }
       return ret?.data?.code;
@@ -287,7 +320,10 @@ export const useDuplicateAgent = () => {
         if (data?.code === 0) {
           message.success(i18n.t('message.created'));
           queryClient.invalidateQueries({
-            queryKey: [AgentApiAction.FetchAgentListByPage],
+            queryKey: AgentKeys.list(),
+          });
+          queryClient.invalidateQueries({
+            queryKey: AgentKeys.filters(),
           });
           return data;
         }
@@ -320,7 +356,10 @@ export const useDeleteAgent = () => {
       const { data } = await agentService.deleteAgent(agentId);
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentListByPage],
+          queryKey: AgentKeys.list(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.filters(),
         });
       }
       return data?.data ?? false;
@@ -337,7 +376,7 @@ export interface IAgentTagCount {
 
 export const useFetchAgentTags = (canvasCategory?: string) => {
   const { data, isFetching: loading } = useQuery<IAgentTagCount[]>({
-    queryKey: [AgentApiAction.FetchAgentTags, canvasCategory],
+    queryKey: AgentKeys.tags(canvasCategory),
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
@@ -367,10 +406,10 @@ export const useUpdateAgentTags = () => {
       const { data } = await updateAgentTags(agentId, tags);
       if (data?.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentListByPage],
+          queryKey: AgentKeys.list(),
         });
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentTags],
+          queryKey: AgentKeys.tags(),
         });
       } else {
         message.error(data?.message || 'Update failed');
@@ -394,7 +433,7 @@ export const useFetchAgent = (): {
     isFetching: loading,
     refetch,
   } = useQuery({
-    queryKey: [AgentApiAction.FetchAgentDetail, sharedId || id],
+    queryKey: AgentKeys.detail(sharedId || id),
     initialData: {} as IFlow,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -443,7 +482,10 @@ export const useResetAgent = () => {
   return { data, loading, resetAgent: mutateAsync };
 };
 
-export const useSetAgent = (showMessage: boolean = true) => {
+export const useSetAgent = (
+  showMessage: boolean = true,
+  skipInvalidation: boolean = false,
+) => {
   const { id } = useParams();
   const queryClient = useQueryClient();
   const {
@@ -480,11 +522,16 @@ export const useSetAgent = (showMessage: boolean = true) => {
           );
         }
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentListByPage],
+          queryKey: AgentKeys.list(),
         });
-        if (agentId) {
+        if (!agentId) {
           queryClient.invalidateQueries({
-            queryKey: [AgentApiAction.FetchAgentDetail, agentId],
+            queryKey: AgentKeys.filters(),
+          });
+        }
+        if (agentId && !skipInvalidation) {
+          queryClient.invalidateQueries({
+            queryKey: AgentKeys.detail(agentId),
           });
         }
       }
@@ -853,10 +900,10 @@ export const useFetchAgentList = ({
   canvas_category,
 }: IPipeLineListRequest) => {
   const { data, isFetching: loading } = useQuery<{
-    canvas: IFlow[];
+    canvas: AgentListItem[];
     total: number;
   }>({
-    queryKey: [AgentApiAction.FetchAgentList],
+    queryKey: AgentKeys.listAll(canvas_category),
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
     queryFn: async () => {
@@ -869,6 +916,45 @@ export const useFetchAgentList = ({
   });
 
   return { data, loading };
+};
+
+export interface IAgentOwnerFilter {
+  id: string;
+  label: string;
+  count: number;
+}
+
+export interface IAgentCategoryFilter {
+  id: string;
+  count: number;
+}
+
+export const useFetchAgentFilters = () => {
+  const { data, isFetching: loading } = useQuery<{
+    filter: {
+      owner: IAgentOwnerFilter[];
+      canvas_category: IAgentCategoryFilter[];
+    };
+    total: number;
+  }>({
+    queryKey: AgentKeys.filters(),
+    initialData: { filter: { owner: [], canvas_category: [] }, total: 0 },
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await agentService.listAgents(
+        { params: { type: 'filter' } },
+        true,
+      );
+      return (
+        data?.data ?? { filter: { owner: [], canvas_category: [] }, total: 0 }
+      );
+    },
+  });
+
+  return {
+    data: data?.filter ?? { owner: [], canvas_category: [] },
+    loading,
+  };
 };
 
 export const BuiltinPipelineKeys = {

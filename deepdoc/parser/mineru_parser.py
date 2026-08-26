@@ -831,13 +831,21 @@ class MinerUParser(RAGFlowPdfParser):
 
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
         sections = []
+        parse_method = (parse_method or "raw").lower()
         for output in outputs:
-            match output.get("type"):
+            output_type = output.get("type")
+            # These chunkers consume tables and images separately, so exclude
+            # media from their text sections. Raw consumers keep legacy sections.
+            if parse_method in {"naive", "manual", "paper"} and (output_type == MinerUContentType.IMAGE or (output_type == MinerUContentType.TABLE and table_enable)):
+                continue
+
+            match output_type:
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
                     section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
                     if not section.strip():
+                        self.logger.warning("[MinerU] Empty table content at page_idx=%s; using fallback text.", output.get("page_idx"))
                         section = "FAILED TO PARSE TABLE"
                 case MinerUContentType.IMAGE:
                     section = "".join(output.get("image_caption", [])) + "\n" + "".join(output.get("image_footnote", []))
@@ -859,7 +867,9 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
                     continue
 
-            if not table_enable:
+            # Only flatten table HTML when table extraction is disabled; the
+            # same sanitization would corrupt valid text, code, and equations.
+            if output_type == MinerUContentType.TABLE and not table_enable:
                 section = self._sanitize_section_text(section)
             if not section:
                 self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
@@ -873,10 +883,54 @@ class MinerUParser(RAGFlowPdfParser):
                 sections.append((section, self._line_tag(output)))
         return sections
 
-    def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
-        return []
+    def _transfer_to_tables(self, outputs: list[dict[str, Any]], table_enable: bool = True):
+        """Convert MinerU media blocks to RAGFlow table/image tuples.
 
-    def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
+        Args:
+            outputs: MinerU content-list blocks in source order.
+            table_enable: Whether table blocks should be emitted.
+        """
+        tables = []
+        for output in outputs:
+            output_type = output.get("type")
+            if output_type not in {MinerUContentType.TABLE, MinerUContentType.IMAGE}:
+                continue
+            if output_type == MinerUContentType.TABLE and not table_enable:
+                continue
+
+            position_tag = self._line_tag(output) if "page_idx" in output and "bbox" in output else ""
+            positions = [(page, left, right, top, bottom) for pages, left, right, top, bottom in self.extract_positions(position_tag) for page in pages]
+
+            if output_type == MinerUContentType.TABLE:
+                text = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
+                if not text.strip():
+                    self.logger.warning("[MinerU] Empty table content at page_idx=%s; using fallback text.", output.get("page_idx"))
+                    text = "FAILED TO PARSE TABLE"
+                tables.append(((None, text), positions))
+                continue
+
+            texts = [*output.get("image_caption", []), *output.get("image_footnote", [])]
+            vlm_description = (output.get("vlm_description") or "").strip()
+            if vlm_description:
+                texts.append(vlm_description)
+
+            image = None
+            image_path = output.get("img_path")
+            if image_path:
+                try:
+                    with Image.open(image_path) as source:
+                        source.load()
+                        image = source.copy()
+                except Exception as e:
+                    self.logger.warning(f"[MinerU] Failed to load image '{image_path}': {e}")
+            if image is None:
+                self.logger.warning("[MinerU] Skip image without a readable resource: %s", image_path)
+                continue
+
+            tables.append(((image, texts or [""]), positions))
+        return tables
+
+    def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None, language: str = "English"):
         """Generate semantic descriptions for image blocks via the tenant's
         VISION model, mirroring deepdoc's VisionFigureParser. Each
         IMAGE block with a readable img_path gets a ``vlm_description``
@@ -894,7 +948,7 @@ class MinerUParser(RAGFlowPdfParser):
         if callback:
             callback(0.78, f"[MinerU] Generating VLM descriptions for {len(image_jobs)} images...")
 
-        prompt = vision_llm_figure_describe_prompt()
+        prompt = vision_llm_figure_describe_prompt(language=language or "English")
 
         def worker(idx, item):
             try:
@@ -935,7 +989,7 @@ class MinerUParser(RAGFlowPdfParser):
         created_tmp_dir = False
 
         parser_cfg = kwargs.get("parser_config", {})
-        lang = parser_cfg.get("mineru_lang") or kwargs.get("lang", "English")
+        lang = parser_cfg.get("mineru_lang") or kwargs.get("lang") or "English"
         mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, "ch")  # Defaults to Chinese if not matched
         mineru_method_raw_str = parser_cfg.get("mineru_parse_method", "auto")
         enable_formula = parser_cfg.get("mineru_formula_enable", True)
@@ -998,11 +1052,13 @@ class MinerUParser(RAGFlowPdfParser):
             vision_model = kwargs.get("vision_model")
             if vision_model is not None:
                 try:
-                    self._enhance_images_with_vlm(outputs, vision_model, callback=callback)
+                    self._enhance_images_with_vlm(outputs, vision_model, callback=callback, language=lang)
                 except Exception as e:
                     self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
 
-            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_tables(outputs)
+            sections = self._transfer_to_sections(outputs, parse_method, enable_table)
+            tables = self._transfer_to_tables(outputs, enable_table) if (parse_method or "raw").lower() in {"naive", "manual", "paper"} else []
+            return sections, tables
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:

@@ -37,7 +37,7 @@ func PtrString[T any](p *T) string {
 	return fmt.Sprintf("%v", *p)
 }
 
-// composite model name format: model_name@instance_name@provider_name
+// IsCompositeModelName checks if a model name is a valid composite model name format model_name@instance_name@provider_name.
 func IsCompositeModelName(modelName string) bool {
 	parts := strings.Split(modelName, "@")
 	if len(parts) != 3 {
@@ -56,6 +56,22 @@ func IsUUID(uuid string) bool {
 		return true
 	}
 	return false
+}
+
+// BaseModelName returns the bare model name of a (possibly composite) model
+// reference by stripping the trailing "@instance@provider" (or "@provider")
+// segments. The split is right-anchored so model names that legitimately
+// contain '@' (e.g. LM Studio quant suffixes) are preserved. Mirrors Python's
+// api/db/services/knowledgebase_service.py _base_model_name (rsplit("@", 2)[0]).
+func BaseModelName(modelName string) string {
+	if idx := strings.LastIndex(modelName, "@"); idx > 0 {
+		base := modelName[:idx]
+		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
+			return base[:idx2]
+		}
+		return base
+	}
+	return modelName
 }
 
 // ExtractCompositeName splits a composite model name into three parts.

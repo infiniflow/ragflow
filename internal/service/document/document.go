@@ -17,13 +17,16 @@
 package document
 
 import (
+	"context"
 	"errors"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 	"regexp"
 	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/ingestion/knowledge_compile"
 )
 
 // DocumentService document service
@@ -47,6 +50,10 @@ func NewDocumentService() *DocumentService {
 	publisher := service.NewMessageQueueTaskPublisher()
 	ingestionTaskSvc := service.NewIngestionTaskService()
 	ingestionTaskSvc.SetTaskPublisher(publisher)
+	// Document deletion is handled by the API process, while the dataset-level
+	// consumer is owned by the ingestor. Register the shared publisher here so
+	// knowledge_compile.PublishDeleted is effective in API processes as well.
+	knowledge_compile.InitializePublisher(dao.DB, engine.GetMessageQueueEngine())
 	return &DocumentService{
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
@@ -75,26 +82,27 @@ type UpdateDocumentRequest struct {
 
 // DocumentResponse document response
 type DocumentResponse struct {
-	ID              string  `json:"id"`
-	Name            *string `json:"name,omitempty"`
-	KbID            string  `json:"kb_id"`
-	ParserID        string  `json:"parser_id"`
-	PipelineID      *string `json:"pipeline_id,omitempty"`
-	Type            string  `json:"type"`
-	SourceType      string  `json:"source_type"`
-	CreatedBy       string  `json:"created_by"`
-	Location        *string `json:"location,omitempty"`
-	Size            int64   `json:"size"`
-	TokenNum        int64   `json:"token_num"`
-	ChunkNum        int64   `json:"chunk_num"`
-	Progress        float64 `json:"progress"`
-	ProgressMsg     *string `json:"progress_msg,omitempty"`
-	ProcessDuration float64 `json:"process_duration"`
-	Suffix          string  `json:"suffix"`
-	Run             *string `json:"run,omitempty"`
-	Status          *string `json:"status,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	ID              string     `json:"id"`
+	Name            *string    `json:"name,omitempty"`
+	KbID            string     `json:"kb_id"`
+	ParserID        string     `json:"parser_id"`
+	PipelineID      *string    `json:"pipeline_id,omitempty"`
+	Type            string     `json:"type"`
+	SourceType      string     `json:"source_type"`
+	CreatedBy       string     `json:"created_by"`
+	Location        *string    `json:"location,omitempty"`
+	Size            int64      `json:"size"`
+	TokenNum        int64      `json:"token_num"`
+	ChunkNum        int64      `json:"chunk_num"`
+	Progress        float64    `json:"progress"`
+	ProgressMsg     *string    `json:"progress_msg,omitempty"`
+	ProcessBeginAt  *time.Time `json:"process_begin_at,omitempty"`
+	ProcessDuration float64    `json:"process_duration"`
+	Suffix          string     `json:"suffix"`
+	Run             *string    `json:"run,omitempty"`
+	Status          *string    `json:"status,omitempty"`
+	CreatedAt       string     `json:"created_at"`
+	UpdatedAt       string     `json:"updated_at"`
 }
 
 type ThumbnailResponse struct {
@@ -113,8 +121,10 @@ type ArtifactResponse struct {
 }
 
 type UpdateDatasetDocumentRequest struct {
-	Name         *string        `json:"name"`
-	ParserID     *string        `json:"parser_id"`
+	Name     *string `json:"name"`
+	ParserID *string `json:"parser_id"`
+	// ChunkMethod is the public alias for parser_id (Python UpdateDocumentReq).
+	ChunkMethod  *string        `json:"chunk_method"`
 	ChunkCount   *int64         `json:"chunk_count"`
 	TokenCount   *int64         `json:"token_count"`
 	PipelineID   *string        `json:"pipeline_id"`
@@ -127,7 +137,6 @@ type UpdateDatasetDocumentRequest struct {
 	ParseType *int `json:"parse_type,omitempty"`
 }
 
-// PATCH /api/v1/datasets/:dataset_id/documents/:document_id.
 type UpdateDatasetDocumentResponse struct {
 	ID              string                 `json:"id"`
 	Thumbnail       *string                `json:"thumbnail,omitempty"`
@@ -159,9 +168,9 @@ type UpdateDatasetDocumentResponse struct {
 }
 
 var (
-	ErrArtifactInvalidFilename = errors.New("Invalid filename.")
-	ErrArtifactInvalidFileType = errors.New("Invalid file type.")
-	ErrArtifactNotFound        = errors.New("Artifact not found.")
+	ErrArtifactInvalidFilename = errors.New("invalid filename")
+	ErrArtifactInvalidFileType = errors.New("invalid file type")
+	ErrArtifactNotFound        = errors.New("artifact not found")
 )
 
 var artifactContentTypes = map[string]string{
@@ -217,10 +226,10 @@ type IngestDocumentRequest struct {
 
 // StartParseOptions controls StartParseDocuments behavior.
 type StartParseOptions struct {
-	// ApplyKB merges the knowledgebase's parser_config (llm_id, metadata)
+	// ApplyKB merges the knowledge base's parser_config (llm_id, metadata)
 	// into the document before parsing.
 	ApplyKB bool
-	// RerunWithDelete clears prior chunks/tasks/counters before re-parsing.
+	// RerunWithDelete clears prior chunks/tasks/counters before reparsing.
 	RerunWithDelete bool
 }
 
@@ -250,7 +259,7 @@ const knowledgebaseFolderName = ".knowledgebase"
 const maxUploadDocSize = 128 * 1024 * 1024
 
 // MetadataUpdate is one update item: set key to value.
-type DocumentMetadataUpdate struct {
+type MetadataUpdate struct {
 	Key       string      `json:"key"`
 	Value     interface{} `json:"value"`
 	Match     interface{} `json:"match,omitempty"`
@@ -258,19 +267,44 @@ type DocumentMetadataUpdate struct {
 }
 
 // MetadataDelete removes a whole key, or a specific value from a list field.
-type DocumentMetadataDelete struct {
+type MetadataDelete struct {
 	Key   string      `json:"key"`
 	Value interface{} `json:"value,omitempty"`
 }
 
 // MetadataSelector selects which documents to target.
-type DocumentMetadataSelector struct {
+type MetadataSelector struct {
 	DocumentIDs       []string               `json:"document_ids"`
 	MetadataCondition map[string]interface{} `json:"metadata_condition"`
 }
 
-// BatchUpdateDocumentMetadatasResponse summarises the operation.
-type BatchUpdateDocumentMetadatasResponse struct {
+// BatchUpdateMetadatasResponse summarises the operation.
+type BatchUpdateMetadatasResponse struct {
 	Updated     int `json:"updated"`
 	MatchedDocs int `json:"matched_docs"`
+}
+
+// removeObjectBestEffort retries blob deletion on a context that survives the
+// originating request. Bounded by a timeout so a wedged storage SDK cannot
+// block the caller forever. It always uses the parent request's storage impl,
+// but deliberately NOT the request context, because a cancelled request must
+// not leak the blob it already wrote (or orphan a blob whose row was deleted).
+func removeObjectBestEffort(ctx context.Context, storageImpl storage.Storage, bucket, object string) error {
+	newCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := storageImpl.Remove(newCtx, bucket, object); err != nil {
+			lastErr = err
+			// Treat cancellation of the *new* cleanup ctx as terminal.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				break
+			}
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }

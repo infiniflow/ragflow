@@ -118,7 +118,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 		}
 	}
 	return "", fmt.Errorf(
-		"Parser: output_format %q for %q is not in allowed_output_format %v",
+		"parser: output_format %q for %q is not in allowed_output_format %v",
 		format, family, allowedList,
 	)
 }
@@ -156,13 +156,13 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 
 	p, err := parser.GetParser(fileType)
 	if err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("Parser: resolve %q: %w", fileType, err)}
+		return parserDispatchResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
+		return parserDispatchResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
 	}
 	// Carry the configured parse_method on the file metadata so
 	// downstream consumers can read which provider ran.
@@ -191,7 +191,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 //
 //  1. inputs["file_type"] — explicit family hint from the upstream
 //     File component. We accept either the extension ("md", "docx")
-//     or the python family name ("markdown"); both are normalised
+//     or the python family name ("markdown"); both are normalized
 //     to the extension form via the pythonFamilyName / familyToExt
 //     lookup tables below.
 //  2. inputs["file"].name — fall back to the filename so a caller
@@ -320,6 +320,16 @@ func pythonFamilyName(raw string) string {
 	return ""
 }
 
+// ParserFileFamily normalises a free-form file-type/extension hint to the
+// python-side family identifier used as the key into a Parser component's
+// setups (e.g. "pdf", "docx", "slides", "text&code"). It is the exported
+// entry point for callers outside this package (e.g. the ingestion task
+// executor that injects the debug page cap into override_params) that need
+// to build the canonical ParserConfig[cpnID][family]["pages"] shape.
+func ParserFileFamily(ext string) string {
+	return pythonFamilyName(ext)
+}
+
 // jsonItemsToPages reshapes a parsed JSON payload into the
 // schema.Page layout the chunker side consumes. Each JSON item
 // becomes one page carrying `text`, `doc_type_kwd`, and any
@@ -372,7 +382,7 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 //   - output_format  string        — the dispatch's OutputFormat,
 //     or "text" for the raw-text
 //     fallback
-//   - json | markdown | text | html — the dispatched payload on
+//   - json | Markdown | text | html — the dispatched payload on
 //     the matching family key (only
 //     populated on a structured
 //     dispatch)

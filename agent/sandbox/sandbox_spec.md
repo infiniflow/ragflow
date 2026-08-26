@@ -133,19 +133,25 @@ Wraps the existing executor_manager implementation. The implementation file is l
   docker pull infiniflow/sandbox-base-nodejs:latest
   ```
 
-**Configuration**: Docker API endpoint, pool size, resource limits:
+**Configuration**: Docker API endpoint, request behavior, resource limits:
 
-- `endpoint`: HTTP endpoint (default: "http://localhost:9385")
+- `endpoint`: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
-- `pool_size`: Container pool size (default: 10)
 
-**Languages**: 
+The container pool is **not** sized from this configuration. sandbox-executor-manager reads
+`SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` from its environment once at startup
+(`agent/sandbox/executor_manager/core/config.py`), so changing the pool size is a deployment
+change that requires restarting that service. A `pool_size` key passed to the provider is carried
+for reporting only — `get_info()` echoes it back — and reloading `sandbox.self_managed` recreates
+the RAGFlow-side client without resizing anything.
+
+**Languages**:
 - Python
 - Node.js
 - JavaScript
 
-**Security**: 
+**Security**:
 - gVisor (runsc runtime)
 - seccomp
 - read-only filesystem
@@ -162,7 +168,7 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - Pool exhaustion causes "Container pool is busy" errors
 
 **Common issues**:
-- `"Container pool is busy"`: Increase `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` (default: 1 in .env, should be 5+)
+- `"Container pool is busy"`: Raise `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` above the baseline your deployment already applies — 5 with the standalone compose file, 3 in the main RAGFlow stack
 - `Container creation fails`: Ensure gVisor is installed and accessible at `/usr/local/bin/runsc`
 
 #### 2.2.2 Aliyun code interpreter provider
@@ -507,7 +513,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
   "name": "sandbox.self_managed",
   "source": "variable",
   "data_type": "json",
-  "value": "{\"endpoint\": \"http://localhost:9385\", \"pool_size\": 10, \"max_memory\": \"256m\", \"timeout\": 30}"
+  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"max_memory\": \"256m\", \"timeout\": 30}"
 }
 ```
 
@@ -606,14 +612,21 @@ class SelfManagedProvider(SandboxProvider):
                 "type": "string",
                 "required": True,
                 "label": "API Endpoint",
-                "placeholder": "http://localhost:9385"
+                "placeholder": "http://sandbox-executor-manager:9385"
             },
-            "pool_size": {
+            # Deployment-level: the pool is sized by SANDBOX_EXECUTOR_MANAGER_POOL_SIZE in the
+            # sandbox-executor-manager environment, not by this field, and the UI renders it
+            # read-only. The default below is read from the RAGFlow server's own environment and
+            # falls back to 3, so it can disagree with the manager's actual pool. The standalone
+            # compose file starts that service with 5, and the manager's own in-code fallback is 1.
+            "executor_manager_pool_size": {
                 "type": "integer",
-                "default": 10,
+                "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "3")),
                 "label": "Container Pool Size",
                 "min": 1,
-                "max": 100
+                "max": 100,
+                "scope": "deployment",
+                "readonly": True
             },
             "max_memory": {
                 "type": "string",
@@ -1316,7 +1329,7 @@ Structured logging for all provider operations:
 class TestSelfManagedProvider:
     def test_initialize_with_config():
         provider = SelfManagedProvider()
-        assert provider.initialize({"endpoint": "http://localhost:9385"})
+        assert provider.initialize({"endpoint": "http://sandbox-executor-manager:9385"})
 
     def test_create_python_instance():
         provider = SelfManagedProvider()
@@ -1538,7 +1551,7 @@ PROVIDER_CLASSES = {
       "name": "sandbox.self_managed",
       "source": "variable",
       "data_type": "json",
-      "value": "{\"endpoint\": \"http://sandbox-internal:9385\", \"pool_size\": 20, \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
+      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
     },
     {
       "name": "sandbox.aliyun_codeinterpreter",
@@ -1562,8 +1575,7 @@ PROVIDER_CLASSES = {
 {
   "provider_type": "self_managed",
   "config": {
-    "endpoint": "http://sandbox-internal:9385",
-    "pool_size": 20,
+    "endpoint": "http://sandbox-executor-manager:9385",
     "max_memory": "512m",
     "timeout": 60,
     "enable_seccomp": true,
@@ -1583,8 +1595,7 @@ PROVIDER_CLASSES = {
   "data": {
     "active": "self_managed",
     "self_managed": {
-      "endpoint": "http://sandbox-internal:9385",
-      "pool_size": 20,
+      "endpoint": "http://sandbox-executor-manager:9385",
       "max_memory": "512m",
       "timeout": 60,
       "enable_seccomp": true,
@@ -1737,13 +1748,13 @@ def execute_code(
 
 **Provider implementations**:
 
-1. **Self-managed provider** ([self_managed.py:164](agent/sandbox/providers/self_managed.py:164)):
+1. **Self-managed provider** ([self_managed.py:164](providers/self_managed.py)):
    - Passes arguments via HTTP API: `"arguments": arguments or {}`
    - executor_manager writes `args.json` into the per-task workspace
    - Runner script loads arguments from `args.json`
    - Python runner calls `main(**args)` and JavaScript runner calls `main(args)`
 
-2. **Aliyun Code Interpreter** ([aliyun_codeinterpreter.py:260-275](agent/sandbox/providers/aliyun_codeinterpreter.py:260-275)):
+2. **Aliyun Code Interpreter** ([aliyun_codeinterpreter.py:260-275](providers/aliyun_codeinterpreter.py)):
    - Wraps user code to call `main(**arguments)` or `main()` if no arguments
    - Python example:
      ```python
@@ -1766,7 +1777,7 @@ def execute_code(
      '''
      ```
 
-**Client layer** ([client.py:138-190](agent/sandbox/client.py:138-190)):
+**Client layer** ([client.py:138-190](client.py)):
 ```python
 def execute_code(
     code: str,
@@ -1791,7 +1802,7 @@ def execute_code(
         provider.destroy_instance(instance.instance_id)
 ```
 
-**CodeExec tool integration** ([code_exec.py:136-165](agent/tools/code_exec.py:136-165)):
+**CodeExec tool integration** ([code_exec.py:136-165](../tools/code_exec.py)):
 ```python
 def _execute_code(self, language: str, code: str, arguments: dict):
     # ... collect arguments from component configuration

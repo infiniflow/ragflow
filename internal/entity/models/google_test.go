@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ func withGoogleListModelsStub(t *testing.T, fn func(context.Context, *genai.Clie
 }
 
 func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	cases := []struct {
@@ -82,6 +84,7 @@ func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -105,6 +108,7 @@ func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	customBaseURL := "https://check-connection.example.test/google"
 	model := NewGoogleModel(map[string]string{"default": customBaseURL}, URLSuffix{})
@@ -131,6 +135,7 @@ func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	calls := 0
@@ -183,6 +188,7 @@ func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -199,6 +205,7 @@ func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
 }
 
 func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	messages := []Message{{Role: "user", Content: "hello"}}
@@ -229,6 +236,7 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -265,6 +273,35 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 	}
 }
 
+func TestGoogleModelChatRequiresConversationalMessage(t *testing.T) {
+	ctx := t.Context()
+	model := &GoogleModel{}
+	apiKey := "test-api-key"
+	messages := []Message{{Role: "system", Content: "You are a helpful assistant."}}
+
+	response, err := model.ChatWithMessages(ctx, "gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for system-only messages")
+	}
+	if !strings.Contains(err.Error(), "no conversational message") {
+		t.Fatalf("expected no-conversational-message error, got %v", err)
+	}
+	if response != nil {
+		t.Fatalf("expected no response, got %v", response)
+	}
+
+	err = model.ChatStreamlyWithSender(ctx, "gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error {
+		t.Errorf("sender should not be called for system-only messages")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected an error for system-only messages")
+	}
+	if !strings.Contains(err.Error(), "no conversational message") {
+		t.Fatalf("expected no-conversational-message error, got %v", err)
+	}
+}
+
 func TestGoogleModelNewInstancePreservesCustomBaseURL(t *testing.T) {
 	model := NewGoogleModel(map[string]string{"default": "https://generativelanguage.googleapis.com"}, URLSuffix{Models: "v1beta/models"})
 	customBaseURL := map[string]string{"default": "https://example.test/google"}
@@ -283,6 +320,7 @@ func TestGoogleModelNewInstancePreservesCustomBaseURL(t *testing.T) {
 }
 
 func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-api-key"
 	cases := []struct {
 		name            string
@@ -343,7 +381,7 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	}
 	var pageTokens []string
 
-	models, err := collectGoogleModelNames(context.Background(), func(_ context.Context, pageToken string) (googleModelPage, error) {
+	models, err := collectGoogleModelNames(t.Context(), func(_ context.Context, pageToken string) (googleModelPage, error) {
 		pageTokens = append(pageTokens, pageToken)
 		if len(pageTokens) > len(pages) {
 			t.Fatalf("unexpected extra page request with token %q", pageToken)
@@ -354,7 +392,10 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedModels := []ListModelResponse{{Name: "Gemini 2.5 Flash@Google"}, {Name: "Gemini 2.5 Pro@Google"}}
+	expectedModels := []ListModelResponse{
+		{Name: "Gemini 2.5 Flash", ModelTypes: []string{"chat"}},
+		{Name: "Gemini 2.5 Pro", ModelTypes: []string{"chat"}},
+	}
 	if !reflect.DeepEqual(models, expectedModels) {
 		t.Fatalf("expected models %v, got %v", expectedModels, models)
 	}
@@ -365,7 +406,7 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 }
 
 func TestCollectGoogleModelNamesPreservesEmptyResult(t *testing.T) {
-	models, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
+	models, err := collectGoogleModelNames(t.Context(), func(context.Context, string) (googleModelPage, error) {
 		return googleModelPage{}, nil
 	})
 	if err != nil {
@@ -380,7 +421,7 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	pageErr := errors.New("next page failed")
 	calls := 0
 
-	_, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
+	_, err := collectGoogleModelNames(t.Context(), func(context.Context, string) (googleModelPage, error) {
 		calls++
 		if calls == 1 {
 			return googleModelPage{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
@@ -392,9 +433,60 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	}
 }
 
+func TestFinalizeGoogleModelListFiltersUnknownModelTypes(t *testing.T) {
+	list := []ListModelResponse{
+		{Name: "gemini-2.5-pro"},                                    // not in catalog: inferred
+		{Name: "gemini-embedding-001"},                              // not in catalog: inferred
+		{Name: "custom", ModelTypes: []string{"chat", "image-gen"}}, // unsupported value stripped
+		{Name: "broken", ModelTypes: []string{"image-gen"}},         // no supported type: dropped
+	}
+
+	got := finalizeGoogleModelList(list)
+
+	expected := []ListModelResponse{
+		{Name: "gemini-2.5-pro", ModelTypes: []string{"chat"}},
+		{Name: "gemini-embedding-001", ModelTypes: []string{"embedding"}},
+		{Name: "custom", ModelTypes: []string{"chat"}},
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("expected models %v, got %v", expected, got)
+	}
+}
+
+func TestFinalizeGoogleModelListPreservesNil(t *testing.T) {
+	if got := finalizeGoogleModelList(nil); got != nil {
+		t.Fatalf("expected nil, got %v", got)
+	}
+}
+
+func TestGoogleSupportsUsableAction(t *testing.T) {
+	usable := [][]string{
+		{"generateContent", "countTokens"},
+		{"embedContent"},
+		{"batchEmbedContents"},
+	}
+	for _, actions := range usable {
+		if !googleSupportsUsableAction(actions) {
+			t.Fatalf("expected actions %v to be usable", actions)
+		}
+	}
+	unusable := [][]string{
+		nil,
+		{"predict"},             // imagen-style image generation
+		{"predictLongRunning"},  // veo-style video generation
+		{"generateAnswer"},      // aqa-style question answering
+		{"createCachedContent"}, // cache-only entry
+	}
+	for _, actions := range unusable {
+		if googleSupportsUsableAction(actions) {
+			t.Fatalf("expected actions %v to be filtered out", actions)
+		}
+	}
+}
+
 func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 	toolChoice := "required"
-	cfg := googleGenerateContentConfig(&ChatConfig{
+	cfg, err := googleGenerateContentConfig(&ChatConfig{
 		Tools: []map[string]interface{}{{
 			"type": "function",
 			"function": map[string]interface{}{
@@ -410,7 +502,10 @@ func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 			},
 		}},
 		ToolChoice: &toolChoice,
-	})
+	}, nil)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
 	if cfg == nil || len(cfg.Tools) != 1 || len(cfg.Tools[0].FunctionDeclarations) != 1 {
 		t.Fatalf("tools = %#v, want one function declaration", cfg)
 	}
@@ -426,6 +521,26 @@ func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 	}
 	if cfg.ToolConfig.FunctionCallingConfig.Mode != genai.FunctionCallingConfigModeAny {
 		t.Fatalf("mode = %s, want ANY", cfg.ToolConfig.FunctionCallingConfig.Mode)
+	}
+}
+
+func TestGoogleGenerateContentConfigRejectsMaxTokensOverflow(t *testing.T) {
+	overflow := int(math.MaxInt32) + 1
+	cfg, err := googleGenerateContentConfig(&ChatConfig{MaxTokens: &overflow}, nil)
+	if err == nil {
+		t.Fatalf("expected an error for max_tokens overflowing int32, got cfg = %#v", cfg)
+	}
+	if cfg != nil {
+		t.Fatalf("cfg = %#v, want nil on error", cfg)
+	}
+
+	maxInt32 := math.MaxInt32
+	cfg, err = googleGenerateContentConfig(&ChatConfig{MaxTokens: &maxInt32}, nil)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
+	if cfg == nil || cfg.MaxOutputTokens != math.MaxInt32 {
+		t.Fatalf("cfg.MaxOutputTokens = %#v, want %d", cfg, int32(math.MaxInt32))
 	}
 }
 
@@ -464,6 +579,84 @@ func TestGoogleChatContentsConvertsToolHistory(t *testing.T) {
 	}
 }
 
+func TestGoogleSystemInstructionExtractedFromMessages(t *testing.T) {
+	messages := []Message{
+		{Role: "system", Content: "You are a helpful assistant."},
+		{Role: "user", Content: "Hello"},
+		{Role: "system", Content: "Always answer in pirate speak."},
+	}
+
+	contents := googleChatContents(messages)
+	if len(contents) != 1 {
+		t.Fatalf("contents len = %d, want 1 (both system messages must be excluded)", len(contents))
+	}
+	if contents[0].Role != genai.RoleUser {
+		t.Fatalf("contents[0].Role = %s, want user", contents[0].Role)
+	}
+
+	systemInstruction, err := googleSystemInstruction(messages)
+	if err != nil {
+		t.Fatalf("googleSystemInstruction error = %v", err)
+	}
+	if systemInstruction == nil || len(systemInstruction.Parts) != 2 {
+		t.Fatalf("systemInstruction = %#v, want two parts", systemInstruction)
+	}
+	if systemInstruction.Parts[0].Text != "You are a helpful assistant." {
+		t.Fatalf("systemInstruction first part text = %q", systemInstruction.Parts[0].Text)
+	}
+	if systemInstruction.Parts[1].Text != "Always answer in pirate speak." {
+		t.Fatalf("systemInstruction second part text = %q", systemInstruction.Parts[1].Text)
+	}
+
+	cfg, err := googleGenerateContentConfig(nil, systemInstruction)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
+	if cfg == nil || cfg.SystemInstruction != systemInstruction {
+		t.Fatalf("cfg.SystemInstruction = %#v, want %#v", cfg, systemInstruction)
+	}
+}
+
+func TestGoogleSystemInstructionNilWhenNoSystemMessage(t *testing.T) {
+	got, err := googleSystemInstruction([]Message{{Role: "user", Content: "Hello"}})
+	if err != nil {
+		t.Fatalf("googleSystemInstruction error = %v", err)
+	}
+	if got != nil {
+		t.Fatalf("systemInstruction = %#v, want nil", got)
+	}
+	cfg, err := googleGenerateContentConfig(nil, nil)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("cfg = %#v, want nil", cfg)
+	}
+}
+
+func TestGoogleSystemInstructionRejectsImageContent(t *testing.T) {
+	messages := []Message{
+		{
+			Role: "system",
+			Content: []interface{}{
+				map[string]interface{}{
+					"type":      "image_url",
+					"image_url": map[string]interface{}{"url": "https://example.com/cat.png"},
+				},
+			},
+		},
+		{Role: "user", Content: "Hello"},
+	}
+
+	systemInstruction, err := googleSystemInstruction(messages)
+	if err == nil {
+		t.Fatalf("googleSystemInstruction error = nil, want error for image content in system message")
+	}
+	if systemInstruction != nil {
+		t.Fatalf("systemInstruction = %#v, want nil on error", systemInstruction)
+	}
+}
+
 func TestGoogleToolCallsConvertsFunctionCalls(t *testing.T) {
 	toolCalls := googleToolCalls([]*genai.FunctionCall{{
 		ID:   "call-1",
@@ -486,6 +679,45 @@ func TestGoogleToolCallsConvertsFunctionCalls(t *testing.T) {
 	}
 	if args["query"] != "marigold" {
 		t.Fatalf("arguments = %#v", args)
+	}
+}
+
+// TestGoogleUsageFromMetadataIncludesToolUsePromptTokens verifies that
+// ToolUsePromptTokenCount from the genai SDK is folded into
+// PromptTokens, that it is treated as non-zero by the presence check
+// (so the helper does not return nil), and that TotalTokenCount is
+// used as the authoritative total when it is present.
+func TestGoogleUsageFromMetadataIncludesToolUsePromptTokens(t *testing.T) {
+	m := &genai.GenerateContentResponseUsageMetadata{
+		PromptTokenCount:        10,
+		CandidatesTokenCount:    4,
+		ToolUsePromptTokenCount: 5,
+		ThoughtsTokenCount:      1,
+		TotalTokenCount:         20,
+	}
+	got := googleUsageFromMetadata(m)
+	if got == nil {
+		t.Fatal("googleUsageFromMetadata returned nil, want populated TokenUsage")
+	}
+	if got.PromptTokens != 15 {
+		t.Errorf("PromptTokens=%d, want 15 (10 prompt + 5 tool-use prompt)", got.PromptTokens)
+	}
+	if got.CompletionTokens != 5 {
+		t.Errorf("CompletionTokens=%d, want 5 (4 candidates + 1 thoughts)", got.CompletionTokens)
+	}
+	if got.TotalTokens != 20 {
+		t.Errorf("TotalTokens=%d, want 20 (SDK authoritative total)", got.TotalTokens)
+	}
+
+	// When TotalTokenCount is absent, the helper must fall back to
+	// prompt + completion so callers still get a consistent total.
+	m.TotalTokenCount = 0
+	got = googleUsageFromMetadata(m)
+	if got == nil {
+		t.Fatal("googleUsageFromMetadata returned nil for non-zero counts")
+	}
+	if got.TotalTokens != 20 {
+		t.Errorf("TotalTokens=%d, want 20 (15 prompt + 5 completion)", got.TotalTokens)
 	}
 }
 

@@ -1,10 +1,5 @@
 package service
 
-// TraceIndexRequest is the request structure for tracing an index task.
-type TraceIndexRequest struct {
-	Type string `json:"type" binding:"required"`
-}
-
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
 	EmbeddingID string `json:"embd_id" binding:"required"`
@@ -46,9 +41,12 @@ type SearchDatasetsRequest struct {
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
+	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
 	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
@@ -56,6 +54,7 @@ type SearchDatasetsRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
 	ForceRefresh           bool                   `json:"force_refresh"`
 }
 
@@ -72,9 +71,12 @@ type SearchDatasetRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
+	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
 	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
@@ -82,6 +84,7 @@ type SearchDatasetRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
 }
 
 // ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
@@ -94,9 +97,12 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Question:               req.Question,
 		Page:                   req.Page,
 		Size:                   req.Size,
+		RerankCandidatesCount:  req.RerankCandidatesCount,
 		DocIDs:                 req.DocIDs,
 		UseKG:                  req.UseKG,
+		KNNTopK:                req.KNNTopK,
 		TopK:                   req.TopK,
+		KNNNumCandidates:       req.KNNNumCandidates,
 		CrossLanguages:         req.CrossLanguages,
 		SearchID:               req.SearchID,
 		MetadataFilter:         req.MetadataFilter,
@@ -104,6 +110,7 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Keyword:                req.Keyword,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		IncludeCompiledChunks:  req.IncludeCompiledChunks,
 	}
 }
 
@@ -117,6 +124,7 @@ type MetadataConfigField struct {
 
 // MetadataConfigRequest mirrors PUT /datasets/:dataset_id/metadata/config.
 type MetadataConfigRequest struct {
+	Enabled         *bool                 `json:"enabled,omitempty"`
 	Metadata        []MetadataConfigField `json:"metadata"`
 	BuiltInMetadata []MetadataConfigField `json:"built_in_metadata"`
 }

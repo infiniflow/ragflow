@@ -65,13 +65,20 @@ func anySlice(v any) []any {
 // defaults to the per-invocation RetrievalRequest. The fields are
 // the same the Python agent/component/retrieval.py exposes.
 type retrievalParams struct {
+	Query                    string
 	KbIDs                    []string
+	MemoryIDs                []string
 	TopN                     int
 	TopK                     int
-	SimilarityThreshold      float64
-	KeywordsSimilarityWeight float64
+	SimilarityThreshold      *float64
+	KeywordsSimilarityWeight *float64
 	RerankID                 string
 	EmptyResponse            string
+	CrossLanguages           []string
+	TOCEnhance               bool
+	UseKG                    bool
+	MetaDataFilter           map[string]any
+	RetrievalFrom            string
 }
 
 // parseRetrievalParams reads the v1 DSL node params for Retrieval.
@@ -80,11 +87,15 @@ type retrievalParams struct {
 // "default everything". This matches Python's
 // component.retrieval.RetrievalParam.__init__ tolerance.
 func parseRetrievalParams(params map[string]any) retrievalParams {
-	out := retrievalParams{
-		EmptyResponse: "Sorry, no relevant content was found in the knowledge base.",
-	}
+	out := retrievalParams{}
 	if params == nil {
 		return out
+	}
+	if ids, ok := params["dataset_ids"]; ok {
+		params["kb_ids"] = ids
+	}
+	if v, ok := params["query"].(string); ok {
+		out.Query = v
 	}
 	if v, ok := params["kb_ids"].([]any); ok {
 		for _, x := range v {
@@ -96,6 +107,7 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	if v, ok := params["kb_ids"].([]string); ok {
 		out.KbIDs = append(out.KbIDs, v...)
 	}
+	out.MemoryIDs = toStringSlice(params["memory_ids"])
 	if v, ok := params["top_n"]; ok {
 		out.TopN = toIntParam(v)
 	}
@@ -103,10 +115,12 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.TopK = toIntParam(v)
 	}
 	if v, ok := params["similarity_threshold"]; ok {
-		out.SimilarityThreshold = toFloatParam(v)
+		value := toFloatParam(v)
+		out.SimilarityThreshold = &value
 	}
 	if v, ok := params["keywords_similarity_weight"]; ok {
-		out.KeywordsSimilarityWeight = toFloatParam(v)
+		value := toFloatParam(v)
+		out.KeywordsSimilarityWeight = &value
 	}
 	if v, ok := params["rerank_id"].(string); ok {
 		out.RerankID = v
@@ -114,14 +128,25 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	if v, ok := params["empty_response"].(string); ok {
 		out.EmptyResponse = v
 	}
+	out.CrossLanguages = toStringSlice(params["cross_languages"])
+	if v, ok := params["toc_enhance"].(bool); ok {
+		out.TOCEnhance = v
+	}
+	if v, ok := params["use_kg"].(bool); ok {
+		out.UseKG = v
+	}
+	if v, ok := params["meta_data_filter"].(map[string]any); ok {
+		out.MetaDataFilter = cloneAnyMap(v)
+	}
+	if v, ok := params["retrieval_from"].(string); ok {
+		out.RetrievalFrom = v
+	}
 	return out
 }
 
 // retrievalComponent delegates to internal/agent/tool/RetrievalTool.
-// The wrapper captures the v1 DSL node params (kb_ids, top_n,
-// top_k, similarity_threshold, keywords_similarity_weight,
-// rerank_id, empty_response) at build time and applies them as
-// defaults to each invocation. Per-call inputs override the
+// The wrapper captures the Retrieval node's DSL params at build time and
+// applies them as defaults to each invocation. Per-call inputs override the
 // defaults.
 type retrievalComponent struct {
 	inner  *agenttool.RetrievalTool
@@ -164,9 +189,9 @@ func (c *retrievalComponent) Outputs() map[string]string {
 	}
 }
 
-func (c *retrievalComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
-	normalizeLegacyRetrievalInputs(ctx, merged)
+	normalizeLegacyRetrievalInputs(ctx, db, merged)
 	common.Debug("agent retrieval component: invoke",
 		zap.Any("inputs", inputs),
 		zap.Any("merged", merged),
@@ -182,7 +207,7 @@ func (c *retrievalComponent) Invoke(ctx context.Context, inputs map[string]any) 
 	return parseToolEnvelope(out), nil
 }
 
-func (c *retrievalComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
 	// V1: retrieval is a non-streaming node (the Python
 	// Retrieval component also blocks on Dealer.search). A
 	// streaming retrieval lands with the streaming-dealer
@@ -215,6 +240,9 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	for k, v := range inputs {
 		out[k] = v
 	}
+	if _, ok := out["query"]; !ok && c.params.Query != "" {
+		out["query"] = c.params.Query
+	}
 	if _, ok := out["kb_ids"]; !ok && len(c.params.KbIDs) > 0 {
 		ids := make([]any, len(c.params.KbIDs))
 		for i, s := range c.params.KbIDs {
@@ -228,17 +256,35 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	if _, ok := out["top_k"]; !ok && c.params.TopK > 0 {
 		out["top_k"] = c.params.TopK
 	}
-	if _, ok := out["similarity_threshold"]; !ok && c.params.SimilarityThreshold > 0 {
-		out["similarity_threshold"] = c.params.SimilarityThreshold
+	if _, ok := out["similarity_threshold"]; !ok && c.params.SimilarityThreshold != nil {
+		out["similarity_threshold"] = *c.params.SimilarityThreshold
 	}
-	if _, ok := out["keywords_similarity_weight"]; !ok && c.params.KeywordsSimilarityWeight > 0 {
-		out["keywords_similarity_weight"] = c.params.KeywordsSimilarityWeight
+	if _, ok := out["keywords_similarity_weight"]; !ok && c.params.KeywordsSimilarityWeight != nil {
+		out["keywords_similarity_weight"] = *c.params.KeywordsSimilarityWeight
 	}
 	if _, ok := out["rerank_id"]; !ok && c.params.RerankID != "" {
 		out["rerank_id"] = c.params.RerankID
 	}
 	if _, ok := out["empty_response"]; !ok && c.params.EmptyResponse != "" {
 		out["empty_response"] = c.params.EmptyResponse
+	}
+	if _, ok := out["memory_ids"]; !ok && len(c.params.MemoryIDs) > 0 {
+		out["memory_ids"] = append([]string(nil), c.params.MemoryIDs...)
+	}
+	if _, ok := out["cross_languages"]; !ok && len(c.params.CrossLanguages) > 0 {
+		out["cross_languages"] = append([]string(nil), c.params.CrossLanguages...)
+	}
+	if _, ok := out["toc_enhance"]; !ok && c.params.TOCEnhance {
+		out["toc_enhance"] = true
+	}
+	if _, ok := out["use_kg"]; !ok && c.params.UseKG {
+		out["use_kg"] = true
+	}
+	if _, ok := out["meta_data_filter"]; !ok && c.params.MetaDataFilter != nil {
+		out["meta_data_filter"] = cloneAnyMap(c.params.MetaDataFilter)
+	}
+	if _, ok := out["retrieval_from"]; !ok && c.params.RetrievalFrom != "" {
+		out["retrieval_from"] = c.params.RetrievalFrom
 	}
 	// Translate v1 DSL name `kb_ids` to the tool's expected
 	// name `dataset_ids`. dataset_ids already-set wins; kb_ids
@@ -255,8 +301,8 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	return out
 }
 
-func normalizeLegacyRetrievalInputs(ctx context.Context, out map[string]any) {
-	if normalizeStructuredRetrievalInputs(ctx, out) {
+func normalizeLegacyRetrievalInputs(ctx context.Context, db *gorm.DB, out map[string]any) {
+	if normalizeStructuredRetrievalInputs(ctx, db, out) {
 		return
 	}
 	rawQuery, _ := out["query"].(string)
@@ -279,12 +325,12 @@ func normalizeLegacyRetrievalInputs(ctx context.Context, out map[string]any) {
 	if kbName == "" {
 		return
 	}
-	if datasetID := resolveRetrievalDatasetID(ctx, kbName); datasetID != "" {
+	if datasetID := resolveRetrievalDatasetID(ctx, db, kbName); datasetID != "" {
 		out["dataset_ids"] = []string{datasetID}
 	}
 }
 
-func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any) bool {
+func normalizeStructuredRetrievalInputs(ctx context.Context, db *gorm.DB, out map[string]any) bool {
 	_, hasDatasetIDs := out["dataset_ids"]
 	candidateMaps := []map[string]any{}
 	if stateMap, ok := out["state"].(map[string]any); ok {
@@ -309,7 +355,7 @@ func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any)
 			out["query"] = queryText
 		}
 		if kbName != "" && !hasDatasetIDs {
-			if datasetID := resolveRetrievalDatasetID(ctx, strings.TrimSpace(kbName)); datasetID != "" {
+			if datasetID := resolveRetrievalDatasetID(ctx, db, strings.TrimSpace(kbName)); datasetID != "" {
 				out["dataset_ids"] = []string{datasetID}
 				common.Debug("agent retrieval component: resolved dataset id")
 			}
@@ -324,11 +370,11 @@ func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any)
 	return consumed
 }
 
-func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
+func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) string {
 	if kbName == "" {
 		return ""
 	}
-	if kb, err := dao.NewKnowledgebaseDAO().GetByID(kbName); err == nil && kb != nil {
+	if kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, kbName); err == nil && kb != nil {
 		common.Debug("agent retrieval component: resolved dataset id by direct id")
 		return kb.ID
 	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -338,7 +384,7 @@ func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
 		common.Debug("agent retrieval component: resolve dataset id context")
 		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
-			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(kbName, tenantID); lookupErr == nil && kb != nil {
+			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(ctx, db, kbName, tenantID); lookupErr == nil && kb != nil {
 				common.Debug("agent retrieval component: resolved dataset id by tenant")
 				return kb.ID
 			} else if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
@@ -349,7 +395,7 @@ func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
 			}
 		}
 		if userID, _ := state.Sys["user_id"].(string); userID != "" {
-			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(kbName, userID); lookupErr == nil && len(kbs) > 0 {
+			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(ctx, db, kbName, userID); lookupErr == nil && len(kbs) > 0 {
 				for _, kb := range kbs {
 					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
 						continue
@@ -429,7 +475,7 @@ func (c *codeExecComponent) Outputs() map[string]string {
 	}
 }
 
-func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := make(map[string]any, len(c.params)+len(inputs))
 	for k, v := range c.params {
 		merged[k] = v
@@ -468,7 +514,7 @@ func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (
 	return decoded, nil
 }
 
-func (c *codeExecComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+func (c *codeExecComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
 }
 

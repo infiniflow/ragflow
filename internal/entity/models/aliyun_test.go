@@ -19,12 +19,15 @@ package models
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	requestBody := make(chan map[string]interface{}, 1)
 	requestPath := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +90,7 @@ func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
 }
 
 func TestAliyunChatWithMessagesStopsQwenFlashAfterToolResult(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	requestBody := make(chan map[string]interface{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +192,7 @@ func TestAliyunToolChoiceStopsOnlyQwenFlashAfterToolResult(t *testing.T) {
 }
 
 func TestAliyunChatStreamlyWithSenderSupportsToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	requestBody := make(chan map[string]interface{}, 1)
 	requestPath := make(chan string, 1)
@@ -282,6 +287,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ra
 }
 
 func TestAliyunChatStreamlyWithSenderRejectsStreamFalse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := NewAliyunModel(
 		map[string]string{"default": "https://dashscope.example"},
@@ -300,5 +306,268 @@ func TestAliyunChatStreamlyWithSenderRejectsStreamFalse(t *testing.T) {
 	)
 	if err == nil || err.Error() != "stream must be true in ChatStreamlyWithSender" {
 		t.Fatalf("error = %v, want stream validation error", err)
+	}
+}
+
+// newAliyunTTSTestServer stubs the DashScope multimodal-generation endpoint:
+// POST returns a JSON body whose output.audio.url points back at the same
+// server, GET returns the synthesized WAV bytes.
+func newAliyunTTSTestServer(t *testing.T, requestBody chan<- map[string]interface{}, requestPath chan<- string) *httptest.Server {
+	t.Helper()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "audio/wav")
+			_, _ = w.Write([]byte("fake-wav-bytes"))
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if requestPath != nil {
+			requestPath <- r.URL.Path
+		}
+		if requestBody != nil {
+			requestBody <- body
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := fmt.Fprintf(w, `{"output":{"audio":{"url":%q},"finish_reason":"stop"},"request_id":"req-1"}`, server.URL+"/audio.wav"); err != nil {
+			t.Errorf("failed to write TTS response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+const aliyunTTSTestSuffix = "api/v1/services/aigc/multimodal-generation/generation"
+
+func TestAliyunAudioSpeechSynthesizesViaNativeEndpoint(t *testing.T) {
+	withSSRFBypass(t)
+	requestBody := make(chan map[string]interface{}, 1)
+	requestPath := make(chan string, 1)
+	server := newAliyunTTSTestServer(t, requestBody, requestPath)
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: aliyunTTSTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-tts-flash"
+	text := "你好，世界"
+
+	response, err := model.AudioSpeech(
+		ctx,
+		&modelName,
+		&text,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Format: "mp3"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("AudioSpeech: %v", err)
+	}
+	if string(response.Audio) != "fake-wav-bytes" {
+		t.Errorf("audio = %q, want fake-wav-bytes", string(response.Audio))
+	}
+	if response.MediaType != "audio/wav" {
+		t.Errorf("media type = %q, want audio/wav", response.MediaType)
+	}
+
+	if got := <-requestPath; got != "/"+aliyunTTSTestSuffix {
+		t.Errorf("request path = %q, want /%s", got, aliyunTTSTestSuffix)
+	}
+	body := <-requestBody
+	if body["model"] != "qwen-tts-flash" {
+		t.Errorf("model = %v, want qwen-tts-flash", body["model"])
+	}
+	input, ok := body["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("input = %T, want JSON object", body["input"])
+	}
+	if input["text"] != "你好，世界" {
+		t.Errorf("input.text = %v, want 你好，世界", input["text"])
+	}
+	if input["voice"] != aliyunTTSDefaultVoice {
+		t.Errorf("input.voice = %v, want default %s", input["voice"], aliyunTTSDefaultVoice)
+	}
+	if _, ok := input["language_type"]; ok {
+		t.Errorf("language_type = %v, want omitted by default", input["language_type"])
+	}
+}
+
+func TestAliyunAudioSpeechHonorsExplicitVoiceAndLanguage(t *testing.T) {
+	withSSRFBypass(t)
+	requestBody := make(chan map[string]interface{}, 1)
+	server := newAliyunTTSTestServer(t, requestBody, nil)
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: aliyunTTSTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-tts-flash"
+	text := "hello"
+
+	if _, err := model.AudioSpeech(
+		ctx,
+		&modelName,
+		&text,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Params: map[string]any{"voice": "Serena", "language_type": "English"}},
+		nil,
+	); err != nil {
+		t.Fatalf("AudioSpeech: %v", err)
+	}
+	input := (<-requestBody)["input"].(map[string]interface{})
+	if got := input["voice"]; got != "Serena" {
+		t.Errorf("voice = %v, want Serena", got)
+	}
+	if got := input["language_type"]; got != "English" {
+		t.Errorf("language_type = %v, want English", got)
+	}
+}
+
+func TestAliyunAudioSpeechRejectsOversizedAudio(t *testing.T) {
+	withSSRFBypass(t)
+	oversized := make([]byte, aliyunTTSAudioMaxBytes+1)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "audio/wav")
+			_, _ = w.Write(oversized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := fmt.Fprintf(w, `{"output":{"audio":{"url":%q},"finish_reason":"stop"},"request_id":"req-1"}`, server.URL+"/audio.wav"); err != nil {
+			t.Errorf("failed to write TTS response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: aliyunTTSTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-tts-flash"
+	text := "hello"
+
+	_, err := model.AudioSpeech(
+		ctx,
+		&modelName,
+		&text,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Format: "mp3"},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("error = %v, want oversized audio error", err)
+	}
+}
+
+func TestAliyunAudioSpeechSurfacesAPIError(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"code":"InvalidApiKey","message":"Invalid API-key provided."}`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: aliyunTTSTestSuffix},
+	)
+	apiKey := "bad-key"
+	modelName := "qwen-tts-flash"
+	text := "hello"
+
+	_, err := model.AudioSpeech(ctx, &modelName, &text, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil {
+		t.Fatal("error = nil, want API error")
+	}
+}
+
+func TestAliyunAudioSpeechRejectsMissingAudioURL(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"finish_reason":"stop"},"request_id":"req-1"}`))
+	}))
+	defer server.Close()
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: aliyunTTSTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-tts-flash"
+	text := "hello"
+
+	_, err := model.AudioSpeech(ctx, &modelName, &text, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil {
+		t.Fatal("error = nil, want missing audio url error")
+	}
+}
+
+func TestAliyunAudioSpeechRequiresTTSSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	model := NewAliyunModel(
+		map[string]string{"default": "https://dashscope.example"},
+		URLSuffix{Chat: "compatible-mode/v1/chat/completions"},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-tts-flash"
+	text := "hello"
+
+	_, err := model.AudioSpeech(ctx, &modelName, &text, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil || err.Error() != "aliyun TTS URL suffix is required" {
+		t.Fatalf("error = %v, want missing TTS suffix error", err)
+	}
+}
+
+func TestAliyunAudioSpeechWithSenderSendsSingleChunk(t *testing.T) {
+	withSSRFBypass(t)
+	server := newAliyunTTSTestServer(t, nil, nil)
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: aliyunTTSTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-tts-flash"
+	text := "hello"
+
+	var chunks []string
+	err := model.AudioSpeechWithSender(
+		ctx,
+		&modelName,
+		&text,
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(content, _ *string) error {
+			if content != nil {
+				chunks = append(chunks, *content)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("AudioSpeechWithSender: %v", err)
+	}
+	if len(chunks) != 1 || chunks[0] != "fake-wav-bytes" {
+		t.Fatalf("chunks = %v, want [fake-wav-bytes]", chunks)
 	}
 }

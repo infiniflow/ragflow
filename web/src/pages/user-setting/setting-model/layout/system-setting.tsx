@@ -92,7 +92,6 @@ function SystemSetting() {
     async (field: string, value: string) => {
       const modelType = FieldToModelType[field];
       if (!modelType) return;
-      if (!value) return;
       const parsed = parseModelValue(value);
       if (parsed) {
         await setDefaultModel({ ...parsed, model_type: modelType });

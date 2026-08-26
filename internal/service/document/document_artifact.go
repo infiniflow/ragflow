@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -17,7 +18,7 @@ import (
 func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
 	parts := strings.SplitN(imageID, "-", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return nil, fmt.Errorf("Image not found.")
+		return nil, fmt.Errorf("image not found")
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -25,7 +26,7 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	return storageImpl.Get(parts[0], parts[1])
+	return storageImpl.Get(ctx, parts[0], parts[1])
 }
 
 // GetDocumentArtifact retrieves a sandbox artifact from object storage.
@@ -49,7 +50,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 		return nil, ErrArtifactInvalidFileType
 	}
 
-	if !s.sandboxArtifactAccessible(basename, userID) {
+	if !s.sandboxArtifactAccessible(ctx, basename, userID) {
 		// Same error as "object does not exist" to avoid leaking
 		// whether the artifact exists for a different user/agent.
 		return nil, ErrArtifactNotFound
@@ -61,11 +62,11 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 	}
 
 	bucket := sandboxArtifactBucket()
-	if !storageImpl.ObjExist(bucket, basename) {
+	if !storageImpl.ObjExist(ctx, bucket, basename) {
 		return nil, ErrArtifactNotFound
 	}
 
-	data, err := storageImpl.Get(bucket, basename)
+	data, err := storageImpl.Get(ctx, bucket, basename)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +93,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 // `LIKE '%...%'` which is fine here because the storage path is
 // short and indexed lookup on (user_id, exp_user_id) keeps the
 // scan narrow.
-func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID string) []string {
+func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, filename, userID string) []string {
 	if filename == "" || userID == "" {
 		return nil
 	}
@@ -114,7 +115,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 	filenamePattern := "%" + filenameSafe + "%"
 	artifactRefPattern := "%" + artifactRefSafe + "%"
 	dialogIDs := make(map[string]struct{})
-	rows, err := dao.DB.Model(&entity.API4Conversation{}).
+	rows, err := dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).
 		Select("dialog_id").
 		Where("user_id = ? OR exp_user_id = ?", userID, userID).
 		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
@@ -127,7 +128,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 	defer rows.Close()
 	for rows.Next() {
 		var d string
-		if err := rows.Scan(&d); err == nil && d != "" {
+		if err = rows.Scan(&d); err == nil && d != "" {
 			dialogIDs[d] = struct{}{}
 		}
 	}
@@ -145,7 +146,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 // UserCanvasDAO.Accessible (owner or team permission, with the
 // latter scoped to the caller's tenant membership — PR review
 // round 5).
-func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) bool {
+func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filename, userID string) bool {
 	if userID == "" {
 		return false
 	}
@@ -155,12 +156,12 @@ func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) boo
 	// (callers without tenant data) is safe — it effectively disables
 	// the team branch, so the only matches are canvases the caller
 	// directly owns.
-	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if terr != nil {
 		tenantIDs = nil
 	}
-	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(filename, userID) {
-		if s.canvasDAO.Accessible(dialogID, userID, tenantIDs) {
+	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
+		if s.canvasDAO.Accessible(ctx, dao.DB, dialogID, userID, tenantIDs) {
 			return true
 		}
 	}
@@ -209,7 +210,7 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	data, err := storageImpl.Get(bucket, name)
+	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
 		return nil, err
 	}
@@ -225,9 +226,28 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 	ext := utility.GetFileExtension(fileName)
 	contentType := utility.GetContentType(ext, doc.Type)
 
+	// Legacy .doc (OLE2) documents cannot be rendered by the
+	// .docx-only web previewer; serve extracted plain text instead.
+	if ext == "doc" {
+		if text, cerr := extractDOCPreviewText(ctx, fileName, data); cerr == nil {
+			data = []byte(text)
+			contentType = "text/plain; charset=utf-8"
+		}
+	}
+
 	return &DocumentPreview{
 		Data:        data,
 		ContentType: contentType,
 		FileName:    fileName,
 	}, nil
+}
+
+// extractDOCPreviewText extracts plain text from a legacy .doc
+// document via the office_oxide-backed DOCParser.
+func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
+	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
+	if res.Err != nil {
+		return "", res.Err
+	}
+	return res.Text, nil
 }

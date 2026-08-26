@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,48 +10,69 @@ import (
 	"testing"
 )
 
-func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
-	var called atomic.Bool
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
+// paddleOCRJobServer stubs the async PaddleOCR Job API
+// (submit → poll → fetch JSONL), mirroring Python's PaddleOCRParser.
+// wantToken is the expected Authorization bearer token; empty skips the check.
+func paddleOCRJobServer(t *testing.T, called *atomic.Bool, wantToken string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/ocr/jobs":
+			if wantToken != "" {
+				if got, want := r.Header.Get("Authorization"), "Bearer "+wantToken; got != want {
+					t.Errorf("Authorization = %q, want %q", got, want)
+					return
+				}
+			}
+			if err := r.ParseMultipartForm(32 << 20); err != nil {
+				t.Errorf("ParseMultipartForm: %v", err)
+				return
+			}
+			f, _, err := r.FormFile("file")
+			if err != nil {
+				t.Errorf("FormFile: %v", err)
+				return
+			}
+			raw, readErr := io.ReadAll(f)
+			f.Close()
+			if readErr != nil {
+				t.Errorf("ReadAll: %v", readErr)
+				return
+			}
+			if got := string(raw); !strings.HasPrefix(got, "%PDF") {
+				t.Errorf("uploaded file = %q, want PDF bytes", got)
+				return
+			}
+			if got, want := r.FormValue("model"), "PaddleOCR-VL"; got != want {
+				t.Errorf("model = %q, want %q", got, want)
+				return
+			}
+			if got := r.FormValue("optionalPayload"); !strings.Contains(got, "formatBlockContent") {
+				t.Errorf("optionalPayload = %q, want formatBlockContent", got)
+				return
+			}
+			if called != nil {
+				called.Store(true)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"jobId":"job-1"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/ocr/jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			resultURL := "http://" + r.Host + "/result"
+			_, _ = fmt.Fprintf(w, `{"data":{"state":"done","resultJsonUrl":%q}}`, resultURL)
+		case r.Method == http.MethodGet && r.URL.Path == "/result":
+			w.Header().Set("Content-Type", "application/jsonl")
+			_, _ = w.Write([]byte(`{"result":{"layoutParsingResults":[{"prunedResult":{"parsing_res_list":[{"block_content":"# Paddle Title\n\nBody paragraph.\n"}]}}]}}`))
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		called.Store(true)
-		if got, want := r.Header.Get("Authorization"), "Bearer paddle-secret"; got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-			return
-		}
-		var body struct {
-			File      string `json:"file"`
-			FileType  int    `json:"fileType"`
-			Algorithm string `json:"algorithm"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("Decode: %v", err)
-			return
-		}
-		if got, want := body.FileType, 0; got != want {
-			t.Errorf("fileType = %d, want %d for PDF", got, want)
-			return
-		}
-		if got, want := body.Algorithm, "PaddleOCR-VL"; got != want {
-			t.Errorf("algorithm = %q, want %q", got, want)
-			return
-		}
-		raw, err := base64.StdEncoding.DecodeString(body.File)
-		if err != nil {
-			t.Errorf("DecodeString: %v", err)
-			return
-		}
-		if got := string(raw); !strings.HasPrefix(got, "%PDF") {
-			t.Errorf("uploaded file = %q, want PDF bytes", got)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Paddle Title\n\nBody paragraph.\n"}}]}}`))
 	}))
+}
+
+func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
+	var called atomic.Bool
+	server := paddleOCRJobServer(t, &called, "paddle-secret")
 	defer server.Close()
 
 	pdf := NewPDFParser()
@@ -82,14 +103,8 @@ func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_PaddleOCRJSONIntegration(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Paddle Title\n\nBody paragraph.\n"}}]}}`))
-	}))
+	withSSRFBypass(t)
+	server := paddleOCRJobServer(t, nil, "")
 	defer server.Close()
 
 	pdf := NewPDFParser()

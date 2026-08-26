@@ -44,7 +44,7 @@ func NewDOCXParser() *DOCXParser {
 
 // ConfigureFromSetup implements parserSetupConfigurer, receiving the
 // DSL "docx" family setup map. The output_format key drives whether
-// ParseWithResult produces JSON items (structured) or markdown.
+// ParseWithResult produces JSON items (structured) or Markdown.
 func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
@@ -108,7 +108,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// (mirrors Python parser.py:892-893 remove_toc_word).
 		if p.RemoveTOC {
 			outlines := extractDOCXOutlines(irJSON)
-			sections = removeTOCWord(sections, outlines, false)
+			sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
 		}
 		if len(sections) == 0 {
 			sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
@@ -120,12 +120,12 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		}
 	}
 
-	// Default / markdown path.
+	// Default / Markdown path.
 	md, err := doc.ToMarkdown()
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("docx to-markdown: %w", err)}
 	}
-	// remove_header_footer on markdown: filter lines by exact match
+	// remove_header_footer on Markdown: filter lines by exact match
 	// (mirrors Python parser.py:923-926 split lines → filter → rejoin).
 	if p.RemoveHeaderFooter {
 		hfTexts := extractDOCXHeaderFooterTexts(data)
@@ -141,8 +141,8 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		}
 		md = strings.Join(rebuilt, "\n")
 	}
-	// remove_toc on markdown: split lines, filter, rejoin
-	// (mirrors Python parser.py:927-928 remove_toc_word on markdown).
+	// remove_toc on Markdown: split lines, filter, rejoin
+	// (mirrors Python parser.py:927-928 remove_toc_word on Markdown).
 	if p.RemoveTOC && irErr == nil {
 		outlines := extractDOCXOutlines(irJSON)
 		lines := strings.Split(md, "\n")
@@ -150,7 +150,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		for _, ln := range lines {
 			lineItems = append(lineItems, map[string]any{"text": ln})
 		}
-		filtered := removeTOCWord(lineItems, outlines, false)
+		filtered := removeTOCWord(lineItems, outlines, isEnglishItems(lineItems))
 		rebuilt := make([]string, 0, len(filtered))
 		for _, item := range filtered {
 			rebuilt = append(rebuilt, itemText(item))

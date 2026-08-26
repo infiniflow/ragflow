@@ -41,7 +41,7 @@ func NewOpenRouterModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenRou
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -77,82 +77,12 @@ func (o *OpenRouterModel) ChatWithMessages(ctx context.Context, modelName string
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := o.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := o.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to send request: %d %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -162,6 +92,10 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
+	}
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+		modelConfig.UsageResult = nil
 	}
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
@@ -175,6 +109,7 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
 	if modelConfig != nil {
 		if modelConfig.Thinking != nil {
@@ -185,107 +120,36 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := o.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, string(body))
-	}
-
-	accumulatedToolCalls := make(map[int]map[string]any)
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		// OpenRouter emits reasoning under delta.reasoning (not
+		// delta.reasoning_content), so it uses its own ParserConfig.
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenRouterParserConfig, sender)
+	})
 }
 
-type openrouterEmbeddingResponse struct {
-	Data   []openrouterEmbeddingData `json:"data"`
-	Model  string                    `json:"model"`
-	Object string                    `json:"object"`
-	Usage  openrouterUsage           `json:"usage"`
+// OpenRouterEmbeddingResponse mirrors OpenRouter's embeddings response.
+type OpenRouterEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
-type openrouterEmbeddingData struct {
-	Embedding []float64 `json:"embedding"`
-	Object    string    `json:"object"`
-	Index     int       `json:"index"`
-}
-
-type openrouterUsage struct {
-	PromptTokens int `json:"prompt_tokens"`
-	TotalTokens  int `json:"total_tokens"`
-}
-
-func (o *OpenRouterModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (o *OpenRouterModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
@@ -300,7 +164,7 @@ func (o *OpenRouterModel) Embed(ctx context.Context, modelName *string, texts []
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
@@ -338,10 +202,15 @@ func (o *OpenRouterModel) Embed(ctx context.Context, modelName *string, texts []
 		return nil, fmt.Errorf("OpenRouter embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var parsed openrouterEmbeddingResponse
+	var parsed OpenRouterEmbeddingResponse
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:      parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, dataElem := range parsed.Data {
@@ -373,20 +242,29 @@ type OpenRouterRerankResponse struct {
 			Text string `json:"text"`
 		} `json:"document,omitempty"`
 	} `json:"results"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
-func (o *OpenRouterModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (o *OpenRouterModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN == 0 {
-		topN = len(documents)
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		topN = rerankConfig.TopN
 	}
 
 	reqBody := OpenRouterRerankRequest{
@@ -437,6 +315,11 @@ func (o *OpenRouterModel) Rerank(ctx context.Context, modelName *string, query s
 	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	recordResponseUsage(modelUsage, rerankResp.ID, &TokenUsage{
+		PromptTokens:     rerankResp.Usage.PromptTokens,
+		CompletionTokens: rerankResp.Usage.CompletionTokens,
+		TotalTokens:      rerankResp.Usage.TotalTokens,
+	}, "rerank")
 
 	var rerankResponse RerankResponse
 	for _, result := range rerankResp.Results {

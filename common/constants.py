@@ -166,6 +166,7 @@ class FileSource(StrEnum):
     GITLAB = "gitlab"
     IMAP = "imap"
     BITBUCKET = "bitbucket"
+    AZURE_DEVOPS = "azure_devops"
     ZENDESK = "zendesk"
     SEAFILE = "seafile"
     MYSQL = "mysql"
@@ -185,7 +186,9 @@ class PipelineTaskType(StrEnum):
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
     MEMORY = "Memory"
-    ARTIFACT = "Artifact"
+    # Member name kept as ARTIFACT for back-compat; value is "Wiki" so the
+    # runtime task_type (``.lower()`` == "wiki") matches the wiki index/task type.
+    ARTIFACT = "Wiki"
     SKILL = "Skill"
     # KB-wide structure-graph merge tasks (rebuild_dataset_structure_graph_json).
     STRUCTURE_GRAPH = "StructureGraph"

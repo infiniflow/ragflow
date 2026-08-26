@@ -23,13 +23,18 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
 )
 
 // stubEmbedder records every call and returns canned vectors.
@@ -52,6 +57,15 @@ type embeddingCallResult struct {
 
 func (s *stubEmbedder) MaxTokens() int {
 	return s.maxTokens
+}
+
+func (s *stubEmbedder) BatchSize() int {
+	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 16
 }
 
 func (s *stubEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
@@ -90,8 +104,10 @@ func (s *stubEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingR
 }
 
 // newStubEmbedder returns a stub embedder for instance-level resolver injection.
+// maxTokens defaults to 2048 so truncateForEmbedding truncates to the first
+// 2048 tokens; tests that exercise truncation set maxTokens explicitly.
 func newStubEmbedder(dim int) *stubEmbedder {
-	return &stubEmbedder{dim: dim}
+	return &stubEmbedder{dim: dim, maxTokens: 2048}
 }
 
 // withStubEmbedder constructs a TokenizerComponent with an instance-scoped
@@ -101,7 +117,7 @@ func newStubEmbedder(dim int) *stubEmbedder {
 func withStubEmbedder(t *testing.T, dim int) (*TokenizerComponent, *stubEmbedder) {
 	t.Helper()
 	stub := newStubEmbedder(dim)
-	comp, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return stub, nil })
+	comp, err := NewTokenizerComponentWithResolver(nil, func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -135,12 +151,9 @@ func TestTokenizerComponent_Registered(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	var err error
-	if err != nil {
-		t.Fatalf("NewTokenizerComponent: %v", err)
-	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
 	})
@@ -168,7 +181,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 	})
 	if err != nil {
@@ -183,14 +196,15 @@ func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"search_method": []any{"embedding"},
-	}, func(_, _, _ string) (Embedder, error) {
+	}, func(ctx context.Context, _, _, _ string) (Embedder, error) {
 		return newStubEmbedder(4), nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
-	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), map[string]any{
+	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
 	})
@@ -216,8 +230,9 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
 	c, stub := withStubEmbedder(t, 2)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
 	})
@@ -256,6 +271,15 @@ func TestTokenizerComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 }
 
+func TestCopyPipelineControlValuesPreservesWikiActiveState(t *testing.T) {
+	states := []map[string]any{{"key": "state-1", "payload": `{"plan":[]}`}}
+	output := map[string]any{"chunks": []any{}}
+	copyPipelineControlValues(output, map[string]any{"wiki_active_map_states": states})
+	if !reflect.DeepEqual(output["wiki_active_map_states"], states) {
+		t.Fatalf("wiki active states = %#v, want %#v", output["wiki_active_map_states"], states)
+	}
+}
+
 // TestTokenizerComponent_NewTokenizerComponent_Defaults verifies
 // the Python default param values propagate.
 func TestTokenizerComponent_NewTokenizerComponent_Defaults(t *testing.T) {
@@ -287,14 +311,14 @@ func TestTokenizerComponent_NewTokenizerComponent_BadParam(t *testing.T) {
 }
 
 func TestValidateTokenizerOutputs_FullTextMissingReturnsError(t *testing.T) {
-	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"full_text"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"full_text"}, []string{"text"}, "")
 	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
 		t.Fatalf("err = %v, want missing full_text tokens", err)
 	}
 }
 
 func TestValidateTokenizerOutputs_EmbeddingMissingReturnsError(t *testing.T) {
-	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"embedding"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"embedding"}, []string{"text"}, "kb-1")
 	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
 		t.Fatalf("err = %v, want missing embedding vector", err)
 	}
@@ -302,7 +326,7 @@ func TestValidateTokenizerOutputs_EmbeddingMissingReturnsError(t *testing.T) {
 
 func TestValidateTokenizerOutputs_BothModesFailWhenOneMissing(t *testing.T) {
 	ck := schema.ChunkDoc{Text: "alpha", ContentLtks: "tok", ContentSmLtks: "sm"}
-	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text", "embedding"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text", "embedding"}, []string{"text"}, "kb-1")
 	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
 		t.Fatalf("err = %v, want missing embedding vector", err)
 	}
@@ -318,7 +342,7 @@ func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T
 		ContentLtks:   "",
 		ContentSmLtks: "",
 	}
-	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text"}, []string{"text"}, "")
 	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
 		t.Fatalf("err = %v, want missing full_text tokens", err)
 	}
@@ -352,3 +376,554 @@ func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 		t.Errorf("positions page already converted; want raw 1-indexed page 1, got %v", got[0][0])
 	}
 }
+
+// TestTruncateForEmbedding_SmallMaxTokens covers Tokenizer Diff-14. For any
+// positive maxTokens, truncateForEmbedding keeps the first maxTokens tokens
+// (non-empty) and the result is strictly shorter than the input.
+//
+// The unconfigured case (maxTokens <= 0) is covered separately by
+// TestTruncateForEmbedding_UnconfiguredClampsToDefault: rather than mirroring
+// Python's `truncate` (which returns "" for max_len <= 0 and would make the
+// embeddings API reject the batch), Go clamps the limit to a safe default so
+// every path still truncates instead of passing the full text through.
+func TestTruncateForEmbedding_SmallMaxTokens(t *testing.T) {
+	// Long enough to produce well over 50 tokens, so 5/10/50 are all clearly
+	// below the total and truncation is observable.
+	long := strings.Repeat("a", 2000)
+	if got := truncateForEmbedding(long, 5); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=5) returned empty, want first 5 tokens")
+	}
+	if got := truncateForEmbedding(long, 10); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=10) returned empty, want first 10 tokens")
+	}
+	// Normal path: maxTokens > 10 should truncate (not return empty).
+	if got := truncateForEmbedding(long, 50); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=50) returned empty, want truncated text")
+	}
+	if got := truncateForEmbedding(long, 50); len(got) >= len(long) {
+		t.Errorf("truncateForEmbedding(maxTokens=50) len = %d, want strictly shorter than %d", len(got), len(long))
+	}
+}
+
+// TestTruncateForEmbedding_UnconfiguredClampsToDefault is the regression gate
+// for the root cause behind embedding truncation: an embedder that reports no
+// token limit (maxTokens <= 0) must NOT be passed through verbatim. Before the
+// central clamp, the generic model_service branch left maxTokens = 0, which
+// silently disabled truncation for the whole generic path. The fix clamps
+// maxTokens <= 0 to defaultEmbeddingTokenLimit (8192) inside
+// truncateForEmbedding itself, so every caller — Builtin and generic alike —
+// keeps truncation active.
+//
+// For a clearly-over-limit input and maxTokens = 0, the result must be non-empty
+// AND strictly shorter than the input: proof that it was truncated to the
+// default, not returned verbatim.
+func TestTruncateForEmbedding_UnconfiguredClampsToDefault(t *testing.T) {
+	// ~10000+ CL100K tokens, comfortably above the 8192 default so truncation
+	// is observable.
+	long := strings.Repeat("hello world ", 5000)
+	got := truncateForEmbedding(long, 0)
+	if got == "" {
+		t.Fatal("truncateForEmbedding(maxTokens=0) returned empty; clamp must keep truncation active")
+	}
+	if len(got) >= len(long) {
+		t.Errorf("truncateForEmbedding(maxTokens=0) len = %d, want strictly shorter than %d; clamp to default must truncate",
+			len(got), len(long))
+	}
+}
+
+// TestEmbeddingBatchSizeEnvVar covers Tokenizer Omission-3: the batch size
+// must be configurable via TOKENIZER_EMBEDDING_BATCH_SIZE env var, matching
+// Python's configurable settings.EMBEDDING_BATCH_SIZE. The resolved batch size
+// is now provided by models.GetEmbeddingBatchSize (env override -> provider
+// capability -> default), surfaced through Embedder.BatchSize().
+func TestEmbeddingBatchSizeEnvVar(t *testing.T) {
+	if got := models.GetEmbeddingBatchSize(""); got != models.DefaultEmbeddingBatchSize {
+		t.Errorf("GetEmbeddingBatchSize() default = %d, want %d", got, models.DefaultEmbeddingBatchSize)
+	}
+	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "32")
+	t.Cleanup(func() { os.Unsetenv("TOKENIZER_EMBEDDING_BATCH_SIZE") })
+	if got := models.GetEmbeddingBatchSize(""); got != 32 {
+		t.Errorf("GetEmbeddingBatchSize() after env = %d, want 32", got)
+	}
+	// Invalid value falls back to default.
+	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "bad")
+	if got := models.GetEmbeddingBatchSize(""); got != models.DefaultEmbeddingBatchSize {
+		t.Errorf("GetEmbeddingBatchSize() invalid env = %d, want %d", got, models.DefaultEmbeddingBatchSize)
+	}
+}
+
+// TestChunkOrderInt_EmbeddingOnly covers Tokenizer Diff-8: chunk_order_int
+// must be set even when search_method does not include "full_text" (i.e.
+// embedding-only path). tokenizeChunks previously only set it for the
+// full_text branch.
+func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	inputs := map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "first chunk", "doc_type_kwd": "text"},
+			{"text": "second chunk", "doc_type_kwd": "text"},
+		},
+	}
+	out, err := comp.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	for i, ck := range chunks {
+		coi, ok := ck["chunk_order_int"]
+		if !ok {
+			t.Errorf("chunk %d: chunk_order_int missing (embedding-only path must set it)", i)
+		}
+		if coi == nil {
+			t.Errorf("chunk %d: chunk_order_int is nil", i)
+		}
+	}
+}
+
+// TestChunksFromTokenizerUpstream_FiltersPhantomChunks covers A5 at the
+// pipeline level: a chunk is dropped only when BOTH text and
+// content_with_weight are empty. Blocks that carry only image / summary /
+// questions / nothing are dropped (they produce no retrievable content),
+// while a content_with_weight-only block is kept (Parser path; normalize
+// backfills text). Deliberate deviation from Python's "filter None only"
+// rule — user value (retrievable content) wins.
+func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
+	// JSON path: 6 items. Only the text block and the content_with_weight
+	// block survive; the other four are dropped by the A5 gate.
+	items := []map[string]any{
+		{"text": "valid chunk", "doc_type_kwd": "text"}, // keep
+		{"image": "data:image/png;base64,abc"},          // drop: no text, no content_with_weight
+		{"summary": "a summary"},                        // drop
+		{"questions": "q1"},                             // drop
+		{"content_with_weight": "weighted"},             // keep (text backfilled by normalize)
+		{},                                              // drop: empty
+	}
+	// Use embedding-only mode to avoid CGo tokenizer dependency.
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	// A5 keeps only the text block and the content_with_weight block.
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks (4 phantoms filtered), got %d: %#v", len(chunks), chunks)
+	}
+	// Surviving chunks, in upstream order.
+	if chunks[0]["text"] != "valid chunk" {
+		t.Errorf("chunk 0 text = %q, want %q", chunks[0]["text"], "valid chunk")
+	}
+	if chunks[1]["text"] != "weighted" {
+		t.Errorf("chunk 1 text = %q, want %q (content_with_weight backfilled to text)", chunks[1]["text"], "weighted")
+	}
+}
+
+// TestChunkOrderInt_AllPathsUnconditional is the A6 regression gate: every
+// surviving chunk must carry chunk_order_int, equal to its index in the
+// (post-filter) reading sequence — on every output_format and every
+// search_method combination. Go sets it unconditionally (deviation from
+// Python's chunks+full_text-only rule) so every retrieval path can sort by
+// reading order.
+func TestChunkOrderInt_AllPathsUnconditional(t *testing.T) {
+	// identity tokenizer: Tokenize returns input unchanged — no CGo pool.
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	stub := newStubEmbedder(8)
+	textChunks := []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}}
+	jsonChunks := []map[string]any{
+		{"text": "a", "doc_type_kwd": "text"},
+		{"text": "b", "doc_type_kwd": "text"},
+		{"text": "c", "doc_type_kwd": "text"},
+	}
+	cases := []struct {
+		name         string
+		searchMethod []string
+		inputs       map[string]any
+		wantChunks   int
+	}{
+		{"chunks/full_text", []string{"full_text"},
+			map[string]any{"output_format": "chunks", "chunks": textChunks}, 3},
+		{"chunks/embedding", []string{"embedding"},
+			map[string]any{"output_format": "chunks", "chunks": textChunks}, 3},
+		{"chunks/full_text+embedding", []string{"full_text", "embedding"},
+			map[string]any{"output_format": "chunks", "chunks": textChunks}, 3},
+		{"json/full_text", []string{"full_text"},
+			map[string]any{"output_format": "json", "json": jsonChunks}, 3},
+		{"markdown/full_text", []string{"full_text"},
+			map[string]any{"output_format": "markdown", "markdown": "# H\n\nbody one\n\nbody two"}, 1},
+		{"text/full_text", []string{"full_text"},
+			map[string]any{"output_format": "text", "text": "body text"}, 1},
+		{"html/full_text", []string{"full_text"},
+			map[string]any{"output_format": "html", "html": "<p>body text</p>"}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			comp, err := NewTokenizerComponentWithResolver(
+				map[string]any{"search_method": tc.searchMethod, "fields": []string{"text"}},
+				func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+			)
+			if err != nil {
+				t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+			}
+			out, err := comp.Invoke(context.Background(), nil, tc.inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := out["chunks"].([]map[string]any)
+			if len(chunks) != tc.wantChunks {
+				t.Fatalf("want %d chunks, got %d: %#v", tc.wantChunks, len(chunks), chunks)
+			}
+			for i, ck := range chunks {
+				coi, ok := ck["chunk_order_int"]
+				if !ok {
+					t.Errorf("chunk %d: chunk_order_int missing", i)
+					continue
+				}
+				got, ok := coi.(float64)
+				if !ok {
+					t.Errorf("chunk %d: chunk_order_int type %T, want number", i, coi)
+					continue
+				}
+				if int(got) != i {
+					t.Errorf("chunk %d: chunk_order_int = %v, want %d", i, got, i)
+				}
+			}
+		})
+	}
+}
+
+// TestChunkOrderInt_A5FilterKeepsSequenceContiguous is the A5+A6 joint gate:
+// when an upstream text-empty chunk is dropped by the A5 gate, the surviving
+// text chunks still receive contiguous 0-based chunk_order_int values (Go
+// indexes the post-filter slice, so no gap is left by the dropped chunk).
+func TestChunkOrderInt_A5FilterKeepsSequenceContiguous(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	stub := newStubEmbedder(8)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"full_text", "embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	// Middle chunk has empty text and no content_with_weight -> dropped by A5.
+	items := []map[string]any{
+		{"text": "first"},
+		{"questions": "orphan question"}, // dropped: no retrievable content
+		{"text": "second"},
+	}
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 surviving chunks, got %d: %#v", len(chunks), chunks)
+	}
+	for i, ck := range chunks {
+		coi, ok := ck["chunk_order_int"]
+		if !ok {
+			t.Errorf("chunk %d: chunk_order_int missing", i)
+			continue
+		}
+		got, ok := coi.(float64)
+		if !ok {
+			t.Errorf("chunk %d: chunk_order_int type %T, want number", i, coi)
+			continue
+		}
+		if int(got) != i {
+			t.Errorf("chunk %d: chunk_order_int = %v, want %d (contiguous after A5 drop)", i, got, i)
+		}
+	}
+}
+
+// TestTokenizerComponent_ImportantKwd_CommaOnly is the no-tag parity test for
+// A2: important_kwd must be split on the ENGLISH COMMA ONLY, matching the DSL
+// tokenizer (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`). It
+// runs without the C++ analyzer pool by switching the tokenizer engine to
+// "infinity" (identity: Tokenize returns its input unchanged), so it executes
+// in the default `go test ./...` CI tier and gives real regression protection.
+func TestTokenizerComponent_ImportantKwd_CommaOnly(t *testing.T) {
+	// Switch to identity tokenizer so tokenizeChunks needs no CGo pool, then
+	// restore the default engine type afterwards.
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	c, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": "kw1,kw2;kw3，kw4"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := out["chunks"].([]map[string]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
+	}
+	kwd, ok := got[0]["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", got[0]["important_kwd"])
+	}
+	// Only the English comma splits; CJK comma and semicolon stay attached.
+	want := []string{"kw1", "kw2;kw3，kw4"}
+	if len(kwd) != len(want) {
+		t.Fatalf("important_kwd = %v, want %v", kwd, want)
+	}
+	for i := range want {
+		if kwd[i] != want[i] {
+			t.Errorf("important_kwd = %v, want %v (only comma splits)", kwd, want)
+		}
+	}
+	// important_tks still tokenizes the full keyword string (identity mode
+	// returns it unchanged).
+	if tks, ok := got[0]["important_tks"].(string); !ok || tks != "kw1,kw2;kw3，kw4" {
+		t.Errorf("important_tks = %v, want full keyword string", got[0]["important_tks"])
+	}
+}
+
+// TestTokenizerComponent_ImportantKwd_PreservesEmptyElements locks F3: the
+// component path splits on the ENGLISH COMMA ONLY via strings.Split and
+// PRESERVES empty elements, matching Python's "a,,b".split(",") ==
+// ["a","","b"]. This is the contract asserted by the comment at
+// tokenizer.go:688-689, and it is the intentional counterpart to the executor
+// fallback (cleanupConsumedChunkFields -> utility.SplitKeywords) which DROPS
+// empty parts. Runs without the C++ analyzer pool via the identity engine.
+func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	c, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+
+	// Middle empty element must be preserved (["a","","b"]), not dropped.
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": "a,,b"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := out["chunks"].([]map[string]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
+	}
+	kwd, ok := got[0]["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", got[0]["important_kwd"])
+	}
+	want := []string{"a", "", "b"}
+	if len(kwd) != len(want) {
+		t.Fatalf("important_kwd = %v, want %v (empty elements preserved)", kwd, want)
+	}
+	for i := range want {
+		if kwd[i] != want[i] {
+			t.Errorf("important_kwd[%d] = %q, want %q (empty elements preserved)", i, kwd[i], want[i])
+		}
+	}
+
+	// Empty keyword string must not error. The component guards on a
+	// non-empty keywords field (tokenizer.go:682), so important_kwd is left
+	// unset (nil) rather than materialized as an empty array. Downstream
+	// indexing treats a missing important_kwd as "no keywords", which is safe.
+	outEmpty, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": ""},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke(empty keywords): %v", err)
+	}
+	gotEmpty, ok := outEmpty["chunks"].([]map[string]any)
+	if !ok || len(gotEmpty) != 1 {
+		t.Fatalf("empty chunks = %v, want 1 chunk", outEmpty["chunks"])
+	}
+	if kwd, exists := gotEmpty[0]["important_kwd"]; exists && kwd != nil {
+		t.Errorf("empty keywords should leave important_kwd unset, got %v", kwd)
+	}
+}
+
+// TestSanitizeKeywordTerm verifies the ES keyword-field guard used by the Go
+// tokenizer path. It mirrors the Python regression tests in
+// tests/test_main.py::TestSanitizeKeywordTerm.
+func TestSanitizeKeywordTerm(t *testing.T) {
+	tests := []struct {
+		name     string
+		term     string
+		want     string
+		wantByte int
+	}{
+		{
+			name: "small term unchanged",
+			term: "hello",
+			want: "hello",
+		},
+		{
+			name: "trims whitespace",
+			term: "  world  ",
+			want: "world",
+		},
+		{
+			name: "empty string",
+			term: "",
+			want: "",
+		},
+		{
+			name:     "oversized single word truncated to byte limit",
+			term:     strings.Repeat("x", 40000),
+			want:     strings.Repeat("x", esKeywordMaxTermBytes),
+			wantByte: esKeywordMaxTermBytes,
+		},
+		{
+			name:     "multi-byte characters truncated at rune boundary",
+			term:     strings.Repeat("中", 20000),
+			want:     strings.Repeat("中", esKeywordMaxTermBytes/3),
+			wantByte: esKeywordMaxTermBytes,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeKeywordTerm(tt.term)
+			if got != tt.want {
+				t.Errorf("sanitizeKeywordTerm(%q) = %q, want %q", tt.term, got, tt.want)
+			}
+			if tt.wantByte > 0 && len(got) != tt.wantByte {
+				t.Errorf("len(sanitizeKeywordTerm(%q)) = %d, want %d", tt.term, len(got), tt.wantByte)
+			}
+		})
+	}
+}
+
+// TestTokenizerComponent_ImportantKwd_Bounded verifies that oversized keywords
+// are truncated to the ES keyword-field limit at the component level, while
+// normal comma-splitting behavior is preserved.
+func TestTokenizerComponent_ImportantKwd_Bounded(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	c, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+
+	oversized := strings.Repeat("x", 40000)
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": "normal," + oversized + ",中文字"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := out["chunks"].([]map[string]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
+	}
+	kwd, ok := got[0]["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", got[0]["important_kwd"])
+	}
+	if len(kwd) != 3 {
+		t.Fatalf("important_kwd = %v, want 3 entries", kwd)
+	}
+	if kwd[0] != "normal" {
+		t.Errorf("important_kwd[0] = %q, want \"normal\"", kwd[0])
+	}
+	if len(kwd[1]) != esKeywordMaxTermBytes {
+		t.Errorf("important_kwd[1] byte length = %d, want %d", len(kwd[1]), esKeywordMaxTermBytes)
+	}
+	if kwd[2] != "中文字" {
+		t.Errorf("important_kwd[2] = %q, want \"中文字\"", kwd[2])
+	}
+}
+
+// TestTextPayloadToChunks_B1B2 pins the text-payload adapter used for
+// markdown/text/html payloads (tokenizer.go:578). This is the Go-correct
+// counterpart to a Python-DSL bug where turning full_text off dropped the
+// entire document (B1), and where an empty payload failed to emit the chunks
+// key at all (B2). The Go helper always returns a slice: non-empty payload ->
+// one chunk carrying the raw text; nil/empty/whitespace payload -> a non-nil
+// EMPTY slice so the downstream "chunks" key is present as [].
+//
+// No-tag unit test: textPayloadToChunks is a pure function, no CGo pool needed.
+func TestTextPayloadToChunks_B1B2(t *testing.T) {
+	// B1: a real payload yields exactly one chunk with the text preserved.
+	payload := "plain payload body"
+	got := textPayloadToChunks(&payload)
+	if len(got) != 1 {
+		t.Fatalf("non-empty payload: len(chunks) = %d, want 1", len(got))
+	}
+	if got[0].Text != payload {
+		t.Errorf("chunk text = %q, want %q", got[0].Text, payload)
+	}
+
+	// B2: empty/whitespace/nil payloads must still return a non-nil EMPTY
+	// slice (so the chunks key is present as [] downstream), never nil.
+	for _, tc := range []struct {
+		name string
+		in   *string
+	}{
+		{"empty string", ptr("")},
+		{"whitespace only", ptr("   \n\t  ")},
+		{"nil pointer", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := textPayloadToChunks(tc.in)
+			if out == nil {
+				t.Fatalf("textPayloadToChunks(%s) = nil, want non-nil empty slice", tc.name)
+			}
+			if len(out) != 0 {
+				t.Errorf("textPayloadToChunks(%s) len = %d, want 0", tc.name, len(out))
+			}
+		})
+	}
+}
+
+func ptr(s string) *string { return &s }

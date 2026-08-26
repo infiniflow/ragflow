@@ -17,6 +17,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
@@ -27,9 +29,9 @@ import (
 // LangfuseService is the behaviour the handler depends on (interface enables
 // mocking in tests).
 type LangfuseService interface {
-	SetAPIKey(tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error)
-	GetAPIKey(tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error)
-	DeleteAPIKey(tenantID string) (bool, common.ErrorCode, string, error)
+	SetAPIKey(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error)
+	GetAPIKey(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error)
+	DeleteAPIKey(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error)
 }
 
 // LangfuseHandler handles /langfuse/api-key HTTP requests.
@@ -68,8 +70,9 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request: "+err.Error())
 		return
 	}
+	ctx := c.Request.Context()
 
-	row, code, err := h.langfuseService.SetAPIKey(user.ID, req.SecretKey, req.PublicKey, req.Host)
+	row, code, err := h.langfuseService.SetAPIKey(ctx, user.ID, req.SecretKey, req.PublicKey, req.Host)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -91,8 +94,9 @@ func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	data, code, message, err := h.langfuseService.GetAPIKey(user.ID)
+	data, code, message, err := h.langfuseService.GetAPIKey(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, message)
 		return
@@ -107,8 +111,9 @@ func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	ok, code, message, err := h.langfuseService.DeleteAPIKey(user.ID)
+	ok, code, message, err := h.langfuseService.DeleteAPIKey(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, message)
 		return

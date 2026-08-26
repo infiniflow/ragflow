@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"sort"
 	"strings"
 )
 
@@ -39,7 +38,7 @@ func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -70,6 +69,20 @@ func (v *VolcEngine) getAPIKey(apiConfig *APIConfig) string {
 		return volcConfig.ArkAPIKey
 	}
 	return key
+}
+
+// effectiveAPIConfig returns an APIConfig with the extracted API key
+// suitable for use with doRequest/doStreamRequest.
+func (v *VolcEngine) effectiveAPIConfig(apiConfig *APIConfig) *APIConfig {
+	if apiConfig == nil {
+		return nil
+	}
+	key := v.getAPIKey(apiConfig)
+	return &APIConfig{
+		ApiKey:  &key,
+		Region:  apiConfig.Region,
+		BaseURL: apiConfig.BaseURL,
+	}
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
@@ -134,92 +147,13 @@ func (v *VolcEngine) ChatWithMessages(ctx context.Context, modelName string, mes
 
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	effectiveConfig := v.effectiveAPIConfig(apiConfig)
+	body, err := v.baseModel.doRequest(ctx, url, effectiveConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
-
-	resp, err := v.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, _ := messageMap["content"].(string)
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid reasonContent format")
-		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	var toolCalls []map[string]any
-	if tcs, ok := messageMap["tool_calls"].([]any); ok {
-		for _, tc := range tcs {
-			if toolCall, ok := tc.(map[string]any); ok {
-				toolCalls = append(toolCalls, toolCall)
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &TokenUsage{
-			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
-		}
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -236,10 +170,11 @@ func (v *VolcEngine) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	if modelConfig != nil {
 		// TODO VolcEngine has `auto` mode
@@ -275,6 +210,10 @@ func (v *VolcEngine) ChatStreamlyWithSender(ctx context.Context, modelName strin
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = "xhigh"
 					break
+				case "max":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "max"
+					break
 				default:
 					return fmt.Errorf("invalid effort level")
 				}
@@ -290,141 +229,10 @@ func (v *VolcEngine) ChatStreamlyWithSender(ctx context.Context, modelName strin
 
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
-
-	resp, err := v.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	accumulatedToolCalls := make(map[int]map[string]any)
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
-			for _, tc := range tcs {
-				tcMap, ok := tc.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				idxF, ok := tcMap["index"].(float64)
-				if !ok {
-					continue
-				}
-				idx := int(idxF)
-				existing, hasExisting := accumulatedToolCalls[idx]
-				if !hasExisting {
-					accumulatedToolCalls[idx] = cloneMap(tcMap)
-					continue
-				}
-				if id, ok := tcMap["id"].(string); ok && id != "" {
-					if eid, ok := existing["id"].(string); ok {
-						existing["id"] = eid + id
-					} else {
-						existing["id"] = id
-					}
-				}
-				if typ, ok := tcMap["type"].(string); ok && typ != "" {
-					existing["type"] = typ
-				}
-				if fn, ok := tcMap["function"].(map[string]interface{}); ok {
-					ef, ok := existing["function"].(map[string]interface{})
-					if !ok {
-						ef = make(map[string]interface{})
-						existing["function"] = ef
-					}
-					if name, ok := fn["name"].(string); ok && name != "" {
-						if en, ok := ef["name"].(string); ok {
-							ef["name"] = en + name
-						} else {
-							ef["name"] = name
-						}
-					}
-					if args, ok := fn["arguments"].(string); ok && args != "" {
-						if ea, ok := ef["arguments"].(string); ok {
-							ef["arguments"] = ea + args
-						} else {
-							ef["arguments"] = args
-						}
-					}
-				}
-			}
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-
-	if len(accumulatedToolCalls) > 0 && modelConfig != nil {
-		indices := make([]int, 0, len(accumulatedToolCalls))
-		for idx := range accumulatedToolCalls {
-			indices = append(indices, idx)
-		}
-		sort.Ints(indices)
-		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
-		for _, idx := range indices {
-			tcs = append(tcs, accumulatedToolCalls[idx])
-		}
-		modelConfig.ToolCallsResult = &tcs
-	}
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	effectiveConfig := v.effectiveAPIConfig(apiConfig)
+	return v.baseModel.doStreamRequest(ctx, url, effectiveConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type volcengineEmbeddingResponse struct {
@@ -453,13 +261,16 @@ type volcenginePromptTokensDetails struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (v *VolcEngine) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
@@ -469,8 +280,10 @@ func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []strin
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Embedding)
 
 	var embeddings []EmbeddingData
+	var totalUsage TokenUsage
+	var requestID string
 
-	for i, text := range texts {
+	for i, text := range request.Texts {
 
 		reqBody := map[string]interface{}{
 			"model":           *modelName,
@@ -493,7 +306,6 @@ func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []strin
 				err,
 			)
 		}
-
 		// Run each per-text request in its own scope so the context's
 		// deadline is cancelled at the end of every iteration instead of
 		// piling up deferred cancels until the whole batch finishes.
@@ -534,18 +346,22 @@ func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []strin
 		if err != nil {
 			return nil, err
 		}
+		requestID = parsed.ID
+		totalUsage.PromptTokens += parsed.Usage.PromptTokens
+		totalUsage.TotalTokens += parsed.Usage.TotalTokens
 
 		var embeddingData EmbeddingData
 		embeddingData.Index = i
 		embeddingData.Embedding = parsed.Data.Embedding
 		embeddings = append(embeddings, embeddingData)
 	}
+	recordResponseUsage(modelUsage, requestID, &totalUsage, "embedding")
 
 	return embeddings, nil
 }
 
 // Rerank calculates similarity scores between query and documents
-func (v *VolcEngine) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (v *VolcEngine) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", v.Name())
 }
 

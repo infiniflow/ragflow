@@ -27,12 +27,72 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.document_service import DocMetadataService
 from api.utils.common import hash128
+from common import settings
 from common.misc_utils import get_uuid
 from common.constants import ConnectorTaskType, TaskStatus
 from common.settings import TIMEZONE
 from common.time_utils import current_timestamp, timestamp_to_date
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _is_gaussdb_compatible_metadata_db() -> bool:
+    return settings.normalize_database_type(settings.DATABASE_TYPE) == "gaussdb"
+
+
+def _gaussdb_poll_interval_expr(freq_field: str) -> SQL:
+    return SQL(f"NOW() AT TIME ZONE '{settings.TIMEZONE}' - (t2.{freq_field} * INTERVAL '1 minute')")
+
+
+def _append_text_expr(field, suffix: str):
+    if not _is_gaussdb_compatible_metadata_db():
+        return field + suffix
+
+    suffix = str(suffix or "")
+    if not suffix:
+        return None
+    return fn.COALESCE(field + suffix, suffix)
+
+
+def connector_doc_id_candidates(kb_id: str, connector_id: str, external_id: str) -> tuple[str, str, str]:
+    """Every document id a connector-sourced document may legitimately carry.
+
+    A synced document's primary key is derived from its external id so that
+    re-running a sync updates the existing row instead of duplicating it. Two
+    historical derivations left ``kb_id`` out, which made the key identical for
+    every knowledge base linked to the same data source:
+
+        <= v0.25.1   hash128(external_id)
+        legacy       hash128(f"{connector_id}:{external_id}")
+        current      hash128(f"{kb_id}:{connector_id}:{external_id}")
+
+    Ordered oldest first, so a knowledge base holding rows from more than one
+    upgrade settles on the earliest id it owns instead of migrating forward
+    again on every sync.
+    """
+    return (
+        hash128(external_id),
+        hash128(f"{connector_id}:{external_id}"),
+        hash128(f"{kb_id}:{connector_id}:{external_id}"),
+    )
+
+
+def resolve_connector_doc_id(kb_id: str, connector_id: str, external_id: str, owned_doc_ids) -> str:
+    """Pick the document id to sync ``external_id`` into ``kb_id`` under.
+
+    ``owned_doc_ids`` must only contain ids this knowledge base already owns
+    (see ``DocumentService.list_doc_headers_by_kb_and_source_type``). A
+    KB-agnostic id is reused only when it resolves to one of those rows; when it
+    does not, the row it would hit belongs to some other knowledge base and
+    ``FileService.upload_document`` would reject the write as a cross-KB
+    collision and drop the document. Everything else gets the KB-scoped id,
+    which cannot collide by construction.
+    """
+    *kb_agnostic_doc_ids, scoped_doc_id = connector_doc_id_candidates(kb_id, connector_id, external_id)
+    for candidate in kb_agnostic_doc_ids:
+        if candidate in owned_doc_ids:
+            return candidate
+    return scoped_doc_id
 
 
 class ConnectorService(CommonService):
@@ -167,7 +227,7 @@ class ConnectorService(CommonService):
             return 0, []
 
         source_type = f"{conn.source}/{conn.id}"
-        retain_doc_ids = {doc_id for file in file_list for doc_id in (hash128(f"{connector_id}:{file.id}"), hash128(f"{kb_id}:{connector_id}:{file.id}"))}
+        retain_doc_ids = {doc_id for file in file_list for doc_id in connector_doc_id_candidates(kb_id, connector_id, file.id)}
         existing_docs = DocumentService.list_doc_headers_by_kb_and_source_type(
             kb_id,
             source_type,
@@ -226,6 +286,10 @@ class SyncLogsService(CommonService):
             Knowledgebase.name.alias("kb_name"),
             cls.model.status,
         ]
+        if _is_gaussdb_compatible_metadata_db():
+            # GaussDB requires a DISTINCT query's ORDER BY expression in the
+            # select list.
+            fields.append(cls.model.update_time)
         if not connector_id:
             fields.append(Connector.config)
 
@@ -239,11 +303,14 @@ class SyncLogsService(CommonService):
         if connector_id:
             query = query.where(cls.model.connector_id == connector_id)
         else:
-            database_type = os.getenv("DB_TYPE", "mysql")
-            if "postgres" in database_type.lower():
-                expr = SQL(f"NOW() AT TIME ZONE '{TIMEZONE}' - make_interval(mins => t2.refresh_freq)")
+            if _is_gaussdb_compatible_metadata_db():
+                expr = _gaussdb_poll_interval_expr("refresh_freq")
             else:
-                expr = SQL("NOW() - INTERVAL `t2`.`refresh_freq` MINUTE")
+                database_type = os.getenv("DB_TYPE", "mysql")
+                if "postgres" in database_type.lower():
+                    expr = SQL(f"NOW() AT TIME ZONE '{TIMEZONE}' - make_interval(mins => t2.refresh_freq)")
+                else:
+                    expr = SQL("NOW() - INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(Connector.input_type == InputType.POLL, Connector.status == TaskStatus.SCHEDULE, cls.model.status == TaskStatus.SCHEDULE, cls.model.update_date < expr)
 
         query = query.distinct().order_by(cls.model.update_time.desc())
@@ -318,11 +385,14 @@ class SyncLogsService(CommonService):
             cls.model.task_type == task_type,
         )
 
-        database_type = os.getenv("DB_TYPE", "mysql")
-        if "postgres" in database_type.lower():
-            expr = SQL(f"NOW() AT TIME ZONE '{TIMEZONE}' - make_interval(mins => t2.{freq_field})")
+        if _is_gaussdb_compatible_metadata_db():
+            expr = _gaussdb_poll_interval_expr(freq_field)
         else:
-            expr = SQL(f"NOW() - INTERVAL `t2`.`{freq_field}` MINUTE")
+            database_type = os.getenv("DB_TYPE", "mysql")
+            if "postgres" in database_type.lower():
+                expr = SQL(f"NOW() AT TIME ZONE '{TIMEZONE}' - make_interval(mins => t2.{freq_field})")
+            else:
+                expr = SQL(f"NOW() - INTERVAL `t2`.`{freq_field}` MINUTE")
         query = query.where(cls.model.update_date < expr)
 
         return list(query.distinct().order_by(cls.model.update_time.desc()).dicts())
@@ -397,34 +467,48 @@ class SyncLogsService(CommonService):
             logging.exception(e)
             task = cls.get_latest_task(connector_id, kb_id, task_type)
             if task:
-                cls.model.update(
-                    status=TaskStatus.SCHEDULE, poll_range_start=poll_range_start, error_msg=cls.model.error_msg + str(e), full_exception_trace=cls.model.full_exception_trace + str(e)
-                ).where(cls.model.id == task.id).execute()
+                update_payload = {
+                    "status": TaskStatus.SCHEDULE,
+                    "poll_range_start": poll_range_start,
+                }
+                error_msg_expr = _append_text_expr(cls.model.error_msg, str(e))
+                trace_expr = _append_text_expr(cls.model.full_exception_trace, str(e))
+                if error_msg_expr is not None:
+                    update_payload["error_msg"] = error_msg_expr
+                if trace_expr is not None:
+                    update_payload["full_exception_trace"] = trace_expr
+                cls.model.update(update_payload).where(cls.model.id == task.id).execute()
                 ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
 
     @classmethod
     def increase_docs(cls, id, max_update, doc_num, err_msg="", error_count=0):
         # Keep sync monotonic.
-        cls.model.update(
-            new_docs_indexed=cls.model.new_docs_indexed + doc_num,
-            total_docs_indexed=cls.model.total_docs_indexed + doc_num,
-            poll_range_start=fn.COALESCE(fn.GREATEST(cls.model.poll_range_start, max_update), max_update),
-            poll_range_end=fn.COALESCE(fn.GREATEST(cls.model.poll_range_end, max_update), max_update),
-            error_msg=cls.model.error_msg + err_msg,
-            error_count=cls.model.error_count + error_count,
-            update_time=current_timestamp(),
-            update_date=timestamp_to_date(current_timestamp()),
-        ).where(cls.model.id == id).execute()
+        update_payload = {
+            "new_docs_indexed": cls.model.new_docs_indexed + doc_num,
+            "total_docs_indexed": cls.model.total_docs_indexed + doc_num,
+            "poll_range_start": fn.COALESCE(fn.GREATEST(cls.model.poll_range_start, max_update), max_update),
+            "poll_range_end": fn.COALESCE(fn.GREATEST(cls.model.poll_range_end, max_update), max_update),
+            "error_count": cls.model.error_count + error_count,
+            "update_time": current_timestamp(),
+            "update_date": timestamp_to_date(current_timestamp()),
+        }
+        error_msg_expr = _append_text_expr(cls.model.error_msg, err_msg)
+        if error_msg_expr is not None:
+            update_payload["error_msg"] = error_msg_expr
+        cls.model.update(update_payload).where(cls.model.id == id).execute()
 
     @classmethod
     def increase_removed_docs(cls, id, removed_count, err_msg="", error_count=0):
-        cls.model.update(
-            docs_removed_from_index=cls.model.docs_removed_from_index + removed_count,
-            error_msg=cls.model.error_msg + err_msg,
-            error_count=cls.model.error_count + error_count,
-            update_time=current_timestamp(),
-            update_date=timestamp_to_date(current_timestamp()),
-        ).where(cls.model.id == id).execute()
+        update_payload = {
+            "docs_removed_from_index": cls.model.docs_removed_from_index + removed_count,
+            "error_count": cls.model.error_count + error_count,
+            "update_time": current_timestamp(),
+            "update_date": timestamp_to_date(current_timestamp()),
+        }
+        error_msg_expr = _append_text_expr(cls.model.error_msg, err_msg)
+        if error_msg_expr is not None:
+            update_payload["error_msg"] = error_msg_expr
+        cls.model.update(update_payload).where(cls.model.id == id).execute()
 
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):

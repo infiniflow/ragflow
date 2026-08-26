@@ -36,7 +36,7 @@ func NewBaichuanModel(baseURL map[string]string, urlSuffix URLSuffix) *BaichuanM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -64,73 +64,12 @@ func (b *BaichuanModel) ChatWithMessages(ctx context.Context, modelName string, 
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := b.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := b.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to send request: %d %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	// baichuan not support think
-	emptyReason := ""
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &emptyReason,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -149,90 +88,19 @@ func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := b.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	return b.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("baichuan: stream ended before [DONE] or finish_reason")
-	}
-
-	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
 }
 
-func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -244,7 +112,7 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -275,14 +143,19 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Baichuan embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("baichuan embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsedResponse struct {
+		ID   string `json:"id"`
 		Data []struct {
 			Embedding []float64 `json:"embedding"`
 			Index     int       `json:"index"`
 		} `json:"data"`
+		Usage struct {
+			PromptTokens int `json:"prompt_tokens"`
+			TotalTokens  int `json:"total_tokens"`
+		}
 	}
 
 	if err = json.Unmarshal(body, &parsedResponse); err != nil {
@@ -290,7 +163,7 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 	}
 
 	if len(parsedResponse.Data) == 0 {
-		return nil, fmt.Errorf("Baichuan embedding response contains no data: %s", string(body))
+		return nil, fmt.Errorf("baichuan embedding response contains no data: %s", string(body))
 	}
 
 	var embeddings []EmbeddingData
@@ -300,11 +173,15 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 			Index:     dataElem.Index,
 		})
 	}
+	recordResponseUsage(modelUsage, parsedResponse.ID, &TokenUsage{
+		PromptTokens: parsedResponse.Usage.PromptTokens,
+		TotalTokens:  parsedResponse.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }
 
-func (b *BaichuanModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (b *BaichuanModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

@@ -43,6 +43,7 @@ const (
 	CodeLicenseTimeRollback     ErrorCode = 324
 	CodeLicenseNotFound         ErrorCode = 325
 	CodeLicenseUnexpectedError  ErrorCode = 326
+	CodeLicenseNotValidYet      ErrorCode = 327
 	CodeBadRequest              ErrorCode = 400
 	CodeUnauthorized            ErrorCode = 401
 	CodeForbidden               ErrorCode = 403
@@ -87,6 +88,20 @@ func (e ErrorCode) Message() string {
 		return msg
 	}
 	return "Unknown error"
+}
+
+// CodedError pairs a business ErrorCode with a message so handlers can return
+// the established {code, message} contract (HTTP 200) instead of a generic
+// HTTP 500 for expected domain failures.
+type CodedError struct {
+	Code    ErrorCode
+	Message string
+}
+
+func (e *CodedError) Error() string { return e.Message }
+
+func NewCodedError(code ErrorCode, message string) *CodedError {
+	return &CodedError{Code: code, Message: message}
 }
 
 var (

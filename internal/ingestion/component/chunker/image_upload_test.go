@@ -228,7 +228,7 @@ func TestImageUploadDecorator_EndToEnd(t *testing.T) {
 			{"content_with_weight": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
 		},
 	}
-	out, err := decorated.Invoke(context.Background(), inputs)
+	out, err := decorated.Invoke(context.Background(), nil, inputs)
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}
@@ -274,5 +274,50 @@ func waitForInflight(t *testing.T, counter *int64, target int64) {
 			t.Fatalf("timed out waiting for %d inflight uploads (got %d)", target, atomic.LoadInt64(counter))
 		case <-time.After(time.Millisecond):
 		}
+	}
+}
+
+// TestImageUploadDecorator_DebugSkipsUpload verifies that a debug/dry-run run
+// (empty kb_id) does NOT upload the chunk image to storage, while still
+// dropping the raw image bytes. This keeps the debug path free of MinIO side
+// effects and preserves the current memory behaviour (raw bytes discarded, not
+// held until a persist stage). An empty kb_id only occurs in canvas debug
+// (dry-run) mode; production ingestion always supplies a KB.
+func TestImageUploadDecorator_DebugSkipsUpload(t *testing.T) {
+	prev := ChunkImageUploader
+	ChunkImageUploader = func(_ context.Context, _, _ string, _ []byte) (string, error) {
+		t.Fatalf("ChunkImageUploader must not be called in a debug run")
+		return "", nil
+	}
+	t.Cleanup(func() { ChunkImageUploader = prev })
+
+	comp, err := NewOneChunker(nil)
+	if err != nil {
+		t.Fatalf("NewOneChunker: %v", err)
+	}
+	decorated := &imageUploadDecorator{inner: comp}
+
+	inputs := map[string]any{
+		"name":   "doc.pdf",
+		"kb_id":  "", // debug mode: no KB -> no upload
+		"doc_id": testDocID,
+		"chunks": []map[string]any{
+			{"content_with_weight": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
+		},
+	}
+	out, err := decorated.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("decorated Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatalf("expected chunks in output, got %#v", out)
+	}
+	ck := chunks[0]
+	if _, stillHas := ck["image"]; stillHas {
+		t.Errorf("raw image should be dropped in debug run, but ck[\"image\"] is still present")
+	}
+	if id, _ := ck["img_id"].(string); id != "" {
+		t.Errorf("img_id should not be set in debug run, got %q", id)
 	}
 }
