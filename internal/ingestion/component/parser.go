@@ -506,6 +506,9 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if dispatched.Err != nil && fileTypeExt != utility.FileTypeOTHER {
 		return nil, dispatched.Err
 	}
+	for _, warning := range dispatched.Warnings {
+		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
+	}
 
 	// 3. Build the legacy `pages` slice. When the dispatch path
 	//    produced a JSON payload, we re-shape it into the page

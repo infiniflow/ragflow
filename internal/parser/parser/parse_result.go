@@ -81,6 +81,9 @@ type ParseResult struct {
 	// Err is the failure reason. On non-nil Err, all payload
 	// fields are zero values.
 	Err error
+
+	// Warnings contains non-fatal issues encountered while parsing.
+	Warnings []string
 }
 
 // ParseResultProducer is the parser package's single structured-output

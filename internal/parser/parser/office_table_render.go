@@ -44,26 +44,32 @@ const defaultTableChunkRows = 256
 // worksheet as structured parser items. Excelize exposes both kinds through
 // GetPictureCells/GetPictures; walking the reported anchor cells avoids
 // scanning the worksheet's entire coordinate space.
-func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, error) {
+func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []string) {
 	cells, err := f.GetPictureCells(sheet)
 	if err != nil {
-		return nil, err
+		return nil, []string{fmt.Sprintf("XLSX image discovery failed for sheet %q: %v", sheet, err)}
 	}
 	if len(cells) == 0 {
 		return nil, nil
 	}
 
 	items := make([]map[string]any, 0, len(cells))
+	warnings := make([]string, 0)
 	for _, cell := range cells {
 		pictures, err := f.GetPictures(sheet, cell)
 		if err != nil {
-			return nil, fmt.Errorf("pictures at %s: %w", cell, err)
+			warnings = append(warnings, fmt.Sprintf("XLSX image extraction failed for sheet %q cell %s: %v", sheet, cell, err))
+			continue
 		}
 		for _, picture := range pictures {
 			if len(picture.File) == 0 {
 				continue
 			}
-			mimeType := xlsxImageMIMEType(picture.Extension)
+			mimeType, ok := xlsxImageMIMEType(picture.Extension)
+			if !ok {
+				warnings = append(warnings, fmt.Sprintf("XLSX image skipped for sheet %q cell %s: unsupported extension %q", sheet, cell, picture.Extension))
+				continue
+			}
 			encoded := base64.StdEncoding.EncodeToString(picture.File)
 			alt := cell
 			if picture.Format != nil && picture.Format.AltText != "" {
@@ -79,23 +85,35 @@ func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, error)
 			})
 		}
 	}
-	return items, nil
+	return items, warnings
 }
 
-func xlsxImageMIMEType(extension string) string {
+func xlsxImageMIMEType(extension string) (string, bool) {
 	switch strings.TrimPrefix(strings.ToLower(extension), ".") {
 	case "jpg", "jpeg":
-		return "image/jpeg"
+		return "image/jpeg", true
 	case "gif":
-		return "image/gif"
+		return "image/gif", true
 	case "bmp":
-		return "image/bmp"
+		return "image/bmp", true
 	case "tif", "tiff":
-		return "image/tiff"
+		return "image/tiff", true
 	case "svg":
-		return "image/svg+xml"
+		return "image/svg+xml", true
+	case "png":
+		return "image/png", true
+	case "emf":
+		return "image/emf", true
+	case "emz":
+		return "image/emz", true
+	case "ico":
+		return "image/x-icon", true
+	case "wmf":
+		return "image/wmf", true
+	case "wmz":
+		return "image/wmz", true
 	default:
-		return "image/png"
+		return "", false
 	}
 }
 

@@ -126,6 +126,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	items := make([]map[string]any, 0)
+	warnings := make([]string, 0)
 	for _, sheet := range sheets {
 		for _, table := range renderSheetTableChunks(f, sheet, chunkRows) {
 			items = append(items, map[string]any{
@@ -135,16 +136,15 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 				"sheet":        sheet,
 			})
 		}
-		images, err := extractXLSXImages(f, sheet)
-		if err != nil {
-			return ParseResult{Err: fmt.Errorf("xlsx images in sheet %q: %w", sheet, err)}
-		}
+		images, imageWarnings := extractXLSXImages(f, sheet)
 		items = append(items, images...)
+		warnings = append(warnings, imageWarnings...)
 	}
 
 	return ParseResult{
 		OutputFormat: "json",
 		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": len(sheets)},
 		JSON:         items,
+		Warnings:     warnings,
 	}
 }

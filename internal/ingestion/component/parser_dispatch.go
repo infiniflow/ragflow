@@ -54,6 +54,7 @@ type parserDispatchResult struct {
 	Markdown     string
 	Text         string
 	HTML         string
+	Warnings     []string
 	Err          error
 }
 
@@ -179,6 +180,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		Markdown:     res.Markdown,
 		Text:         res.Text,
 		HTML:         res.HTML,
+		Warnings:     res.Warnings,
 	}
 }
 
