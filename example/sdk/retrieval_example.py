@@ -55,7 +55,7 @@ try:
     else:
         print("Parsing timed out.")
         sys.exit(-1)
-    print("Document parsed and ready for retrieval.")
+    print(f"Document {doc.id} parsed after {elapsed}s and ready for retrieval.")
 
     # 3. Perform retrieval (Semantic Search)
     print("\n--- Performing Retrieval ---")
