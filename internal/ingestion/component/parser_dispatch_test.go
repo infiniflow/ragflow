@@ -229,6 +229,7 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	allowed := map[string][]string{
 		"pdf":      {"json", "markdown"},
 		"markdown": {"text", "json"},
+		"image":    {"json"},
 	}
 	cases := []struct {
 		name    string

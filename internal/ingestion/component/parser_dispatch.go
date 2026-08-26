@@ -86,8 +86,10 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // allowed_output_format[fileType]. We mirror that exact sequence:
 //
 //  1. setups[fileType].output_format (or "" when absent),
-//  2. if absent, default to "text" (the most permissive option
-//     that every family accepts),
+//  2. if absent and the family has an allowed_output_format entry,
+//     use the first allowed value as the default (mirrors Python's
+//     per-family explicit default in ParserParam.__init__ setups,
+//     e.g. "image" → "json", "pdf" → "json"),
 //  3. if absent and the family has no allowed_output_format entry,
 //     return "" (the component falls back to text-page mode
 //     without validating).
@@ -104,13 +106,20 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 		return "", nil
 	}
 	format, _ := setup["output_format"].(string)
-	if format == "" {
-		format = "text"
-	}
 	allowedList, ok := allowed[family]
 	if !ok || len(allowedList) == 0 {
-		// No whitelist entry — accept what the setup asked for.
+		// No whitelist entry — accept what the setup asked for, or
+		// fall back to "text" for legacy families with no constraint.
+		if format == "" {
+			format = "text"
+		}
 		return format, nil
+	}
+	if format == "" {
+		// No explicit format: use the first entry from the whitelist,
+		// which matches the Python per-family default declared in
+		// ParserParam.__init__ (e.g. image → json, pdf → json).
+		return allowedList[0], nil
 	}
 	for _, candidate := range allowedList {
 		if strings.EqualFold(candidate, format) {
