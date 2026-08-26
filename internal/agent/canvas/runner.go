@@ -46,7 +46,7 @@
 // SSE wire contract (matches the handler envelope):
 //   - RunEvent.Type == "message"          → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
-//   - RunEvent.Type == "error"            → {message: <string>}
+//   - RunEvent.Type == "error"            → {message: <string>, kind?: <string>}
 //   - RunEvent.Type == "cancelled"        → {message: <string>}
 package canvas
 
@@ -135,9 +135,11 @@ type WaitingForUserEvent struct {
 	Inputs map[string]any `json:"inputs,omitempty"`
 }
 
-// ErrorEvent is the JSON payload for Type=="error" frames.
+// ErrorEvent is the JSON payload for Type=="error" frames. Kind is present
+// only when adapters must apply special handling, such as internal redaction.
 type ErrorEvent struct {
 	Message string `json:"message"`
+	Kind    string `json:"kind,omitempty"`
 }
 
 // CancelledEvent is an alias for ErrorEvent because both terminal payloads
@@ -358,7 +360,19 @@ func (r *Runner) Run(
 				push(ctx, out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
 				return
 			}
-			pushErr(ctx, out, runErr.Error(), sessionID)
+			errorEvent := runErrorEvent(runErr)
+			if errorEvent.Kind == RunErrorKindInternal {
+				common.Error("canvas runner internal error", runErr,
+					zap.String("canvas", canvasID),
+					zap.String("session", sessionID))
+			}
+			push(ctx, out, RunEvent{
+				Type:      "error",
+				Data:      safeEventJSON(errorEvent),
+				MessageID: messageID,
+				CreatedAt: nowUnix(),
+				SessionID: sessionID,
+			})
 			return
 		}
 	}()

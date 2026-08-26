@@ -219,7 +219,9 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	if ev.Type == "error" {
 		msg := "an internal error occurred"
 		if m, ok := data.(map[string]any); ok {
-			if s, _ := m["message"].(string); s != "" {
+			if kind, _ := m["kind"].(string); kind == canvas.RunErrorKindInternal {
+				msg = canvas.InternalRunErrorMessage
+			} else if s, _ := m["message"].(string); s != "" {
 				msg = s
 			}
 		}

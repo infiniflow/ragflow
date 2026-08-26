@@ -3,7 +3,7 @@ package file
 import (
 	"bytes"
 	"context"
-
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -149,7 +149,7 @@ func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 		"name":       "secret.txt",
 		"mime_type":  "text/plain",
 		"created_by": "other-user",
-	}}, false)
+	}})
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
@@ -178,7 +178,7 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 		"name":       "doc.txt",
 		"mime_type":  "text/plain",
 		"created_by": "user-1",
-	}}, false)
+	}})
 	if err != nil {
 		t.Fatalf("GetFileContents failed: %v", err)
 	}
@@ -187,6 +187,42 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	}
 	if len(texts) != 1 || !strings.Contains(texts[0], "allowed content") {
 		t.Fatalf("unexpected texts: %v", texts)
+	}
+}
+
+// Regression for chat image attachments: visual file dicts must come back
+// as mime-preserving base64 data URIs. The Go multimodal conversion layer
+// (common.ConvertLastUserMsgToMultimodal → parseDataURIOrB64) rejects raw
+// binary blobs, which silently dropped the image before the LLM call.
+func TestFileService_GetFileContents_ImageAttachmentAsDataURI(t *testing.T) {
+	memory := storage.NewMemoryStorage()
+	if err := memory.Put(t.Context(), "user-1-downloads", "img-1", []byte("jpeg-bytes")); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	svc := testFileService()
+	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
+		"id":         "img-1",
+		"name":       "25336bcdd3126d32a522db5e9c9fcaf3.jpeg",
+		"mime_type":  "image/jpeg",
+		"created_by": "user-1",
+	}})
+	if err != nil {
+		t.Fatalf("GetFileContents failed: %v", err)
+	}
+	if len(texts) != 0 {
+		t.Fatalf("expected no texts for image attachment, got %v", texts)
+	}
+	if len(images) != 1 {
+		t.Fatalf("expected 1 image, got %v", images)
+	}
+	want := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte("jpeg-bytes"))
+	if images[0] != want {
+		t.Fatalf("image = %q, want data URI %q", images[0], want)
 	}
 }
 

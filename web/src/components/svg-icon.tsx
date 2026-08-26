@@ -88,7 +88,7 @@ const svgIcons = [
   LLMFactory.MinerU,
   LLMFactory.MinerUNet,
   LLMFactory.PaddleOCR,
-  LLMFactory.PaddleOCRNet,
+  LLMFactory.PaddleOCRLocal,
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
   LLMFactory.Avian,

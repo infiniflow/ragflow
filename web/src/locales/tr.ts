@@ -1221,6 +1221,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Google Console'dan oluşturulan OAuth JSON'ını yükleyin. Yalnızca istemci kimlik bilgilerini içeriyorsa, uzun ömürlü yenileme tokenları oluşturmak için tarayıcı tabanlı doğrulamayı bir kez çalıştırın.",
       dropboxDescription:
         "Seçilen bir hesaptan dosya ve klasörleri senkronize etmek için Dropbox'ınızı bağlayın.",
+      azure_devopsDescription: "Depo dosyalarını ve pull request'leri senkronize etmek için Azure DevOps'u bağlayın.",
       bitbucketDescription:
         "PR içeriğini senkronize etmek için Bitbucket'ı bağlayın.",
       bitbucketTopWorkspaceTip:

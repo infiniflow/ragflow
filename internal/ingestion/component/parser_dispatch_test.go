@@ -779,6 +779,71 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 	}
 }
 
+// TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload pins the cloud
+// PaddleOCR configuration contract: the tenant api_key is a JSON payload
+// (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm) and the
+// instance base_url field stays empty, mirroring Python's PaddleOCROcrModel.
+// Dispatch must unwrap that payload into a concrete base url, bearer token and
+// algorithm before handing the driver its API config.
+func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/layout-parsing" {
+			http.NotFound(w, r)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+			t.Errorf("Authorization = %q, want %q (must unwrap api_key payload)", got, want)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			return
+		}
+		if got, want := body["algorithm"], "PaddleOCR-VL"; got != want {
+			t.Errorf("algorithm = %v, want %v (must unwrap api_key payload)", got, want)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Unwrapped Title\n\nUnwrapped body.\n"}}]}}`))
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
+	apiKey := fmt.Sprintf(
+		`{"paddleocr_api_url":%q,"paddleocr_access_token":"tok-123","paddleocr_algorithm":"PaddleOCR-VL"}`,
+		server.URL+"/api")
+	emptyBaseURL := ""
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if got, want := providerName, "PaddleOCR"; got != want {
+			t.Fatalf("providerName = %q, want %q", got, want)
+		}
+		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, 0, nil
+	}
+
+	param := schema.ParserParam{}.Defaults()
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "PaddleOCR"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{Param: param, Setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	md, ok := out["markdown"].(string)
+	if !ok || !strings.Contains(md, "Unwrapped Title") {
+		t.Fatalf("markdown payload = %#v, want Unwrapped Title content", out["markdown"])
+	}
+}
+
 func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
 	withSSRFBypass(t)
 	origResolver := resolveTenantOCRModelByProvider
@@ -811,7 +876,7 @@ func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
 // resolved first (mirroring Python's get_composite_model_name_by_id before
 // normalize_layout_recognizer). Previously the UUID fell through to the
 // image2text VLM path and failed with "cannot be used as image2text model"
-// for OCR-typed models such as the cloud "PaddleOCR.Net" provider's.
+// for OCR-typed models such as the cloud "PaddleOCR" provider's.
 func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

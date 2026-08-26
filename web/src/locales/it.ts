@@ -1280,6 +1280,7 @@ Esempio: Virtual Hosted Style`,
         'Connetti un sito SharePoint tramite Microsoft Graph per sincronizzare le sue librerie documenti.',
       sharepointSiteUrlTip:
         "URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).",
+      azure_devopsDescription: 'Collega Azure DevOps per sincronizzare i file del repository e le pull request.',
       bitbucketDescription:
         'Connetti Bitbucket per sincronizzare il contenuto delle PR.',
       bitbucketTopWorkspaceTip:

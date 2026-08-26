@@ -1080,6 +1080,10 @@ class VLLM(OpenAIAPICompatible):
     _FACTORY_NAME = "VLLM"
 
 
+class GPUStack(OpenAIAPICompatible):
+    _FACTORY_NAME = "GPUStack"
+
+
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
 
