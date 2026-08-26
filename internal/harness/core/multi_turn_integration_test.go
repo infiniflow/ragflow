@@ -396,7 +396,7 @@ func TestMultiTurn_HighConcurrency(t *testing.T) {
 			runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
 			for turn := 0; turn < turns; turn++ {
-				ctx := t.Context()
+				ctx := context.Background()
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 				var ok bool
 				for {
