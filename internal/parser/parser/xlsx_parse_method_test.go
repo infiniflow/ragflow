@@ -122,6 +122,31 @@ func TestXLSXParser_ExtractsFloatingImages(t *testing.T) {
 	}
 }
 
+func TestXLSXParser_ImageWithoutAltTextUsesAnchorCell(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+	data := newTestXLSX(t, func(f *excelize.File) {
+		if err := f.AddPictureFromBytes("Sheet1", "C3", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+
+	p, err := NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "without-alt.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 || res.JSON[0]["text"] != "C3" {
+		t.Fatalf("image item = %#v, want anchor-cell text C3", res.JSON)
+	}
+}
+
 func mustDecodeBase64(t *testing.T, encoded string) []byte {
 	t.Helper()
 	data, err := base64.StdEncoding.DecodeString(encoded)

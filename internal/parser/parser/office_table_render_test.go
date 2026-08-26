@@ -19,6 +19,38 @@ func xlsxTableHTML(res ParseResult) string {
 	return out.String()
 }
 
+func TestXLSXImageMIMEType(t *testing.T) {
+	tests := []struct {
+		extension string
+		mime      string
+		ok        bool
+	}{
+		{extension: ".png", mime: "image/png", ok: true},
+		{extension: ".JPG", mime: "image/jpeg", ok: true},
+		{extension: ".emf", mime: "image/x-emf", ok: true},
+		{extension: ".emz", mime: "image/x-emz", ok: true},
+		{extension: ".ico", mime: "image/x-icon", ok: true},
+		{extension: ".wmf", mime: "image/x-wmf", ok: true},
+		{extension: ".wmz", mime: "image/x-wmz", ok: true},
+		{extension: ".unknown", ok: false},
+	}
+	for _, tc := range tests {
+		mime, ok := xlsxImageMIMEType(tc.extension)
+		if mime != tc.mime || ok != tc.ok {
+			t.Errorf("xlsxImageMIMEType(%q) = (%q, %v), want (%q, %v)", tc.extension, mime, ok, tc.mime, tc.ok)
+		}
+	}
+}
+
+func TestExtractXLSXImagesWarningForInvalidSheet(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	_, warnings := extractXLSXImages(f, "MissingSheet")
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "image discovery failed") {
+		t.Fatalf("warnings = %v, want image discovery warning", warnings)
+	}
+}
+
 // newTestXLSX builds an in-memory .xlsx from a cell writer.
 func newTestXLSX(t *testing.T, fill func(f *excelize.File)) []byte {
 	t.Helper()
