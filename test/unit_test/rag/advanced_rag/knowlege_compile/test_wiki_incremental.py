@@ -1046,6 +1046,9 @@ async def test_finalize_writes_outlinks():
             # the old-mode writer) which Infinity stores/reads back correctly.
             assert upd["outlinks_kwd"] == ["concept/B"], f"Got {upd['outlinks_kwd']}"
             assert upd["outlinks_int"] == 1
+            assert upd["available_int"] == 1
+            assert upd["doc_id"] == "kb1"
+            assert upd["content_with_weight"]
             break
     else:
         pytest.fail("No update for concept/A found")
@@ -1427,6 +1430,11 @@ def test_refine_page_persists_source_doc_ids_as_array():
     inserted_page = doc_store.insert.call_args.args[0][0]
     assert inserted_page["source_doc_ids"] == ["doc_1", "doc_2"]
     assert inserted_page["topic_kwd"] == "Technology companies"
+    assert inserted_page["available_int"] == 1
+    assert inserted_page["doc_id"] == "kb1"
+    assert inserted_page["kb_id"] == "kb1"
+    assert inserted_page["content_with_weight"] == inserted_page["md_with_weight"]
+    assert inserted_page["content_with_weight"]
 
 
 def test_topics_for_docs_only_returns_source_scoped_candidates():
@@ -1955,6 +1963,25 @@ async def test_reduce_entity_deletes_page_when_last_chunk_is_removed():
     assert delta["action"] == "delete"
     assert delta["source_chunk_ids"] == []
     assert [claim["statement"] for claim in delta["retractions"]] == ["only claim"]
+
+
+def test_canonical_entity_doc_stamps_retrieval_fields():
+    doc = _wiki._build_canonical_entity_doc(
+        tenant_id="t1",
+        kb_id="kb1",
+        entity_name="Apple",
+        entity_type="org",
+        aliases=["Apple Inc."],
+        source_doc_ids=["doc_1"],
+        claim_count=2,
+        embedding=[0.1, 0.2],
+    )
+
+    assert doc["available_int"] == 1
+    assert doc["doc_id"] == "kb1"
+    assert doc["kb_id"] == "kb1"
+    assert doc["content_with_weight"] == "Apple"
+    assert doc["q_2_vec"] == [0.1, 0.2]
 
 
 def test_as_int_accepts_string_doc_store_values():

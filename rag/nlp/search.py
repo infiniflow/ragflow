@@ -45,6 +45,28 @@ def index_name(uid):
     return f"ragflow_{uid}"
 
 
+def _chunk_scalar(value) -> str:
+    """Normalize a doc-store scalar that Infinity may return as a one-item list."""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def is_kb_scoped_chunk(chunk: dict | None) -> bool:
+    """True for compilation/graph rows keyed to the KB, not a source document.
+
+    Wiki persist stamps ``doc_id = kb_id`` (or omits ``doc_id``). Those rows
+    must not be treated as leftover chunks from a deleted ``document`` row.
+    """
+    if not isinstance(chunk, dict):
+        return False
+    doc_id = _chunk_scalar(chunk.get("doc_id"))
+    if not doc_id:
+        return True
+    kb_id = _chunk_scalar(chunk.get("kb_id"))
+    return bool(kb_id) and doc_id == kb_id
+
+
 class Dealer:
     def __init__(self, dataStore: DocStoreConnection):
         self.qryr = query.FulltextQueryer()
@@ -89,7 +111,14 @@ class Dealer:
         # is removed but the vector record is not fully cleaned up. We filter those
         # chunks here so chat/retrieval does not surface content from deleted docs.
         # Keep this as a fallback, not as the primary delete mechanism.
-        chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
+        fields = sres.field or {}
+        chunk_doc_ids = []
+        for chunk in fields.values():
+            if not chunk or is_kb_scoped_chunk(chunk):
+                continue
+            doc_id = _chunk_scalar(chunk.get("doc_id"))
+            if doc_id:
+                chunk_doc_ids.append(doc_id)
         if not chunk_doc_ids:
             return sres
 
@@ -103,8 +132,17 @@ class Dealer:
         removed = 0
 
         for chunk_id in sres.ids:
-            chunk = sres.field.get(chunk_id)
-            if not chunk or chunk.get("doc_id") not in existing_doc_ids:
+            chunk = fields.get(chunk_id)
+            if not chunk:
+                removed += 1
+                continue
+            if is_kb_scoped_chunk(chunk):
+                filtered_ids.append(chunk_id)
+                filtered_field[chunk_id] = chunk
+                if sres.highlight and chunk_id in sres.highlight:
+                    filtered_highlight[chunk_id] = sres.highlight[chunk_id]
+                continue
+            if _chunk_scalar(chunk.get("doc_id")) not in existing_doc_ids:
                 removed += 1
                 continue
 
