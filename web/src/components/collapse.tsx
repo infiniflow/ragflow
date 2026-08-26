@@ -50,19 +50,21 @@ export function Collapse({
   onOpenChange,
   disabled,
 }: CollapseProps) {
-  const [currentOpen, setCurrentOpen] = useState(open);
+  const [internalOpen, setInternalOpen] = useState(open ?? defaultOpen);
 
   useEffect(() => {
-    if (typeof open === 'boolean') {
-      setCurrentOpen(open);
-    } else {
-      setCurrentOpen(defaultOpen);
+    if (typeof open !== 'boolean') {
+      setInternalOpen(defaultOpen);
     }
   }, [defaultOpen, open]);
 
+  // A boolean `open` prop takes effect at render time so callers can rely on
+  // the content being mounted right after they update it.
+  const currentOpen = typeof open === 'boolean' ? open : internalOpen;
+
   const handleOpenChange = useCallback(
     (open: boolean) => {
-      setCurrentOpen(open);
+      setInternalOpen(open);
       onOpenChange?.(open);
     },
     [onOpenChange],
