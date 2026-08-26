@@ -27,9 +27,9 @@ import { AsyncTreeSelect } from '@/components/ui/async-tree-select';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { FormLayout } from '@/constants/form';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
   useManageMetadata,
@@ -270,10 +270,10 @@ const GoExtractorForm = ({
                 label={t('flow.systemPrompt')}
                 name="keywords.system_prompt"
               >
-                <PromptEditor
+                <Textarea
                   placeholder={t('flow.messagePlaceholder')}
-                  showToolbar={false}
-                  showMergePath={false}
+                  rows={18}
+                  resize="vertical"
                 />
               </RAGFlowFormItem>
             </div>
@@ -286,10 +286,10 @@ const GoExtractorForm = ({
                 label={t('flow.systemPrompt')}
                 name="questions.system_prompt"
               >
-                <PromptEditor
+                <Textarea
                   placeholder={t('flow.messagePlaceholder')}
-                  showToolbar={false}
-                  showMergePath={false}
+                  resize="vertical"
+                  rows={18}
                 />
               </RAGFlowFormItem>
             </div>
@@ -340,10 +340,10 @@ const GoExtractorForm = ({
               label={t('flow.systemPrompt')}
               name="summary.system_prompt"
             >
-              <PromptEditor
+              <Textarea
                 placeholder={t('flow.messagePlaceholder')}
-                showToolbar={false}
-                showMergePath={false}
+                resize="vertical"
+                rows={18}
               />
             </RAGFlowFormItem>
           </Collapse>

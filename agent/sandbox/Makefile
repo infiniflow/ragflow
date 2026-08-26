@@ -32,7 +32,7 @@ all: setup start
 # 🌱 Initialize environment + install dependencies
 setup: ensure_env ensure_uv
 	@echo "📦 Installing dependencies with uv..."
-	@$(UV) sync --python 3.12
+	@$(UV) sync --python 3.13
 	source $(ACTIVATE_SCRIPT) && \
 	export PYTHONPATH=$(PYTHONPATH)
 	@$(UV) pip install -r executor_manager/requirements.txt

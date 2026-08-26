@@ -36,7 +36,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
 | **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
 | **POST** `/api/v1/chats/{chat_id}/completions`                                    | **POST** `/api/v1/chat/completions`                                                 |
-| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommandation`                                              |
+| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommendation`                                              |
 | **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
 | **GET** `/v1/system/healthz`                                                      | **GET** `/api/v1/system/healthz`                                                    |
 | **POST** `/v1/document/upload_info`                                               | **POST** `/api/v1/documents/upload`                                                 |
@@ -1518,13 +1518,13 @@ Failure:
 
 ### Update document
 
-**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 
 Updates configurations for a specified document.
 
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
   - `'content-Type: application/json'`
@@ -1538,7 +1538,7 @@ Updates configurations for a specified document.
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --header 'Content-Type: application/json' \
@@ -5425,7 +5425,7 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/api/v1/chat/recommandation`
+**POST** `/api/v1/chat/recommendation`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -5444,7 +5444,7 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chat/recommandation`
+- URL: `/api/v1/chat/recommendation`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -5456,7 +5456,7 @@ The chat model autonomously determines the number of questions to generate based
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chat/recommandation \
+     --url http://{address}/api/v1/chat/recommendation \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{
