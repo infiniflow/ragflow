@@ -826,7 +826,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     return chunks
 
 
-def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False):
+def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False, section_page_offset: int = 0):
     from deepdoc.parser import PdfParser
 
     if table_context_size <= 0:
@@ -862,6 +862,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
+            page += section_page_offset
             page_bucket[page].append(((left, right, top, bottom), txt))
 
     def upper_context(page, i):
@@ -917,8 +918,11 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
 
         page, left, right, top, bott = poss[0]
         _page, _left, _right, _top, _bott = poss[-1]
-        if isinstance(tb, list):
-            tb = "\n".join(tb)
+        # Context extraction needs text, but list payloads identify images for
+        # tokenize_table; restore that shape before returning the media block.
+        image_rows = tb if isinstance(tb, list) else None
+        if image_rows is not None:
+            tb = "\n".join(image_rows)
 
         i = 0
         blks = page_bucket.get(page, [])
@@ -956,6 +960,8 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             contexts.append((upper.strip(), lower.strip()))
         if len(contexts) < len(res) + 1:
             contexts.append(("", ""))
+        if image_rows is not None:
+            tb = image_rows if tb == _tb else [tb]
         res.append(((img, tb), poss))
     return contexts if return_context else res
 
