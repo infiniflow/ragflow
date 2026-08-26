@@ -33,8 +33,7 @@ func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 	got := AnalyzeNHopPaths(ents)
 
 	// Edge src->mid: contributions 0.3 and 0.9 — max-wins must keep 0.9.
-	// Old last-wins code would overwrite to 0.2 (last seen) or 0.3
-	// depending on iteration order; either way it would lose the 0.9.
+	// The reversed-order case below detects last-wins regressions.
 	if v, ok := got[Edge{"src", "mid"}]; !ok {
 		t.Fatalf("missing edge src->mid; got map keys: %v", mapKeys(got))
 	} else if v.PageRank != 0.9 {
