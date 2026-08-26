@@ -553,6 +553,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		SimilarityThreshold:    floatFromValue(req["similarity_threshold"]),
 		VectorSimilarityWeight: floatFromValue(req["vector_similarity_weight"]),
 		TopN:                   int64FromValue(req["top_n"]),
+		PrefetchSize:           int64FromValue(req["rerank_candidates_count"]),
 		RerankCandidatesCount:  int64FromValue(req["rerank_candidates_count"]),
 		TopK:                   int64FromValue(req["top_k"]),
 		DoRefer:                stringFromValue(req["do_refer"]),
