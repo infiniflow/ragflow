@@ -154,6 +154,7 @@ class MinerUParser(RAGFlowPdfParser):
             "images_chunked": 0,
             "images_described": 0,
             "images_dropped_no_text": 0,
+            "images_unreadable_resource": 0,
         }
 
     @staticmethod
@@ -850,6 +851,7 @@ class MinerUParser(RAGFlowPdfParser):
             "images_chunked": 0,
             "images_dropped_no_text": 0,
             "images_described": 0,
+            "images_unreadable_resource": 0,
         }
         for output in outputs:
             output_type = output.get("type")
@@ -930,11 +932,12 @@ class MinerUParser(RAGFlowPdfParser):
         self.last_image_coverage = image_coverage
         if image_coverage["images_detected"] > 0:
             self.logger.info(
-                "[MinerU] image_coverage detected=%s chunked=%s described=%s dropped_no_text=%s",
+                "[MinerU] image_coverage detected=%s chunked=%s described=%s dropped_no_text=%s unreadable=%s",
                 image_coverage["images_detected"],
                 image_coverage["images_chunked"],
                 image_coverage["images_described"],
                 image_coverage["images_dropped_no_text"],
+                image_coverage["images_unreadable_resource"],
             )
         return sections
 
@@ -986,10 +989,13 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.warning(f"[MinerU] Failed to load image '{image_path}': {e}")
             if image is None:
                 self.logger.warning("[MinerU] Skip image without a readable resource: %s", image_path)
-                # An IMAGE block that was detected but produced no readable
-                # resource counts as dropped — surface it explicitly.
+                # The IMAGE block was detected and counted as chunked, but
+                # Image.open() couldn't read the resource. Distinguish this
+                # from "dropped_no_text" (which means no caption/footnote/
+                # vlm_description) — the text was non-empty, only the
+                # binary resource was unreadable.
                 self.last_image_coverage["images_chunked"] -= 1
-                self.last_image_coverage["images_dropped_no_text"] += 1
+                self.last_image_coverage["images_unreadable_resource"] += 1
                 continue
 
             tables.append(((image, texts or [""]), positions))
@@ -1132,11 +1138,12 @@ class MinerUParser(RAGFlowPdfParser):
             coverage = self.last_image_coverage
             coverage["vlm_configured"] = vision_model is not None
             self.logger.info(
-                "[MinerU] image_coverage final detected=%s chunked=%s described=%s dropped_no_text=%s vlm_configured=%s",
+                "[MinerU] image_coverage final detected=%s chunked=%s described=%s dropped_no_text=%s unreadable=%s vlm_configured=%s",
                 coverage["images_detected"],
                 coverage["images_chunked"],
                 coverage["images_described"],
                 coverage["images_dropped_no_text"],
+                coverage["images_unreadable_resource"],
                 coverage["vlm_configured"],
             )
             return sections, tables

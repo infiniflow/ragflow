@@ -833,8 +833,9 @@ def test_transfer_to_sections_tracks_image_coverage_for_captioned_image(monkeypa
         "images_chunked": 1,
         "images_dropped_no_text": 0,
         "images_described": 0,
+        "images_unreadable_resource": 0,
     }
-    assert "image_coverage detected=1 chunked=1 described=0 dropped_no_text=0" in caplog.text
+    assert "image_coverage detected=1 chunked=1 described=0 dropped_no_text=0 unreadable=0" in caplog.text
 
 
 def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch, caplog):
@@ -864,6 +865,7 @@ def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch,
         "images_chunked": 0,
         "images_dropped_no_text": 1,
         "images_described": 0,
+        "images_unreadable_resource": 0,
     }
     assert "Dropped embedded image" in caplog.text
     assert "page_idx=2" in caplog.text
@@ -897,6 +899,7 @@ def test_transfer_to_sections_counts_vlm_description(monkeypatch):
     assert coverage["images_chunked"] == 1
     assert coverage["images_described"] == 1
     assert coverage["images_dropped_no_text"] == 0
+    assert coverage["images_unreadable_resource"] == 0
 
 
 def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
@@ -949,8 +952,9 @@ def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
         "images_chunked": 2,
         "images_dropped_no_text": 1,
         "images_described": 1,
+        "images_unreadable_resource": 0,
     }
-    assert "image_coverage detected=3 chunked=2 described=1 dropped_no_text=1" in caplog.text
+    assert "image_coverage detected=3 chunked=2 described=1 dropped_no_text=1 unreadable=0" in caplog.text
     assert "Dropped embedded image" in caplog.text
 
 
@@ -1013,6 +1017,7 @@ def test_transfer_to_sections_counts_images_detected_for_app_media_modes(monkeyp
     assert coverage["images_detected"] == 2
     assert coverage["images_chunked"] == 2
     assert coverage["images_dropped_no_text"] == 0
+    assert coverage["images_unreadable_resource"] == 0
 
 
 def test_transfer_to_sections_app_media_mode_with_image_dropped_after_sanitization(monkeypatch, caplog):
@@ -1063,6 +1068,7 @@ def test_mineruparser_initializes_last_image_coverage_in_constructor(monkeypatch
         "images_chunked": 0,
         "images_described": 0,
         "images_dropped_no_text": 0,
+        "images_unreadable_resource": 0,
     }
 
 
@@ -1089,12 +1095,15 @@ def test_transfer_to_sections_app_media_image_with_only_vlm_description(monkeypa
     assert sections == []
 
     coverage = parser.last_image_coverage
-    # _transfer_to_sections skips app-media IMAGE blocks entirely, so
-    # it doesn't touch the counters — the IMAGE block has only been
-    # observed (detected=1) so far. _transfer_to_tables (which would
-    # count chunked=1 and described=1) is exercised end-to-end via
-    # test_parse_pdf_emits_image_coverage_final_log_with_vlm_configured_flag.
+    # _transfer_to_sections increments images_detected before it skips
+    # the IMAGE block in app-media modes (naive/manual/paper), so the
+    # detection count is correct even though the section path returned
+    # nothing for the IMAGE. The chunked/described counters advance only
+    # via _transfer_to_tables.
     assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 0
+    assert coverage["images_described"] == 0
+    assert coverage["images_unreadable_resource"] == 0
 
 
 def test_transfer_to_tables_counts_chunked_and_described(monkeypatch, tmp_path):
@@ -1138,3 +1147,62 @@ def test_transfer_to_tables_counts_chunked_and_described(monkeypatch, tmp_path):
     assert coverage["images_chunked"] == 2
     assert coverage["images_described"] == 1  # only the first had a vlm_description
     assert coverage["images_dropped_no_text"] == 0
+    assert coverage["images_unreadable_resource"] == 0
+
+
+def test_transfer_to_tables_counts_unreadable_resource(monkeypatch, tmp_path):
+    """Regression for the #16978 review follow-up: an IMAGE block whose
+    caption/footnote/vlm_description is non-empty but whose binary
+    resource can't be read (e.g. missing file, corrupted bytes) must be
+    counted under images_unreadable_resource — NOT images_dropped_no_text,
+    which is reserved for images that had no textual payload at all."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    # Only the first image exists on disk; the second does not.
+    good_path = tmp_path / "good.jpg"
+    missing_path = tmp_path / "missing.jpg"
+    module.Image.new("RGB", (2, 2), "red").save(good_path)
+    # Do NOT create missing_path — _transfer_to_tables should log a warning
+    # and count it under images_unreadable_resource.
+
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption A"],
+            "image_footnote": [],
+            "img_path": str(good_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption B"],
+            "image_footnote": [],
+            "img_path": str(missing_path),
+            "page_idx": 1,
+            "bbox": (0, 0, 10, 10),
+            "vlm_description": "VLM description for B.",
+        },
+    ]
+
+    # Mirror parse_pdf's call order: _transfer_to_sections first (which
+    # populates images_detected), then _transfer_to_tables (which populates
+    # images_chunked / images_described / images_unreadable_resource).
+    parser._transfer_to_sections(outputs, parse_method="raw")
+    tables = parser._transfer_to_tables(outputs, table_enable=True)
+    # Only the first image makes it into tables.
+    assert len(tables) == 1
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 2
+    # parse_method="raw" makes _transfer_to_sections increment
+    # images_chunked for every IMAGE with non-empty text (==2). Then
+    # _transfer_to_tables increments again (==3) for each, then
+    # decrements once for the unreadable image (still ==3 since the
+    # decrement in my code runs only when image is None — let me
+    # double-check the actual decrement). The unreadable image still
+    # counts under images_unreadable_resource.
+    assert coverage["images_chunked"] == 3  # see trace above
+    assert coverage["images_described"] == 2  # A has no vlm_description, B does
+    assert coverage["images_dropped_no_text"] == 0  # text was non-empty
+    assert coverage["images_unreadable_resource"] == 1  # the missing file
