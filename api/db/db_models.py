@@ -2003,34 +2003,30 @@ _INTEGER_COLUMN_TYPES = frozenset({"int", "integer", "bigint", "smallint", "medi
 
 
 def _get_column_data_type(table_name: str, column_name: str) -> str | None:
-    try:
-        if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
-            cursor = DB.execute_sql(
-                """
-                SELECT data_type
-                FROM information_schema.columns
-                WHERE table_schema = current_schema()
-                  AND table_name = %s
-                  AND column_name = %s
-                """,
-                (table_name, column_name),
-            )
-        else:
-            cursor = DB.execute_sql(
-                """
-                SELECT DATA_TYPE
-                FROM information_schema.columns
-                WHERE table_schema = DATABASE()
-                  AND table_name = %s
-                  AND column_name = %s
-                """,
-                (table_name, column_name),
-            )
-        row = cursor.fetchone()
-        return row[0].lower() if row else None
-    except Exception:
-        logging.exception("Failed to inspect %s.%s column type", table_name, column_name)
-        raise
+    if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+        cursor = DB.execute_sql(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = %s
+              AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+    else:
+        cursor = DB.execute_sql(
+            """
+            SELECT DATA_TYPE
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = %s
+              AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+    row = cursor.fetchone()
+    return row[0].lower() if row else None
 
 
 def migrate_tenant_model_id_column_types(migrator):
@@ -2054,8 +2050,13 @@ def migrate_tenant_model_id_column_types(migrator):
 
         try:
             col_type = _get_column_data_type(table_name, column_name)
-        except Exception as ex:
-            logging.warning("Skipping %s.%s tenant_*_id migration; column inspection failed: %s", table_name, column_name, ex)
+        except Exception:
+            logging.critical(
+                "Skipping %s.%s tenant_*_id migration; column inspection failed",
+                table_name,
+                column_name,
+                exc_info=True,
+            )
             continue
 
         if col_type is None:

@@ -2,6 +2,8 @@
 Tests for tenant_*_id column type migration on upgrade (#18756).
 """
 
+import logging
+
 import pytest
 
 from api.db import db_models
@@ -32,7 +34,7 @@ def test_migrate_tenant_model_id_column_types_skips_non_integer_columns(monkeypa
     assert not executed
 
 
-def test_migrate_tenant_model_id_column_types_skips_add_when_inspection_fails(monkeypatch):
+def test_migrate_tenant_model_id_column_types_skips_add_when_inspection_fails(monkeypatch, caplog):
     added = []
 
     def boom(*_args):
@@ -42,9 +44,15 @@ def test_migrate_tenant_model_id_column_types_skips_add_when_inspection_fails(mo
     monkeypatch.setattr(db_models, "DB", type("DB", (), {"table_exists": staticmethod(lambda _name: True)})())
     monkeypatch.setattr(db_models, "alter_db_add_column", lambda *_args: added.append("add"))
 
-    db_models.migrate_tenant_model_id_column_types(object())
+    logging.disable(logging.ERROR)
+    try:
+        with caplog.at_level(logging.CRITICAL):
+            db_models.migrate_tenant_model_id_column_types(object())
+    finally:
+        logging.disable(logging.NOTSET)
 
     assert not added
+    assert any("column inspection failed" in r.message for r in caplog.records if r.levelno >= logging.CRITICAL)
 
 
 def test_migrate_tenant_model_id_column_types_adds_missing_columns(monkeypatch):
