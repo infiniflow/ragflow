@@ -55,16 +55,22 @@ def _chunk_scalar(value) -> str:
 def is_kb_scoped_chunk(chunk: dict | None) -> bool:
     """True for compilation/graph rows keyed to the KB, not a source document.
 
-    Wiki persist stamps ``doc_id = kb_id`` (or omits ``doc_id``). Those rows
-    must not be treated as leftover chunks from a deleted ``document`` row.
+    Wiki persist stamps ``doc_id = kb_id``. Those rows must not be treated as
+    leftover chunks from a deleted ``document`` row. A missing ``doc_id`` is
+    not enough on its own: only an explicit compilation marker (``compile_kwd``)
+    or the KB-id sentinel bypasses deleted-document pruning. Otherwise stale
+    ordinary chunks without ``doc_id`` would stay retrievable after their
+    source document is deleted.
     """
     if not isinstance(chunk, dict):
         return False
     doc_id = _chunk_scalar(chunk.get("doc_id"))
-    if not doc_id:
-        return True
     kb_id = _chunk_scalar(chunk.get("kb_id"))
-    return bool(kb_id) and doc_id == kb_id
+    if kb_id and doc_id == kb_id:
+        return True
+    if doc_id:
+        return False
+    return bool(_chunk_scalar(chunk.get("compile_kwd")))
 
 
 class Dealer:
@@ -130,17 +136,20 @@ class Dealer:
             )
 
         chunk_doc_ids = []
+        unscoped_missing_doc_id = False
         for chunk in fields.values():
             if not chunk or is_kb_scoped_chunk(chunk):
                 continue
             doc_id = _chunk_scalar(chunk.get("doc_id"))
             if doc_id:
                 chunk_doc_ids.append(doc_id)
-        if not chunk_doc_ids:
+            else:
+                unscoped_missing_doc_id = True
+        if not chunk_doc_ids and not unscoped_missing_doc_id:
             return sres
 
-        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids)
-        if len(existing_doc_ids) == len(set(chunk_doc_ids)):
+        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids) if chunk_doc_ids else set()
+        if chunk_doc_ids and not unscoped_missing_doc_id and len(existing_doc_ids) == len(set(chunk_doc_ids)):
             return sres
 
         filtered_ids = []
