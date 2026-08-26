@@ -181,6 +181,7 @@ dispatch:
 	}
 	wg.Wait()
 	if ctx.Err() != nil {
+		//nolint:nilerr // Vision enhancement is best-effort.
 		return dispatched, false, nil
 	}
 
