@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -10,7 +26,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Plus, X } from 'lucide-react';
+import { LucidePlus, LucideTrash2 } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Separator } from '../ui/separator';
@@ -51,7 +67,9 @@ export function DynamicPageRange() {
                 </FormItem>
               )}
             />
+
             <Separator className="w-3 "></Separator>
+
             <FormField
               control={form.control}
               name={`parser_config.pages.${index}.to`}
@@ -70,19 +88,27 @@ export function DynamicPageRange() {
                 </FormItem>
               )}
             />
-            <Button variant={'ghost'} onClick={() => remove(index)}>
-              <X />
+
+            <Button
+              className="ml-4"
+              size="icon"
+              variant="outline"
+              onClick={() => remove(index)}
+            >
+              <LucideTrash2 />
             </Button>
           </div>
         );
       })}
+
       <Button
         onClick={() => append({ from: 1, to: 100 })}
-        className="mt-4 border-dashed w-full"
-        variant={'outline'}
+        block
+        className="mt-4"
+        variant="dashed"
         type="button"
       >
-        <Plus />
+        <LucidePlus />
         {t('knowledgeDetails.addPage')}
       </Button>
     </div>

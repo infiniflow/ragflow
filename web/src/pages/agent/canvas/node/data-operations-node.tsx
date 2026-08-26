@@ -11,11 +11,12 @@ export function DataOperationsNode({
 }: NodeProps<BaseNode<DataOperationsFormSchemaType>>) {
   const { data } = props;
   const { t } = useTranslation();
+  const operations = data.form?.operations;
 
   return (
     <RagNode {...props}>
       <LabelCard>
-        {t(`flow.operationsOptions.${camelCase(data.form?.operations)}`)}
+        {operations && t(`flow.operationsOptions.${camelCase(operations)}`)}
       </LabelCard>
     </RagNode>
   );

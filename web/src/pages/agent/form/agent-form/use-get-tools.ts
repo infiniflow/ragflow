@@ -3,6 +3,11 @@ import { get } from 'lodash';
 import { useContext, useMemo } from 'react';
 import { AgentFormContext } from '../../context';
 
+export function useGetNodeTools() {
+  const node = useContext(AgentFormContext);
+  return get(node, 'data.form.tools', []) as IAgentForm['tools'];
+}
+
 export function useGetAgentToolNames() {
   const node = useContext(AgentFormContext);
 

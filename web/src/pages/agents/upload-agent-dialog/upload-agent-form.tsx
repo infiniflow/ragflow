@@ -14,8 +14,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { FileMimeType } from '@/constants/common';
+import { TagRenameId } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
-import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { NameFormField, NameFormSchema } from '../name-form-field';
 
 export const FormSchema = z.object({
@@ -41,7 +41,7 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-6 w-full text-ellipsis overflow-hidden"
+        className="space-y-6"
         id={TagRenameId}
       >
         <NameFormField></NameFormField>
@@ -53,10 +53,12 @@ export function UploadAgentForm({ hideModal, onOk }: IModalProps<any>) {
               <FormLabel required>DSL</FormLabel>
               <FormControl>
                 <FileUploader
-                  className="w-[calc(100%-40px)] text-ellipsis overflow-hidden"
+                  data-testid="agent-import-file"
+                  className="text-ellipsis overflow-hidden"
                   value={field.value}
                   onValueChange={field.onChange}
                   maxFileCount={1}
+                  showFolderTab={false}
                   accept={{ '*.json': [FileMimeType.Json] }}
                 />
               </FormControl>

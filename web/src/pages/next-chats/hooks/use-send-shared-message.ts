@@ -1,16 +1,17 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
+import message from '@/components/ui/message';
 import { MessageType, SharedFrom } from '@/constants/chat';
-import { useCreateNextSharedConversation } from '@/hooks/chat-hooks';
 import {
   useHandleMessageInputChange,
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
+import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
-import { message } from 'antd';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 
 const isCompletionError = (res: any) =>
@@ -24,8 +25,7 @@ export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
   const data = Object.fromEntries(
-    searchParams
-      .entries()
+    Array.from(searchParams.entries())
       .filter(([key]) => key.startsWith(data_prefix))
       .map(([key, value]) => [key.replace(data_prefix, ''), value]),
   );
@@ -33,6 +33,7 @@ export const useGetSharedChatSearchParams = () => {
     from: searchParams.get('from') as SharedFrom,
     sharedId: searchParams.get('shared_id'),
     locale: searchParams.get('locale'),
+    theme: searchParams.get('theme'),
     data: data,
     visibleAvatar: searchParams.get('visible_avatar')
       ? searchParams.get('visible_avatar') !== '1'
@@ -46,12 +47,10 @@ export const useSendSharedMessage = () => {
     sharedId: conversationId,
     data: data,
   } = useGetSharedChatSearchParams();
-  const { createSharedConversation: setConversation } =
-    useCreateNextSharedConversation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
-    `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`,
-  );
+  const completionUrl = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
+  const { data: chatInfo } = useFetchExternalChatInfo();
+  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
   const {
     derivedMessages,
     removeLatestMessage,
@@ -65,12 +64,20 @@ export const useSendSharedMessage = () => {
   const [hasError, setHasError] = useState(false);
 
   const sendMessage = useCallback(
-    async (message: Message, id?: string) => {
-      const res = await send({
+    async (
+      message: Message,
+      id?: string,
+      enableThinking?: string,
+      enableInternet?: boolean,
+    ) => {
+      const res = await send(completionUrl, {
         conversation_id: id ?? conversationId,
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
+        reasoning: Number(enableThinking),
+        internet: enableInternet,
+        ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
       });
 
       if (isCompletionError(res)) {
@@ -79,32 +86,36 @@ export const useSendSharedMessage = () => {
         removeLatestMessage();
       }
     },
-    [send, conversationId, derivedMessages, setValue, removeLatestMessage],
+    [
+      send,
+      completionUrl,
+      conversationId,
+      derivedMessages,
+      setValue,
+      removeLatestMessage,
+      chatInfo,
+    ],
   );
 
   const handleSendMessage = useCallback(
-    async (message: Message) => {
-      if (conversationId !== '') {
-        sendMessage(message);
-      } else {
-        const data = await setConversation('user id');
-        if (data.code === 0) {
-          const id = data.data.id;
-          sendMessage(message, id);
-        }
-      }
+    async (
+      message: Message,
+      enableThinking?: string,
+      enableInternet?: boolean,
+    ) => {
+      sendMessage(message, undefined, enableThinking, enableInternet);
     },
-    [conversationId, setConversation, sendMessage],
+    [sendMessage],
   );
 
   const fetchSessionId = useCallback(async () => {
     const payload = { question: '' };
-    const ret = await send({ ...payload, ...data });
+    const ret = await send(completionUrl, { ...payload, ...data });
     if (isCompletionError(ret)) {
-      message.error(ret?.data.message);
+      message.error(ret?.data.message ?? 'Unknown error');
       setHasError(true);
     }
-  }, [send]);
+  }, [send, completionUrl]);
 
   useEffect(() => {
     fetchSessionId();
@@ -117,22 +128,29 @@ export const useSendSharedMessage = () => {
   }, [answer, addNewestAnswer]);
 
   const handlePressEnter = useCallback(
-    (documentIds: string[]) => {
-      if (trim(value) === '') return;
+    ({
+      enableThinking,
+      enableInternet,
+    }: NextMessageInputOnPressEnterParameter) => {
+      if (trim(value) === '' || !done) return;
       const id = uuid();
       if (done) {
         setValue('');
         addNewestQuestion({
           content: value,
-          doc_ids: documentIds,
+          doc_ids: [],
           id,
           role: MessageType.User,
         });
-        handleSendMessage({
-          content: value.trim(),
-          id,
-          role: MessageType.User,
-        });
+        handleSendMessage(
+          {
+            content: value.trim(),
+            id,
+            role: MessageType.User,
+          },
+          enableThinking,
+          enableInternet,
+        );
       }
     },
     [addNewestQuestion, done, handleSendMessage, setValue, value],

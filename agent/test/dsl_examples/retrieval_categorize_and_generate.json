@@ -65,7 +65,7 @@
                     "component_name": "Agent",
                     "params": {
                       "llm_id": "deepseek-chat",
-                      "sys_prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n      Here is the knowledge base:\n      {retrieval:0@formalized_content}\n      The above is the knowledge base.",
+                      "sys_prompt": "You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n      Here is the knowledge base:\n      {retrieval:0@formalized_content}\n      The above is the knowledge base.",
                       "temperature": 0.2
                     }
                 },
@@ -85,7 +85,7 @@
   },
   "history": [],
   "path": [],
-  "retrival": {"chunks": [], "doc_aggs": []},
+  "retrieval": {"chunks": [], "doc_aggs": []},
   "globals": {
     "sys.query": "",
     "sys.user_id": "",

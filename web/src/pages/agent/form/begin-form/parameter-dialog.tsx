@@ -1,3 +1,4 @@
+import { KeyInput } from '@/components/key-input';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -95,7 +96,7 @@ function ParameterForm({
       },
       [],
     );
-  }, []);
+  }, [t]);
 
   const type = useWatch({
     control: form.control,
@@ -113,7 +114,6 @@ function ParameterForm({
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const values = { ...data, options: data.options?.map((x) => x.value) };
-    console.log('🚀 ~ onSubmit ~ values:', values);
 
     submit(values);
   }
@@ -153,7 +153,11 @@ function ParameterForm({
             <FormItem>
               <FormLabel>{t('key')}</FormLabel>
               <FormControl>
-                <Input {...field} autoComplete="off" onBlur={handleKeyChange} />
+                <KeyInput
+                  {...field}
+                  autoComplete="off"
+                  onBlur={handleKeyChange}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -206,7 +210,7 @@ export function ParameterDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent>
+      <DialogContent className="max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('flow.variableSettings')}</DialogTitle>
         </DialogHeader>

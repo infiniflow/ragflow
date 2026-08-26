@@ -1,5 +1,21 @@
-import { DecoratorNode, LexicalNode, NodeKey } from 'lexical';
+import {
+  DecoratorNode,
+  LexicalNode,
+  NodeKey,
+  SerializedLexicalNode,
+  Spread,
+} from 'lexical';
 import { ReactNode } from 'react';
+
+export type SerializedVariableNode = Spread<
+  {
+    type: 'variable';
+    version: 1;
+    value: string;
+    label: string;
+  },
+  SerializedLexicalNode
+>;
 
 export class VariableNode extends DecoratorNode<ReactNode> {
   __value: string;
@@ -22,6 +38,14 @@ export class VariableNode extends DecoratorNode<ReactNode> {
     );
   }
 
+  static importJSON(serializedNode: SerializedVariableNode): VariableNode {
+    return new VariableNode(
+      serializedNode.value,
+      serializedNode.label,
+      undefined,
+    );
+  }
+
   constructor(
     value: string,
     label: string,
@@ -38,7 +62,7 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   createDOM(): HTMLElement {
     const dom = document.createElement('span');
-    dom.className = 'mr-1';
+    dom.className = 'variable-node [&+.variable-node]:ml-[.25em]';
 
     return dom;
   }
@@ -53,16 +77,18 @@ export class VariableNode extends DecoratorNode<ReactNode> {
     );
     if (this.__parentLabel) {
       content = (
-        <div className="flex items-center gap-1 text-text-primary ">
-          <div>{this.__icon}</div>
-          <div>{this.__parentLabel}</div>
-          <div className="text-text-disabled mr-1">/</div>
+        <div className="flex items-center gap-1 text-text-primary">
+          <div className="contents after:content-['/'] after:text-text-disabled">
+            {this.__icon}
+            {this.__parentLabel}
+          </div>
+
           {content}
         </div>
       );
     }
     return (
-      <div className="bg-accent-primary-5 text-sm inline-flex items-center rounded-md px-2 py-1">
+      <div className="bg-accent-primary-5 text-sm inline-flex items-center rounded-md px-2 py-1 align-middle">
         {content}
       </div>
     );
@@ -71,12 +97,22 @@ export class VariableNode extends DecoratorNode<ReactNode> {
   getTextContent(): string {
     return `{${this.__value}}`;
   }
+
+  exportJSON(): SerializedVariableNode {
+    return {
+      ...super.exportJSON(),
+      type: 'variable',
+      version: 1,
+      value: this.__value,
+      label: this.__label,
+    };
+  }
 }
 
 export function $createVariableNode(
   value: string,
   label: string,
-  parentLabel: string | ReactNode,
+  parentLabel?: string | ReactNode,
   icon?: ReactNode,
 ): VariableNode {
   return new VariableNode(value, label, undefined, parentLabel, icon);

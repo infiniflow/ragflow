@@ -1,10 +1,11 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { GlobalVariableType } from '@/interfaces/database/agent';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import {
+  GlobalVariableType,
+  RAGFlowNodeType,
+} from '@/interfaces/database/agent';
 import { useCallback } from 'react';
-import { Operator } from '../constant';
 import useGraphStore from '../store';
-import { buildDslComponentsByGraph, buildDslGobalVariables } from '../utils';
+import { graphToDsl } from '../utils/dsl-bridge';
 
 export const useBuildDslData = () => {
   const { data } = useFetchAgent();
@@ -13,46 +14,16 @@ export const useBuildDslData = () => {
   const buildDslData = useCallback(
     (
       currentNodes?: RAGFlowNodeType[],
-      otherParam?: { gobalVariables: Record<string, GlobalVariableType> },
+      otherParam?: { globalVariables: Record<string, GlobalVariableType> },
     ) => {
-      const nodesToProcess = currentNodes ?? nodes;
-
-      // Filter out placeholder nodes and related edges
-      const filteredNodes = nodesToProcess.filter(
-        (node) => node.data?.label !== Operator.Placeholder,
+      return graphToDsl(
+        currentNodes ?? nodes,
+        edges,
+        data?.dsl ?? {},
+        otherParam?.globalVariables,
       );
-
-      const filteredEdges = edges.filter((edge) => {
-        const sourceNode = nodesToProcess.find(
-          (node) => node.id === edge.source,
-        );
-        const targetNode = nodesToProcess.find(
-          (node) => node.id === edge.target,
-        );
-        return (
-          sourceNode?.data?.label !== Operator.Placeholder &&
-          targetNode?.data?.label !== Operator.Placeholder
-        );
-      });
-
-      const dslComponents = buildDslComponentsByGraph(
-        filteredNodes,
-        filteredEdges,
-        data.dsl.components,
-      );
-
-      const gobalVariables = buildDslGobalVariables(
-        data.dsl,
-        otherParam?.gobalVariables,
-      );
-      return {
-        ...data.dsl,
-        ...gobalVariables,
-        graph: { nodes: filteredNodes, edges: filteredEdges },
-        components: dslComponents,
-      };
     },
-    [data.dsl, edges, nodes],
+    [data?.dsl, edges, nodes],
   );
 
   return { buildDslData };

@@ -16,45 +16,119 @@
 
 
 import logging
+import os
 import uuid
 from functools import wraps
 from datetime import datetime
-from flask import request, jsonify
+
+from flask import jsonify, request
 from flask_login import current_user, login_user
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.common.exceptions import AdminException, UserNotFoundError
 from api.common.base64 import encode_to_base64
 from api.db.services import UserService
+from api.db import UserTenantRole
+from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
-from common.connection_utils import construct_response
+from common.connection_utils import sync_construct_response
 from common import settings
+
+
+# The admin server reports DEFAULT_SUPERUSER_EMAIL via
+# `services.EnvironmentsMgr.get_all()` and the admin CLI's "list envs"
+# output, so operators reasonably expect the env value to drive the
+# bootstrap admin account's email. (DEFAULT_SUPERUSER_PASSWORD is
+# deliberately NOT exposed through the env-listing API — it would
+# leak the bootstrap credential into any audit log that records the
+# full env map.) Read once at module load so the bootstrap functions
+# below can reference the values as module-level constants, matching
+# `api/db/init_data.py:init_superuser`. See infiniflow/ragflow#16876.
+#
+# Reject empty env values explicitly: ``os.getenv(name, fallback)``
+# only uses the fallback when the variable is *unset*, so a misconfigured
+# operator setting ``DEFAULT_SUPERUSER_PASSWORD=`` would otherwise
+# persist an empty password — every first login would silently fail with
+# "credentials don't match" instead of a clear startup error. We
+# deliberately preserve the raw value (no whitespace stripping) so a
+# password like ``"  s3cret  "`` keeps its leading/trailing whitespace
+# and isn't silently mutated before being hashed/stored. Email/nickname
+# callers strip separately because whitespace there would be invalid.
+def _required_env(name, default):
+    value = os.getenv(name, default)
+    if not value:
+        logging.error(
+            "admin server: %s is set but empty; either unset it (the default %r will be used) or provide a real value",
+            name,
+            default,
+        )
+        raise RuntimeError(f"admin server: {name} is set but empty; either unset it (the default {default!r} will be used) or provide a real value")
+    return value
+
+
+def _required_env_stripped(name, default):
+    """Like ``_required_env`` but rejects whitespace-only values.
+
+    A raw value of ``" "`` would survive the empty-check in
+    ``_required_env`` and then collapse to ``""`` after the caller
+    ``.strip()``s it, propagating an empty nickname/email into the
+    bootstrap flow and silently failing later checks. Strip before
+    the empty check so the failure surfaces at startup with the
+    intended config-error message."""
+    raw = os.getenv(name, default)
+    stripped = raw.strip()
+    if not stripped:
+        logging.error(
+            "admin server: %s is set to whitespace-only value; either unset it (the default %r will be used) or provide a real value",
+            name,
+            default,
+        )
+        raise RuntimeError(f"admin server: {name} is set to whitespace-only value; either unset it (the default {default!r} will be used) or provide a real value")
+    return stripped
+
+
+DEFAULT_SUPERUSER_NICKNAME = _required_env_stripped("DEFAULT_SUPERUSER_NICKNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = _required_env_stripped("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+DEFAULT_SUPERUSER_PASSWORD = _required_env("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 
 def setup_auth(login_manager):
     @login_manager.request_loader
     def load_user(web_request):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        # Authorization header contains JWT-encoded access token
+        # First decode JWT to get the UUID, then query database
+        from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+        from common import settings
+
         authorization = web_request.headers.get("Authorization")
         if authorization:
             try:
-                access_token = str(jwt.loads(authorization))
+                # Strip "Bearer " prefix if present
+                jwt_token = authorization
+                if jwt_token.startswith("Bearer "):
+                    jwt_token = jwt_token[7:]
 
-                if not access_token or not access_token.strip():
-                    logging.warning("Authentication attempt with empty access token")
+                jwt_token = jwt_token.strip()
+                if not jwt_token:
+                    logging.warning("Authentication attempt with empty JWT token")
                     return None
 
-                # Access tokens should be UUIDs (32 hex characters)
-                if len(access_token.strip()) < 32:
+                # Decode JWT to get the UUID access_token
+                jwt = Serializer(secret_key=settings.get_secret_key())
+                access_token = str(jwt.loads(jwt_token))
+
+                if not access_token or not access_token.strip():
+                    logging.warning("Authentication attempt with empty access token after JWT decode")
+                    return None
+
+                # Access tokens stored in database are UUIDs (32 hex characters)
+                if len(access_token) < 32:
                     logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
                     return None
 
-                user = UserService.query(
-                    access_token=access_token, status=StatusEnum.VALID.value
-                )
+                user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
                 if user:
                     if not user[0].access_token or not user[0].access_token.strip():
                         logging.warning(f"User {user[0].email} has empty access_token in database")
@@ -75,17 +149,83 @@ def init_default_admin():
     if not users:
         default_admin = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
-            "nickname": "admin",
+            "password": encode_to_base64(DEFAULT_SUPERUSER_PASSWORD),
+            "nickname": DEFAULT_SUPERUSER_NICKNAME,
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": DEFAULT_SUPERUSER_EMAIL,
             "creator": "system",
             "status": "1",
         }
         if not UserService.save(**default_admin):
             raise AdminException("Can't init admin.", 500)
+        add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
+    else:
+        # Filter existing superuser rows by the configured
+        # ``DEFAULT_SUPERUSER_EMAIL``. Per @Lynn-Inf's review on
+        # PR #17674, this intentionally does NOT also filter on
+        # ``is_active`` — an inactive row matching the configured
+        # email must still be treated as the configured bootstrap
+        # admin, otherwise the tenant-backfill branch above could
+        # silently create a duplicate entry for the (already-existing,
+        # just-disabled) default admin. Activity gating already lives
+        # in ``login_admin`` (``is_active == INACTIVE`` rejects the
+        # session at login time), so the bootstrap path stays
+        # read-only.
+        default_admin_rows = [u for u in users if u.email == DEFAULT_SUPERUSER_EMAIL]
+        if default_admin_rows:
+            default_admin = default_admin_rows[0].to_dict()
+            exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
+            if not exist:
+                add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
+        elif any(u.email != DEFAULT_SUPERUSER_EMAIL for u in users):
+            # Active superuser(s) exist but none match the configured
+            # DEFAULT_SUPERUSER_EMAIL — the operator set the env var to a
+            # value that doesn't match any existing admin row. Don't
+            # silently fall back to the original "admin@ragflow.io"
+            # identity (that would diverge the bootstrap credential
+            # from the env), and don't auto-create a new admin (the
+            # user may have intentionally kept the old admin). Surface
+            # the mismatch with explicit migration guidance.
+            existing_emails = sorted({u.email for u in users})
+            logging.error(
+                "admin server: configured DEFAULT_SUPERUSER_EMAIL (%r) "
+                "does not match any active superuser row; existing admin "
+                "emails: %r. Refusing to bootstrap to avoid diverging the "
+                "credential from the env value.",
+                DEFAULT_SUPERUSER_EMAIL,
+                existing_emails,
+            )
+            raise AdminException(
+                f"Active superuser(s) exist but none match DEFAULT_SUPERUSER_EMAIL "
+                f"({DEFAULT_SUPERUSER_EMAIL!r}). Either unset the env var to "
+                f"keep the existing admin, or run the API-side migration "
+                f"(``python -m api.ragflow_server --init-superuser``) to align "
+                f"the configured email with an existing admin row before "
+                f"restarting.",
+                500,
+            )
+
+
+def add_tenant_for_admin(user_info: dict, role: str):
+    tenant = {
+        "id": user_info["id"],
+        "name": user_info["nickname"] + "‘s Kingdom",
+        "llm_id": settings.CHAT_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
+        "asr_id": settings.ASR_MDL,
+        "parser_ids": settings.PARSERS,
+        "img2txt_id": settings.VISION_MDL,
+        "rerank_id": settings.RERANK_MDL,
+    }
+    usr_tenant = {"tenant_id": user_info["id"], "user_id": user_info["id"], "invited_by": user_info["id"], "role": role}
+
+    # tenant_llm = get_init_tenant_llm(user_info["id"])
+    TenantService.insert(**tenant)
+    UserTenantService.insert(**usr_tenant)
+    # TenantLLMService.insert_many(tenant_llm)
+    logging.info(f"Added tenant for email: {user_info['email']}, A default tenant has been set; changing the default models after login is strongly recommended.")
 
 
 def check_admin_auth(func):
@@ -107,13 +247,13 @@ def check_admin_auth(func):
 def login_admin(email: str, password: str):
     """
     :param email: admin email
-    :param password: string before decrypt
+    :param password: string before decrypt (RSA encrypted + base64 encoded)
     """
     users = UserService.query(email=email)
     if not users:
         raise UserNotFoundError(email)
-    psw = decrypt(password)
-    user = UserService.query_user(email, psw)
+    decrypted = decrypt(password)
+    user = UserService.query_user(email, decrypted)
     if not user:
         raise AdminException("Email and password do not match!")
     if not user.is_superuser:
@@ -129,19 +269,25 @@ def login_admin(email: str, password: str):
     user.last_login_time = get_format_time()
     user.save()
     msg = "Welcome back!"
-    return construct_response(data=resp, auth=user.get_id(), message=msg)
+    return sync_construct_response(data=resp, auth=user.get_id(), message=msg)
 
 
 def check_admin(username: str, password: str):
     users = UserService.query(email=username)
     if not users:
         logging.info(f"Username: {username} is not registered!")
+        # On first login with an unrecognised username, fall back to the
+        # env-configured default admin bootstrap so an operator who set
+        # ``DEFAULT_SUPERUSER_EMAIL=me@corp.com`` gets an admin at
+        # ``me@corp.com`` — matching what ``services.EnvironmentsMgr.get_all``
+        # advertises and what the API-side ``init_superuser`` already
+        # does. See infiniflow/ragflow#16876.
         user_info = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
-            "nickname": "admin",
+            "password": encode_to_base64(DEFAULT_SUPERUSER_PASSWORD),
+            "nickname": DEFAULT_SUPERUSER_NICKNAME,
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": DEFAULT_SUPERUSER_EMAIL,
             "creator": "system",
             "status": "1",
         }
@@ -159,28 +305,17 @@ def login_verify(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        if not auth or 'username' not in auth.parameters or 'password' not in auth.parameters:
-            return jsonify({
-                "code": 401,
-                "message": "Authentication required",
-                "data": None
-            }), 200
+        if not auth or "username" not in auth.parameters or "password" not in auth.parameters:
+            return jsonify({"code": 401, "message": "Authentication required", "data": None}), 200
 
-        username = auth.parameters['username']
-        password = auth.parameters['password']
+        username = auth.parameters["username"]
+        password = auth.parameters["password"]
         try:
-            if check_admin(username, password) is False:
-                return jsonify({
-                    "code": 500,
-                    "message": "Access denied",
-                    "data": None
-                }), 200
-        except Exception as e:
-            error_msg = str(e)
-            return jsonify({
-                "code": 500,
-                "message": error_msg
-            }), 200
+            if not check_admin(username, password):
+                return jsonify({"code": 500, "message": "Access denied", "data": None}), 200
+        except Exception:
+            logging.exception("An error occurred during admin login verification.")
+            return jsonify({"code": 500, "message": "An internal server error occurred."}), 200
 
         return f(*args, **kwargs)
 

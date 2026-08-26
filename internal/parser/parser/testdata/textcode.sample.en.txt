@@ -1,0 +1,11 @@
+RAGFlow parses plain text and source code through the text&code family. This is the first English sentence. Here is a second sentence with more detail! Is this a question that the parser should handle?
+
+A blank line separates paragraphs. Semicolons also act as delimiters; this clause stays attached to the previous one. The parser keeps the trailing punctuation so sentence boundaries survive the split.
+
+def greet(name):
+    return f"hello, {name}"
+
+def main():
+    print(greet("world"))
+
+Long code lines are kept as their own segments. The parser does not perform the token merge; the downstream chunker owns chunking per PARSER_ALIGNMENT_HANDOFF.md section 2.3.

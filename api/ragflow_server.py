@@ -14,66 +14,82 @@
 #  limitations under the License.
 #
 
-# from beartype import BeartypeConf
-# from beartype.claw import beartype_all  # <-- you didn't sign up for this
-# beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
+print("Start RAGFlow server...")
 
-from common.log_utils import init_root_logger
-from plugin import GlobalPluginManager
-init_root_logger("ragflow_server")
+import time
+
+start_ts = time.time()
+
+import os
+
+# LiteLLM fetches a model cost map from GitHub during import unless this is set.
+# The API server should not block startup on external network access.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 import logging
-import os
 import signal
 import sys
-import time
-import traceback
 import threading
 import uuid
+import faulthandler
 
-from werkzeug.serving import run_simple
-from api.apps import app, smtp_mail_server
+from api.apps import app
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
 from common import settings
 from api.db.db_models import init_database_tables as init_web_db
-from api.db.init_data import init_web_data
+from api.db.init_data import init_web_data, init_superuser
 from common.versions import get_ragflow_version
 from common.config_utils import show_configs
-from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
+from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
+from common.log_utils import init_root_logger
+from agent.plugin import GlobalPluginManager
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
+chat_channel_thread = None
 
-RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get('RAGFLOW_DEBUGPY_LISTEN', "0"))
+RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get("RAGFLOW_DEBUGPY_LISTEN", "0"))
+
 
 def update_progress():
     lock_value = str(uuid.uuid4())
     redis_lock = RedisDistributedLock("update_progress", lock_value=lock_value, timeout=60)
     logging.info(f"update_progress lock_value: {lock_value}")
     while not stop_event.is_set():
+        acquired = False
         try:
-            if redis_lock.acquire():
+            acquired = redis_lock.acquire()
+            if acquired:
                 DocumentService.update_progress()
-                redis_lock.release()
         except Exception:
             logging.exception("update_progress exception")
         finally:
-            try:
-                redis_lock.release()
-            except Exception:
-                logging.exception("update_progress exception")
+            if acquired:
+                try:
+                    redis_lock.release()
+                except Exception:
+                    logging.exception("update_progress exception")
             stop_event.wait(6)
+
+
+def stop_background_services():
+    stop_event.set()
+    if chat_channel_thread and chat_channel_thread.is_alive() and chat_channel_thread is not threading.current_thread():
+        chat_channel_thread.join(timeout=5)
+
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
     shutdown_all_mcp_sessions()
-    stop_event.set()
-    time.sleep(1)
+    stop_background_services()
     sys.exit(0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
+    faulthandler.enable()
+    init_root_logger("ragflow_server")
     logging.info(r"""
         ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
@@ -82,12 +98,8 @@ if __name__ == '__main__':
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     """)
-    logging.info(
-        f'RAGFlow version: {get_ragflow_version()}'
-    )
-    logging.info(
-        f'project base: {get_project_base_directory()}'
-    )
+    logging.info(f"RAGFlow version: {get_ragflow_version()}")
+    logging.info(f"project base: {get_project_base_directory()}")
     show_configs()
     settings.init_settings()
     settings.print_rag_settings()
@@ -95,6 +107,7 @@ if __name__ == '__main__':
     if RAGFLOW_DEBUGPY_LISTEN > 0:
         logging.info(f"debugpy listen on {RAGFLOW_DEBUGPY_LISTEN}")
         import debugpy
+
         debugpy.listen(("0.0.0.0", RAGFLOW_DEBUGPY_LISTEN))
 
     # init db
@@ -104,17 +117,16 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--version", default=False, help="RAGFlow version", action="store_true"
-    )
-    parser.add_argument(
-        "--debug", default=False, help="debug mode", action="store_true"
-    )
+    parser.add_argument("--version", default=False, help="RAGFlow version", action="store_true")
+    parser.add_argument("--debug", default=False, help="debug mode", action="store_true")
+    parser.add_argument("--init-superuser", default=False, help="init superuser", action="store_true")
     args = parser.parse_args()
     if args.version:
         print(get_ragflow_version())
         sys.exit(0)
 
+    if args.init_superuser:
+        init_superuser()
     RuntimeConfig.DEBUG = args.debug
     if RuntimeConfig.DEBUG:
         logging.info("run on debug mode")
@@ -132,37 +144,37 @@ if __name__ == '__main__':
         t = threading.Thread(target=update_progress, daemon=True)
         t.start()
 
+    def start_chat_channels():
+        global chat_channel_thread
+        try:
+            from api.channels.bootstrap import start_channel_server
+
+            logging.info("Starting chat channel server thread")
+            chat_channel_thread = threading.Thread(
+                target=start_channel_server,
+                args=(stop_event,),
+                daemon=True,
+                name="chat-channels",
+            )
+            chat_channel_thread.start()
+        except Exception:
+            logging.exception("Failed to start chat channel server")
+
     if RuntimeConfig.DEBUG:
         if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             threading.Timer(1.0, delayed_start_update_progress).start()
+            start_chat_channels()
     else:
         threading.Timer(1.0, delayed_start_update_progress).start()
-
-    # init smtp server
-    if settings.SMTP_CONF:
-        app.config["MAIL_SERVER"] = settings.MAIL_SERVER
-        app.config["MAIL_PORT"] = settings.MAIL_PORT
-        app.config["MAIL_USE_SSL"] = settings.MAIL_USE_SSL
-        app.config["MAIL_USE_TLS"] = settings.MAIL_USE_TLS
-        app.config["MAIL_USERNAME"] = settings.MAIL_USERNAME
-        app.config["MAIL_PASSWORD"] = settings.MAIL_PASSWORD
-        app.config["MAIL_DEFAULT_SENDER"] = settings.MAIL_DEFAULT_SENDER
-        smtp_mail_server.init_app(app)
-
+        start_chat_channels()
 
     # start http server
     try:
-        logging.info("RAGFlow HTTP server start...")
-        run_simple(
-            hostname=settings.HOST_IP,
-            port=settings.HOST_PORT,
-            application=app,
-            threaded=True,
-            use_reloader=RuntimeConfig.DEBUG,
-            use_debugger=RuntimeConfig.DEBUG,
-        )
-    except Exception:
-        traceback.print_exc()
-        stop_event.set()
-        time.sleep(1)
+        logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
+        app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=False)
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
+        stop_background_services()
         os.kill(os.getpid(), signal.SIGKILL)
+    finally:
+        stop_background_services()

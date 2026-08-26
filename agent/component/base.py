@@ -14,24 +14,43 @@
 #  limitations under the License.
 #
 
+import asyncio
+import builtins
+import json
+import logging
+import os
 import re
 import time
 from abc import ABC
-import builtins
-import json
-import os
-import logging
 from typing import Any, List, Union
+
 import pandas as pd
-import trio
+
 from agent import settings
 from common.connection_utils import timeout
 
+
+from common.misc_utils import thread_pool_exec
+
+_logger = logging.getLogger(__name__)
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
 _USER_FEEDED_PARAMS = "_user_feeded_params"
 _IS_RAW_CONF = "_is_raw_conf"
+
+
+def _build_template_ref_pattern(reference_pattern: str) -> str:
+    """Match a plain reference or one balanced outer brace pair.
+
+    Group 1 remains the reference for existing callers. The named ``outer``
+    group records whether the match used the wrapped form.
+    """
+    return (
+        rf"(?=(?:\{{ *)?\{{({reference_pattern})\}})"
+        rf"(?:(?P<outer>\{{) *)?\{{(?:{reference_pattern})\}}"
+        r"(?(outer) *\}|(?! *\}))"
+    )
 
 
 class ComponentParamBase(ABC):
@@ -91,13 +110,19 @@ class ComponentParamBase(ABC):
         return {name: True for name in self.get_feeded_deprecated_params()}
 
     def __str__(self):
-        return json.dumps(self.as_dict(), ensure_ascii=False)
+        def _serialize_default(obj):
+            if callable(obj):
+                return None
+            logging.warning("ComponentParamBase.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
+            return str(obj)
+
+        return json.dumps(self.as_dict(), ensure_ascii=False, default=_serialize_default)
 
     def as_dict(self):
         def _recursive_convert_obj_to_dict(obj):
             ret_dict = {}
             if isinstance(obj, dict):
-                for k,v in obj.items():
+                for k, v in obj.items():
                     if isinstance(v, dict) or (v and type(v).__name__ not in dir(builtins)):
                         ret_dict[k] = _recursive_convert_obj_to_dict(v)
                     else:
@@ -125,15 +150,11 @@ class ComponentParamBase(ABC):
         update_from_raw_conf = conf.get(_IS_RAW_CONF, True)
         if update_from_raw_conf:
             deprecated_params_set = self._get_or_init_deprecated_params_set()
-            feeded_deprecated_params_set = (
-                self._get_or_init_feeded_deprecated_params_set()
-            )
+            feeded_deprecated_params_set = self._get_or_init_feeded_deprecated_params_set()
             user_feeded_params_set = self._get_or_init_user_feeded_params_set()
             setattr(self, _IS_RAW_CONF, False)
         else:
-            feeded_deprecated_params_set = (
-                self._get_or_init_feeded_deprecated_params_set(conf)
-            )
+            feeded_deprecated_params_set = self._get_or_init_feeded_deprecated_params_set(conf)
             user_feeded_params_set = self._get_or_init_user_feeded_params_set(conf)
 
         def _recursive_update_param(param, config, depth, prefix):
@@ -169,15 +190,11 @@ class ComponentParamBase(ABC):
 
                 else:
                     # recursive set obj attr
-                    sub_params = _recursive_update_param(
-                        attr, config_value, depth + 1, prefix=f"{prefix}{config_key}."
-                    )
+                    sub_params = _recursive_update_param(attr, config_value, depth + 1, prefix=f"{prefix}{config_key}.")
                     setattr(param, config_key, sub_params)
 
             if not allow_redundant and redundant_attrs:
-                raise ValueError(
-                    f"cpn `{getattr(self, '_name', type(self))}` has redundant parameters: `{[redundant_attrs]}`"
-                )
+                raise ValueError(f"cpn `{getattr(self, '_name', type(self))}` has redundant parameters: `{[redundant_attrs]}`")
 
             return param
 
@@ -208,9 +225,7 @@ class ComponentParamBase(ABC):
         param_validation_path_prefix = home_dir + "/param_validation/"
 
         param_name = type(self).__name__
-        param_validation_path = "/".join(
-            [param_validation_path_prefix, param_name + ".json"]
-        )
+        param_validation_path = "/".join([param_validation_path_prefix, param_name + ".json"])
 
         validation_json = None
 
@@ -243,106 +258,76 @@ class ComponentParamBase(ABC):
                         break
 
                 if not value_legal:
-                    raise ValueError(
-                        "Please check runtime conf, {} = {} does not match user-parameter restriction".format(
-                            variable, value
-                        )
-                    )
+                    raise ValueError("Please check runtime conf, {} = {} does not match user-parameter restriction".format(variable, value))
 
             elif variable in validation_json:
                 self._validate_param(attr, validation_json)
 
     @staticmethod
-    def check_string(param, descr):
+    def check_string(param, description):
         if type(param).__name__ not in ["str"]:
-            raise ValueError(
-                descr + " {} not supported, should be string type".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be string type".format(param))
 
     @staticmethod
-    def check_empty(param, descr):
+    def check_empty(param, description):
         if not param:
-            raise ValueError(
-                descr + " does not support empty value."
-            )
+            raise ValueError(description + " does not support empty value.")
 
     @staticmethod
-    def check_positive_integer(param, descr):
+    def check_nonnegative_integer(param, description):
+        if type(param).__name__ not in ["int", "long"] or param < 0:
+            raise ValueError(description + " {} not supported, should be 0 or positive integer".format(param))
+
+    @staticmethod
+    def check_positive_integer(param, description):
         if type(param).__name__ not in ["int", "long"] or param <= 0:
-            raise ValueError(
-                descr + " {} not supported, should be positive integer".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be positive integer".format(param))
 
     @staticmethod
-    def check_positive_number(param, descr):
+    def check_positive_number(param, description):
         if type(param).__name__ not in ["float", "int", "long"] or param <= 0:
-            raise ValueError(
-                descr + " {} not supported, should be positive numeric".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be positive numeric".format(param))
 
     @staticmethod
-    def check_nonnegative_number(param, descr):
+    def check_nonnegative_number(param, description):
         if type(param).__name__ not in ["float", "int", "long"] or param < 0:
-            raise ValueError(
-                descr
-                + " {} not supported, should be non-negative numeric".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be non-negative numeric".format(param))
 
     @staticmethod
-    def check_decimal_float(param, descr):
+    def check_decimal_float(param, description):
         if type(param).__name__ not in ["float", "int"] or param < 0 or param > 1:
-            raise ValueError(
-                descr
-                + " {} not supported, should be a float number in range [0, 1]".format(
-                    param
-                )
-            )
+            raise ValueError(description + " {} not supported, should be a float number in range [0, 1]".format(param))
 
     @staticmethod
-    def check_boolean(param, descr):
+    def check_boolean(param, description):
         if type(param).__name__ != "bool":
-            raise ValueError(
-                descr + " {} not supported, should be bool type".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be bool type".format(param))
 
     @staticmethod
-    def check_open_unit_interval(param, descr):
+    def check_open_unit_interval(param, description):
         if type(param).__name__ not in ["float"] or param <= 0 or param >= 1:
-            raise ValueError(
-                descr + " should be a numeric number between 0 and 1 exclusively"
-            )
+            raise ValueError(description + " should be a numeric number between 0 and 1 exclusively")
 
     @staticmethod
-    def check_valid_value(param, descr, valid_values):
+    def check_valid_value(param, description, valid_values):
         if param not in valid_values:
-            raise ValueError(
-                descr
-                + " {} is not supported, it should be in {}".format(param, valid_values)
-            )
+            raise ValueError(description + " {} is not supported, it should be in {}".format(param, valid_values))
 
     @staticmethod
-    def check_defined_type(param, descr, types):
+    def check_defined_type(param, description, types):
         if type(param).__name__ not in types:
-            raise ValueError(
-                descr + " {} not supported, should be one of {}".format(param, types)
-            )
+            raise ValueError(description + " {} not supported, should be one of {}".format(param, types))
 
     @staticmethod
-    def check_and_change_lower(param, valid_list, descr=""):
+    def check_and_change_lower(param, valid_list, description=""):
         if type(param).__name__ != "str":
-            raise ValueError(
-                descr
-                + " {} not supported, should be one of {}".format(param, valid_list)
-            )
+            raise ValueError(description + " {} not supported, should be one of {}".format(param, valid_list))
 
         lower_param = param.lower()
         if lower_param in valid_list:
             return lower_param
         else:
-            raise ValueError(
-                descr
-                + " {} not supported, should be one of {}".format(param, valid_list)
-            )
+            raise ValueError(description + " {} not supported, should be one of {}".format(param, valid_list))
 
     @staticmethod
     def _greater_equal_than(value, limit):
@@ -356,11 +341,7 @@ class ComponentParamBase(ABC):
     def _range(value, ranges):
         in_range = False
         for left_limit, right_limit in ranges:
-            if (
-                    left_limit - settings.FLOAT_ZERO
-                    <= value
-                    <= right_limit + settings.FLOAT_ZERO
-            ):
+            if left_limit - settings.FLOAT_ZERO <= value <= right_limit + settings.FLOAT_ZERO:
                 in_range = True
                 break
 
@@ -374,26 +355,28 @@ class ComponentParamBase(ABC):
     def _not_in(value, wrong_value_list):
         return value not in wrong_value_list
 
-    def _warn_deprecated_param(self, param_name, descr):
+    def _warn_deprecated_param(self, param_name, description):
         if self._deprecated_params_set.get(param_name):
-            logging.warning(
-                f"{descr} {param_name} is deprecated and ignored in this version."
-            )
+            logging.warning(f"{description} {param_name} is deprecated and ignored in this version.")
 
-    def _warn_to_deprecate_param(self, param_name, descr, new_param):
+    def _warn_to_deprecate_param(self, param_name, description, new_param):
         if self._deprecated_params_set.get(param_name):
-            logging.warning(
-                f"{descr} {param_name} will be deprecated in future release; "
-                f"please use {new_param} instead."
-            )
+            logging.warning(f"{description} {param_name} will be deprecated in future release; please use {new_param} instead.")
             return True
         return False
 
 
 class ComponentBase(ABC):
     component_name: str
-    thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
-    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
+    # Match `cpn_id@var_nm` / `sys.var_nm` / `env.var_nm` style template refs.
+    # `cpn_id` allows underscores (frontend ids like `userfillup_abc`,
+    # `retrieval_xyz`) and colons (legacy DSL ids like `UserFillUp:CateInput`,
+    # `Retrieval:KBSearch`).
+    variable_ref_patt = _build_template_ref_pattern(r"[a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+")
+    variable_ref_patt_re = re.compile(variable_ref_patt, flags=re.IGNORECASE | re.DOTALL)
+    iteration_alias_patt = _build_template_ref_pattern(r"item|index|result")
+    iteration_alias_patt_re = re.compile(iteration_alias_patt, flags=re.IGNORECASE | re.DOTALL)
 
     def __str__(self):
         """
@@ -405,12 +388,11 @@ class ComponentBase(ABC):
         return """{{
             "component_name": "{}",
             "params": {}
-        }}""".format(self.component_name,
-                     self._param
-        )
+        }}""".format(self.component_name, self._param)
 
     def __init__(self, canvas, id, param: ComponentParamBase):
         from agent.canvas import Graph  # Local import to avoid cyclic dependency
+
         assert isinstance(canvas, Graph), "canvas must be an instance of Canvas"
         self._canvas = canvas
         self._id = id
@@ -422,7 +404,7 @@ class ComponentBase(ABC):
 
     def check_if_canceled(self, message: str = "") -> bool:
         if self.is_canceled():
-            task_id = getattr(self._canvas, 'task_id', 'unknown')
+            task_id = getattr(self._canvas, "task_id", "unknown")
             log_message = f"Task {task_id} has been canceled"
             if message:
                 log_message += f" during {message}"
@@ -445,14 +427,42 @@ class ComponentBase(ABC):
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    async def invoke_async(self, **kwargs) -> dict[str, Any]:
+        """
+        Async wrapper for component invocation.
+        Prefers coroutine `_invoke_async` if present; otherwise falls back to `_invoke`.
+        Handles timing and error recording consistently with `invoke`.
+        """
+        self.set_output("_created_time", time.perf_counter())
+        try:
+            if self.check_if_canceled("Component processing"):
+                return
+
+            fn_async = getattr(self, "_invoke_async", None)
+            if fn_async and asyncio.iscoroutinefunction(fn_async):
+                await fn_async(**kwargs)
+            elif asyncio.iscoroutinefunction(self._invoke):
+                await self._invoke(**kwargs)
+            else:
+                await thread_pool_exec(self._invoke, **kwargs)
+        except Exception as e:
+            if self.get_exception_default_value():
+                self.set_exception_default_value()
+            else:
+                self.set_output("_ERROR", str(e))
+            logging.exception(e)
+        self._param.debug_inputs = {}
+        self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
+        return self.output()
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         raise NotImplementedError()
 
-    def output(self, var_nm: str=None) -> Union[dict[str, Any], Any]:
+    def output(self, var_nm: str = None) -> Union[dict[str, Any], Any]:
         if var_nm:
             return self._param.outputs.get(var_nm, {}).get("value", "")
-        return {k: o.get("value") for k,o in self._param.outputs.items()}
+        return {k: o.get("value") for k, o in self._param.outputs.items()}
 
     def set_output(self, key: str, value: Any):
         if key not in self._param.outputs:
@@ -463,27 +473,46 @@ class ComponentBase(ABC):
         return self._param.outputs.get("_ERROR", {}).get("value")
 
     def reset(self, only_output=False):
-        for k in self._param.outputs.keys():
-            self._param.outputs[k]["value"] = None
+        outputs: dict = self._param.outputs  # for better performance
+        for k in outputs.keys():
+            outputs[k]["value"] = None
         if only_output:
             return
-        for k in self._param.inputs.keys():
-            self._param.inputs[k]["value"] = None
+
+        inputs: dict = self._param.inputs  # for better performance
+        for k in inputs.keys():
+            inputs[k]["value"] = None
         self._param.debug_inputs = {}
 
-    def get_input(self, key: str=None) -> Union[Any, dict[str, Any]]:
+    def get_input(self, key: str = None) -> Union[Any, dict[str, Any]]:
         if key:
             return self._param.inputs.get(key, {}).get("value")
 
         res = {}
-        for var, o in self.get_input_elements().items():
+        input_elements = self.get_input_elements()
+        _logger.debug(
+            "[Base] Component '%s' (%s) resolving inputs. Input element keys: %s",
+            self._id,
+            self.component_name,
+            list(input_elements.keys()),
+        )
+        for var, o in input_elements.items():
             v = self.get_param(var)
             if v is None:
+                _logger.debug("[Base]   var '%s': param is None, skipping", var)
                 continue
             if isinstance(v, str) and self._canvas.is_reff(v):
-                self.set_input_value(var, self._canvas.get_variable_value(v))
+                resolved = self._canvas.get_variable_value(v)
+                self.set_input_value(var, resolved)
+                _logger.debug("[Base]   var '%s': resolved ref '%s' -> %s", var, v, json.dumps(resolved, ensure_ascii=False, default=str)[:200])
+            elif isinstance(v, str) and self.variable_ref_patt_re.search(v):
+                elements = self.get_input_elements_from_text(v)
+                kv = {k: e.get("value", "") for k, e in elements.items()}
+                self.set_input_value(var, self.string_format(v, kv))
+                _logger.debug("[Base]   var '%s': resolved text refs '%s' -> %s", var, v, json.dumps(kv, ensure_ascii=False, default=str)[:200])
             else:
                 self.set_input_value(var, v)
+                _logger.debug("[Base]   var '%s': literal value -> %s", var, json.dumps(v, ensure_ascii=False, default=str)[:200])
             res[var] = self.get_input_value(var)
         return res
 
@@ -493,16 +522,52 @@ class ComponentBase(ABC):
 
         return {var: self.get_input_value(var) for var, o in self.get_input_elements().items()}
 
+    def _resolve_iteration_alias_ref(self, exp: str) -> str | None:
+        if exp not in {"item", "index", "result"}:
+            return None
+
+        parent = self.get_parent()
+        if not parent or parent.component_name.lower() != "iteration":
+            return None
+
+        for cid, cpn in self._canvas.components.items():
+            if cpn.get("parent_id") != parent._id:
+                continue
+            if cpn["obj"].component_name.lower() != "iterationitem":
+                continue
+            return f"{cid}@{exp}"
+
+        return None
+
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE|re.DOTALL):
+        for r in self._iter_template_matches(self.variable_ref_patt_re, txt):
             exp = r.group(1)
-            cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
+            # Use maxsplit=1 to be defensive: although `exp` here comes
+            # from `variable_ref_patt` (which constrains `var_nm` to
+            # `[A-Za-z0-9_.-]+`), a future regex relaxation or a non-
+            # pattern caller should not raise `ValueError: too many values
+            # to unpack` if the trailing part happens to contain '@'.
+            cpn_id, var_nm = exp.split("@", 1) if exp.find("@") > 0 else ("", exp)
             res[exp] = {
-                "name": (self._canvas.get_component_name(cpn_id) +f"@{var_nm}") if cpn_id else exp,
+                "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}") if cpn_id else exp,
                 "value": self._canvas.get_variable_value(exp),
-                "_retrival": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
-                "_cpn_id": cpn_id
+                "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
+                "_cpn_id": cpn_id,
+            }
+        for r in self._iter_template_matches(self.iteration_alias_patt_re, txt):
+            exp = r.group(1)
+            if exp in res:
+                continue
+            ref = self._resolve_iteration_alias_ref(exp)
+            if not ref:
+                continue
+            cpn_id, var_nm = ref.split("@", 1)
+            res[exp] = {
+                "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}"),
+                "value": self._canvas.get_variable_value(ref),
+                "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references"),
+                "_cpn_id": cpn_id,
             }
         return res
 
@@ -522,6 +587,10 @@ class ComponentBase(ABC):
             return None
         return self._param.inputs[key].get("value")
 
+    @staticmethod
+    def be_output(v):
+        return pd.DataFrame([{"content": v}])
+
     def get_component_name(self, cpn_id) -> str:
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
 
@@ -540,32 +609,62 @@ class ComponentBase(ABC):
         return self._canvas.get_component(pid)["obj"]
 
     def get_upstream(self) -> List[str]:
-        cpn_nms = self._canvas.get_component(self._id)['upstream']
+        cpn_nms = self._canvas.get_component(self._id)["upstream"]
         return cpn_nms
 
     def get_downstream(self) -> List[str]:
-        cpn_nms = self._canvas.get_component(self._id)['downstream']
+        cpn_nms = self._canvas.get_component(self._id)["downstream"]
         return cpn_nms
 
     @staticmethod
-    def string_format(content: str, kv: dict[str, str]) -> str:
-        for n, v in kv.items():
-            def repl(_match, val=v):
-                return str(val) if val is not None else ""
-            content = re.sub(
-                r"\{%s\}" % re.escape(n),
-                repl,
-                content
-            )
+    def _is_complete_template_match(content: str, match: re.Match) -> bool:
+        if match.groupdict().get("outer") is not None:
+            return True
+
+        # A failed wrapped match can otherwise be rediscovered as its inner
+        # plain reference (for example, ``{ {A@x}``). Keep such malformed
+        # input literal instead of consuming only half of the brace pair.
+        before = content[: match.start()].rstrip(" ")
+        after = content[match.end() :].lstrip(" ")
+        return not before.endswith("{") and not after.startswith("}")
+
+    @classmethod
+    def _iter_template_matches(cls, pattern: re.Pattern, content: str):
+        for match in pattern.finditer(content):
+            if cls._is_complete_template_match(content, match):
+                yield match
+            else:
+                _logger.debug("Ignored incomplete template reference candidate at offset %d", match.start())
+
+    @classmethod
+    def _replace_template_matches(cls, pattern: re.Pattern, content: str, replacement) -> str:
+        out = []
+        last = 0
+        for match in cls._iter_template_matches(pattern, content):
+            out.append(content[last : match.start()])
+            out.append(replacement(match))
+            last = match.end()
+        out.append(content[last:])
+        return "".join(out)
+
+    @classmethod
+    def string_format(cls, content: str, kv: dict[str, str]) -> str:
+        for pattern in (cls.variable_ref_patt_re, cls.iteration_alias_patt_re):
+
+            def replace(match):
+                key = match.group(1)
+                if key in kv:
+                    value = kv[key]
+                    return str(value) if value is not None else ""
+                return match.group(0)
+
+            content = cls._replace_template_matches(pattern, content, replace)
         return content
 
     def exception_handler(self):
         if not self._param.exception_method:
             return None
-        return {
-            "goto": self._param.exception_goto,
-            "default_value": self._param.exception_default_value
-        }
+        return {"goto": self._param.exception_goto, "default_value": self._param.exception_default_value}
 
     def get_exception_default_value(self):
         if self._param.exception_method != "comment":

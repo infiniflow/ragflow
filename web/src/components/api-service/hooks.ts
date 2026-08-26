@@ -1,4 +1,19 @@
-import { SharedFrom } from '@/constants/chat';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   useSetModalState,
   useShowDeleteConfirm,
@@ -9,11 +24,11 @@ import {
   useFetchManualSystemTokenList,
   useFetchSystemTokenList,
   useRemoveSystemToken,
-} from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-user-setting-request';
 import { IStats } from '@/interfaces/database/chat';
 import { useQueryClient } from '@tanstack/react-query';
-import { message } from 'antd';
 import { useCallback } from 'react';
+import message from '../ui/message';
 
 export const useOperateApiKey = (idKey: string, dialogId?: string) => {
   const { removeToken } = useRemoveSystemToken();
@@ -80,11 +95,6 @@ export const useShowBetaEmptyError = () => {
   return { showBetaEmptyError };
 };
 
-const getUrlWithToken = (token: string, from: string = 'chat') => {
-  const { protocol, host } = window.location;
-  return `${protocol}//${host}/chat/share?shared_id=${token}&from=${from}`;
-};
-
 const useFetchTokenListBeforeOtherStep = () => {
   const { showTokenEmptyError } = useShowTokenEmptyError();
   const { showBetaEmptyError } = useShowBetaEmptyError();
@@ -147,33 +157,5 @@ export const useShowEmbedModal = () => {
     embedVisible,
     embedToken: token,
     beta,
-  };
-};
-
-export const usePreviewChat = (idKey: string) => {
-  const { handleOperate } = useFetchTokenListBeforeOtherStep();
-
-  const open = useCallback(
-    (t: string) => {
-      window.open(
-        getUrlWithToken(
-          t,
-          idKey === 'canvasId' ? SharedFrom.Agent : SharedFrom.Chat,
-        ),
-        '_blank',
-      );
-    },
-    [idKey],
-  );
-
-  const handlePreview = useCallback(async () => {
-    const token = await handleOperate();
-    if (token) {
-      open(token);
-    }
-  }, [handleOperate, open]);
-
-  return {
-    handlePreview,
   };
 };

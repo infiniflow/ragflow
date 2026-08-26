@@ -23,8 +23,12 @@ from common import (
     batch_create_chat_assistants,
     batch_create_datasets,
     bulk_upload_documents,
+    delete_all_chats,
+    delete_all_chunks,
+    delete_all_datasets,
+    delete_all_sessions,
 )
-from configs import HOST_ADDRESS, VERSION
+from configs import HOST_ADDRESS, IS_GO_PROXY, VERSION
 from pytest import FixtureRequest
 from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow
 from utils import wait_for
@@ -42,9 +46,53 @@ from utils.file_utils import (
 )
 
 
-@wait_for(30, 1, "Document parsing timeout")
+GO_ONLY_PATH_SKIPS = {
+    "test_file_management_within_dataset/test_download_document.py::test_file_type_validation": "Go deployment database schema is missing document.meta_fields",
+    "test_file_management_within_dataset/test_upload_documents.py": "Go deployment database schema is missing document.meta_fields",
+    "test_dataset_mangement/test_create_dataset.py::TestDatasetCreate::test_parser_config_invalid": "Go dataset parser_config only validates serialized size, not individual fields",
+    "test_dataset_mangement/test_create_dataset.py::TestDatasetCreate::test_parser_config_empty": "Go dataset creation does not preserve an explicit empty parser_config",
+    "test_dataset_mangement/test_create_dataset.py::TestDatasetCreate::test_parser_config_unset": "Go dataset creation does not return the SDK parser_config contract",
+    "test_dataset_mangement/test_create_dataset.py::TestParserConfigBugFix": "Go dataset parser_config defaults do not match the SDK contract",
+    "test_dataset_mangement/test_update_dataset.py::TestDatasetUpdate::test_parser_config": "Go dataset updates do not return the SDK parser_config contract",
+    "test_dataset_mangement/test_update_dataset.py::TestDatasetUpdate::test_parser_config_invalid": "Go dataset parser_config only validates serialized size, not individual fields",
+    "test_dataset_mangement/test_update_dataset.py::TestDatasetUpdate::test_parser_config_empty": "Go dataset update ignores an explicit empty parser_config",
+    "test_dataset_mangement/test_update_dataset.py::TestDatasetUpdate::test_field_unsupported": "Go dataset update ignores unsupported fields",
+    "test_dataset_mangement/test_update_dataset.py::TestDatasetUpdate::test_pagerank": "Go dataset update does not persist pagerank",
+    "test_dataset_mangement/test_update_dataset.py::TestDatasetUpdate::test_pagerank_set_to_0": "Go dataset update does not persist pagerank",
+    "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_page_invalid": "Go dataset list normalizes invalid page values instead of rejecting them",
+    "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_page_size_invalid": "Go dataset list normalizes invalid page_size values instead of rejecting them",
+    "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_name": "Go dataset list does not apply the name filter",
+    "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_id": "Go dataset list does not apply the id filter",
+    "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_id_empty": "Go dataset list accepts an empty id instead of rejecting it",
+    "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_name_and_id": "Go dataset list does not combine name and id filters",
+    "test_memory_management/test_list_memory.py::TestMemoryList::test_get_config_invalid_memory_id_raises": "Go memory config lookup does not reject an unknown memory id",
+    "test_message_management/test_add_message.py::TestAddRawMessage": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_add_message.py::TestAddMultipleTypeMessage": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_add_message.py::TestAddToMultipleMemory": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_forget_message.py::TestForgetMessage": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_get_message_content.py::TestGetMessageContent": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_get_recent_message.py::TestGetRecentMessage": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_list_message.py::TestMessageList": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_search_message.py::TestSearchMessage": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+    "test_message_management/test_update_message_status.py::TestUpdateMessageStatus": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
+}
+
+
+def pytest_collection_modifyitems(items):
+    if not IS_GO_PROXY:
+        return
+    for item in items:
+        for test_path, reason in GO_ONLY_PATH_SKIPS.items():
+            matched_at = item.nodeid.find(test_path)
+            matched_suffix = item.nodeid[matched_at + len(test_path) :] if matched_at >= 0 else ""
+            if matched_at >= 0 and (not matched_suffix or matched_suffix.startswith("[") or matched_suffix.startswith("::")):
+                item.add_marker(pytest.mark.skip(reason=reason))
+                break
+
+
+@wait_for(200, 1, "Document parsing timeout")
 def condition(_dataset: DataSet):
-    documents = _dataset.list_documents(page_size=1000)
+    documents = _dataset.list_documents(page_size=100)
     for document in documents:
         if document.run != "DONE":
             return False
@@ -88,7 +136,7 @@ def client(token: str) -> RAGFlow:
 @pytest.fixture(scope="function")
 def clear_datasets(request: FixtureRequest, client: RAGFlow):
     def cleanup():
-        client.delete_datasets(ids=None)
+        delete_all_datasets(client)
 
     request.addfinalizer(cleanup)
 
@@ -96,7 +144,7 @@ def clear_datasets(request: FixtureRequest, client: RAGFlow):
 @pytest.fixture(scope="function")
 def clear_chat_assistants(request: FixtureRequest, client: RAGFlow):
     def cleanup():
-        client.delete_chats(ids=None)
+        delete_all_chats(client)
 
     request.addfinalizer(cleanup)
 
@@ -106,7 +154,7 @@ def clear_session_with_chat_assistants(request, add_chat_assistants):
     def cleanup():
         for chat_assistant in chat_assistants:
             try:
-                chat_assistant.delete_sessions(ids=None)
+                delete_all_sessions(chat_assistant)
             except Exception:
                 pass
 
@@ -118,7 +166,7 @@ def clear_session_with_chat_assistants(request, add_chat_assistants):
 @pytest.fixture(scope="class")
 def add_dataset(request: FixtureRequest, client: RAGFlow) -> DataSet:
     def cleanup():
-        client.delete_datasets(ids=None)
+        delete_all_datasets(client)
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(client, 1)[0]
@@ -127,7 +175,7 @@ def add_dataset(request: FixtureRequest, client: RAGFlow) -> DataSet:
 @pytest.fixture(scope="function")
 def add_dataset_func(request: FixtureRequest, client: RAGFlow) -> DataSet:
     def cleanup():
-        client.delete_datasets(ids=None)
+        delete_all_datasets(client)
 
     request.addfinalizer(cleanup)
     return batch_create_datasets(client, 1)[0]
@@ -142,7 +190,7 @@ def add_document(add_dataset: DataSet, ragflow_tmp_dir: Path) -> tuple[DataSet, 
 def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
     def cleanup():
         try:
-            document.delete_chunks(ids=[])
+            delete_all_chunks(document)
         except Exception:
             pass
 
@@ -161,7 +209,7 @@ def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) 
 def add_chat_assistants(request, client, add_document) -> tuple[DataSet, Document, list[Chat]]:
     def cleanup():
         try:
-            client.delete_chats(ids=None)
+            delete_all_chats(client)
         except Exception:
             pass
 

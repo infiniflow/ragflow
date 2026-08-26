@@ -8,8 +8,10 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { NumberInput } from '@/components/ui/input';
-import { useFetchTagListByKnowledgeIds } from '@/hooks/knowledge-hooks';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import {
+  useFetchKnowledgeBaseConfiguration,
+  useFetchTagListByKnowledgeIds,
+} from '@/hooks/use-knowledge-request';
 import { CircleMinus, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
@@ -105,7 +107,7 @@ export const TagFeatureItem = () => {
                                 'knowledgeConfiguration.frequency',
                               )}
                               max={10}
-                              min={0}
+                              min={1}
                             />
                           </FormControl>
                           <FormMessage />
@@ -123,7 +125,7 @@ export const TagFeatureItem = () => {
             <Button
               variant="dashed"
               className="w-full flex items-center justify-center gap-2"
-              onClick={() => append({ tag: '', frequency: 0 })}
+              onClick={() => append({ tag: '', frequency: 1 })}
             >
               <Plus size={16} />
               {t('knowledgeConfiguration.addTag')}

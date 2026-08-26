@@ -3,31 +3,45 @@ import {
   useResetAgent,
   useSetAgent,
 } from '@/hooks/use-agent-request';
-import { GlobalVariableType } from '@/interfaces/database/agent';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import {
+  GlobalVariableType,
+  RAGFlowNodeType,
+} from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import useGraphStore from '../store';
 import { useBuildDslData } from './use-build-dsl';
 
-export const useSaveGraph = (showMessage: boolean = true) => {
+export const useSaveGraph = (
+  showMessage: boolean = true,
+  skipInvalidation: boolean = false,
+) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage);
+  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
-      otherParam?: { gobalVariables: Record<string, GlobalVariableType> },
+      otherParam?: {
+        globalVariables: Record<string, GlobalVariableType>;
+      },
+      release?: boolean,
     ) => {
-      return setAgent({
+      const params: Record<string, any> = {
         id,
         title: data.title,
         dsl: buildDslData(currentNodes, otherParam),
-      });
+      };
+
+      if (release) {
+        params.release = 'true';
+      }
+
+      return setAgent(params);
     },
     [setAgent, data, id, buildDslData],
   );
@@ -61,7 +75,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const [time, setTime] = useState<string>();
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
-  const { saveGraph } = useSaveGraph(false);
+  const { saveGraph } = useSaveGraph(false, true);
   const { data: flowDetail } = useFetchAgent();
 
   const setSaveTime = useCallback((updateTime: number) => {
@@ -75,7 +89,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const saveAgent = useCallback(async () => {
     if (!chatDrawerVisible) {
       const ret = await saveGraph();
-      setSaveTime(ret.data.update_time);
+      setSaveTime(ret.data.update_time ?? Date.now());
     }
   }, [chatDrawerVisible, saveGraph, setSaveTime]);
 

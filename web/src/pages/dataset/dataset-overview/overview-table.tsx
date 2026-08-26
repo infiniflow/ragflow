@@ -1,3 +1,5 @@
+import { EmptyType } from '@/components/empty/constant';
+import Empty from '@/components/empty/empty';
 import FileStatusBadge from '@/components/file-status-badge';
 import { FileIcon, IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
@@ -16,13 +18,18 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { RunningStatusMap } from '@/constants/knowledge';
+import {
+  ProcessingType,
+  ProcessingTypeMap,
+  RunningStatusMap,
+} from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { cn } from '@/lib/utils';
 import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
-import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
+import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
   ColumnDef,
@@ -39,19 +46,20 @@ import {
 import { TFunction } from 'i18next';
 import { ArrowUpDown, ClipboardList, Eye, MonitorUp } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
-import ProcessLogModal from '../process-log-modal';
-import { LogTabs, ProcessingType, ProcessingTypeMap } from './dataset-common';
+import ProcessLogModal, { ILogInfo } from '../process-log-modal';
+import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
   showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
-  kowledgeId: string,
+  knowledgeId: string,
   navigateToDataflowResult: (
     props: NavigateToDataflowResultProps,
   ) => () => void,
+  dataSourceInfo: IDataSourceInfoMap,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<IFileLogItem & DocumentLog>[] = [
@@ -112,13 +120,19 @@ export const getFileLogsTableColumns = (
             <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
               <MonitorUp className="text-accent-primary" size={16} />
             </div>
-          ) : (
+          ) : dataSourceInfo[
+              row.original.source_from as keyof typeof dataSourceInfo
+            ] ? (
             <div className="w-6 h-6 flex items-center justify-center">
               {
-                DataSourceInfo[
-                  row.original.source_from as keyof typeof DataSourceInfo
+                dataSourceInfo[
+                  row.original.source_from as keyof typeof dataSourceInfo
                 ].icon
               }
+            </div>
+          ) : (
+            <div className="w-6 h-6 flex items-center justify-center">
+              <MonitorUp className="text-accent-primary" size={16} />
             </div>
           )}
         </div>
@@ -126,7 +140,7 @@ export const getFileLogsTableColumns = (
     },
     {
       accessorKey: 'pipeline_title',
-      header: t('dataPipeline'),
+      header: t('dataPipelineTitle'),
       cell: ({ row }) => {
         const title = row.original.pipeline_title;
         const pipelineTitle = title === 'naive' ? 'general' : title;
@@ -146,14 +160,19 @@ export const getFileLogsTableColumns = (
       accessorKey: 'process_begin_at',
       header: ({ column }) => {
         return (
-          <Button
-            variant="transparent"
-            className="border-none"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('startDate')}
-            <ArrowUpDown />
-          </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown className="size-[1em]" />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -188,8 +207,7 @@ export const getFileLogsTableColumns = (
         <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"
-            size="sm"
-            className="p-1"
+            size="icon-sm"
             onClick={() => {
               showLog(row, LogTabs.FILE_LOGS);
             }}
@@ -199,11 +217,11 @@ export const getFileLogsTableColumns = (
           {row.original.pipeline_id && (
             <Button
               variant="ghost"
-              size="sm"
-              className="p-1"
+              size="icon-sm"
               onClick={navigateToDataflowResult({
                 id: row.original.id,
-                [PipelineResultSearchParams.KnowledgeId]: kowledgeId,
+                [PipelineResultSearchParams.KnowledgeId]:
+                  row.original.kb_id || knowledgeId,
                 [PipelineResultSearchParams.DocumentId]:
                   row.original.document_id,
                 [PipelineResultSearchParams.IsReadOnly]: 'false',
@@ -257,14 +275,18 @@ export const getDatasetLogsTableColumns = (
       accessorKey: 'process_begin_at',
       header: ({ column }) => {
         return (
-          <Button
-            variant="transparent"
-            className="border-none"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('startDate')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown className="size-[1em]" />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -278,7 +300,8 @@ export const getDatasetLogsTableColumns = (
       header: t('processingType'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
-          {ProcessingType.knowledgeGraph === row.original.task_type && (
+          {(ProcessingType.knowledgeGraph === row.original.task_type ||
+            row.original.task_type === 'GraphRAG') && (
             <IconFontFill
               name={`knowledgegraph`}
               className="text-text-secondary"
@@ -315,11 +338,10 @@ export const getDatasetLogsTableColumns = (
       id: 'operations',
       header: t('operations'),
       cell: ({ row }) => (
-        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <Button
             variant="ghost"
-            size="sm"
-            className="p-1"
+            size="icon-sm"
             onClick={() => {
               showLog(row, LogTabs.DATASET_LOGS);
             }}
@@ -344,10 +366,11 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState({});
   const { t } = useTranslate('knowledgeDetails');
+  const { t: tDatasetOverview } = useTranslate('datasetOverview');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
   const [logInfo, setLogInfo] = useState<IFileLogItem>();
-  const kowledgeId = useParams().id;
+  const knowledgeId = useParams().id;
   const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
@@ -365,14 +388,15 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     setLogInfo(logDetail);
     setIsModalVisible(true);
   };
-
+  const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
       ? getFileLogsTableColumns(
           t,
           showLog,
-          kowledgeId || '',
+          knowledgeId || '',
           navigateToDataflowResult,
+          dataSourceInfo,
         )
       : getDatasetLogsTableColumns(t, showLog);
   }, [active, t]);
@@ -408,8 +432,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   });
 
   return (
-    <div className="w-full h-[calc(100vh-360px)]">
-      <Table rootClassName="max-h-[calc(100vh-380px)]">
+    <div className="size-full flex flex-col">
+      <Table rootClassName="max-h-full mb-4">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -445,27 +469,30 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                <Empty
+                  type={EmptyType.Data}
+                  text={tDatasetOverview('noData')}
+                />
               </TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end absolute bottom-3 right-12">
-        <div className="space-x-2">
-          <RAGFlowPagination
-            {...{ current: pagination.current, pageSize: pagination.pageSize }}
-            total={pagination.total}
-            onChange={(page, pageSize) => setPagination({ page, pageSize })}
-          />
-        </div>
+
+      <div className="mt-auto flex items-center justify-end">
+        <RAGFlowPagination
+          {...{ current: pagination.current, pageSize: pagination.pageSize }}
+          total={pagination.total}
+          onChange={(page, pageSize) => setPagination({ page, pageSize })}
+        />
       </div>
+
       {isModalVisible && (
         <ProcessLogModal
           title={active === LogTabs.FILE_LOGS ? t('fileLogs') : t('datasetLog')}
           visible={isModalVisible}
           onCancel={() => setIsModalVisible(false)}
-          logInfo={logInfo}
+          logInfo={logInfo as unknown as ILogInfo}
         />
       )}
     </div>

@@ -48,17 +48,35 @@ from common.data_source.exceptions import RateLimitTriedTooManyTimesError
 from common.data_source.interfaces import CT, CheckpointedConnector, CheckpointOutputWrapper, ConfluenceUser, LoadFunction, OnyxExtensionType, SecondsSinceUnixEpoch, TokenResponse
 from common.data_source.models import BasicExpertInfo, Document
 
+_TZ_SUFFIX_PATTERN = re.compile(r"([+-])([\d:]+)$")
+
 
 def datetime_from_string(datetime_string: str) -> datetime:
     datetime_string = datetime_string.strip()
 
+    match_jira_format = _TZ_SUFFIX_PATTERN.search(datetime_string)
+    if match_jira_format:
+        sign, tz_field = match_jira_format.groups()
+        digits = tz_field.replace(":", "")
+
+        if digits.isdigit() and 1 <= len(digits) <= 4:
+            if len(digits) >= 3:
+                hours = digits[:-2].rjust(2, "0")
+                minutes = digits[-2:]
+            else:
+                hours = digits.rjust(2, "0")
+                minutes = "00"
+
+            normalized = f"{sign}{hours}:{minutes}"
+            datetime_string = f"{datetime_string[: match_jira_format.start()]}{normalized}"
+
     # Handle the case where the datetime string ends with 'Z' (Zulu time)
-    if datetime_string.endswith('Z'):
-        datetime_string = datetime_string[:-1] + '+00:00'
+    if datetime_string.endswith("Z"):
+        datetime_string = datetime_string[:-1] + "+00:00"
 
     # Handle timezone format "+0000" -> "+00:00"
-    if datetime_string.endswith('+0000'):
-        datetime_string = datetime_string[:-5] + '+00:00'
+    if datetime_string.endswith("+0000"):
+        datetime_string = datetime_string[:-5] + "+00:00"
 
     datetime_object = datetime.fromisoformat(datetime_string)
 
@@ -206,11 +224,13 @@ def wrap_request_to_handle_ratelimiting(request_fn: R, default_wait_time_sec: in
 
 _rate_limited_get = wrap_request_to_handle_ratelimiting(requests.get)
 _rate_limited_post = wrap_request_to_handle_ratelimiting(requests.post)
+_rate_limited_request = wrap_request_to_handle_ratelimiting(requests.request)
 
 
 class _RateLimitedRequest:
     get = _rate_limited_get
     post = _rate_limited_post
+    request = _rate_limited_request
 
 
 rl_requests = _RateLimitedRequest
@@ -236,18 +256,21 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
     elif bucket_type == BlobType.S3:
         authentication_method = credentials.get("authentication_method", "access_key")
 
+        region_name = credentials.get("region") or None
+
         if authentication_method == "access_key":
             session = boto3.Session(
                 aws_access_key_id=credentials["aws_access_key_id"],
                 aws_secret_access_key=credentials["aws_secret_access_key"],
+                region_name=region_name,
             )
-            return session.client("s3")
+            return session.client("s3", region_name=region_name)
 
         elif authentication_method == "iam_role":
             role_arn = credentials["aws_role_arn"]
 
             def _refresh_credentials() -> dict[str, str]:
-                sts_client = boto3.client("sts")
+                sts_client = boto3.client("sts", region_name=credentials.get("region") or None)
                 assumed_role_object = sts_client.assume_role(
                     RoleArn=role_arn,
                     RoleSessionName=f"onyx_blob_storage_{int(datetime.now().timestamp())}",
@@ -267,11 +290,11 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
             )
             botocore_session = get_session()
             botocore_session._credentials = refreshable
-            session = boto3.Session(botocore_session=botocore_session)
-            return session.client("s3")
+            session = boto3.Session(botocore_session=botocore_session, region_name=region_name)
+            return session.client("s3", region_name=region_name)
 
         elif authentication_method == "assume_role":
-            return boto3.client("s3")
+            return boto3.client("s3", region_name=region_name)
 
         else:
             raise ValueError("Invalid authentication method for S3.")
@@ -292,6 +315,14 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
             aws_access_key_id=credentials["access_key_id"],
             aws_secret_access_key=credentials["secret_access_key"],
             region_name=credentials["region"],
+        )
+    elif bucket_type == BlobType.S3_COMPATIBLE:
+        return boto3.client(
+            "s3",
+            endpoint_url=credentials["endpoint_url"],
+            aws_access_key_id=credentials["aws_access_key_id"],
+            aws_secret_access_key=credentials["aws_secret_access_key"],
+            config=Config(s3={"addressing_style": credentials["addressing_style"]}),
         )
 
     else:
@@ -480,7 +511,7 @@ def get_file_ext(file_name: str) -> str:
 
 
 def is_accepted_file_ext(file_ext: str, extension_type: OnyxExtensionType) -> bool:
-    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
+    image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
     text_extensions = {".txt", ".md", ".mdx", ".conf", ".log", ".json", ".csv", ".tsv", ".xml", ".yml", ".yaml", ".sql"}
     document_extensions = {".pdf", ".docx", ".pptx", ".xlsx", ".eml", ".epub", ".html"}
 
@@ -705,7 +736,7 @@ def build_time_range_query(
     """Build time range query for Gmail API"""
     query = ""
     if time_range_start is not None and time_range_start != 0:
-        query += f"after:{int(time_range_start)}"
+        query += f"after:{int(time_range_start) + 1}"
     if time_range_end is not None and time_range_end != 0:
         query += f" before:{int(time_range_end)}"
     query = query.strip()
@@ -748,6 +779,15 @@ def time_str_to_utc(time_str: str):
     from datetime import datetime
 
     return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+
+
+def gmail_time_str_to_utc(time_str: str):
+    """Convert Gmail RFC 2822 time string to UTC."""
+    from email.utils import parsedate_to_datetime
+    from datetime import timezone
+
+    dt = parsedate_to_datetime(time_str)
+    return dt.astimezone(timezone.utc)
 
 
 # Notion Utilities
@@ -900,6 +940,18 @@ def load_all_docs_from_checkpoint_connector(
         connector=connector,
         load=lambda checkpoint: connector.load_from_checkpoint(start=start, end=end, checkpoint=checkpoint),
     )
+
+
+_ATLASSIAN_CLOUD_DOMAINS = (".atlassian.net", ".jira.com", ".jira-dev.com")
+
+
+def is_atlassian_cloud_url(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname or ""
+    except ValueError:
+        return False
+    host = host.lower()
+    return any(host.endswith(domain) for domain in _ATLASSIAN_CLOUD_DOMAINS)
 
 
 def get_cloudId(base_url: str) -> str:
@@ -1097,3 +1149,133 @@ def parallel_yield(gens: list[Iterator[R]], max_workers: int = 10) -> Iterator[R
                     future_to_index[executor.submit(_next_or_none, ind, gens[ind])] = next_ind
                     next_ind += 1
                 del future_to_index[future]
+
+
+def sanitize_filename(name: str, extension: str = "txt") -> str:
+    """
+    Soft sanitize for MinIO/S3:
+    - Replace only prohibited characters with a space.
+    - Preserve readability (no ugly underscores).
+    - Collapse multiple spaces.
+    """
+    if name is None:
+        return f"file.{extension}"
+
+    name = str(name).strip()
+
+    # Characters that MUST NOT appear in S3/MinIO object keys
+    # Replace them with a space (not underscore)
+    forbidden = r'[\\\?\#\%\*\:\|\<\>"]'
+    name = re.sub(forbidden, " ", name)
+
+    # Replace slashes "/" (S3 interprets as folder) with space
+    name = name.replace("/", " ")
+
+    # Collapse multiple spaces into one
+    name = re.sub(r"\s+", " ", name)
+
+    # Trim both ends
+    name = name.strip()
+
+    # Enforce reasonable max length
+    if len(name) > 200:
+        base, ext = os.path.splitext(name)
+        name = base[:180].rstrip() + ext
+
+    if not os.path.splitext(name)[1]:
+        name += f".{extension}"
+
+    return name
+
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+class _RateLimitDecorator:
+    """Builds a generic wrapper/decorator for calls to external APIs that
+    prevents making more than `max_calls` requests per `period`
+
+    Implementation inspired by the `ratelimit` library:
+    https://github.com/tomasbasham/ratelimit.
+
+    NOTE: is not thread safe.
+    """
+
+    def __init__(
+        self,
+        max_calls: int,
+        period: float,  # in seconds
+        sleep_time: float = 2,  # in seconds
+        sleep_backoff: float = 2,  # applies exponential backoff
+        max_num_sleep: int = 0,
+    ):
+        self.max_calls = max_calls
+        self.period = period
+        self.sleep_time = sleep_time
+        self.sleep_backoff = sleep_backoff
+        self.max_num_sleep = max_num_sleep
+
+        self.call_history: list[float] = []
+        self.curr_calls = 0
+
+    def __call__(self, func: F) -> F:
+        @wraps(func)
+        def wrapped_func(*args: list, **kwargs: dict[str, Any]) -> Any:
+            # cleanup calls which are no longer relevant
+            self._cleanup()
+
+            # check if we've exceeded the rate limit
+            sleep_cnt = 0
+            while len(self.call_history) == self.max_calls:
+                sleep_time = self.sleep_time * (self.sleep_backoff**sleep_cnt)
+                logging.warning(f"Rate limit exceeded for function {func.__name__}. Waiting {sleep_time} seconds before retrying.")
+                time.sleep(sleep_time)
+                sleep_cnt += 1
+                if self.max_num_sleep != 0 and sleep_cnt >= self.max_num_sleep:
+                    raise RateLimitTriedTooManyTimesError(f"Exceeded '{self.max_num_sleep}' retries for function '{func.__name__}'")
+
+                self._cleanup()
+
+            # add the current call to the call history
+            self.call_history.append(time.monotonic())
+            return func(*args, **kwargs)
+
+        return cast(F, wrapped_func)
+
+    def _cleanup(self) -> None:
+        curr_time = time.monotonic()
+        time_to_expire_before = curr_time - self.period
+        self.call_history = [call_time for call_time in self.call_history if call_time > time_to_expire_before]
+
+
+rate_limit_builder = _RateLimitDecorator
+
+
+def retry_builder(
+    tries: int = 20,
+    delay: float = 0.1,
+    max_delay: float | None = 60,
+    backoff: float = 2,
+    jitter: tuple[float, float] | float = 1,
+    exceptions: type[Exception] | tuple[type[Exception], ...] = (Exception,),
+) -> Callable[[F], F]:
+    """Builds a generic wrapper/decorator for calls to external APIs that
+    may fail due to rate limiting, flakes, or other reasons. Applies exponential
+    backoff with jitter to retry the call."""
+
+    def retry_with_default(func: F) -> F:
+        @retry(
+            tries=tries,
+            delay=delay,
+            max_delay=max_delay,
+            backoff=backoff,
+            jitter=jitter,
+            logger=logging.getLogger(__name__),
+            exceptions=exceptions,
+        )
+        def wrapped_func(*args: list, **kwargs: dict[str, Any]) -> Any:
+            return func(*args, **kwargs)
+
+        return cast(F, wrapped_func)
+
+    return retry_with_default

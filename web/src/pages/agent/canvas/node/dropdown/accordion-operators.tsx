@@ -21,11 +21,23 @@ function OperatorAccordionTrigger({ children }: PropsWithChildren) {
 export function AccordionOperators({
   isCustomDropdown = false,
   mousePosition,
+  nodeId,
 }: {
   isCustomDropdown?: boolean;
   mousePosition?: { x: number; y: number };
+  nodeId?: string;
 }) {
   const { t } = useTranslation();
+  const { getOperatorTypeFromId, getParentIdById } = useGraphStore(
+    (state) => state,
+  );
+
+  const exitLoopList = useMemo(() => {
+    if (getOperatorTypeFromId(getParentIdById(nodeId)) === Operator.Loop) {
+      return [Operator.ExitLoop];
+    }
+    return [];
+  }, [getOperatorTypeFromId, getParentIdById, nodeId]);
 
   return (
     <Accordion
@@ -62,6 +74,8 @@ export function AccordionOperators({
             operators={[
               Operator.Switch,
               Operator.Iteration,
+              Operator.Loop,
+              ...exitLoopList,
               Operator.Categorize,
             ]}
             isCustomDropdown={isCustomDropdown}
@@ -79,7 +93,8 @@ export function AccordionOperators({
               Operator.Code,
               Operator.StringTransform,
               Operator.DataOperations,
-              // Operator.VariableAssigner,
+              Operator.VariableAssigner,
+              Operator.ListOperations,
               Operator.VariableAggregator,
             ]}
             isCustomDropdown={isCustomDropdown}
@@ -94,6 +109,8 @@ export function AccordionOperators({
             operators={[
               Operator.TavilySearch,
               Operator.TavilyExtract,
+              Operator.QueritContents,
+              Operator.QueritSearch,
               Operator.ExeSQL,
               Operator.Google,
               Operator.YahooFinance,
@@ -103,10 +120,15 @@ export function AccordionOperators({
               Operator.GoogleScholar,
               Operator.ArXiv,
               Operator.PubMed,
+              Operator.BGPT,
               Operator.GitHub,
               Operator.Invoke,
               Operator.WenCai,
               Operator.SearXNG,
+              Operator.KeenableSearch,
+              Operator.YouComSearch,
+              Operator.DocGenerator,
+              Operator.Browser,
             ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}
@@ -150,18 +172,21 @@ export function PipelineAccordionOperators({
   const { getOperatorTypeFromId } = useGraphStore((state) => state);
 
   const operators = useMemo(() => {
-    let list = [
+    const list = [
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);
+    if (getOperatorTypeFromId(nodeId) !== Operator.Compiler) {
+      list.push(Operator.Compiler);
+    }
     return list;
-  }, [restrictSingleOperatorOnCanvas]);
+  }, [getOperatorTypeFromId, nodeId, restrictSingleOperatorOnCanvas]);
 
   const chunkerOperators = useMemo(() => {
     return [
       ...restrictSingleOperatorOnCanvas([
-        Operator.Splitter,
-        Operator.HierarchicalMerger,
+        Operator.TokenChunker,
+        Operator.TitleChunker,
       ]),
     ];
   }, [restrictSingleOperatorOnCanvas]);
@@ -169,6 +194,7 @@ export function PipelineAccordionOperators({
   const showChunker = useMemo(() => {
     return (
       getOperatorTypeFromId(nodeId) !== Operator.Extractor &&
+      getOperatorTypeFromId(nodeId) !== Operator.Compiler &&
       chunkerOperators.length > 0
     );
   }, [chunkerOperators.length, getOperatorTypeFromId, nodeId]);

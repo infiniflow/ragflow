@@ -1,7 +1,7 @@
-import { buildNodeOutputOptions } from '@/utils/canvas-util';
+import { buildUpstreamNodeOutputOptions } from '@/utils/canvas-util';
 import { useMemo } from 'react';
 import { Operator } from '../constant';
-import OperatorIcon from '../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../store';
 
 export function useBuildNodeOutputOptions(nodeId?: string) {
@@ -9,7 +9,7 @@ export function useBuildNodeOutputOptions(nodeId?: string) {
   const edges = useGraphStore((state) => state.edges);
 
   return useMemo(() => {
-    return buildNodeOutputOptions({
+    return buildUpstreamNodeOutputOptions({
       nodes,
       edges,
       nodeId,

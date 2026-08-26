@@ -19,17 +19,15 @@ import queue
 import threading
 from typing import Any, Callable, Coroutine, Optional, Type, Union
 import asyncio
-import trio
 from functools import wraps
-from flask import make_response, jsonify
+from quart import make_response, jsonify
 from common.constants import RetCode
 
 TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
 
 
-def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None,
-            on_timeout: Optional[OnTimeoutCallback] = None):
+def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
     if isinstance(seconds, str):
         seconds = float(seconds)
 
@@ -70,11 +68,10 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
             for a in range(attempts):
                 try:
                     if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
-                        with trio.fail_after(seconds):
-                            return await func(*args, **kwargs)
+                        return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
                     else:
                         return await func(*args, **kwargs)
-                except trio.TooSlowError:
+                except asyncio.TimeoutError:
                     if a < attempts - 1:
                         continue
                     if on_timeout is not None:
@@ -103,7 +100,7 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
     return decorator
 
 
-def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
+async def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
     result_dict = {"code": code, "message": message, "data": data}
     response_dict = {}
     for key, value in result_dict.items():
@@ -111,12 +108,31 @@ def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=
             continue
         else:
             response_dict[key] = value
-    response = make_response(jsonify(response_dict))
+    response = await make_response(jsonify(response_dict))
     if auth:
         response.headers["Authorization"] = auth
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Method"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Expose-Headers"] = "Authorization"
+    return response
+
+
+def sync_construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
+    import flask
+
+    result_dict = {"code": code, "message": message, "data": data}
+    response_dict = {}
+    for key, value in result_dict.items():
+        if value is None and key != "code":
+            continue
+        else:
+            response_dict[key] = value
+    response = flask.make_response(flask.jsonify(response_dict))
+    if auth:
+        response.headers["Authorization"] = auth
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Method"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Expose-Headers"] = "Authorization"
     return response

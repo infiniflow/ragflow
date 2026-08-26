@@ -41,7 +41,7 @@ Scale depth to match complexity. Always stop once success criteria are met.
 
 **For HIGH (150–250 words for analysis only):**
 - Comprehensive objective analysis; Intent & Scope
-- 5–8 step Plan with dependencies/parallelism
+- 5–8 steps Plan with dependencies/parallelism
 - **Uncertainty & Probes** (key unknowns → probe → stop condition)
 - Measurable Success Criteria; Failure detectors & fallbacks
 - **Source Plan** (evidence acquisition & validation)

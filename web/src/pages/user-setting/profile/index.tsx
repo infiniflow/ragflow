@@ -1,6 +1,23 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 // src/components/ProfilePage.tsx
 import { AvatarUpload } from '@/components/avatar-upload';
 import PasswordInput from '@/components/originui/password-input';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,32 +30,34 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Loader2Icon, PenLine } from 'lucide-react';
-import { FC, useEffect } from 'react';
+import { FC, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import {
-  ProfileSettingWrapperCard,
-  UserSettingHeader,
-} from '../components/user-setting-header';
+import { ProfileSettingWrapperCard } from '../components/user-setting-header';
+import { NICKNAME_MAX_LENGTH, NICKNAME_PATTERN } from './constants';
 import { EditType, modalTitle, useProfile } from './hooks/use-profile';
+
+const timezoneOptions = TimezoneList.map(({ name }) => ({
+  value: name,
+  label: name,
+}));
 
 const baseSchema = z.object({
   userName: z
     .string()
+    .trim()
     .min(1, { message: t('setting.usernameMessage') })
-    .trim(),
+    .max(NICKNAME_MAX_LENGTH, {
+      message: t('setting.usernameMaxLength', { max: NICKNAME_MAX_LENGTH }),
+    })
+    .regex(NICKNAME_PATTERN, {
+      message: t('setting.usernameInvalidCharacters'),
+    }),
   timeZone: z
     .string()
     .trim()
@@ -84,6 +103,7 @@ const passwordSchema = baseSchema
       });
     }
   });
+
 const ProfilePage: FC = () => {
   const { t } = useTranslate('setting');
 
@@ -125,14 +145,23 @@ const ProfilePage: FC = () => {
   //     );
   //   };
 
+  const timezone = useMemo(() => {
+    const tz = TimezoneList.find((tz) => tz.name === profile.timeZone);
+    return tz?.name ?? '';
+  }, [profile.timeZone]);
+
   return (
     // <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
     <ProfileSettingWrapperCard
       header={
-        <UserSettingHeader
-          name={t('profile')}
-          description={t('profileDescription')}
-        />
+        <header>
+          <h2 className="text-2xl font-medium text-text-primary">
+            {t('profile')}
+          </h2>
+          <p className="mt-1 text-sm text-text-secondary ">
+            {t('profileDescription')}
+          </p>
+        </header>
       }
     >
       <Spotlight />
@@ -144,17 +173,17 @@ const ProfilePage: FC = () => {
           <label className="w-[190px] text-sm font-medium">
             {t('username')}
           </label>
-          <div className="flex-1 flex items-center gap-4 min-w-60">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
+          <div className="flex-1 flex items-center gap-4 min-w-0">
+            <div className="text-sm text-text-primary border border-border-button flex-1 min-w-0 rounded-md py-1.5 px-2 truncate">
               {profile.userName}
             </div>
+
             <Button
-              variant={'secondary'}
+              variant="outline"
               type="button"
               onClick={() => handleEditClick(EditType.editName)}
-              className="text-sm text-text-secondary flex gap-1 px-1"
             >
-              <PenLine size={12} /> Edit
+              <PenLine size={12} /> {t('edit')}
             </Button>
           </div>
         </div>
@@ -166,7 +195,7 @@ const ProfilePage: FC = () => {
             <AvatarUpload
               value={profile.avatar}
               onChange={handleAvatarUpload}
-              tips={'This will be displayed on your profile.'}
+              tips={t('avatarTip')}
             />
           </div>
         </div>
@@ -177,16 +206,15 @@ const ProfilePage: FC = () => {
             {t('timezone')}
           </label>
           <div className="flex-1 flex items-center gap-4">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
-              {profile.timeZone}
+            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2 empty:before:content-['_'] empty:before:whitespace-pre">
+              {timezone}
             </div>
             <Button
-              variant={'secondary'}
+              variant="outline"
               type="button"
               onClick={() => handleEditClick(EditType.editTimeZone)}
-              className="text-sm text-text-secondary flex gap-1 px-1"
             >
-              <PenLine size={12} /> Edit
+              <PenLine size={12} /> {t('edit')}
             </Button>
           </div>
         </div>
@@ -211,15 +239,14 @@ const ProfilePage: FC = () => {
           </label>
           <div className="flex-1 flex items-center gap-4">
             <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
-              {profile.currPasswd ? '********' : ''}
+              <span className="inline-block translate-y-0.5">********</span>
             </div>
             <Button
-              variant={'secondary'}
+              variant="outline"
               type="button"
               onClick={() => handleEditClick(EditType.editPassword)}
-              className="text-sm text-text-secondary flex gap-1 px-1"
             >
-              <PenLine size={12} /> Edit
+              <PenLine size={12} /> {t('edit')}
             </Button>
           </div>
         </div>
@@ -230,6 +257,7 @@ const ProfilePage: FC = () => {
           title={modalTitle[editType]}
           open={isEditing}
           showfooter={false}
+          maskClosable={false}
           titleClassName="text-base"
           onOpenChange={(open) => {
             if (!open) {
@@ -257,13 +285,13 @@ const ProfilePage: FC = () => {
                         <FormControl className="w-full">
                           <Input
                             placeholder=""
+                            maxLength={NICKNAME_MAX_LENGTH}
                             {...field}
                             className="bg-bg-input border-border-default"
                           />
                         </FormControl>
                       </div>
                       <div className="flex w-full pt-1">
-                        <div className="w-1/4"></div>
                         <FormMessage />
                       </div>
                     </FormItem>
@@ -281,23 +309,12 @@ const ProfilePage: FC = () => {
                         <FormLabel className="text-sm text-text-secondary whitespace-nowrap">
                           {t('timezone')}
                         </FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
+                        <SelectWithSearch
+                          options={timezoneOptions}
+                          placeholder="Select a timeZone"
+                          onChange={field.onChange}
                           value={field.value}
-                        >
-                          <FormControl className="w-full bg-bg-input border-border-default">
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a timeZone" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {TimezoneList.map((timeStr) => (
-                              <SelectItem key={timeStr} value={timeStr}>
-                                {timeStr}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        />
                       </div>
                       <div className="flex w-full pt-1">
                         <div className="w-1/4"></div>
@@ -318,7 +335,7 @@ const ProfilePage: FC = () => {
                         <div className="flex flex-col w-full gap-2">
                           <FormLabel
                             required
-                            className="text-sm flex justify-between text-text-secondary whitespace-nowrap"
+                            className="text-sm flex text-text-secondary whitespace-nowrap"
                           >
                             {t('currentPassword')}
                           </FormLabel>

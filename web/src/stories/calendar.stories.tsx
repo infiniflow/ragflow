@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Calendar } from '@/components/originui/calendar';
 import type { Meta, StoryObj } from '@storybook/react-webpack5';
 import { useState } from 'react';
@@ -28,7 +44,7 @@ import { useState } from 'react';
 
 function MyComponent() {
   const [date, setDate] = useState<Date | undefined>(new Date());
-  
+
   return (
     <Calendar
       mode="single"
@@ -99,7 +115,7 @@ export const Default: Story = {
     className: 'rounded-md border',
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [date, setDate] = useState<Date | undefined>(new Date());
 
     return (
@@ -143,7 +159,7 @@ export const RangeSelection: Story = {
     className: 'rounded-md border',
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [range, setRange] = useState<{
       from: Date | undefined;
       to?: Date | undefined;
@@ -206,7 +222,7 @@ export const WithoutOutsideDays: Story = {
     className: 'rounded-md border',
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [date, setDate] = useState<Date | undefined>(new Date());
 
     return (
@@ -249,7 +265,7 @@ export const CustomStyling: Story = {
     showOutsideDays: true,
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [date, setDate] = useState<Date | undefined>(new Date());
 
     return (

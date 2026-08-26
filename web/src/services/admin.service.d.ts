@@ -1,4 +1,20 @@
-declare module AdminService {
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+declare namespace AdminService {
   export type LoginData = {
     access_token: string;
     avatar: unknown;
@@ -66,7 +82,7 @@ declare module AdminService {
     title: string;
   };
 
-  export type TaskExectorHeartbeatItem = {
+  export type TaskExecutorHeartbeatItem = {
     name: string;
     boot_at: string;
     now: string;
@@ -79,7 +95,7 @@ declare module AdminService {
     pid: number;
   };
 
-  export type TaskExecutorInfo = Record<string, TaskExectorHeartbeatItem[]>;
+  export type TaskExecutorInfo = Record<string, TaskExecutorHeartbeatItem[]>;
 
   export type ListServicesItem = {
     extra: Record<string, unknown>;
@@ -134,7 +150,7 @@ declare module AdminService {
   export type RoleDetail = {
     id: string;
     name: string;
-    descrtiption: string;
+    description: string;
     create_date: string;
     update_date: string;
   };
@@ -162,8 +178,60 @@ declare module AdminService {
     id: number;
     email: string;
     create_date: string;
-    createt_time: number;
+    create_time: number;
     update_date: string;
     update_time: number;
+  };
+
+  // Sandbox settings types
+  export type SandboxProvider = {
+    id: string;
+    name: string;
+    description: string;
+    tags: string[];
+  };
+
+  export type SandboxConfigFieldBase = {
+    required?: boolean;
+    label?: string;
+    placeholder?: string;
+    description?: string;
+    multiline?: boolean;
+    readonly?: boolean;
+    scope?: 'runtime' | 'deployment';
+  };
+
+  export type SandboxConfigStringField = SandboxConfigFieldBase & {
+    type: 'string';
+    default?: string;
+    secret?: boolean;
+  };
+
+  export type SandboxConfigIntegerField = SandboxConfigFieldBase & {
+    type: 'integer';
+    default?: number;
+    min?: number;
+    max?: number;
+  };
+
+  export type SandboxConfigBooleanField = SandboxConfigFieldBase & {
+    type: 'boolean';
+    default?: boolean;
+  };
+
+  export type SandboxConfigJsonField = SandboxConfigFieldBase & {
+    type: 'json';
+    default?: unknown;
+  };
+
+  export type SandboxConfigField =
+    | SandboxConfigStringField
+    | SandboxConfigIntegerField
+    | SandboxConfigBooleanField
+    | SandboxConfigJsonField;
+
+  export type SandboxConfig = {
+    provider_type: string;
+    config: Record<string, unknown>;
   };
 }

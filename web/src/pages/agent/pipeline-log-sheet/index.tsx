@@ -18,8 +18,8 @@ import {
   SquareArrowOutUpRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import 'react18-json-view/src/style.css';
-import { useParams } from 'umi';
 import {
   isEndOutputEmpty,
   useDownloadOutput,
@@ -75,6 +75,12 @@ export function PipelineLogSheet({
                     uploadedFileData?.created_by,
                   [PipelineResultSearchParams.DocumentExtension]:
                     uploadedFileData?.extension,
+                  [PipelineResultSearchParams.DocumentName]:
+                    uploadedFileData?.name,
+                  [PipelineResultSearchParams.DocumentSize]:
+                    uploadedFileData?.size,
+                  [PipelineResultSearchParams.DocumentCreatedAt]:
+                    uploadedFileData?.created_at,
                 })}
               >
                 {t('flow.viewResult')} <ArrowUpRight />

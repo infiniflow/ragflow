@@ -1,3 +1,23 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useListTenantUser } from '@/hooks/user-setting-hooks';
+import { useListTenantUser } from '@/hooks/use-user-setting-request';
 import { formatDate } from '@/utils/date';
 import { upperFirst } from 'lodash';
 import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from 'lucide-react';
@@ -19,14 +39,17 @@ import { TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
 
 const ColorMap: Record<string, string> = {
-  [TenantRole.Normal]: 'bg-transparent text-text-primary',
-  [TenantRole.Invite]: 'bg-accent-primary-5 bg-accent-primary rounded-sm',
-  [TenantRole.Owner]: 'bg-red-100 text-red-800',
+  [TenantRole.Normal]:
+    'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  [TenantRole.Invite]:
+    'bg-accent-primary-5 text-accent-primary hover:bg-accent-primary/10 rounded-sm',
+  [TenantRole.Owner]:
+    'bg-red-100 text-red-800 hover:bg-red-200 hover:text-red-800',
 };
 
 const UserTable = ({ searchUser }: { searchUser: string }) => {
   const { data, loading } = useListTenantUser();
-  const { handleDeleteTenantUser } = useHandleDeleteUser();
+  const { deleteTenantUser } = useHandleDeleteUser();
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
   const { t } = useTranslation();
   const sortedData = useMemo(() => {
@@ -67,26 +90,29 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
 
   const renderSortIcon = () => {
     if (sortOrder === 'asc') {
-      return <ArrowUp className="ml-1 h-4 w-4 " />;
+      return <ArrowUp className="size-[1em] " />;
     } else if (sortOrder === 'desc') {
-      return <ArrowDown className="ml-1 h-4 w-4" />;
+      return <ArrowDown className="size-[1em]" />;
     } else {
-      return <ArrowUpDown className="ml-1 h-4 w-4" />;
+      return <ArrowUpDown className="size-[1em]" />;
     }
   };
   return (
     <div className="rounded-lg bg-bg-input scrollbar-auto overflow-hidden border border-border-default">
       <Table rootClassName="rounded-lg">
         <TableHeader className="bg-bg-title">
-          <TableRow>
+          <TableRow className="hover:bg-bg-title">
             <TableHead className="h-12 px-4">{t('common.name')}</TableHead>
-            <TableHead
-              className="h-12 px-4 cursor-pointer"
-              onClick={toggleSortOrder}
-            >
-              <div className="flex items-center">
+            <TableHead className="h-12 px-4">
+              <div className="flex items-center gap-1">
                 {t('setting.updateDate')}
-                {renderSortIcon()}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={toggleSortOrder}
+                >
+                  {renderSortIcon()}
+                </Button>
               </div>
             </TableHead>
             <TableHead className="h-12 px-4">{t('setting.email')}</TableHead>
@@ -106,7 +132,7 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
           ) : sortedData && sortedData.length > 0 ? (
             sortedData.map((record) => (
               <TableRow key={record.user_id} className="hover:bg-bg-card">
-                <TableCell className="p-4 ">
+                <TableCell className="p-4">
                   <div className="flex gap-1 items-center">
                     <RAGFlowAvatar
                       isPerson
@@ -134,14 +160,35 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
                   )}
                 </TableCell>
                 <TableCell className="p-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 p-0"
-                    onClick={handleDeleteTenantUser(record.user_id)}
+                  <ConfirmDeleteDialog
+                    title={t('deleteModal.delMember')}
+                    onOk={async () => {
+                      await deleteTenantUser({
+                        userId: record.user_id,
+                      });
+                      return;
+                    }}
+                    content={{
+                      node: (
+                        <ConfirmDeleteDialogNode
+                          avatar={{
+                            avatar: record.avatar,
+                            name: record.nickname,
+                            isPerson: true,
+                          }}
+                          name={record.email}
+                        ></ConfirmDeleteDialogNode>
+                      ),
+                    }}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 p-0 hover:bg-state-error-5 hover:text-state-error"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </ConfirmDeleteDialog>
                 </TableCell>
               </TableRow>
             ))

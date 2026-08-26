@@ -1,4 +1,4 @@
-import { IRagNode } from '@/interfaces/database/flow';
+import { IRagNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import { PropsWithChildren, memo } from 'react';
 import { NodeHandleId } from '../../constant';
@@ -26,7 +26,7 @@ function InnerRagNode({
       showRun={needsSingleStepDebugging(data.label)}
       showCopy={showCopyIcon(data.label)}
     >
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           type="source"

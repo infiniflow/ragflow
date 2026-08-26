@@ -14,9 +14,9 @@
 #  limitations under the License.
 #
 
-'''
+"""
 The example is about CRUD operations (Create, Read, Update, Delete) on a dataset.
-'''
+"""
 
 from ragflow_sdk import RAGFlow
 import sys
@@ -32,7 +32,7 @@ try:
     dataset_instance = ragflow_instance.create_dataset(name="dataset_instance")
 
     # update the dataset instance
-    updated_message = {"name":"updated_dataset"}
+    updated_message = {"name": "updated_dataset"}
     updated_dataset = dataset_instance.update(updated_message)
 
     # get the dataset (list datasets)
@@ -49,5 +49,3 @@ try:
 except Exception as e:
     print(str(e))
     sys.exit(-1)
-
-

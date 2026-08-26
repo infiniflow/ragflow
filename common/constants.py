@@ -14,11 +14,15 @@
 #  limitations under the License.
 #
 
+import os
 from enum import Enum, IntEnum
-from strenum import StrEnum
+from enum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 RAG_FLOW_SERVICE_NAME = "ragflow"
+SANDBOX_ARTIFACT_BUCKET = os.environ.get("SANDBOX_ARTIFACT_BUCKET", "sandbox-artifacts")
+SANDBOX_ARTIFACT_EXPIRE_DAYS = int(os.environ.get("SANDBOX_ARTIFACT_EXPIRE_DAYS", "7"))
+
 
 class CustomEnum(Enum):
     @classmethod
@@ -49,15 +53,29 @@ class RetCode(IntEnum, CustomEnum):
     RUNNING = 106
     PERMISSION_ERROR = 108
     AUTHENTICATION_ERROR = 109
+    BAD_REQUEST = 400
     UNAUTHORIZED = 401
     SERVER_ERROR = 500
     FORBIDDEN = 403
     NOT_FOUND = 404
+    CONFLICT = 409
 
 
 class StatusEnum(Enum):
     VALID = "1"
     INVALID = "0"
+
+
+class ActiveStatusEnum(Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    UNSUPPORTED = "unsupported"
+
+
+class ModelVerifyStatusEnum(Enum):
+    SUCCESS = "success"
+    FAIL = "fail"
+    UNKNOWN = "unknown"
 
 
 class ActiveEnum(Enum):
@@ -66,12 +84,23 @@ class ActiveEnum(Enum):
 
 
 class LLMType(StrEnum):
-    CHAT = 'chat'
-    EMBEDDING = 'embedding'
-    SPEECH2TEXT = 'speech2text'
-    IMAGE2TEXT = 'image2text'
-    RERANK = 'rerank'
-    TTS = 'tts'
+    CHAT = "chat"
+    EMBEDDING = "embedding"
+    ASR = "asr"
+    VISION = "vision"
+    RERANK = "rerank"
+    TTS = "tts"
+    OCR = "ocr"
+
+
+class ModelTypeBinary(Enum):
+    CHAT = 0b0000001  # 1 << 0 = 1
+    EMBEDDING = 0b0000010  # 1 << 1 = 2
+    ASR = 0b0000100  # 1 << 2 = 4
+    VISION = 0b0001000  # 1 << 3 = 8
+    RERANK = 0b0010000  # 1 << 4 = 16
+    TTS = 0b0100000  # 1 << 5 = 32
+    OCR = 0b1000000  # 1 << 6 = 64
 
 
 class TaskStatus(StrEnum):
@@ -83,8 +112,12 @@ class TaskStatus(StrEnum):
     SCHEDULE = "5"
 
 
-VALID_TASK_STATUS = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL,
-                     TaskStatus.SCHEDULE}
+VALID_TASK_STATUS = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
+
+
+class ConnectorTaskType(StrEnum):
+    SYNC = "sync"
+    PRUNE = "prune"
 
 
 class ParserType(StrEnum):
@@ -108,8 +141,10 @@ class ParserType(StrEnum):
 class FileSource(StrEnum):
     LOCAL = ""
     KNOWLEDGEBASE = "knowledgebase"
+    RSS = "rss"
     S3 = "s3"
     NOTION = "notion"
+    REST_API = "rest_api"
     DISCORD = "discord"
     CONFLUENCE = "confluence"
     GMAIL = "gmail"
@@ -118,6 +153,30 @@ class FileSource(StrEnum):
     SHAREPOINT = "sharepoint"
     SLACK = "slack"
     TEAMS = "teams"
+    WEBDAV = "webdav"
+    MOODLE = "moodle"
+    DROPBOX = "dropbox"
+    BOX = "box"
+    R2 = "r2"
+    OCI_STORAGE = "oci_storage"
+    GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
+    AIRTABLE = "airtable"
+    ASANA = "asana"
+    GITHUB = "github"
+    GITLAB = "gitlab"
+    IMAP = "imap"
+    BITBUCKET = "bitbucket"
+    AZURE_DEVOPS = "azure_devops"
+    ZENDESK = "zendesk"
+    SEAFILE = "seafile"
+    MYSQL = "mysql"
+    POSTGRESQL = "postgresql"
+    BIGQUERY = "bigquery"
+    DINGTALK_AI_TABLE = "dingtalk_ai_table"
+    ONEDRIVE = "onedrive"
+    OUTLOOK = "outlook"
+    SALESFORCE = "salesforce"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
@@ -126,16 +185,44 @@ class PipelineTaskType(StrEnum):
     RAPTOR = "RAPTOR"
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
+    MEMORY = "Memory"
+    # Member name kept as ARTIFACT for back-compat; value is "Wiki" so the
+    # runtime task_type (``.lower()`` == "wiki") matches the wiki index/task type.
+    ARTIFACT = "Wiki"
+    SKILL = "Skill"
+    # KB-wide structure-graph merge tasks (rebuild_dataset_structure_graph_json).
+    STRUCTURE_GRAPH = "StructureGraph"
+    STRUCTURE_MINDMAP = "StructureMindmap"
+    TIMELINE = "Timeline"
+    SESSION_GRAPH = "SessionGraph"
+    SESSION_ESSENCE = "SessionEssence"
+    STRUCTURE = "Structure"
 
 
-VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR,
-                             PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
+VALID_PIPELINE_TASK_TYPES = {
+    PipelineTaskType.PARSE,
+    PipelineTaskType.DOWNLOAD,
+    PipelineTaskType.RAPTOR,
+    PipelineTaskType.GRAPH_RAG,
+    PipelineTaskType.MINDMAP,
+    PipelineTaskType.ARTIFACT,
+    PipelineTaskType.SKILL,
+    PipelineTaskType.STRUCTURE_GRAPH,
+    PipelineTaskType.STRUCTURE_MINDMAP,
+    PipelineTaskType.TIMELINE,
+    PipelineTaskType.SESSION_GRAPH,
+    PipelineTaskType.SESSION_ESSENCE,
+    PipelineTaskType.STRUCTURE,
+}
+
 
 class MCPServerType(StrEnum):
     SSE = "sse"
     STREAMABLE_HTTP = "streamable-http"
 
+
 VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
+
 
 class Storage(Enum):
     MINIO = 1
@@ -144,6 +231,24 @@ class Storage(Enum):
     AWS_S3 = 4
     OSS = 5
     OPENDAL = 6
+    GCS = 7
+
+
+class MemoryType(Enum):
+    RAW = 0b0001  # 1 << 0 = 1 (0b00000001)
+    SEMANTIC = 0b0010  # 1 << 1 = 2 (0b00000010)
+    EPISODIC = 0b0100  # 1 << 2 = 4 (0b00000100)
+    PROCEDURAL = 0b1000  # 1 << 3 = 8 (0b00001000)
+
+
+class MemoryStorageType(StrEnum):
+    TABLE = "table"
+    GRAPH = "graph"
+
+
+class ForgettingPolicy(StrEnum):
+    FIFO = "FIFO"
+
 
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"
@@ -177,6 +282,22 @@ class Storage(Enum):
 # ENV_MINERU_OUTPUT_DIR = "MINERU_OUTPUT_DIR"
 # ENV_MINERU_BACKEND = "MINERU_BACKEND"
 # ENV_MINERU_DELETE_OUTPUT = "MINERU_DELETE_OUTPUT"
+# ENV_SOMARK_BASE_URL = "SOMARK_BASE_URL"
+# ENV_SOMARK_API_KEY = "SOMARK_API_KEY"
+# ENV_SOMARK_IMAGE_FORMAT = "SOMARK_IMAGE_FORMAT"
+# ENV_SOMARK_FORMULA_FORMAT = "SOMARK_FORMULA_FORMAT"
+# ENV_SOMARK_TABLE_FORMAT = "SOMARK_TABLE_FORMAT"
+# ENV_SOMARK_CS_FORMAT = "SOMARK_CS_FORMAT"
+# ENV_SOMARK_ENABLE_TEXT_CROSS_PAGE = "SOMARK_ENABLE_TEXT_CROSS_PAGE"
+# ENV_SOMARK_ENABLE_TABLE_CROSS_PAGE = "SOMARK_ENABLE_TABLE_CROSS_PAGE"
+# ENV_SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION = "SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION"
+# ENV_SOMARK_ENABLE_INLINE_IMAGE = "SOMARK_ENABLE_INLINE_IMAGE"
+# ENV_SOMARK_ENABLE_TABLE_IMAGE = "SOMARK_ENABLE_TABLE_IMAGE"
+# ENV_SOMARK_ENABLE_IMAGE_UNDERSTANDING = "SOMARK_ENABLE_IMAGE_UNDERSTANDING"
+# ENV_SOMARK_KEEP_HEADER_FOOTER = "SOMARK_KEEP_HEADER_FOOTER"
+# ENV_DOCLING_SERVER_URL = "DOCLING_SERVER_URL"
+# ENV_DOCLING_OUTPUT_DIR = "DOCLING_OUTPUT_DIR"
+# ENV_DOCLING_DELETE_OUTPUT = "DOCLING_DELETE_OUTPUT"
 # ENV_TCADP_OUTPUT_DIR = "TCADP_OUTPUT_DIR"
 # ENV_LM_TIMEOUT_SECONDS = "LM_TIMEOUT_SECONDS"
 # ENV_LLM_MAX_RETRIES = "LLM_MAX_RETRIES"
@@ -191,6 +312,78 @@ class Storage(Enum):
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
-SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_QUEUE_NAME = "te"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 TAG_FLD = "tag_feas"
+
+# Maximum page number used as "unlimited" sentinel value.
+# Parsing layer (chunk/Pdf.__call__) uses MAXIMUM_PAGE_NUMBER.
+# Task/DB layer (Task model) uses MAXIMUM_PAGE_NUMBER * 1000 to avoid collision with user-specified page ranges.
+MAXIMUM_PAGE_NUMBER = 100000
+MAXIMUM_TASK_PAGE_NUMBER = MAXIMUM_PAGE_NUMBER * 1000
+
+
+MINERU_ENV_KEYS = ["MINERU_APISERVER", "MINERU_OUTPUT_DIR", "MINERU_BACKEND", "MINERU_SERVER_URL", "MINERU_DELETE_OUTPUT"]
+MINERU_DEFAULT_CONFIG = {
+    "MINERU_APISERVER": "",
+    "MINERU_OUTPUT_DIR": "",
+    "MINERU_BACKEND": "pipeline",
+    "MINERU_SERVER_URL": "",
+    "MINERU_DELETE_OUTPUT": 1,
+}
+
+PADDLEOCR_ENV_KEYS = ["PADDLEOCR_BASE_URL", "PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
+PADDLEOCR_DEFAULT_CONFIG = {
+    "PADDLEOCR_BASE_URL": "",
+    "PADDLEOCR_API_URL": "",
+    "PADDLEOCR_ACCESS_TOKEN": None,
+    "PADDLEOCR_ALGORITHM": "PaddleOCR-VL",
+}
+
+OPENDATALOADER_ENV_KEYS = ["OPENDATALOADER_APISERVER"]
+OPENDATALOADER_DEFAULT_CONFIG = {
+    "OPENDATALOADER_APISERVER": "",
+}
+
+SOMARK_ENV_KEYS = [
+    "SOMARK_BASE_URL",
+    "SOMARK_API_KEY",
+    "SOMARK_IMAGE_FORMAT",
+    "SOMARK_FORMULA_FORMAT",
+    "SOMARK_TABLE_FORMAT",
+    "SOMARK_CS_FORMAT",
+    "SOMARK_ENABLE_TEXT_CROSS_PAGE",
+    "SOMARK_ENABLE_TABLE_CROSS_PAGE",
+    "SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION",
+    "SOMARK_ENABLE_INLINE_IMAGE",
+    "SOMARK_ENABLE_TABLE_IMAGE",
+    "SOMARK_ENABLE_IMAGE_UNDERSTANDING",
+    "SOMARK_KEEP_HEADER_FOOTER",
+]
+SOMARK_DEFAULT_CONFIG = {
+    "SOMARK_BASE_URL": "https://somark.cn/api/v1",
+    "SOMARK_API_KEY": "",
+    "SOMARK_IMAGE_FORMAT": "url",
+    "SOMARK_FORMULA_FORMAT": "latex",
+    "SOMARK_TABLE_FORMAT": "html",
+    "SOMARK_CS_FORMAT": "image",
+    "SOMARK_ENABLE_TEXT_CROSS_PAGE": 0,
+    "SOMARK_ENABLE_TABLE_CROSS_PAGE": 0,
+    "SOMARK_ENABLE_TITLE_LEVEL_RECOGNITION": 0,
+    "SOMARK_ENABLE_INLINE_IMAGE": 1,
+    "SOMARK_ENABLE_TABLE_IMAGE": 1,
+    "SOMARK_ENABLE_IMAGE_UNDERSTANDING": 1,
+    "SOMARK_KEEP_HEADER_FOOTER": 0,
+}
+MISTRAL_OCR_ENV_KEYS = [
+    "MISTRAL_OCR_BASE_URL",
+    "MISTRAL_OCR_API_KEY",
+    "MISTRAL_OCR_TABLE_FORMAT",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER",
+]
+MISTRAL_OCR_DEFAULT_CONFIG = {
+    "MISTRAL_OCR_BASE_URL": "https://api.mistral.ai/v1",
+    "MISTRAL_OCR_API_KEY": "",
+    "MISTRAL_OCR_TABLE_FORMAT": "html",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER": 0,
+}

@@ -19,6 +19,8 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
+import os
 import queue
 import re
 import ssl
@@ -36,7 +38,12 @@ import requests
 import websocket
 from pydantic import BaseModel, conint
 
+from common.http_client import sync_request
 from common.token_utils import num_tokens_from_string
+from rag.utils.url_utils import ensure_v1
+from rag.llm.key_utils import _resolve_provider_credentials
+
+logger = logging.getLogger(__name__)
 
 
 class ServeReferenceAudio(BaseModel):
@@ -77,13 +84,73 @@ class Base(ABC):
         return re.sub(r"(\*\*|##\d+\$\$|#)", "", text)
 
 
+class HTTPBasedTTS(Base):
+    """
+    Base class for HTTP-based TTS services.
+    Provides common HTTP request handling and response processing.
+    """
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        self.model_name = model_name
+        self.base_url = ensure_v1(base_url)
+        self.api_key = key
+        self.headers = {"Content-Type": "application/json"}
+        if key and key != "x":
+            self.headers["Authorization"] = f"Bearer {self.api_key}"
+
+    def _build_payload(self, text, voice, **kwargs):
+        """
+        Build payload for TTS request.
+        Subclasses should override this method if they need custom payload structure.
+        """
+        return {"model": self.model_name, "voice": voice, "input": text}
+
+    def _send_request(self, endpoint, payload, stream=True):
+        """
+        Send HTTP request to TTS service.
+        """
+        url = f"{self.base_url}{endpoint}"
+        response = requests.post(
+            url,
+            headers=self.headers,
+            json=payload,
+            stream=stream,
+            timeout=60,
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+
+        return response
+
+    def _process_response(self, response):
+        """
+        Process streaming response from TTS service.
+        """
+        for chunk in response.iter_content():
+            if chunk:
+                yield chunk
+
+    def tts(self, text, voice="alloy"):
+        """
+        Generate speech from text.
+        """
+        text = self.normalize_text(text)
+        payload = self._build_payload(text, voice)
+        response = self._send_request("/audio/speech", payload)
+        return self._process_response(response)
+
+
 class FishAudioTTS(Base):
     _FACTORY_NAME = "Fish Audio"
 
     def __init__(self, key, model_name, base_url="https://api.fish.audio/v1/tts"):
         if not base_url:
             base_url = "https://api.fish.audio/v1/tts"
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         self.headers = {
             "api-key": key.get("fish_audio_ak"),
             "content-type": "application/msgpack",
@@ -176,28 +243,13 @@ class QwenTTS(Base):
             raise RuntimeError(f"**ERROR**: {e}")
 
 
-class OpenAITTS(Base):
+class OpenAITTS(HTTPBasedTTS):
     _FACTORY_NAME = "OpenAI"
 
     def __init__(self, key, model_name="tts-1", base_url="https://api.openai.com/v1"):
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        self.api_key = key
-        self.model_name = model_name
-        self.base_url = base_url
-        self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-
-    def tts(self, text, voice="alloy"):
-        text = self.normalize_text(text)
-        payload = {"model": self.model_name, "voice": voice, "input": text}
-
-        response = requests.post(f"{self.base_url}/audio/speech", headers=self.headers, json=payload, stream=True)
-
-        if response.status_code != 200:
-            raise Exception(f"**Error**: {response.status_code}, {response.text}")
-        for chunk in response.iter_content():
-            if chunk:
-                yield chunk
+        super().__init__(key, model_name, base_url)
 
 
 class SparkTTS(Base):
@@ -207,7 +259,10 @@ class SparkTTS(Base):
     STATUS_LAST_FRAME = 2
 
     def __init__(self, key, model_name, base_url=""):
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         self.APPID = key.get("spark_app_id", "xxxxxxx")
         self.APISecret = key.get("spark_api_secret", "xxxxxxx")
         self.APIKey = key.get("spark_api_key", "xxxxxx")
@@ -263,7 +318,7 @@ class SparkTTS(Base):
                 raise Exception(error)
 
             def on_close(self, ws, close_status_code, close_msg):
-                self.audio_queue.put(None)  # 放入 None 作为结束标志
+                self.audio_queue.put(None)  # None is terminator
 
             def on_open(self, ws):
                 def run(*args):
@@ -289,103 +344,117 @@ class SparkTTS(Base):
             yield audio_chunk
 
 
-class XinferenceTTS(Base):
+class XinferenceTTS(HTTPBasedTTS):
     _FACTORY_NAME = "Xinference"
 
     def __init__(self, key, model_name, **kwargs):
-        self.base_url = kwargs.get("base_url", None)
-        self.model_name = model_name
+        base_url = kwargs.get("base_url", None)
+        super().__init__(key, model_name, base_url)
+        # Override headers to remove Authorization
         self.headers = {"accept": "application/json", "Content-Type": "application/json"}
 
-    def tts(self, text, voice="中文女", stream=True):
-        payload = {"model": self.model_name, "input": text, "voice": voice}
-
-        response = requests.post(f"{self.base_url}/v1/audio/speech", headers=self.headers, json=payload, stream=stream)
-
-        if response.status_code != 200:
-            raise Exception(f"**Error**: {response.status_code}, {response.text}")
-
+    def _process_response(self, response):
+        # Use chunk_size=1024 for processing response
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
 
+    def tts(self, text, voice="中文女", stream=True):
+        text = self.normalize_text(text)
+        payload = self._build_payload(text, voice)
+        response = self._send_request("/v1/audio/speech", payload, stream=stream)
+        return self._process_response(response)
 
-class OllamaTTS(Base):
+
+class OllamaTTS(HTTPBasedTTS):
     def __init__(self, key, model_name="ollama-tts", base_url="https://api.ollama.ai/v1"):
         if not base_url:
             base_url = "https://api.ollama.ai/v1"
-        self.model_name = model_name
-        self.base_url = base_url
-        self.headers = {"Content-Type": "application/json"}
-        if key and key != "x":
-            self.headers["Authorization"] = f"Bearer {key}"
+        super().__init__(key, model_name, base_url)
 
     def tts(self, text, voice="standard-voice"):
-        payload = {"model": self.model_name, "voice": voice, "input": text}
-
-        response = requests.post(f"{self.base_url}/audio/tts", headers=self.headers, json=payload, stream=True)
-
-        if response.status_code != 200:
-            raise Exception(f"**Error**: {response.status_code}, {response.text}")
-
-        for chunk in response.iter_content():
-            if chunk:
-                yield chunk
+        text = self.normalize_text(text)
+        payload = self._build_payload(text, voice)
+        response = self._send_request("/audio/tts", payload)
+        return self._process_response(response)
 
 
-class GPUStackTTS(Base):
+class GPUStackTTS(HTTPBasedTTS):
+    """GPUStack text-to-speech adapter."""
+
     _FACTORY_NAME = "GPUStack"
 
     def __init__(self, key, model_name, **kwargs):
-        self.base_url = kwargs.get("base_url", None)
-        self.api_key = key
-        self.model_name = model_name
-        self.headers = {"accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+        base_url = kwargs.get("base_url", None)
+        super().__init__(key, model_name, base_url)
+        # Add accept header
+        self.headers["accept"] = "application/json"
+        self.default_voice = os.environ.get("GPUSTACK_TTS_VOICE", "aiden")
+        logger.info("GPUStack TTS initialized for model %s", self.model_name)
 
-    def tts(self, text, voice="Chinese Female", stream=True):
-        payload = {"model": self.model_name, "input": text, "voice": voice}
-
-        response = requests.post(f"{self.base_url}/v1/audio/speech", headers=self.headers, json=payload, stream=stream)
-
-        if response.status_code != 200:
-            raise Exception(f"**Error**: {response.status_code}, {response.text}")
-
+    def _process_response(self, response):
+        # Use chunk_size=1024 for processing response
         for chunk in response.iter_content(chunk_size=1024):
             if chunk:
                 yield chunk
 
+    def tts(self, text, voice="Chinese Female", stream=True):
+        """Generate speech through GPUStack without logging input text."""
+        text = self.normalize_text(text)
+        voice_value = (voice or self.default_voice).strip()
+        voice_aliases = {
+            "chinese female": self.default_voice,
+            "chinese_female": self.default_voice,
+            "alloy": self.default_voice,
+        }
+        selected_voice = voice_aliases.get(voice_value.lower(), voice_value)
+        logger.info("GPUStack TTS request started for model %s with voice %s", self.model_name, selected_voice)
+        payload = self._build_payload(text, selected_voice)
+        try:
+            response = self._send_request("/audio/speech", payload, stream=stream)
+            logger.info("GPUStack TTS response received for model %s with status %s", self.model_name, response.status_code)
+        except Exception:
+            logger.warning("GPUStack TTS request failed for model %s before audio streaming", self.model_name)
+            raise
+        return self._process_response_with_logging(response)
 
-class SILICONFLOWTTS(Base):
+    def _process_response_with_logging(self, response):
+        """Stream GPUStack audio and log completion only after it is consumed."""
+        try:
+            yield from self._process_response(response)
+            logger.info("GPUStack TTS audio stream completed for model %s with status %s", self.model_name, response.status_code)
+        except Exception:
+            logger.warning("GPUStack TTS audio stream failed for model %s with status %s", self.model_name, getattr(response, "status_code", "unknown"))
+            raise
+
+
+class SILICONFLOWTTS(HTTPBasedTTS):
     _FACTORY_NAME = "SILICONFLOW"
 
     def __init__(self, key, model_name="FunAudioLLM/CosyVoice2-0.5B", base_url="https://api.siliconflow.cn/v1"):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
-        self.api_key = key
-        self.model_name = model_name
-        self.base_url = base_url
-        self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        super().__init__(key, model_name, base_url)
 
-    def tts(self, text, voice="anna"):
-        text = self.normalize_text(text)
-        payload = {
+    def _build_payload(self, text, voice, **kwargs):
+        # Custom payload structure for SILICONFLOW
+        return {
             "model": self.model_name,
             "input": text,
             "voice": f"{self.model_name}:{voice}",
             "response_format": "mp3",
-            "sample_rate": 123,
+            "sample_rate": 32000,
             "stream": True,
             "speed": 1,
             "gain": 0,
         }
 
-        response = requests.post(f"{self.base_url}/audio/speech", headers=self.headers, json=payload)
+    def tts(self, text, voice="anna"):
+        text = self.normalize_text(text)
+        payload = self._build_payload(text, voice)
+        response = self._send_request("/audio/speech", payload)
+        return self._process_response(response)
 
-        if response.status_code != 200:
-            raise Exception(f"**Error**: {response.status_code}, {response.text}")
-        for chunk in response.iter_content():
-            if chunk:
-                yield chunk
 
 class DeepInfraTTS(OpenAITTS):
     _FACTORY_NAME = "DeepInfra"
@@ -394,7 +463,8 @@ class DeepInfraTTS(OpenAITTS):
         if not base_url:
             base_url = "https://api.deepinfra.com/v1/openai"
         super().__init__(key, model_name, base_url, **kwargs)
-        
+
+
 class CometAPITTS(OpenAITTS):
     _FACTORY_NAME = "CometAPI"
 
@@ -402,11 +472,108 @@ class CometAPITTS(OpenAITTS):
         if not base_url:
             base_url = "https://api.cometapi.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
-        
+
+
 class DeerAPITTS(OpenAITTS):
     _FACTORY_NAME = "DeerAPI"
 
     def __init__(self, key, model_name, base_url="https://api.deerapi.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.deerapi.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class FuturMixTTS(OpenAITTS):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] TTS initialized with model %s", model_name)
+
+
+class StepFunTTS(OpenAITTS):
+    _FACTORY_NAME = "StepFun"
+    _SUPPORTED_RESPONSE_FORMATS = {"wav", "mp3", "flac", "opus", "pcm"}
+
+    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.stepfun.com/v1"
+        self.default_voice = os.environ.get("STEPFUN_TTS_VOICE") or "cixingnansheng"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+    def tts(self, text, voice=None, response_format: Literal["wav", "mp3", "flac", "opus", "pcm"] = "mp3"):
+        text = self.normalize_text(text)
+        if response_format not in self._SUPPORTED_RESPONSE_FORMATS:
+            raise ValueError(f"Unsupported response_format={response_format!r}. Supported: {sorted(self._SUPPORTED_RESPONSE_FORMATS)}")
+
+        payload = {
+            "model": self.model_name,
+            "voice": voice or self.default_voice,
+            "input": text,
+            "response_format": response_format,
+        }
+
+        response = sync_request("POST", f"{self.base_url}/audio/speech", headers=self.headers, json=payload)
+
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+
+        for chunk in response.iter_bytes():
+            if chunk:
+                yield chunk
+
+        yield num_tokens_from_string(text)
+
+
+class RAGconTTS(Base):
+    """
+    RAGcon TTS Provider - routes through LiteLLM proxy
+
+    Text-to-speech models routed through LiteLLM.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+
+    _FACTORY_NAME = "RAGcon"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+
+        self.base_url = ensure_v1(base_url)
+        self.api_key = key
+        self.model_name = model_name
+        self.headers = {"accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+
+    def tts(self, text, voice="English Female", stream=True):
+        """
+        Uses LiteLLM's /v1/audio/speech endpoint
+        """
+
+        payload = {"model": self.model_name, "input": text, "voice": voice}
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            headers=self.headers,
+            json=payload,
+            stream=stream,
+            timeout=60,
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+
+        for chunk in response.iter_content(chunk_size=1024):
+            if chunk:
+                yield chunk
+
+
+class NewAPITTS(OpenAITTS):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)

@@ -1,9 +1,15 @@
 import FileStatusBadge from '@/components/file-status-badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
 export interface ILogInfo {
@@ -30,17 +36,31 @@ interface ProcessLogModalProps {
   onCancel: () => void;
   logInfo: ILogInfo;
   title: string;
+  translateKey?: string;
 }
 
 const InfoItem: React.FC<{
+  overflowTip?: boolean;
   label: string;
   value: string | React.ReactNode;
   className?: string;
-}> = ({ label, value, className = '' }) => {
+}> = ({ label, value, className = '', overflowTip = false }) => {
   return (
     <div className={`flex flex-col mb-4 ${className}`}>
       <span className="text-text-secondary text-sm">{label}</span>
-      <span className="text-text-primary mt-1">{value}</span>
+      {overflowTip && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-text-primary mt-1 truncate w-full">
+              {value}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{value}</TooltipContent>
+        </Tooltip>
+      )}
+      {!overflowTip && (
+        <span className="text-text-primary mt-1 truncate w-full">{value}</span>
+      )}
     </div>
   );
 };
@@ -67,12 +87,12 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   onCancel,
   logInfo: initData,
   title,
+  translateKey,
 }) => {
-  const { t } = useTranslate('knowledgeDetails');
+  const { t } = useTranslate(translateKey || 'knowledgeDetails');
+  const { t: tc } = useTranslation();
   const blackKeyList = [''];
-  console.log('logInfo', initData);
   const logInfo = useMemo(() => {
-    console.log('logInfo', initData);
     return initData;
   }, [initData]);
 
@@ -83,7 +103,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
       onCancel={onCancel}
       footer={
         <div className="flex justify-end">
-          <Button onClick={onCancel}>{t('close')}</Button>
+          <Button onClick={onCancel}>{tc('common.close')}</Button>
         </div>
       }
       className="process-log-modal"
@@ -129,6 +149,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
             return (
               <div className="w-1/2" key={key}>
                 <InfoItem
+                  overflowTip={true}
                   label={t(key)}
                   value={logInfo[key as keyof typeof logInfo]}
                 />

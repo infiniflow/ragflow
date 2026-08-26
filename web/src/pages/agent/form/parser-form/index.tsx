@@ -13,8 +13,8 @@ import { useHover } from 'ahooks';
 import { Trash2 } from 'lucide-react';
 import { memo, useCallback, useMemo, useRef } from 'react';
 import {
-  UseFieldArrayRemove,
   useFieldArray,
+  UseFieldArrayRemove,
   useForm,
   useFormContext,
 } from 'react-hook-form';
@@ -25,6 +25,7 @@ import {
   InitialOutputFormatMap,
   initialParserValues,
 } from '../../constant/pipeline';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -34,17 +35,30 @@ import { OutputFormatFormField } from './common-form-fields';
 import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
+import { PptFormFields } from './ppt-form-fields';
+import { SpreadsheetFormFields } from './spreadsheet-form-fields';
+import {
+  HtmlFormFields,
+  TextMarkdownFormFields,
+} from './text-html-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
+import { WordFormFields } from './word-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
+  [FileType.Spreadsheet]: SpreadsheetFormFields,
+  [FileType.PowerPoint]: PptFormFields,
+  [FileType.Doc]: WordFormFields,
+  [FileType.Docx]: WordFormFields,
   [FileType.Video]: VideoFormFields,
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
+  [FileType.TextMarkdown]: TextMarkdownFormFields,
+  [FileType.Html]: HtmlFormFields,
 };
 
 type ParserItemProps = {
@@ -59,12 +73,22 @@ export const FormSchema = z.object({
   setups: z.array(
     z.object({
       fileFormat: z.string().nullish(),
+      // preprocess: z.array(z.string()).optional(),
       output_format: z.string().optional(),
       parse_method: z.string().optional(),
       lang: z.string().optional(),
       fields: z.array(z.string()).optional(),
-      llm_id: z.string().optional(),
+      vlm: z.object({ llm_id: z.string().optional() }).optional(),
+      flatten_media_to_text: z.boolean().optional(),
       system_prompt: z.string().optional(),
+      table_result_type: z.string().optional(),
+      markdown_image_response_type: z.string().optional(),
+      enable_multi_column: z.boolean().optional(),
+      remove_toc: z.boolean().optional(),
+      remove_header_footer: z.boolean().optional(),
+      pages: z
+        .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
+        .optional(),
     }),
   ),
 });
@@ -153,12 +177,17 @@ function ParserItem({
           fileType={fileFormat as FileType}
         />
       </div>
+
       {index < fieldLength - 1 && <Separator />}
     </section>
   );
 }
 
-const ParserForm = ({ node }: INextOperatorForm) => {
+const ParserForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+}: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
 
@@ -183,11 +212,16 @@ const ParserForm = ({ node }: INextOperatorForm) => {
       parse_method: '',
       lang: '',
       fields: [],
-      llm_id: '',
+      vlm: { llm_id: '' },
+      table_result_type: '',
+      markdown_image_response_type: '',
+      remove_header_footer: false,
+      // preprocess: [],
     });
   }, [append]);
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -210,9 +244,11 @@ const ParserForm = ({ node }: INextOperatorForm) => {
           </BlockButton>
         )}
       </form>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

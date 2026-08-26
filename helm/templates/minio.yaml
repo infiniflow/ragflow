@@ -1,3 +1,4 @@
+{{- if .Values.minio.enabled }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -43,9 +44,9 @@ spec:
         {{- include "ragflow.labels" . | nindent 8 }}
         app.kubernetes.io/component: minio
     spec:
-      {{- if or .Values.imagePullSecrets .Values.minio.image.pullSecrets }}
+      {{- if or .Values.global.imagePullSecrets .Values.minio.image.pullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
+        {{- with .Values.global.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- with .Values.minio.image.pullSecrets }}
@@ -54,7 +55,7 @@ spec:
       {{- end }}
       containers:
       - name: minio
-        image: {{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.minio.image.repository) }}:{{ .Values.minio.image.tag }}
         {{- with .Values.minio.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
@@ -103,3 +104,4 @@ spec:
       port: 9001
       targetPort: console
   type: {{ .Values.minio.service.type }}
+{{- end }}

@@ -14,7 +14,9 @@
 #  limitations under the License.
 
 import datetime
+import logging
 import time
+
 
 def current_timestamp():
     """
@@ -45,8 +47,9 @@ def timestamp_to_date(timestamp, format_string="%Y-%m-%d %H:%M:%S"):
         >>> timestamp_to_date(1704067200000)
         '2024-01-01 08:00:00'
     """
-    if not timestamp:
-        timestamp = time.time()
+    if timestamp is None or timestamp == "":
+        timestamp = current_timestamp()
+        logging.debug("timestamp_to_date received empty timestamp; using current_timestamp() fallback")
     timestamp = int(timestamp) / 1000
     time_array = time.localtime(timestamp)
     str_date = time.strftime(format_string, time_array)
@@ -72,6 +75,7 @@ def date_string_to_timestamp(time_str, format_string="%Y-%m-%d %H:%M:%S"):
     time_stamp = int(time.mktime(time_array) * 1000)
     return time_stamp
 
+
 def datetime_format(date_time: datetime.datetime) -> datetime.datetime:
     """
     Normalize a datetime object by removing microsecond component.
@@ -90,8 +94,7 @@ def datetime_format(date_time: datetime.datetime) -> datetime.datetime:
         >>> datetime_format(dt)
         datetime.datetime(2024, 1, 1, 12, 30, 45)
     """
-    return datetime.datetime(date_time.year, date_time.month, date_time.day,
-                             date_time.hour, date_time.minute, date_time.second)
+    return datetime.datetime(date_time.year, date_time.month, date_time.day, date_time.hour, date_time.minute, date_time.second)
 
 
 def get_format_time() -> datetime.datetime:
@@ -124,3 +127,29 @@ def delta_seconds(date_string: str):
     """
     dt = datetime.datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
     return (datetime.datetime.now() - dt).total_seconds()
+
+
+def format_iso_8601_to_ymd_hms(time_str: str, fallback: str | None = None) -> str:
+    """
+    Convert ISO 8601 formatted string to "YYYY-MM-DD HH:MM:SS" format.
+
+    Args:
+        time_str: ISO 8601 date string (e.g. "2024-01-01T12:00:00Z")
+        fallback: Value to return when ``time_str`` cannot be parsed. When omitted,
+            the original input is returned.
+
+    Returns:
+        str: Date string in "YYYY-MM-DD HH:MM:SS" format
+
+    Example:
+        >>> format_iso_8601_to_ymd_hms("2024-01-01T12:00:00Z")
+        '2024-01-01 12:00:00'
+    """
+    from dateutil import parser
+
+    try:
+        dt = parser.isoparse(time_str)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError, OverflowError) as e:
+        logging.error("Failed to parse ISO 8601 timestamp %r: %s", time_str, e)
+        return time_str if fallback is None else fallback

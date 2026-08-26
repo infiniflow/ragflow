@@ -26,12 +26,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -49,7 +45,7 @@ class TestSessionWithChatAssistantCreate:
             ({"name": "valid_name"}, 0, ""),
             pytest.param({"name": "a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            ({"name": ""}, 102, "`name` can not be empty."),
+            ({"name": ""}, 102, "`name` can not be empty"),
             ({"name": "duplicated_name"}, 0, ""),
             ({"name": "case insensitive"}, 0, ""),
         ],
@@ -74,7 +70,7 @@ class TestSessionWithChatAssistantCreate:
         "chat_assistant_id, expected_code, expected_message",
         [
             ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
-            ("invalid_chat_assistant_id", 102, "You do not own the assistant."),
+            ("invalid_chat_assistant_id", 109, "no authorization"),
         ],
     )
     def test_invalid_chat_assistant_id(self, HttpApiAuth, chat_assistant_id, expected_code, expected_message):
@@ -115,5 +111,5 @@ class TestSessionWithChatAssistantCreate:
         res = delete_chat_assistants(HttpApiAuth, {"ids": [chat_assistant_ids[0]]})
         assert res["code"] == 0
         res = create_session_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], {"name": "valid_name"})
-        assert res["code"] == 102
-        assert res["message"] == "You do not own the assistant."
+        assert res["code"] == 109
+        assert res["message"] == "no authorization"

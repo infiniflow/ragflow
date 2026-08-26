@@ -1,23 +1,47 @@
-import Image from '@/components/image';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import {
   useFetchDocumentThumbnailsByIds,
   useGetDocumentUrl,
-} from '@/hooks/document-hooks';
+} from '@/hooks/use-document-request';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
+  currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
+  replaceRetrievingToSection,
+  replaceTextByOldReg,
   replaceThinkToSection,
   showImage,
 } from '@/utils/chat';
+import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
-import { Button, Flex, Popover, Tooltip } from 'antd';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
@@ -29,19 +53,22 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
-import { currentReg, replaceTextByOldReg } from '../pages/next-chats/utils';
-import styles from './floating-chat-widget-markdown.less';
+import styles from './floating-chat-widget-markdown.module.less';
 import { useIsDarkTheme } from './theme-provider';
+import { Button } from './ui/button';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
-const getChunkIndex = (match: string) => Number(match.replace(/\[|\]/g, ''));
+const getChunkIndex = (match: string) =>
+  parseCitationIndex(match.replace(/\[|\]/g, ''));
 
 const FloatingChatWidgetMarkdown = ({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -55,9 +82,13 @@ const FloatingChatWidgetMarkdown = ({
   const isDarkTheme = useIsDarkTheme();
 
   const contentWithCursor = useMemo(() => {
-    let text = content === '' ? t('chat.searching') : content;
+    const text = content === '' ? t('chat.searching') : content;
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+    return pipe(
+      replaceThinkToSection,
+      replaceRetrievingToSection,
+      preprocessLaTeX,
+    )(nextText);
   }, [content, t]);
 
   useEffect(() => {
@@ -72,13 +103,14 @@ const FloatingChatWidgetMarkdown = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
         if (!documentId) return;
-        if (!isPdf && documentUrl) {
-          window.open(documentUrl, '_blank');
+        if (fileExtension !== 'pdf' && documentUrl) {
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else if (clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
         }
@@ -159,20 +191,20 @@ const FloatingChatWidgetMarkdown = ({
           className="flex gap-2 widget-citation-content"
         >
           {imageId && (
-            <Popover
-              placement="left"
-              content={
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Image
+                  id={imageId}
+                  className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
+                />
+              </TooltipTrigger>
+              <TooltipContent side="left">
                 <Image
                   id={imageId}
                   className="max-w-[80vw] max-h-[60vh] rounded"
                 />
-              }
-            >
-              <Image
-                id={imageId}
-                className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
-              />
-            </Popover>
+              </TooltipContent>
+            </Tooltip>
           )}
           <div className="space-y-2 flex-1 min-w-0">
             <div
@@ -182,9 +214,9 @@ const FloatingChatWidgetMarkdown = ({
               className="max-h-[250px] overflow-y-auto text-xs leading-relaxed p-2 bg-gray-50 dark:bg-gray-800 rounded prose-sm"
             ></div>
             {documentId && (
-              <Flex gap={'small'} align="center">
+              <section className="flex gap-1 justify-center">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt={document?.doc_name}
                     className="w-6 h-6 rounded"
@@ -192,32 +224,33 @@ const FloatingChatWidgetMarkdown = ({
                 ) : (
                   <SvgIcon name={`file-icon/${fileExtension}`} width={20} />
                 )}
-                <Tooltip
-                  title={
-                    !documentUrl && fileExtension !== 'pdf'
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size={'sm'}
+                      variant={'link'}
+                      className="p-0 text-xs break-words h-auto text-left flex-1"
+                      onClick={handleDocumentButtonClick(
+                        documentId,
+                        chunkItem,
+                        fileExtension,
+                        documentUrl,
+                      )}
+                      disabled={!documentUrl && fileExtension !== 'pdf'}
+                      style={{ whiteSpace: 'normal' }}
+                    >
+                      <span className="truncate">
+                        {document?.doc_name ?? 'Unnamed Document'}
+                      </span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {!documentUrl && fileExtension !== 'pdf'
                       ? 'Document link unavailable'
-                      : document.doc_name
-                  }
-                >
-                  <Button
-                    type="link"
-                    size="small"
-                    className="p-0 text-xs break-words h-auto text-left flex-1"
-                    onClick={handleDocumentButtonClick(
-                      documentId,
-                      chunkItem,
-                      fileExtension === 'pdf',
-                      documentUrl,
-                    )}
-                    disabled={!documentUrl && fileExtension !== 'pdf'}
-                    style={{ whiteSpace: 'normal' }}
-                  >
-                    <span className="truncate">
-                      {document?.doc_name ?? 'Unnamed Document'}
-                    </span>
-                  </Button>
+                      : document.doc_name}
+                  </TooltipContent>
                 </Tooltip>
-              </Flex>
+              </section>
             )}
           </div>
         </div>
@@ -234,8 +267,13 @@ const FloatingChatWidgetMarkdown = ({
 
         if (!info) {
           return (
-            <Tooltip key={`err-tooltip-${i}`} title="Reference unavailable">
-              <InfoCircleOutlined className={styles.referenceIcon} />
+            <Tooltip key={`err-tooltip-${i}`}>
+              <TooltipTrigger asChild>
+                <InfoCircleOutlined className={styles.referenceIcon} />
+              </TooltipTrigger>
+              <TooltipContent>
+                {loading ? t('chat.searching') : 'Reference unavailable'}
+              </TooltipContent>
             </Tooltip>
           );
         }
@@ -252,7 +290,7 @@ const FloatingChatWidgetMarkdown = ({
               onClick={handleDocumentButtonClick(
                 documentId,
                 chunkItem,
-                fileExtension === 'pdf',
+                fileExtension,
                 documentUrl,
               )}
             />
@@ -260,27 +298,55 @@ const FloatingChatWidgetMarkdown = ({
         }
 
         return (
-          <Popover content={getPopoverContent(chunkIndex)} key={`popover-${i}`}>
-            <InfoCircleOutlined className={styles.referenceIcon} />
-          </Popover>
+          <HoverCard key={`hovercard-${i}`}>
+            <HoverCardTrigger asChild>
+              <InfoCircleOutlined className={styles.referenceIcon} />
+            </HoverCardTrigger>
+            <HoverCardPrimitive.Portal>
+              <HoverCardContent
+                collisionPadding={8}
+                className="max-h-[var(--radix-hover-card-content-available-height)]"
+              >
+                {getPopoverContent(chunkIndex)}
+              </HoverCardContent>
+            </HoverCardPrimitive.Portal>
+          </HoverCard>
         );
       });
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      t,
+    ],
   );
 
+  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
   return (
-    <div className="floating-chat-widget">
+    <div className={styles['floating-chat-widget']} dir={dir}>
       <Markdown
-        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
+        remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
           {
+            p: (props: any) => {
+              const { children, node, ...rest } = props;
+              void node;
+              return <p {...rest}>{children}</p>;
+            },
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              // oxlint-disable-next-line typescript/no-unused-vars
               const { children, className, node, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');
               return match ? (

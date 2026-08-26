@@ -18,6 +18,8 @@ export default {
       portugueseBr: 'Tiếng Bồ Đào Nha (Brazil)',
       chinese: 'Tiếng Trung giản thể',
       traditionalChinese: 'Tiếng Trung phồn thể',
+      bulgarian: 'Tiếng Bulgaria',
+      arabic: 'Tiếng Ả Rập',
       language: 'Ngôn ngữ',
       languageMessage: 'Vui lòng chọn ngôn ngữ của bạn!',
       languagePlaceholder: 'chọn ngôn ngữ của bạn',
@@ -38,8 +40,10 @@ export default {
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
       embedIntoSite: 'Nhúng vào trang web',
+      openInNewTab: 'Mở trong tab mới',
       nextPage: 'Tới',
       previousPage: 'Lùi',
+      owner: 'Chủ sở hữu',
     },
     login: {
       login: 'Đăng nhập',
@@ -155,7 +159,7 @@ export default {
       changeSpecificCategory: 'Thay đổi danh mục cụ thể',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:
-        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với demo.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
+        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với cloud.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
       chunk: 'Khối',
       bulk: 'Hàng loạt',
       cancel: 'Hủy bỏ',
@@ -182,6 +186,9 @@ export default {
       documentMetaTips: `<p>Dữ liệu meta ở định dạng Json (không thể tìm kiếm). Nó sẽ được thêm vào prompt cho LLM nếu bất kỳ đoạn nào của tài liệu này được đưa vào prompt.</p> <p>Ví dụ:</p> <b>Dữ liệu meta là:</b><br> <code> { "Author": "Alex Dowson", "Date": "2024-11-12" } </code><br><b>Prompt sẽ là:</b><br> <p>Tài liệu: the_name_of_document</p> <p>Tác giả: Alex Dowson</p> <p>Ngày: 2024-11-12</p> <p>Các đoạn liên quan như sau:</p> <ul> <li> Đây là nội dung của đoạn...</li> <li> Đây là nội dung của đoạn...</li> </ul>`,
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: 'Cửa sổ ngữ cảnh hình ảnh & bảng',
+      imageTableContextWindowTip:
+        'Trích xuất N token văn bản phía trên và phía dưới hình ảnh và bảng để cung cấp bối cảnh phong phú hơn.',
       titleDescription:
         'Cập nhật cấu hình cơ sở kiến thức của bạn tại đây, đặc biệt là phương thức phân khối.',
       name: 'Tên cơ sở kiến thức',
@@ -195,7 +202,7 @@ export default {
       chunkTokenNumber: 'Kích thước khối được khuyến nghị',
       chunkTokenNumberMessage: 'Số token khối là bắt buộc',
       embeddingModelTip:
-        'Mô hình nhúng mặc định của cơ sở tri thức. Không thể thay đổi khi cơ sở tri thức đã có các đoạn dữ liệu. Để chuyển sang mô hình nhúng mặc định khác, bạn phải xóa tất cả các đoạn dữ liệu hiện có trong cơ sở tri thức.',
+        'Mô hình nhúng mặc định của cơ sở tri thức. Khi cơ sở tri thức đã có các đoạn (chunk), lúc thay đổi mô hình nhúng, hệ thống sẽ lấy ngẫu nhiên một số chunk để kiểm tra tương thích, mã hóa lại bằng mô hình nhúng mới và tính độ tương đồng cosine giữa vector mới và vector cũ. Chỉ cho phép chuyển khi độ tương đồng trung bình của mẫu ≥ 0.9. Nếu không, bạn phải xóa tất cả các chunk trong cơ sở tri thức trước khi có thể thay đổi.',
       permissionsTip:
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
@@ -217,6 +224,12 @@ export default {
         'Để giúp bạn hiểu rõ hơn, chúng tôi đã cung cấp ảnh chụp màn hình liên quan để tham khảo.',
       dialogueExamplesTitle: 'Ví dụ hội thoại',
       methodEmpty: 'Mô tả bằng hình ảnh các danh mục cơ sở kiến thức',
+      audio: `<p>Các định dạng tệp được hỗ trợ là <b>WAV, MP3, AAC, FLAC, OGG</b> và các định dạng âm thanh phổ biến khác.</p>
+<p>Phương pháp này phiên âm các tệp âm thanh thành văn bản bằng mô hình chuyển giọng nói thành văn bản.</p>`,
+      email: `<p>Các định dạng tệp được hỗ trợ là <b>EML</b> và <b>MSG</b>.</p>
+<p>Phương pháp này phân tích các tệp email, trích xuất các trường tiêu đề (như Từ, Đến, CC, Chủ đề và Ngày), nội dung thân thư và tệp đính kèm.</p>`,
+      knowledgeCompiler: `<p>Pipeline này phân tích và chia nhỏ tệp thành các chunk, sau đó biên dịch các chunk thành các đơn vị tri thức có cấu trúc (đồ thị tri thức, wiki, RAPTOR, sơ đồ tư duy hoặc điều hướng tập dữ liệu) thông qua thành phần Knowledge Compiler.</p>
+<p>Các đơn vị tri thức đã biên dịch được xuất dưới dạng chunk hợp nhất vào luồng chunk, rất lý tưởng để xây dựng lớp tri thức có thể truy xuất trên các tài liệu đã chia nhỏ.</p>`,
       book: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Đối với mỗi sách trong PDF, vui lòng đặt <i>phạm vi trang</i> để loại bỏ thông tin không mong muốn và giảm thời gian phân tích.</p>`,
       laws: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -342,7 +355,8 @@ export default {
       tagCloud: 'Đám mây',
       graphRagMethod: 'Phương pháp',
       graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
-      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
+      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.
+      NER: Sử dụng spaCy NER và trích xuất từ khóa dựa trên quy tắc để trích xuất thực thể và quan hệ. Không cần LLM cho việc trích xuất, giúp nhanh chóng và tiết kiệm tài nguyên.`,
       useGraphRagTip:
         'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/dev/construct_knowledge_graph để biết thêm chi tiết.',
       resolution: 'Hợp nhất thực thể',
@@ -351,9 +365,23 @@ export default {
       community: 'Xây dựng mối quan hệ cộng đồng',
       communityTip:
         'Các liên kết được nhóm lại thành các cộng đồng phân cấp, với các thực thể và mối quan hệ kết nối từng phân đoạn lên các cấp độ trừu tượng cao hơn. Sau đó, chúng tôi sử dụng một LLM để tạo ra bản tóm tắt cho mỗi cộng đồng, được gọi là báo cáo cộng đồng. Xem thêm: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      paddleocrOptions: 'Tùy chọn PaddleOCR',
+      paddleocrApiUrl: 'URL API PaddleOCR',
+      paddleocrApiUrlTip: 'URL điểm cuối API của dịch vụ PaddleOCR',
+      paddleocrApiUrlPlaceholder:
+        'Ví dụ: https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'Token truy cập AI Studio',
+      paddleocrAccessTokenTip: 'Token truy cập cho API PaddleOCR (tùy chọn)',
+      paddleocrAccessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
+      paddleocrAlgorithm: 'Thuật toán PaddleOCR',
+      paddleocrAlgorithmTip: 'Thuật toán được sử dụng để xử lý PaddleOCR',
+      paddleocrSelectAlgorithm: 'Chọn thuật toán',
+      paddleocrModelNamePlaceholder: 'Ví dụ: paddleocr-môi-trường-1',
     },
     chunk: {
       chunk: 'Khối',
+      createChunk: 'Tạo khối',
+      editChunk: 'Chỉnh sửa khối',
       bulk: 'Hàng loạt',
       selectAll: 'Chọn tất cả',
       enabledSelected: 'Bật đã chọn',
@@ -375,6 +403,9 @@ export default {
         'Nếu có những câu hỏi được đưa ra, việc nhúng phần đó sẽ dựa trên những câu hỏi đó.',
     },
     chat: {
+      chatSupport: 'Hỗ trợ trò chuyện',
+      replyInstantly: 'Chúng tôi thường phản hồi ngay lập tức',
+      typeYourMessage: 'Nhập tin nhắn của bạn...',
       newConversation: 'Cuộc trò chuyện mới',
       createAssistant: 'Tạo trợ lý',
       assistantSetting: 'Cài đặt trợ lý',
@@ -393,7 +424,7 @@ export default {
       assistantAvatar: 'Avatar trợ lý',
       language: 'Ngôn ngữ',
       emptyResponse: 'Phản hồi trống',
-      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến ​​riêng của mình khi không tìm thấy gì, hãy để trống.`,
+      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến riêng của mình khi không tìm thấy gì, hãy để trống.`,
       setAnOpener: 'Đặt lời mở đầu',
       setAnOpenerInitial: `Xin chào! Tôi là trợ lý của bạn, tôi có thể giúp gì cho bạn?`,
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',
@@ -443,8 +474,7 @@ export default {
         'Tương tự như hình phạt hiện diện, điều này làm giảm xu hướng của mô hình lặp lại cùng một từ thường xuyên.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',
-      maxTokensTip:
-        'Điều này đặt độ dài tối đa của đầu ra của mô hình, được đo bằng số lượng token (từ hoặc phần của từ).',
+      maxTokensTip: `Kích thước ngữ cảnh tối đa của mô hình; giá trị không hợp lệ hoặc sai sẽ gây lỗi. Mặc định là 512.`,
       maxTokensInvalidMessage: 'Vui lòng nhập số Token tối đa hợp lệ.',
       maxTokensMinMessage: 'Token tối đa không thể nhỏ hơn 0.',
       quote: 'Hiển thị Trích dẫn',
@@ -502,6 +532,11 @@ export default {
         'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan. Hoạt động tốt với các truy vấn dài nhưng sẽ làm tăng thời gian phản hồi.',
       languageTip:
         'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
+      showChunkMetadata: 'Hiển thị siêu dữ liệu đoạn',
+      showChunkMetadataTip:
+        'Hiển thị siêu dữ liệu tài liệu (tiêu đề, số trang, ngày tải lên, v.v.) bên cạnh các đoạn văn bản được truy xuất',
+      metadataFields: 'Trường siêu dữ liệu',
+      metadataFieldsTip: 'Chọn các trường siêu dữ liệu hiển thị với mỗi đoạn',
     },
     setting: {
       profile: 'Hồ sơ',
@@ -509,8 +544,7 @@ export default {
       profileDescription: 'Cập nhật ảnh và thông tin cá nhân của bạn tại đây.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',
-      maxTokensTip:
-        'Điều này đặt độ dài tối đa của đầu ra của mô hình, được đo bằng số lượng token (từ hoặc phần của từ).',
+      maxTokensTip: `Kích thước ngữ cảnh tối đa của mô hình; giá trị không hợp lệ hoặc sai sẽ gây lỗi. Mặc định là 512.`,
       maxTokensInvalidMessage: 'Vui lòng nhập số Token tối đa hợp lệ.',
       maxTokensMinMessage: 'Token tối đa không thể nhỏ hơn 0.',
       password: 'Mật khẩu',
@@ -548,16 +582,22 @@ export default {
       addedModels: 'Các mô hình đã thêm',
       modelsToBeAdded: 'Các mô hình cần thêm',
       addTheModel: 'Thêm mô hình',
-      apiKey: 'API-Key',
+      apiKey: 'API Key',
       apiKeyMessage:
         'Vui lòng nhập khóa API (đối với mô hình được triển khai cục bộ, bỏ qua điều này).',
       apiKeyTip:
         'Khóa API có thể được lấy bằng cách đăng ký nhà cung cấp LLM tương ứng.',
       showMoreModels: 'Hiển thị thêm mô hình',
       hideModels: 'Ẩn mô hình',
-      baseUrl: 'Base-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
+      siliconBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://api.siliconflow.cn/v1. For international users, use https://api.siliconflow.com/v1',
+      minimaxBaseUrlTip:
+        'Chỉ người dùng quốc tế: dùng https://api.minimax.io/v1.',
+      minimaxBaseUrlPlaceholder:
+        '(Chỉ dành cho người dùng quốc tế, điền https://api.minimax.io/v1)',
       modify: 'Sửa đổi',
       systemModelSettings: 'Đặt mô hình mặc định',
       chatModel: 'Mô hình trò chuyện',
@@ -587,14 +627,25 @@ export default {
       modelType: 'Loại mô hình',
       modelTypeMessage: 'Vui lòng nhập loại mô hình của bạn!',
       addLlmBaseUrl: 'URL cơ sở',
-      baseUrlNameMessage: 'Vui lòng nhập URL cơ sở của bạn!',
+      baseUrlNameMessage: 'Vui lòng nhập URL cơ sở của bạn',
+      paddleocr: {
+        apiUrl: 'URL API PaddleOCR',
+        apiUrlPlaceholder: 'Ví dụ: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'Token truy cập AI Studio',
+        accessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
+        algorithm: 'Thuật toán PaddleOCR',
+        selectAlgorithm: 'Chọn thuật toán',
+        modelNamePlaceholder: 'Ví dụ: paddleocr-from-env-1',
+        modelNameRequired: 'Tên mô hình là bắt buộc',
+        apiUrlRequired: 'URL API PaddleOCR là bắt buộc',
+      },
       vision: 'Có hỗ trợ Tầm nhìn không?',
       ollamaLink: 'Cách tích hợp {{name}}',
       FishAudioLink: 'Cách sử dụng FishAudio',
       TencentCloudLink: 'Cách sử dụng TencentCloud ASR',
       volcModelNameMessage: 'Vui lòng nhập tên mô hình của bạn!',
-      addEndpointID: 'EndpointID của mô hình',
-      endpointIDMessage: 'Vui lòng nhập EndpointID của mô hình của bạn',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Vui lòng nhập Model ID của mô hình',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Vui lòng nhập ARK_API_KEY của bạn',
       addBedrockEngineAK: 'KHÓA TRUY CẬP',
@@ -602,7 +653,7 @@ export default {
       addBedrockSK: 'KHÓA BÍ MẬT',
       bedrockSKMessage: 'Vui lòng nhập KHÓA BÍ MẬT của bạn',
       bedrockRegion: 'Vùng AWS',
-      bedrockRegionMessage: 'Vui lòng chọn!',
+      bedrockRegionMessage: 'Vui lòng chọn',
       'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
       'us-west-1': 'US West (N. California)',
@@ -638,13 +689,9 @@ export default {
       'sa-east-1': 'South America (São Paulo)',
       'us-gov-east-1': 'AWS GovCloud (US-East)',
       'us-gov-west-1': 'AWS GovCloud (US-West)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Vui lòng nhập ID bí mật của bạn',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Vui lòng nhập Khóa bí mật của bạn',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Vui lòng nhập ID bí mật của bạn',
-      addTencentCloudSK: 'TencentCloud Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
       TencentCloudSKMessage: 'Vui lòng nhập Khóa bí mật của bạn',
       SparkModelNameMessage: 'Vui lòng chọn mô hình Spark',
       addSparkAPIPassword: 'Mật khẩu API Spark',
@@ -687,7 +734,7 @@ export default {
       refuse: 'Từ chối',
       teamMembers: 'Thành viên nhóm',
       joinedTeams: 'Nhóm đã tham gia',
-      bedrockModelNameMessage: `Vui lòng nhập tên model của bạn!`,
+      bedrockModelNameMessage: `Vui lòng nhập tên model của bạn`,
       sureDelete: `Bạn có chắc chắn muốn xóa thành viên này không?`,
       quit: `Rời khỏi`,
       sureQuit: `Bạn có chắc chắn muốn rời khỏi nhóm mà bạn đã tham gia không?`,
@@ -695,6 +742,8 @@ export default {
       FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
       modelsToBeAddedTooltip:
         'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
+      dingtalkAITableDescription:
+        'Kết nối với Dingtalk AI Table và đồng bộ hóa bản ghi từ một bảng được chỉ định.',
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -745,7 +794,7 @@ export default {
       directory: 'Thư mục',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:
-        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với demo.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
+        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với cloud.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
       local: 'Tải lên cục bộ',
       s3: 'Tải lên S3',
       preview: 'Xem trước',
@@ -817,15 +866,29 @@ export default {
       baiduDescription: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ www.baidu.com. Thông thường, nó hoạt động như một phần bổ sung cho các cơ sở kiến thức. Top N chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
-        'Một thành phần truy xuất kết quả tìm kiếm từ duckduckgo.com, với TopN xác định số lượng kết quả tìm kiếm. Nó bổ sung cho các cơ sở kiến thức hiện có.',
+        'Một thành phần tìm kiếm trên duckduckgo.com, cho phép bạn chỉ định số lượng kết quả tìm kiếm sử dụng TopN. Nó bổ sung cho các cơ sở kiến thức hiện có.',
       searXNG: 'SearXNG',
       searXNGDescription:
-        'Một thành phần truy xuất kết quả tìm kiếm từ searxng.com, với TopN xác định số lượng kết quả tìm kiếm. Nó bổ sung cho các cơ sở kiến thức hiện có.',
-      channel: 'Kênh',
-      channelTip: `Thực hiện tìm kiếm văn bản hoặc tìm kiếm tin tức trên đầu vào của thành phần`,
-      text: 'Văn bản',
-      news: 'Tin tức',
-      messageHistoryWindowSize: 'Cửa sổ lịch sử tin nhắn',
+        'Một thành phần tìm kiếm thông qua URL phiên bản SearXNG bạn cung cấp. Chỉ định TopN và URL phiên bản.',
+      docGenerator: 'Trình tạo Tài liệu',
+      docGeneratorDescription: `Tạo tệp từ nội dung Markdown.`,
+      subtitle: 'Phụ đề',
+      logoImage: 'Hình ảnh Logo',
+      logoPosition: 'Vị trí Logo',
+      logoWidth: 'Chiều rộng Logo',
+      logoHeight: 'Chiều cao Logo',
+      fontFamily: 'Họ phông chữ',
+      fontSize: 'Kích thước phông chữ',
+      titleFontSize: 'Kích thước phông chữ tiêu đề',
+      pageSize: 'Kích thước trang',
+      orientation: 'Hướng',
+      marginTop: 'Lề trên',
+      marginBottom: 'Lề dưới',
+      filename: 'Tên tệp',
+      outputDirectory: 'Thư mục đầu ra',
+      addPageNumbers: 'Thêm số trang',
+      addTimestamp: 'Thêm dấu thời gian',
+      watermarkText: 'Văn bản watermark',
       messageHistoryWindowSizeTip:
         'Kích thước cửa sổ lịch sử cuộc trò chuyện hiển thị với LLM. Càng lớn càng tốt, nhưng hãy chú ý đến giới hạn tối đa số token của LLM.',
       wikipedia: 'Wikipedia',
@@ -844,11 +907,11 @@ export default {
       relevance: 'Liên quan',
       google: 'Google',
       googleDescription:
-        'Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.google.com/. Thông thường, nó hoạt động như một phần bổ sung cho các cơ sở kiến thức. Top N và SerpApi API key xác định số lượng kết quả tìm kiếm bạn cần điều chỉnh.',
+        'Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.google.com/. Thông thường, nó hoạt động như một phần bổ sung cho các cơ sở kiến thức. Top N và SerpApi API Key xác định số lượng kết quả tìm kiếm bạn cần điều chỉnh.',
       bing: 'Bing',
       bingDescription:
         'Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.bing.com/. Thông thường, nó hoạt động như một phần bổ sung cho các cơ sở kiến thức. Top N và Bing Subscription-Key xác định số lượng kết quả tìm kiếm bạn cần điều chỉnh.',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       country: 'Quốc gia',
       language: 'Ngôn ngữ',
       googleScholar: 'Google Scholar',
@@ -927,7 +990,7 @@ export default {
         'Thành phần này được sử dụng để lấy thông tin thời tiết từ https://www.qweather.com/. Bạn có thể lấy thời tiết, chỉ số, chất lượng không khí.',
       lang: 'Ngôn ngữ',
       type: 'Loại',
-      webApiKey: 'Web API key',
+      webApiKey: 'Web API Key',
       userType: 'Loại người dùng',
       timePeriod: 'Kỳ hạn',
       qWeatherLangOptions: {
@@ -1152,8 +1215,8 @@ export default {
       toEmail: 'Email người nhận',
       smtpServerRequired: 'Vui lòng nhập địa chỉ máy chủ SMTP',
       emailContent: 'Nội dung',
-      smtpServer: 'SMTP Server',
-      smtpPort: 'SMTP Port',
+      smtpServer: 'Máy chủ SMTP',
+      smtpPort: 'Cổng SMTP',
       senderEmailRequired: 'Vui lòng nhập email người gửi',
       authCodeRequired: 'Vui lòng nhập mã xác thực',
       toEmailRequired: 'Vui lòng nhập email người nhận',
@@ -1163,9 +1226,10 @@ export default {
       jsonFormatTip:
         'Thành phần thượng nguồn phải cung cấp chuỗi JSON theo định dạng sau:',
       emailComponent: 'Email',
-      senderEmail: 'Người gửi Email',
-      authCode: 'Mã xác minh',
-      senderName: 'Tên người gửi',
+      senderEmail: 'Địa chỉ người gửi (From)',
+      smtpUsername: 'Tên đăng nhập SMTP',
+      authCode: 'Mật khẩu SMTP / mật khẩu ứng dụng',
+      senderName: 'Tên hiển thị người gửi',
       jsonUploadContentErrorMessage: 'lỗi tệp json',
       contentTip: 'content: Nội dung email (Tùy chọn)',
       subjectTip: 'subject: Tiêu đề email (Tùy chọn)',
@@ -1192,6 +1256,11 @@ export default {
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       runningHintText: 'đang chạy...🕞',
+      canvasCategory: 'Danh mục canvas',
+      tags: 'Thẻ',
+      created: 'Đã tạo',
+      id: 'ID',
+      logTitle: 'Tiêu đề',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1200,6 +1269,15 @@ export default {
       file: 'tệp',
       knowledge: 'kiến thức',
       chat: 'trò chuyện',
+    },
+    language: {
+      english: 'Tiếng Anh',
+      chinese: 'Tiếng Trung',
+      russian: 'Tiếng Nga',
+      bulgarian: 'Tiếng Bulgaria',
+      arabic: 'Tiếng Ả Rập',
+      turkish: 'Tiếng Thổ Nhĩ Kỳ',
+      korean: 'Tiếng Hàn',
     },
   },
 };

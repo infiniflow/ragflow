@@ -8,6 +8,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - cpu
     image: edwardelric233/ragflow:oc9
@@ -23,7 +24,7 @@ services:
     env_file: .env
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
     # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
     # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
     extra_hosts:
@@ -33,6 +34,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - gpu
     image: edwardelric233/ragflow:oc9
@@ -48,7 +50,7 @@ services:
     env_file: .env
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
     # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
     # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
     extra_hosts:

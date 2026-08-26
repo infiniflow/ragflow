@@ -17,7 +17,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useFetchChunk } from '@/hooks/chunk-hooks';
+import { useFetchChunk } from '@/hooks/use-chunk-request';
 import { IModalProps } from '@/interfaces/common';
 import { Trash2 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -57,7 +57,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   });
   const [checked, setChecked] = useState(false);
   const { removeChunk } = useDeleteChunkByIds();
-  const { data } = useFetchChunk(chunkId);
+  const { data } = useFetchChunk(chunkId, doc_id);
   const { t } = useTranslation();
 
   const isTagParser = parserId === 'tag';
@@ -98,7 +98,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   return (
     <Modal
-      title={`${chunkId ? t('common.edit') : t('common.create')} ${t('chunk.chunk')}`}
+      title={t(chunkId ? 'chunk.editChunk' : 'chunk.createChunk')}
       open={true}
       onOk={handleOk}
       onCancel={hideModal}

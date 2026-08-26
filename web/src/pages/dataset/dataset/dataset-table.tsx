@@ -13,7 +13,8 @@ import {
 } from '@tanstack/react-table';
 import * as React from 'react';
 
-import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
+import { EmptyType } from '@/components/empty/constant';
+import Empty from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
@@ -26,23 +27,25 @@ import {
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { getExtension } from '@/utils/document-util';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
+import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import ProcessLogModal from '../process-log-modal';
+import { ChangeParserDialog } from './change-parser-dialog';
 import { useShowLog } from './hooks';
-import { SetMetaDialog } from './set-meta-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
 import { useRenameDocument } from './use-rename-document';
-import { useSaveMeta } from './use-save-meta';
 
 export type DatasetTableProps = Pick<
   ReturnType<typeof useFetchDocumentList>,
   'documents' | 'setPagination' | 'pagination' | 'loading'
 > &
-  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'>;
+  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
+    showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+    bulkOperateBarVisible?: boolean;
+  };
 
 export function DatasetTable({
   documents,
@@ -50,6 +53,8 @@ export function DatasetTable({
   setPagination,
   rowSelection,
   setRowSelection,
+  showManageMetadataModal,
+  bulkOperateBarVisible = false,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -76,21 +81,14 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  const {
-    showSetMetaModal,
-    hideSetMetaModal,
-    setMetaVisible,
-    setMetaLoading,
-    onSetMetaModalOk,
-    metaRecord,
-  } = useSaveMeta();
   const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     showRenameModal,
-    showSetMetaModal,
+    showManageMetadataModal,
     showLog,
+    setRowSelection,
   });
 
   const currentPagination = useMemo(() => {
@@ -111,6 +109,7 @@ export function DatasetTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
+    getRowId: (row) => row.id, // Use document ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     state: {
       sorting,
@@ -124,7 +123,13 @@ export function DatasetTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-222px)]">
+      <Table
+        rootClassName={
+          bulkOperateBarVisible
+            ? 'max-h-[calc(100vh-320px)]'
+            : 'max-h-[calc(100vh-280px)]'
+        }
+      >
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -148,6 +153,8 @@ export function DatasetTable({
             table.getRowModel().rows.map((row) => (
               <TableRow
                 key={row.id}
+                data-testid="document-row"
+                data-doc-name={row.original.name}
                 data-state={row.getIsSelected() && 'selected'}
                 className="group"
               >
@@ -164,13 +171,13 @@ export function DatasetTable({
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                <Empty type={EmptyType.Data} />
               </TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-3">
+      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-8">
         <div className="space-x-2">
           <RAGFlowPagination
             {...pick(pagination, 'current', 'pageSize')}
@@ -182,17 +189,13 @@ export function DatasetTable({
         </div>
       </div>
       {changeParserVisible && (
-        <ChunkMethodDialog
-          documentId={changeParserRecord.id}
-          parserId={changeParserRecord.parser_id}
-          pipelineId={changeParserRecord.pipeline_id}
-          parserConfig={changeParserRecord.parser_config}
-          documentExtension={getExtension(changeParserRecord.name)}
-          onOk={onChangeParserOk}
+        <ChangeParserDialog
+          record={changeParserRecord}
           visible={changeParserVisible}
+          onOk={onChangeParserOk}
           hideModal={hideChangeParserModal}
           loading={changeParserLoading}
-        ></ChunkMethodDialog>
+        />
       )}
 
       {renameVisible && (
@@ -205,14 +208,6 @@ export function DatasetTable({
         ></RenameDialog>
       )}
 
-      {setMetaVisible && (
-        <SetMetaDialog
-          hideModal={hideSetMetaModal}
-          loading={setMetaLoading}
-          onOk={onSetMetaModalOk}
-          initialMetaData={metaRecord.meta_fields}
-        ></SetMetaDialog>
-      )}
       {logVisible && (
         <ProcessLogModal
           title={t('knowledgeDetails.fileLogs')}

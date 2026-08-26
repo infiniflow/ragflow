@@ -1,110 +1,25 @@
-import { useSelectParserList } from '@/hooks/user-setting-hooks';
-import { useCallback, useMemo } from 'react';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 
-const ParserListMap = new Map([
-  [
-    ['pdf'],
-    [
-      'naive',
-      'resume',
-      'manual',
-      'paper',
-      'book',
-      'laws',
-      'presentation',
-      'one',
-      'qa',
-      'knowledge_graph',
-    ],
-  ],
-  [
-    ['doc', 'docx'],
-    [
-      'naive',
-      'resume',
-      'book',
-      'laws',
-      'one',
-      'qa',
-      'manual',
-      'knowledge_graph',
-    ],
-  ],
-  [
-    ['xlsx', 'xls'],
-    ['naive', 'qa', 'table', 'one', 'knowledge_graph'],
-  ],
-  [['ppt', 'pptx'], ['presentation']],
-  [
-    ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff', 'webp', 'svg', 'ico'],
-    ['picture'],
-  ],
-  [
-    ['txt'],
-    [
-      'naive',
-      'resume',
-      'book',
-      'laws',
-      'one',
-      'qa',
-      'table',
-      'knowledge_graph',
-    ],
-  ],
-  [
-    ['csv'],
-    [
-      'naive',
-      'resume',
-      'book',
-      'laws',
-      'one',
-      'qa',
-      'table',
-      'knowledge_graph',
-    ],
-  ],
-  [['md'], ['naive', 'qa', 'knowledge_graph']],
-  [['json'], ['naive', 'knowledge_graph']],
-  [['eml'], ['email']],
-]);
-
-const getParserList = (
-  values: string[],
-  parserList: Array<{
-    value: string;
-    label: string;
-  }>,
-) => {
-  return parserList.filter((x) => values?.some((y) => y === x.value));
-};
-
-export const useFetchParserListOnMount = (documentExtension: string) => {
-  const parserList = useSelectParserList();
-
-  const nextParserList = useMemo(() => {
-    const key = [...ParserListMap.keys()].find((x) =>
-      x.some((y) => y === documentExtension),
-    );
-    if (key) {
-      const values = ParserListMap.get(key);
-      return getParserList(values ?? [], parserList);
-    }
-
-    return getParserList(
-      ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'table'],
-      parserList,
-    );
-  }, [parserList, documentExtension]);
-
-  return { parserList: nextParserList };
-};
+import { useCallback } from 'react';
 
 const hideAutoKeywords = ['qa', 'table', 'resume', 'knowledge_graph', 'tag'];
 
 export const useShowAutoKeywords = () => {
-  const showAutoKeywords = useCallback((selectedTag: string) => {
+  const showAutoKeywords = useCallback((selectedTag: string | undefined) => {
     return hideAutoKeywords.every((x) => selectedTag !== x);
   }, []);
 

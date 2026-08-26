@@ -1,0 +1,396 @@
+{
+  "name": "ZHIPU-AI",
+  "rank": 993,
+  "url": {
+    "default": "https://open.bigmodel.cn/api/paas/v4"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "async_chat": "async/chat/completions",
+    "async_result": "async-result",
+    "embedding": "embeddings",
+    "rerank": "rerank",
+    "ocr": "layout_parsing",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech",
+    "files": "files",
+    "models": "models"
+  },
+  "class": "glm",
+  "models": [
+    {
+      "name": "glm-5.2",
+      "content_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.1",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5-turbo",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5v-turbo",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.7",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.7-flashx",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.6",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.6v-Flash",
+      "content_length": 128000,
+      "max_output": 32768,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.5",
+      "content_length": 128000,
+      "max_output": 96000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.5-x",
+      "content_length": 128000,
+      "max_output": 96000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.5-air",
+      "content_length": 128000,
+      "max_output": 96000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.5-airx",
+      "content_length": 128000,
+      "max_output": 96000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.5-flash",
+      "content_length": 128000,
+      "max_output": 96000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.5v",
+      "content_length": 65536,
+      "max_output": 16384,
+      "model_types": [
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4-plus",
+      "content_length": 128000,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4-0520",
+      "content_length": 128000,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4",
+      "content_length": 128000,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4-airx",
+      "content_length": 8192,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4-air",
+      "content_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4-flash",
+      "content_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4-flashx",
+      "content_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4-long",
+      "content_length": 1000000,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4v",
+      "content_length": 16384,
+      "max_output": 1024,
+      "model_types": [
+        "vision"
+      ]
+    },
+    {
+      "name": "glm-4-9b",
+      "content_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "embedding-2",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 512
+    },
+    {
+      "name": "embedding-3",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 512
+    },
+    {
+      "name": "glm-asr-2512",
+      "max_tokens": 4000,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "glm-tts",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "glm-ocr",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "rerank",
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}

@@ -1,4 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 
 import { FileUploader } from '@/components/file-uploader';
 import { Button } from '@/components/ui/button';
@@ -10,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import message from '@/components/ui/message';
 import { FileMimeType } from '@/constants/common';
 import {
@@ -17,6 +32,7 @@ import {
   startGoogleDriveWebAuth,
 } from '@/services/data-source-service';
 import { Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type GoogleDriveTokenFieldProps = {
   value?: string;
@@ -48,12 +64,58 @@ const describeCredentials = (content?: string) => {
   }
 };
 
+const parseJsonObject = (content?: string): Record<string, any> | null => {
+  if (!content) return null;
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === 'object' && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const extractRedirectUri = (content?: string): string => {
+  const parsed = parseJsonObject(content);
+  if (!parsed) return '';
+
+  if (typeof parsed.redirect_uri === 'string' && parsed.redirect_uri.trim()) {
+    return parsed.redirect_uri.trim();
+  }
+
+  const redirectUris =
+    parsed.web?.redirect_uris ?? parsed.installed?.redirect_uris;
+  if (Array.isArray(redirectUris)) {
+    const firstValidRedirect = redirectUris.find(
+      (item) => typeof item === 'string' && item.trim(),
+    );
+    if (firstValidRedirect) {
+      return firstValidRedirect.trim();
+    }
+  }
+
+  return '';
+};
+
+const withRedirectUri = (credentials: string, redirectUri: string): string => {
+  const trimmedRedirectUri = redirectUri.trim();
+  if (!trimmedRedirectUri) return credentials;
+
+  const parsed = parseJsonObject(credentials);
+  if (!parsed) return credentials;
+
+  return JSON.stringify({
+    ...parsed,
+    redirect_uri: trimmedRedirectUri,
+  });
+};
+
 const GoogleDriveTokenField = ({
   value,
   onChange,
 }: GoogleDriveTokenFieldProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [pendingCredentials, setPendingCredentials] = useState<string>('');
+  const [redirectUri, setRedirectUri] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [webAuthLoading, setWebAuthLoading] = useState(false);
   const [webFlowId, setWebFlowId] = useState<string | null>(null);
@@ -87,6 +149,12 @@ const GoogleDriveTokenField = ({
     webFlowIdRef.current = webFlowId;
   }, [webFlowId]);
 
+  useEffect(() => {
+    if (!dialogOpen) {
+      setRedirectUri(extractRedirectUri(value));
+    }
+  }, [dialogOpen, value]);
+
   const credentialSummary = useMemo(() => describeCredentials(value), [value]);
   const hasVerifiedTokens = useMemo(
     () => Boolean(value && credentialHasRefreshToken(value)),
@@ -116,7 +184,11 @@ const GoogleDriveTokenField = ({
           flow_id: flowId,
         });
         if (data.code === 0 && data.data?.credentials) {
-          onChange(data.data.credentials);
+          const rawCredentials =
+            typeof data.data.credentials === 'string'
+              ? data.data.credentials
+              : JSON.stringify(data.data.credentials);
+          onChange(withRedirectUri(rawCredentials, redirectUri));
           setPendingCredentials('');
           message.success('Google Drive credentials verified.');
           resetDialog(false);
@@ -136,12 +208,12 @@ const GoogleDriveTokenField = ({
         }
         message.error(data.message || 'Authorization failed.');
         clearWebState();
-      } catch (err) {
+      } catch {
         message.error('Unable to retrieve authorization result.');
         clearWebState();
       }
     },
-    [clearWebState, onChange, resetDialog],
+    [clearWebState, onChange, redirectUri, resetDialog],
   );
 
   useEffect(() => {
@@ -196,8 +268,10 @@ const GoogleDriveTokenField = ({
           }
           setFiles([file]);
           clearWebState();
+          const extractedRedirectUri = extractRedirectUri(text);
+          setRedirectUri(extractedRedirectUri);
           if (credentialHasRefreshToken(text)) {
-            onChange(text);
+            onChange(withRedirectUri(text, extractedRedirectUri));
             setPendingCredentials('');
             message.success('OAuth credentials uploaded.');
             return;
@@ -221,11 +295,17 @@ const GoogleDriveTokenField = ({
       message.error('No Google credential file detected.');
       return;
     }
+    if (!redirectUri.trim()) {
+      message.error('Please fill in Redirect URI.');
+      return;
+    }
+    const trimmedRedirectUri = redirectUri.trim();
     setWebAuthLoading(true);
     clearWebState();
     try {
       const { data } = await startGoogleDriveWebAuth({
         credentials: pendingCredentials,
+        redirect_uri: trimmedRedirectUri,
       });
       if (data.code === 0 && data.data?.authorization_url) {
         const flowId = data.data.flow_id;
@@ -248,12 +328,12 @@ const GoogleDriveTokenField = ({
       } else {
         message.error(data.message || 'Failed to start browser authorization.');
       }
-    } catch (err) {
+    } catch {
       message.error('Failed to start browser authorization.');
     } finally {
       setWebAuthLoading(false);
     }
-  }, [clearWebState, pendingCredentials]);
+  }, [clearWebState, pendingCredentials, redirectUri]);
 
   const handleManualWebCheck = useCallback(() => {
     if (!webFlowId) {
@@ -273,7 +353,7 @@ const GoogleDriveTokenField = ({
   }, [resetDialog]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex w-full flex-col gap-3">
       {(credentialSummary ||
         hasVerifiedTokens ||
         hasUploadedButUnverified ||
@@ -307,18 +387,23 @@ const GoogleDriveTokenField = ({
         onValueChange={handleValueChange}
         accept={{ '*.json': [FileMimeType.Json] }}
         maxFileCount={1}
+        showFolderTab={false}
         description="Upload your Google OAuth JSON file."
       />
 
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && dialogOpen) {
             handleCancel();
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Complete Google verification</DialogTitle>
             <DialogDescription>
@@ -326,8 +411,15 @@ const GoogleDriveTokenField = ({
               Run the verification flow once to mint reusable tokens.
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Redirect URI</label>
+              <Input
+                value={redirectUri}
+                placeholder="https://example.com/google-drive/oauth/callback"
+                onChange={(e) => setRedirectUri(e.target.value)}
+              />
+            </div>
             <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
               <div className="text-sm font-semibold text-foreground">
                 Authorize in browser
@@ -370,7 +462,6 @@ const GoogleDriveTokenField = ({
               </div>
             </div>
           </div>
-
           <DialogFooter className="pt-2">
             <Button variant="ghost" onClick={handleCancel}>
               Cancel

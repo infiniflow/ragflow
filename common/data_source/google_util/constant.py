@@ -49,11 +49,11 @@ MISSING_SCOPES_ERROR_STR = "client not authorized for any of the scopes requeste
 SCOPE_INSTRUCTIONS = ""
 
 
-GOOGLE_DRIVE_WEB_OAUTH_POPUP_TEMPLATE = """<!DOCTYPE html>
+WEB_OAUTH_POPUP_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Google Drive Authorization</title>
+  <title>{title}</title>
   <style>
     body {{
       font-family: Arial, sans-serif;

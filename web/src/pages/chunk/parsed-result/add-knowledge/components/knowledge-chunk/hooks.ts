@@ -1,11 +1,11 @@
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import {
   useCreateChunk,
   useDeleteChunk,
   useSelectChunkList,
-} from '@/hooks/chunk-hooks';
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
-import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { IChunk } from '@/interfaces/database/knowledge';
+} from '@/hooks/use-chunk-request';
+import { IChunk } from '@/interfaces/database/dataset';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';

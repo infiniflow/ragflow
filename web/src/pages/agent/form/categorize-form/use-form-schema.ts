@@ -30,3 +30,7 @@ export function useCreateCategorizeFormSchema() {
 
   return FormSchema;
 }
+
+export type CreateCategorizeFormSchema = ReturnType<
+  typeof useCreateCategorizeFormSchema
+>;

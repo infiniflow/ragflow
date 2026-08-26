@@ -14,12 +14,11 @@
 #  limitations under the License.
 #
 import argparse
+import asyncio
 import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-
-import trio
 
 from common import settings
 from rag.flow.pipeline import Pipeline
@@ -57,5 +56,5 @@ if __name__ == "__main__":
 
     # queue_dataflow(dsl=open(args.dsl, "r").read(), tenant_id=args.tenant_id, doc_id=args.doc_id, task_id="xxxx", flow_id="xxx", priority=0)
 
-    trio.run(pipeline.run)
+    asyncio.run(pipeline.run())
     thr.result()

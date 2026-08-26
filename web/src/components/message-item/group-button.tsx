@@ -1,21 +1,44 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
+import { cn } from '@/lib/utils';
+import { removeThinkSection } from '@/utils/chat';
 import {
-  DeleteOutlined,
-  DislikeOutlined,
-  LikeOutlined,
-  PauseCircleOutlined,
-  SoundOutlined,
-  SyncOutlined,
-} from '@ant-design/icons';
-import { Radio, Tooltip } from 'antd';
-import { useCallback } from 'react';
+  LucidePauseCircle,
+  LucideRefreshCw,
+  LucideThumbsDown,
+  LucideThumbsUp,
+  LucideTrash2,
+  LucideVolume2,
+} from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import FeedbackModal from './feedback-modal';
+import FeedbackDialog from '../feedback-dialog';
+import { PromptDialog } from '../prompt-dialog';
+import { Button } from '../ui/button';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
-import PromptModal from './prompt-modal';
 
 interface IProps {
   messageId: string;
@@ -44,54 +67,92 @@ export const AssistantGroupButton = ({
   const { t } = useTranslation();
   const { handleRead, ref, isPlaying } = useSpeech(content, audioBinary);
 
+  const copyText = useMemo(() => removeThinkSection(content), [content]);
+
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
   }, [onFeedbackOk]);
 
   return (
     <>
-      <Radio.Group size="small">
-        <Radio.Button value="a">
-          <CopyToClipboard text={content}></CopyToClipboard>
-        </Radio.Button>
+      <div
+        className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+        role="toolbar"
+      >
+        <CopyToClipboard
+          text={copyText}
+          className="border-0"
+          size="icon-xs"
+          avoidButtonWrapper
+        />
+
         {showLoudspeaker && (
-          <Radio.Button value="b" onClick={handleRead}>
-            <Tooltip title={t('chat.read')}>
-              {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="transparent"
+                  size="icon-xs"
+                  className="border-0"
+                  onClick={handleRead}
+                >
+                  <span>
+                    {isPlaying ? <LucidePauseCircle /> : <LucideVolume2 />}
+                  </span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.read')}</TooltipContent>
             </Tooltip>
+
             <audio src="" ref={ref}></audio>
-          </Radio.Button>
+          </>
         )}
         {showLikeButton && (
           <>
-            <Radio.Button value="c" onClick={handleLike}>
-              <LikeOutlined />
-            </Radio.Button>
-            <Radio.Button value="d" onClick={showModal}>
-              <DislikeOutlined />
-            </Radio.Button>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={handleLike}
+            >
+              <LucideThumbsUp />
+            </Button>
+
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={showModal}
+            >
+              <LucideThumbsDown />
+            </Button>
           </>
         )}
         {prompt && (
-          <Radio.Button value="e" onClick={showPromptModal}>
+          <Button
+            onClick={showPromptModal}
+            variant="transparent"
+            size="icon-xs"
+            className="border-0"
+          >
             <PromptIcon style={{ fontSize: '16px' }} />
-          </Radio.Button>
+          </Button>
         )}
-      </Radio.Group>
+      </div>
       {visible && (
-        <FeedbackModal
+        <FeedbackDialog
           visible={visible}
           hideModal={hideModal}
           onOk={onFeedbackOk}
           loading={loading}
-        ></FeedbackModal>
+        ></FeedbackDialog>
       )}
       {promptVisible && (
-        <PromptModal
+        <PromptDialog
           visible={promptVisible}
           hideModal={hidePromptModal}
           prompt={prompt}
-        ></PromptModal>
+        ></PromptDialog>
       )}
     </>
   );
@@ -118,28 +179,46 @@ export const UserGroupButton = ({
   const { t } = useTranslation();
 
   return (
-    <Radio.Group size="small">
-      <Radio.Button value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
-      </Radio.Button>
+    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <CopyToClipboard
+        text={content}
+        className="border-0"
+        size="icon-xs"
+        avoidButtonWrapper
+      />
+
       {regenerateMessage && (
-        <Radio.Button
-          value="b"
-          onClick={regenerateMessage}
-          disabled={sendLoading}
-        >
-          <Tooltip title={t('chat.regenerate')}>
-            <SyncOutlined spin={sendLoading} />
-          </Tooltip>
-        </Radio.Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={regenerateMessage}
+              disabled={sendLoading}
+            >
+              <LucideRefreshCw className={cn(sendLoading && 'animate-spin')} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('chat.regenerate')}</TooltipContent>
+        </Tooltip>
       )}
       {removeMessageById && (
-        <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
-          <Tooltip title={t('common.delete')}>
-            <DeleteOutlined spin={loading} />
-          </Tooltip>
-        </Radio.Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              size="icon-xs"
+              className="border-0"
+              onClick={onRemoveMessage}
+              disabled={loading}
+            >
+              <LucideTrash2 />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.delete')}</TooltipContent>
+        </Tooltip>
       )}
-    </Radio.Group>
+    </div>
   );
 };

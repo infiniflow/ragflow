@@ -109,12 +109,12 @@
               }
           }
         },
-        "downstream": ["Splitter:0"],
+        "downstream": ["TokenChunker:0"],
         "upstream": ["Begin"]
     },
-    "Splitter:0": {
+    "TokenChunker:0": {
         "obj": {
-            "component_name": "Splitter",
+            "component_name": "TokenChunker",
             "params": {
               "chunk_token_size": 512,
               "delimiters": ["\n"],
@@ -131,9 +131,8 @@
             }
         },
         "downstream": [],
-        "upstream": ["Chunker:0"]
+        "upstream": ["TokenChunker:0"]
     }
   },
   "path": []
 }
-

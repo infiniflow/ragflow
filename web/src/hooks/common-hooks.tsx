@@ -1,5 +1,20 @@
-import { ExclamationCircleFilled } from '@ant-design/icons';
-import { App } from 'antd';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { Modal } from '@/components/ui/modal/modal';
 import isEqual from 'lodash/isEqual';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -61,7 +76,9 @@ export function useDynamicSVGImport(
     setLoading(true);
     const importIcon = async (): Promise<void> => {
       try {
-        ImportedIconRef.current = (await import(name)).ReactComponent;
+        ImportedIconRef.current = (
+          await import(/* @vite-ignore */ name)
+        ).ReactComponent;
         onCompleted?.(name, ImportedIconRef.current);
       } catch (err: any) {
         onError?.(err);
@@ -77,6 +94,7 @@ export function useDynamicSVGImport(
 }
 
 interface IProps {
+  header?: string | ReactNode;
   title?: string;
   content?: ReactNode;
   onOk?: (...args: any[]) => any;
@@ -84,20 +102,28 @@ interface IProps {
 }
 
 export const useShowDeleteConfirm = () => {
-  const { modal } = App.useApp();
   const { t } = useTranslation();
-
   const showDeleteConfirm = useCallback(
-    ({ title, content, onOk, onCancel }: IProps): Promise<number> => {
+    ({ title, content, onOk, onCancel, header }: IProps): Promise<number> => {
       return new Promise((resolve, reject) => {
-        modal.confirm({
-          title: title ?? t('common.deleteModalTitle'),
-          icon: <ExclamationCircleFilled />,
-          content,
-          okText: t('common.yes'),
-          okType: 'danger',
-          cancelText: t('common.no'),
-          async onOk() {
+        Modal.show({
+          title: header,
+          closable: !!header,
+          visible: true,
+          onVisibleChange: () => {
+            Modal.destroy();
+          },
+          footer: null,
+          maskClosable: false,
+          okText: t('common.delete'),
+          cancelText: t('common.cancel'),
+          style: {
+            width: '450px',
+          },
+          zIndex: 1000,
+          okButtonClassName:
+            'bg-state-error text-white hover:bg-state-error hover:text-white',
+          onOk: async () => {
             try {
               const ret = await onOk?.();
               resolve(ret);
@@ -106,13 +132,22 @@ export const useShowDeleteConfirm = () => {
               reject(error);
             }
           },
-          onCancel() {
+          onCancel: () => {
             onCancel?.();
+            Modal.destroy();
           },
+          children: (
+            <div className="flex flex-col justify-start items-start mt-3">
+              <div className="text-lg font-medium">
+                {title ?? t('common.deleteModalTitle')}
+              </div>
+              <div className="text-base font-normal">{content}</div>
+            </div>
+          ),
         });
       });
     },
-    [t, modal],
+    [t],
   );
 
   return showDeleteConfirm;

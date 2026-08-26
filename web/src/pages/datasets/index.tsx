@@ -1,13 +1,19 @@
 import { CardContainer } from '@/components/card-container';
+import { EmptyCardType } from '@/components/empty/constant';
+import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
+import { useQueryClient } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 import { DatasetCard } from './dataset-card';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { useSaveKnowledge } from './hooks';
@@ -26,13 +32,14 @@ export default function Datasets() {
 
   const {
     kbs,
-    total,
+    total_datasets,
     pagination,
     setPagination,
     handleInputChange,
     searchString,
     filterValue,
     handleFilterSubmit,
+    loading,
   } = useFetchNextKnowledgeListByPage();
 
   const owners = useSelectOwners();
@@ -52,44 +59,97 @@ export default function Datasets() {
     },
     [setPagination],
   );
+  useGoToPreviousPageOnEmpty(kbs?.length, loading);
+  const [searchUrl, setSearchUrl] = useSearchParams();
+  const isCreate = searchUrl.get('isCreate') === 'true';
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (isCreate) {
+      queryClient.invalidateQueries({ queryKey: ['tenantInfo'] });
+      showModal();
+      searchUrl.delete('isCreate');
+      setSearchUrl(searchUrl);
+    }
+  }, [isCreate, showModal, searchUrl, setSearchUrl, queryClient]);
 
   return (
-    <section className="py-4 flex-1 flex flex-col">
-      <ListFilterBar
-        title={t('header.dataset')}
-        searchString={searchString}
-        onSearchChange={handleInputChange}
-        value={filterValue}
-        filters={owners}
-        onChange={handleFilterSubmit}
-        className="px-8"
-        icon={'datasets'}
-      >
-        <Button onClick={showModal}>
-          <Plus className=" size-2.5" />
-          {t('knowledgeList.createKnowledgeBase')}
-        </Button>
-      </ListFilterBar>
-      <div className="flex-1">
-        <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
-          {kbs.map((dataset) => {
-            return (
-              <DatasetCard
-                dataset={dataset}
-                key={dataset.id}
-                showDatasetRenameModal={showDatasetRenameModal}
-              ></DatasetCard>
-            );
-          })}
-        </CardContainer>
-      </div>
-      <div className="mt-8 px-8">
-        <RAGFlowPagination
-          {...pick(pagination, 'current', 'pageSize')}
-          total={total}
-          onChange={handlePageChange}
-        ></RAGFlowPagination>
-      </div>
+    <>
+      {loading && !kbs?.length ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="datasets-list"
+        >
+          <Spin size="large" />
+        </article>
+      ) : kbs?.length || searchString ? (
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="datasets-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
+            <ListFilterBar
+              title={t('header.dataset')}
+              searchString={searchString}
+              onSearchChange={handleInputChange}
+              value={filterValue}
+              filters={owners}
+              onChange={handleFilterSubmit}
+              icon={'datasets'}
+            >
+              <Button onClick={showModal}>
+                <Plus className="size-[1em]" />
+                {t('knowledgeList.createKnowledgeBase')}
+              </Button>
+            </ListFilterBar>
+          </header>
+
+          {kbs?.length ? (
+            <>
+              <CardContainer className="flex-1 overflow-auto px-5">
+                {kbs.map((dataset) => (
+                  <DatasetCard
+                    dataset={dataset}
+                    key={dataset.id}
+                    showDatasetRenameModal={showDatasetRenameModal}
+                  />
+                ))}
+              </CardContainer>
+
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={total_datasets}
+                  onChange={handlePageChange}
+                />
+              </footer>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <EmptyAppCard
+                showIcon
+                size="large"
+                className="w-[480px] p-14"
+                isSearch
+                type={EmptyCardType.Dataset}
+                onClick={() => showModal()}
+              />
+            </div>
+          )}
+        </article>
+      ) : (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="datasets-list"
+        >
+          <EmptyAppCard
+            showIcon
+            size="large"
+            className="w-[480px] p-14"
+            type={EmptyCardType.Dataset}
+            onClick={() => showModal()}
+          />
+        </article>
+      )}
       {visible && (
         <DatasetCreatingDialog
           hideModal={hideModal}
@@ -105,6 +165,6 @@ export default function Datasets() {
           loading={datasetRenameLoading}
         ></RenameDialog>
       )}
-    </section>
+    </>
   );
 }

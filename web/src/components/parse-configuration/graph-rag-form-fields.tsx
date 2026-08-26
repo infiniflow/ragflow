@@ -1,16 +1,35 @@
-import { DocumentParserType } from '@/constants/knowledge';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { FormLayout } from '@/constants/form';
+import { DocumentParserType, GenerateType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import {
-  GenerateLogButton,
-  GenerateType,
-  IGenerateLogButtonProps,
-} from '@/pages/dataset/dataset/generate-button/generate';
+import { useOwnerTenantId } from '@/pages/dataset/contexts/knowledge-base-context';
+import { LLMModelItem } from '@/pages/dataset/setting/python/configuration/common-item';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { FormContainer } from '../form-container';
+import {
+  GenerateLogButton,
+  IGenerateLogButtonProps,
+} from '../generate-log-button';
+import { SliderInputFormField } from '../slider-input-form-field';
 import {
   FormControl,
   FormField,
@@ -34,6 +53,7 @@ export const showTagItems = (parserId: DocumentParserType) => {
 const enum MethodValue {
   General = 'general',
   Light = 'light',
+  NER = 'ner',
 }
 
 export const excludedParseMethods = [
@@ -106,14 +126,15 @@ export function UseGraphRagFormField({
 }
 
 // The three types "table", "resume" and "one" do not display this configuration.
-const GraphRagItems = ({
+const GraphRagItems = function GraphRagItems({
   marginBottom = false,
   className = 'p-10',
   data,
   onDelete,
-}: GraphRagItemsProps) => {
+}: GraphRagItemsProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
+  const ownerTenantId = useOwnerTenantId();
 
   const useRaptor = useWatch({
     control: form.control,
@@ -121,10 +142,12 @@ const GraphRagItems = ({
   });
 
   const methodOptions = useMemo(() => {
-    return [MethodValue.Light, MethodValue.General].map((x) => ({
-      value: x,
-      label: upperFirst(x),
-    }));
+    return [MethodValue.Light, MethodValue.General /*, MethodValue.NER*/].map(
+      (x) => ({
+        value: x,
+        label: x === MethodValue.NER ? 'NER' : upperFirst(x),
+      }),
+    );
   }, []);
 
   const renderWideTooltip = useCallback(
@@ -136,13 +159,22 @@ const GraphRagItems = ({
 
   return (
     <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
+      <LLMModelItem
+        label={t('globalIndexModel')}
+        name={'parser_config.llm_id'}
+        ownerTenantId={ownerTenantId}
+      />
       <UseGraphRagFormField
         data={data}
         onDelete={onDelete}
       ></UseGraphRagFormField>
       {useRaptor && (
         <>
-          <EntityTypesFormField name="parser_config.graphrag.entity_types"></EntityTypesFormField>
+          <EntityTypesFormField
+            name="parser_config.graphrag.entity_types"
+            addButtonTestId="ds-settings-graph-entity-types-add-btn"
+            inputTestId="ds-settings-graph-entity-types-input"
+          ></EntityTypesFormField>
           <FormField
             control={form.control}
             name="parser_config.graphrag.method"
@@ -166,6 +198,7 @@ const GraphRagItems = ({
                       <RAGFlowSelect
                         {...field}
                         options={methodOptions}
+                        triggerTestId="ds-settings-graph-method-select"
                       ></RAGFlowSelect>
                     </FormControl>
                   </div>
@@ -177,6 +210,19 @@ const GraphRagItems = ({
               </FormItem>
             )}
           />
+
+          <SliderInputFormField
+            name="parser_config.graphrag.batch_chunk_token_size"
+            label={t('graphRagBatchChunkTokenSize')}
+            tooltip={t('graphRagBatchChunkTokenSizeTip')}
+            max={8196}
+            min={512}
+            step={1}
+            defaultValue={4096}
+            layout={FormLayout.Horizontal}
+            sliderTestId="ds-settings-graph-batch-chunk-token-size-slider"
+            numberInputTestId="ds-settings-graph-batch-chunk-token-size-input"
+          ></SliderInputFormField>
 
           <FormField
             control={form.control}
@@ -195,6 +241,7 @@ const GraphRagItems = ({
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
+                        data-testid="ds-settings-graph-entity-resolution-switch"
                       ></Switch>
                     </FormControl>
                   </div>
@@ -224,6 +271,7 @@ const GraphRagItems = ({
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
+                        data-testid="ds-settings-graph-community-reports-switch"
                       ></Switch>
                     </FormControl>
                   </div>

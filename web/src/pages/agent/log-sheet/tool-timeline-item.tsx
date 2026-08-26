@@ -14,12 +14,10 @@ import {
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { Operator } from '../constant';
-import OperatorIcon, { SVGIconMap } from '../operator-icon';
-import {
-  JsonViewer,
-  toLowerCaseStringAndDeleteChar,
-  typeMap,
-} from './workflow-timeline';
+import { JsonViewer } from '../form/components/json-viewer';
+import OperatorIcon, { SVGIconMap } from '@/components/operator-icon';
+import { getToolOperatorName } from './tool-name';
+import { toLowerCaseStringAndDeleteChar, typeMap } from './workflow-timeline';
 type IToolIcon =
   | Operator.ArXiv
   | Operator.GitHub
@@ -28,8 +26,13 @@ type IToolIcon =
   | Operator.Google
   | Operator.GoogleScholar
   | Operator.PubMed
+  | Operator.BGPT
   | Operator.TavilyExtract
   | Operator.TavilySearch
+  | Operator.QueritContents
+  | Operator.QueritSearch
+  | Operator.KeenableSearch
+  | Operator.YouComSearch
   | Operator.Wikipedia
   | Operator.YahooFinance
   | Operator.WenCai
@@ -74,7 +77,7 @@ const ToolTimelineItem = ({
   return (
     <>
       {filteredTools?.map((tool, idx) => {
-        const toolName = capitalizeWords(tool.tool_name, '_').join('');
+        const toolName = getToolOperatorName(tool.tool_name);
 
         return (
           <TimelineItem

@@ -7,22 +7,30 @@ import {
   AgentGlobalsSysQueryWithBrace,
   CodeTemplateStrMap,
   ComparisonOperator,
+  JsonSchemaDataType,
   Operator,
   ProgrammingLanguage,
+  SwitchLogicOperator,
   SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
-export { Operator } from '@/constants/agent';
+export {
+  AgentDialogueMode,
+  AgentStructuredOutputField,
+  BeginId,
+  JsonSchemaDataType,
+  Operator,
+  initialBeginValues,
+} from '@/constants/agent';
 
 export * from './pipeline';
 
-export enum AgentDialogueMode {
-  Conversational = 'conversational',
-  Task = 'task',
-}
-
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
+import {
+  buildDefaultCodeOutput,
+  serializeCodeOutputContract,
+} from '../form/code-form/utils';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -36,6 +44,7 @@ export enum PromptRole {
 }
 
 import {
+  Braces,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -43,10 +52,6 @@ import {
   ToggleLeft,
   WrapText,
 } from 'lucide-react';
-
-export const BeginId = 'begin';
-
-export const SwitchLogicOperatorOptions = ['and', 'or'];
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -57,7 +62,6 @@ export const AgentOperatorList = [
   Operator.Categorize,
   Operator.Message,
   Operator.RewriteQuestion,
-  Operator.KeywordExtract,
   Operator.Switch,
   Operator.Iteration,
   Operator.WaitingDialogue,
@@ -75,22 +79,22 @@ export const DataOperationsOperatorOptions = [
 
 export const SwitchElseTo = 'end_cpn_ids';
 
-const initialQueryBaseValues = {
-  query: [],
-};
+export enum RetrievalFrom {
+  Dataset = 'dataset',
+  Memory = 'memory',
+}
 
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
-  top_k: 1024,
+  rerank_candidates_count: 64,
   kb_ids: [],
   rerank_id: '',
   empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
-  use_kg: false,
-  toc_enhance: false,
   cross_languages: [],
+  retrieval_from: RetrievalFrom.Dataset,
   outputs: {
     formalized_content: {
       type: 'string',
@@ -101,11 +105,6 @@ export const initialRetrievalValues = {
       value: [],
     },
   },
-};
-
-export const initialBeginValues = {
-  mode: AgentDialogueMode.Conversational,
-  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const initialRewriteQuestionValues = {
@@ -135,11 +134,31 @@ export const initialMessageValues = {
   content: [''],
 };
 
-export const initialKeywordExtractValues = {
-  ...initialLlmBaseValues,
-  top_n: 3,
-  ...initialQueryBaseValues,
+export const initialExcelProcessorValues = {
+  input_files: [],
+  operation: 'read',
+  sheet_selection: 'all',
+  merge_strategy: 'concat',
+  join_on: '',
+  transform_data: '',
+  output_format: 'xlsx',
+  output_filename: 'output',
+  outputs: {
+    data: {
+      type: 'object',
+      value: {},
+    },
+    summary: {
+      type: 'string',
+      value: '',
+    },
+    markdown: {
+      type: 'string',
+      value: '',
+    },
+  },
 };
+
 export const initialDuckValues = {
   top_n: 10,
   channel: Channel.Text,
@@ -172,6 +191,54 @@ export const initialSearXNGValues = {
   },
 };
 
+export enum KeenableMode {
+  Pro = 'pro',
+  Realtime = 'realtime',
+}
+
+export enum YouComFreshness {
+  Any = 'any',
+  Day = 'day',
+  Week = 'week',
+  Month = 'month',
+  Year = 'year',
+}
+
+export const initialYouComValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  freshness: YouComFreshness.Any,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export const initialKeenableValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  mode: KeenableMode.Pro,
+  site: '',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
@@ -192,6 +259,23 @@ export const initialPubMedValues = {
     formalized_content: {
       value: '',
       type: 'string',
+    },
+  },
+};
+
+export const initialBGPTValues = {
+  top_n: 10,
+  api_key: '',
+  days_back: '',
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
     },
   },
 };
@@ -271,14 +355,6 @@ export const initialGithubValues = {
   },
 };
 
-export const initialQWeatherValues = {
-  web_apikey: 'xxx',
-  type: 'weather',
-  user_type: 'free',
-  time_period: 'now',
-  ...initialQueryBaseValues,
-};
-
 export const initialExeSqlValues = {
   sql: '',
   db_type: 'mysql',
@@ -303,7 +379,7 @@ export const initialExeSqlValues = {
 export const initialSwitchValues = {
   conditions: [
     {
-      logical_operator: SwitchLogicOperatorOptions[0],
+      logical_operator: SwitchLogicOperator.And,
       items: [
         {
           operator: SwitchOperatorOptions[0].value,
@@ -327,8 +403,6 @@ export const initialWenCaiValues = {
   },
 };
 
-export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
-
 export const initialYahooFinanceValues = {
   stock_code: '',
   info: true,
@@ -343,22 +417,6 @@ export const initialYahooFinanceValues = {
       type: 'string',
     },
   },
-};
-
-export const initialJin10Values = {
-  type: 'flash',
-  secret_key: 'xxx',
-  flash_type: '1',
-  contain: '',
-  filter: '',
-  ...initialQueryBaseValues,
-};
-
-export const initialTuShareValues = {
-  token: 'xxx',
-  src: 'eastmoney',
-  start_date: '2024-01-01 09:00:00',
-  ...initialQueryBaseValues,
 };
 
 export const initialNoteValues = {
@@ -399,6 +457,7 @@ export const initialEmailValues = {
   smtp_server: '',
   smtp_port: 465,
   email: '',
+  smtp_username: '',
   password: '',
   sender_name: '',
   to_email: '',
@@ -417,10 +476,11 @@ export const initialIterationValues = {
   items_ref: '',
   outputs: {},
 };
+
 export const initialIterationStartValues = {
   outputs: {
     item: {
-      type: 'unkown',
+      type: 'unknown',
     },
     index: {
       type: 'integer',
@@ -435,12 +495,10 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
-  outputs: {},
+  outputs: serializeCodeOutputContract(buildDefaultCodeOutput()),
 };
 
 export const initialWaitingDialogueValues = {};
-
-export const AgentStructuredOutputField = 'structured';
 
 export const initialAgentValues = {
   ...initialLlmBaseValues,
@@ -459,21 +517,13 @@ export const initialAgentValues = {
   tools: [],
   mcp: [],
   cite: true,
+  showStructuredOutput: false,
   outputs: {
-    // structured_output: {
-    //   topic: {
-    //     type: 'string',
-    //     description:
-    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-    //     enum: ['general', 'news'],
-    //     default: 'general',
-    //   },
-    // },
     content: {
       type: 'string',
       value: '',
     },
-    [AgentStructuredOutputField]: {},
+    // [AgentStructuredOutputField]: {},
   },
 };
 
@@ -545,6 +595,48 @@ export const initialTavilyValues = {
   },
 };
 
+export const initialQueritValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  count: 10,
+  chunks_per_doc: 3,
+  site_include: [],
+  site_exclude: [],
+  time_range: '',
+  country_include: [],
+  language_include: [],
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
+export enum QueritContentFormat {
+  Text = 'text',
+  Markdown = 'markdown',
+  Html = 'html',
+}
+
+export const initialQueritContentsValues = {
+  api_key: '',
+  urls: '',
+  format: QueritContentFormat.Markdown,
+  crawl_timeout: 10,
+  extras_meta: false,
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
 export enum TavilyExtractDepth {
   Basic = 'basic',
   Advanced = 'advanced',
@@ -595,10 +687,47 @@ export const initialDataOperationsValues = {
     },
   },
 };
+export enum SortMethod {
+  Asc = 'asc',
+  Desc = 'desc',
+}
+
+export enum ListOperations {
+  Nth = 'nth',
+  Head = 'head',
+  Tail = 'tail',
+  Filter = 'filter',
+  Sort = 'sort',
+  DropDuplicates = 'drop_duplicates',
+}
+
+export const initialListOperationsValues = {
+  query: '',
+  operations: ListOperations.Nth,
+  strict: false,
+  outputs: {
+    // result: {
+    //   type: 'Array<?>',
+    // },
+    // first: {
+    //   type: '?',
+    // },
+    // last: {
+    //   type: '?',
+    // },
+  },
+};
 
 export const initialVariableAssignerValues = {};
 
 export const initialVariableAggregatorValues = { outputs: {}, groups: [] };
+
+export const initialLoopValues = {
+  loop_variables: [],
+  loop_termination_condition: [],
+  maximum_loop_count: 10,
+  outputs: {},
+};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -618,8 +747,8 @@ export const CategorizeAnchorPointPositions = [
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [Operator.Relevant],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
+  [Operator.Begin]: [Operator.Begin],
+  [Operator.Categorize]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Message]: [
     Operator.Begin,
@@ -628,35 +757,27 @@ export const RestrictedUpstreamMap = {
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
-  [Operator.Relevant]: [Operator.Begin],
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
     Operator.RewriteQuestion,
-    Operator.Relevant,
-  ],
-  [Operator.KeywordExtract]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Relevant,
   ],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
+  [Operator.BGPT]: [Operator.Begin, Operator.Retrieval],
   [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
-  [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
+  [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
-  [Operator.AkShare]: [Operator.Begin],
   [Operator.YahooFinance]: [Operator.Begin],
-  [Operator.Jin10]: [Operator.Begin],
-  [Operator.TuShare]: [Operator.Begin],
   [Operator.Crawler]: [Operator.Begin],
   [Operator.Note]: [],
   [Operator.Invoke]: [Operator.Begin],
@@ -667,19 +788,29 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.QueritContents]: [Operator.Begin],
+  [Operator.QueritSearch]: [Operator.Begin],
   [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
   [Operator.Tool]: [Operator.Begin],
   [Operator.Placeholder]: [Operator.Begin],
   [Operator.DataOperations]: [Operator.Begin],
+  [Operator.ListOperations]: [Operator.Begin],
+  [Operator.VariableAssigner]: [Operator.Begin],
+  [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
-  [Operator.Splitter]: [Operator.Begin],
-  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.TokenChunker]: [Operator.Begin],
+  [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
+  [Operator.Compiler]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
-  [Operator.VariableAssigner]: [Operator.Begin],
+  [Operator.Loop]: [Operator.Begin],
+  [Operator.LoopStart]: [Operator.Begin],
+  [Operator.ExitLoop]: [Operator.Begin],
+  [Operator.DocGenerator]: [Operator.Begin],
+  [Operator.Browser]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -687,37 +818,36 @@ export const NodeMap = {
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Message]: 'messageNode',
-  [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
-  [Operator.KeywordExtract]: 'keywordNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
+  [Operator.BGPT]: 'ragNode',
   [Operator.ArXiv]: 'ragNode',
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
-  [Operator.QWeather]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
+  [Operator.KeenableSearch]: 'ragNode',
+  [Operator.YouComSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
-  [Operator.AkShare]: 'ragNode',
   [Operator.YahooFinance]: 'ragNode',
-  [Operator.Jin10]: 'ragNode',
-  [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
   [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
+  [Operator.Iteration]: 'iterationNode',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.QueritContents]: 'ragNode',
+  [Operator.QueritSearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',
   [Operator.TavilyExtract]: 'ragNode',
@@ -725,12 +855,20 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
-  [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'splitterNode',
+  [Operator.TokenChunker]: 'chunkerNode',
+  [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
+  [Operator.Compiler]: 'compilationNode',
   [Operator.DataOperations]: 'dataOperationsNode',
+  [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
   [Operator.VariableAggregator]: 'variableAggregatorNode',
+  [Operator.Loop]: 'loopNode',
+  [Operator.LoopStart]: 'loopStartNode',
+  [Operator.ExitLoop]: 'exitLoopNode',
+  [Operator.ExcelProcessor]: 'ragNode',
+  [Operator.DocGenerator]: 'ragNode',
+  [Operator.Browser]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -740,6 +878,7 @@ export enum BeginQueryType {
   File = 'file',
   Integer = 'integer',
   Boolean = 'boolean',
+  Object = 'object',
 }
 
 export const BeginQueryTypeIconMap = {
@@ -749,6 +888,7 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.File]: CloudUpload,
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
+  [BeginQueryType.Object]: Braces,
 };
 
 export const NoDebugOperatorsList = [
@@ -762,18 +902,22 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
+  Operator.Compiler,
+  Operator.Tool,
+  Operator.Loop,
 ];
 
 export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
+  Operator.Compiler,
 ];
 
 export enum NodeHandleId {
@@ -807,10 +951,242 @@ export const DROPDOWN_HORIZONTAL_OFFSET = 28;
 export const DROPDOWN_VERTICAL_OFFSET = 74;
 export const PREVENT_CLOSE_DELAY = 300;
 
-export enum JsonSchemaDataType {
+export enum VariableAssignerLogicalOperator {
+  Overwrite = 'overwrite',
+  Clear = 'clear',
+  Set = 'set',
+}
+
+export enum VariableAssignerLogicalNumberOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Set = VariableAssignerLogicalOperator.Set,
+  Add = '+=',
+  Subtract = '-=',
+  Multiply = '*=',
+  Divide = '/=',
+}
+
+export const VariableAssignerLogicalNumberOperatorLabelMap = {
+  [VariableAssignerLogicalNumberOperator.Add]: 'add',
+  [VariableAssignerLogicalNumberOperator.Subtract]: 'subtract',
+  [VariableAssignerLogicalNumberOperator.Multiply]: 'multiply',
+  [VariableAssignerLogicalNumberOperator.Divide]: 'divide',
+};
+
+export enum VariableAssignerLogicalArrayOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Append = 'append',
+  Extend = 'extend',
+  RemoveFirst = 'remove_first',
+  RemoveLast = 'remove_last',
+}
+
+export enum ExportFileType {
+  // PDF = 'pdf',
+  HTML = 'html',
+  Markdown = 'md',
+  DOCX = 'docx',
+  Excel = 'xlsx',
+}
+
+export enum TypesWithArray {
   String = 'string',
   Number = 'number',
   Boolean = 'boolean',
-  Array = 'array',
   Object = 'object',
+  ArrayString = 'array<string>',
+  ArrayNumber = 'array<number>',
+  ArrayBoolean = 'array<boolean>',
+  ArrayObject = 'array<object>',
 }
+
+export const ArrayFields = [
+  JsonSchemaDataType.Array,
+  TypesWithArray.ArrayBoolean,
+  TypesWithArray.ArrayNumber,
+  TypesWithArray.ArrayString,
+  TypesWithArray.ArrayObject,
+];
+
+export enum InputMode {
+  Constant = 'constant',
+  Variable = 'variable',
+}
+
+export enum LoopTerminationComparisonOperator {
+  Contains = ComparisonOperator.Contains,
+  NotContains = ComparisonOperator.NotContains,
+  StartWith = ComparisonOperator.StartWith,
+  EndWith = ComparisonOperator.EndWith,
+  Is = 'is',
+  IsNot = 'is not',
+}
+
+export const LoopTerminationStringComparisonOperator = [
+  LoopTerminationComparisonOperator.Contains,
+  LoopTerminationComparisonOperator.NotContains,
+  LoopTerminationComparisonOperator.StartWith,
+  LoopTerminationComparisonOperator.EndWith,
+  LoopTerminationComparisonOperator.Is,
+  LoopTerminationComparisonOperator.IsNot,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
+
+export const LoopTerminationBooleanComparisonOperator = [
+  LoopTerminationComparisonOperator.Is,
+  LoopTerminationComparisonOperator.IsNot,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
+// object or object array
+export const LoopTerminationObjectComparisonOperator = [
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
+
+// string array or number array
+export const LoopTerminationStringArrayComparisonOperator = [
+  LoopTerminationComparisonOperator.Contains,
+  LoopTerminationComparisonOperator.NotContains,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
+
+export const LoopTerminationBooleanArrayComparisonOperator = [
+  LoopTerminationComparisonOperator.Is,
+  LoopTerminationComparisonOperator.IsNot,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
+
+export const LoopTerminationNumberComparisonOperator = [
+  ComparisonOperator.Equal,
+  ComparisonOperator.NotEqual,
+  ComparisonOperator.GreatThan,
+  ComparisonOperator.LessThan,
+  ComparisonOperator.GreatEqual,
+  ComparisonOperator.LessEqual,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
+
+export const LoopTerminationStringComparisonOperatorMap = {
+  [TypesWithArray.String]: LoopTerminationStringComparisonOperator,
+  [TypesWithArray.Number]: LoopTerminationNumberComparisonOperator,
+  [TypesWithArray.Boolean]: LoopTerminationBooleanComparisonOperator,
+  [TypesWithArray.Object]: LoopTerminationObjectComparisonOperator,
+  [TypesWithArray.ArrayString]: LoopTerminationStringArrayComparisonOperator,
+  [TypesWithArray.ArrayNumber]: LoopTerminationStringArrayComparisonOperator,
+  [TypesWithArray.ArrayBoolean]: LoopTerminationBooleanArrayComparisonOperator,
+  [TypesWithArray.ArrayObject]: LoopTerminationObjectComparisonOperator,
+};
+
+export enum AgentVariableType {
+  Begin = 'begin',
+  Conversation = 'conversation',
+}
+
+export const initialDocGeneratorValues = {
+  output_format: 'pdf',
+  content: '',
+  filename: '',
+  header_text: '',
+  footer_text: '',
+  watermark_text: '',
+  add_page_numbers: true,
+  add_timestamp: true,
+  include_download_info_in_content: false,
+  font_size: 12,
+  outputs: {
+    doc_id: { type: 'string' },
+    filename: { type: 'string' },
+    mime_type: { type: 'string' },
+    size: { type: 'number' },
+    download: { type: 'string' },
+  },
+};
+
+export const initialBrowserValues = {
+  ...initialLlmBaseValues,
+  prompts: `{${AgentGlobals.SysQuery}}`,
+  max_steps: 30,
+  headless: true,
+  enable_default_extensions: false,
+  chromium_sandbox: false,
+  persist_session: true,
+  upload_sources: '',
+  outputs: {
+    content: { type: 'string', value: '' },
+    downloaded_files: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export enum WebhookMethod {
+  Post = 'POST',
+  Get = 'GET',
+  Put = 'PUT',
+  Patch = 'PATCH',
+  Delete = 'DELETE',
+  Head = 'HEAD',
+}
+
+export enum WebhookContentType {
+  ApplicationJson = 'application/json',
+  MultipartFormData = 'multipart/form-data',
+  ApplicationXWwwFormUrlencoded = 'application/x-www-form-urlencoded',
+  TextPlain = 'text/plain',
+  ApplicationOctetStream = 'application/octet-stream',
+}
+
+export enum WebhookExecutionMode {
+  Immediately = 'Immediately',
+  Streaming = 'Streaming',
+}
+
+export enum WebhookSecurityAuthType {
+  None = 'none',
+  Token = 'token',
+  Basic = 'basic',
+  Jwt = 'jwt',
+}
+
+export enum WebhookRateLimitPer {
+  Second = 'second',
+  Minute = 'minute',
+  Hour = 'hour',
+  Day = 'day',
+}
+
+export const RateLimitPerList = Object.values(WebhookRateLimitPer);
+
+export const WebhookMaxBodySize = ['1MB', '5MB', '10MB'];
+
+export enum WebhookRequestParameters {
+  File = VariableType.File,
+  String = TypesWithArray.String,
+  Number = TypesWithArray.Number,
+  Boolean = TypesWithArray.Boolean,
+  Object = TypesWithArray.Object,
+}
+
+export enum WebhookStatus {
+  Testing = 'testing',
+  Live = 'live',
+  Stopped = 'stopped',
+}
+
+// Map BeginQueryType to TypesWithArray
+export const BeginQueryTypeMap = {
+  [BeginQueryType.Line]: TypesWithArray.String,
+  [BeginQueryType.Paragraph]: TypesWithArray.String,
+  [BeginQueryType.Options]: TypesWithArray.ArrayString,
+  [BeginQueryType.File]: 'File',
+  [BeginQueryType.Integer]: TypesWithArray.Number,
+  [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+  [BeginQueryType.Object]: TypesWithArray.Object,
+};
+
+export const VariableRegex = /{([^{}]*)}/g;

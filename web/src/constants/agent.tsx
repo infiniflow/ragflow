@@ -1,5 +1,26 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { Circle, CircleSlash2 } from 'lucide-react';
+import {
+  Circle,
+  CircleDashed,
+  CircleDotDashed,
+  CircleSlash2,
+} from 'lucide-react';
 import { ChatVariableEnabledField, variableEnabledFieldMap } from './chat';
 
 export enum ProgrammingLanguage {
@@ -27,6 +48,8 @@ export enum AgentGlobals {
   SysUserId = 'sys.user_id',
   SysConversationTurns = 'sys.conversation_turns',
   SysFiles = 'sys.files',
+  SysHistory = 'sys.history',
+  SysDate = 'sys.date',
 }
 
 export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;
@@ -58,24 +81,12 @@ export enum AgentQuery {
   Category = 'category',
 }
 
-export enum DataflowOperator {
-  Begin = 'File',
-  Note = 'Note',
-  Parser = 'Parser',
-  Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
-  Extractor = 'Extractor',
-}
-
 export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
   Message = 'Message',
-  Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
-  KeywordExtract = 'KeywordExtract',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
@@ -84,14 +95,10 @@ export enum Operator {
   Bing = 'Bing',
   GoogleScholar = 'GoogleScholar',
   GitHub = 'GitHub',
-  QWeather = 'QWeather',
   ExeSQL = 'ExeSQL',
   Switch = 'Switch',
   WenCai = 'WenCai',
-  AkShare = 'AkShare',
   YahooFinance = 'YahooFinance',
-  Jin10 = 'Jin10',
-  TuShare = 'TuShare',
   Note = 'Note',
   Crawler = 'Crawler',
   Invoke = 'Invoke',
@@ -104,19 +111,32 @@ export enum Operator {
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
   TavilyExtract = 'TavilyExtract',
+  QueritContents = 'QueritContents',
+  QueritSearch = 'QueritSearch',
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  BGPT = 'BGPT',
+  KeenableSearch = 'KeenableSearch',
+  YouComSearch = 'YouComSearch',
+  DocGenerator = 'DocGenerator',
+  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
+  ListOperations = 'ListOperations',
   VariableAssigner = 'VariableAssigner',
   VariableAggregator = 'VariableAggregator',
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
+  TokenChunker = 'TokenChunker',
+  TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
+  Compiler = 'Compiler',
+  Loop = 'Loop',
+  LoopStart = 'LoopItem',
+  ExitLoop = 'ExitLoop',
+  ExcelProcessor = 'ExcelProcessor',
 }
 
 export enum ComparisonOperator {
@@ -132,6 +152,8 @@ export enum ComparisonOperator {
   EndWith = 'end with',
   Empty = 'empty',
   NotEmpty = 'not empty',
+  In = 'in',
+  NotIn = 'not in',
 }
 
 export const SwitchOperatorOptions = [
@@ -167,4 +189,103 @@ export const SwitchOperatorOptions = [
     label: 'notEmpty',
     icon: <CircleSlash2 className="size-4" />,
   },
+  {
+    value: ComparisonOperator.In,
+    label: 'in',
+    icon: <CircleDotDashed className="size-4" />,
+  },
+  {
+    value: ComparisonOperator.NotIn,
+    label: 'notIn',
+    icon: <CircleDashed className="size-4" />,
+  },
 ];
+
+export const AgentStructuredOutputField = 'structured';
+
+export enum JsonSchemaDataType {
+  String = 'string',
+  Number = 'number',
+  Boolean = 'boolean',
+  Array = 'array',
+  Object = 'object',
+}
+
+export enum SwitchLogicOperator {
+  And = 'and',
+  Or = 'or',
+}
+
+export const WebhookJWTAlgorithmList = [
+  'hs256',
+  'hs384',
+  'hs512',
+  'rs256',
+  'rs384',
+  'rs512',
+  'es256',
+  'es384',
+  'es512',
+  'ps256',
+  'ps384',
+  'ps512',
+  'none',
+] as const;
+
+export enum AgentDialogueMode {
+  Conversational = 'conversational',
+  Task = 'task',
+  Webhook = 'Webhook',
+}
+
+export const initialBeginValues = {
+  mode: AgentDialogueMode.Conversational,
+  prologue: `Hi! I'm your assistant. What can I do for you?`,
+};
+
+export const BeginId = 'begin';
+
+export const EmptyDsl = {
+  graph: {
+    nodes: [
+      {
+        id: BeginId,
+        type: 'beginNode',
+        position: {
+          x: 50,
+          y: 200,
+        },
+        data: {
+          label: 'Begin',
+          name: 'begin',
+          form: initialBeginValues,
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+    ],
+    edges: [],
+  },
+  components: {
+    begin: {
+      obj: {
+        component_name: 'Begin',
+        params: {},
+      },
+      downstream: [], // other edge target is downstream, edge source is current node id
+      upstream: [], // edge source is upstream, edge target is current node id
+    },
+  },
+  retrieval: [], // reference
+  history: [],
+  path: [],
+  variables: [],
+  globals: {
+    [AgentGlobals.SysQuery]: '',
+    [AgentGlobals.SysUserId]: '',
+    [AgentGlobals.SysConversationTurns]: 0,
+    [AgentGlobals.SysFiles]: [],
+    [AgentGlobals.SysHistory]: [],
+    [AgentGlobals.SysDate]: '',
+  },
+};

@@ -2,21 +2,22 @@ import { EmbedContainer } from '@/components/embed-container';
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
-import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
+import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
-import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
-import { useSendButtonDisabled } from '@/pages/chat/hooks';
+import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
 import React, { forwardRef, useCallback } from 'react';
 import {
   useGetSharedChatSearchParams,
+  useSendButtonDisabled,
   useSendNextSharedMessage,
 } from '../hooks/use-send-shared-message';
 import { ParameterDialog } from './parameter-dialog';
@@ -25,13 +26,15 @@ const ChatContainer = () => {
   const {
     sharedId: conversationId,
     locale,
+    theme,
     visibleAvatar,
   } = useGetSharedChatSearchParams();
+  useSyncThemeFromParams(theme);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
-  const { uploadCanvasFile, loading } =
-    useUploadCanvasFileWithProgress(conversationId);
+  const { uploadAgentFile, loading } =
+    useUploadAgentFileWithProgress(conversationId);
   const {
     addEventList,
     setCurrentMessageId,
@@ -61,10 +64,9 @@ const ChatContainer = () => {
     resetSession,
   } = useSendNextSharedMessage(addEventList);
 
-  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+  const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
-    canvasId: conversationId as string,
   });
   const sendDisabled = useSendButtonDisabled(value);
 
@@ -77,15 +79,15 @@ const ChatContainer = () => {
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
-        const ret = await uploadCanvasFile({ files, options });
+        const ret = await uploadAgentFile({ files, options });
         appendUploadResponseList(ret.data, files);
       },
-      [appendUploadResponseList, uploadCanvasFile],
+      [appendUploadResponseList, uploadAgentFile],
     );
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale, { persist: false });
     }
   }, [locale, visibleAvatar]);
 
@@ -119,11 +121,12 @@ const ChatContainer = () => {
         title={inputsData.title}
         avatar={inputsData.avatar}
         handleReset={handleReset}
+        hideReset={sendLoading}
       >
         <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
           <div
             className={cn(
-              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6',
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto md:w-5/6',
             )}
             ref={messageContainerRef}
           >
@@ -183,20 +186,21 @@ const ChatContainer = () => {
             <div ref={scrollRef} />
           </div>
           {isTaskMode || (
-            <div className="flex w-full justify-center mb-8">
-              <div className="w-5/6">
+            <div className="flex w-full justify-center md:mb-8">
+              <div className="w-full md:w-5/6">
                 <NextMessageInput
                   isShared
                   value={value}
-                  disabled={hasError || isWaitting}
-                  sendDisabled={sendDisabled || isWaitting}
+                  disabled={hasError || isWaiting}
+                  sendDisabled={sendDisabled || isWaiting}
+                  resize="vertical"
                   conversationId={conversationId}
                   onInputChange={handleInputChange}
                   onPressEnter={handlePressEnter}
                   sendLoading={sendLoading}
                   stopOutputMessage={stopOutputMessage}
                   onUpload={handleUploadFile}
-                  isUploading={loading || isWaitting}
+                  isUploading={loading || isWaiting}
                 ></NextMessageInput>
               </div>
             </div>
@@ -204,12 +208,12 @@ const ChatContainer = () => {
         </div>
       </EmbedContainer>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
       {parameterDialogVisible && (
         <ParameterDialog

@@ -1,6 +1,7 @@
 import { omit, pick } from 'lodash';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
+import { getQueritAgentInitialValues } from './querit-agent-initial-values';
 import { useInitializeOperatorParams } from './use-add-node';
 
 export function useAgentToolInitialValues() {
@@ -20,6 +21,10 @@ export function useAgentToolInitialValues() {
           return {
             api_key: '',
           };
+        case Operator.QueritSearch:
+          return getQueritAgentInitialValues(initialValues);
+        case Operator.QueritContents:
+          return { api_key: '' };
         case Operator.ExeSQL:
           return omit(initialValues, 'sql');
         case Operator.Bing:
@@ -33,6 +38,7 @@ export function useAgentToolInitialValues() {
             'smtp_server',
             'smtp_port',
             'email',
+            'smtp_username',
             'password',
             'sender_name',
           );
@@ -50,6 +56,8 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'top_n', 'sort_by');
         case Operator.PubMed:
           return pick(initialValues, 'top_n', 'email');
+        case Operator.BGPT:
+          return pick(initialValues, 'top_n', 'api_key', 'days_back');
         case Operator.GitHub:
           return pick(initialValues, 'top_n');
         case Operator.WenCai:
@@ -58,6 +66,10 @@ export function useAgentToolInitialValues() {
           return {};
         case Operator.SearXNG:
           return pick(initialValues, 'searxng_url', 'top_n');
+        case Operator.KeenableSearch:
+          return pick(initialValues, 'api_key', 'mode', 'site', 'top_n');
+        case Operator.YouComSearch:
+          return pick(initialValues, 'api_key', 'freshness', 'top_n');
 
         default:
           return initialValues;

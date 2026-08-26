@@ -44,16 +44,9 @@ module.exports = {
         'colors-outline-neutral-standard':
           'var(--colors-outline-neutral-standard)',
 
-        'colors-text-core-standard': 'var(--colors-text-core-standard)',
         'colors-text-neutral-strong': 'var(--colors-text-neutral-strong)',
         'colors-text-neutral-standard': 'var(--colors-text-neutral-standard)',
-        'colors-text-neutral-weak': 'var(--colors-text-neutral-weak)',
-        'colors-text-functional-danger': 'var(--colors-text-functional-danger)',
-        'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
-        'colors-text-persist-light': 'var(--colors-text-persist-light)',
-        'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
 
-        'background-badge': 'var(--background-badge)',
         'text-badge': 'var(--text-badge)',
         'text-title': 'var(--text-title)',
         'text-sub-title': 'var(--text-sub-title)',
@@ -61,7 +54,6 @@ module.exports = {
         'text-title-invert': 'var(--text-title-invert)',
         'background-header-bar': 'var(--background-header-bar)',
         'background-card': 'var(--background-card)',
-        'background-note': 'var(--background-note)',
         'background-highlight': 'var(--background-highlight)',
 
         'input-border': 'var(--input-border)',
@@ -91,7 +83,6 @@ module.exports = {
           DEFAULT: 'rgb(var(--text-secondary-inverse) / <alpha-value>)',
         },
         'text-disabled': 'var(--text-disabled)',
-        'text-input-tip': 'var(--text-input-tip)',
         'border-default': 'var(--border-default)',
         'border-accent': 'var(--border-accent)',
         'border-button': 'var(--border-button)',
@@ -115,9 +106,7 @@ module.exports = {
         'team-group': 'var(--team-group)',
         'team-member': 'var(--team-member)',
         'team-department': 'var(--team-department)',
-        'bg-group': 'var(--bg-group)',
         'bg-member': 'var(--bg-member)',
-        'bg-department': 'var(--bg-department)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
@@ -147,32 +136,9 @@ module.exports = {
           DEFAULT: 'var(--background-inverse-standard)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
-        backgroundCoreWeak: {
-          DEFAULT: 'var(--background-core-weak)',
-          foreground: 'var(--background-core-weak-foreground)',
-        },
-        'colors-background-inverse-standard': {
-          DEFAULT: 'var(--colors-background-inverse-standard)',
-          foreground: 'var(--colors-background-inverse-standard-foreground)',
-        },
-        'colors-background-inverse-standard': {
-          DEFAULT: 'var(--colors-background-inverse-standard)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-inverse-strong': {
-          DEFAULT: 'var(--colors-background-inverse-strong)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
+        backgroundCoreWeak: 'var(--background-core-weak)',
         'colors-background-neutral-standard': {
           DEFAULT: 'var(--colors-background-neutral-standard)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-neutral-strong': {
-          DEFAULT: 'var(--colors-background-neutral-strong)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
-        'colors-background-neutral-weak': {
-          DEFAULT: 'var(--colors-background-neutral-weak)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
         sidebar: {
@@ -191,9 +157,18 @@ module.exports = {
           'linear-gradient(104deg, rgb(var(--text-primary)) 30%, var(--metallic) 50%, rgb(var(--text-primary)) 70%)',
       },
       borderRadius: {
-        lg: `var(--radius)`,
-        md: `calc(var(--radius) - 2px)`,
-        sm: 'calc(var(--radius) - 4px)',
+        px: '1px',
+
+        '4xl': '1rem' /* 16px */,
+        '3xl': '0.75rem' /* 12px */,
+        '2xl': '0.625rem' /* 10px */,
+        xl: '0.5rem' /* 8px */,
+        lg: '0.4375rem' /* 7px */,
+        DEFAULT: '0.375rem' /* 6px */,
+        sm: '0.3125rem' /* 5px */,
+        xs: '0.25rem' /* 4px */,
+        '2xs': '0.1875rem' /* 3px */,
+        '3xs': '0.125' /* 2px */,
       },
       fontFamily: {
         sans: ['var(--font-sans)', ...fontFamily.sans],
@@ -211,11 +186,25 @@ module.exports = {
           '0%,70%,100%': { opacity: '1' },
           '20%,50%': { opacity: '0' },
         },
+        'spin-reverse': {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(-360deg)' },
+        },
+        'bell-shake': {
+          '0%,25%': { transform: 'rotate(0)', transformOrigin: 'center 25% ' },
+          '3.125%': { transform: 'rotate(-12.5deg)' },
+          '9.375%': { transform: 'rotate(11deg)' },
+          '15.625%': { transform: 'rotate(-9.5deg)' },
+          '21.875%': { transform: 'rotate(7.5deg)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         'caret-blink': 'caret-blink 1.25s ease-out infinite',
+        'spin-reverse': 'spin-reverse 1s linear infinite',
+        'bell-shake':
+          'bell-shake 2s 1s cubic-bezier(0.33, 1, 0.68, 1) infinite',
       },
     },
   },
@@ -223,5 +212,7 @@ module.exports = {
     require('tailwindcss-animate'),
     require('@tailwindcss/line-clamp'),
     require('tailwind-scrollbar'),
+    require('@tailwindcss/container-queries'),
+    require('@tailwindcss/typography'),
   ],
 };

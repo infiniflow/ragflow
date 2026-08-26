@@ -1,25 +1,22 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import Spotlight from '@/components/spotlight';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { PropsWithChildren } from 'react';
-
-export const UserSettingHeader = ({
-  name,
-  description,
-}: {
-  name: string;
-  description?: string;
-}) => {
-  return (
-    <>
-      <header className="flex flex-col gap-1 justify-between items-start p-0">
-        <div className="text-2xl font-medium text-text-primary">{name}</div>
-        {description && (
-          <div className="text-sm text-text-secondary ">{description}</div>
-        )}
-      </header>
-      {/* <Separator className="border-border-button bg-border-button h-[0.5px]" /> */}
-    </>
-  );
-};
 
 export function Title({ children }: PropsWithChildren) {
   return <span className="font-bold text-xl">{children}</span>;
@@ -34,11 +31,17 @@ export function ProfileSettingWrapperCard({
   children,
 }: ProfileSettingWrapperCardProps) {
   return (
-    <Card className="w-full border-border-button bg-transparent relative border-[0.5px]">
-      <CardHeader className="border-b-[0.5px] border-border-button p-5 ">
+    <Card
+      as="article"
+      className="relative w-full border-border-button bg-transparent border-0.5 flex flex-col"
+    >
+      <CardHeader className="flex-0 border-b-0.5 border-border-button p-5">
         {header}
       </CardHeader>
-      <CardContent className="p-5">{children}</CardContent>
+
+      <CardContent className="flex-1 h-0 p-0">{children}</CardContent>
+
+      <Spotlight />
     </Card>
   );
 }

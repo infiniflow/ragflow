@@ -48,10 +48,11 @@ const JsonSchemaVisualizer: FC<JsonSchemaVisualizerProps> = ({
 
     try {
       const parsedJson = JSON.parse(value);
-      if (onChange) {
+      if (onChange && typeof parsedJson !== 'number') {
         onChange(parsedJson);
       }
     } catch (_error) {
+      console.error(_error);
       // Monaco will show the error inline, no need for additional error handling
     }
   };

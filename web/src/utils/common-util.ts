@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { LLMFactory } from '@/constants/llm';
 import { IFactory } from '@/interfaces/database/llm';
 import isObject from 'lodash/isObject';
@@ -7,10 +23,16 @@ export const isFormData = (data: unknown): data is FormData => {
   return data instanceof FormData;
 };
 
-const excludedFields = ['img2txt_id', 'mcpServers'];
+const excludedFields: Array<string | RegExp> = [
+  'img2txt_id',
+  'mcpServers',
+  'image_base64',
+];
 
 const isExcludedField = (key: string) => {
-  return excludedFields.includes(key);
+  return excludedFields.some((excl) =>
+    excl instanceof RegExp ? excl.test(key) : excl === key,
+  );
 };
 
 export const convertTheKeysOfTheObjectToSnake = (data: unknown) => {
@@ -37,6 +59,7 @@ export const formatNumberWithThousandsSeparator = (numberStr: string) => {
 };
 
 const orderFactoryList = [
+  LLMFactory.AIMLAPI,
   LLMFactory.OpenAI,
   LLMFactory.Moonshot,
   LLMFactory.PPIO,
@@ -46,6 +69,7 @@ const orderFactoryList = [
   LLMFactory.Ai302,
   LLMFactory.CometAPI,
   LLMFactory.DeerAPI,
+  LLMFactory.JiekouAI,
 ];
 
 export const sortLLmFactoryListBySpecifiedOrder = (list: IFactory[]) => {
@@ -244,4 +268,9 @@ export function parseColorToRGB(color: string): [number, number, number] {
 export function parseColorToRGBA(color: string, opcity = 1): string {
   const [r, g, b] = parseColorToRGB(color);
   return `rgba(${r},${g},${b},${opcity})`;
+}
+
+export function middleEllipsis(str: string, front = 12, back = 8) {
+  if (str.length <= front + back) return str;
+  return `${str.slice(0, front)}…${str.slice(-back)}`;
 }

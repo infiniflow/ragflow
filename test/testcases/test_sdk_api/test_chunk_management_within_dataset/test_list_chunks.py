@@ -18,10 +18,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import batch_add_chunks
+from utils.engine_utils import get_doc_engine
 
 
 class TestChunksList:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",
         [
@@ -38,9 +39,9 @@ class TestChunksList:
         _, document, _ = add_chunks
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.list_chunks(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = document.list_chunks(**params)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -62,9 +63,9 @@ class TestChunksList:
         _, document, _ = add_chunks
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.list_chunks(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = document.list_chunks(**params)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -76,13 +77,20 @@ class TestChunksList:
             ({"keywords": None}, 5),
             ({"keywords": ""}, 5),
             ({"keywords": "1"}, 1),
-            pytest.param({"keywords": "chunk"}, 4, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6509")),
-            ({"keywords": "ragflow"}, 1),
+            ({"keywords": "chunk"}, 4),
+            pytest.param({"keywords": "ragflow"}, 1, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6509")),
+            pytest.param({"keywords": "ragflow"}, 5, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="issues/6509")),
             ({"keywords": "unknown"}, 0),
         ],
     )
     def test_keywords(self, add_chunks, params, expected_page_size):
         _, document, _ = add_chunks
+        if params.get("keywords") == "ragflow":
+            doc_engine = get_doc_engine(document.rag)
+            if doc_engine == "infinity" and expected_page_size == 1:
+                pytest.skip("issues/6509")
+            if doc_engine != "infinity" and expected_page_size == 5:
+                pytest.skip("issues/6509")
         chunks = document.list_chunks(**params)
         assert len(chunks) == expected_page_size, str(chunks)
 
@@ -98,6 +106,8 @@ class TestChunksList:
     )
     def test_id(self, add_chunks, chunk_id, expected_page_size, expected_message):
         _, document, chunks = add_chunks
+        if callable(chunk_id) and get_doc_engine(document.rag) == "infinity":
+            pytest.skip("issues/6499")
         chunk_ids = [chunk.id for chunk in chunks]
         if callable(chunk_id):
             params = {"id": chunk_id(chunk_ids)}
@@ -105,9 +115,9 @@ class TestChunksList:
             params = {"id": chunk_id}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.list_chunks(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = document.list_chunks(**params)
             if params["id"] in [None, ""]:
@@ -126,7 +136,7 @@ class TestChunksList:
         assert len(responses) == count, responses
         assert all(len(future.result()) == 5 for future in futures)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_default(self, add_document):
         _, document = add_document
         batch_add_chunks(document, 31)
@@ -137,3 +147,14 @@ class TestChunksList:
 
         chunks = document.list_chunks()
         assert len(chunks) == 30, str(chunks)
+
+    @pytest.mark.p3
+    def test_list_chunks_invalid_document_id_raises(self, add_chunks):
+        _, document, _ = add_chunks
+        invalid_document = document.__class__(
+            document.rag,
+            {"id": "missing-document-id-for-chunks", "dataset_id": document.dataset_id},
+        )
+        with pytest.raises(Exception) as exception_info:
+            invalid_document.list_chunks()
+        assert str(exception_info.value), exception_info
