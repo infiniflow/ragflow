@@ -354,9 +354,9 @@ def test_boundaryless_run_is_hard_split():
 
 
 # --------------------------------------------------------------------------- #
-# 7. PDF positions: plan A - first sub-chunk keeps coordinates, rest empty    #
+# 7. PDF positions: every sub-chunk keeps the source coordinates              #
 # --------------------------------------------------------------------------- #
-def test_position_plan_a_first_subchunk_keeps_coordinates():
+def test_position_all_subchunks_keep_coordinates():
     body = "。".join(f"S{i:02d}" for i in range(12)) + "。"
     items = [{"text": body, "doc_type_kwd": "text", "positions": [[1, 10, 200, 50, 80]]}]
     chunks = _run(
@@ -368,9 +368,8 @@ def test_position_plan_a_first_subchunk_keeps_coordinates():
     )
 
     assert len(chunks) > 1
-    assert chunks[0].get("position_int") == [[1, 10, 200, 50, 80]], "first sub-chunk must keep coordinates"
-    for ck in chunks[1:]:
-        assert "position_int" not in ck, "only the first sub-chunk should carry coordinates"
+    for ck in chunks:
+        assert ck.get("position_int") == [[1, 10, 200, 50, 80]], "every sub-chunk must keep the source coordinates"
 
 
 # --------------------------------------------------------------------------- #
