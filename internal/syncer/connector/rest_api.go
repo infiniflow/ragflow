@@ -1115,11 +1115,12 @@ type restAPIItemIterator struct {
 	perPage   int
 	cursor    string
 	finished  bool
-	lastPos   *restAPISyncCursor
+	lastPos   *restAPISync
+  CursorseenCursors map[string]struct{}
 }
 
 func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
-	it := &restAPIItemIterator{c: c}
+	it := &restAPIItemIterator{c: c, seenCursors: map[string]struct{}{}}
 	if perPage, err := c.resolvePageSize(); err == nil {
 		it.perPage = perPage
 	} else {
@@ -1141,6 +1142,9 @@ func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
 		it.limit = it.perPage
 	}
 	it.cursor = strings.TrimSpace(stringConfig(c.cfg.PaginationConfig["initial_cursor"]))
+	if it.cursor != "" {
+		it.seenCursors[it.cursor] = struct{}{}
+	}
 	return it
 }
 
@@ -1182,7 +1186,8 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	}
 
 	items := restAPIExtractItems(response, it.c.cfg.ItemsPath)
-	if len(items) == 0 {
+	hasNext, reportsHasNext := restAPIExtractHasNextPage(response, it.c.cfg.PaginationConfig)
+	if len(items) == 0 && !(it.c.cfg.PaginationType == restAPIPaginationCursor && reportsHasNext && hasNext) {
 		it.finished = true
 		return nil, nil
 	}
@@ -1204,10 +1209,17 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 			it.offset += it.limit
 		}
 	case restAPIPaginationCursor:
+		if reportsHasNext && !hasNext {
+			it.finished = true
+			break
+		}
 		next := restAPIExtractNextCursor(response, it.c.cfg.PaginationConfig)
 		if next == "" {
 			it.finished = true
+		} else if _, repeated := it.seenCursors[next]; repeated {
+			it.finished = true
 		} else {
+			it.seenCursors[next] = struct{}{}
 			it.cursor = next
 		}
 	}
@@ -1290,6 +1302,19 @@ func restAPIExtractItems(response any, itemsPath string) []map[string]any {
 		}
 	}
 	return out
+}
+
+func restAPIExtractHasNextPage(response any, paginationConfig map[string]any) (bool, bool) {
+	field := strings.TrimSpace(stringConfig(paginationConfig["has_next_page_field"]))
+	if field == "" {
+		return false, false
+	}
+	dict, ok := response.(map[string]any)
+	if !ok {
+		return false, false
+	}
+	value, ok := dict[field].(bool)
+	return value, ok
 }
 
 // restAPIExtractNextCursor mirrors _extract_next_cursor.

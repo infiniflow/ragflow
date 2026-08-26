@@ -892,6 +892,9 @@ export default {
       created: 'Создано',
       action: 'Действие',
       embedModalTitle: 'Встроить на веб-страницу',
+      embedUserIdPlaceholder: 'например: user-001',
+      embedUserIdTooltip:
+        'Строка (до 255 символов), идентифицирующая конечного пользователя встроенной страницы. Она добавляется в URL встраивания как параметр userId.',
       published: 'Опубликовано',
       publishedTooltip:
         'Использовать опубликованную версию для встраивания. В URL будет release=true.',

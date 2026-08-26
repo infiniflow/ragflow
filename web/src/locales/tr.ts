@@ -1052,6 +1052,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       created: 'Oluşturuldu',
       action: 'İşlem',
       embedModalTitle: 'Web sayfasına göm',
+      embedUserIdPlaceholder: 'örn. user-001',
+      embedUserIdTooltip:
+        'Gömülü sayfanın son kullanıcısını tanımlayan bir metin (en fazla 255 karakter). Gömme URL\'sine userId parametresi olarak eklenir.',
       published: 'Yayınlandı',
       publishedTooltip: 'Bu göm için yayınlanan sürümü kullanın.',
       embedType: 'Embed türü',
