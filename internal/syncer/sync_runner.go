@@ -148,6 +148,7 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 				if err != nil {
 					return "", err
 				}
+				stats = service.SyncStats{}
 				continue
 			}
 			return "", nextErr
