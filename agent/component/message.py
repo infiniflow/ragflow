@@ -233,6 +233,11 @@ class Message(ComponentBase):
                         all_content += t
                         cnt += t
                         yield t
+                if "@" in exp:
+                    source_component = self._canvas.get_component_obj(exp.split("@", 1)[0])
+                    if source_error := source_component.error():
+                        self.set_output("_ERROR", source_error)
+                        return
                 self.set_input_value(exp, cnt)
                 continue
             elif inspect.isawaitable(v):
