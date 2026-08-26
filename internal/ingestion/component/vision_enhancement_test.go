@@ -18,6 +18,8 @@ package component
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -62,7 +64,14 @@ func (c *visionEnhanceCaptureInvoker) invoke(
 	return &modelModule.ChatResponse{Answer: &ans}, nil
 }
 
-func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
+// swapVisionGlobals replaces injectable vars and restores them on t.Cleanup.
+func swapVisionGlobals(
+	t *testing.T,
+	resolver func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error),
+	invoker func(context.Context, modelModule.ModelDriver, string, []modelModule.Message, *modelModule.APIConfig) (*modelModule.ChatResponse, error),
+	prompt func(string) (string, error),
+) {
+	t.Helper()
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker
 	origPrompt := figureVisionPromptBuilder
@@ -71,18 +80,26 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 		visionChatInvoker = origInvoker
 		figureVisionPromptBuilder = origPrompt
 	})
-
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		return &visionEnhanceFakeDriver{}, "vision-model", &modelModule.APIConfig{}, 0, nil
+	if resolver != nil {
+		resolveTenantModelByType = resolver
 	}
-	invoker := &visionEnhanceCaptureInvoker{}
-	visionChatInvoker = invoker.invoke
-	var capturedLanguage string
-	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
-		capturedLanguage = language
-		return "describe the figure in " + language, nil
+	if invoker != nil {
+		visionChatInvoker = invoker
 	}
+	if prompt != nil {
+		figureVisionPromptBuilder = prompt
+	}
+}
 
+func fakeResolver(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	return &visionEnhanceFakeDriver{}, "vision-model", &modelModule.APIConfig{}, 0, nil
+}
+
+func fakePrompt(language string) (string, error) {
+	return "describe the figure in " + language, nil
+}
+
+func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 	testCases := []struct {
 		name     string
 		fileType utility.FileType
@@ -94,6 +111,14 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			var capturedLanguage string
+			// Per-subtest invoker and prompt — avoids implicit coupling between subtests.
+			invoker := &visionEnhanceCaptureInvoker{}
+			swapVisionGlobals(t, fakeResolver, invoker.invoke, func(language string) (string, error) {
+				capturedLanguage = language
+				return "describe the figure in " + language, nil
+			})
+
 			dispatched := parserDispatchResult{
 				OutputFormat: "json",
 				DocType:      string(tc.fileType),
@@ -135,31 +160,27 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 			if got, _ := res.JSON[3]["text"].(string); got != "<table></table>" {
 				t.Errorf("table item without image text = %q, want unchanged", got)
 			}
+			if capturedLanguage != "Japanese" {
+				t.Errorf("figure prompt language = %q, want Japanese", capturedLanguage)
+			}
 		})
-	}
-	if capturedLanguage != "Japanese" {
-		t.Errorf("figure prompt language = %q, want Japanese", capturedLanguage)
 	}
 }
 
 func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
-	origResolver := resolveTenantModelByType
-	origInvoker := visionChatInvoker
-	t.Cleanup(func() {
-		resolveTenantModelByType = origResolver
-		visionChatInvoker = origInvoker
-	})
-
 	called := false
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		called = true
-		return &visionEnhanceFakeDriver{}, "m", &modelModule.APIConfig{}, 0, nil
-	}
-	visionChatInvoker = func(ctx context.Context, d modelModule.ModelDriver, m string, msgs []modelModule.Message, c *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
-		called = true
-		ans := "x"
-		return &modelModule.ChatResponse{Answer: &ans}, nil
-	}
+	swapVisionGlobals(t,
+		func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+			called = true
+			return &visionEnhanceFakeDriver{}, "m", &modelModule.APIConfig{}, 0, nil
+		},
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			called = true
+			ans := "x"
+			return &modelModule.ChatResponse{Answer: &ans}, nil
+		},
+		nil,
+	)
 
 	dispatched := parserDispatchResult{
 		OutputFormat: "markdown",
@@ -238,6 +259,200 @@ func TestVisionEnhancement_EmptyOrNoTenantSkipped(t *testing.T) {
 	}
 	if res.JSON[0]["text"] != "" {
 		t.Errorf("text = %q, want untouched", res.JSON[0]["text"])
+	}
+}
+
+// TestVisionEnhancement_DispatchedErrSkipped ensures a failed parse result is
+// returned unchanged — enhancement must not touch items when dispatched.Err != nil.
+func TestVisionEnhancement_DispatchedErrSkipped(t *testing.T) {
+	parseErr := errors.New("parse failed")
+	dispatched := parserDispatchResult{
+		Err:          parseErr,
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		},
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when dispatched.Err is set")
+	}
+	if res.Err != parseErr {
+		t.Errorf("res.Err = %v, want original parse error preserved", res.Err)
+	}
+}
+
+// TestVisionEnhancement_ContextCancellation verifies that a cancelled context
+// propagates through visionChatInvoker and the enhancement is skipped without panic.
+func TestVisionEnhancement_ContextCancellation(t *testing.T) {
+	swapVisionGlobals(t, fakeResolver,
+		func(ctx context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			return nil, ctx.Err()
+		},
+		fakePrompt,
+	)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // pre-cancel
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		},
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		ctx,
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	// Enhancement is best-effort; ctx.Err is not propagated to caller.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true with cancelled context, want false")
+	}
+	// text field should be untouched since invoker returned no answer.
+	if got, _ := res.JSON[0]["text"].(string); got != "" {
+		t.Errorf("text = %q, want empty (no successful VLM response)", got)
+	}
+}
+
+// TestVisionEnhancement_NonStringImageFieldFiltered verifies that items with a
+// non-string image field (e.g., int) are silently skipped during target collection.
+func TestVisionEnhancement_NonStringImageFieldFiltered(t *testing.T) {
+	invokerCalled := false
+	swapVisionGlobals(t, fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			invokerCalled = true
+			ans := "description"
+			return &modelModule.ChatResponse{Answer: &ans}, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			// non-string image field — filtered by target collector
+			{"text": "para", "image": 12345, "doc_type_kwd": "image"},
+			// nil image — also filtered
+			{"text": "para2", "image": nil, "doc_type_kwd": "image"},
+		},
+	}
+
+	_, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false — no valid image targets")
+	}
+	if invokerCalled {
+		t.Error("invoker was called despite no valid image targets")
+	}
+}
+
+// TestVisionEnhancement_MoreThanConcurrencyItems verifies that N > visionEnhancementConcurrency
+// items are all processed without deadlock.
+func TestVisionEnhancement_MoreThanConcurrencyItems(t *testing.T) {
+	n := visionEnhancementConcurrency + 5
+	swapVisionGlobals(t, fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			ans := "desc"
+			return &modelModule.ChatResponse{Answer: &ans}, nil
+		},
+		fakePrompt,
+	)
+
+	items := make([]map[string]any, n)
+	for i := range items {
+		items[i] = map[string]any{
+			"text":         fmt.Sprintf("item%d", i),
+			"image":        "aGVsbG8=",
+			"doc_type_kwd": "image",
+		}
+	}
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON:         items,
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handled = false, want true")
+	}
+	// All n items should have received a description appended.
+	for i, item := range res.JSON {
+		got, _ := item["text"].(string)
+		if got == fmt.Sprintf("item%d", i) {
+			t.Errorf("item[%d] text unchanged %q, expected description appended", i, got)
+		}
+	}
+}
+
+// TestVisionEnhancement_PlainTextResponseNotTruncated verifies that a plain-text
+// (no fences) VLM response is returned verbatim — cleanMarkdownBlock must not truncate it.
+func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
+	plain := "A pipeline diagram showing three stages."
+	swapVisionGlobals(t, fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			return &modelModule.ChatResponse{Answer: &plain}, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		},
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handled = false, want true")
+	}
+	if got, _ := res.JSON[0]["text"].(string); got != plain {
+		t.Errorf("plain text response = %q, want %q (must not be truncated)", got, plain)
 	}
 }
 

@@ -39,14 +39,13 @@ import (
 )
 
 var (
-	figureVisionPromptBuilder         = buildFigureVisionPrompt
-	visionChatInvoker                 = defaultVisionChatInvoker
-	visionEnhancementConcurrency uint = 10
+	figureVisionPromptBuilder func(language string) (string, error) = buildFigureVisionPrompt
+	visionChatInvoker                                               = defaultVisionChatInvoker
 )
 
 const (
-	figureVisionPromptFile            = "vision_llm_figure_describe_prompt.md"
-	figureVisionPromptWithContextFile = "vision_llm_figure_describe_prompt_with_context.md"
+	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
+	visionEnhancementConcurrency int = 10
 )
 
 var (
@@ -138,23 +137,21 @@ func maybeDispatchVisionEnhancement(
 	}
 
 	// Hoist prompt once: language is invariant across items.
-	prompt, perr := figureVisionPromptBuilder("", "", language)
+	prompt, perr := figureVisionPromptBuilder(language)
 	if perr != nil {
 		return dispatched, false, nil
 	}
 
-	// 3. Concurrently invoke VLM — acquire semaphore before launching goroutine.
+	// 3. Concurrently invoke VLM — acquire semaphore before launching goroutine
+	// so live goroutine count is bounded by visionEnhancementConcurrency.
+	// Cancellation propagates via ctx through visionChatInvoker; no separate
+	// select-on-Done is needed for N ≤ visionEnhancementConcurrency items.
 	descriptions := make([]string, len(targets))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
 
 	for slot, tg := range targets {
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			wg.Wait()
-			return dispatched, false, ctx.Err()
-		}
+		sem <- struct{}{}
 		wg.Add(1)
 		go func(slot int, itemIdx int) {
 			defer wg.Done()
@@ -193,27 +190,12 @@ func maybeDispatchVisionEnhancement(
 	return dispatched, modified, nil
 }
 
-func buildFigureVisionPrompt(contextAbove, contextBelow, language string) (string, error) {
-	hasContext := strings.TrimSpace(contextAbove) != "" || strings.TrimSpace(contextBelow) != ""
-
-	var templateName string
-	if hasContext {
-		templateName = figureVisionPromptWithContextFile
-	} else {
-		templateName = figureVisionPromptFile
-	}
-
-	template, err := loadFigureVisionPromptFile(templateName)
+func buildFigureVisionPrompt(language string) (string, error) {
+	template, err := loadFigureVisionPromptFile(figureVisionPromptFile)
 	if err != nil {
 		return "", err
 	}
-	template = renderFigureVisionLanguage(template, language)
-
-	if hasContext {
-		template = strings.ReplaceAll(template, "{{ context_above }}", contextAbove)
-		template = strings.ReplaceAll(template, "{{ context_below }}", contextBelow)
-	}
-	return template, nil
+	return renderFigureVisionLanguage(template, language), nil
 }
 
 func loadFigureVisionPromptFile(filename string) (string, error) {
@@ -270,6 +252,10 @@ func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {
 	}}
 }
 
+// extractVisionAnswer strips ```markdown fences from the VLM response.
+// Python calls clean_markdown_block inside vision_llm_chunk (rag/app/picture.py:198,
+// i.e., inside the invoker wrapper). Go applies it here post-invoker so that
+// visionChatInvoker stays a pure, swappable test seam — output is equivalent.
 func extractVisionAnswer(resp *modelModule.ChatResponse) string {
 	if resp == nil || resp.Answer == nil {
 		return ""

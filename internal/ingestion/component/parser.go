@@ -486,6 +486,9 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		// append vision-model descriptions to embedded image and
 		// table items. Mirrors Python's enhance_media_sections_with_vision
 		// (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
+		// Errors (including context cancellation) are intentionally
+		// discarded — enhancement is best-effort, matching Python's
+		// try/except pass pattern.
 		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or

@@ -602,7 +602,7 @@ func dispatchPDFVision(
 		if err != nil {
 			return parserDispatchResult{}, fmt.Errorf("parser: pdf vision page %d: %w", page.PageNumber, err)
 		}
-		text := extractPDFVisionAnswer(resp)
+		text := extractVisionAnswer(resp)
 		positions := [][]any{{page.PageNumber, 0.0, page.WidthPts, 0.0, page.HeightPts}}
 		items = append(items, map[string]any{
 			"text":           text,
@@ -654,12 +654,6 @@ func buildPDFVisionMessages(prompt string, imageURL string) []modelModule.Messag
 	}}
 }
 
-func extractPDFVisionAnswer(resp *modelModule.ChatResponse) string {
-	if resp == nil || resp.Answer == nil {
-		return ""
-	}
-	return strings.TrimSpace(*resp.Answer)
-}
 
 func defaultPDFVisionModelResolver(
 	ctx context.Context,
@@ -729,7 +723,7 @@ func pdfVisionPromptsBaseDir() (string, error) {
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision
 // prompt is a transcription contract that preserves the document's original
 // language; dataset-language instructions apply to figure descriptions in
-// maybeDispatchPDFVisionEnhancement instead.
+// maybeDispatchVisionEnhancement instead.
 func renderPDFVisionPrompt(template string, page int) string {
 	rendered := strings.ReplaceAll(template, "{{ page }}", fmt.Sprintf("%d", page))
 	rendered = strings.ReplaceAll(rendered, "{{page}}", fmt.Sprintf("%d", page))
