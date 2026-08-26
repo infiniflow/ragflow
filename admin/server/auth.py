@@ -18,13 +18,10 @@
 import logging
 import os
 import secrets
-import threading
-import time
 import uuid
 from functools import wraps
 from datetime import datetime
 
-from flask import request
 from flask_login import current_user, login_user
 
 from api.common.exceptions import AdminException, UserNotFoundError
@@ -46,114 +43,11 @@ from common import settings
 # shared with api/db/init_data.py so a deployment can keep one bootstrap
 # password for both sides. Unlike api/db/init_data.py (which still falls back
 # to the literal "admin"), the admin server falls back to a random password
-# printed once to the log: the admin panel manages sandbox providers
+# delivered through a 0600 bootstrap file: the admin panel manages sandbox providers
 # (including the "local" provider, i.e. host-level execution), so a guessable
 # default here would effectively be host RCE.
 ADMIN_DEFAULT_PASSWORD_ENV = "ADMIN_DEFAULT_PASSWORD"
 DEFAULT_SUPERUSER_PASSWORD_ENV = "DEFAULT_SUPERUSER_PASSWORD"
-
-# Login throttling for the admin auth endpoints. Deliberately dependency-free
-# and in-process: the admin server runs a single Flask process
-# (werkzeug run_simple, threaded=True), so one lock-guarded dict is shared by
-# every request. Limitation: the counters are process-local; if the admin
-# server is ever run with multiple workers/processes, each worker keeps its
-# own counters and the effective limit multiplies accordingly.
-ADMIN_LOGIN_MAX_FAILURES = 5
-ADMIN_LOGIN_FAILURE_WINDOW = 300  # seconds in which failures accumulate
-ADMIN_LOGIN_LOCKOUT_SECONDS = 300  # seconds an address stays blocked
-
-_login_state_lock = threading.Lock()
-_login_failures: dict[str, list[float]] = {}  # client key -> recent failure timestamps (time.monotonic)
-_login_block_until: dict[str, float] = {}  # client key -> monotonic lockout deadline
-
-
-_TRUSTED_PROXY_PEERS = frozenset({"127.0.0.1", "::1"})
-
-
-def _client_key() -> str:
-    """Identify the client for login throttling.
-
-    X-Forwarded-For is trusted only when the TCP peer is loopback: the admin
-    server and the bundled nginx run in the same container, so proxied
-    requests arrive from 127.0.0.1 and nginx appends the real client address
-    to any client-supplied value — the rightmost entry is then the one our
-    own proxy added and cannot be spoofed. Everything else (the admin API is
-    designed to be reachable externally, so requests may hit the published
-    port directly) is keyed by its TCP peer address, and a client-supplied
-    X-Forwarded-For cannot rotate throttle buckets. Deployments fronting the
-    admin server with an external reverse proxy share that proxy's peer key
-    until it is added to the trusted set.
-    """
-    peer = (request.remote_addr or "").strip()
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    last_hop = forwarded_for.split(",")[-1].strip() if forwarded_for else ""
-    if peer in _TRUSTED_PROXY_PEERS and last_hop:
-        return last_hop
-    return peer or "unknown"
-
-
-def _reserve_login_attempt(key: str) -> tuple[int, float | None]:
-    """Atomically admit one login attempt for ``key``.
-
-    Returns ``(remaining_lockout_seconds, reserved_marker)``: ``remaining``
-    is positive when the key is blocked (``reserved_marker`` is then None),
-    or 0 with the marker of the recorded failure slot when the attempt is
-    admitted. Admission records the slot under the same state lock that
-    checks the lockout, so concurrent requests cannot all observe "not
-    blocked" and run credential verification before any of them records the
-    failure that should have locked the key. Callers keep the reservation
-    when verification fails, release exactly their own slot via
-    ``_release_login_attempt`` on verification errors, and clear all state
-    via ``_reset_login_failures`` on success.
-
-    The recorded timestamps are kept when the lockout arms — clearing them
-    would let a single release (judged against the shortened list) lift a
-    lockout earned by genuine failures. They age out with
-    ``ADMIN_LOGIN_FAILURE_WINDOW`` instead.
-    """
-    now = time.monotonic()
-    with _login_state_lock:
-        deadline = _login_block_until.get(key, 0.0)
-        remaining = deadline - now
-        if remaining > 0:
-            return int(remaining) + 1, None
-        _login_block_until.pop(key, None)
-        failures = [ts for ts in _login_failures.get(key, []) if now - ts < ADMIN_LOGIN_FAILURE_WINDOW]
-        failures.append(now)
-        _login_failures[key] = failures
-        if len(failures) >= ADMIN_LOGIN_MAX_FAILURES:
-            _login_block_until[key] = now + ADMIN_LOGIN_LOCKOUT_SECONDS
-            logging.warning(f"Admin login from {key} blocked for {ADMIN_LOGIN_LOCKOUT_SECONDS}s after {ADMIN_LOGIN_MAX_FAILURES} failed attempts within {ADMIN_LOGIN_FAILURE_WINDOW}s.")
-        return 0, now
-
-
-def _release_login_attempt(key: str, marker: float | None) -> None:
-    """Undo exactly the reservation identified by ``marker`` for ``key``.
-
-    Used when verification could not evaluate the credentials (an internal
-    error) or rejected the caller before credential evaluation, so a
-    non-credential failure does not consume the failure budget. Removing one
-    marker leaves the other recorded failures intact — including the
-    ADMIN_LOGIN_MAX_FAILURES - 1 genuine ones — so a lockout is lifted only
-    when the released reservation is what armed it.
-    """
-    with _login_state_lock:
-        failures = _login_failures.get(key)
-        if failures:
-            try:
-                failures.remove(marker)
-            except ValueError:
-                pass  # already expired out of the window; nothing to undo
-            if not failures:
-                _login_failures.pop(key, None)
-        if len(_login_failures.get(key, [])) < ADMIN_LOGIN_MAX_FAILURES:
-            _login_block_until.pop(key, None)
-
-
-def _reset_login_failures(key: str) -> None:
-    with _login_state_lock:
-        _login_failures.pop(key, None)
-        _login_block_until.pop(key, None)
 
 
 def setup_auth(login_manager):
@@ -330,50 +224,26 @@ def login_admin(email: str, password: str):
     :param email: admin email
     :param password: string before decrypt (RSA encrypted + base64 encoded)
     """
-    key = _client_key()
-    # Admission and the failure record are one atomic step: the attempt slot
-    # is consumed before credential verification, so a concurrent burst from
-    # one client cannot exceed ADMIN_LOGIN_MAX_FAILURES verifications.
-    remaining, marker = _reserve_login_attempt(key)
-    if remaining > 0:
-        raise AdminException(f"Too many failed login attempts. Retry in {remaining}s.", 429)
-
+    users = UserService.query(email=email)
+    if not users:
+        raise UserNotFoundError(email)
     try:
-        users = UserService.query(email=email)
-        if not users:
-            raise UserNotFoundError(email)
-        try:
-            decrypted = decrypt(password)
-        except CryptPayloadError:
-            # A payload the client could not encode correctly is the
-            # client's failure, not a server fault: it keeps the reserved
-            # slot like any other credential rejection. Server-side faults
-            # (missing/invalid private key) propagate to the outer handler
-            # and release the reservation instead.
-            logging.info("Admin login with undecryptable password payload.")
-            raise AdminException("Email and password do not match!")
-        user = UserService.query_user(email, decrypted)
-        if not user:
-            raise AdminException("Email and password do not match!")
-        if not user.is_superuser:
-            # Valid credentials, but not an admin account: reject without
-            # consuming the client's failure budget.
-            _release_login_attempt(key, marker)
-            raise AdminException("Not admin", 403)
-        if user.is_active == ActiveEnum.INACTIVE.value:
-            _release_login_attempt(key, marker)
-            raise AdminException(f"User {email} inactive", 403)
-    except (UserNotFoundError, AdminException):
-        # Deliberate rejections keep the reserved failure slot (the 403
-        # branches released theirs above).
-        raise
-    except Exception:
-        # Verification errors (unexpected server-side faults) release the
-        # reserved slot so they do not consume the client's failure budget.
-        _release_login_attempt(key, marker)
-        raise
+        decrypted = decrypt(password)
+    except CryptPayloadError:
+        # A payload the client could not encode correctly is the client's
+        # failure, not a server fault: answer with the same generic mismatch
+        # as any other credential rejection. Server-side faults
+        # (missing/invalid private key) propagate to the caller instead.
+        logging.info("Admin login with undecryptable password payload.")
+        raise AdminException("Email and password do not match!")
+    user = UserService.query_user(email, decrypted)
+    if not user:
+        raise AdminException("Email and password do not match!")
+    if not user.is_superuser:
+        raise AdminException("Not admin", 403)
+    if user.is_active == ActiveEnum.INACTIVE.value:
+        raise AdminException(f"User {email} inactive", 403)
 
-    _reset_login_failures(key)
     resp = user.to_json()
     user.access_token = get_uuid()
     login_user(user)
