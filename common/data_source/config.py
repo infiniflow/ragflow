@@ -55,6 +55,7 @@ class DocumentSource(str, Enum):
     CONFLUENCE = "confluence"
     JIRA = "jira"
     GOOGLE_DRIVE = "google_drive"
+    FEISHU_WIKI = "feishu_wiki"
     GMAIL = "gmail"
     DISCORD = "discord"
     WEBDAV = "webdav"

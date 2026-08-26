@@ -39,6 +39,7 @@ from .config import BlobType, DocumentSource
 from .dingtalk_ai_table_connector import DingTalkAITableConnector
 from .discord_connector import DiscordConnector
 from .dropbox_connector import DropboxConnector
+from .feishu_wiki_connector import FeishuWikiConnector
 from .exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -81,6 +82,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.GMAIL: GmailConnector,
     FileSource.DROPBOX: DropboxConnector,
     FileSource.GOOGLE_DRIVE: GoogleDriveConnector,
+    FileSource.FEISHU_WIKI: FeishuWikiConnector,
     FileSource.JIRA: JiraConnector,
     FileSource.SHAREPOINT: SharePointConnector,
     FileSource.SLACK: SlackConnector,
@@ -142,6 +144,7 @@ __all__ = [
     "Document",
     "DocumentSource",
     "DropboxConnector",
+    "FeishuWikiConnector",
     "GithubConnector",
     "GitlabConnector",
     "GmailConnector",

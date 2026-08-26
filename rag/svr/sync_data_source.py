@@ -82,6 +82,7 @@ from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.exceptions import ConnectorValidationError
+from rag.svr.feishu_wiki_sync import build_feishu_wiki_generator
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
@@ -1305,6 +1306,24 @@ class Slack(SyncBase):
         return document_generator
 
 
+class FeishuWiki(SyncBase):
+    """Synchronize approved attachment files from a Feishu Wiki subtree."""
+
+    SOURCE_NAME: str = FileSource.FEISHU_WIKI
+
+    async def _generate(self, task: dict):
+        self.connector, document_generator = build_feishu_wiki_generator(
+            self.conf,
+            task,
+        )
+        self.log_connection(
+            "Feishu Wiki",
+            f"space={self.conf.get('space_id', '<missing>')}",
+            task,
+        )
+        return document_generator
+
+
 class Teams(SyncBase):
     SOURCE_NAME: str = FileSource.TEAMS
 
@@ -2228,6 +2247,7 @@ func_factory = {
     FileSource.CONFLUENCE: Confluence,
     FileSource.GMAIL: Gmail,
     FileSource.GOOGLE_DRIVE: GoogleDrive,
+    FileSource.FEISHU_WIKI: FeishuWiki,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
     FileSource.ONEDRIVE: OneDrive,
