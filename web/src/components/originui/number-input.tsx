@@ -20,6 +20,7 @@ interface NumberInputProps {
   height?: number | string;
   min?: number;
   max?: number;
+  step?: number;
   hideIcons?: boolean;
   integer?: boolean;
   inputClassName?: string;
@@ -28,6 +29,21 @@ interface NumberInputProps {
 // Keys that would introduce a fractional part or exponent notation in
 // integer mode; blocked on keydown so a decimal point can never be typed.
 const BlockedIntegerKeys = ['.', 'e', 'E', '+'];
+
+// Decimal places implied by a fractional step (e.g. 0.01 -> 2, 0.1 -> 1).
+// Undefined or whole-number steps keep the value untouched so integer
+// sliders are not affected.
+const getStepDecimals = (step?: number): number => {
+  if (!step || step >= 1) {
+    return 0;
+  }
+  return String(step).split('.')[1]?.length ?? 0;
+};
+
+const roundToStepPrecision = (value: number, step?: number): number => {
+  const decimals = getStepDecimals(step);
+  return decimals > 0 ? Number(value.toFixed(decimals)) : value;
+};
 
 const NumberInput = forwardRef<
   HTMLInputElement,
@@ -41,6 +57,7 @@ const NumberInput = forwardRef<
     height,
     min = 0,
     max = Infinity,
+    step,
     hideIcons = false,
     integer = false,
     inputClassName,
@@ -56,9 +73,11 @@ const NumberInput = forwardRef<
 
   useEffect(() => {
     if (initialValue !== undefined) {
-      setValue(initialValue);
+      // Normalize over-precise persisted values (e.g. a filename embedding
+      // weight stored as 0.3333333333333333) to the step precision.
+      setValue(roundToStepPrecision(initialValue, step));
     }
-  }, [initialValue]);
+  }, [initialValue, step]);
 
   const handleDecrement = () => {
     if (isNumber(value) && value > min) {
@@ -107,11 +126,13 @@ const NumberInput = forwardRef<
       }
       // Show the raw typed value as-is, even when it falls outside [min, max]
       // (e.g. deleting "1024" → "102" when min=512), so the controlled input
-      // never snaps back mid-edit. Out-of-range values are not propagated to
-      // the form; handleBlur clamps them into range on focus loss.
+      // never snaps back mid-edit. Values leaving the component are rounded
+      // to the step precision so the form never holds more decimals than the
+      // step allows; out-of-range values are not propagated at all and
+      // handleBlur clamps them into range on focus loss.
       setValue(newValue);
       if (newValue >= min && newValue <= max) {
-        onChange?.(newValue);
+        onChange?.(roundToStepPrecision(newValue, step));
       }
     }
   };
@@ -125,6 +146,7 @@ const NumberInput = forwardRef<
         } else if (value > max) {
           finalValue = max;
         }
+        finalValue = roundToStepPrecision(finalValue, step);
         if (finalValue !== value) {
           setValue(finalValue);
         }
@@ -137,6 +159,7 @@ const NumberInput = forwardRef<
         } else if (previousValue > max) {
           finalValue = max;
         }
+        finalValue = roundToStepPrecision(finalValue, step);
         setValue(finalValue);
         onChange?.(finalValue);
       }
@@ -145,7 +168,7 @@ const NumberInput = forwardRef<
       // spread below cannot silently replace this handler.
       onBlurProp?.(e);
     },
-    [min, max, onChange, onBlurProp, value],
+    [min, max, step, onChange, onBlurProp, value],
   );
 
   const style = useMemo(
@@ -201,6 +224,7 @@ const NumberInput = forwardRef<
           )}
           style={style}
           min={min}
+          step={step}
           {...omit(props, ['prefix', 'suffix'])}
         />
         {hideIcons || (
