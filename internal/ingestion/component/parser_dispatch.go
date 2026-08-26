@@ -153,7 +153,9 @@ func defaultOutputFormatForFamily(family string) (string, bool) {
 		return "json", true
 	case "email":
 		return "text", true
-	case "audio", "video":
+	case "audio":
+		return "json", true
+	case "video":
 		return "text", true
 	default:
 		return "", false
