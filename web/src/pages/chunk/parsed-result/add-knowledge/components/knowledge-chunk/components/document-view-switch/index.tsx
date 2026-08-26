@@ -24,6 +24,8 @@ interface DocumentViewSwitchProps {
   highlights: IHighlight[];
   setWidthAndHeight: (width: number, height: number) => void;
   url: string;
+  positions?: number[][];
+  highlightText?: string;
   onChunkIdsChange?: (chunkIds: string[]) => void;
 }
 
@@ -33,6 +35,8 @@ export default function DocumentViewSwitch({
   highlights,
   setWidthAndHeight,
   url,
+  positions,
+  highlightText,
   onChunkIdsChange,
 }: DocumentViewSwitchProps) {
   const { t } = useTranslation();
@@ -100,6 +104,8 @@ export default function DocumentViewSwitch({
             highlights={highlights}
             setWidthAndHeight={setWidthAndHeight}
             url={url}
+            positions={positions}
+            highlightText={highlightText}
           />
         ) : (
           <Representation onNodeClick={handleNodeClick} />

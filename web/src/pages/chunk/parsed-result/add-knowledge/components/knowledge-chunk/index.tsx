@@ -10,6 +10,7 @@ import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
   useGetChunkHighlights,
+  useGetSelectedChunk,
   useHandleChunkCardClick,
   useUpdateChunk,
 } from './hooks';
@@ -38,6 +39,7 @@ import {
   QueryStringMap,
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
+import { getExtension } from '@/utils/document-util';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
@@ -166,19 +168,27 @@ function Chunk() {
 
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunkId);
+  const selectedChunk = useGetSelectedChunk(selectedChunkId);
+  const positions = Array.isArray(selectedChunk?.positions)
+    ? selectedChunk.positions
+    : [];
+  const highlightText = selectedChunk?.content_with_weight || '';
 
   const fileType = useMemo(() => {
+    const ext = getExtension(documentInfo?.name || '');
+    if (ext) {
+      return ext;
+    }
     switch (documentInfo?.type) {
       case 'doc':
-        return documentInfo?.name.split('.').pop() || 'doc';
       case 'visual':
-        return documentInfo?.name.split('.').pop() || 'visual';
+        return documentInfo?.name?.split('.').pop() || documentInfo.type;
       case 'docx':
       case 'txt':
       case 'md':
       case 'mdx':
       case 'pdf':
-        return documentInfo?.type;
+        return documentInfo.type;
     }
     return 'unknown';
   }, [documentInfo]);
@@ -208,6 +218,10 @@ function Chunk() {
                   highlights={highlights}
                   setWidthAndHeight={setWidthAndHeight}
                   url={fileUrl}
+                  positions={positions}
+                  highlightText={
+                    typeof highlightText === 'string' ? highlightText : ''
+                  }
                   onChunkIdsChange={handleChunkIdsChange}
                 />
               </article>

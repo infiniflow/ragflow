@@ -20,6 +20,7 @@ import { Images } from '@/constants/common';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
+import { HtmlPreviewer } from './html-preview';
 import { ImagePreviewer } from './image-preview';
 import { Md } from './md';
 import PdfPreviewer, { IProps } from './pdf-preview';
@@ -31,6 +32,8 @@ type PreviewProps = {
   fileType: string;
   className?: string;
   url: string;
+  positions?: number[][];
+  highlightText?: string;
 };
 const DocumentPreview = function ({
   fileType,
@@ -38,6 +41,8 @@ const DocumentPreview = function ({
   highlights,
   setWidthAndHeight,
   url,
+  positions,
+  highlightText,
 }: PreviewProps & Partial<IProps>) {
   const isPdf = fileType === 'pdf';
 
@@ -90,14 +95,28 @@ const DocumentPreview = function ({
           <PptPreviewer className={className} url={url} />
         </section>
       )}
-      {['xlsx'].indexOf(fileType) > -1 && (
-        <section>
-          <ExcelCsvPreviewer className={className} url={url} />
+      {['xlsx', 'xls'].indexOf(fileType) > -1 && (
+        <section className="h-full">
+          <ExcelCsvPreviewer
+            className={className}
+            url={url}
+            positions={positions}
+          />
         </section>
       )}
       {['csv'].indexOf(fileType) > -1 && (
         <section>
           <CSVFileViewer className={className} url={url} />
+        </section>
+      )}
+      {['html', 'htm'].indexOf(fileType) > -1 && (
+        <section className="h-full">
+          <HtmlPreviewer
+            className={className}
+            url={url}
+            positions={positions}
+            highlightText={highlightText}
+          />
         </section>
       )}
       {['md', 'mdx'].indexOf(fileType) > -1 && (
