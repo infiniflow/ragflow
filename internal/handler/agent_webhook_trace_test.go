@@ -135,6 +135,7 @@ func TestGetAgentWebhookLogsPollsTraceIncrementally(t *testing.T) {
 	startTS := initial.Data.NextSinceTS + 1
 	messageTS := startTS + 1
 	finishedTS := startTS + 2
+	trailingTS := startTS + 3
 	startKey := strconv.FormatFloat(startTS, 'f', -1, 64)
 	laterKey := strconv.FormatFloat(startTS+10, 'f', -1, 64)
 	seedWebhookTrace(t, rdb, "c1", map[string]any{
@@ -156,6 +157,11 @@ func TestGetAgentWebhookLogsPollsTraceIncrementally(t *testing.T) {
 					"event": "finished",
 					"data":  map[string]any{"success": true},
 				},
+				map[string]any{
+					"ts":    trailingTS,
+					"event": "message",
+					"data":  map[string]any{"content": "late"},
+				},
 			},
 		},
 	})
@@ -174,7 +180,10 @@ func TestGetAgentWebhookLogsPollsTraceIncrementally(t *testing.T) {
 		"since_ts":   {strconv.FormatFloat(initial.Data.NextSinceTS, 'f', -1, 64)},
 		"webhook_id": {*discovery.Data.WebhookID},
 	})
-	if poll.Data == nil || len(poll.Data.Events) != 2 || !poll.Data.Finished {
+	if poll.Data == nil ||
+		len(poll.Data.Events) != 2 ||
+		poll.Data.Events[1]["event"] != "finished" ||
+		!poll.Data.Finished {
 		t.Fatalf("poll data = %+v, want two events and finished", poll.Data)
 	}
 	if poll.Data.NextSinceTS != finishedTS {
@@ -265,8 +274,8 @@ func TestGetAgentWebhookLogsChecksOwnershipBeforeRedis(t *testing.T) {
 	}
 }
 
-// TestEncodeWebhookIDMatchesPython pins cross-backend cursor compatibility.
-func TestEncodeWebhookIDMatchesPython(t *testing.T) {
+// TestEncodeWebhookIDUsesStableEncoding pins deterministic cursor output.
+func TestEncodeWebhookIDUsesStableEncoding(t *testing.T) {
 	const want = "7a7-Rfe0PSB5OwV10qD7SWcmrtbFhfQKTZajRny8STM"
 	if got := encodeWebhookID("123.5"); got != want {
 		t.Fatalf("encodeWebhookID = %q, want %q", got, want)

@@ -42,7 +42,7 @@ type webhookTraceRun struct {
 	Events []map[string]any `json:"events"`
 }
 
-// parseWebhookSinceTS mirrors Quart's optional float query conversion.
+// parseWebhookSinceTS parses an optional finite timestamp cursor.
 func parseWebhookSinceTS(raw string) (float64, bool) {
 	if strings.TrimSpace(raw) == "" {
 		return 0, false
@@ -54,7 +54,7 @@ func parseWebhookSinceTS(raw string) (float64, bool) {
 	return value, true
 }
 
-// pollWebhookTrace advances one step of the Python-compatible polling protocol.
+// pollWebhookTrace advances one webhook trace polling step.
 func pollWebhookTrace(raw string, sinceTS float64, webhookID string) (webhookTracePoll, error) {
 	empty := newWebhookTracePoll(nil, sinceTS, false)
 	if strings.TrimSpace(raw) == "" {
@@ -106,8 +106,8 @@ func nextWebhookTraceRun(webhooks map[string]webhookTraceRun, sinceTS float64) (
 	return selectedKey, selectedTS, found
 }
 
-// encodeWebhookID matches the Python cursor format. The ID is only an opaque
-// run cursor; canvas ownership is checked before it is decoded.
+// encodeWebhookID creates an opaque run cursor. Canvas ownership is checked
+// before the cursor is decoded.
 func encodeWebhookID(startTS string) string {
 	mac := hmac.New(sha256.New, []byte(webhookIDSecret))
 	_, _ = mac.Write([]byte(startTS))
@@ -138,12 +138,13 @@ func collectWebhookTraceEvents(run webhookTraceRun, sinceTS float64, webhookID s
 		}
 		if eventType, _ := event["event"].(string); eventType == "finished" {
 			result.Finished = true
+			break
 		}
 	}
 	return result
 }
 
-// webhookTraceEventTimestamp matches Python's missing-timestamp default of zero.
+// webhookTraceEventTimestamp returns zero when an event has no numeric timestamp.
 func webhookTraceEventTimestamp(event map[string]any) float64 {
 	switch value := event["ts"].(type) {
 	case float64:
