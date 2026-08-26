@@ -2002,6 +2002,27 @@ def alter_db_drop_index(migrator, table_name, index_name):
         pass
 
 
+def migrate_dialog_rerank_candidates():
+    """Complete the prefetch_size -> rerank_candidates_count migration."""
+    try:
+        columns = {column.name for column in DB.get_columns("dialog")}
+        if "prefetch_size" not in columns:
+            return
+        if "rerank_candidates_count" in columns:
+            DB.execute_sql(
+                "UPDATE dialog SET rerank_candidates_count = prefetch_size"
+            )
+            DB.execute_sql("ALTER TABLE dialog DROP COLUMN prefetch_size")
+        else:
+            DB.execute_sql(
+                "ALTER TABLE dialog RENAME COLUMN prefetch_size TO rerank_candidates_count"
+            )
+    except Exception as ex:
+        logging.critical(
+            "Failed to migrate dialog prefetch_size to rerank_candidates_count: %s", ex
+        )
+
+
 def ensure_model_indexes(migrator):
     """Create indexes declared by the Peewee models when they are missing."""
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
@@ -2414,6 +2435,7 @@ def migrate_db():
     alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
     alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
     alter_db_add_column(migrator, "dialog", "rerank_candidates_count", IntegerField(default=64))
+    migrate_dialog_rerank_candidates()
     alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
