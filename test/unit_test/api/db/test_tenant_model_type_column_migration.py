@@ -63,11 +63,11 @@ def test_migrate_tenant_model_type_column_converts_postgres_varchar(monkeypatch)
     assert len(queries) == 1
     sql = queries[0]
     assert 'ALTER TABLE "tenant_model" ALTER COLUMN "model_type" TYPE integer USING' in sql
-    assert "WHEN lower(\"model_type\") = 'chat' THEN 1" in sql
-    assert "WHEN lower(\"model_type\") = 'embedding' THEN 2" in sql
-    assert "WHEN lower(\"model_type\") = 'speech2text' THEN 4" in sql
-    assert "WHEN lower(\"model_type\") = 'image2text' THEN 8" in sql
     assert "WHEN \"model_type\" ~ '^[0-9]+$' THEN \"model_type\"::integer" in sql
+    assert "string_to_array" in sql
+    assert "WHEN 'chat' = ANY(" in sql
+    assert "WHEN 'vision' = ANY(" in sql
+    assert "COALESCE(NULLIF((" in sql
 
 
 def test_migrate_tenant_model_type_column_converts_mysql_varchar(monkeypatch):
@@ -96,8 +96,13 @@ def test_migrate_tenant_model_type_column_converts_mysql_varchar(monkeypatch):
     db_models.migrate_tenant_model_type_column(Migrator())
 
     assert len(queries) == 1
-    assert "UPDATE `tenant_model` SET `model_type` = CASE LOWER(`model_type`)" in queries[0]
-    assert "WHEN 'chat' THEN '1'" in queries[0]
+    sql = queries[0]
+    assert "UPDATE `tenant_model` SET `model_type` = CASE" in sql
+    assert "WHEN `model_type` REGEXP '^[0-9]+$' THEN `model_type`" in sql
+    assert "WHEN `model_type` IS NULL OR TRIM(`model_type`) = '' THEN '1'" in sql
+    assert "FIND_IN_SET('chat'" in sql
+    assert "FIND_IN_SET('vision'" in sql
+    assert "IFNULL(NULLIF((" in sql
     assert ("tenant_model", "model_type") in [(table, column) for table, column, *_rest in altered if table != "migrate"]
     assert ("migrate", "alter tenant_model.model_type") in altered
 

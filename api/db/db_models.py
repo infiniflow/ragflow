@@ -2032,12 +2032,29 @@ def _get_column_data_type(table_name: str, column_name: str) -> str | None:
         return None
 
 
+def _tenant_model_type_normalized_tokens_sql(column_sql: str) -> str:
+    """Lowercase, trim, drop spaces, and split pipe-delimited model_type names."""
+    return f"REPLACE(REPLACE(LOWER(TRIM({column_sql})), ' ', ''), '|', ',')"
+
+
 def _tenant_model_type_postgres_using_sql() -> str:
-    name_cases = " ".join(f"WHEN lower(\"model_type\") = '{name}' THEN {value}" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
+    token_list = "string_to_array(replace(replace(lower(btrim(\"model_type\")), ' ', ''), '|', ','), ',')"
+    bits = " | ".join(f"CASE WHEN '{name}' = ANY({token_list}) THEN {value} ELSE 0 END" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
     return (
         'CASE WHEN "model_type" IS NULL OR btrim("model_type") = \'\' THEN 1 '
         'WHEN "model_type" ~ \'^[0-9]+$\' THEN "model_type"::integer '
-        f"{name_cases} ELSE 1 END"
+        f"ELSE COALESCE(NULLIF(({bits}), 0), 1) END"
+    )
+
+
+def _tenant_model_type_mysql_update_sql() -> str:
+    tokens = _tenant_model_type_normalized_tokens_sql("`model_type`")
+    bits = " | ".join(f"IF(FIND_IN_SET('{name}', {tokens}), {value}, 0)" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
+    return (
+        "UPDATE `tenant_model` SET `model_type` = CASE "
+        "WHEN `model_type` REGEXP '^[0-9]+$' THEN `model_type` "
+        "WHEN `model_type` IS NULL OR TRIM(`model_type`) = '' THEN '1' "
+        f"ELSE CAST(IFNULL(NULLIF(({bits}), 0), 1) AS CHAR) END"
     )
 
 
@@ -2078,8 +2095,7 @@ def migrate_tenant_model_type_column(migrator):
         if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
             DB.execute_sql(f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" TYPE integer USING {_tenant_model_type_postgres_using_sql()}')
         else:
-            name_cases = " ".join(f"WHEN '{name}' THEN '{value}'" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
-            DB.execute_sql(f"UPDATE `{table_name}` SET `{column_name}` = CASE LOWER(`{column_name}`) {name_cases} ELSE `{column_name}` END")
+            DB.execute_sql(_tenant_model_type_mysql_update_sql())
             migrate(migrator.alter_column_type(table_name, column_name, target_field))
         logging.info("Converted tenant_model.model_type from %s to integer bitmask", col_type)
     except Exception as ex:
