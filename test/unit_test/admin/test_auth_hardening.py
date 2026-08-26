@@ -19,14 +19,14 @@ Unit tests for the admin auth bootstrap hardening in ``admin/server/auth.py``.
 Covers the security fixes for the "anonymous probe resurrects the superuser"
 chain:
 
-1. ``check_admin`` (Basic-Auth verification for GET /api/v1/admin/auth) must
-   never create accounts. Previously a single request with any unregistered
-   username silently created a superuser ``admin@ragflow.io`` with a fixed
-   password, defeating operators who had removed the default account.
+1. The Basic-Auth probe endpoint (GET /api/v1/admin/auth, ``login_verify`` /
+   ``check_admin``) — the historic silent-superuser-creation path — is dead
+   code (the admin UI uses the JSON login, ragflow-cli uses POST
+   /admin/login) and has been removed outright instead of hardened.
 2. ``init_default_admin`` must not hardcode ``admin``: the bootstrap password
    comes from ``ADMIN_DEFAULT_PASSWORD`` (or ``DEFAULT_SUPERUSER_PASSWORD``,
-   shared with ``api/db/init_data.py``) or is randomly generated and printed
-   once to the log.
+   shared with ``api/db/init_data.py``) or is randomly generated and written
+   once to a 0600 bootstrap file, never the log.
 3. Failed logins are throttled per client key (in-process counter).
 """
 
@@ -44,11 +44,6 @@ import auth
 import pytest
 
 assert auth.__file__.endswith("admin/server/auth.py"), f"unexpected auth module resolved: {auth.__file__}"
-
-
-def _fake_jsonify(payload=None, **kwargs):
-    """Minimal stand-in for flask.jsonify: returns its payload unchanged."""
-    return payload if payload is not None else kwargs
 
 
 def _reset_login_state():
@@ -69,43 +64,14 @@ def _no_bootstrap_password_env(monkeypatch):
     monkeypatch.delenv("DEFAULT_SUPERUSER_PASSWORD", raising=False)
 
 
-class TestCheckAdminNeverCreatesAccounts:
-    def test_unregistered_username_is_rejected_without_creation(self):
-        with mock.patch.object(auth, "UserService") as user_service:
-            user_service.query.return_value = []
-            user_service.query_user.return_value = None
-
-            assert auth.check_admin("probe@attacker.example", "whatever") is False
-
-        user_service.query.assert_called_once_with(email="probe@attacker.example")
-        user_service.save.assert_not_called()
-        user_service.query_user.assert_not_called()
-
-    def test_wrong_password_is_rejected_without_creation(self):
-        registered = mock.MagicMock()
-        with mock.patch.object(auth, "UserService") as user_service:
-            user_service.query.return_value = [registered]
-            user_service.query_user.return_value = None
-
-            assert auth.check_admin("admin@ragflow.io", "wrong-password") is False
-
-        user_service.query_user.assert_called_once_with("admin@ragflow.io", "wrong-password")
-        user_service.save.assert_not_called()
-
-    def test_valid_credentials_pass(self):
-        registered = mock.MagicMock()
-        with mock.patch.object(auth, "UserService") as user_service:
-            user_service.query.return_value = [registered]
-            user_service.query_user.return_value = registered
-
-            assert auth.check_admin("admin@ragflow.io", "YWRtaW4=") is True
-
-        user_service.save.assert_not_called()
-
-
 class TestInitDefaultAdminPassword:
-    def test_random_password_when_env_unset_and_logged_once(self, caplog):
-        with caplog.at_level(logging.WARNING), mock.patch.object(auth, "UserService") as user_service, mock.patch.object(auth, "add_tenant_for_admin") as add_tenant:
+    def test_random_password_when_env_unset_is_not_logged(self, tmp_path, caplog):
+        with (
+            caplog.at_level(logging.WARNING),
+            mock.patch.object(auth, "get_project_base_directory", return_value=str(tmp_path)),
+            mock.patch.object(auth, "UserService") as user_service,
+            mock.patch.object(auth, "add_tenant_for_admin") as add_tenant,
+        ):
             user_service.query.return_value = []
             user_service.save.return_value = object()
 
@@ -119,11 +85,59 @@ class TestInitDefaultAdminPassword:
         stored_password = base64.b64decode(saved["password"]).decode("utf-8")
         assert stored_password != "admin"
         assert len(stored_password) >= 18
-        # The random password is revealed exactly once, in the startup log.
-        assert stored_password in caplog.text
-        assert caplog.text.count(stored_password) == 1
-        assert "change it immediately" in caplog.text
+        # The random password goes to the 0600 bootstrap file and never the log.
+        assert stored_password not in caplog.text
+        assert "admin_bootstrap_password.txt" in caplog.text
+        assert "0600" in caplog.text
         add_tenant.assert_called_once()
+
+    def test_random_password_written_to_0600_file_matching_the_saved_hash(self, tmp_path, caplog):
+        with (
+            caplog.at_level(logging.WARNING),
+            mock.patch.object(auth, "get_project_base_directory", return_value=str(tmp_path)),
+            mock.patch.object(auth, "UserService") as user_service,
+            mock.patch.object(auth, "add_tenant_for_admin"),
+        ):
+            user_service.query.return_value = []
+            user_service.save.return_value = object()
+
+            auth.init_default_admin()
+
+        saved = user_service.save.call_args.kwargs
+        stored_password = base64.b64decode(saved["password"]).decode("utf-8")
+
+        password_file = tmp_path / "logs" / "admin_bootstrap_password.txt"
+        assert password_file.exists()
+        assert password_file.read_text(encoding="utf-8").strip() == stored_password
+        assert (password_file.stat().st_mode & 0o777) == 0o600
+        # The log announces the file, not the credential itself.
+        assert stored_password not in caplog.text
+        assert str(password_file) in caplog.text
+
+    def test_unwritable_bootstrap_dir_fails_closed_without_leaking(self, tmp_path, caplog):
+        locked_dir = tmp_path / "logs"
+        locked_dir.mkdir()
+        locked_dir.chmod(0o500)  # read+execute, no write
+        try:
+            with (
+                caplog.at_level(logging.ERROR),
+                mock.patch.object(auth, "get_project_base_directory", return_value=str(tmp_path)),
+                mock.patch.object(auth, "UserService") as user_service,
+                mock.patch.object(auth, "add_tenant_for_admin"),
+            ):
+                user_service.query.return_value = []
+                user_service.save.return_value = object()
+
+                auth.init_default_admin()
+
+            saved = user_service.save.call_args.kwargs
+            stored_password = base64.b64decode(saved["password"]).decode("utf-8")
+            # Fail closed: no file, and the password never reaches the log.
+            assert not (locked_dir / "admin_bootstrap_password.txt").exists()
+            assert stored_password not in caplog.text
+            assert "NOT recoverable" in caplog.text
+        finally:
+            locked_dir.chmod(0o700)
 
     def test_random_passwords_differ_between_bootstraps(self):
         first, first_env = auth._resolve_bootstrap_admin_password()
@@ -264,73 +278,6 @@ class TestLoginThrottling:
 
         # A fresh reservation is admitted immediately after the success reset.
         assert auth._reserve_login_attempt("1.2.3.4")[0] == 0
-
-    def test_login_verify_returns_429_when_throttled(self):
-        for _ in range(auth.ADMIN_LOGIN_MAX_FAILURES):
-            auth._reserve_login_attempt("1.2.3.4")
-
-        fake_request = mock.MagicMock()
-        fake_request.headers = {}
-        fake_request.authorization.parameters = {"username": "admin@ragflow.io", "password": "anything"}
-        with (
-            mock.patch.object(auth, "_client_key", return_value="1.2.3.4"),
-            mock.patch.object(auth, "request", fake_request),
-            mock.patch.object(auth, "jsonify", _fake_jsonify),
-            mock.patch.object(auth, "check_admin") as check_admin,
-        ):
-
-            @auth.login_verify
-            def endpoint():
-                return "ok"
-
-            payload, status = endpoint()
-
-        assert status == 200
-        assert payload["code"] == 429
-        check_admin.assert_not_called()
-
-    def test_login_verify_records_failure_on_denied_credentials(self):
-        fake_request = mock.MagicMock()
-        fake_request.headers = {}
-        fake_request.authorization.parameters = {"username": "admin@ragflow.io", "password": "bad"}
-        with (
-            mock.patch.object(auth, "_client_key", return_value="1.2.3.4"),
-            mock.patch.object(auth, "request", fake_request),
-            mock.patch.object(auth, "jsonify", _fake_jsonify),
-            mock.patch.object(auth, "check_admin", return_value=False),
-        ):
-
-            @auth.login_verify
-            def endpoint():
-                return "ok"
-
-            payload, status = endpoint()
-
-        assert status == 200
-        assert payload["code"] == 500
-        # The reserved failure slot is visible to the counter but does not
-        # block the very next attempt.
-        assert auth._login_failures.get("1.2.3.4") is not None
-        assert auth._reserve_login_attempt("1.2.3.4")[0] == 0
-
-
-def test_throttle_client_key_uses_last_forwarded_hop():
-    """Only the rightmost XFF entry (appended by our nginx) may key the limiter."""
-    from flask import Flask
-
-    from admin.server.auth import _client_key
-
-    app = Flask(__name__)
-    # Proxied through the in-container nginx: the peer is loopback, so the
-    # XFF last hop (the address our nginx appended) keys the limiter.
-    with app.test_request_context("/", headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, environ_base={"REMOTE_ADDR": "127.0.0.1"}):
-        assert _client_key() == "5.6.7.8"
-    # Direct hit on the externally published port: the peer keys the limiter
-    # and a client-supplied XFF cannot rotate throttle buckets.
-    with app.test_request_context("/", headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}, environ_base={"REMOTE_ADDR": "9.9.9.9"}):
-        assert _client_key() == "9.9.9.9"
-    with app.test_request_context("/", environ_base={"REMOTE_ADDR": "127.0.0.1"}):
-        assert _client_key() == "127.0.0.1"
 
 
 class TestConcurrentLoginBurst:

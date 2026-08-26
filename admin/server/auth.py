@@ -24,7 +24,7 @@ import uuid
 from functools import wraps
 from datetime import datetime
 
-from flask import jsonify, request
+from flask import request
 from flask_login import current_user, login_user
 
 from api.common.exceptions import AdminException, UserNotFoundError
@@ -33,6 +33,7 @@ from api.db.services import UserService
 from api.db import UserTenantRole
 from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import ActiveEnum, StatusEnum
+from common.file_utils import get_project_base_directory
 from api.utils.crypt import CryptPayloadError, decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
@@ -209,13 +210,34 @@ def _resolve_bootstrap_admin_password() -> tuple[str, str | None]:
 
     Precedence: ADMIN_DEFAULT_PASSWORD, then DEFAULT_SUPERUSER_PASSWORD (the
     variable honoured by api/db/init_data.py on the web side), then a random
-    password that is only revealed once in the startup log.
+    password that is delivered through a 0600 bootstrap file, never the log.
     """
     for env_name in (ADMIN_DEFAULT_PASSWORD_ENV, DEFAULT_SUPERUSER_PASSWORD_ENV):
         value = os.getenv(env_name)
         if value:
             return value, env_name
     return secrets.token_urlsafe(18), None
+
+
+def _write_bootstrap_password_file(password: str) -> str | None:
+    """Write the generated bootstrap password to a 0600 file beside the logs.
+
+    Returns the file path, or None when the file could not be written (the
+    password is then unrecoverable and the operator must set
+    ADMIN_DEFAULT_PASSWORD and recreate the account — failing closed beats
+    leaking the credential into a log stream).
+    """
+    target_dir = os.path.join(get_project_base_directory(), "logs")
+    path = os.path.join(target_dir, "admin_bootstrap_password.txt")
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(password + "\n")
+        return path
+    except OSError as e:
+        logging.error(f"Failed to write the admin bootstrap password file {path}: {e}")
+        return None
 
 
 def init_default_admin():
@@ -243,10 +265,18 @@ def init_default_admin():
         if env_name:
             logging.info(f"Created default superuser admin@ragflow.io with the password from {env_name}. Change it after the first login.")
         else:
-            logging.warning(
-                f"No superuser found and neither {ADMIN_DEFAULT_PASSWORD_ENV} nor {DEFAULT_SUPERUSER_PASSWORD_ENV} is set. "
-                f"Created default superuser admin@ragflow.io with the randomly generated password (printed only once, change it immediately): {password}"
-            )
+            password_file = _write_bootstrap_password_file(password)
+            if password_file:
+                logging.warning(
+                    f"No superuser found and neither {ADMIN_DEFAULT_PASSWORD_ENV} nor {DEFAULT_SUPERUSER_PASSWORD_ENV} is set. "
+                    f"Created default superuser admin@ragflow.io; its randomly generated password was written once to {password_file} (mode 0600). Read it there and change it immediately after the first login."
+                )
+            else:
+                logging.error(
+                    f"No superuser found and neither {ADMIN_DEFAULT_PASSWORD_ENV} nor {DEFAULT_SUPERUSER_PASSWORD_ENV} is set, "
+                    f"and the bootstrap password file could not be written. The randomly generated password for admin@ragflow.io is NOT recoverable: "
+                    f"delete the account and re-run with {ADMIN_DEFAULT_PASSWORD_ENV} set."
+                )
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
@@ -353,57 +383,3 @@ def login_admin(email: str, password: str):
     user.save()
     msg = "Welcome back!"
     return sync_construct_response(data=resp, auth=user.get_id(), message=msg)
-
-
-def check_admin(username: str, password: str):
-    # Authentication must never create accounts. Historically, probing this
-    # function with any unregistered username silently created a superuser
-    # admin@ragflow.io with a fixed password, so a single anonymous request
-    # could resurrect a default admin account that an operator had removed
-    # (CWE-798 hardcoded credentials + CWE-306 missing authentication for a
-    # privileged action). A failed check is now just a failure; bootstrap
-    # account creation only happens in init_default_admin() at startup.
-    users = UserService.query(email=username)
-    if not users:
-        logging.info(f"Username: {username} is not registered!")
-        return False
-
-    user = UserService.query_user(username, password)
-    if user:
-        return True
-    else:
-        return False
-
-
-def login_verify(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or "username" not in auth.parameters or "password" not in auth.parameters:
-            return jsonify({"code": 401, "message": "Authentication required", "data": None}), 200
-
-        key = _client_key()
-        # Same atomic admission as login_admin: the failure slot is consumed
-        # before credential verification so concurrent bursts cannot exceed
-        # ADMIN_LOGIN_MAX_FAILURES verifications from one client.
-        remaining, marker = _reserve_login_attempt(key)
-        if remaining > 0:
-            logging.warning(f"Admin basic-auth verification from {key} throttled, retry in {remaining}s.")
-            return jsonify({"code": 429, "message": f"Too many failed login attempts. Retry in {remaining}s.", "data": None}), 200
-
-        username = auth.parameters["username"]
-        password = auth.parameters["password"]
-        try:
-            verified = check_admin(username, password)
-        except Exception:
-            logging.exception("An error occurred during admin login verification.")
-            _release_login_attempt(key, marker)
-            return jsonify({"code": 500, "message": "An internal server error occurred."}), 200
-        if not verified:
-            # The reserved slot already records this failure.
-            return jsonify({"code": 500, "message": "Access denied", "data": None}), 200
-
-        _reset_login_failures(key)
-        return f(*args, **kwargs)
-
-    return decorated

@@ -40,7 +40,7 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 ## Default Administrative Account
 
 - Username: admin@ragflow.io
-- Password: the value of the `ADMIN_DEFAULT_PASSWORD` (or `DEFAULT_SUPERUSER_PASSWORD`) environment variable; if neither is set when the admin server first starts, a random password is generated and printed once to the admin server log. Change it after the first login.
+- Password: the value of the `ADMIN_DEFAULT_PASSWORD` (or `DEFAULT_SUPERUSER_PASSWORD`) environment variable; if neither is set when the admin server first starts, a random password is generated and written once to `logs/admin_bootstrap_password.txt` (mode 0600). Change it after the first login.
 
 ## Supported Commands
 
