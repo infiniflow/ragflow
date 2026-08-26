@@ -4,13 +4,68 @@ from rag.advanced_rag.harness.tools.registry import _inspector_schema, _navigate
 
 # Register tools
 # Search tools
-from rag.advanced_rag.harness.tools.search import bm25_search, hybrid_search, structured_query, vector_search, web_search
+from rag.advanced_rag.harness.tools.search import (
+    bm25_search,
+    grep_search,
+    hybrid_search,
+    list_chunks,
+    structured_query,
+    vector_search,
+    web_search,
+)
 
 register_tool("hybrid_search", _search_schema("hybrid_search", "Embedding + Keywords search"), hybrid_search)
 register_tool("vector_search", _search_schema("vector_search", "Embedding search"), vector_search)
 register_tool("bm25_search", _search_schema("bm25_search", "Keywords search"), bm25_search)
 register_tool("web_search", _search_schema("web_search", "Internet search"), web_search)
 register_tool("structured_query", _search_schema("structured_query", "SQL search"), structured_query)
+
+# Grep-style exact locate + deep-read (used by the sub-agent, mirrors dynamic's
+# grep_chunks / list_chunks but returns the Pipeline {"chunks": [...]} contract).
+register_tool(
+    "grep_search",
+    {
+        "type": "function",
+        "function": {
+            "name": "grep_search",
+            "description": (
+                "Exact keyword/pattern locate: keyword-first (BM25) candidate retrieval, then a "
+                "case-insensitive regex locate returning COMPACT snippet chunks (token-cheap). Use "
+                "for exact names / ids / numbers. When nothing matches it returns the candidates unchanged."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "the regex/keywords to locate (case-insensitive)."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    grep_search,
+)
+register_tool(
+    "list_chunks",
+    {
+        "type": "function",
+        "function": {
+            "name": "list_chunks",
+            "description": (
+                "Deep-read a document: return its COMPLETE chunk list in reading order. Call after "
+                "grep_search / hybrid_search hits a document when you need the full text (enumeration / "
+                "count / arithmetic answers)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "string", "description": "the owning document id to read fully."},
+                },
+                "required": ["doc_id"],
+            },
+        },
+    },
+    list_chunks,
+)
 
 # Navigation tools (require compilation)
 from rag.advanced_rag.harness.tools.navigation import dataset_navigation_search, mindmap_navigate, ontology_navigate

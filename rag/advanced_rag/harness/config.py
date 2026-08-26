@@ -1,4 +1,12 @@
-"""Thinking mode configurations."""
+"""Thinking mode configurations.
+
+medium/high/ultra all run the single-agent SCA graph (see
+``agentic_rag_graph.build_agentic_graph``); the ONLY thing the ReAct/SCA path
+consumes from the strategy is ``available_tools`` (via ``get_mode("medium")``)
+and ``label``. low runs the lightweight ``direct_search`` graph, which reads
+``execution_strategy`` (=="direct_search") and ``available_tools``. All other
+fields are legacy data and never read by any running path.
+"""
 
 from rag.advanced_rag.harness.types import ExecutionStrategy
 
@@ -6,101 +14,22 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
     "low": ExecutionStrategy(
         label="low",
         execution_strategy="direct_search",
-        requires_decomposition=False,
-        requires_agent_loop=False,
-        requires_sufficiency_judge=False,
-        requires_selective_gen=False,
-        allows_dynamic_claims=False,
-        allows_replan=False,
-        max_orchestrator_cycles=1,
-        max_agent_cycles=0,
-        max_parallel_agents=1,
         available_tools=["hybrid_search", "web_search", "bm25_search"],
-        sufficiency_threshold=0.85,
-        fallback_to_direct_llm=False,
     ),
     "medium": ExecutionStrategy(
         label="medium",
-        execution_strategy="decompose_and_search",
-        requires_decomposition=True,
-        requires_agent_loop=False,
-        requires_sufficiency_judge=True,
-        requires_selective_gen=True,
-        allows_dynamic_claims=False,
-        allows_replan=False,
-        max_orchestrator_cycles=3,
-        max_agent_cycles=0,
-        max_parallel_agents=1,
-        available_tools=["hybrid_search", "web_search", "bm25_search"],
-        sufficiency_threshold=0.75,
-        fallback_to_direct_llm=False,
-        c_high=0.75,
-        c_low=0.45,
-        llm_floor=0.55,
-        allows_reconcile=False,
+        execution_strategy="direct_search",  # legacy; SCA path does not read it
+        available_tools=["grep_search", "list_chunks", "web_search"],
     ),
     "high": ExecutionStrategy(
         label="high",
-        execution_strategy="agentic_research",
-        requires_decomposition=True,
-        requires_agent_loop=False,
-        requires_sufficiency_judge=True,
-        requires_selective_gen=True,
-        allows_dynamic_claims=False,
-        allows_replan=False,
-        max_orchestrator_cycles=3,
-        max_agent_cycles=2,
-        max_parallel_agents=4,
-        available_tools=[
-            "hybrid_search",
-            "web_search",
-            "bm25_search",
-            "ontology_navigate",
-            "dataset_navigation_search",
-            "graph_explore",
-            "inspector_open_context",
-            "inspector_compare",
-        ],
-        sufficiency_threshold=0.65,
-        fallback_to_direct_llm=False,
-        c_high=0.70,
-        c_low=0.40,
-        llm_floor=0.50,
-        allows_reconcile=True,
+        execution_strategy="direct_search",  # legacy; SCA path does not read it
+        available_tools=["grep_search", "list_chunks", "web_search"],
     ),
     "ultra": ExecutionStrategy(
         label="ultra",
-        execution_strategy="deep_research",
-        requires_decomposition=True,
-        requires_agent_loop=True,
-        requires_sufficiency_judge=True,
-        requires_selective_gen=True,
-        allows_dynamic_claims=True,
-        allows_replan=True,
-        max_orchestrator_cycles=4,
-        max_agent_cycles=2,
-        max_parallel_agents=4,
-        available_tools=[
-            "hybrid_search",
-            "bm25_search",
-            "web_search",
-            "structured_query",
-            "ontology_navigate",
-            "dataset_navigation_search",
-            "mindmap_navigate",
-            "graph_explore",
-            "wiki_query",
-            "inspector_open_context",
-            "inspector_compare",
-            "inspector_grep_within",
-            "inspector_request_adjacent",
-        ],
-        sufficiency_threshold=0.55,
-        fallback_to_direct_llm=True,
-        c_high=0.65,
-        c_low=0.35,
-        llm_floor=0.45,
-        allows_reconcile=True,
+        execution_strategy="direct_search",  # legacy; SCA path does not read it
+        available_tools=["grep_search", "list_chunks", "web_search"],
     ),
 }
 
