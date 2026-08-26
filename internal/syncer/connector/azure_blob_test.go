@@ -362,6 +362,41 @@ func TestAzureBlobStorageConnectorResumeSkipsBlobs(t *testing.T) {
 	}
 }
 
+func TestAzureBlobStorageConnectorResumeRejectsMissingAnchor(t *testing.T) {
+	connector := newTestAzureBlobStorageConnector(t, map[string]any{
+		"auth_mode":   "account_key",
+		"credentials": map[string]any{"account_name": "acct", "account_key": "key", "container_name": "container"},
+	}, []azureBlobObject{
+		{Name: "a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
+		{Name: "c.txt", LastModified: mustTime(t, "2026-01-03T00:00:00Z"), Size: 1, ETag: "c"},
+	})
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: "b.txt", SourceID: "b.txt"},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+func TestAzureBlobStorageConnectorResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newTestAzureBlobStorageConnector(t, map[string]any{
+		"auth_mode":   "account_key",
+		"credentials": map[string]any{"account_name": "acct", "account_key": "key", "container_name": "container"},
+	}, []azureBlobObject{
+		{Name: "a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
+	})
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestAzureBlobStorageConnectorOpenPruneReturnsSlimSnapshot(t *testing.T) {
 	connector := newTestAzureBlobStorageConnector(t, map[string]any{
 		"auth_mode":   "account_key",
