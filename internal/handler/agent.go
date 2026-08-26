@@ -96,8 +96,8 @@ type AgentHandler struct {
 	documentService documentAccessChecker
 	// redisGet fetches a raw string from Redis. Defaults to the global
 	// client (redis.Get) so production behaviour is unchanged; tests inject
-	// a miniredis-backed getter to exercise GetAgentLogs without a live
-	// Redis (mirrors the newExecutor injection pattern).
+	// a miniredis-backed getter to exercise Agent log endpoints without a
+	// live Redis (mirrors the newExecutor injection pattern).
 	redisGet func(key string) (string, error)
 	// redisStore writes the debug-run log array. Defaults to the global
 	// client (redis.Get, which satisfies task.DebugLogStore); tests inject a
@@ -146,9 +146,9 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 	}
 }
 
-// WithRedisGetter overrides the Redis string getter used by GetAgentLogs.
-// Tests pass a miniredis-backed getter so the debug-log polling endpoint can
-// be exercised end-to-end without a live Redis.
+// WithRedisGetter overrides the Redis string getter used by Agent log endpoints.
+// Tests pass a miniredis-backed getter so polling can be exercised end-to-end
+// without a live Redis.
 func (h *AgentHandler) WithRedisGetter(f func(key string) (string, error)) *AgentHandler {
 	h.redisGet = f
 	return h
@@ -1605,7 +1605,9 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 // id does not resolve to a canvas owned by the caller (see
 // api/apps/restful_apis/agent_api.py webhook_trace). We replicate
 // that envelope here so the front-end poll does not surface a 500
-// for unknown / foreign canvas ids.
+// for unknown / foreign canvas ids. Polling follows the same cursor
+// protocol: establish since_ts, discover a run, then fetch events by
+// webhook_id until a finished event arrives.
 func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1621,17 +1623,33 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 		// indistinguishable for missing vs foreign, so collapse
 		// both into 102 "Canvas not found." here.
 		if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
-			common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+			jsonInternalError(c, err)
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Canvas not found.")
 		return
 	}
-	common.SuccessWithData(c, gin.H{
-		"events":        []interface{}{},
-		"finished":      false,
-		"next_since_ts": 0,
-	}, "success")
+
+	sinceTS, hasSinceTS := parseWebhookSinceTS(c.Query("since_ts"))
+	if !hasSinceTS {
+		common.SuccessWithData(c, newWebhookTracePoll(nil, float64(time.Now().UnixNano())/1e9, false), "success")
+		return
+	}
+	if h.redisGet == nil {
+		jsonInternalError(c, errors.New("agent webhook trace: redis getter not configured"))
+		return
+	}
+	payload, err := h.redisGet(fmt.Sprintf("webhook-trace-%s-logs", canvasID))
+	if err != nil {
+		jsonInternalError(c, fmt.Errorf("read agent webhook trace: %w", err))
+		return
+	}
+	result, err := pollWebhookTrace(payload, sinceTS, c.Query("webhook_id"))
+	if err != nil {
+		jsonInternalError(c, err)
+		return
+	}
+	common.SuccessWithData(c, result, "success")
 }
 
 // checkCanvasAccessForHandler is the shared 103 envelope helper for
