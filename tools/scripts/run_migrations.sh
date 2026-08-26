@@ -9,18 +9,29 @@
 #   PY=python3 tools/scripts/run_migrations.sh [--config CONFIG_PATH]
 #
 # Environment variables:
-#   PY  - Python interpreter path (default: python3)
+#   PY       - Python interpreter path (default: python3)
+#   DB_TYPE  - metadata database type (mysql, postgres, gaussdb, oceanbase)
 # -----------------------------------------------------------------------------
 
 set -e
 
 PY="${PY:-python3}"
 CONFIG="${1:-conf/service_conf.yaml}"
+DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
+DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
 
-echo "Running model provider table migrations..."
+if [[ "$DB_TYPE_NORMALIZED" == "postgres" || "$DB_TYPE_NORMALIZED" == "postgresql" || "$DB_TYPE_NORMALIZED" == "gaussdb" || "$DB_TYPE_NORMALIZED" == "gauss" ]]; then
+    MIGRATION_SCRIPT="tools/scripts/postgres_migration.py"
+    ENGINE_LABEL="PostgreSQL/GaussDB"
+else
+    MIGRATION_SCRIPT="tools/scripts/mysql_migration.py"
+    ENGINE_LABEL="MySQL"
+fi
+
+echo "Running model provider table migrations (${ENGINE_LABEL}, DB_TYPE=${DB_TYPE:-mysql})..."
 
 # Step 1: Create base model provider tables
-"$PY" tools/scripts/mysql_migration.py \
+"$PY" "$MIGRATION_SCRIPT" \
     --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
     --config "$CONFIG" \
     --execute \
@@ -28,7 +39,7 @@ echo "Running model provider table migrations..."
     --mark-database-version-on-success
 
 # Step 2: Seed, merge model types, and migrate model IDs
-"$PY" tools/scripts/mysql_migration.py \
+"$PY" "$MIGRATION_SCRIPT" \
     --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
     --config "$CONFIG" \
     --execute \

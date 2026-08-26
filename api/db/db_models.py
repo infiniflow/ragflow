@@ -1984,122 +1984,165 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
         pass
 
 
-_INTEGER_COLUMN_TYPES = frozenset({"int", "integer", "bigint", "smallint", "mediumint", "tinyint"})
-_STRING_COLUMN_TYPES = frozenset({"varchar", "character varying", "char", "character", "text", "nvarchar"})
+TENANT_MODEL_ID_COLUMNS = (
+    ("tenant", "tenant_llm_id"),
+    ("tenant", "tenant_embd_id"),
+    ("tenant", "tenant_asr_id"),
+    ("tenant", "tenant_img2txt_id"),
+    ("tenant", "tenant_rerank_id"),
+    ("tenant", "tenant_tts_id"),
+    ("tenant", "tenant_ocr_id"),
+    ("knowledgebase", "tenant_embd_id"),
+    ("dialog", "tenant_llm_id"),
+    ("dialog", "tenant_rerank_id"),
+    ("memory", "tenant_llm_id"),
+    ("memory", "tenant_embd_id"),
+)
 
-# Matches tools/scripts/mysql_migration.py ModelTypeMergeStage.MODEL_TYPE_STR_TO_INT
-TENANT_MODEL_TYPE_NAME_TO_INT = {
-    "chat": 1,
-    "embedding": 2,
-    "asr": 4,
-    "speech2text": 4,
-    "vision": 8,
-    "image2text": 8,
-    "rerank": 16,
-    "tts": 32,
-    "ocr": 64,
-}
+_INTEGER_COLUMN_TYPES = frozenset({"int", "integer", "bigint", "smallint", "mediumint", "tinyint"})
 
 
 def _get_column_data_type(table_name: str, column_name: str) -> str | None:
-    try:
-        if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
-            cursor = DB.execute_sql(
-                """
-                SELECT data_type
-                FROM information_schema.columns
-                WHERE table_schema = current_schema()
-                  AND table_name = %s
-                  AND column_name = %s
-                """,
-                (table_name, column_name),
-            )
-        else:
-            cursor = DB.execute_sql(
-                """
-                SELECT DATA_TYPE
-                FROM information_schema.columns
-                WHERE table_schema = DATABASE()
-                  AND table_name = %s
-                  AND column_name = %s
-                """,
-                (table_name, column_name),
-            )
-        row = cursor.fetchone()
-        return row[0].lower() if row else None
-    except Exception as ex:
-        logging.warning("Failed to inspect %s.%s column type: %s", table_name, column_name, ex)
-        return None
+    if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+        cursor = DB.execute_sql(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = %s
+              AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+    else:
+        cursor = DB.execute_sql(
+            """
+            SELECT DATA_TYPE
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = %s
+              AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+    row = cursor.fetchone()
+    return row[0].lower() if row else None
 
 
-def _tenant_model_type_normalized_tokens_sql(column_sql: str) -> str:
-    """Lowercase, trim, drop spaces, and split pipe-delimited model_type names."""
-    return f"REPLACE(REPLACE(LOWER(TRIM({column_sql})), ' ', ''), '|', ',')"
+def migrate_tenant_model_id_column_types(migrator):
+    """Convert legacy IntegerField tenant_*_id columns to VARCHAR(32).
 
-
-def _tenant_model_type_postgres_using_sql() -> str:
-    token_list = "string_to_array(replace(replace(lower(btrim(\"model_type\")), ' ', ''), '|', ','), ',')"
-    bits = " | ".join(f"CASE WHEN '{name}' = ANY({token_list}) THEN {value} ELSE 0 END" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
-    return (
-        'CASE WHEN "model_type" IS NULL OR btrim("model_type") = \'\' THEN 1 '
-        'WHEN btrim("model_type") ~ \'^[0-9]+$\' THEN btrim("model_type")::integer '
-        f"ELSE COALESCE(NULLIF(({bits}), 0), 1) END"
-    )
-
-
-def _tenant_model_type_mysql_update_sql() -> str:
-    tokens = _tenant_model_type_normalized_tokens_sql("`model_type`")
-    bits = " | ".join(f"IF(FIND_IN_SET('{name}', {tokens}), {value}, 0)" for name, value in TENANT_MODEL_TYPE_NAME_TO_INT.items())
-    return (
-        "UPDATE `tenant_model` SET `model_type` = CASE "
-        "WHEN TRIM(`model_type`) REGEXP '^[0-9]+$' THEN TRIM(`model_type`) "
-        "WHEN `model_type` IS NULL OR TRIM(`model_type`) = '' THEN '1' "
-        f"ELSE CAST(IFNULL(NULLIF(({bits}), 0), 1) AS CHAR) END"
-    )
-
-
-def migrate_tenant_model_type_column(migrator):
-    """Convert tenant_model.model_type from varchar names to an integer bitmask.
-
-    The v0.27.0 provider-table migration creates model_type as VARCHAR(32) and
-    only the MySQL-only model_type_merge stage turns it into INT. Upgraded
-    PostgreSQL databases keep the string column, so bitmask predicates
-    (`model_type & N`) fail with `operator does not exist: character varying & integer`
-    (#18755).
+    v0.26.x stored tenant_llm row ids (integers) in these columns. v0.27.0
+    stores tenant_model.id hex strings instead. Upgraded databases that never
+    ran the MySQL-only tenant_model_id_migration stage can still have integer
+    columns, which breaks default-model and dataset embedding updates (#18756).
     """
-    table_name = "tenant_model"
-    column_name = "model_type"
-    target_field = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr")
+    target_field = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
 
-    try:
-        table_present = DB.table_exists(table_name)
-    except Exception as ex:
-        logging.warning("Failed to inspect table %s while migrating model_type: %s", table_name, ex)
-        return
-    if not table_present:
+    for table_name, column_name in TENANT_MODEL_ID_COLUMNS:
+        try:
+            table_present = DB.table_exists(table_name)
+        except Exception as ex:
+            logging.warning("Failed to inspect table %s while migrating tenant_*_id types: %s", table_name, ex)
+            continue
+        if not table_present:
+            continue
+
+        try:
+            col_type = _get_column_data_type(table_name, column_name)
+        except Exception:
+            logging.critical(
+                "Skipping %s.%s tenant_*_id migration; column inspection failed",
+                table_name,
+                column_name,
+                exc_info=True,
+            )
+            continue
+
+        if col_type is None:
+            logging.info("Adding missing %s.%s tenant_model.id reference column", table_name, column_name)
+            alter_db_add_column(migrator, table_name, column_name, target_field)
+            continue
+
+        mysql_family = settings.DATABASE_TYPE.upper() not in {"POSTGRES"} and not is_gaussdb_compatible_database()
+        leftover_sql = (
+            f"UPDATE `{table_name}` SET `{column_name}` = NULL "
+            f"WHERE `{column_name}` IS NOT NULL AND CHAR_LENGTH(`{column_name}`) <> 32"
+        )
+
+        if col_type not in _INTEGER_COLUMN_TYPES:
+            # MySQL commits ALTER TABLE independently of the leftover UPDATE.
+            # A retry after a failed cleanup must still NULL non-32-char values.
+            if mysql_family:
+                try:
+                    DB.execute_sql(leftover_sql)
+                except Exception as ex:
+                    logging.critical(
+                        "Failed to clear leftover integer ids in converted %s.%s: %s",
+                        table_name,
+                        column_name,
+                        ex,
+                    )
+            continue
+
+        try:
+            if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+                # Legacy integers were tenant_llm row ids, never 32-char tenant_model.id
+                # values. Cast them away rather than leaving strings such as "42".
+                DB.execute_sql(
+                    f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" '
+                    f"TYPE varchar(32) USING CAST(NULL AS varchar(32))"
+                )
+            else:
+                migrate(migrator.alter_column_type(table_name, column_name, target_field))
+                DB.execute_sql(leftover_sql)
+            logging.info(
+                "Converted %s.%s from %s to varchar(32) for tenant_model.id references",
+                table_name,
+                column_name,
+                col_type,
+            )
+        except Exception as ex:
+            logging.critical(
+                "Failed to convert %s.%s from %s to varchar(32): %s",
+                table_name,
+                column_name,
+                col_type,
+                ex,
+            )
+
+
+def _load_model_provider_migration_module():
+    import importlib.util
+
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tools", "scripts", "mysql_migration.py")
+    spec = importlib.util.spec_from_file_location("ragflow_mysql_migration", script_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def migrate_postgres_family_model_provider_tables():
+    """Run table-init and data-backfill stages on postgres/gaussdb upgrades.
+
+    Mirrors tools/scripts/mysql_migration.py, including TenantModelIdMigrationStage
+    (populate tenant_*_id from llm_id/embd_id) and ModelTypeMergeStage. MySQL
+    still uses the docker entrypoint script; postgres/gaussdb never ran that
+    path, so in-place upgrades left integer tenant_*_id values that match no
+    tenant_model.id.
+    """
+    if settings.DATABASE_TYPE.upper() not in {"POSTGRES", "GAUSSDB"}:
         return
 
-    col_type = _get_column_data_type(table_name, column_name)
-    if col_type is None:
-        alter_db_add_column(migrator, table_name, column_name, target_field)
-        return
-
-    if col_type in _INTEGER_COLUMN_TYPES:
-        return
-
-    if col_type not in _STRING_COLUMN_TYPES:
-        logging.warning("Skipping tenant_model.model_type conversion from unexpected type %s", col_type)
-        return
-
-    try:
-        if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
-            DB.execute_sql(f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" TYPE integer USING {_tenant_model_type_postgres_using_sql()}')
-        else:
-            DB.execute_sql(_tenant_model_type_mysql_update_sql())
-            migrate(migrator.alter_column_type(table_name, column_name, target_field))
-        logging.info("Converted tenant_model.model_type from %s to integer bitmask", col_type)
-    except Exception as ex:
-        logging.critical("Failed to convert tenant_model.model_type from %s to integer: %s", col_type, ex)
+    database_cfg = settings.DATABASE or {}
+    database_name = database_cfg.get("name") or database_cfg.get("database") or "rag_flow"
+    module = _load_model_provider_migration_module()
+    module.run_using_existing_connection(
+        peewee_db=DB,
+        dialect="postgres",
+        database_name=database_name,
+        options=database_cfg.get("options"),
+    )
 
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
@@ -2585,7 +2628,7 @@ def migrate_db():
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_ocr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
-    migrate_tenant_model_type_column(migrator)
+    migrate_tenant_model_id_column_types(migrator)
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
     # ---- FileCommit / FileCommitItem: artifact-page commit extension ----
@@ -2642,6 +2685,7 @@ def migrate_db():
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
     ensure_model_indexes(migrator)
+    migrate_postgres_family_model_provider_tables()
 
 
 def migrate_model_type_names():

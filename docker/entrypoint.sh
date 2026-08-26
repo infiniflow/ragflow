@@ -266,15 +266,10 @@ ensure_docling
 ensure_db_init
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
-    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
-    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
-    else
-        tools/scripts/run_migrations.sh
-    fi
+    # run_migrations.sh selects mysql_migration.py or postgres_migration.py
+    # from DB_TYPE so postgres/gaussdb upgrades get the same table-init and
+    # tenant_*_id backfill as MySQL.
+    tools/scripts/run_migrations.sh
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then

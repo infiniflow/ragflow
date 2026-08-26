@@ -103,12 +103,13 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
     monkeypatch.setattr(db_models, "alter_db_column_type", lambda *_args: events.append(("alter_type",)))
     monkeypatch.setattr(db_models, "alter_db_rename_column", lambda *_args: events.append(("rename",)))
     monkeypatch.setattr(db_models, "alter_db_drop_index", lambda *_args: events.append(("drop_index",)))
-    monkeypatch.setattr(db_models, "migrate_tenant_model_type_column", lambda _migrator: events.append(("tenant_model_type",)))
+    monkeypatch.setattr(db_models, "migrate_tenant_model_id_column_types", lambda _migrator: events.append(("tenant_model_id_types",)))
     monkeypatch.setattr(db_models, "relax_gaussdb_empty_string_compatible_columns", lambda: events.append(("relax",)))
     monkeypatch.setattr(db_models, "migrate", lambda *_operations: None)
     monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
     monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: None)
     monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: None)
+    monkeypatch.setattr(db_models, "migrate_postgres_family_model_provider_tables", lambda: events.append(("pg_model_provider",)))
 
     db_models.migrate_db()
 
@@ -116,8 +117,10 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
         assert isinstance(field, db_models.EmptyStringCharField)
         assert field.null is True
     assert set(migrated_fields) == {("document", "suffix"), ("user_canvas", "tags")}
-    assert ("tenant_model_type",) in events
-    assert events[-1] == ("relax",)
+    assert ("tenant_model_id_types",) in events
+    assert ("pg_model_provider",) in events
+    assert events.index(("tenant_model_id_types",)) < events.index(("relax",))
+    assert events.index(("relax",)) < events.index(("pg_model_provider",))
 
 
 def test_empty_string_char_field_keeps_non_gaussdb_constraints(monkeypatch):
@@ -386,14 +389,16 @@ def test_docker_compose_metadata_profile_does_not_force_mysql_for_gaussdb():
         assert cn_compose["services"][service_name]["depends_on"]["mysql"]["required"] is False
 
 
-def test_docker_launch_scripts_skip_mysql_migration_for_gaussdb():
+def test_docker_launch_scripts_run_postgres_migration_for_gaussdb():
     entrypoint = read_repo_file("docker/entrypoint.sh")
     launcher = read_repo_file("docker/launch_backend_service.sh")
+    run_migrations = read_repo_file("tools/scripts/run_migrations.sh")
 
-    assert 'DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"' in entrypoint
-    assert 'if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then' in entrypoint
-    assert "Skipping MySQL-specific model provider table migrations" in entrypoint
-
-    assert 'local db_type="${DB_TYPE:-mysql}"' in launcher
-    assert 'if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then' in launcher
-    assert "Skipping MySQL-specific model provider table migrations" in launcher
+    assert "Skipping MySQL-specific model provider table migrations" not in entrypoint
+    assert "Skipping MySQL-specific model provider table migrations" not in launcher
+    assert "tools/scripts/run_migrations.sh" in entrypoint
+    assert "tools/scripts/run_migrations.sh" in launcher
+    assert "tools/scripts/postgres_migration.py" in run_migrations
+    assert 'DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"' in run_migrations
+    assert '"$DB_TYPE_NORMALIZED" == "gaussdb"' in run_migrations
+    assert '"$DB_TYPE_NORMALIZED" == "postgres"' in run_migrations
