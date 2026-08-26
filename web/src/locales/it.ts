@@ -1091,6 +1091,9 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       created: 'Creato',
       action: 'Azione',
       embedModalTitle: 'Incorpora nella pagina web',
+      embedUserIdPlaceholder: 'es. user-001',
+      embedUserIdTooltip:
+        'Stringa di testo (massimo 255 caratteri) che identifica l\'utente finale della pagina incorporata. Viene aggiunta all\'URL di incorporamento come parametro userId.',
       published: 'Pubblicato',
       publishedTooltip:
         "Usa la versione pubblicata per questo embed. Quando abilitato, l'URL generato include release=true.",

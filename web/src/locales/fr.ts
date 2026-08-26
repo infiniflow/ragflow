@@ -1029,6 +1029,9 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       created: 'Créé',
       action: 'Action',
       embedModalTitle: 'Intégrer dans une page web',
+      embedUserIdPlaceholder: 'ex. user-001',
+      embedUserIdTooltip:
+        'Chaîne de texte (255 caractères maximum) identifiant l\'utilisateur final de la page intégrée. Elle est ajoutée à l\'URL d\'intégration comme paramètre userId.',
       comingSoon: 'Bientôt disponible',
       fullScreenTitle: 'Intégration complète',
       fullScreenDescription:

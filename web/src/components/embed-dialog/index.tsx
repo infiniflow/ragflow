@@ -59,6 +59,8 @@ import { SwitchFormField } from '../switch-fom-field';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from '../ui/input';
 
+const MAX_EMBED_USER_ID_LENGTH = 255;
+
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
   published: z.boolean(),
@@ -67,7 +69,7 @@ const FormSchema = z.object({
   enableStreaming: z.boolean(),
   muteWidget: z.boolean(),
   theme: z.enum([ThemeEnum.Light, ThemeEnum.Dark]),
-  userId: z.string().optional(),
+  userId: z.string().max(MAX_EMBED_USER_ID_LENGTH).optional(),
   widgetTitle: z.string(),
   widgetSubtitle: z.string(),
   widgetFooterText: z.string(),
@@ -431,8 +433,15 @@ window.addEventListener('message',e=>{
                     ></SelectWithSearch>
                   </RAGFlowFormItem>
                   {isAgent && (
-                    <RAGFlowFormItem name="userId" label={t('flow.userId')}>
-                      <Input></Input>
+                    <RAGFlowFormItem
+                      name="userId"
+                      label={t('flow.userId')}
+                      tooltip={t('chat.embedUserIdTooltip')}
+                    >
+                      <Input
+                        maxLength={MAX_EMBED_USER_ID_LENGTH}
+                        placeholder={t('chat.embedUserIdPlaceholder')}
+                      ></Input>
                     </RAGFlowFormItem>
                   )}
                 </TabsContent>
