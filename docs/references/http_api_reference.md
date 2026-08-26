@@ -2878,7 +2878,7 @@ curl --request POST \
 - `"knn_top_k"`: (*Body parameter*), `integer`
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
 - `"knn_num_candidates"`: (*Body parameter*), `integer`
-  The number of approximate nearest-neighbor candidates considered for vector search. It must be greater than or equal to `"knn_top_k"`. Defaults to `2048`. This parameter currently applies only to Elasticsearch.
+  The number of approximate nearest-neighbor candidates considered for vector search. It must be greater than or equal to `"knn_top_k"`. Defaults to the greater of `2048` and `"knn_top_k"`. This parameter currently applies only to Elasticsearch.
 - `"rerank_candidates_count"`: (*Body parameter*), `integer`
   The number of initial retrieval candidates to rank. It must be at least `"page"` multiplied by `"page_size"`. Defaults to `64`.
 - `"include_knowledge_compilation"`: (*Body parameter*), `boolean`
