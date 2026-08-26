@@ -138,6 +138,7 @@ Wraps the existing executor_manager implementation. The implementation file is l
 - `endpoint`: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
+- `api_token`: Shared secret for the executor manager API (falls back to the `SANDBOX_EXECUTOR_MANAGER_API_TOKEN` environment variable)
 
 The container pool is **not** sized from this configuration. sandbox-executor-manager reads
 `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE` from its environment once at startup
@@ -145,6 +146,12 @@ The container pool is **not** sized from this configuration. sandbox-executor-ma
 change that requires restarting that service. A `pool_size` key passed to the provider is carried
 for reporting only — `get_info()` echoes it back — and reloading `sandbox.self_managed` recreates
 the RAGFlow-side client without resizing anything.
+
+**Executor manager environment variables**:
+
+- `SANDBOX_EXECUTOR_MANAGER_API_TOKEN`: Shared secret required on the `/run` endpoint (sent as `Authorization: Bearer <token>` or `X-Sandbox-Token: <token>`, compared with `secrets.compare_digest`). When unset, `/run` refuses requests with HTTP 503 instead of staying open; the legacy open behaviour survives only through the explicit operator opt-in `SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED=true`. The RAGFlow side must be configured with the same value.
+- `SANDBOX_CONTAINER_NETWORK`: Docker network attached to sandbox runner containers (default: `none`, i.e. no external network access). Set to `bridge` (or a custom network) only when sandboxed code genuinely needs outbound network access; prefer baking dependencies into the base images instead.
+- `SANDBOX_RUN_RATE_LIMIT`: Rate limit for `POST /run`, keyed by client address (default: `120/minute`).
 
 **Languages**:
 - Python
@@ -156,6 +163,8 @@ the RAGFlow-side client without resizing anything.
 - seccomp
 - read-only filesystem
 - memory limits
+- network isolation (`--network none` by default)
+- shared-secret authentication on the executor API
 
 **Advantages**:
 - Low latency (&lt;90ms), data privacy, full control
@@ -1163,6 +1172,9 @@ class CodeExecutorComponent:
 
 ### Network security
 - Self-managed: Network isolation by default, no external access
+  - Sandbox runner containers are started with `--network none` (opt out via `SANDBOX_CONTAINER_NETWORK`, e.g. `bridge`, when sandboxed code needs outbound network such as runtime `pip`/`npm` installs; prefer baking dependencies into the base images instead)
+  - The executor manager API itself requires a shared secret (`SANDBOX_EXECUTOR_MANAGER_API_TOKEN`) on execution endpoints when configured; requests are authenticated with a constant-time comparison of the `Authorization: Bearer` or `X-Sandbox-Token` header
+  - The executor manager port is published to loopback (`127.0.0.1`) only; RAGFlow reaches it over the internal compose network
 - SaaS: HTTPS only, certificate pinning
 - IP whitelisting for self-managed endpoint access
 

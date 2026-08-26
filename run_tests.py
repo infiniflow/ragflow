@@ -329,8 +329,10 @@ Examples:
             return True
 
         except SystemExit:
-            # argparse already printed help, just exit
-            return False
+            # argparse already printed help or the error and chose a status:
+            # 0 for --help, 2 for a bad argument. Let it through instead of
+            # collapsing both into a failure.
+            raise
         except Exception as e:
             self.print_error(f"Error parsing arguments: {e}")
             return False
