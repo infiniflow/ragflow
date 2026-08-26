@@ -103,15 +103,15 @@ func xlsxImageMIMEType(extension string) (string, bool) {
 	case "png":
 		return "image/png", true
 	case "emf":
-		return "image/emf", true
+		return "image/x-emf", true
 	case "emz":
-		return "image/emz", true
+		return "image/x-emz", true
 	case "ico":
 		return "image/x-icon", true
 	case "wmf":
-		return "image/wmf", true
+		return "image/x-wmf", true
 	case "wmz":
-		return "image/wmz", true
+		return "image/x-wmz", true
 	default:
 		return "", false
 	}
