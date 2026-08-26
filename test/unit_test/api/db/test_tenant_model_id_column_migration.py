@@ -2,6 +2,8 @@
 Tests for tenant_*_id column type migration on upgrade (#18756).
 """
 
+import pytest
+
 from api.db import db_models
 from common import settings
 
@@ -15,6 +17,7 @@ def test_migrate_tenant_model_id_column_types_skips_non_integer_columns(monkeypa
 
     monkeypatch.setattr(db_models, "_get_column_data_type", fake_get_column_data_type)
     monkeypatch.setattr(db_models, "DB", type("DB", (), {"table_exists": staticmethod(lambda _name: True)})())
+    monkeypatch.setattr(settings, "DATABASE_TYPE", "postgres")
     monkeypatch.setattr(db_models, "alter_db_add_column", lambda *_args: (_ for _ in ()).throw(AssertionError("should not add column")))
 
     executed = []
@@ -27,6 +30,21 @@ def test_migrate_tenant_model_id_column_types_skips_non_integer_columns(monkeypa
 
     assert len(inspected) == len(db_models.TENANT_MODEL_ID_COLUMNS)
     assert not executed
+
+
+def test_migrate_tenant_model_id_column_types_skips_add_when_inspection_fails(monkeypatch):
+    added = []
+
+    def boom(*_args):
+        raise RuntimeError("catalog unavailable")
+
+    monkeypatch.setattr(db_models, "_get_column_data_type", boom)
+    monkeypatch.setattr(db_models, "DB", type("DB", (), {"table_exists": staticmethod(lambda _name: True)})())
+    monkeypatch.setattr(db_models, "alter_db_add_column", lambda *_args: added.append("add"))
+
+    db_models.migrate_tenant_model_id_column_types(object())
+
+    assert not added
 
 
 def test_migrate_tenant_model_id_column_types_adds_missing_columns(monkeypatch):
@@ -112,6 +130,37 @@ def test_migrate_tenant_model_id_column_types_converts_mysql_integer(monkeypatch
     assert converted == [("knowledgebase", "tenant_embd_id")]
     assert ("migrate", "alter knowledgebase.tenant_embd_id") in altered
     assert any("CHAR_LENGTH(`tenant_embd_id`) <> 32" in sql for sql in queries)
+
+
+@pytest.mark.parametrize("db_type", ["mysql", "oceanbase"])
+def test_migrate_tenant_model_id_column_types_retries_mysql_leftover_cleanup(monkeypatch, db_type):
+    queries = []
+    altered = []
+
+    class FakeDB:
+        @staticmethod
+        def table_exists(_name):
+            return True
+
+        @staticmethod
+        def execute_sql(sql, params=None):
+            queries.append(sql)
+
+    class Migrator:
+        def alter_column_type(self, *_args):
+            altered.append("alter")
+            raise AssertionError("already-converted varchar must not be altered again")
+
+    monkeypatch.setattr(db_models, "DB", FakeDB)
+    monkeypatch.setattr(settings, "DATABASE_TYPE", db_type)
+    monkeypatch.setattr(db_models, "_get_column_data_type", lambda *_args: "varchar")
+    monkeypatch.setattr(db_models, "migrate", lambda *_args: (_ for _ in ()).throw(AssertionError("should not migrate")))
+
+    db_models.migrate_tenant_model_id_column_types(Migrator())
+
+    assert not altered
+    assert len(queries) == len(db_models.TENANT_MODEL_ID_COLUMNS)
+    assert all("CHAR_LENGTH(" in sql and "<> 32" in sql for sql in queries)
 
 
 def test_migrate_db_invokes_tenant_model_id_column_migration(monkeypatch):

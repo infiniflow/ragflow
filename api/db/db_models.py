@@ -2028,9 +2028,9 @@ def _get_column_data_type(table_name: str, column_name: str) -> str | None:
             )
         row = cursor.fetchone()
         return row[0].lower() if row else None
-    except Exception as ex:
-        logging.warning("Failed to inspect %s.%s column type: %s", table_name, column_name, ex)
-        return None
+    except Exception:
+        logging.exception("Failed to inspect %s.%s column type", table_name, column_name)
+        raise
 
 
 def migrate_tenant_model_id_column_types(migrator):
@@ -2052,13 +2052,36 @@ def migrate_tenant_model_id_column_types(migrator):
         if not table_present:
             continue
 
-        col_type = _get_column_data_type(table_name, column_name)
+        try:
+            col_type = _get_column_data_type(table_name, column_name)
+        except Exception as ex:
+            logging.warning("Skipping %s.%s tenant_*_id migration; column inspection failed: %s", table_name, column_name, ex)
+            continue
+
         if col_type is None:
             logging.info("Adding missing %s.%s tenant_model.id reference column", table_name, column_name)
             alter_db_add_column(migrator, table_name, column_name, target_field)
             continue
 
+        mysql_family = settings.DATABASE_TYPE.upper() not in {"POSTGRES"} and not is_gaussdb_compatible_database()
+        leftover_sql = (
+            f"UPDATE `{table_name}` SET `{column_name}` = NULL "
+            f"WHERE `{column_name}` IS NOT NULL AND CHAR_LENGTH(`{column_name}`) <> 32"
+        )
+
         if col_type not in _INTEGER_COLUMN_TYPES:
+            # MySQL commits ALTER TABLE independently of the leftover UPDATE.
+            # A retry after a failed cleanup must still NULL non-32-char values.
+            if mysql_family:
+                try:
+                    DB.execute_sql(leftover_sql)
+                except Exception as ex:
+                    logging.critical(
+                        "Failed to clear leftover integer ids in converted %s.%s: %s",
+                        table_name,
+                        column_name,
+                        ex,
+                    )
             continue
 
         try:
@@ -2071,10 +2094,7 @@ def migrate_tenant_model_id_column_types(migrator):
                 )
             else:
                 migrate(migrator.alter_column_type(table_name, column_name, target_field))
-                DB.execute_sql(
-                    f"UPDATE `{table_name}` SET `{column_name}` = NULL "
-                    f"WHERE `{column_name}` IS NOT NULL AND CHAR_LENGTH(`{column_name}`) <> 32"
-                )
+                DB.execute_sql(leftover_sql)
             logging.info(
                 "Converted %s.%s from %s to varchar(32) for tenant_model.id references",
                 table_name,
