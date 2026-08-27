@@ -377,11 +377,11 @@ class TextRecognizer:
 
 
 class TextDetector:
-    def __init__(self, model_dir, device_id: int | None = None):
+    def __init__(self, model_dir, device_id: int | None = None, limit_side_len: int = 2048):
         pre_process_list = [
             {
                 "DetResizeForTest": {
-                    "limit_side_len": 960,
+                    "limit_side_len": limit_side_len,
                     "limit_type": "max",
                 }
             },
