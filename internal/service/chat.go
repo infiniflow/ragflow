@@ -339,12 +339,12 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
-		return nil, common.CodeDataError, errors.New("failed to create chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to create chat: %w", err)
 	}
 
 	chat, err = s.chatDAO.GetByID(ctx, dao.DB, chat.ID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to retrieve created chat: %w", err)
 	}
 
 	response, err := s.buildCreateChatResponse(ctx, chat)

@@ -131,10 +131,10 @@ func TestMergeUnits_ExpandsOversizedSentence(t *testing.T) {
 	}
 }
 
-// TestMergeUnits_PlanAPositions verifies Plan A: original (coarse) positions
-// attach to the first sub-chunk of an expanded unit only; later sub-chunks
-// carry none.
-func TestMergeUnits_PlanAPositions(t *testing.T) {
+// TestMergeUnits_SubChunksKeepPositions verifies that the original (coarse)
+// positions attach to every sub-chunk of an expanded unit, so each piece
+// still gets its page-region preview image.
+func TestMergeUnits_SubChunksKeepPositions(t *testing.T) {
 	const target = 30
 	body := strings.Repeat("word ", 100)
 	pos := []byte(`[{"page":1}]`)
@@ -144,12 +144,9 @@ func TestMergeUnits_PlanAPositions(t *testing.T) {
 	if len(got) < 2 {
 		t.Fatalf("want >=2 chunks, got %d", len(got))
 	}
-	if len(got[0].PDFPositions) == 0 {
-		t.Errorf("first sub-chunk must carry the original positions")
-	}
-	for i := 1; i < len(got); i++ {
-		if len(got[i].PDFPositions) != 0 {
-			t.Errorf("sub-chunk %d must carry no positions", i)
+	for i := range got {
+		if string(got[i].PDFPositions) != string(pos) {
+			t.Errorf("sub-chunk %d must carry the original positions, got %q", i, got[i].PDFPositions)
 		}
 	}
 }
@@ -255,11 +252,11 @@ func TestMergeUnits_ExpansionPreservesWhitespaceFragments(t *testing.T) {
 	}
 }
 
-// TestMergeUnits_ExpandedFirstPieceCarriesMetadata verifies Plan A metadata
-// inheritance: the first sub-piece of an expanded unit keeps every field the
-// source unit carried (coarse positions plus item attributes), while later
-// sub-pieces keep only the basics.
-func TestMergeUnits_ExpandedFirstPieceCarriesMetadata(t *testing.T) {
+// TestMergeUnits_ExpandedPiecesCarryMetadata verifies metadata inheritance:
+// every sub-piece of an expanded unit keeps the fields the source unit
+// carried (coarse positions plus item attributes), built from a clone of the
+// source unit.
+func TestMergeUnits_ExpandedPiecesCarryMetadata(t *testing.T) {
 	const target = 30
 	body := strings.Repeat("word ", 100)
 	unit := schema.ChunkDoc{
@@ -280,28 +277,21 @@ func TestMergeUnits_ExpandedFirstPieceCarriesMetadata(t *testing.T) {
 	if len(got) < 2 {
 		t.Fatalf("oversized unit must be split, got %d chunk(s)", len(got))
 	}
-	head := got[0]
-	if head.Mom != "parent-id" || head.ImgID != "img-1" || head.Layout != "text" || head.Image != "raw-image" {
-		t.Errorf("first sub-piece lost item metadata: %#v", head)
-	}
-	if head.PageNumber == nil || *head.PageNumber != 3 {
-		t.Errorf("first sub-piece lost PageNumber: %#v", head.PageNumber)
-	}
-	if len(head.TagKwd) != 1 || head.TagKwd[0] != "t1" {
-		t.Errorf("first sub-piece lost TagKwd: %#v", head.TagKwd)
-	}
-	if head.ChunkOrderInt == nil || *head.ChunkOrderInt != 7 {
-		t.Errorf("first sub-piece lost ChunkOrderInt: %#v", head.ChunkOrderInt)
-	}
-	if len(head.PDFPositions) == 0 {
-		t.Errorf("first sub-piece must carry the original positions")
-	}
-	for i := 1; i < len(got); i++ {
-		if len(got[i].PDFPositions) != 0 {
-			t.Errorf("sub-piece %d must carry no positions", i)
+	for i, ck := range got {
+		if ck.Mom != "parent-id" || ck.ImgID != "img-1" || ck.Layout != "text" || ck.Image != "raw-image" {
+			t.Errorf("sub-piece %d lost item metadata: %#v", i, ck)
 		}
-		if got[i].Mom != "" || got[i].ImgID != "" || got[i].Layout != "" {
-			t.Errorf("sub-piece %d must not carry item metadata", i)
+		if ck.PageNumber == nil || *ck.PageNumber != 3 {
+			t.Errorf("sub-piece %d lost PageNumber: %#v", i, ck.PageNumber)
+		}
+		if len(ck.TagKwd) != 1 || ck.TagKwd[0] != "t1" {
+			t.Errorf("sub-piece %d lost TagKwd: %#v", i, ck.TagKwd)
+		}
+		if ck.ChunkOrderInt == nil || *ck.ChunkOrderInt != 7 {
+			t.Errorf("sub-piece %d lost ChunkOrderInt: %#v", i, ck.ChunkOrderInt)
+		}
+		if len(ck.PDFPositions) == 0 {
+			t.Errorf("sub-piece %d must carry the original positions", i)
 		}
 	}
 }

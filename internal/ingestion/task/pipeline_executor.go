@@ -260,8 +260,21 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// KnowledgeCompiler component and stamped with `compile_kwd`) are persisted
 	// as available_int=0: invisible to the normal retriever until the dataset-level
 	// post-processing consumer (§11) merges them into available_int=1 products.
-	// Ordinary source chunks stay available_int=1 (the index default).
+	// Ordinary source chunks stay available_int=1 (the index default) unless the
+	// document itself is disabled (status=0).
 	markCompiledProductsHidden(chunks)
+	// Reload status immediately before write: LoadFromIngestionTask copied a
+	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
+	docStatus := s.taskCtx.Doc.Status
+	if dao.DB != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
+			docStatus = persisted.Status
+			s.taskCtx.Doc.Status = persisted.Status
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s status before availability stamp: %v", s.taskCtx.Doc.ID, err))
+		}
+	}
+	applyDocumentAvailability(chunks, docStatus)
 
 	oldCompiledProductIDs, oldCompiledVariants, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
@@ -507,6 +520,22 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 		}
 	}
 	return nil
+}
+
+// applyDocumentAvailability stamps ordinary source chunks with available_int=0
+// when Document.status is "0" (disabled). Disabling before any chunks exist only
+// updates MySQL; without this, later parsing would still write searchable
+// available_int=1 rows. Compiled products (compile_kwd) stay at 0 regardless.
+func applyDocumentAvailability(chunks []map[string]any, status *string) {
+	if status == nil || *status != "0" {
+		return
+	}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; ok {
+			continue
+		}
+		ck["available_int"] = 0
+	}
 }
 
 // compiledVariants returns the sorted, de-duplicated set of compile types a

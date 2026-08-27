@@ -103,6 +103,60 @@ func TestOutlookConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
+func TestOutlookConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newFixtureOutlookConnector()
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+func TestOutlookConnectorOpenSyncResumeRejectsMissingRemoteAnchor(t *testing.T) {
+	connector := newFixtureOutlookConnector()
+	connector.OutlookConnector.batchSize = 2
+	connector.OutlookConnector.getDeltaPage = func(ctx context.Context, apiURL string) (outlookDeltaPage, error) {
+		return outlookDeltaPage{
+			DeltaLink: "delta-1",
+			Value: []outlookMessage{
+				outlookTestMessage("msg-1", "One", "2026-01-02T03:04:05Z"),
+				outlookTestMessage("msg-2", "Two", "2026-01-02T04:04:05Z"),
+				outlookTestMessage("msg-3", "Three", "2026-01-02T05:04:05Z"),
+			},
+		}, nil
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "msg-2" {
+		t.Fatalf("first checkpoint = %+v, want msg-2", first.Checkpoint)
+	}
+
+	connector.OutlookConnector.getDeltaPage = func(ctx context.Context, apiURL string) (outlookDeltaPage, error) {
+		return outlookDeltaPage{
+			DeltaLink: "delta-1",
+			Value: []outlookMessage{
+				outlookTestMessage("msg-1", "One", "2026-01-02T03:04:05Z"),
+				outlookTestMessage("msg-3", "Three", "2026-01-02T05:04:05Z"),
+			},
+		}, nil
+	}
+
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	if _, err = resumed.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
 func TestOutlookConnectorOpenPrune(t *testing.T) {
 	connector := newFixtureOutlookConnector()
 	session, err := connector.OpenPrune(context.Background(), PruneRequest{})

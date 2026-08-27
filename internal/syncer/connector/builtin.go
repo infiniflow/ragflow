@@ -46,6 +46,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)
 	registerBuiltIn(registry, "notion", NewNotionConnector)
 	registerBuiltIn(registry, "rest_api", NewRestAPIConnector)
+	registerBuiltIn(registry, "xquik", NewXquikConnector)
 	registerBuiltIn(registry, "moodle", NewMoodleConnector)
 	registerBuiltIn(registry, "mysql", NewMySQLConnector)
 	registerBuiltIn(registry, "postgresql", NewPostgreSQLConnector)

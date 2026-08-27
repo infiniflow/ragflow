@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net"
@@ -89,7 +88,7 @@ func TestExeSQL_SSRF_RejectsLoopbackLinkLocalAndRFC1918(t *testing.T) {
 				MaxRecords: 10,
 			}).WithExeSQLDialer(rec.dial)
 
-			_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+			_, err := e.InvokableRun(t.Context(), `{"sql":"SELECT 1"}`)
 			if err == nil {
 				t.Fatalf("expected SSRF rejection for %q, got nil", c.host)
 			}
@@ -117,7 +116,7 @@ func TestExeSQL_SSRF_RejectsEmptyHost(t *testing.T) {
 		MaxRecords: 10,
 	}).WithExeSQLDialer(rec.dial)
 
-	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, err := e.InvokableRun(t.Context(), `{"sql":"SELECT 1"}`)
 	if err == nil {
 		t.Fatal("expected SSRF rejection for empty host")
 	}
@@ -158,7 +157,7 @@ func TestExeSQL_SSRF_PinsToValidatedIP(t *testing.T) {
 		MaxRecords: 10,
 	}).WithExeSQLDialer(rec.dial)
 
-	_, _ = e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, _ = e.InvokableRun(t.Context(), `{"sql":"SELECT 1"}`)
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()

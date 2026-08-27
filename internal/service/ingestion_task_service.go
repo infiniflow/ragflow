@@ -403,7 +403,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 			clearCancelFlag(ctx, existing.ID)
 			if err = s.enqueueTask(existing.ID); err != nil {
 				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
-					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
+					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
 				}
 				return nil, err
 			}
@@ -418,7 +418,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	}
 	if err = s.enqueueTask(created.ID); err != nil {
 		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
-			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", created.ID, err, rollbackErr)
+			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", created.ID, err, rollbackErr)
 		}
 		return nil, err
 	}

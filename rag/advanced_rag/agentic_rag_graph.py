@@ -434,6 +434,10 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         rules = cp(tools.user_defined_prompts).strip()
         system = FINAL_ANSWER_SYSTEM.format(cite_rules=rules)
+        # Honor the dialog-level system prompt in the reasoning path the same
+        # way async_chat does when reasoning is disabled.
+        if tools.system_prompt.strip():
+            system = f"{tools.system_prompt.strip()}\n\n{system}"
 
         parts.append(f"Evidence:\n{evidence}")
         user_content = "\n".join(parts)

@@ -20,6 +20,7 @@ import os
 from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
+from typing import Any, Callable
 from docx import Document
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.table import Table as DocxTable
@@ -47,7 +48,7 @@ from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
-from common.parser_config_utils import normalize_layout_recognizer
+from common.parser_config_utils import has_mineru_options, normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
@@ -115,7 +116,7 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
-    sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+    sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
 
     tables = vision_figure_parser_pdf_wrapper(
         tbls=tables,
@@ -125,6 +126,65 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, 
         **kwargs,
     )
     return sections, tables, pdf_parser
+
+
+def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layout_recognize_override: str | None = None) -> tuple[Callable, str, Any, str, Any]:
+    """Resolve the PDF parser callable for the current ``parser_config``.
+
+    Returns a 5-tuple ``(parser_callable, parser_name, layout_recognizer,
+    opendataloader_llm_name, parser_model_name)`` so the dispatch logic
+    stays testable in isolation (issue #17114).
+
+    ``layout_recognize_override`` lets callers pass an already-resolved
+    layout_recognize value (e.g. a UUID resolved via
+    :func:`get_composite_model_name_by_id`) so the dispatch doesn't
+    re-read the stale UUID from ``parser_config`` and re-normalize it.
+
+    When ``layout_recognize`` is a value that does not match any known parser
+    name — typically a stale ``TenantModel`` UUID stored on the document —
+    and the parser config carries MinerU-specific options (``mineru_*``
+    keys), the dispatch falls back to :func:`by_mineru` instead of routing
+    to :func:`by_plaintext`, which would otherwise try to resolve the UUID
+    as an IMAGE2TEXT vision model and crash.
+    """
+    raw_layout_recognize = layout_recognize_override if layout_recognize_override is not None else parser_config.get("layout_recognize", "DeepDOC")
+    layout_recognizer, parser_model_name = normalize_layout_recognizer(raw_layout_recognize)
+    if layout_recognizer == "OpenDataLoader" and parser_model_name:
+        opendataloader_llm_name = parser_model_name
+
+    if isinstance(layout_recognizer, bool):
+        layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
+
+    # Normalize "Plain Text" to "plaintext" so the PARSERS lookup below
+    # hits the explicit "plaintext" entry instead of falling through to
+    # the by_plaintext default — important because the MinerU fallback
+    # guard below keys off whether the parsed name is a known keyword.
+    if layout_recognizer == "Plain Text":
+        layout_recognizer = "plaintext"
+    name = layout_recognizer.strip().lower()
+    parser = PARSERS.get(name, by_plaintext)
+
+    # Closes #17114: when the document's layout_recognize is a model id
+    # (e.g. a TenantModel UUID) that does not match any known parser name,
+    # the previous dispatch fell through to by_plaintext, which tried to
+    # resolve the id as an IMAGE2TEXT vision model and failed with
+    # ``Provider <empty> not found for model <id>``. If mineru-specific
+    # options are set in parser_config, the operator clearly intended the
+    # MinerU parser, so route there instead and surface a clear log line
+    # rather than masking the misconfiguration silently.
+    # Guard: only fall back when the parser name is NOT a known keyword
+    # (e.g. "DeepDOC", "Plain Text"). A configuration like
+    # ``{"layout_recognize": "Plain Text", "mineru_lang": "English"}``
+    # must keep honoring PlainText, not be silently rerouted to MinerU.
+    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
+        logging.warning(
+            "[naive] layout_recognize=%r does not match a known parser; falling back to MinerU because mineru_* options are set (see issue #17114).",
+            layout_recognizer,
+        )
+        parser = by_mineru
+        name = "mineru"
+
+    return parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name
 
 
 def by_mineru(
@@ -179,10 +239,9 @@ def by_mineru(
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle MinerU ({mineru_llm_name}): {e}")
+                raise
 
-    if callback:
-        callback(-1, "MinerU not found.")
-    return None, None, None
+    raise RuntimeError("MinerU model not found or not configured.")
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -425,7 +484,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
         )
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
 
-    sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+    sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
     return sections, tables, pdf_parser
 
 
@@ -556,7 +615,7 @@ class Docx(DocxParser):
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         lines = []
         last_image = None
@@ -681,7 +740,7 @@ class Docx(DocxParser):
         import mammoth
         from markdownify import markdownify
 
-        docx_file = BytesIO(binary) if binary else open(filename, "rb")
+        docx_file = BytesIO(binary) if binary is not None else open(filename, "rb")
 
         def _convert_image_to_base64(image):
             try:
@@ -710,7 +769,7 @@ class Docx(DocxParser):
             return markdown_text
 
         finally:
-            if not binary:
+            if binary is None:
                 docx_file.close()
 
 
@@ -722,7 +781,7 @@ class Pdf(PdfParser):
         start = timer()
         first_start = start
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
@@ -1052,19 +1111,23 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
             except LookupError:
                 pass
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
+        # Skip the local normalize_layout_recognizer() call — the dispatcher
+        # does it internally on the layout_recognize_override argument, so a
+        # second call here just discards the parsed model_name and breaks the
+        # @mineru/@paddleocr/@opendataloader/@somark composite-name wiring
+        # (CodeRabbit review #5 on #17114).
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
-        if layout_recognizer == "OpenDataLoader" and parser_model_name:
-            opendataloader_llm_name = parser_model_name
+        # Pass the resolved layout_recognize (after get_composite_model_name_by_id
+        # turned a TenantModel UUID into a "<model>@<instance>@<provider>" form)
+        # so the dispatch can extract the right parser_model_name.
+        parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(
+            parser_config,
+            opendataloader_llm_name,
+            layout_recognize_override=layout_recognize_raw,
+        )
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_pdf(binary)
-
-        if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
-
-        name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
         if name == "mineru":
             kwargs["parse_method"] = "naive"
@@ -1090,7 +1153,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             return []
 
         if table_context_size or image_context_size:
-            tables = append_context2table_image4pdf(sections, tables, image_context_size)
+            tables = append_context2table_image4pdf(
+                sections,
+                tables,
+                image_context_size,
+                section_page_offset=from_page if name == "mineru" else 0,
+            )
 
         if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:

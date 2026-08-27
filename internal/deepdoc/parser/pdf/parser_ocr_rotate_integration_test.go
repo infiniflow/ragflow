@@ -63,7 +63,7 @@ func TestOCRRecognizeWithRotation_Live(t *testing.T) {
 	texts := map[string]string{}
 	best, bestConf, bestText := "", -1.0, ""
 	for name, im := range cands {
-		rec, recErr := client.OCRRecognize(context.Background(), im)
+		rec, recErr := client.OCRRecognize(t.Context(), im)
 		if recErr != nil {
 			t.Fatalf("rec %s: %v", name, recErr)
 		}

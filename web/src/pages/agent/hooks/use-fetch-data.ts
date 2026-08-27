@@ -8,7 +8,10 @@ export const useFetchDataOnMount = () => {
   const setGraphInfo = useSetGraphInfo();
 
   useEffect(() => {
-    setGraphInfo(dslToGraph(data?.dsl));
+    if (!data?.dsl) {
+      return;
+    }
+    setGraphInfo(dslToGraph(data.dsl));
   }, [setGraphInfo, data]);
 
   useEffect(() => {

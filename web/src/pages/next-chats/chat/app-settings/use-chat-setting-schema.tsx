@@ -45,7 +45,8 @@ export function useChatSettingSchema() {
         WebSearchProvider.Serply,
         WebSearchProvider.YouCom,
       ])
-      .optional(),
+      .optional()
+      .or(z.literal('')),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
     reference_metadata: z

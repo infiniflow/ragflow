@@ -475,7 +475,13 @@ run() {
     print_section "Starting admin server (background)"
     "$RAGFLOW_SERVER_BINARY" --admin &
     ADMIN_PID=$!
-    trap 'kill "$ADMIN_PID" 2>/dev/null || true' EXIT INT TERM
+    # One trap for both background services: a second `trap ... EXIT INT TERM`
+    # would replace this one rather than add to it, leaving admin_server holding
+    # port 9383 after the foreground server exits. INGESTOR_PID is cleared first
+    # so a value inherited from the environment cannot be signalled during the
+    # window before the ingestor starts.
+    INGESTOR_PID=""
+    trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
 
     # Give admin_server a moment to bind its listening port (9383) before
     # ragflow_server starts sending heartbeats to it.
@@ -484,7 +490,6 @@ run() {
     print_section "Starting ingestor (background)"
     "$RAGFLOW_SERVER_BINARY" --ingestor &
     INGESTOR_PID=$!
-    trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"

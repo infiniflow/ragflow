@@ -29,7 +29,7 @@ export enum SpreadsheetOutputFormat {
 }
 
 export enum ImageOutputFormat {
-  Text = 'text',
+  Json = 'json',
 }
 
 export enum EmailOutputFormat {
@@ -81,7 +81,7 @@ export const OutputFormatMap = {
 export const InitialOutputFormatMap = {
   [FileType.PDF]: PdfOutputFormat.Json,
   [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
-  [FileType.Image]: ImageOutputFormat.Text,
+  [FileType.Image]: ImageOutputFormat.Json,
   [FileType.Email]: EmailOutputFormat.Text,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
   [FileType.Code]: TextJsonOutputFormat.Json,
@@ -208,7 +208,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Image,
-      output_format: ImageOutputFormat.Text,
+      output_format: ImageOutputFormat.Json,
       parse_method: ImageParseMethod.OCR,
       preprocess: PreprocessValue.main_content,
       system_prompt: '',

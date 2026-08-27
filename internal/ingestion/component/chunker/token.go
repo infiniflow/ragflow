@@ -1031,9 +1031,9 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 // so every returned text unit is <= target tokens. Sentence boundaries are
 // tried first (delimiters preserved, lossless); a piece that still exceeds
 // target is hard-split on token count (char-prefix via TrimContentToTokenLimit,
-// also lossless). PDF positions follow Plan A: the original (coarse)
-// coordinates attach to the first sub-piece only. Non-text units pass through
-// unchanged.
+// also lossless). Every sub-piece keeps the source unit's (coarse) PDF
+// positions so each piece still gets its page-region preview image and
+// highlight. Non-text units pass through unchanged.
 func expandOversizedUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc {
 	if target <= 0 {
 		return units
@@ -1064,8 +1064,8 @@ func expandOversizedUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc
 // Sentence boundaries are preferred; a boundary-less run that still exceeds
 // target is hard token-split. Delimiters are preserved so the concatenated
 // pieces reproduce the unit text exactly (lossless). Every piece keeps the
-// source unit's DocType, and PDF positions follow Plan A (original coordinates
-// on the first piece only).
+// source unit's DocType and (coarse) PDF positions, built from a clone of the
+// source so all ChunkDoc fields survive the split.
 func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	text := ck.Text
 	// Preserve a leading "\n" glue (text-path units are built as "\n"+part).
@@ -1131,14 +1131,16 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 			pieces[0].TKNums = intPtr(n)
 		}
 	}
-	// Plan A: the first sub-piece inherits the source unit's metadata (coarse
-	// positions + item attributes); later sub-pieces keep only the basics.
-	// Build it from a clone so every ChunkDoc field survives the split.
-	head := cloneChunkDoc(ck)
-	head.Text = pieces[0].Text
-	head.TKNums = pieces[0].TKNums
-	head.CKType = "text"
-	pieces[0] = head
+	// Every sub-piece inherits the source unit's metadata (coarse positions +
+	// item attributes); each is built from a clone so every ChunkDoc field
+	// survives the split and each piece keeps its page-region preview.
+	for i := range pieces {
+		inherited := cloneChunkDoc(ck)
+		inherited.Text = pieces[i].Text
+		inherited.TKNums = pieces[i].TKNums
+		inherited.CKType = "text"
+		pieces[i] = inherited
+	}
 	return pieces
 }
 

@@ -602,7 +602,7 @@ func dispatchPDFVision(
 		if err != nil {
 			return parserDispatchResult{}, fmt.Errorf("parser: pdf vision page %d: %w", page.PageNumber, err)
 		}
-		text := extractPDFVisionAnswer(resp)
+		text := extractVisionAnswer(resp)
 		positions := [][]any{{page.PageNumber, 0.0, page.WidthPts, 0.0, page.HeightPts}}
 		items = append(items, map[string]any{
 			"text":           text,
@@ -652,13 +652,6 @@ func buildPDFVisionMessages(prompt string, imageURL string) []modelModule.Messag
 			map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}},
 		},
 	}}
-}
-
-func extractPDFVisionAnswer(resp *modelModule.ChatResponse) string {
-	if resp == nil || resp.Answer == nil {
-		return ""
-	}
-	return strings.TrimSpace(*resp.Answer)
 }
 
 func defaultPDFVisionModelResolver(
@@ -729,7 +722,7 @@ func pdfVisionPromptsBaseDir() (string, error) {
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision
 // prompt is a transcription contract that preserves the document's original
 // language; dataset-language instructions apply to figure descriptions in
-// maybeDispatchPDFVisionEnhancement instead.
+// maybeDispatchVisionEnhancement instead.
 func renderPDFVisionPrompt(template string, page int) string {
 	rendered := strings.ReplaceAll(template, "{{ page }}", fmt.Sprintf("%d", page))
 	rendered = strings.ReplaceAll(rendered, "{{page}}", fmt.Sprintf("%d", page))
@@ -779,97 +772,3 @@ func defaultIsPaddleOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID,
 	}
 	return isPaddleOCRDriver(driver)
 }
-
-// maybeDispatchPDFVisionEnhancement mirrors Python's
-// enhance_media_sections_with_vision for PDF
-// After the normal PDF parser produces JSON items, this function
-// enriches image/table items by calling the tenant's IMAGE2TEXT
-// model and appending vision descriptions to each item's text field.
-// The markdown/text output paths are not enhanced (Python does the same).
-//
-// This follows the exact same convention as maybeDispatchDOCXVision and
-// maybeDispatchMarkdownVision: it is not gated by a separate setup flag,
-// it simply resolves the tenant's IMAGE2TEXT model and skips silently
-// when none is configured — matching Python's try/except pass behaviour.
-func maybeDispatchPDFVisionEnhancement(
-	ctx context.Context,
-	db *gorm.DB,
-	fileType utility.FileType,
-	dispatched parserDispatchResult,
-	inputs map[string]any,
-) (parserDispatchResult, bool, error) {
-	if fileType != utility.FileTypePDF {
-		return dispatched, false, nil
-	}
-	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
-		return dispatched, false, nil
-	}
-	tenantID := getStringOr(inputs, "tenant_id", "")
-	if tenantID == "" {
-		return dispatched, false, nil
-	}
-	language := resolveVisionLanguage(inputs, "")
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
-	if err != nil {
-		return dispatched, false, nil
-	}
-	type target struct{ idx int }
-	var targets []target
-	for i, item := range dispatched.JSON {
-		kd, _ := item["doc_type_kwd"].(string)
-		if kd != "image" && kd != "table" {
-			continue
-		}
-		img, _ := item["image"].(string)
-		if img == "" {
-			continue
-		}
-		targets = append(targets, target{idx: i})
-	}
-	if len(targets) == 0 {
-		return dispatched, false, nil
-	}
-	descriptions := make([]string, len(targets))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, pdfVisionEnhanceConcurrency)
-	for slot, tg := range targets {
-		sem <- struct{}{}
-		wg.Add(1)
-		go func(slot int, itemIdx int) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			img, _ := dispatched.JSON[itemIdx]["image"].(string)
-			if img == "" {
-				return
-			}
-			prompt, perr := figureVisionPromptBuilder("", "", language)
-			if perr != nil {
-				return
-			}
-			messages := buildVisionMessages(prompt, img)
-			resp, ierr := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
-			if ierr != nil {
-				return
-			}
-			descriptions[slot] = extractDOCXVisionAnswer(resp)
-		}(slot, tg.idx)
-	}
-	wg.Wait()
-	modified := false
-	for slot, tg := range targets {
-		desc := strings.TrimSpace(descriptions[slot])
-		if desc == "" {
-			continue
-		}
-		existing, _ := dispatched.JSON[tg.idx]["text"].(string)
-		if existing != "" {
-			dispatched.JSON[tg.idx]["text"] = existing + "\n" + desc
-		} else {
-			dispatched.JSON[tg.idx]["text"] = desc
-		}
-		modified = true
-	}
-	return dispatched, modified, nil
-}
-
-var pdfVisionEnhanceConcurrency = 10
