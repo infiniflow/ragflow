@@ -1,0 +1,41 @@
+# =============================================================================
+# kb 二次开发覆盖样例（docker-compose.override.example.yml）
+# 作者：张彦龙
+#
+# 用法：复制本文件到官方 compose 文件旁（docker/ 目录），并去掉 .example 后缀：
+#   cp overlay/docker-compose.override.example.yml docker/docker-compose.override.yml
+# docker compose 会自动合并 docker-compose.yml 与 docker-compose.override.yml。
+# 本文件默认不改变任何行为，所有定制项均为注释，按需取消注释。
+# =============================================================================
+
+services:
+  ragflow:
+    # -------------------------------------------------------------------------
+    # 镜像标签固定（与 docs/SECONDARY.md 的部署基线一致，优先 v0.26.4）。
+    # 也可以不在这里写死，改为在 .env 中设置 RAGFLOW_IMAGE。
+    # -------------------------------------------------------------------------
+    # image: infiniflow/ragflow:v0.26.4
+
+    # -------------------------------------------------------------------------
+    # 端口：官方 compose 已通过 .env 暴露以下端口，通常无需在此重复声明：
+    #   ${SVR_HTTP_PORT}:9380  -> HTTP API（默认 9380）
+    #   ${SVR_MCP_PORT}:9382   -> MCP 服务（默认 9382，需启用 MCP 后才有服务监听）
+    # 仅当需要覆盖宿主机端口映射时才取消注释：
+    # -------------------------------------------------------------------------
+    # ports:
+    #   - "9380:9380"   # HTTP API
+    #   - "9382:9382"   # MCP
+
+    # -------------------------------------------------------------------------
+    # 启用 MCP 服务（可选）。取消注释以下 command 会整体覆盖官方 entrypoint 参数，
+    # 端口需与上面的 9382 映射及 .env 中 SVR_MCP_PORT 保持一致。
+    # 注意：host 模式需搭配 --no-transport-streamable-http-enabled 使用。
+    # -------------------------------------------------------------------------
+    # command:
+    #   - --enable-mcpserver
+    #   - --mcp-host=0.0.0.0
+    #   - --mcp-port=9382
+    #   - --mcp-base-url=http://127.0.0.1:9380
+    #   - --mcp-script-path=/ragflow/mcp/server/server.py
+    #   - --mcp-mode=self-host
+    #   - --mcp-host-api-key=ragflow-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
