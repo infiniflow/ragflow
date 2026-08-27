@@ -997,6 +997,16 @@ class GreenPT(OpenAIAPICompatible):
         return models
 
 
+class Synthorai(OpenAIAPICompatible):
+    """Synthorai catalog lister.
+
+    The gateway returns a plain OpenAI-shaped /v1/models payload, so the
+    inherited formatting applies without an override.
+    """
+
+    _FACTORY_NAME = "Synthorai"
+
+
 class HuggingFace(Base):
     """Discover models served by Hugging Face inference endpoints.
 

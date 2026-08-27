@@ -1778,6 +1778,15 @@ class _StreamSanitizer:
         return out
 
 
+class SynthoraiChat(Base):
+    """Synthorai OpenAI-compatible chat adapter."""
+
+    _FACTORY_NAME = "Synthorai"
+
+    def __init__(self, key, model_name, base_url="https://synthorai.io/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://synthorai.io/v1", **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
