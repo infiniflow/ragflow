@@ -1,8 +1,8 @@
-# overlay/ —— kb 二次开发覆盖层
+# overlay/ —— Netstars-KB 二次开发覆盖层
 
 > 作者：张彦龙
 
-本目录存放 kb（本 fork 的产品工作名）在 RAGFlow 官方部署之上的**部署期覆盖样例**。原则见 [docs/SECONDARY.md](../docs/SECONDARY.md)：不改核心源码、不改 UI 文案、不改镜像内部，一切定制通过覆盖文件叠加。
+本目录存放 Netstars-KB（本 fork 的产品工作名）在 RAGFlow 官方部署之上的**部署期覆盖样例**。原则见 [docs/SECONDARY.md](../docs/SECONDARY.md)：不改核心源码、不改镜像内部，一切部署定制通过覆盖文件叠加。
 
 ## 目录内容
 
@@ -38,5 +38,5 @@ docker compose up -d
 
 - **不要提交密钥**：`docker/.env`、`docker/docker-compose.override.yml` 是实际部署文件，包含真实密码/API Key，一律不入库；仓库中只保留本目录下的 `.example` 样例。
 - 镜像标签、compose 与 entrypoint 版本必须匹配，部署基线优先 `v0.26.4`，详见 [docs/SECONDARY.md](../docs/SECONDARY.md)。
-- 品牌化备注：kb 名称仅用于内部文档与部署配置。若后续需要界面品牌化，通过挂载覆盖（如 nginx 静态资源卷）实现并在本目录登记，不修改 `web/` 源码。
+- 品牌化备注：用户可见的产品名称为 Netstars-KB；浏览器标签页标题定义在 `web/index.html`。
 - 插件/解析器桩：后续如需自定义解析器或插件，在本目录新建子目录存放桩代码，并在 `docs/SECONDARY.md` 登记所用扩展点。
