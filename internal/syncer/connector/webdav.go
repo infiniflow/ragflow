@@ -131,7 +131,7 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 			return fmt.Errorf("remote path '%s' does not exist on WebDAV server", c.remotePath)
 		}
 	}
-	return fmt.Errorf("WebDAV validation failed for path '%s': %v", testPath, err)
+	return fmt.Errorf("WebDAV validation failed for path '%s': %w", testPath, err)
 }
 
 // ValidateConnectorSetting validates WebDAV settings from an unsaved config.

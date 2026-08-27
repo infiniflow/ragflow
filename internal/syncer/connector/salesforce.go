@@ -453,7 +453,7 @@ func (c *SalesforceConnector) apiURL(snap salesforceToken, path string) (string,
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		parsed, err := url.Parse(path)
 		if err != nil {
-			return "", fmt.Errorf("Salesforce pagination URL is invalid: %v", err)
+			return "", fmt.Errorf("Salesforce pagination URL is invalid: %w", err)
 		}
 		if !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
 			return "", fmt.Errorf("Salesforce pagination URL must use HTTPS on an approved Salesforce host")

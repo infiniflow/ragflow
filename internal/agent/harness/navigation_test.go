@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -25,7 +24,7 @@ func TestRenderStructureEntities(t *testing.T) {
 // TestNavigateStructure_NoScope asserts empty doc scope yields empty chunks
 // without calling the model.
 func TestNavigateStructure_NoScope(t *testing.T) {
-	out, err := NavigateStructure(context.Background(), "t1", toolOntologyNavigate, structureNavArgs{
+	out, err := NavigateStructure(t.Context(), "t1", toolOntologyNavigate, structureNavArgs{
 		Topic: "rocket", DocScope: nil,
 	})
 	if err != nil {

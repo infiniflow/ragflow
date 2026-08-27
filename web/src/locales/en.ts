@@ -1113,6 +1113,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       thinking: 'Thinking',
+      thinkingMode: 'Thinking',
       thought: 'Thought',
       thinkingDefault: 'System default',
       thinkingEnabled: 'Enabled',

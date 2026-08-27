@@ -16,7 +16,7 @@ func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 	base := NewChatModel(driver, &modelName, &APIConfig{})
 	model := NewEinoChatModel(base, &ChatConfig{})
 
-	stream, err := model.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	stream, err := model.Stream(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	msg, err := bound.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	msg, err := bound.Generate(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestEinoChatModelStreamWithToolsYieldsToolCalls(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	stream, err := bound.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	stream, err := bound.Stream(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	stream, err := bound.Stream(context.Background(), []*schema.Message{
+	stream, err := bound.Stream(t.Context(), []*schema.Message{
 		schema.UserMessage("hello"),
 		{
 			Role:       schema.Tool,

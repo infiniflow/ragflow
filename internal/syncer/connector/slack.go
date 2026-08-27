@@ -603,7 +603,7 @@ func (c *SlackConnector) joinChannel(ctx context.Context, channel slackChannel) 
 		var apiErr *slackAPIError
 		if errors.As(err, &apiErr) {
 			if _, ok := slackUnjoinableErrors[apiErr.code]; ok {
-				return fmt.Errorf("%w: %v", errSlackChannelUnavailable, err)
+				return fmt.Errorf("%w: %w", errSlackChannelUnavailable, err)
 			}
 		}
 		return err

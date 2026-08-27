@@ -72,6 +72,19 @@ const (
 	TaskStatusSchedule TaskStatus = "5"
 )
 
+// DocumentModifiableStatuses are the run statuses in which a document's
+// configuration (parser config, chunk method, pipeline id, name, enabled
+// flag, ...) may be edited via UpdateDatasetDocument. Documents that are
+// running ("1") or scheduled ("5") must not be edited — the in-flight parser
+// would race with the config change and the document can get stuck and become
+// undeletable.
+var DocumentModifiableStatuses = map[TaskStatus]bool{
+	TaskStatusUnstart: true,
+	TaskStatusCancel:  true,
+	TaskStatusDone:    true,
+	TaskStatusFail:    true,
+}
+
 // PipelineTaskType represents the type of pipeline task
 type PipelineTaskType string
 

@@ -116,7 +116,7 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
-    sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+    sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
 
     tables = vision_figure_parser_pdf_wrapper(
         tbls=tables,
@@ -147,11 +147,7 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     to :func:`by_plaintext`, which would otherwise try to resolve the UUID
     as an IMAGE2TEXT vision model and crash.
     """
-    raw_layout_recognize = (
-        layout_recognize_override
-        if layout_recognize_override is not None
-        else parser_config.get("layout_recognize", "DeepDOC")
-    )
+    raw_layout_recognize = layout_recognize_override if layout_recognize_override is not None else parser_config.get("layout_recognize", "DeepDOC")
     layout_recognizer, parser_model_name = normalize_layout_recognizer(raw_layout_recognize)
     if layout_recognizer == "OpenDataLoader" and parser_model_name:
         opendataloader_llm_name = parser_model_name
@@ -182,9 +178,7 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     # must keep honoring PlainText, not be silently rerouted to MinerU.
     if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
         logging.warning(
-            "[naive] layout_recognize=%r does not match a known parser; "
-            "falling back to MinerU because mineru_* options are set "
-            "(see issue #17114).",
+            "[naive] layout_recognize=%r does not match a known parser; falling back to MinerU because mineru_* options are set (see issue #17114).",
             layout_recognizer,
         )
         parser = by_mineru
@@ -245,10 +239,9 @@ def by_mineru(
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle MinerU ({mineru_llm_name}): {e}")
+                raise
 
-    if callback:
-        callback(-1, "MinerU not found.")
-    return None, None, None
+    raise RuntimeError("MinerU model not found or not configured.")
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -491,7 +484,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
         )
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
 
-    sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+    sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
     return sections, tables, pdf_parser
 
 
@@ -622,7 +615,7 @@ class Docx(DocxParser):
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         lines = []
         last_image = None
@@ -747,7 +740,7 @@ class Docx(DocxParser):
         import mammoth
         from markdownify import markdownify
 
-        docx_file = BytesIO(binary) if binary else open(filename, "rb")
+        docx_file = BytesIO(binary) if binary is not None else open(filename, "rb")
 
         def _convert_image_to_base64(image):
             try:
@@ -776,7 +769,7 @@ class Docx(DocxParser):
             return markdown_text
 
         finally:
-            if not binary:
+            if binary is None:
                 docx_file.close()
 
 
@@ -788,7 +781,7 @@ class Pdf(PdfParser):
         start = timer()
         first_start = start
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
@@ -1128,7 +1121,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         # turned a TenantModel UUID into a "<model>@<instance>@<provider>" form)
         # so the dispatch can extract the right parser_model_name.
         parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(
-            parser_config, opendataloader_llm_name, layout_recognize_override=layout_recognize_raw,
+            parser_config,
+            opendataloader_llm_name,
+            layout_recognize_override=layout_recognize_raw,
         )
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
@@ -1158,7 +1153,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             return []
 
         if table_context_size or image_context_size:
-            tables = append_context2table_image4pdf(sections, tables, image_context_size)
+            tables = append_context2table_image4pdf(
+                sections,
+                tables,
+                image_context_size,
+                section_page_offset=from_page if name == "mineru" else 0,
+            )
 
         if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:

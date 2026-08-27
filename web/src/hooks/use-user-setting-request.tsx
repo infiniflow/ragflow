@@ -179,7 +179,7 @@ export const useSelectParserList = (): Array<{
         // backend's parser_ids (settings.PARSERS), so the chunk-method
         // dropdown lists commonly used methods first. The Python "naive"
         // slot corresponds to the Go "general" pipeline. Go-only pipelines
-        // (e.g. knowledge_compiler) keep their API order at the end.
+        // Any backend-only pipelines keep their API order at the end.
         const pythonParserOrder = [
           'general', // "naive" in Python parser_ids
           'qa',
