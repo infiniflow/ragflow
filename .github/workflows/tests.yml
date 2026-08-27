@@ -130,6 +130,9 @@ jobs:
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "http_api_test_level=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_OUTPUT}
 
+      - name: Check uv lock metadata
+        run: python3 tools/scripts/check_uv_lock_metadata.py
+
       - name: Prepare Python test environment
         run: |
           git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
