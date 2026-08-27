@@ -17,6 +17,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { useIsGoBackend } from '@/utils/backend-variant';
+import { isDatasetId } from '@/utils/dataset-util';
 import { GenerateType, ParseType } from '@/constants/knowledge';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
@@ -1117,9 +1118,13 @@ export const useFetchKnowledgeList = (
  * Fetch datasets by a set of IDs. Used to resolve already-selected datasets
  * that are not present in the first page of the paginated list, e.g. to echo
  * their names in a form field. For staleness checks see `useStaleDatasetIds`.
+ *
+ * Callers may pass values mixed with variable references (agent forms let
+ * users pick variables alongside datasets); those are not resolvable ids and
+ * are dropped before the request is built.
  */
 export const useFetchDatasetsByIds = (ids: string[]) => {
-  const sortedIds = useMemo(() => [...ids].sort(), [ids]);
+  const sortedIds = useMemo(() => ids.filter(isDatasetId).sort(), [ids]);
   const { data, isFetching: loading } = useQuery<IDataset[]>({
     queryKey: KnowledgeListKeys.byIds(sortedIds),
     enabled: sortedIds.length > 0,
@@ -1144,7 +1149,13 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
  * until it settles; `settled` flips true once the lookup has finished.
  */
 export const useStaleDatasetIds = (datasetIds?: string[]) => {
-  const persistedIds = useMemo(() => datasetIds ?? [], [datasetIds]);
+  // Variable references (e.g. `sys.query`) never resolve to datasets, so
+  // exclude them up front instead of letting them fall out of the lookup
+  // below and get misreported as stale.
+  const persistedIds = useMemo(
+    () => (datasetIds ?? []).filter(isDatasetId),
+    [datasetIds],
+  );
   const { data: datasets, loading } = useFetchDatasetsByIds(persistedIds);
 
   const staleDatasetIds = useMemo(() => {
