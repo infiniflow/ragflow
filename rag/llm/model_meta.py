@@ -1034,11 +1034,7 @@ class Synthorai(OpenAIAPICompatible):
                 cfg = json.load(f)
         except (OSError, ValueError):
             return set()
-        return {
-            m["name"]
-            for m in cfg.get("models", [])
-            if isinstance(m, dict) and m.get("name") and "chat" in (m.get("model_types") or [])
-        }
+        return {m["name"] for m in cfg.get("models", []) if isinstance(m, dict) and m.get("name") and "chat" in (m.get("model_types") or [])}
 
 
 class HuggingFace(Base):
