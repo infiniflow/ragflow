@@ -13,9 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import sys
-import types
-import pytest
 from api.apps.restful_apis import chunk_api  # noqa: E402
 from api.apps.services import document_api_service  # noqa: E402
 from common.constants import TaskStatus  # noqa: E402
