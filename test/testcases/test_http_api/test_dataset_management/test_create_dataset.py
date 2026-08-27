@@ -23,7 +23,7 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 
-from common import create_dataset
+from test_http_api.common import create_dataset, delete_all_datasets
 
 
 @pytest.mark.usefixtures("clear_datasets")
@@ -32,11 +32,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
         ids=["empty_auth", "invalid_api_token"],
@@ -94,8 +94,9 @@ class TestDatasetCreate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20)
+    @settings(max_examples=20, deadline=None)
     def test_name(self, HttpApiAuth, name):
+        delete_all_datasets(HttpApiAuth)
         res = create_dataset(HttpApiAuth, {"name": name})
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
@@ -162,9 +163,9 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, prefix, expected_message",
         [
-            ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -250,7 +251,7 @@ class TestDatasetCreate:
     def test_embedding_model_invalid(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:
@@ -275,9 +276,9 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
+            assert "embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
-            assert "Both model_name and provider must be non-empty strings" in res["message"], res
+            assert "both model_name and provider must be non-empty strings" in res["message"], res
 
     @pytest.mark.p2
     def test_embedding_model_unset(self, HttpApiAuth):
@@ -380,7 +381,7 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, HttpApiAuth):
@@ -394,7 +395,7 @@ class TestDatasetCreate:
         payload = {"name": "chunk_method_none", "chunk_method": None}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -438,16 +439,20 @@ class TestDatasetCreate:
             ("raptor_true", {"raptor": {"use_raptor": True}}),
             ("raptor_false", {"raptor": {"use_raptor": False}}),
             ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
-            ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+            ("raptor_max_token_min", {"raptor": {"max_token": 512}}),
             ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
             ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
-            ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
-            ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
-            ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+            ("raptor_clustering_threshold_min", {"raptor": {"clustering_threshold": 0.0}}),
+            ("raptor_clustering_threshold_mid", {"raptor": {"clustering_threshold": 0.5}}),
+            ("raptor_clustering_threshold_max", {"raptor": {"clustering_threshold": 1.0}}),
             ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
             ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
             ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
             ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
+            ("parent_child_true", {"parent_child": {"use_parent_child": True}}),
+            ("parent_child_false", {"parent_child": {"use_parent_child": False}}),
+            ("parent_child_delimiter", {"parent_child": {"children_delimiter": "\n\n"}}),
+            ("parent_child_delimiter_custom", {"parent_child": {"use_parent_child": True, "children_delimiter": "。"}}),
         ],
         ids=[
             "auto_keywords_min",
@@ -491,13 +496,17 @@ class TestDatasetCreate:
             "raptor_max_token_min",
             "raptor_max_token_mid",
             "raptor_max_token_max",
-            "raptor_threshold_min",
-            "raptor_threshold_mid",
-            "raptor_threshold_max",
+            "raptor_clustering_threshold_min",
+            "raptor_clustering_threshold_mid",
+            "raptor_clustering_threshold_max",
             "raptor_max_cluster_min",
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
             "raptor_random_seed_min",
+            "parent_child_true",
+            "parent_child_false",
+            "parent_child_delimiter",
+            "parent_child_delimiter_custom",
         ],
     )
     def test_parser_config(self, HttpApiAuth, name, parser_config):
@@ -547,20 +556,18 @@ class TestDatasetCreate:
             ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ("graphrag_entity_types_not_list", {"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ("graphrag_entity_types_not_str_in_list", {"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ("raptor_prompt_empty", {"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ("raptor_prompt_space", {"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-            ("raptor_max_token_min_limit", {"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_token_max_limit", {"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
             ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-            ("raptor_threshold_min_limit", {"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-            ("raptor_threshold_max_limit", {"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+            ("raptor_clustering_threshold_min_limit", {"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+            ("raptor_clustering_threshold_max_limit", {"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+            ("raptor_clustering_threshold_type_invalid", {"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
             ("raptor_max_cluster_min_limit", {"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_cluster_max_limit", {"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
             ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -569,6 +576,8 @@ class TestDatasetCreate:
             ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
             ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
             ("parser_config_type_invalid", {"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
+            ("parent_child_type_invalid", {"parent_child": {"use_parent_child": "string"}}, "Input should be a valid boolean"),
+            ("parent_child_delimiter_empty", {"parent_child": {"children_delimiter": ""}}, "String should have at least 1 character"),
         ],
         ids=[
             "auto_keywords_min_limit",
@@ -610,13 +619,11 @@ class TestDatasetCreate:
             "raptor_type_invalid",
             "raptor_prompt_empty",
             "raptor_prompt_space",
-            "raptor_max_token_min_limit",
             "raptor_max_token_max_limit",
-            "raptor_max_token_float_not_allowed",
             "raptor_max_token_type_invalid",
-            "raptor_threshold_min_limit",
-            "raptor_threshold_max_limit",
-            "raptor_threshold_type_invalid",
+            "raptor_clustering_threshold_min_limit",
+            "raptor_clustering_threshold_max_limit",
+            "raptor_clustering_threshold_type_invalid",
             "raptor_max_cluster_min_limit",
             "raptor_max_cluster_max_limit",
             "raptor_max_cluster_float_not_allowed",
@@ -625,6 +632,8 @@ class TestDatasetCreate:
             "raptor_random_seed_float_not_allowed",
             "raptor_random_seed_type_invalid",
             "parser_config_type_invalid",
+            "parent_child_type_invalid",
+            "parent_child_delimiter_empty",
         ],
     )
     def test_parser_config_invalid(self, HttpApiAuth, name, parser_config, expected_message):

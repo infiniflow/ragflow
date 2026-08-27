@@ -20,8 +20,8 @@ import os
 from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
+from typing import Any, Callable
 from docx import Document
-from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
@@ -30,18 +30,25 @@ from markdown import markdown
 from PIL import Image
 from common.token_utils import num_tokens_from_string
 
-from common.constants import LLMType
+from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import (
+    ensure_mineru_from_env,
+    ensure_opendataloader_from_env,
+    ensure_paddleocr_from_env,
+    get_composite_model_name_by_id,
+    get_first_provider_model_name,
+    resolve_model_config,
+    get_tenant_default_model_by_type,
+)
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from rag.utils.lazy_image import LazyDocxImage
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
-from common.parser_config_utils import normalize_layout_recognizer
+from common.parser_config_utils import has_mineru_options, normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
@@ -56,6 +63,28 @@ from rag.nlp import (
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
 )  # noqa: F401
+
+
+def _is_short_header(text, max_tokens=50):
+    """
+    Check if text is a short markdown header.
+
+    Args:
+        text: The text to check
+        max_tokens: Maximum tokens for a header to be considered "short"
+
+    Returns:
+        bool: True if text is a short markdown header, False otherwise
+    """
+    if not text or not text.strip():
+        return False
+
+    # Check if it matches markdown header pattern: 1-6 # followed by space
+    if not re.match(r"^#{1,6}\s+", text.strip()):
+        return False
+
+    # Check if token count is below threshold
+    return num_tokens_from_string(text) < max_tokens
 
 
 def _normalize_section_text_for_rtl_presentation_forms(sections):
@@ -85,26 +114,84 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
     return normalized_sections
 
 
-def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
-    callback = callback
-    binary = binary
+def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
-    sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+    sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
 
     tables = vision_figure_parser_pdf_wrapper(
         tbls=tables,
         sections=sections,
         callback=callback,
+        lang=lang,
         **kwargs,
     )
     return sections, tables, pdf_parser
+
+
+def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layout_recognize_override: str | None = None) -> tuple[Callable, str, Any, str, Any]:
+    """Resolve the PDF parser callable for the current ``parser_config``.
+
+    Returns a 5-tuple ``(parser_callable, parser_name, layout_recognizer,
+    opendataloader_llm_name, parser_model_name)`` so the dispatch logic
+    stays testable in isolation (issue #17114).
+
+    ``layout_recognize_override`` lets callers pass an already-resolved
+    layout_recognize value (e.g. a UUID resolved via
+    :func:`get_composite_model_name_by_id`) so the dispatch doesn't
+    re-read the stale UUID from ``parser_config`` and re-normalize it.
+
+    When ``layout_recognize`` is a value that does not match any known parser
+    name — typically a stale ``TenantModel`` UUID stored on the document —
+    and the parser config carries MinerU-specific options (``mineru_*``
+    keys), the dispatch falls back to :func:`by_mineru` instead of routing
+    to :func:`by_plaintext`, which would otherwise try to resolve the UUID
+    as an IMAGE2TEXT vision model and crash.
+    """
+    raw_layout_recognize = layout_recognize_override if layout_recognize_override is not None else parser_config.get("layout_recognize", "DeepDOC")
+    layout_recognizer, parser_model_name = normalize_layout_recognizer(raw_layout_recognize)
+    if layout_recognizer == "OpenDataLoader" and parser_model_name:
+        opendataloader_llm_name = parser_model_name
+
+    if isinstance(layout_recognizer, bool):
+        layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
+
+    # Normalize "Plain Text" to "plaintext" so the PARSERS lookup below
+    # hits the explicit "plaintext" entry instead of falling through to
+    # the by_plaintext default — important because the MinerU fallback
+    # guard below keys off whether the parsed name is a known keyword.
+    if layout_recognizer == "Plain Text":
+        layout_recognizer = "plaintext"
+    name = layout_recognizer.strip().lower()
+    parser = PARSERS.get(name, by_plaintext)
+
+    # Closes #17114: when the document's layout_recognize is a model id
+    # (e.g. a TenantModel UUID) that does not match any known parser name,
+    # the previous dispatch fell through to by_plaintext, which tried to
+    # resolve the id as an IMAGE2TEXT vision model and failed with
+    # ``Provider <empty> not found for model <id>``. If mineru-specific
+    # options are set in parser_config, the operator clearly intended the
+    # MinerU parser, so route there instead and surface a clear log line
+    # rather than masking the misconfiguration silently.
+    # Guard: only fall back when the parser name is NOT a known keyword
+    # (e.g. "DeepDOC", "Plain Text"). A configuration like
+    # ``{"layout_recognize": "Plain Text", "mineru_lang": "English"}``
+    # must keep honoring PlainText, not be silently rerouted to MinerU.
+    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
+        logging.warning(
+            "[naive] layout_recognize=%r does not match a known parser; falling back to MinerU because mineru_* options are set (see issue #17114).",
+            layout_recognizer,
+        )
+        parser = by_mineru
+        name = "mineru"
+
+    return parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name
 
 
 def by_mineru(
     filename,
     binary=None,
     from_page=0,
-    to_page=100000,
+    to_page=MAXIMUM_PAGE_NUMBER,
     lang="Chinese",
     callback=None,
     pdf_cls=None,
@@ -117,59 +204,110 @@ def by_mineru(
     if tenant_id:
         if not mineru_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR)
-                if candidates:
-                    mineru_llm_name = candidates[0].llm_name
-                elif env_name:
-                    mineru_llm_name = env_name
+                mineru_llm_name = get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
             except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env mineru: {e}")
 
         if mineru_llm_name:
             try:
-                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, mineru_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mineru_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
+
+                # Closes #14869: when the tenant has a VISION model
+                # configured, let the MinerU parser enrich image chunks with
+                # VLM-generated semantic descriptions (parity with deepdoc's
+                # VisionFigureParser). Best-effort — fall back silently if
+                # no vision model is available.
+                if "vision_model" not in kwargs:
+                    try:
+                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
+                        kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
+                    except Exception as vlm_err:
+                        logging.info(f"[MinerU] no VISION model for tenant; skipping image VLM enhancement: {vlm_err}")
+
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
                     lang=lang,
+                    page_from=from_page,
+                    page_to=min(to_page, MAXIMUM_PAGE_NUMBER),
                     **kwargs,
                 )
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle MinerU ({mineru_llm_name}): {e}")
+                raise
 
-    if callback:
-        callback(-1, "MinerU not found.")
-    return None, None, None
+    raise RuntimeError("MinerU model not found or not configured.")
 
 
-def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = DoclingParser()
     parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
-        callback(-1, "Docling not found.")
+        if callback:
+            callback(-1, "Docling not found.")
         return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
         binary=binary,
         callback=callback,
-        output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-        delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        output_dir=os.environ.get("DOCLING_OUTPUT_DIR", ""),
+        delete_output=bool(int(os.environ.get("DOCLING_DELETE_OUTPUT", 1))),
+        docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
         parse_method=parse_method,
     )
     return sections, tables, pdf_parser
 
 
-def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_opendataloader(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    opendataloader_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    if tenant_id:
+        if not opendataloader_llm_name:
+            try:
+                opendataloader_llm_name = get_first_provider_model_name(tenant_id, "OpenDataLoader", LLMType.OCR) or ensure_opendataloader_from_env(tenant_id)
+            except Exception as e:  # best-effort fallback
+                logging.warning(f"fallback to env opendataloader: {e}")
+
+        if opendataloader_llm_name:
+            try:
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, opendataloader_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                parse_options = {k: kwargs[k] for k in ("hybrid", "image_output", "sanitize") if k in kwargs}
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    **parse_options,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle OpenDataLoader ({opendataloader_llm_name}): {e}")
+
+    if callback:
+        callback(-1, "OpenDataLoader not found.")
+    return None, None, None
+
+
+def by_tcadp(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
@@ -184,7 +322,7 @@ def by_paddleocr(
     filename,
     binary=None,
     from_page=0,
-    to_page=100000,
+    to_page=MAXIMUM_PAGE_NUMBER,
     lang="Chinese",
     callback=None,
     pdf_cls=None,
@@ -197,20 +335,13 @@ def by_paddleocr(
     if tenant_id:
         if not paddleocr_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_paddleocr_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR)
-                if candidates:
-                    paddleocr_llm_name = candidates[0].llm_name
-                elif env_name:
-                    paddleocr_llm_name = env_name
+                paddleocr_llm_name = get_first_provider_model_name(tenant_id, "PaddleOCR", LLMType.OCR) or ensure_paddleocr_from_env(tenant_id)
             except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env paddleocr: {e}")
 
         if paddleocr_llm_name:
             try:
-                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, paddleocr_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, paddleocr_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -231,15 +362,121 @@ def by_paddleocr(
     return None, None, None
 
 
-def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def by_somark(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    somark_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    pdf_parser = None
+    if tenant_id:
+        if not somark_llm_name:
+            try:
+                from api.db.joint_services.tenant_model_service import ensure_somark_from_env
+
+                somark_llm_name = ensure_somark_from_env(tenant_id)
+            except Exception as e:
+                logging.warning(f"fallback to env somark: {e}")
+
+        if somark_llm_name:
+            try:
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, somark_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle SoMark ({somark_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via SoMark ({somark_llm_name}): {e}")
+                return None, None, None
+
+    if callback:
+        callback(-1, "SoMark not found.")
+    return None, None, None
+
+
+def by_mistral_ocr(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    mistral_ocr_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    pdf_parser = None
+    if tenant_id:
+        if not mistral_ocr_llm_name:
+            try:
+                from api.db.joint_services.tenant_model_service import ensure_mistral_ocr_from_env
+
+                mistral_ocr_llm_name = ensure_mistral_ocr_from_env(tenant_id)
+            except Exception as e:
+                logging.warning(f"fallback to env mistral ocr: {e}")
+
+        if mistral_ocr_llm_name:
+            try:
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mistral_ocr_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                # Best-effort figure description: hand the parser the tenant's
+                # vision model so Mistral OCR's extracted images get VLM captions
+                # (parity with MinerU/deepdoc). Skip silently if none is configured.
+                if "vision_model" not in kwargs:
+                    try:
+                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
+                        kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
+                    except Exception as vlm_err:
+                        logging.info(f"[Mistral OCR] no vision model for tenant; skipping figure description: {vlm_err}")
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    from_page=from_page,
+                    to_page=to_page,
+                    lang=lang,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle Mistral OCR ({mistral_ocr_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via Mistral OCR ({mistral_ocr_llm_name}): {e}")
+                return None, None, None
+
+    if callback:
+        callback(-1, "Mistral OCR not found.")
+    return None, None, None
+
+
+def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
-    if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
+    if (not layout_recognizer) or layout_recognizer.replace(" ", "").lower() == "plaintext":
         pdf_parser = PlainParser()
     else:
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
-        vision_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
+        vision_model_config = resolve_model_config(tenant_id, LLMType.VISION, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
             model_config=vision_model_config,
@@ -247,7 +484,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=No
         )
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
 
-    sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+    sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
     return sections, tables, pdf_parser
 
 
@@ -255,8 +492,11 @@ PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
     "docling": by_docling,
+    "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
+    "somark": by_somark,
+    "mistral ocr": by_mistral_ocr,
     "plaintext": by_plaintext,  # default
 }
 
@@ -264,40 +504,6 @@ PARSERS = {
 class Docx(DocxParser):
     def __init__(self):
         pass
-
-    def get_picture(self, document, paragraph):
-        imgs = paragraph._element.xpath(".//pic:pic")
-        if not imgs:
-            return None
-        image_blobs = []
-        for img in imgs:
-            embed = img.xpath(".//a:blip/@r:embed")
-            if not embed:
-                continue
-            embed = embed[0]
-            try:
-                related_part = document.part.related_parts[embed]
-                image_blob = related_part.image.blob
-            except UnrecognizedImageError:
-                logging.info("Unrecognized image format. Skipping image.")
-                continue
-            except UnexpectedEndOfFileError:
-                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
-                continue
-            except InvalidImageStreamError:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-                continue
-            except UnicodeDecodeError:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-                continue
-            except Exception as e:
-                logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
-                continue
-            image_blobs.append(image_blob)
-
-        if not image_blobs:
-            return None
-        return LazyDocxImage(image_blobs)
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -408,8 +614,8 @@ class Docx(DocxParser):
 
         return ""
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         lines = []
         last_image = None
@@ -534,7 +740,7 @@ class Docx(DocxParser):
         import mammoth
         from markdownify import markdownify
 
-        docx_file = BytesIO(binary) if binary else open(filename, "rb")
+        docx_file = BytesIO(binary) if binary is not None else open(filename, "rb")
 
         def _convert_image_to_base64(image):
             try:
@@ -563,7 +769,7 @@ class Docx(DocxParser):
             return markdown_text
 
         finally:
-            if not binary:
+            if binary is None:
                 docx_file.close()
 
 
@@ -571,11 +777,11 @@ class Pdf(PdfParser):
     def __init__(self):
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None, separate_tables_figures=False):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None, separate_tables_figures=False):
         start = timer()
         first_start = start
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
@@ -604,6 +810,11 @@ class Pdf(PdfParser):
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
+
+
+# Maximum number of HTTP redirects followed when fetching a remote image
+# referenced by a markdown document (each hop is SSRF-validated).
+MAX_IMAGE_REDIRECTS = 5
 
 
 class Markdown(MarkdownParser):
@@ -677,6 +888,9 @@ class Markdown(MarkdownParser):
     def load_images_from_urls(self, urls, cache=None):
         import requests
         from pathlib import Path
+        from urllib.parse import urljoin
+
+        from common.ssrf_guard import assert_url_is_safe, pin_dns
 
         cache = cache or {}
         images = []
@@ -688,9 +902,40 @@ class Markdown(MarkdownParser):
             img_obj = None
             try:
                 if url.startswith(("http://", "https://")):
-                    response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
-                        img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    # SSRF guard: image references come from the (untrusted) uploaded
+                    # document, so validate and DNS-pin every hop before connecting.
+                    # Otherwise a markdown image like ![x](http://169.254.169.254/...)
+                    # would make the server fetch internal services / cloud metadata.
+                    # Redirects are followed manually so each hop is re-validated,
+                    # mirroring common/data_source/rss_connector.py.
+                    current_hostname, current_ip = assert_url_is_safe(url)
+                    current_url = url
+                    response = None
+                    try:
+                        for _ in range(MAX_IMAGE_REDIRECTS + 1):
+                            # Release the previous hop before opening the next: with
+                            # stream=True the connection isn't returned to the pool
+                            # until the body is read or the response is closed.
+                            if response is not None:
+                                response.close()
+                            with pin_dns(current_hostname, current_ip):
+                                response = requests.get(current_url, stream=True, timeout=30, allow_redirects=False)
+                            if response.status_code not in (301, 302, 303, 307, 308):
+                                break
+                            location = response.headers.get("Location")
+                            if not location:
+                                break
+                            current_url = urljoin(current_url, location)
+                            current_hostname, current_ip = assert_url_is_safe(current_url)
+                        else:
+                            raise ValueError(f"Exceeded {MAX_IMAGE_REDIRECTS} redirects fetching {url!r}")
+                        if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
+                            img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    finally:
+                        # Always release the final/streamed response, including the
+                        # non-image and redirect-cap paths where the body is unread.
+                        if response is not None:
+                            response.close()
                 else:
                     local_path = Path(url)
                     if local_path.exists():
@@ -705,7 +950,8 @@ class Markdown(MarkdownParser):
         return images, cache
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
-        if binary:
+        """Parse markdown into text sections and optional standalone table chunks."""
+        if binary is not None:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
@@ -713,10 +959,9 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
-        # extractor = MarkdownElementExtractor(remainder)
-        extractor = MarkdownElementExtractor(txt)
-        image_refs = self.extract_image_urls_with_lines(txt)
+        parsing_text = remainder
+        extractor = MarkdownElementExtractor(parsing_text)
+        image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
 
         sections = []
@@ -737,8 +982,9 @@ class Markdown(MarkdownParser):
             section_images.append(combined_image)
 
         tbls = []
-        for table in tables:
-            tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
+        if separate_tables:
+            for table in tables:
+                tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
         if return_section_images:
             return sections, tbls, section_images
         return sections, tbls
@@ -760,7 +1006,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
     return srels
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Supported file formats are docx, pdf, excel, txt.
     This method apply the naive ways to chunk files.
@@ -770,6 +1016,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     urls = set()
     url_res = []
 
+    lang = lang or "Chinese"
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
@@ -839,29 +1086,51 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         # images list - index of image chunk in chunks
         chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
 
-        vision_figure_parser_docx_wrapper_naive(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
+        vision_figure_parser_docx_wrapper_naive(
+            chunks=chunks,
+            idx_lst=images,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
 
         callback(0.8, "Finish parsing.")
         st = timer()
 
-        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli))
+        res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli, language=lang))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
         res.extend(url_res)
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        # Skip the local normalize_layout_recognizer() call — the dispatcher
+        # does it internally on the layout_recognize_override argument, so a
+        # second call here just discards the parsed model_name and breaks the
+        # @mineru/@paddleocr/@opendataloader/@somark composite-name wiring
+        # (CodeRabbit review #5 on #17114).
+        opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
+        # Pass the resolved layout_recognize (after get_composite_model_name_by_id
+        # turned a TenantModel UUID into a "<model>@<instance>@<provider>" form)
+        # so the dispatch can extract the right parser_model_name.
+        parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name = _dispatch_pdf_parser(
+            parser_config,
+            opendataloader_llm_name,
+            layout_recognize_override=layout_recognize_raw,
+        )
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_pdf(binary)
-
-        if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
-
-        name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
+        if name == "mineru":
+            kwargs["parse_method"] = "naive"
 
         sections, tables, pdf_parser = parser(
             filename=filename,
@@ -873,6 +1142,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
+            opendataloader_llm_name=opendataloader_llm_name,
+            somark_llm_name=parser_model_name,
+            mistral_ocr_llm_name=parser_model_name,
             **kwargs,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -881,13 +1153,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             return []
 
         if table_context_size or image_context_size:
-            tables = append_context2table_image4pdf(sections, tables, image_context_size)
+            tables = append_context2table_image4pdf(
+                sections,
+                tables,
+                image_context_size,
+                section_page_offset=from_page if name == "mineru" else 0,
+            )
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
@@ -909,7 +1186,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type=file_type)
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
-            res = tokenize_table(tables, doc, is_english)
+            res = tokenize_table(tables, doc, is_english, language=lang)
             callback(0.8, "Finish parsing.")
         else:
             # Default DeepDOC parser
@@ -925,6 +1202,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+        logging.info("TxtParser produced %d sections for %s", len(sections), filename)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -942,8 +1220,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         is_markdown = True
 
         try:
-            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
+            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, lang=lang)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:
             logging.warning(f"Failed to detect figure extraction: {e}")
@@ -964,7 +1242,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     else:
                         section_images = [None] * len(sections)
                         section_images[idx] = combined_image
-                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                    markdown_vision_parser = VisionFigureParser(
+                        vision_model=vision_model,
+                        figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])],
+                        lang=lang,
+                        **kwargs,
+                    )
                     boosted_figures = markdown_vision_parser(callback=callback)
                     sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
 
@@ -976,13 +1259,21 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 soup = markdown_parser.md_to_html(section_text)
                 hyperlink_urls = markdown_parser.get_hyperlink_urls(soup)
                 urls.update(hyperlink_urls)
-        res = tokenize_table(tables, doc, is_english)
+        res = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = HtmlParser()(filename, binary, chunk_token_num)
+        sections = [(_, "") for _ in sections if _]
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+        callback(0.8, "Finish parsing.")
+
+    elif re.search(r"\.epub$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+        sections = EpubParser()(filename, binary, chunk_token_num)
         sections = [(_, "") for _ in sections if _]
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
@@ -1022,6 +1313,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
+
     if is_markdown:
         merged_chunks = []
         merged_images = []
@@ -1036,7 +1328,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             sec_tokens = num_tokens_from_string(text)
             sec_image = section_images[idx] if section_images and idx < len(section_images) else None
 
-            if current_text and current_tokens + sec_tokens > chunk_limit:
+            # Don't finalize chunk if current_text is a short header (force merge with next section)
+            if current_text and not _is_short_header(current_text) and current_tokens + sec_tokens > chunk_limit:
                 merged_chunks.append(current_text)
                 merged_images.append(current_image)
                 overlap_part = ""
@@ -1065,9 +1358,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         has_images = merged_images and any(img is not None for img in merged_images)
 
         if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli, language=lang))
         else:
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
     else:
         if section_images:
             if all(image is None for image in section_images):
@@ -1075,11 +1368,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         if section_images:
             chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli, language=lang))
         else:
             chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
 
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):
@@ -1101,6 +1394,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         res.extend(url_res)
     # if table_context_size or image_context_size:
     #    attach_media_context(res, table_context_size, image_context_size)
+
+    # Attach PDF outline as transient metadata on the first chunk.
+    # task_executor.py will extract and persist it as document metadata.
+    if res and pdf_parser and getattr(pdf_parser, "outlines", None):
+        res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
+
     return res
 
 

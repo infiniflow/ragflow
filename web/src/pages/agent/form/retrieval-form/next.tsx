@@ -9,7 +9,11 @@ import {
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
-import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
+import {
+  RerankCandidatesCountFormField,
+  rerankCandidatesCountSchema,
+} from '@/components/rerank-candidates-count-item';
+
 import { TopNFormField } from '@/components/top-n-item';
 import {
   Form,
@@ -21,7 +25,11 @@ import {
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
 import {
@@ -33,27 +41,28 @@ import {
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { RetrievalFrom, initialRetrievalValues } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
+import { UserIdFormField } from '../components/user-id-form-field';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
-  keywords_similarity_weight: z.coerce.number(),
+  keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
-  top_k: z.coerce.number(),
-  kb_ids: z.array(z.string()),
+  ...rerankCandidatesCountSchema,
+  dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
   cross_languages: z.array(z.string()),
-  use_kg: z.boolean(),
-  toc_enhance: z.boolean(),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
+  user_id: z.string().optional(),
 };
 
 export const FormSchema = z.object({
@@ -82,7 +91,10 @@ export function MemoryDatasetForm() {
         </Radio.Group>
       </RAGFlowFormItem>
       {retrievalFrom === RetrievalFrom.Memory ? (
-        <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+        <>
+          <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+          <UserIdFormField></UserIdFormField>
+        </>
       ) : (
         <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
       )}
@@ -129,6 +141,7 @@ export function EmptyResponseField() {
 
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const outputList = useMemo(() => {
     return [
@@ -145,14 +158,22 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(node?.id, form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <Form {...form}>
@@ -161,16 +182,20 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
         <MemoryDatasetForm></MemoryDatasetForm>
-        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+        <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
-                <RerankFormFields></RerankFormFields>
+                <RerankFormFields
+                  ownerTenantId={ownerTenantId}
+                ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}
@@ -178,8 +203,6 @@ function RetrievalForm({ node }: INextOperatorForm) {
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-                <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-                <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
               </>
             )}
           </section>

@@ -1,0 +1,85 @@
+{
+  "name": "xAI",
+  "rank": 992,
+  "url": {
+    "default": "https://api.x.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "tts": "tts",
+    "asr": "stt"
+  },
+  "class": "grok",
+  "models": [
+    {
+      "name": "grok-4",
+      "content_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "grok-3",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "grok-3-fast",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "grok-3-mini",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "grok-3-mini-mini-fast",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "grok-2-vision",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "vision"
+      ]
+    },
+    {
+      "name": "eve",
+      "model_types": [
+        "tts"
+      ]
+    }
+  ]
+}

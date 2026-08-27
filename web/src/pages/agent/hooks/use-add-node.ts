@@ -1,4 +1,5 @@
-import { useFetchModelId } from '@/hooks/logic-hooks';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
+import { pickByBackend } from '@/utils/backend-variant';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { t } from 'i18next';
@@ -13,36 +14,43 @@ import {
   initialArXivValues,
   initialBeginValues,
   initialBingValues,
+  initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
+  initialCompilationValues,
   initialCrawlerValues,
   initialDataOperationsValues,
+  initialDocGeneratorValues,
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
-  initialExtractorValues,
+  getInitialExtractorValues,
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
-  initialHierarchicalMergerValues,
   initialInvokeValues,
   initialIterationStartValues,
   initialIterationValues,
+  initialKeenableValues,
+  initialYouComValues,
   initialListOperationsValues,
   initialLoopValues,
   initialMessageValues,
   initialNoteValues,
-  initialPDFGeneratorValues,
   initialParserValues,
   initialPubMedValues,
+  initialBGPTValues,
+  initialQueritContentsValues,
+  initialQueritValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSearXNGValues,
-  initialSplitterValues,
   initialStringTransformValues,
   initialSwitchValues,
   initialTavilyExtractValues,
   initialTavilyValues,
+  initialTitleChunkerValues,
+  initialTokenChunkerValues,
   initialTokenizerValues,
   initialUserFillUpValues,
   initialVariableAggregatorValues,
@@ -75,7 +83,7 @@ const GroupStartNodeMap = {
       name: Operator.IterationStart,
       form: initialIterationStartValues,
     },
-    extent: 'parent' as 'parent',
+    extent: 'parent' as const,
   },
   [Operator.Loop]: {
     id: `${Operator.LoopStart}:${humanId()}`,
@@ -86,7 +94,7 @@ const GroupStartNodeMap = {
       name: Operator.LoopStart,
       form: {},
     },
-    extent: 'parent' as 'parent',
+    extent: 'parent' as const,
   },
 };
 
@@ -122,13 +130,17 @@ function useAddGroupNode() {
   return { addGroupNode };
 }
 export const useInitializeOperatorParams = () => {
-  const llmId = useFetchModelId();
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const llmId = defaultModelDictionary.llm_id;
 
   const initialFormValuesMap = useMemo(() => {
     return {
       [Operator.Begin]: initialBeginValues,
       [Operator.Retrieval]: initialRetrievalValues,
-      [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
+      [Operator.Categorize]: {
+        ...initialCategorizeValues,
+        llm_id: llmId,
+      },
       [Operator.RewriteQuestion]: {
         ...initialRewriteQuestionValues,
         llm_id: llmId,
@@ -137,6 +149,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
+      [Operator.BGPT]: initialBGPTValues,
       [Operator.ArXiv]: initialArXivValues,
       [Operator.Google]: initialGoogleValues,
       [Operator.Bing]: initialBingValues,
@@ -158,6 +171,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.QueritContents]: initialQueritContentsValues,
+      [Operator.QueritSearch]: initialQueritValues,
+      [Operator.KeenableSearch]: initialKeenableValues,
+      [Operator.YouComSearch]: initialYouComValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
@@ -165,14 +182,23 @@ export const useInitializeOperatorParams = () => {
       [Operator.File]: {},
       [Operator.Parser]: initialParserValues,
       [Operator.Tokenizer]: initialTokenizerValues,
-      [Operator.Splitter]: initialSplitterValues,
-      [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
+      [Operator.TokenChunker]: initialTokenChunkerValues,
+      [Operator.TitleChunker]: initialTitleChunkerValues,
       [Operator.Extractor]: {
-        ...initialExtractorValues,
+        ...getInitialExtractorValues(),
         llm_id: llmId,
-        sys_prompt: t('flow.prompts.system.summary'),
-        prompts: t('flow.prompts.user.summary'),
+        // sys_prompt/prompts belong to the Python extractor form. The Go
+        // form seeds summary.system_prompt itself, and the Go extractor
+        // falls back to a built-in prompt when it is empty.
+        ...pickByBackend({
+          go: {},
+          python: {
+            sys_prompt: t('flow.prompts.system.summary'),
+            prompts: t('flow.prompts.user.summary'),
+          },
+        }),
       },
+      [Operator.Compiler]: { ...initialCompilationValues, llm_id: llmId },
       [Operator.DataOperations]: initialDataOperationsValues,
       [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,
@@ -180,7 +206,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Loop]: initialLoopValues,
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
-      [Operator.PDFGenerator]: initialPDFGeneratorValues,
+      [Operator.DocGenerator]: initialDocGeneratorValues,
+      [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
       [Operator.ExcelProcessor]: {},
     };
   }, [llmId]);

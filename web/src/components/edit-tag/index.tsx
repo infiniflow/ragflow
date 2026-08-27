@@ -1,14 +1,27 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { PlusOutlined } from '@ant-design/icons';
 import React, { useEffect, useRef, useState } from 'react';
 
+import { cn } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '../ui/hover-card';
 import { Input } from '../ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 interface EditTagsProps {
   value?: string[];
   onChange?: (tags: string[]) => void;
@@ -59,28 +72,35 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
 
     const forMap = (tag: string) => {
       return (
-        <HoverCard key={tag}>
-          <HoverCardContent side="top">{tag}</HoverCardContent>
-          <HoverCardTrigger asChild>
-            <div className="w-fit flex items-center justify-center gap-2 border border-border-button px-2 py-1 rounded-sm bg-bg-card">
+        <Tooltip key={tag}>
+          <TooltipContent side="top">{tag}</TooltipContent>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                'w-fit h-8 flex items-center justify-center gap-2 border border-border-button rounded-sm bg-bg-card',
+                disabled ? 'px-2' : 'ps-2 pe-1',
+              )}
+            >
               <div className="flex gap-2 items-center">
-                <div className="max-w-80 overflow-hidden text-ellipsis">
+                <div className="max-w-80 whitespace-nowrap overflow-hidden text-ellipsis">
                   {tag}
                 </div>
                 {!disabled && (
-                  <Trash2
-                    size={14}
-                    className="text-text-secondary hover:text-state-error"
+                  <Button
+                    variant="delete"
+                    size="icon-xs"
                     onClick={(e) => {
                       e.preventDefault();
                       handleClose(tag);
                     }}
-                  />
+                  >
+                    <Trash2 className="size-[1em]" />
+                  </Button>
                 )}
               </div>
             </div>
-          </HoverCardTrigger>
-        </HoverCard>
+          </TooltipTrigger>
+        </Tooltip>
       );
     };
 
@@ -99,7 +119,10 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             disabled={disabled}
             data-testid={inputTestId}
             onKeyDown={(e) => {
-              if (e?.key === 'Enter') {
+              // Ignore the Enter that confirms an IME (e.g. Chinese/Japanese)
+              // composition, otherwise the half-composed text is committed as a
+              // tag and the input closes before the user finishes typing.
+              if (e?.key === 'Enter' && !e.nativeEvent.isComposing) {
                 handleInputConfirm();
               }
             }}
@@ -107,10 +130,11 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
         )}
         <div className="flex gap-2 py-1 flex-wrap">
           {Array.isArray(tagChild) && tagChild.length > 0 && <>{tagChild}</>}
+
           {!inputVisible && !disabled && (
             <Button
-              variant="ghost"
-              className="w-fit flex items-center justify-center gap-2 bg-bg-card border-border-button border"
+              variant="outline"
+              size="icon"
               onClick={showInput}
               disabled={disabled}
               data-testid={addButtonTestId}

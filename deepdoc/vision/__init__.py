@@ -60,9 +60,8 @@ def init_in_out(args):
             pdf_pages(fnm)
             return
         try:
-            fp = open(fnm, "rb")
-            binary = fp.read()
-            fp.close()
+            with open(fnm, "rb") as fp:
+                binary = fp.read()
             images.append(Image.open(io.BytesIO(binary)).convert("RGB"))
             outputs.append(os.path.split(fnm)[-1])
         except Exception:

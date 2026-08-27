@@ -1,5 +1,5 @@
-import { useFetchModelId } from '@/hooks/logic-hooks';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { get, isEmpty, omit } from 'lodash';
 import { useMemo } from 'react';
 import { initialAgentValues } from '../../constant';
@@ -13,15 +13,15 @@ function omitToolsAndMcp(values: Record<string, any>) {
 }
 
 export function useValues(node?: RAGFlowNodeType) {
-  const llmId = useFetchModelId();
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const defaultValues = useMemo(
     () => ({
       ...omitToolsAndMcp(initialAgentValues),
-      llm_id: llmId,
+      llm_id: defaultModelDictionary.llm_id,
       prompts: '',
     }),
-    [llmId],
+    [defaultModelDictionary],
   );
 
   const values = useMemo(() => {
@@ -33,6 +33,7 @@ export function useValues(node?: RAGFlowNodeType) {
 
     return {
       ...omitToolsAndMcp(formData),
+      tool_timeout: get(formData, 'tool_timeout', 10),
       prompts: get(formData, 'prompts.0.content', ''),
     };
   }, [defaultValues, node?.data?.form]);

@@ -13,17 +13,22 @@ type RadioProps = {
   checked?: boolean;
   disabled?: boolean;
   onChange?: (checked: boolean) => void;
-  children?: React.ReactNode;
   testId?: string;
-};
+  children?: React.ReactNode;
+} & Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'value' | 'checked' | 'onChange'
+>;
 
 function Radio({
+  className,
   value,
   checked,
   disabled,
   onChange,
-  children,
   testId,
+  children,
+  ...props
 }: RadioProps) {
   const groupContext = useContext(RadioGroupContext);
   const isControlled = checked !== undefined;
@@ -32,7 +37,7 @@ function Radio({
   const isChecked = isControlled ? checked : groupContext?.value === value;
   const mergedDisabled = disabled || groupContext?.disabled;
 
-  const handleClick = () => {
+  const handleChange = () => {
     if (mergedDisabled) return;
 
     // if (!isControlled) {
@@ -57,24 +62,24 @@ function Radio({
     >
       <input
         type="radio"
-        name={groupContext?.name}
         value={value}
         checked={isChecked}
-        onClick={handleClick}
+        onChange={handleChange}
         disabled={mergedDisabled}
+        className={cn('peer absolute size-[1px] opacity-0', className)}
         data-testid={testId}
-        className="peer absolute size-[1px] opacity-0"
+        {...props}
+        name={groupContext?.name}
       />
 
       <div
         className={cn(
-          'flex h-4 w-4 items-center justify-center rounded-full border border-border-button transition-colors',
-          'group-hover/radio:border-border-default hover:border-border-default',
-          'peer-focus:border-primary',
+          'flex h-4 w-4 items-center justify-center rounded-full text-border-button border border-current transition-colors',
+          'group-hover/radio:text-border-default hover:text-border-default',
+          'peer-focus:text-text-primary',
           isChecked && 'border-primary bg-primary/10',
           mergedDisabled && 'border-muted',
         )}
-        data-testid={testId}
       >
         <div
           className={cn(
@@ -148,11 +153,14 @@ const Group = React.forwardRef<HTMLDivElement, RadioGroupProps>(
             className,
           )}
         >
-          {React.Children.map(children, (child) =>
-            React.cloneElement(child as React.ReactElement, {
-              disabled: disabled || child?.props?.disabled,
-            }),
-          )}
+          {React.Children.map(children, (child) => {
+            if (!React.isValidElement<RadioProps>(child)) {
+              return child;
+            }
+            return React.cloneElement(child, {
+              disabled: disabled || child.props.disabled,
+            });
+          })}
         </div>
       </RadioGroupContext.Provider>
     );

@@ -17,11 +17,9 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
-	"ragflow/internal/dao"
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 )
 
@@ -60,131 +58,64 @@ func NewLLMHandler(llmService *service.LLMService, userService *service.UserServ
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/llm/my_llms [get]
 func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Get tenant ID from user
 	tenantID := user.ID
-	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "User has no tenant ID",
-		})
-		return
-	}
-
-	// Parse include_details query parameter
 	includeDetailsStr := c.DefaultQuery("include_details", "false")
 	includeDetails := includeDetailsStr == "true"
+	ctx := c.Request.Context()
 
-	// Get LLMs for tenant
-	llms, err := h.llmService.GetMyLLMs(tenantID, includeDetails)
+	llms, err := h.llmService.GetMyLLMs(ctx, tenantID, includeDetails)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get LLMs",
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": llms,
-	})
+	common.SuccessWithData(c, llms, "success")
 }
 
-// Factories get model provider factories
-// @Summary Get Model Provider Factories
-// @Description Get list of model provider factories
+// SetAPIKey set API key for a LLM factory
+// @Summary Set API Key
+// @Description Set API key for a LLM factory and test connectivity
 // @Tags llm
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Success 200 {array} FactoryResponse
-// @Router /v1/llm/factories [get]
-func (h *LLMHandler) Factories(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
+// @Param request body service.SetAPIKeyRequest true "API Key configuration"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/llm/set_api_key [post]
+func (h *LLMHandler) SetAPIKey(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
-	// Get user by token
-	_, code, err := h.userService.GetUserByToken(token)
+	var req service.SetAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, false, "Invalid request: "+err.Error())
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	tenantID := user.ID
+	result, err := h.llmService.SetAPIKey(ctx, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 		return
 	}
 
-	// Get model providers
-	dao := dao.NewModelProviderDAO()
-	providers := dao.GetAllProviders()
-
-	// Filter out unwanted providers
-	filtered := make([]FactoryResponse, 0)
-	excluded := map[string]bool{
-		"Youdao":    true,
-		"FastEmbed": true,
-		"BAAI":      true,
-		"Builtin":   true,
+	if req.Verify {
+		common.SuccessWithData(c, result, "success")
+		return
 	}
 
-	for _, provider := range providers {
-		if excluded[provider.Name] {
-			continue
-		}
-
-		// Collect unique model types from LLMs
-		modelTypes := make(map[string]bool)
-		for _, llm := range provider.LLMs {
-			modelTypes[llm.ModelType] = true
-		}
-
-		// Convert to slice
-		modelTypeSlice := make([]string, 0, len(modelTypes))
-		for mt := range modelTypes {
-			modelTypeSlice = append(modelTypeSlice, mt)
-		}
-
-		// If no model types found, use defaults
-		if len(modelTypeSlice) == 0 {
-			modelTypeSlice = []string{"chat", "embedding", "rerank", "image2text", "speech2text", "tts", "ocr"}
-		}
-
-		filtered = append(filtered, FactoryResponse{
-			Name:       provider.Name,
-			Logo:       provider.Logo,
-			Tags:       provider.Tags,
-			Status:     provider.Status,
-			Rank:       provider.Rank,
-			ModelTypes: modelTypeSlice,
-		})
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"data": filtered,
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ListApp lists LLMs grouped by factory
@@ -198,52 +129,22 @@ func (h *LLMHandler) Factories(c *gin.Context) {
 // @Success 200 {object} map[string][]service.LLMListItem
 // @Router /v1/llm/list [get]
 func (h *LLMHandler) ListApp(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    code,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Get tenant ID from user
 	tenantID := user.ID
-	if tenantID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "User has no tenant ID",
-		})
-		return
-	}
+	ctx := c.Request.Context()
 
-	// Parse model_type query parameter
 	modelType := c.Query("model_type")
 
-	// Get LLM list
-	llms, err := h.llmService.ListLLMs(tenantID, modelType)
+	llms, err := h.llmService.ListLLMs(ctx, tenantID, modelType)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    llms,
-		"message": "success",
-	})
+	common.SuccessWithData(c, llms, "success")
 }

@@ -77,10 +77,53 @@ def open_user_settings(page, base_url: str) -> None:
     wait_for_path_prefix(page, "/user-setting", timeout_ms=5000)
 
 
-def needs_selection(combobox, option_text: str) -> bool:
-    """Return True when the combobox does not already show the option text."""
+def _clean_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _has_malformed_model_suffix(value: str) -> bool:
+    return "#" in (value or "")
+
+
+def _is_expected_selected(current_text: str, expected_value_prefix: str, option_text: str) -> bool:
+    current = _clean_text(current_text)
+    expected_prefix = _clean_text(expected_value_prefix)
+    expected_label = _clean_text(option_text)
+
+    if not current:
+        return False
+    if _has_malformed_model_suffix(current):
+        return False
+
+    # When a canonical model prefix is provided (model@factory), prefer strict matching.
+    if "@" in expected_prefix:
+        if "@" not in current:
+            return False
+        return current.lower().startswith(expected_prefix.lower())
+
+    return expected_label and expected_label.lower() in current.lower()
+
+
+def needs_selection(combobox, expected_value_prefix: str, option_text: str) -> bool:
+    """Return True when the combobox should be reselected."""
     current_text = combobox.inner_text().strip()
-    return option_text not in current_text
+    return not _is_expected_selected(current_text, expected_value_prefix, option_text)
+
+
+def _assert_selected_option_value(
+    selected_value: str | None,
+    expected_value_prefix: str,
+    option_text: str,
+) -> None:
+    if not selected_value:
+        return
+
+    if _has_malformed_model_suffix(selected_value):
+        raise AssertionError(f"Selected combobox option contains malformed model suffix '#': value={selected_value!r} option_text={option_text!r}")
+
+    expected_prefix = _clean_text(expected_value_prefix)
+    if expected_prefix and not selected_value.lower().startswith(expected_prefix.lower()):
+        raise AssertionError(f"Selected combobox option does not match expected canonical prefix: expected_prefix={expected_prefix!r} selected_value={selected_value!r} option_text={option_text!r}")
 
 
 def click_with_retry(page, expect, locator_factory, attempts: int, timeout_ms: int) -> None:
@@ -115,9 +158,7 @@ def select_cmdk_option_by_value_prefix(
 
     controls_id = combobox.get_attribute("aria-controls")
     options_container = None
-    option_selector = (
-        "[data-testid='combobox-option'], [role='option'], [cmdk-item], [data-value]"
-    )
+    option_selector = "[data-testid='combobox-option'], [role='option'], [cmdk-item], [data-value]"
 
     if controls_id:
         controls_selector = f"[id={json.dumps(controls_id)}]:visible"
@@ -140,11 +181,7 @@ def select_cmdk_option_by_value_prefix(
         return page.locator(option_selector)
 
     def option_locator():
-        by_value = (
-            options_container.locator(value_selector)
-            if options_container is not None
-            else page.locator(f"{value_selector}:visible")
-        )
+        by_value = options_container.locator(value_selector) if options_container is not None else page.locator(f"{value_selector}:visible")
         if by_value.count() > 0:
             return by_value.first
         return options_locator().filter(has_text=option_pattern).first
@@ -168,18 +205,12 @@ def select_cmdk_option_by_value_prefix(
                 selected_value = None
             click_with_retry(page, expect, lambda: first_option, attempts=3, timeout_ms=timeout_ms)
             if selected_text:
-                expect(combobox).to_contain_text(
-                    selected_text, timeout=timeout_ms
-                )
+                expect(combobox).to_contain_text(selected_text, timeout=timeout_ms)
             try:
-                expect(combobox).to_have_attribute(
-                    "aria-expanded", "false", timeout=timeout_ms
-                )
+                expect(combobox).to_have_attribute("aria-expanded", "false", timeout=timeout_ms)
             except AssertionError:
                 page.keyboard.press("Escape")
-                expect(combobox).to_have_attribute(
-                    "aria-expanded", "false", timeout=timeout_ms
-                )
+                expect(combobox).to_have_attribute("aria-expanded", "false", timeout=timeout_ms)
             return selected_text or option_text, selected_value
         dump = []
         count = min(options.count(), 30)
@@ -230,7 +261,7 @@ def select_default_model(
     timeout_ms: int,
 ) -> tuple[str, str | None]:
     """Select and persist a default model."""
-    if not needs_selection(combobox, option_text):
+    if not needs_selection(combobox, value_prefix, option_text):
         try:
             current_text = combobox.inner_text().strip()
         except Exception:
@@ -256,13 +287,20 @@ def select_default_model(
         capture_response(
             page,
             trigger,
-            lambda resp: resp.request.method == "POST"
-            and "/v1/user/set_tenant_info" in resp.url,
+            lambda resp: resp.request.method == "PATCH" and "/api/v1/users/me/models" in resp.url,
         )
     except PlaywrightTimeoutError:
         if not selected[0]:
             raise
 
+    _assert_selected_option_value(selected[1], value_prefix, option_text)
+
     expected_text = selected[0] or option_text
     expect(combobox).to_contain_text(expected_text, timeout=timeout_ms)
+    try:
+        current_text = combobox.inner_text().strip()
+    except Exception:
+        current_text = expected_text
+    if _has_malformed_model_suffix(current_text):
+        raise AssertionError(f"Combobox text still contains malformed model suffix '#': text={current_text!r} expected={expected_text!r}")
     return selected

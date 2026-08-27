@@ -1,15 +1,34 @@
-import Image from '@/components/image';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { SafeImg } from '@/components/safe-img';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { downloadFileFromBlob } from '@/utils/file-util';
+import request from '@/utils/request';
 import DOMPurify from 'dompurify';
-import { memo, useCallback, useEffect, useMemo } from 'react';
-import Markdown from 'react-markdown';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -18,34 +37,151 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
+  replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
+import { useLoadingPause } from '@/hooks/use-loading-pause';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import reactStringReplace from 'react-string-replace';
+import { LoadingDots } from '../loading-dots';
 import { Button } from '../ui/button';
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from '../ui/hover-card';
+import message from '../ui/message';
 import styles from './index.module.less';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
+
+const isArtifactUrl = (url?: string) =>
+  Boolean(url && url.includes('/api/v1/documents/artifact/'));
+
+const fetchArtifactBlob = async (url: string): Promise<Blob> => {
+  const response = await request(url, {
+    method: 'GET',
+    responseType: 'blob',
+  });
+
+  return response.data as Blob;
+};
+
+const getArtifactName = (url?: string, fallback?: string) =>
+  fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
+
+function ArtifactLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const handleClick = useCallback(
+    async (e: React.MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      try {
+        const blob = await fetchArtifactBlob(href);
+        const objectUrl = URL.createObjectURL(blob);
+        window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
+      } catch {
+        message.error('Failed to open artifact');
+      }
+    },
+    [href],
+  );
+
+  return (
+    <a href={href} className={className} onClick={handleClick}>
+      {children}
+    </a>
+  );
+}
+
+function ArtifactImage({
+  src,
+  alt,
+  downloadLabel,
+}: {
+  src: string;
+  alt?: string;
+  downloadLabel: string;
+}) {
+  const [imageSrc, setImageSrc] = useState('');
+
+  useEffect(() => {
+    let objectUrl = '';
+    let active = true;
+
+    const load = async () => {
+      try {
+        const blob = await fetchArtifactBlob(src);
+        objectUrl = URL.createObjectURL(blob);
+        if (active) {
+          setImageSrc(objectUrl);
+        }
+      } catch {
+        message.error('Failed to load artifact image');
+      }
+    };
+
+    load();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [alt, src]);
+
+  const handleDownload = useCallback(async () => {
+    try {
+      const blob = await fetchArtifactBlob(src);
+      downloadFileFromBlob(blob, getArtifactName(src, alt));
+    } catch {
+      message.error('Failed to download artifact');
+    }
+  }, [alt, src]);
+
+  return (
+    <span className={styles.artifactImageWrapper}>
+      {imageSrc ? (
+        <img src={imageSrc} alt={alt || ''} className={styles.artifactImage} />
+      ) : (
+        <span className={styles.artifactImage} />
+      )}
+      <button
+        type="button"
+        className={styles.artifactDownload}
+        onClick={handleDownload}
+      >
+        {downloadLabel}
+      </button>
+    </span>
+  );
+}
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 function MarkdownContent({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -56,8 +192,12 @@ function MarkdownContent({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
-      ADD_TAGS: ['think', 'section'],
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
+      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
     // let text = content;
@@ -65,8 +205,17 @@ function MarkdownContent({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
-  }, [content, t]);
+    const thinkSummary = loading
+      ? `${t('chat.thinking')}...`
+      : t('chat.thought');
+    return unescapeAngleBrackets(
+      pipe(
+        (value: string) => replaceThinkToSection(value, thinkSummary),
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+      )(nextText),
+    );
+  }, [content, loading, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -77,15 +226,16 @@ function MarkdownContent({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
-        if (!isPdf) {
+        if (fileExtension !== 'pdf') {
           if (!documentUrl) {
             return;
           }
-          window.open(documentUrl, '_blank');
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else {
           clickDocumentButton?.(documentId, chunk);
         }
@@ -179,7 +329,7 @@ function MarkdownContent({
             {documentId && (
               <div className="flex gap-1">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt=""
                     className={styles.fileThumbnail}
@@ -195,7 +345,7 @@ function MarkdownContent({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    fileExtension === 'pdf',
+                    fileExtension,
                     documentUrl,
                   )}
                   className="text-ellipsis text-wrap"
@@ -213,14 +363,14 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
+      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
 
         return (
           <HoverCard key={i}>
             <HoverCardTrigger>
               <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                Fig. {chunkIndex + 1}
+                {t('common.figure')} {chunkIndex + 1}
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
@@ -232,23 +382,62 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [renderPopoverContent],
+    [renderPopoverContent, t],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const showLoadingDots = useLoadingPause(loading, content);
 
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
+        remarkPlugins={MarkdownRemarkPlugins}
+        urlTransform={(url, key) => {
+          if (
+            key === 'src' &&
+            /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/.test(url)
+          ) {
+            return url;
+          }
+          return defaultUrlTransform(url);
+        }}
         components={
           {
-            p: ({ children, node, ...props }: any) => (
-              <p {...props}>{children}</p>
-            ),
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
+            a({ href, children, ...props }: any) {
+              if (isArtifactUrl(href)) {
+                return (
+                  <ArtifactLink href={href} className={styles.artifactDownload}>
+                    {children}
+                  </ArtifactLink>
+                );
+              }
+              return (
+                <a href={href} {...omit(props, 'node')}>
+                  {children}
+                </a>
+              );
+            },
+            img({ src, alt, title }: any) {
+              if (isArtifactUrl(src)) {
+                return (
+                  <ArtifactImage
+                    src={src}
+                    alt={alt || ''}
+                    downloadLabel={t('common.download')}
+                  />
+                );
+              }
+              return <SafeImg src={src} alt={alt} title={title} />;
+            },
             code(props: any) {
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');
@@ -276,6 +465,9 @@ function MarkdownContent({
       >
         {contentWithCursor}
       </Markdown>
+      {showLoadingDots && (
+        <LoadingDots className="ml-1 inline-block text-text-secondary" />
+      )}
     </div>
   );
 }

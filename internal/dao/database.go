@@ -17,38 +17,71 @@
 package dao
 
 import (
+	"context"
 	"fmt"
-	"ragflow/internal/model"
-	"ragflow/internal/server"
+	"os"
+	"path/filepath"
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
+	"strings"
+	"sync"
 	"time"
 
+	"ragflow/internal/server"
+
+	"go.uber.org/zap"
 	gormLogger "gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-
-	"ragflow/internal/logger"
 )
 
 var DB *gorm.DB
+var modelProviderManager *models.ProviderManager
+var modelProviderManagerMu sync.Mutex
+
+// LLMFactoryConfig represents a single LLM factory configuration
+type LLMFactoryConfig struct {
+	Name   string      `json:"name"`
+	Logo   string      `json:"logo"`
+	Tags   string      `json:"tags"`
+	Status string      `json:"status"`
+	Rank   string      `json:"rank"`
+	LLM    []LLMConfig `json:"llm"`
+}
+
+// LLMConfig represents a single LLM model configuration
+type LLMConfig struct {
+	LLMName   string `json:"llm_name"`
+	Tags      string `json:"tags"`
+	MaxTokens int64  `json:"max_tokens"`
+	ModelType string `json:"model_type"`
+	IsTools   bool   `json:"is_tools"`
+}
+
+// LLMFactoriesFile represents the structure of llm_factories.json
+type LLMFactoriesFile struct {
+	FactoryLLMInfos []LLMFactoryConfig `json:"factory_llm_infos"`
+}
 
 // InitDB initialize database connection
-func InitDB() error {
-	cfg := server.GetConfig()
-	dbCfg := cfg.Database
+func InitDB(ctx context.Context, migrateDB bool) error {
+	globalConfig := server.GetConfig()
+	databaseConfig := globalConfig.GetMySQLConfig()
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		dbCfg.Username,
-		dbCfg.Password,
-		dbCfg.Host,
-		dbCfg.Port,
-		dbCfg.Database,
-		dbCfg.Charset,
+		databaseConfig.User,
+		databaseConfig.Password,
+		databaseConfig.Host,
+		databaseConfig.Port,
+		databaseConfig.DatabaseName,
+		databaseConfig.Charset,
 	)
 
 	// Set log level
 	var gormLogLevel gormLogger.LogLevel
-	if cfg.Server.Mode == "debug" {
+	if globalConfig.GetMode() == "debug" {
 		gormLogLevel = gormLogger.Info
 	} else {
 		gormLogLevel = gormLogger.Silent
@@ -61,6 +94,7 @@ func InitDB() error {
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},
+		TranslateError: true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
@@ -77,58 +111,180 @@ func InitDB() error {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	// Auto migrate all models
-	models := []interface{}{
-		&model.User{},
-		&model.Tenant{},
-		&model.UserTenant{},
-		&model.File{},
-		&model.File2Document{},
-		&model.TenantLLM{},
-		&model.Chat{},
-		&model.ChatSession{},
-		&model.Task{},
-		&model.APIToken{},
-		&model.API4Conversation{},
-		&model.Knowledgebase{},
-		&model.InvitationCode{},
-		&model.Document{},
-		&model.UserCanvas{},
-		&model.CanvasTemplate{},
-		&model.UserCanvasVersion{},
-		&model.LLMFactories{},
-		&model.LLM{},
-		&model.TenantLangfuse{},
-		&model.SystemSettings{},
-		&model.Connector{},
-		&model.Connector2Kb{},
-		&model.SyncLogs{},
-		&model.MCPServer{},
-		&model.Memory{},
-		&model.Search{},
-		&model.PipelineOperationLog{},
-		&model.EvaluationDataset{},
-		&model.EvaluationCase{},
-		&model.EvaluationRun{},
-		&model.EvaluationResult{},
+	// Auto migrate all dataModels
+	dataModels := []interface{}{
+		&entity.User{},
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.TenantLLM{},
+		&entity.Chat{},
+		&entity.ChatSession{},
+		&entity.Task{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.Knowledgebase{},
+		&entity.InvitationCode{},
+		&entity.Document{},
+		&entity.UserCanvas{},
+		&entity.CanvasTemplate{},
+		&entity.UserCanvasVersion{},
+		&entity.LLMFactories{},
+		&entity.LLM{},
+		&entity.TenantLangfuse{},
+		&entity.SystemSettings{},
+		&entity.Connector{},
+		&entity.Connector2Kb{},
+		&entity.SyncLogs{},
+		&entity.MCPServer{},
+		&entity.Memory{},
+		&entity.Search{},
+		&entity.PipelineOperationLog{},
+		&entity.EvaluationDataset{},
+		&entity.EvaluationCase{},
+		&entity.EvaluationRun{},
+		&entity.EvaluationResult{},
+		&entity.TimeRecord{},
+		&entity.License{},
+		&entity.SkillSearchConfig{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+		&entity.TenantModelGroupMapping{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelGroup{},
+		&entity.IngestionTask{},
+		&entity.IngestionTaskLog{},
+		&entity.FileCommit{},
+		&entity.FileCommitItem{},
+		&entity.KnowledgeCompileDataset{},
+		&entity.WikiDocumentDirty{},
+		// Knowledge-compile compilation templates and their groups. The Go
+		// KnowledgeCompilerComponent resolves a compilation_template (or group)
+		// from these tables at runtime, so the Go side must guarantee they exist.
+		&entity.CompilationTemplate{},
+		&entity.CompilationTemplateGroup{},
 	}
 
-	for _, m := range models {
-		if err := DB.AutoMigrate(m); err != nil {
-			return fmt.Errorf("failed to migrate model %T: %w", m, err)
+	if migrateDB {
+		common.Info("Migrating database schema...")
+		for _, m := range dataModels {
+			if err = autoMigrateSafely(ctx, DB, m); err != nil {
+				return fmt.Errorf("failed to migrate model %T: %w", m, err)
+			}
 		}
+
+		// Run manual migrations for complex schema changes
+		if err = RunMigrations(ctx, DB); err != nil {
+			return fmt.Errorf("failed to run manual migrations: %w", err)
+		}
+		common.Info("Database schema migrated successfully")
+	}
+	// Seed built-in agent templates so the Go backend can serve the
+	// "create agent from template" catalogue without relying on Python-side
+	// initialization.
+	if err = SeedCanvasTemplates(ctx, DB); err != nil {
+		common.Warn("Failed to seed canvas templates", zap.Error(err))
+	}
+	// Seed the built-in compilation template group (c3aa748c...) for every
+	// tenant so compiler.json's default group resolves out of the box.
+	if err = SeedBuiltinCompilationTemplates(ctx, DB); err != nil {
+		common.Warn("Failed to seed built-in compilation templates", zap.Error(err))
 	}
 
-	// Run manual migrations for complex schema changes
-	if err := RunMigrations(DB); err != nil {
-		return fmt.Errorf("failed to run manual migrations: %w", err)
+	common.Info("Database connected and migrated successfully")
+
+	err = models.InitProviderManager("conf/models")
+	if err != nil {
+		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 
-	logger.Info("Database connected and migrated successfully")
+	modelProviderManager = models.GetProviderManager()
+	common.Info("Model providers loaded successfully")
+
 	return nil
 }
 
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
+}
+
+// GetModelProviderManager get database instance
+func GetModelProviderManager() *models.ProviderManager {
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+
+	modelProviderManagerMu.Lock()
+	defer modelProviderManagerMu.Unlock()
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+	if existing := models.GetProviderManager(); existing != nil {
+		modelProviderManager = existing
+		return modelProviderManager
+	}
+	modelConfigDir, err := findModelConfigDir()
+	if err != nil {
+		common.Fatal("Failed to locate model providers", zap.Error(err))
+	}
+	if err = models.InitProviderManager(modelConfigDir); err != nil {
+		common.Fatal("Failed to load model providers", zap.Error(err))
+	}
+	modelProviderManager = models.GetProviderManager()
+	return modelProviderManager
+}
+
+func findModelConfigDir() (string, error) {
+	candidates := []string{
+		"conf/models",
+		filepath.Join("..", "..", "conf", "models"),
+		filepath.Join("..", "..", "..", "conf", "models"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("conf/models not found")
+}
+
+// autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
+// This handles cases where indexes already exist (e.g., created by Python backend)
+func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) error {
+	//err := db.Debug().AutoMigrate(model) // to print debug info
+	err := db.WithContext(ctx).AutoMigrate(model)
+	if err == nil {
+		return nil
+	}
+
+	// Check if error is MySQL duplicate index error (Error 1061)
+	errStr := err.Error()
+	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+		common.Warn("Index already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
+		common.Warn("Column already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
+		common.Warn("Table already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1091") && strings.Contains(errStr, "Can't DROP") {
+		common.Warn("Index/column already dropped, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1138") && strings.Contains(errStr, "Invalid use of NULL") {
+		common.Warn("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
+		return nil
+	}
+
+	return err
 }

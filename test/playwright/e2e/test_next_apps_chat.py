@@ -41,9 +41,7 @@ def step_02_open_chat_list(ctx: FlowContext, step, snap):
     with step("open chat list"):
         _goto_home(page, ctx.base_url)
         _nav_click(page, "nav-chat")
-        expect(page.locator("[data-testid='chats-list']")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.locator("[data-testid='chats-list']")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     snap("chat_list_open")
 
 
@@ -172,7 +170,7 @@ def _mm_open_and_close_embed_dialog_if_available(page) -> bool:
 
 
 def _mm_settings_save_request(req) -> bool:
-    return req.method.upper() in MM_REQUEST_METHOD_WHITELIST and "/dialog/set" in req.url
+    return req.method.upper() in MM_REQUEST_METHOD_WHITELIST and "/api/v1/chats" in req.url
 
 
 def _mm_open_settings_panel(page):
@@ -211,6 +209,62 @@ def _mm_dismiss_open_popovers(page) -> None:
         page.wait_for_timeout(120)
 
 
+def _mm_open_model_options(page, card, option_prefix: str):
+    options = page.locator(f"[data-testid^='{option_prefix}']")
+    deadline = monotonic() + 12
+    while monotonic() < deadline:
+        card.get_by_test_id("chat-detail-multimodel-card-model-select").click()
+        try:
+            expect(options.first).to_be_visible(timeout=1200)
+            return options
+        except AssertionError:
+            pass
+
+        popover_root = page.locator("[data-radix-popper-content-wrapper]").last
+        if popover_root.count() > 0:
+            popover_model_select = popover_root.locator("button[role='combobox']").first
+            if popover_model_select.count() > 0:
+                try:
+                    popover_model_select.click(timeout=1200)
+                except Exception:
+                    pass
+                try:
+                    expect(options.first).to_be_visible(timeout=1200)
+                    return options
+                except AssertionError:
+                    pass
+        page.wait_for_timeout(120)
+
+    raise AssertionError(f"no model options rendered for prefix={option_prefix!r} in multi-model selector")
+
+
+def _mm_click_generic_model_option(page, card_index: int, option_prefix: str) -> str:
+    popover_root = page.locator("[data-radix-popper-content-wrapper]").last
+    options = popover_root.locator("[role='option']")
+    expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+
+    option_count = options.count()
+    choose_index = 1 if option_count > 1 and card_index == 1 else 0
+    chosen = options.nth(choose_index)
+    chosen.scroll_into_view_if_needed()
+
+    for _ in range(3):
+        try:
+            chosen.click(timeout=2000, force=True)
+            break
+        except Exception:
+            page.wait_for_timeout(120)
+    else:
+        raise AssertionError("failed to click fallback generic model option")
+
+    chosen_testid = chosen.get_attribute("data-testid") or ""
+    if chosen_testid:
+        return chosen_testid
+
+    chosen_value = chosen.get_attribute("data-value") or chosen.get_attribute("value") or f"idx-{choose_index}"
+    return f"{option_prefix}{chosen_value}"
+
+
 def mm_step_01_ensure_authed_and_open_chat_list(ctx: FlowContext, step, snap):
     page = ctx.page
     with step("ensure logged in and open chat list"):
@@ -223,9 +277,7 @@ def mm_step_01_ensure_authed_and_open_chat_list(ctx: FlowContext, step, snap):
         )
         _goto_home(page, ctx.base_url)
         _nav_click(page, "nav-chat")
-        expect(page.locator("[data-testid='chats-list']")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.locator("[data-testid='chats-list']")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     ctx.state["mm_logged_in"] = True
     snap("chat_mm_list")
 
@@ -280,28 +332,20 @@ def mm_step_05_sessions_panel_row_ops(ctx: FlowContext, step, snap):
         expect(sessions_root).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         page.get_by_test_id("chat-detail-sessions-close").click()
-        expect(page.get_by_test_id("chat-detail-sessions-open")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.get_by_test_id("chat-detail-sessions-open")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         page.get_by_test_id("chat-detail-sessions-open").click()
         expect(sessions_root).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         page.get_by_test_id("chat-detail-session-new").click()
         session_rows = page.locator("[data-testid='chat-detail-session-item']")
         expect(session_rows.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        active_session = sessions_root.locator(
-            "li[aria-selected='true'] [data-testid='chat-detail-session-item']"
-        )
+        active_session = sessions_root.locator("li[aria-selected='true'] [data-testid='chat-detail-session-item']")
         selected_row = active_session.first if active_session.count() > 0 else session_rows.first
         created_session_id = selected_row.get_attribute("data-session-id") or ""
         assert created_session_id, "failed to capture created session id"
 
         selected_row.click()
-        expect(
-            page.locator(
-                f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']"
-            ).first
-        ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.locator(f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         search_input = page.get_by_test_id("chat-detail-session-search")
         expect(search_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
@@ -321,31 +365,19 @@ def mm_step_05_sessions_panel_row_ops(ctx: FlowContext, step, snap):
         # When only one row exists, some builds keep it visible for temporary sessions.
         # In that case we still validate the search interaction without forcing impossible narrowing.
         if row_count_before > 1:
-            assert (
-                min_filtered_count < row_count_before
-            ), "session search did not narrow visible rows"
+            assert min_filtered_count < row_count_before, "session search did not narrow visible rows"
         else:
             assert min_filtered_count <= row_count_before
         search_input.fill("")
-        expect(
-            page.locator(
-                f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']"
-            ).first
-        ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.locator(f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
-        row_li = sessions_root.locator(
-            f"li:has([data-testid='chat-detail-session-item'][data-session-id='{created_session_id}'])"
-        ).first
+        row_li = sessions_root.locator(f"li:has([data-testid='chat-detail-session-item'][data-session-id='{created_session_id}'])").first
         row_li.hover()
-        actions_btn = page.locator(
-            f"[data-testid='chat-detail-session-actions'][data-session-id='{created_session_id}']"
-        ).first
+        actions_btn = page.locator(f"[data-testid='chat-detail-session-actions'][data-session-id='{created_session_id}']").first
         expect(actions_btn).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         actions_btn.click()
 
-        row_delete = page.locator(
-            f"[data-testid='chat-detail-session-delete'][data-session-id='{created_session_id}']"
-        ).first
+        row_delete = page.locator(f"[data-testid='chat-detail-session-delete'][data-session-id='{created_session_id}']").first
         expect(row_delete).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         row_delete.click()
         row_delete_dialog = page.get_by_test_id("confirm-delete-dialog")
@@ -357,11 +389,7 @@ def mm_step_05_sessions_panel_row_ops(ctx: FlowContext, step, snap):
             # If no dialog renders in this branch, still dismiss any menu overlay.
             page.keyboard.press("Escape")
 
-        expect(
-            page.locator(
-                f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']"
-            ).first
-        ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.locator(f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
     ctx.state["mm_created_session_id"] = created_session_id
     ctx.state["mm_session_row_checked"] = True
@@ -386,21 +414,15 @@ def mm_step_06_selection_mode_batch_delete(ctx: FlowContext, step, snap):
             page.keyboard.press("Escape")
             page.mouse.click(5, 5)
             selection_enable.click(timeout=RESULT_TIMEOUT_MS)
-        checked_before = page.locator(
-            "[data-testid='chat-detail-session-checkbox'][data-state='checked']"
-        ).count()
+        checked_before = page.locator("[data-testid='chat-detail-session-checkbox'][data-state='checked']").count()
         page.get_by_test_id("chat-detail-session-select-all").click()
-        checked_after = page.locator(
-            "[data-testid='chat-detail-session-checkbox'][data-state='checked']"
-        ).count()
+        checked_after = page.locator("[data-testid='chat-detail-session-checkbox'][data-state='checked']").count()
         if page.locator("[data-testid='chat-detail-session-checkbox']").count() > 1:
             assert checked_after != checked_before
         else:
             assert checked_after >= checked_before
 
-        session_checkbox = page.locator(
-            f"[data-testid='chat-detail-session-checkbox'][data-session-id='{created_session_id}']"
-        ).first
+        session_checkbox = page.locator(f"[data-testid='chat-detail-session-checkbox'][data-session-id='{created_session_id}']").first
         expect(session_checkbox).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         if _mm_is_checked(session_checkbox):
             session_checkbox.click()
@@ -409,11 +431,7 @@ def mm_step_06_selection_mode_batch_delete(ctx: FlowContext, step, snap):
         assert _mm_is_checked(session_checkbox), "target session checkbox did not become checked"
 
         page.get_by_test_id("chat-detail-session-selection-exit").click()
-        expect(
-            page.locator(
-                f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']"
-            ).first
-        ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.locator(f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         selection_enable = page.get_by_test_id("chat-detail-session-selection-enable")
         expect(selection_enable).to_be_visible(timeout=RESULT_TIMEOUT_MS)
@@ -423,9 +441,7 @@ def mm_step_06_selection_mode_batch_delete(ctx: FlowContext, step, snap):
             page.keyboard.press("Escape")
             page.mouse.click(5, 5)
             selection_enable.click(timeout=RESULT_TIMEOUT_MS)
-        session_checkbox = page.locator(
-            f"[data-testid='chat-detail-session-checkbox'][data-session-id='{created_session_id}']"
-        ).first
+        session_checkbox = page.locator(f"[data-testid='chat-detail-session-checkbox'][data-session-id='{created_session_id}']").first
         expect(session_checkbox).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         if not _mm_is_checked(session_checkbox):
             session_checkbox.click()
@@ -435,27 +451,14 @@ def mm_step_06_selection_mode_batch_delete(ctx: FlowContext, step, snap):
         expect(batch_dialog).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         page.get_by_test_id("chat-detail-session-batch-delete-cancel").click()
         expect(batch_dialog).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        expect(
-            page.locator(
-                f"[data-testid='chat-detail-session-checkbox'][data-session-id='{created_session_id}']"
-            ).first
-        ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.locator(f"[data-testid='chat-detail-session-checkbox'][data-session-id='{created_session_id}']").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         page.get_by_test_id("chat-detail-session-batch-delete").click()
         expect(batch_dialog).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         page.get_by_test_id("chat-detail-session-batch-delete-confirm").click()
         expect(batch_dialog).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        expect(
-            page.locator(
-                f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']"
-            )
-        ).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
-        expect(
-            sessions_root.locator(
-                "li[aria-selected='true'] "
-                f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']"
-            )
-        ).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
+        expect(page.locator(f"[data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']")).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
+        expect(sessions_root.locator(f"li[aria-selected='true'] [data-testid='chat-detail-session-item'][data-session-id='{created_session_id}']")).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
 
     ctx.state["mm_sessions_cleanup_done"] = True
     snap("chat_mm_sessions_cleanup_done")
@@ -497,9 +500,11 @@ def mm_step_07_settings_open_close_cancel_save(ctx: FlowContext, step, snap):
         with page.expect_request(_mm_settings_save_request, timeout=RESULT_TIMEOUT_MS) as req_info:
             page.get_by_test_id("chat-settings-save").click()
         payload = _mm_payload_from_request(req_info.value)
-        assert payload.get("dialog_id"), "missing dialog_id in /dialog/set payload"
-        assert "llm_id" in payload, "missing llm_id in /dialog/set payload"
-        assert "llm_setting" in payload, "missing llm_setting in /dialog/set payload"
+        assert payload.get("name"), "missing name in /api/v1/chats payload"
+        assert "kb_ids" in payload, "missing kb_ids in /api/v1/chats payload"
+        assert payload.get("llm_id"), "missing llm_id in /api/v1/chats payload"
+        assert "llm_setting" in payload, "missing llm_setting in /api/v1/chats payload"
+        assert "prompt_config" in payload, "missing prompt_config in /api/v1/chats payload"
 
     ctx.state["mm_settings_saved"] = True
     snap("chat_mm_settings_saved")
@@ -551,37 +556,22 @@ def mm_step_10_select_models_for_two_cards(ctx: FlowContext, step, snap):
         selected_option_testids: list[str] = []
 
         for card_index in (0, 1):
-            card = mm_grid.locator(
-                f"[data-testid='chat-detail-multimodel-card'][data-card-index='{card_index}']"
-            ).first
+            card = mm_grid.locator(f"[data-testid='chat-detail-multimodel-card'][data-card-index='{card_index}']").first
             expect(card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-            card.get_by_test_id("chat-detail-multimodel-card-model-select").click()
-
-            options = page.locator(f"[data-testid^='{option_prefix}']")
-            if options.count() == 0:
-                popover_root = page.locator("[data-radix-popper-content-wrapper]").last
-                expect(popover_root).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-                popover_model_select = popover_root.locator("button[role='combobox']").first
-                expect(popover_model_select).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-                popover_model_select.click()
-
-            expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-            option_testids = [
-                tid
-                for tid in options.evaluate_all(
-                    "els => els.map(el => el.getAttribute('data-testid') || '')"
-                )
-                if tid
-            ]
+            options = _mm_open_model_options(page, card, option_prefix)
+            option_testids = [tid for tid in options.evaluate_all("els => els.map(el => el.getAttribute('data-testid') || '')") if tid]
             option_testids = list(dict.fromkeys(option_testids))
-            assert option_testids, "no deterministic model options were rendered"
 
-            if len(option_testids) > 1 and card_index == 1:
-                chosen = option_testids[1]
+            if option_testids:
+                if len(option_testids) > 1 and card_index == 1:
+                    chosen = option_testids[1]
+                else:
+                    chosen = option_testids[0]
+                selected_option_testids.append(chosen)
+                _mm_click_model_option_by_testid(page, chosen)
             else:
-                chosen = option_testids[0]
-            selected_option_testids.append(chosen)
-            _mm_click_model_option_by_testid(page, chosen)
+                chosen = _mm_click_generic_model_option(page, card_index, option_prefix)
+                selected_option_testids.append(chosen)
             _mm_dismiss_open_popovers(page)
 
     ctx.state["mm_selected_option_testids"] = selected_option_testids
@@ -597,15 +587,12 @@ def mm_step_11_apply_multimodel_config(ctx: FlowContext, step, snap):
         expect(mm_grid).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         _mm_dismiss_open_popovers(page)
 
-        apply_btn = mm_grid.locator(
-            "[data-testid='chat-detail-multimodel-card-apply'][data-card-index='0']"
-        ).first
+        apply_btn = mm_grid.locator("[data-testid='chat-detail-multimodel-card-apply'][data-card-index='0']").first
         expect(apply_btn).to_be_enabled(timeout=RESULT_TIMEOUT_MS)
         with page.expect_request(_mm_settings_save_request, timeout=RESULT_TIMEOUT_MS) as req_info:
             apply_btn.click()
         payload = _mm_payload_from_request(req_info.value)
-        assert payload.get("dialog_id"), "missing dialog_id in apply-config payload"
-        assert "llm_id" in payload, "missing llm_id in apply-config payload"
+        assert payload.get("llm_id"), "missing llm_id in apply-config payload"
         assert "llm_setting" in payload, "missing llm_setting in apply-config payload"
 
     ctx.state["mm_cards_configured"] = True
@@ -620,10 +607,7 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
     completion_payloads: list[dict] = []
 
     def _on_completion_request(req):
-        if (
-            req.method.upper() in MM_REQUEST_METHOD_WHITELIST
-            and "/conversation/completion" in req.url
-        ):
+        if req.method.upper() in MM_REQUEST_METHOD_WHITELIST and "/api/v1/chats/" in req.url and "/sessions/" in req.url and req.url.rstrip("/").endswith("/completions"):
             completion_payloads.append(_mm_payload_from_request(req))
 
     with step("composer interactions and single send in multi-model mode"):
@@ -638,9 +622,7 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
                 file_input = page.locator("input[type='file']").first
                 expect(file_input).to_be_attached(timeout=RESULT_TIMEOUT_MS)
                 file_input.set_input_files(str(attach_path))
-            expect(page.locator(f"text={attach_path.name}").first).to_be_visible(
-                timeout=RESULT_TIMEOUT_MS
-            )
+            expect(page.locator(f"text={attach_path.name}").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
             thinking_toggle = page.get_by_test_id("chat-detail-thinking-toggle")
             expect(thinking_toggle).to_be_visible(timeout=RESULT_TIMEOUT_MS)
@@ -677,7 +659,10 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
                 expect(stream_status).to_be_visible(timeout=5000)
             except AssertionError:
                 pass
-            expect(stream_status).to_have_count(0, timeout=90000)
+            try:
+                expect(stream_status.first).to_have_attribute("data-status", "idle", timeout=90000)
+            except AssertionError:
+                expect(stream_status).to_have_count(0, timeout=90000)
 
             deadline = monotonic() + 8
             while not completion_payloads and monotonic() < deadline:
@@ -686,15 +671,11 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
             page.remove_listener("request", _on_completion_request)
             attach_path.unlink(missing_ok=True)
 
-        assert completion_payloads, "no /conversation/completion request was captured"
+        assert completion_payloads, "no chat session completion request was captured"
         payloads_with_messages = [p for p in completion_payloads if p.get("messages")]
         assert payloads_with_messages, "completion requests did not include messages"
 
-        selected_model_ids = [
-            tid.replace(option_prefix, "")
-            for tid in selected_option_testids
-            if tid.startswith(option_prefix)
-        ]
+        selected_model_ids = [tid.replace(option_prefix, "") for tid in selected_option_testids if tid.startswith(option_prefix)]
         has_model_payload = any(
             (p.get("llm_id") in selected_model_ids)
             or ("llm_id" in p)
@@ -730,9 +711,7 @@ def mm_step_13_remove_extra_card_and_exit(ctx: FlowContext, step, snap):
         expect(cards).to_have_count(current_count - 1, timeout=RESULT_TIMEOUT_MS)
 
         page.get_by_test_id("chat-detail-multimodel-back").click()
-        expect(page.get_by_test_id("chat-detail-multimodel-root")).not_to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.get_by_test_id("chat-detail-multimodel-root")).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
         expect(page.get_by_test_id("chat-detail")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         expect(page.get_by_test_id("chat-textarea")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 

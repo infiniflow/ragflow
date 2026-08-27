@@ -2,7 +2,7 @@
 
 'use client';
 
-import { FileText, FolderUp, Upload, X } from 'lucide-react';
+import { FileText, FolderUp, LucideTrash2, Upload } from 'lucide-react';
 import * as React from 'react';
 import Dropzone, {
   type DropzoneProps,
@@ -80,12 +80,12 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
       <div className="flex items-center gap-2">
         <Button
           type="button"
-          variant="outline"
+          variant="delete"
           size="icon"
           className="size-7"
           onClick={onRemove}
         >
-          <X className="size-4" aria-hidden="true" />
+          <LucideTrash2 className="size-4" aria-hidden="true" />
           <span className="sr-only">Remove file</span>
         </Button>
       </div>
@@ -159,6 +159,14 @@ interface FileUploaderProps extends Omit<
   hideDropzoneOnMaxFileCount?: boolean;
 
   /**
+   * Whether the folder tab should be shown in the uploader.
+   * @type boolean
+   * @default true
+   * @example showFolderTab={false}
+   */
+  showFolderTab?: boolean;
+
+  /**
    * Whether the uploader should accept multiple files.
    * @type boolean
    * @default false
@@ -192,6 +200,7 @@ export function FileUploader(props: FileUploaderProps) {
     multiple = false,
     disabled = false,
     hideDropzoneOnMaxFileCount = false,
+    showFolderTab = true,
     className,
     title,
     description,
@@ -295,76 +304,72 @@ export function FileUploader(props: FileUploaderProps) {
         }
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 
   const isDisabled = disabled || (files?.length ?? 0) >= maxFileCount;
 
-  const renderDropzone = (isFolderMode: boolean = false) => (
-    <Dropzone
-      onDrop={onDrop}
-      accept={isFolderMode ? undefined : accept}
-      maxSize={maxSize}
-      maxFiles={maxFileCount}
-      multiple={maxFileCount > 1 || multiple}
-      disabled={isDisabled}
-      noClick={isFolderMode}
-      noDrag={isFolderMode}
-    >
-      {({ getRootProps, getInputProps, isDragActive }) => (
-        <div
-          {...getRootProps()}
-          className={cn(
-            'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-border-button bg-bg-card',
-            'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-            isDragActive && 'border-border-button',
-            isDisabled && 'pointer-events-none opacity-60',
-            className,
-          )}
-          {...dropzoneProps}
-        >
-          {!isFolderMode && <input {...getInputProps()} />}
-          {isDragActive && !isFolderMode ? (
-            <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
-              <div className="rounded-full border border-dashed p-3">
-                <Upload
-                  className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
-                  aria-hidden="true"
-                />
-              </div>
-              <p className="font-medium text-text-secondary">
-                {t('fileManager.dropFilesHere', 'Drop the files here')}
-              </p>
-            </div>
-          ) : (
-            <div
-              className="flex flex-col items-center justify-center gap-4 sm:px-5"
-              onClick={() => {
-                if (isFolderMode && !isDisabled) {
-                  folderInputRef.current?.click();
-                }
-              }}
-            >
-              <div className="rounded-full border border-dashed p-3">
-                {isFolderMode ? (
-                  <FolderUp
-                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
-                    aria-hidden="true"
-                  />
-                ) : (
+  const renderDropzone = (isFolderMode: boolean = false) => {
+    const IconComponent = isFolderMode ? FolderUp : Upload;
+
+    return (
+      <Dropzone
+        onDrop={onDrop}
+        accept={isFolderMode ? undefined : accept}
+        maxSize={maxSize}
+        maxFiles={maxFileCount}
+        multiple={maxFileCount > 1 || multiple}
+        disabled={isDisabled}
+        noClick={isFolderMode}
+        noDrag={isFolderMode}
+      >
+        {({ getRootProps, getInputProps, isDragActive }) => (
+          <div
+            {...getRootProps()}
+            className={cn(
+              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default',
+              'px-5 py-2.5 text-center transition hover:bg-bg-card outline-none',
+              'focus-visible:border-accent-primary focus-visible:bg-bg-card',
+              isDragActive && 'border-border-button',
+              isDisabled && 'pointer-events-none opacity-60',
+              className,
+            )}
+            {...dropzoneProps}
+          >
+            {!isFolderMode && <input {...getInputProps()} />}
+            {isDragActive && !isFolderMode ? (
+              <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
+                <div>
                   <Upload
                     className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
                     aria-hidden="true"
                   />
-                )}
+                </div>
+                <p className="font-medium text-text-secondary">
+                  {t('fileManager.dropFilesHere', 'Drop the files here')}
+                </p>
               </div>
-              <div className="flex flex-col gap-px">
-                <p className="font-medium text-text-secondary ">
+            ) : (
+              <div
+                className="flex flex-col items-center justify-center gap-4 sm:px-5"
+                onClick={() => {
+                  if (isFolderMode && !isDisabled) {
+                    folderInputRef.current?.click();
+                  }
+                }}
+              >
+                <IconComponent
+                  className="size-12 stroke-1 text-text-secondary transition-colors group-hover:text-text-primary"
+                  aria-hidden="true"
+                />
+
+                <p className="font-medium text-text-secondary">
                   {title ||
                     (isFolderMode
                       ? t('fileManager.uploadFolderTitle', 'Upload Folder')
                       : t('knowledgeDetails.uploadTitle'))}
                 </p>
+
                 <p className="text-sm text-text-disabled">
                   {description ||
                     (isFolderMode
@@ -375,49 +380,53 @@ export function FileUploader(props: FileUploaderProps) {
                       : t('knowledgeDetails.uploadDescription'))}
                 </p>
               </div>
-            </div>
-          )}
-        </div>
-      )}
-    </Dropzone>
-  );
+            )}
+          </div>
+        )}
+      </Dropzone>
+    );
+  };
 
   return (
     <div className="relative flex flex-col gap-4 overflow-hidden">
       {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
         <Tabs defaultValue="file" className="w-full">
-          <TabsList className="w-full justify-start">
+          <TabsList className="w-fit justify-start">
             <TabsTrigger value="file" className="gap-2">
               <FileText className="size-4" />
               {t('fileManager.files', 'Files')}
             </TabsTrigger>
-            <TabsTrigger value="folder" className="gap-2">
-              <FolderUp className="size-4" />
-              {t('fileManager.folder', 'Folder')}
-            </TabsTrigger>
+            {showFolderTab && (
+              <TabsTrigger value="folder" className="gap-2">
+                <FolderUp className="size-4" />
+                {t('fileManager.folder', 'Folder')}
+              </TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value="file" className="mt-1">
             {renderDropzone(false)}
           </TabsContent>
-          <TabsContent value="folder" className="mt-1">
-            {renderDropzone(true)}
-            <input
-              ref={folderInputRef}
-              type="file"
-              className="hidden"
-              multiple
-              onChange={handleFolderSelect}
-              {...{
-                webkitdirectory: '',
-                directory: '',
-              }}
-            />
-          </TabsContent>
+          {showFolderTab && (
+            <TabsContent value="folder" className="mt-1">
+              {renderDropzone(true)}
+              <input
+                ref={folderInputRef}
+                type="file"
+                className="hidden"
+                multiple
+                onChange={handleFolderSelect}
+                {...{
+                  webkitdirectory: '',
+                  directory: '',
+                }}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       )}
 
       {files?.length ? (
-        <div className="h-fit w-full px-3">
+        <div className="h-fit w-full">
           <div className="flex max-h-48 flex-col gap-4 overflow-auto scrollbar-auto">
             {files?.map((file, index) => (
               <FileCard

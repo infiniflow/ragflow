@@ -1,4 +1,4 @@
-import { IBeginNode } from '@/interfaces/database/flow';
+import { IBeginNode } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { NodeProps, Position } from '@xyflow/react';
 import get from 'lodash/get';
@@ -11,7 +11,7 @@ import {
   Operator,
 } from '../../constant';
 import { BeginQuery } from '../../interface';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import styles from './index.module.less';

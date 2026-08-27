@@ -1,4 +1,6 @@
+import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
 import { DataFlowSelect } from '@/components/data-pipeline-select';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -18,9 +20,11 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { FormLayout } from '@/constants/form';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
+import { ParseType } from '@/constants/knowledge';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { omit } from 'lodash';
 import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -28,14 +32,18 @@ import { z } from 'zod';
 import {
   ChunkMethodItem,
   EmbeddingModelItem,
-  ParseTypeItem,
-} from '../dataset/dataset-setting/configuration/common-item';
+} from '../dataset/setting/python/configuration/common-item';
+import { BackendVariant, pickByBackend } from '@/utils/backend-variant';
 
 const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
-  const { data: tenantInfo } = useFetchTenantInfo();
+  const defaultModelDictionary = useFetchDefaultModelDictionary(true);
+  const ChunkMethodName = pickByBackend<'parser_id' | 'chunk_method'>({
+    go: 'parser_id',
+    python: 'chunk_method',
+  });
 
   const FormSchema = z
     .object({
@@ -45,30 +53,31 @@ export function InputForm({ onOk }: IModalProps<any>) {
           message: t('knowledgeList.namePlaceholder'),
         })
         .trim(),
-      parseType: z.number().optional(),
-      embd_id: z
+      parseType: z.nativeEnum(ParseType).optional(),
+      embedding_model: z
         .string()
         .min(1, {
           message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
         })
         .trim(),
+      // Go registers parser_id, Python registers chunk_method; only the
+      // active key is set at runtime (see ChunkMethodName).
       parser_id: z.string().optional(),
+      chunk_method: z.string().optional(),
       pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
-      // When parseType === 1, parser_id is required
-      if (
-        data.parseType === 1 &&
-        (!data.parser_id || data.parser_id.trim() === '')
-      ) {
+      const chunkMethod = data[ChunkMethodName];
+      // When parseType === BuiltIn, chunk_method is required
+      if (data.parseType === ParseType.BuiltIn && !chunkMethod?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
-          path: ['parser_id'],
+          path: [ChunkMethodName],
         });
       }
-      // When parseType === 1, pipline_id required
-      if (data.parseType === 2 && !data.pipeline_id) {
+      // When parseType === Pipeline, pipeline_id required
+      if (data.parseType === ParseType.Pipeline && !data.pipeline_id) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.dataFlowRequired'),
@@ -81,33 +90,40 @@ export function InputForm({ onOk }: IModalProps<any>) {
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: '',
-      parseType: 1,
-      parser_id: '',
-      embd_id: tenantInfo?.embd_id,
+      parseType: ParseType.BuiltIn,
+      [ChunkMethodName]: '',
+      embedding_model: defaultModelDictionary?.embd_id,
     },
   });
-
-  function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('submit', data);
-    onOk?.(data);
-  }
 
   const parseType = useWatch({
     control: form.control,
     name: 'parseType',
   });
 
+  function onSubmit(data: z.infer<typeof FormSchema>) {
+    const nextData =
+      parseType === ParseType.BuiltIn
+        ? omit(data, ['pipeline_id'])
+        : omit(data, [ChunkMethodName]);
+    onOk?.(nextData);
+  }
+
   useEffect(() => {
-    console.log('parseType', parseType);
-    if (parseType === 1) {
+    if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
-  }, [parseType, form]);
+    if (defaultModelDictionary?.embd_id) {
+      form.setValue('embedding_model', defaultModelDictionary?.embd_id);
+    }
+  }, [parseType, form, defaultModelDictionary]);
 
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={form.handleSubmit(onSubmit, (errors) => {
+          console.warn(errors);
+        })}
         className="space-y-6"
         id={FormId}
       >
@@ -115,11 +131,8 @@ export function InputForm({ onOk }: IModalProps<any>) {
           control={form.control}
           name="name"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <span className="text-destructive mr-1"> *</span>
-                {t('knowledgeList.name')}
-              </FormLabel>
+            <FormItem className="space-y-1">
+              <FormLabel required>{t('knowledgeList.name')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('knowledgeList.namePlaceholder')}
@@ -133,8 +146,13 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
-        {parseType === 1 && <ChunkMethodItem></ChunkMethodItem>}
-        {parseType === 2 && (
+        {parseType === ParseType.BuiltIn && (
+          <BackendVariant
+            go={<BuiltinPipelineItem name={ChunkMethodName} />}
+            python={<ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>}
+          />
+        )}
+        {parseType === ParseType.Pipeline && (
           <DataFlowSelect
             isMult={false}
             showToDataPipeline={true}
@@ -159,7 +177,7 @@ export function DatasetCreatingDialog({
       <DialogContent
         className="sm:max-w-[425px] focus-visible:!outline-none flex flex-col"
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             const form = document.getElementById(FormId) as HTMLFormElement;
             form?.requestSubmit();

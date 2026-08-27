@@ -1,6 +1,6 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { IGraph } from '@/interfaces/database/flow';
 import { useEffect } from 'react';
+import { dslToGraph } from '../utils/dsl-bridge';
 import { useSetGraphInfo } from './use-set-graph';
 
 export const useFetchDataOnMount = () => {
@@ -8,7 +8,10 @@ export const useFetchDataOnMount = () => {
   const setGraphInfo = useSetGraphInfo();
 
   useEffect(() => {
-    setGraphInfo(data?.dsl?.graph ?? ({} as IGraph));
+    if (!data?.dsl) {
+      return;
+    }
+    setGraphInfo(dslToGraph(data.dsl));
   }, [setGraphInfo, data]);
 
   useEffect(() => {

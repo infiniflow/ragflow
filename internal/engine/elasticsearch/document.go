@@ -21,12 +21,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
 // IndexDocument indexes a single document
-func (e *elasticsearchEngine) IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error {
+func (e *Engine) IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -58,14 +59,19 @@ func (e *elasticsearchEngine) IndexDocument(ctx context.Context, indexName, docI
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(body))
 	}
 
 	return nil
 }
 
 // BulkIndex indexes documents in bulk
-func (e *elasticsearchEngine) BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error) {
+func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error) {
 	if indexName == "" {
 		return nil, fmt.Errorf("index name cannot be empty")
 	}
@@ -116,6 +122,11 @@ func (e *elasticsearchEngine) BulkIndex(ctx context.Context, indexName string, d
 	defer res.Body.Close()
 
 	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return nil, fmt.Errorf("elasticsearch error: %s", reason)
+		}
 		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
@@ -163,7 +174,7 @@ type BulkResponse struct {
 }
 
 // GetDocument gets a document
-func (e *elasticsearchEngine) GetDocument(ctx context.Context, indexName, docID string) (interface{}, error) {
+func (e *Engine) GetDocument(ctx context.Context, indexName, docID string) (interface{}, error) {
 	if indexName == "" {
 		return nil, fmt.Errorf("index name cannot be empty")
 	}
@@ -188,6 +199,11 @@ func (e *elasticsearchEngine) GetDocument(ctx context.Context, indexName, docID 
 	}
 
 	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return nil, fmt.Errorf("elasticsearch error: %s", reason)
+		}
 		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
@@ -205,7 +221,7 @@ func (e *elasticsearchEngine) GetDocument(ctx context.Context, indexName, docID 
 }
 
 // DeleteDocument deletes a document
-func (e *elasticsearchEngine) DeleteDocument(ctx context.Context, indexName, docID string) error {
+func (e *Engine) DeleteDocument(ctx context.Context, indexName, docID string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -231,7 +247,12 @@ func (e *elasticsearchEngine) DeleteDocument(ctx context.Context, indexName, doc
 	}
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(body))
 	}
 
 	return nil

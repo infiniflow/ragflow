@@ -33,6 +33,8 @@ export interface ISwitchForm {
 import { AgentCategory } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
+import { ICompilationTemplateGroup } from './compilation-template';
+import { IDataset } from './dataset';
 
 export type DSLComponents = Record<string, IOperator>;
 
@@ -77,11 +79,30 @@ export declare interface IFlow {
   nickname: string;
   operator_permission: number;
   canvas_category: string;
+  release?: boolean;
+  release_time?: number;
+  last_publish_time?: number;
+  datasets?: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
+  tags?: string;
 }
+
+// GET /agents merges compilation template groups into the agent list when no
+// canvas_category is requested; every item carries this discriminator.
+export enum AgentListItemType {
+  Agent = 'agent',
+  CompilationTemplateGroup = 'compilation_template_group',
+}
+
+export type AgentListItem =
+  | (IFlow & { type?: AgentListItemType.Agent })
+  | (ICompilationTemplateGroup & {
+      type: AgentListItemType.CompilationTemplateGroup;
+    });
 
 export interface IFlowTemplate {
   avatar: string;
   canvas_type: string;
+  canvas_types?: string[];
   create_date: string;
   create_time: number;
   canvas_category?: string;
@@ -92,10 +113,12 @@ export interface IFlowTemplate {
   description: {
     en: string;
     zh: string;
+    de: string;
   };
   title: {
     en: string;
     zh: string;
+    de: string;
   };
 }
 
@@ -142,6 +165,7 @@ export interface IRetrievalForm {
   similarity_threshold?: number;
   keywords_similarity_weight?: number;
   top_n?: number;
+  rerank_candidates_count?: number;
   top_k?: number;
   rerank_id?: string;
   tenant_rerank_id?: string;
@@ -153,7 +177,7 @@ export interface ICodeForm {
   arguments: Record<string, string>;
   lang: string;
   script?: string;
-  outputs: Record<string, { value: string; type: string }>;
+  outputs: Record<string, { value: unknown; type: string }>;
 }
 
 export interface IAgentForm {
@@ -185,11 +209,12 @@ export interface IAgentForm {
   };
 }
 
-export type BaseNodeData<TForm extends any> = {
+export type BaseNodeData<TForm = any> = {
   label: string; // operator type
   name: string; // operator name
   color?: string;
   form?: TForm;
+  operatorId?: string;
 };
 
 export type BaseNode<T = any> = Node<BaseNodeData<T>>;
@@ -257,8 +282,9 @@ export interface IAgentLogResponse {
   source: string;
   user_id: string;
   dsl: string;
-  reference: IReference;
+  reference: IReference[];
   name: string;
+  version_title: string;
 }
 export interface IAgentLogsResponse {
   total: number;
@@ -288,6 +314,19 @@ export interface IPipeLineListRequest {
   orderby?: string;
   desc?: boolean;
   canvas_category?: AgentCategory;
+  ext?: string;
+}
+
+export interface IBuiltinPipeline {
+  id: string;
+  title: string;
+  description?: string;
+  filename?: string;
+}
+
+export interface IBuiltinPipelineListResponse {
+  canvas: IBuiltinPipeline[];
+  total: number;
 }
 
 export interface GlobalVariableType {

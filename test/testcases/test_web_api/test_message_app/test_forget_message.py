@@ -16,7 +16,7 @@
 import random
 import pytest
 import requests
-from test_web_api.common import forget_message, list_memory_message, get_message_content
+from test_common import forget_message, list_memory_message, get_message_content
 from configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
 from libs.auth import RAGFlowWebApiAuth
 
@@ -38,7 +38,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestForgetMessage:
-
     @pytest.mark.p1
     def test_forget_message(self, WebApiAuth):
         memory_id = self.memory_id

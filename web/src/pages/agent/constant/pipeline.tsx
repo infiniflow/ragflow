@@ -1,16 +1,18 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
-import {
-  initialLlmBaseValues,
-  DataflowOperator as Operator,
-} from '@/constants/agent';
+import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { pickByBackend } from '@/utils/backend-variant';
+import { cloneDeep } from 'lodash';
 
 export enum FileType {
   PDF = 'pdf',
   Spreadsheet = 'spreadsheet',
   Image = 'image',
   Email = 'email',
-  TextMarkdown = 'text&markdown',
-  Docx = 'word',
+  TextMarkdown = 'markdown',
+  Code = 'text&code',
+  Html = 'html',
+  Doc = 'doc',
+  Docx = 'docx',
   PowerPoint = 'slides',
   Video = 'video',
   Audio = 'audio',
@@ -27,7 +29,7 @@ export enum SpreadsheetOutputFormat {
 }
 
 export enum ImageOutputFormat {
-  Text = 'text',
+  Json = 'json',
 }
 
 export enum EmailOutputFormat {
@@ -36,7 +38,12 @@ export enum EmailOutputFormat {
 }
 
 export enum TextMarkdownOutputFormat {
+  Text = 'json',
+}
+
+export enum TextJsonOutputFormat {
   Text = 'text',
+  Json = 'json',
 }
 
 export enum DocxOutputFormat {
@@ -62,6 +69,9 @@ export const OutputFormatMap = {
   [FileType.Image]: ImageOutputFormat,
   [FileType.Email]: EmailOutputFormat,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat,
+  [FileType.Code]: TextJsonOutputFormat,
+  [FileType.Html]: TextJsonOutputFormat,
+  [FileType.Doc]: DocxOutputFormat,
   [FileType.Docx]: DocxOutputFormat,
   [FileType.PowerPoint]: PptOutputFormat,
   [FileType.Video]: VideoOutputFormat,
@@ -71,9 +81,12 @@ export const OutputFormatMap = {
 export const InitialOutputFormatMap = {
   [FileType.PDF]: PdfOutputFormat.Json,
   [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
-  [FileType.Image]: ImageOutputFormat.Text,
+  [FileType.Image]: ImageOutputFormat.Json,
   [FileType.Email]: EmailOutputFormat.Text,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
+  [FileType.Code]: TextJsonOutputFormat.Json,
+  [FileType.Html]: TextJsonOutputFormat.Json,
+  [FileType.Doc]: DocxOutputFormat.Json,
   [FileType.Docx]: DocxOutputFormat.Json,
   [FileType.PowerPoint]: PptOutputFormat.Json,
   [FileType.Video]: VideoOutputFormat.Text,
@@ -85,7 +98,6 @@ export enum ContextGeneratorFieldName {
   Keywords = 'keywords',
   Questions = 'questions',
   Metadata = 'metadata',
-  TableOfContents = 'toc',
 }
 
 export const FileId = 'File'; // BeginId
@@ -183,16 +195,20 @@ export const initialParserValues = {
       output_format: PdfOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
+      remove_header_footer: false,
+      pages: [{ from: 1, to: 100000 }],
     },
     {
       fileFormat: FileType.Spreadsheet,
       output_format: SpreadsheetOutputFormat.Html,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Image,
-      output_format: ImageOutputFormat.Text,
+      output_format: ImageOutputFormat.Json,
       parse_method: ImageParseMethod.OCR,
       preprocess: PreprocessValue.main_content,
       system_prompt: '',
@@ -207,11 +223,32 @@ export const initialParserValues = {
       fileFormat: FileType.TextMarkdown,
       output_format: TextMarkdownOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
+    },
+    {
+      fileFormat: FileType.Code,
+      output_format: TextJsonOutputFormat.Json,
+      preprocess: PreprocessValue.main_content,
+    },
+    {
+      fileFormat: FileType.Html,
+      output_format: TextJsonOutputFormat.Json,
+      preprocess: PreprocessValue.main_content,
+      remove_header_footer: false,
+    },
+    {
+      fileFormat: FileType.Doc,
+      output_format: DocxOutputFormat.Json,
+      preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
+      remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
+      flatten_media_to_text: false,
+      remove_header_footer: false,
     },
     {
       fileFormat: FileType.PowerPoint,
@@ -222,10 +259,11 @@ export const initialParserValues = {
   ],
 };
 
-export const initialSplitterValues = {
+export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
+  delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
@@ -240,36 +278,164 @@ export enum Hierarchy {
   H5 = '5',
 }
 
-export const initialHierarchicalMergerValues = {
+export enum TitleChunkerMethod {
+  Hierarchy = 'hierarchy',
+  Group = 'group',
+}
+export const originalRules = [
+  {
+    // levels: [
+    //   { expression: '^#[^#]' },
+    //   { expression: '^##[^#]' },
+    //   { expression: '^###[^#]' },
+    //   { expression: '^####[^#]' },
+    // ],
+    levels: [
+      { expression: '^#[^#]' },
+      { expression: '^##[^#]' },
+      { expression: '^###[^#]' },
+      { expression: '^####[^#]' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[零一二三四五六七八九十百0-9]+(分?编|部分)' },
+      { expression: '第[零一二三四五六七八九十百0-9]+章' },
+      { expression: '第[零一二三四五六七八九十百0-9]+节' },
+      { expression: '第[零一二三四五六七八九十百0-9]+条' },
+      { expression: '[\\(（][零一二三四五六七八九十百]+[\\)）]' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[0-9]+章' },
+      { expression: '第[0-9]+节' },
+      { expression: '[0-9]{1,2}[\\. 、]' },
+      { expression: '[0-9]{1,2}\\.[0-9]{1,2}($|[^a-zA-Z/%~.-])' },
+      { expression: '[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}' },
+    ],
+  },
+  {
+    levels: [
+      { expression: '第[零一二三四五六七八九十百0-9]+章' },
+      { expression: '第[零一二三四五六七八九十百0-9]+节' },
+      { expression: '[零一二三四五六七八九十百]+[ 、]' },
+      { expression: '[\\(（][零一二三四五六七八九十百]+[\\)）]' },
+      { expression: '[\\(（][0-9]{,2}[\\)）]' },
+    ],
+  },
+  {
+    levels: [
+      {
+        expression: 'PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)',
+      },
+      { expression: 'Chapter (I+V?|VI*|XI|IX|X)' },
+      { expression: 'Section [0-9]+' },
+      { expression: 'Article [0-9]+' },
+    ],
+  },
+];
+
+export const initialTitleChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
-  hierarchy: Hierarchy.H3,
-  levels: [
-    { expressions: [{ expression: '^#[^#]' }] },
-    { expressions: [{ expression: '^##[^#]' }] },
-    { expressions: [{ expression: '^###[^#]' }] },
-    { expressions: [{ expression: '^####[^#]' }] },
-  ],
+  method: TitleChunkerMethod.Hierarchy,
+  hierarchyHierarchy: Hierarchy.H3,
+  hierarchyGroup: '0',
+  include_heading_content: false,
+  root_chunk_as_heading: false,
+  chunk_token_cap: 512,
+  hierarchyRules: cloneDeep(originalRules),
+  groupRules: cloneDeep(originalRules),
 };
 
+// Defaults for the Python backend extractor (legacy flat fields).
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
   field_name: ContextGeneratorFieldName.Summary,
+  auto_tags: 1,
+  tag_file_id: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
 };
 
-export const NoDebugOperatorsList = [Operator.Begin];
+// Defaults for the Go backend extractor: the LLM settings plus the nested
+// per-feature groups the Go schema reads (schema.ExtractorParam).
+export const initialGoExtractorValues = {
+  ...initialLlmBaseValues,
+  keywords: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  questions: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  tags: {
+    top_n: 0,
+    tag_file_id: '',
+  },
+  summary: {
+    enabled: false,
+    system_prompt: '',
+  },
+  metadata: {
+    enabled: false,
+    metadata: [],
+    built_in_metadata: [],
+  },
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export function getInitialExtractorValues() {
+  return pickByBackend<
+    typeof initialGoExtractorValues | typeof initialExtractorValues
+  >({
+    go: initialGoExtractorValues,
+    python: initialExtractorValues,
+  });
+}
+
+export const initialCompilationValues = {
+  compilation_template_group_id: '',
+  llm_id: '',
+  mode: 'entity',
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export const NoDebugOperatorsList = [Operator.File];
 
 export const FileTypeSuffixMap = {
   [FileType.PDF]: ['pdf'],
   [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
   [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
   [FileType.Email]: ['eml', 'msg'],
-  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx', 'txt'],
-  [FileType.Docx]: ['doc', 'docx'],
+  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx'],
+  [FileType.Code]: [
+    'txt',
+    'py',
+    'js',
+    'java',
+    'c',
+    'cpp',
+    'h',
+    'php',
+    'go',
+    'ts',
+    'sh',
+    'cs',
+    'kt',
+    'sql',
+  ],
+  [FileType.Html]: ['htm', 'html'],
+  [FileType.Doc]: ['doc'],
+  [FileType.Docx]: ['docx'],
   [FileType.PowerPoint]: ['pptx', 'ppt'],
   [FileType.Video]: ['mp4', 'avi', 'mkv'],
   [FileType.Audio]: [
@@ -293,7 +459,7 @@ export const FileTypeSuffixMap = {
 
 export const SingleOperators = [
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Parser,
 ];

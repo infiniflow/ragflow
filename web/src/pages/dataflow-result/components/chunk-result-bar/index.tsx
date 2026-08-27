@@ -9,11 +9,11 @@ interface ChunkResultBarProps {
   createChunk: (text: string) => void;
   isReadonly: boolean;
 }
-export default ({
+export default function ChunkResultBar({
   changeChunkTextMode,
   createChunk,
   isReadonly,
-}: ChunkResultBarProps) => {
+}: ChunkResultBarProps) {
   const { t } = useTranslate('chunk');
   const [textSelectValue, setTextSelectValue] = useState<ChunkTextMode>(
     ChunkTextMode.Full,
@@ -57,4 +57,4 @@ export default ({
       )}
     </div>
   );
-};
+}

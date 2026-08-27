@@ -44,7 +44,6 @@ import { useNodeLoading } from '../hooks/use-node-loading';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
-  useShowLogSheet,
 } from '../hooks/use-show-drawer';
 import { useStopMessageUnmount } from '../hooks/use-stop-message';
 import { LogSheet } from '../log-sheet';
@@ -55,6 +54,8 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { ChunkerNode } from './node/chunker-node';
+import { CompilationNode } from './node/compilation-node';
 import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExitLoopNode } from './node/exit-loop-node';
@@ -70,7 +71,6 @@ import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
-import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
@@ -89,14 +89,15 @@ export const nodeTypes: NodeTypes = {
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
   // emailNode: EmailNode,
-  group: IterationNode,
+  iterationNode: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
   toolNode: ToolNode,
   fileNode: FileNode,
   parserNode: ParserNode,
   tokenizerNode: TokenizerNode,
-  splitterNode: SplitterNode,
+  chunkerNode: ChunkerNode,
+  compilationNode: CompilationNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
   listOperationsNode: ListOperationsNode,
@@ -134,6 +135,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     useState<ReactFlowInstance<any, any>>();
 
   const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessageById,
+    clearEventList,
+    currentMessageId,
+    latestTaskId,
+  } = useCacheChatLog();
+
+  const {
     onNodeClick,
     clickedNode,
     formDrawerVisible,
@@ -146,28 +156,23 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideRunOrChatDrawer,
     showChatModal,
     showFormDrawer,
+    logSheetVisible,
+    showLogSheet,
+    hideLogSheet,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
-  });
-
-  const {
-    addEventList,
-    setCurrentMessageId,
-    currentEventListWithoutMessageById,
-    clearEventList,
-    currentMessageId,
-    latestTaskId,
-  } = useCacheChatLog();
-
-  const { stopMessage } = useStopMessageUnmount(chatVisible, latestTaskId);
-
-  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
   });
+
   const [lastSendLoading, setLastSendLoading] = useState(false);
 
   const [currentSendLoading, setCurrentSendLoading] = useState(false);
+
+  const { stopMessage } = useStopMessageUnmount(
+    chatVisible && currentSendLoading,
+    latestTaskId,
+  );
 
   const { handleBeforeDelete } = useBeforeDelete();
 
@@ -179,10 +184,18 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useEffect(() => {
     if (!chatVisible) {
-      stopMessage(latestTaskId);
+      if (currentSendLoading) {
+        stopMessage(latestTaskId);
+      }
       clearEventList();
     }
-  }, [chatVisible, clearEventList, latestTaskId, stopMessage]);
+  }, [
+    chatVisible,
+    clearEventList,
+    currentSendLoading,
+    latestTaskId,
+    stopMessage,
+  ]);
 
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
     setCurrentSendLoading(!!loading);
@@ -331,6 +344,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           }}
           deleteKeyCode={['Delete', 'Backspace']}
           onBeforeDelete={handleBeforeDelete}
+          panActivationKeyCode={null}
         >
           <AgentBackground></AgentBackground>
           <Spotlight className="z-0" opcity={0.7} coverage={70} />
@@ -403,7 +417,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           <AgentChatLogContext.Provider
             value={{ addEventList, setCurrentMessageId }}
           >
-            <ChatSheet hideModal={hideRunOrChatDrawer}></ChatSheet>
+            <ChatSheet
+              hideModal={() => {
+                hideRunOrChatDrawer();
+                hideLogSheet();
+              }}
+            ></ChatSheet>
           </AgentChatLogContext.Provider>
         </AgentChatContext.Provider>
       )}

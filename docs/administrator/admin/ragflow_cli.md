@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: RAGFlow CLI
+sidebar_label: RAGFlow CLI
 slug: /admin_cli
 sidebar_custom_props: {
   categoryIcon: LucideSquareTerminal
@@ -16,8 +18,9 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.24.0
+   pipx install ragflow-cli==0.27.0
    ```
+  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.27.0`.
 
 3. Launch the CLI client:
 
@@ -29,12 +32,12 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
     The default password is admin.
 
     **Parameters:**
-    
+
     - -h: RAGFlow admin server host address
-    
+
     - -p: RAGFlow admin server port
 
-## Default administrative account
+## Default Administrative Account
 
 - Username: admin@ragflow.io
 - Password: admin
@@ -43,7 +46,7 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 
 Commands are case-insensitive and must be terminated with a semicolon(;).
 
-### Service manage commands
+### Service Manage Commands
 
 `LIST SERVICES;`
 
@@ -120,7 +123,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - Lists the agents associated with the specified user.
 - [Example](#example-list-agents-of-user)
 
-### System info
+### System Info
 
 `SHOW VERSION;`
 - Display the current RAGFlow version.
@@ -439,7 +442,7 @@ show_version
 +-----------------------+
 | version               |
 +-----------------------+
-| v0.24.0-24-g6f60e9f9e |
+| v0.25.4-24-g6f60e9f9e |
 +-----------------------+
 ```
 
@@ -468,18 +471,18 @@ Revoke successfully!
 ```
 ragflow> list vars;
 +-----------+---------------------+--------------+-----------+
-| data_type | name                | source       | value     |
+| data_type | name                | setting_type | value     |
 +-----------+---------------------+--------------+-----------+
-| string    | default_role        | variable     | user      |
-| bool      | enable_whitelist    | variable     | true      |
-| string    | mail.default_sender | variable     |           |
-| string    | mail.password       | variable     |           |
-| integer   | mail.port           | variable     | 15        |
-| string    | mail.server         | variable     | localhost |
-| integer   | mail.timeout        | variable     | 10        |
-| bool      | mail.use_ssl        | variable     | true      |
-| bool      | mail.use_tls        | variable     | false     |
-| string    | mail.username       | variable     |           |
+| string    | default_role        | config       | user      |
+| bool      | enable_whitelist    | config       | true      |
+| string    | mail.default_sender | config       |           |
+| string    | mail.password       | config       |           |
+| integer   | mail.port           | config       | 15        |
+| string    | mail.server         | config       | localhost |
+| integer   | mail.timeout        | config       | 10        |
+| bool      | mail.use_ssl        | config       | true      |
+| bool      | mail.use_tls        | config       | false     |
+| string    | mail.username       | config       |           |
 +-----------+---------------------+--------------+-----------+
 ```
 
@@ -490,9 +493,9 @@ ragflow> list vars;
 ```
 ragflow> show var mail.server;
 +-----------+-------------+--------------+-----------+
-| data_type | name        | source       | value     |
+| data_type | name        | setting_type | value     |
 +-----------+-------------+--------------+-----------+
-| string    | mail.server | variable     | localhost |
+| string    | mail.server | config       | localhost |
 +-----------+-------------+--------------+-----------+
 ```
 

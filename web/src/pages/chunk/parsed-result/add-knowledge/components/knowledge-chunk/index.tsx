@@ -2,7 +2,6 @@ import {
   useFetchNextChunkList,
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
-import classNames from 'classnames';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
@@ -17,28 +16,32 @@ import {
 
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
+import DocumentViewSwitch from './components/document-view-switch';
 // import DocumentHeader from './components/document-preview/document-header';
 
-import DocumentPreview from '@/components/document-preview';
-import DocumentHeader from '@/components/document-preview/document-header';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import message from '@/components/ui/message';
 import {
   RAGFlowPagination,
   RAGFlowPaginationType,
 } from '@/components/ui/ragflow-pagination';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 import { Spin } from '@/components/ui/spin';
 import {
   QueryStringMap,
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { LucideArrowBigLeft } from 'lucide-react';
-import styles from './index.module.less';
 
-const Chunk = () => {
+function Chunk() {
+  const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const { removeChunk } = useDeleteChunkByIds();
   const {
@@ -50,10 +53,8 @@ const Chunk = () => {
     available,
     handleSetAvailable,
     dataUpdatedAt,
-  } = useFetchNextChunkList();
+  } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
-  const isPdf = documentInfo?.type === 'pdf';
-  const { data: dataset } = useFetchKnowledgeBaseConfiguration();
 
   const { t } = useTranslation();
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
@@ -68,8 +69,7 @@ const Chunk = () => {
     chunkUpdatingVisible,
     documentId,
   } = useUpdateChunk();
-  const { navigateToDataFile, getQueryString, navigateToDatasetList } =
-    useNavigatePage();
+  const { navigateToDataFile, getQueryString } = useNavigatePage();
   const fileUrl = useGetDocumentUrl(false);
   useEffect(() => {
     setChunkList(data);
@@ -103,6 +103,16 @@ const Chunk = () => {
       });
     },
     [],
+  );
+
+  const handleChunkIdsChange = useCallback(
+    (chunkIds: string[]) => {
+      setFilterChunkIds(chunkIds);
+      if (chunkIds.length === 0) {
+        pagination.onChange?.(1, pagination.pageSize);
+      }
+    },
+    [pagination],
   );
 
   const showSelectedChunkWarning = useCallback(() => {
@@ -174,7 +184,7 @@ const Chunk = () => {
   }, [documentInfo]);
 
   return (
-    <>
+    <main className="h-dvh flex flex-col">
       <PageHeader>
         <Button
           variant="outline"
@@ -186,99 +196,105 @@ const Chunk = () => {
           {t('common.back')}
         </Button>
       </PageHeader>
-      <div className={styles.chunkPage}>
-        <div className="flex flex-1 gap-8">
-          <div className="w-2/5">
-            <div className="h-[100px] flex flex-col justify-end pb-[5px]">
-              <DocumentHeader {...documentInfo} />
-            </div>
-            <section className={styles.documentPreview}>
-              <DocumentPreview
-                className={styles.documentPreview}
-                fileType={fileType}
-                highlights={highlights}
-                setWidthAndHeight={setWidthAndHeight}
-                url={fileUrl}
-              ></DocumentPreview>
-            </section>
-          </div>
-          <div
-            className={classNames(
-              { [styles.pagePdfWrapper]: isPdf },
-              'flex flex-col w-3/5',
-            )}
-          >
-            <Spin spinning={loading} className={styles.spin} size="large">
-              <div className="h-[100px] flex flex-col justify-end pb-[5px]">
-                <div>
+
+      <Card className="mx-5 mb-5 flex-1 h-0 p-0 bg-transparent shadow-none">
+        <CardContent className="p-0 h-full flex flex-row divide-x-0.5 rtl:divide-x-reverse">
+          <ResizablePanelGroup direction="horizontal" className="flex-1">
+            <ResizablePanel defaultSize={40} minSize={30}>
+              <article className="h-full flex flex-col">
+                <DocumentViewSwitch
+                  documentInfo={documentInfo}
+                  fileType={fileType}
+                  highlights={highlights}
+                  setWidthAndHeight={setWidthAndHeight}
+                  url={fileUrl}
+                  onChunkIdsChange={handleChunkIdsChange}
+                />
+              </article>
+            </ResizablePanel>
+
+            <ResizableHandle
+              withHandle
+              className="bg-border-button w-[0.5px]"
+            />
+
+            <ResizablePanel defaultSize={60} minSize={30}>
+              <article className="h-full flex flex-col">
+                <header className="flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
                   <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
                   <div className="text-[14px] text-text-secondary">
                     {t('chunk.chunkResultTip')}
                   </div>
-                </div>
-              </div>
-              <div className=" rounded-[16px] bg-[#FFF]/10 pl-[20px] pb-[20px] pt-[20px] box-border	mb-2">
-                <ChunkResultBar
-                  handleInputChange={handleInputChange}
-                  searchString={searchString}
-                  changeChunkTextMode={changeChunkTextMode}
-                  createChunk={showChunkUpdatingModal}
-                  available={available}
-                  selectAllChunk={selectAllChunk}
-                  handleSetAvailable={handleSetAvailable}
-                />
-                <div className="pt-[5px] pb-[5px]">
-                  <CheckboxSets
-                    selectAllChunk={selectAllChunk}
-                    switchChunk={handleSwitchChunk}
-                    removeChunk={handleRemoveChunk}
-                    checked={selectedChunkIds.length === data.length}
-                    selectedChunkIds={selectedChunkIds}
-                  />
-                </div>
-                <div className={styles.pageContent}>
-                  <div
-                    className={classNames(
-                      styles.chunkContainer,
-                      {
-                        [styles.chunkOtherContainer]: !isPdf,
-                      },
-                      'flex flex-col gap-4',
-                    )}
-                  >
-                    {chunkList.map((item) => (
-                      <ChunkCard
-                        item={item}
-                        key={item.chunk_id}
-                        editChunk={showChunkUpdatingModal}
-                        checked={selectedChunkIds.some(
-                          (x) => x === item.chunk_id,
-                        )}
-                        handleCheckboxClick={handleSingleCheckboxClick}
+                </header>
+
+                <Spin spinning={loading} className="flex-1 h-0" size="large">
+                  <div className="relative @container h-full px-5 pb-5 overflow-hidden flex flex-col">
+                    <div
+                      className="
+                        sticky top-0 z-[1] bg-bg-base space-y-4 py-5
+                        @4xl:flex @4xl:justify-between @4xl:items-center
+                        @4xl:space-y-0 @4xl:gap-4
+                      "
+                      role="toolbar"
+                    >
+                      <ChunkResultBar
+                        className="@4xl:order-2"
+                        handleInputChange={handleInputChange}
+                        searchString={searchString}
+                        changeChunkTextMode={changeChunkTextMode}
+                        createChunk={showChunkUpdatingModal}
+                        available={available}
+                        selectAllChunk={selectAllChunk}
+                        handleSetAvailable={handleSetAvailable}
+                      />
+
+                      <CheckboxSets
+                        className="h-8"
+                        selectAllChunk={selectAllChunk}
                         switchChunk={handleSwitchChunk}
-                        clickChunkCard={handleChunkCardClick}
-                        selected={item.chunk_id === selectedChunkId}
-                        textMode={textMode}
-                        t={dataUpdatedAt}
-                      ></ChunkCard>
-                    ))}
+                        removeChunk={handleRemoveChunk}
+                        checked={selectedChunkIds.length === data.length}
+                        selectedChunkIds={selectedChunkIds}
+                      />
+                    </div>
+
+                    <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
+                      {chunkList.map((item) => (
+                        <ChunkCard
+                          item={item}
+                          key={item.chunk_id}
+                          editChunk={showChunkUpdatingModal}
+                          checked={selectedChunkIds.some(
+                            (x) => x === item.chunk_id,
+                          )}
+                          handleCheckboxClick={handleSingleCheckboxClick}
+                          switchChunk={handleSwitchChunk}
+                          clickChunkCard={handleChunkCardClick}
+                          selected={item.chunk_id === selectedChunkId}
+                          textMode={textMode}
+                          t={dataUpdatedAt}
+                        />
+                      ))}
+                    </div>
+
+                    <footer className="mt-5">
+                      <RAGFlowPagination
+                        pageSize={pagination.pageSize}
+                        current={pagination.current}
+                        total={total}
+                        onChange={(page, pageSize) => {
+                          onPaginationChange(page, pageSize);
+                        }}
+                      />
+                    </footer>
                   </div>
-                </div>
-                <div className={styles.pageFooter}>
-                  <RAGFlowPagination
-                    pageSize={pagination.pageSize}
-                    current={pagination.current}
-                    total={total}
-                    onChange={(page, pageSize) => {
-                      onPaginationChange(page, pageSize);
-                    }}
-                  ></RAGFlowPagination>
-                </div>
-              </div>
-            </Spin>
-          </div>
-        </div>
-      </div>
+                </Spin>
+              </article>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </CardContent>
+      </Card>
+
       {chunkUpdatingVisible && (
         <CreatingModal
           doc_id={documentId}
@@ -290,8 +306,8 @@ const Chunk = () => {
           parserId={documentInfo.parser_id}
         />
       )}
-    </>
+    </main>
   );
-};
+}
 
 export default Chunk;

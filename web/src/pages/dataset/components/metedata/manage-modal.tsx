@@ -65,6 +65,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowValueSwitch = false,
     isVerticalShowValue = true,
     builtInMetadata,
+    isLocalSave,
     success,
     documentIds,
     secondTitle,
@@ -102,6 +103,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     metadataType,
     otherData,
     documentIds,
+    isLocalSave,
   );
   // const { handleMenuClick } = useHandleMenuClick();
   const [shouldSave, setShouldSave] = useState(false);
@@ -210,6 +212,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowDescription,
     showTypeColumn,
     setShouldSave,
+    addUpdateValue,
   });
 
   const table = useReactTable({
@@ -322,34 +325,27 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         <>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <div className="w-1/2">
+              <div className="w-1/2 text-truncate">
                 {secondTitle || t('knowledgeDetails.metadata.metadata')}
               </div>
               <div>
-                {/* {metadataType === MetadataType.Manage && (
-                  <Button
-                    variant={'ghost'}
-                    className="border border-border-button"
-                    type="button"
-                    onClick={handleMenuClick(Routes.DataSetSetting, {
-                      openMetadata: true,
-                    })}
-                  >
-                    {t('knowledgeDetails.metadata.toMetadataSetting')}
-                  </Button>
-                )} */}
-                {isCanAdd && activeTab !== 'built-in' && (
-                  <Button
-                    variant={'ghost'}
-                    className="border border-border-button"
-                    type="button"
-                    onClick={handAddValueRow}
-                    data-testid={addButtonTestId}
-                  >
-                    <Plus />
-                    {t('common.add')}
-                  </Button>
-                )}
+                {isCanAdd &&
+                  activeTab !== 'built-in' &&
+                  !(
+                    metadataType === MetadataType.Setting ||
+                    metadataType === MetadataType.SingleFileSetting
+                  ) && (
+                    <Button
+                      variant={'ghost'}
+                      className="border border-border-button"
+                      type="button"
+                      onClick={handAddValueRow}
+                      data-testid={addButtonTestId}
+                    >
+                      <Plus />
+                      {t('common.add')}
+                    </Button>
+                  )}
               </div>
             </div>
 
@@ -366,14 +362,43 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 value={activeTab}
                 onValueChange={(v) => setActiveTab(v as MetadataSettingsTab)}
               >
-                <TabsList className="w-fit">
-                  <TabsTrigger value="generation">
-                    {t('knowledgeDetails.metadata.generation')}
-                  </TabsTrigger>
-                  <TabsTrigger value="built-in">
-                    {t('knowledgeDetails.metadata.builtIn')}
-                  </TabsTrigger>
-                </TabsList>
+                <div className="flex gap-4 items-center justify-between">
+                  <TabsList className="w-fit">
+                    <TabsTrigger value="generation">
+                      {t('knowledgeDetails.metadata.generation')}
+                    </TabsTrigger>
+                    <TabsTrigger value="built-in">
+                      {t('knowledgeDetails.metadata.builtIn')}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <div>
+                    {/* {metadataType === MetadataType.Manage && (
+                      <Button
+                        variant={'ghost'}
+                        className="border border-border-button"
+                        type="button"
+                        onClick={handleMenuClick(Routes.DataSetSetting, {
+                          openMetadata: true,
+                        })}
+                      >
+                        {t('knowledgeDetails.metadata.toMetadataSetting')}
+                      </Button>
+                    )} */}
+                    {isCanAdd && activeTab !== 'built-in' && (
+                      <Button
+                        variant="outline"
+                        type="button"
+                        onClick={handAddValueRow}
+                        data-testid={addButtonTestId}
+                      >
+                        <Plus />
+                        {t('common.add')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
                 <TabsContent value="generation">
                   <Table rootClassName="max-h-[800px]">
                     <TableHeader>
@@ -430,7 +455,9 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                         <TableHead>
                           {t('knowledgeDetails.metadata.field')}
                         </TableHead>
-                        <TableHead>Type</TableHead>
+                        <TableHead>
+                          {t('knowledgeDetails.metadata.type')}
+                        </TableHead>
                         <TableHead>
                           {t('knowledgeDetails.metadata.description')}
                         </TableHead>
@@ -575,6 +602,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           addDeleteValue={addDeleteValue}
           isEditField={isEditField || isAddValueMode}
           isAddValue={isAddValue || isAddValueMode}
+          isAddValueMode={isAddValueMode}
           isShowDescription={isShowDescription}
           isShowValueSwitch={isShowValueSwitch}
           isShowType={true}

@@ -22,7 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	ce "ragflow/internal/cli/filesystem"
+	"strings"
 	"time"
 )
 
@@ -31,12 +34,13 @@ type HTTPClient struct {
 	Host           string
 	Port           int
 	APIVersion     string
-	APIKey         string
-	LoginToken     string
+	APIKey         *string
+	LoginToken     *string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
 	VerifySSL      bool
 	client         *http.Client
+	useAPIKey      bool
 }
 
 // NewHTTPClient creates a new HTTP client
@@ -53,7 +57,7 @@ func NewHTTPClient() *HTTPClient {
 		VerifySSL:      false,
 		client: &http.Client{
 			Transport: transport,
-			Timeout:   60 * time.Second,
+			Timeout:   300 * time.Second,
 		},
 	}
 }
@@ -65,15 +69,19 @@ func (c *HTTPClient) APIBase() string {
 
 // NonAPIBase returns the non-API base URL
 func (c *HTTPClient) NonAPIBase() string {
-	return fmt.Sprintf("%s:%d/%s", c.Host, c.Port, c.APIVersion)
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
 // BuildURL builds the full URL for a given path
-func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
-	base := c.APIBase()
-	if !useAPIBase {
+func (c *HTTPClient) BuildURL(path string, authKind string) string {
+	var base string
+
+	if authKind == "none" {
 		base = c.NonAPIBase()
+	} else {
+		base = c.APIBase()
 	}
+
 	if c.VerifySSL {
 		return fmt.Sprintf("https://%s%s", base, path)
 	}
@@ -83,16 +91,21 @@ func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
 // Headers builds the request headers
 func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[string]string {
 	headers := make(map[string]string)
+
 	switch authKind {
 	case "api":
-		if c.APIKey != "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIKey)
+		if c.APIKey != nil {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", *c.APIKey)
+		} else if c.LoginToken != nil {
+			// Fallback to login token for API requests (user mode)
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", *c.LoginToken)
 		}
 	case "web", "admin":
-		if c.LoginToken != "" {
-			headers["Authorization"] = c.LoginToken
+		if c.LoginToken != nil {
+			headers["Authorization"] = *c.LoginToken
 		}
 	}
+
 	for k, v := range extra {
 		headers[k] = v
 	}
@@ -104,6 +117,7 @@ type Response struct {
 	StatusCode int
 	Body       []byte
 	Headers    http.Header
+	Duration   float64
 }
 
 // JSON parses the response body as JSON
@@ -116,8 +130,12 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 }
 
 // Request makes an HTTP request
-func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
-	url := c.BuildURL(path, useAPIBase)
+func (c *HTTPClient) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	if c == nil {
+		return nil, fmt.Errorf("HTTP Client is nil")
+	}
+
+	url := c.BuildURL(path, authKind)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -142,7 +160,9 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 		req.Header.Set(k, v)
 	}
 
-	resp, err := c.client.Do(req)
+	var resp *http.Response
+	startTime := time.Now()
+	resp, err = c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -152,29 +172,59 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 	if err != nil {
 		return nil, err
 	}
+	duration := time.Since(startTime).Seconds()
 
 	return &Response{
 		StatusCode: resp.StatusCode,
 		Body:       respBody,
 		Headers:    resp.Header.Clone(),
+		Duration:   duration,
 	}, nil
+}
+
+func isJSONMediaType(contentType string) bool {
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func benchmarkResponseSucceeded(resp *Response) bool {
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	result, err := resp.JSON()
+	if err != nil {
+		// Some successful endpoints, such as ping, return plain text.
+		return !isJSONMediaType(resp.Headers.Get("Content-Type"))
+	}
+	code, hasCode := result["code"].(float64)
+	return !hasCode || code == 0
 }
 
 // RequestWithIterations makes multiple HTTP requests for benchmarking
 // Returns a map with "duration" (total time in seconds) and "response_list"
-func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (map[string]interface{}, error) {
+func (c *HTTPClient) RequestWithIterations(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (*BenchmarkResponse, error) {
+	response := new(BenchmarkResponse)
+
 	if iterations <= 1 {
-		resp, err := c.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+		start := time.Now()
+		resp, err := c.Request(method, path, authKind, headers, jsonBody)
+		totalDuration := time.Since(start).Seconds()
 		if err != nil {
 			return nil, err
 		}
-		return map[string]interface{}{
-			"duration":      0.0,
-			"response_list": []*Response{resp},
-		}, nil
+
+		response.Code = resp.StatusCode
+		response.Duration = totalDuration
+		if benchmarkResponseSucceeded(resp) {
+			response.SuccessCount = 1
+		} else {
+			response.FailureCount = 1
+		}
+		return response, nil
 	}
 
-	url := c.BuildURL(path, useAPIBase)
+	url := c.BuildURL(path, authKind)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -232,17 +282,158 @@ func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool,
 		totalDuration += time.Since(start).Seconds()
 	}
 
-	return map[string]interface{}{
-		"duration":      totalDuration,
-		"response_list": responseList,
-	}, nil
+	response.Code = 0
+	response.Duration = totalDuration
+	for _, resp := range responseList {
+		if benchmarkResponseSucceeded(resp) {
+			response.SuccessCount++
+		} else {
+			response.FailureCount++
+		}
+	}
+
+	return response, nil
 }
 
 // RequestJSON makes an HTTP request and returns JSON response
-func (c *HTTPClient) RequestJSON(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (map[string]interface{}, error) {
-	resp, err := c.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+func (c *HTTPClient) RequestJSON(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (map[string]interface{}, error) {
+	resp, err := c.Request(method, path, authKind, headers, jsonBody)
 	if err != nil {
 		return nil, err
 	}
 	return resp.JSON()
+}
+
+// UploadMultipart uploads data using multipart/form-data
+func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Reader) error {
+	url := c.BuildURL(path, "api")
+
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return err
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", contentType)
+	if c.APIKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *c.APIKey))
+	} else if c.LoginToken != nil {
+		req.Header.Set("Authorization", *c.LoginToken)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("upload failed: HTTP %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	// Check response code
+	var result struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(respBody, &result); err == nil && result.Code != 0 {
+		return fmt.Errorf("upload failed: %s", result.Message)
+	}
+
+	return nil
+}
+
+// RequestStream makes an HTTP request for SSE streaming and returns the response body reader
+func (c *HTTPClient) RequestStream(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, error) {
+	url := c.BuildURL(path, authKind)
+	mergedHeaders := c.Headers(authKind, headers)
+
+	var body io.Reader
+	if jsonBody != nil {
+		jsonData, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(jsonData)
+		if mergedHeaders == nil {
+			mergedHeaders = make(map[string]string)
+		}
+		mergedHeaders["Content-Type"] = "application/json"
+	}
+	// Add Accept header for SSE
+	if mergedHeaders == nil {
+		mergedHeaders = make(map[string]string)
+	}
+	mergedHeaders["Accept"] = "text/event-stream"
+
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range mergedHeaders {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	return resp.Body, nil
+}
+
+// PasswordPromptFunc is a function type for password input
+type PasswordPromptFunc func(prompt string) (string, error)
+
+// CurrentModel holds the current model configuration
+type CurrentModel struct {
+	Provider string
+	Instance string
+	Model    string
+	ModelID  string
+}
+
+// httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
+type httpClientAdapter struct {
+	client *HTTPClient
+}
+
+func (a *httpClientAdapter) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
+	// Auto-detect auth kind based on available tokens
+	// If authKind is "auto" or empty, determine based on token availability
+	if authKind == "auto" || authKind == "" {
+		if a.client.useAPIKey && a.client.APIKey != nil {
+			authKind = "api"
+		} else if a.client.LoginToken != nil {
+			authKind = "web"
+		} else {
+			authKind = "web" // default
+		}
+	}
+	resp, err := a.client.Request(method, path, authKind, headers, jsonBody)
+	if err != nil {
+		return nil, err
+	}
+	return &ce.HTTPResponse{
+		StatusCode: resp.StatusCode,
+		Body:       resp.Body,
+		Headers:    resp.Headers,
+		Duration:   resp.Duration,
+	}, nil
+}
+
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }

@@ -1,3 +1,5 @@
+// https://github.com/MrLightful/shadcn-tree-view
+
 'use client';
 
 import { cn } from '@/lib/utils';
@@ -7,22 +9,26 @@ import { ChevronRight } from 'lucide-react';
 import React from 'react';
 
 const treeVariants = cva(
-  'group hover:before:opacity-100 before:absolute before:rounded-lg before:left-0 px-2 before:w-full before:opacity-0 before:bg-accent/70 before:h-[2rem] before:-z-10',
+  'group hover:before:opacity-100 before:absolute before:rounded-lg before:left-0 px-2 before:w-full before:opacity-0 before:bg-accent/70 before:h-[2rem] before:-z-10 text-text-secondary',
 );
 
 const selectedTreeVariants = cva(
-  'before:opacity-100 before:bg-[#4E74Fd]/70 text-accent-foreground',
+  'before:opacity-100 before:bg-bg-card text-accent-foreground',
 );
 
 export interface TreeDataItem {
   id: string;
   name: string;
+  entityType?: string;
   icon?: any;
   selectedIcon?: any;
   openIcon?: any;
   children?: TreeDataItem[];
+  hasChildren?: boolean;
   actions?: React.ReactNode;
   onClick?: () => void;
+  /** Fires when the chevron expands a collapsed branch (split-click mode). */
+  onExpand?: () => void;
 }
 
 type TreeProps = React.HTMLAttributes<HTMLDivElement> & {
@@ -30,8 +36,46 @@ type TreeProps = React.HTMLAttributes<HTMLDivElement> & {
   initialSelectedItemId?: string;
   onSelectChange?: (item: TreeDataItem | undefined) => void;
   expandAll?: boolean;
+  /**
+   * Defaults to true: clicking anywhere on a branch row toggles expansion.
+   * When false, only the chevron toggles expansion (firing `onExpand`) and
+   * the rest of the row just selects the item like a leaf (firing `onClick`).
+   */
+  expandOnRowClick?: boolean;
   defaultNodeIcon?: any;
   defaultLeafIcon?: any;
+};
+
+const TreeItemLabel = ({ item }: { item: TreeDataItem }) => {
+  if (!item.entityType) {
+    return (
+      <span className="flex-grow truncate text-sm text-left">{item.name}</span>
+    );
+  }
+
+  const isTitle = item.entityType === 'title';
+  return (
+    <span className="flex min-w-0 flex-grow items-center gap-2">
+      <span
+        className={cn(
+          'truncate text-sm',
+          isTitle && 'font-medium text-text-primary',
+        )}
+      >
+        {item.name}
+      </span>
+      <span
+        className={cn(
+          'shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none',
+          isTitle
+            ? 'bg-accent/15 text-accent-foreground'
+            : 'bg-bg-card text-text-secondary',
+        )}
+      >
+        {item.entityType}
+      </span>
+    </span>
+  );
 };
 
 const TreeView = React.forwardRef<HTMLDivElement, TreeProps>(
@@ -41,6 +85,7 @@ const TreeView = React.forwardRef<HTMLDivElement, TreeProps>(
       initialSelectedItemId,
       onSelectChange,
       expandAll,
+      expandOnRowClick = true,
       defaultLeafIcon,
       defaultNodeIcon,
       className,
@@ -100,6 +145,7 @@ const TreeView = React.forwardRef<HTMLDivElement, TreeProps>(
           selectedItemId={selectedItemId}
           handleSelectChange={handleSelectChange}
           expandedItemIds={expandedItemIds}
+          expandOnRowClick={expandOnRowClick}
           defaultLeafIcon={defaultLeafIcon}
           defaultNodeIcon={defaultNodeIcon}
           {...props}
@@ -126,6 +172,7 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
       selectedItemId,
       handleSelectChange,
       expandedItemIds,
+      expandOnRowClick = true,
       defaultNodeIcon,
       defaultLeafIcon,
       ...props
@@ -140,12 +187,14 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
         <ul>
           {data.map((item) => (
             <li key={item.id}>
-              {item.children ? (
+              {item.hasChildren ||
+              (item.children && item.children.length > 0) ? (
                 <TreeNode
                   item={item}
                   selectedItemId={selectedItemId}
                   expandedItemIds={expandedItemIds}
                   handleSelectChange={handleSelectChange}
+                  expandOnRowClick={expandOnRowClick}
                   defaultNodeIcon={defaultNodeIcon}
                   defaultLeafIcon={defaultLeafIcon}
                 />
@@ -173,6 +222,7 @@ const TreeNode = ({
   selectedItemId,
   defaultNodeIcon,
   defaultLeafIcon,
+  expandOnRowClick = true,
 }: {
   item: TreeDataItem;
   handleSelectChange: (item: TreeDataItem | undefined) => void;
@@ -180,10 +230,81 @@ const TreeNode = ({
   selectedItemId?: string;
   defaultNodeIcon?: any;
   defaultLeafIcon?: any;
+  expandOnRowClick?: boolean;
 }) => {
   const [value, setValue] = React.useState(
     expandedItemIds.includes(item.id) ? [item.id] : [],
   );
+  const isOpen = value.includes(item.id);
+  const isSelected = selectedItemId === item.id;
+
+  const handleSelect = () => {
+    handleSelectChange(item);
+    item.onClick?.();
+  };
+
+  // Split-click mode: the chevron toggles expansion by itself, so its click
+  // must not bubble up to the row (which would also select the node).
+  const handleChevronClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isOpen) {
+      item.onExpand?.();
+    }
+  };
+
+  const content = (
+    <AccordionContent className="ml-4 pl-1 border-l">
+      <TreeItem
+        data={item.children ?? []}
+        selectedItemId={selectedItemId}
+        handleSelectChange={handleSelectChange}
+        expandedItemIds={expandedItemIds}
+        expandOnRowClick={expandOnRowClick}
+        defaultLeafIcon={defaultLeafIcon}
+        defaultNodeIcon={defaultNodeIcon}
+      />
+    </AccordionContent>
+  );
+
+  if (!expandOnRowClick) {
+    return (
+      <AccordionPrimitive.Root
+        type="multiple"
+        value={value}
+        onValueChange={setValue}
+      >
+        <AccordionPrimitive.Item value={item.id}>
+          <AccordionPrimitive.Header>
+            <div
+              className={cn(
+                'flex flex-1 w-full items-center py-2 cursor-pointer',
+                treeVariants(),
+                isSelected && selectedTreeVariants(),
+              )}
+              onClick={handleSelect}
+            >
+              <AccordionPrimitive.Trigger
+                className="mr-1 shrink-0 data-[state=open]:[&>svg]:rotate-90"
+                onClick={handleChevronClick}
+              >
+                <ChevronRight className="h-4 w-4 transition-transform duration-200 text-accent-foreground/50" />
+              </AccordionPrimitive.Trigger>
+              <TreeIcon
+                item={item}
+                isSelected={isSelected}
+                isOpen={isOpen}
+                default={defaultNodeIcon}
+              />
+              <TreeItemLabel item={item} />
+              <TreeActions isSelected={isSelected}>{item.actions}</TreeActions>
+            </div>
+          </AccordionPrimitive.Header>
+          {content}
+        </AccordionPrimitive.Item>
+      </AccordionPrimitive.Root>
+    );
+  }
+
   return (
     <AccordionPrimitive.Root
       type="multiple"
@@ -192,36 +313,19 @@ const TreeNode = ({
     >
       <AccordionPrimitive.Item value={item.id}>
         <AccordionTrigger
-          className={cn(
-            treeVariants(),
-            selectedItemId === item.id && selectedTreeVariants(),
-          )}
-          onClick={() => {
-            handleSelectChange(item);
-            item.onClick?.();
-          }}
+          className={cn(treeVariants(), isSelected && selectedTreeVariants())}
+          onClick={handleSelect}
         >
           <TreeIcon
             item={item}
-            isSelected={selectedItemId === item.id}
-            isOpen={value.includes(item.id)}
+            isSelected={isSelected}
+            isOpen={isOpen}
             default={defaultNodeIcon}
           />
-          <span className="text-sm truncate">{item.name}</span>
-          <TreeActions isSelected={selectedItemId === item.id}>
-            {item.actions}
-          </TreeActions>
+          <TreeItemLabel item={item} />
+          <TreeActions isSelected={isSelected}>{item.actions}</TreeActions>
         </AccordionTrigger>
-        <AccordionContent className="ml-4 pl-1 border-l">
-          <TreeItem
-            data={item.children ? item.children : item}
-            selectedItemId={selectedItemId}
-            handleSelectChange={handleSelectChange}
-            expandedItemIds={expandedItemIds}
-            defaultLeafIcon={defaultLeafIcon}
-            defaultNodeIcon={defaultNodeIcon}
-          />
-        </AccordionContent>
+        {content}
       </AccordionPrimitive.Item>
     </AccordionPrimitive.Root>
   );
@@ -267,7 +371,7 @@ const TreeLeaf = React.forwardRef<
           isSelected={selectedItemId === item.id}
           default={defaultLeafIcon}
         />
-        <span className="flex-grow text-sm truncate">{item.name}</span>
+        <TreeItemLabel item={item} />
         <TreeActions isSelected={selectedItemId === item.id}>
           {item.actions}
         </TreeActions>
@@ -355,4 +459,4 @@ const TreeActions = ({
   );
 };
 
-export { TreeView, type TreeDataItem };
+export { TreeView };

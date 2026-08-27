@@ -149,7 +149,7 @@ def _load_tenant_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
     api_utils_mod.get_data_error_result = lambda message="": {"code": 102, "message": message, "data": False}
     api_utils_mod.server_error_response = lambda exc: {"code": 100, "message": repr(exc), "data": False}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
@@ -180,7 +180,7 @@ def _load_tenant_module(monkeypatch):
     common_pkg.settings = settings_mod
 
     sys.modules.pop("test_tenant_app_unit_module", None)
-    module_path = repo_root / "api" / "apps" / "tenant_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "tenant_api.py"
     spec = importlib.util.spec_from_file_location("test_tenant_app_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -196,7 +196,7 @@ def test_user_list_auth_success_exception_matrix_unit(monkeypatch):
     module.current_user.id = "other-user"
     res = module.user_list("tenant-1")
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     monkeypatch.setattr(
@@ -223,7 +223,7 @@ def test_create_invite_role_and_email_failure_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"email": "invitee@example.com"})
     res = _run(module.create("tenant-1"))
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
@@ -268,20 +268,21 @@ def test_rm_and_tenant_list_matrix_unit(monkeypatch):
     module = _load_tenant_module(monkeypatch)
 
     module.current_user.id = "outsider"
-    res = module.rm("tenant-1", "user-2")
+    _set_request_json(monkeypatch, module, {"user_id": "user-2"})
+    res = _run(module.rm("tenant-1"))
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     deleted = []
     monkeypatch.setattr(module.UserTenantService, "filter_delete", lambda conditions: deleted.append(conditions) or True)
-    res = module.rm("tenant-1", "user-2")
+    res = _run(module.rm("tenant-1"))
     assert res["code"] == 0, res
     assert res["data"] is True, res
     assert deleted, "filter_delete should be called"
 
     monkeypatch.setattr(module.UserTenantService, "filter_delete", lambda _conditions: (_ for _ in ()).throw(RuntimeError("rm boom")))
-    res = module.rm("tenant-1", "user-2")
+    res = _run(module.rm("tenant-1"))
     assert res["code"] == 100, res
     assert "rm boom" in res["message"], res
 

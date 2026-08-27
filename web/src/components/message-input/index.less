@@ -1,5 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 .messageInputWrapper {
-  margin-right: 20px;
+  margin-inline-end: 20px;
   padding: '0px 0px 10px 0px';
   border: 1px solid #d9d9d9;
   &:hover {
@@ -8,8 +24,8 @@
   }
   border-radius: 8px;
   :global(.ant-input-affix-wrapper) {
-    border-bottom-right-radius: 0;
-    border-bottom-left-radius: 0;
+    border-end-end-radius: 0;
+    border-end-start-radius: 0;
   }
 }
 
@@ -31,7 +47,7 @@
 }
 .deleteIcon {
   position: absolute;
-  right: -4px;
+  inset-inline-end: -4px;
   top: -4px;
   color: #d92d20;
 }

@@ -12,19 +12,10 @@ import TestingForm from './testing-form';
 import { TestingResult } from './testing-result';
 
 export default function RetrievalTesting() {
-  const {
-    loading,
-    setValues,
-    refetch,
-    data,
-    onPaginationChange,
-    page,
-    pageSize,
-    handleFilterSubmit,
-    filterValue,
-  } = useTestRetrieval();
+  const { loading, setValues, refetch, data, handleFilterSubmit, filterValue } =
+    useTestRetrieval();
 
-  const [count] = useState(1);
+  const [count] = useState(1); // TODO: Different layouts are needed; if they are no longer required, consider deleting them.
 
   return (
     <div className="pr-5 pb-5">
@@ -38,8 +29,6 @@ export default function RetrievalTesting() {
             <CardDescription>
               {t('knowledgeDetails.testingDescription')}
             </CardDescription>
-
-            {/* <Button>Save as Preset</Button> */}
           </header>
         </CardHeader>
 
@@ -50,9 +39,6 @@ export default function RetrievalTesting() {
                 <h2 className="font-semibold text-base leading-8">
                   {t('knowledgeDetails.testSetting')}
                 </h2>
-                {/* <Button variant={'outline'} onClick={addCount}>
-                  <Plus /> Add New Test
-                </Button> */}
               </header>
 
               <div className="flex-1 h-0">
@@ -67,12 +53,9 @@ export default function RetrievalTesting() {
             <div className="flex-1">
               <TestingResult
                 data={data}
-                page={page}
                 loading={loading}
-                pageSize={pageSize}
                 filterValue={filterValue}
                 handleFilterSubmit={handleFilterSubmit}
-                onPaginationChange={onPaginationChange}
               />
             </div>
           </CardContent>
@@ -86,12 +69,9 @@ export default function RetrievalTesting() {
               ></TestingForm>
               <TestingResult
                 data={data}
-                page={page}
                 loading={loading}
-                pageSize={pageSize}
                 filterValue={filterValue}
                 handleFilterSubmit={handleFilterSubmit}
-                onPaginationChange={onPaginationChange}
               ></TestingResult>
             </div>
             <div className="flex-1">
@@ -102,12 +82,9 @@ export default function RetrievalTesting() {
               ></TestingForm>
               <TestingResult
                 data={data}
-                page={page}
                 loading={loading}
-                pageSize={pageSize}
                 filterValue={filterValue}
                 handleFilterSubmit={handleFilterSubmit}
-                onPaginationChange={onPaginationChange}
               ></TestingResult>
             </div>
           </CardContent>

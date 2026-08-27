@@ -1,12 +1,12 @@
 import {
   IIterationNode,
   IIterationStartNode,
-} from '@/interfaces/database/flow';
+} from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import { CommonHandle, LeftEndHandle } from './handle';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';

@@ -5,6 +5,7 @@ import {
 import { FileIcon } from '@/components/icon-font';
 import NewDocumentLink from '@/components/new-document-link';
 import { Button } from '@/components/ui/button';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useDownloadFile } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ import { isFolderType, isKnowledgeBaseType } from './util';
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
   Pick<UseRenameCurrentFileReturnType, 'showFileRenameModal'> &
+  Pick<UseRowSelectionType, 'setRowSelection'> &
   UseMoveDocumentShowType;
 
 export function ActionCell({
@@ -41,6 +43,7 @@ export function ActionCell({
   showConnectToKnowledgeModal,
   showFileRenameModal,
   showMoveFileModal,
+  setRowSelection,
 }: IProps) {
   const record = row.original;
   const documentId = record.id;
@@ -49,6 +52,7 @@ export function ActionCell({
 
   const { downloadFile } = useDownloadFile();
   const isFolder = isFolderType(record.type);
+  const isSkillsFolder = isFolder && record.name.toLowerCase() === 'skills';
   const extension = getExtension(record.name);
   const isKnowledgeBase = isKnowledgeBaseType(record.source_type);
 
@@ -73,17 +77,30 @@ export function ActionCell({
 
   const { handleRemoveFile } = useHandleDeleteFile();
 
-  const onRemoveFile = useCallback(() => {
-    handleRemoveFile([documentId]);
-  }, [handleRemoveFile, documentId]);
+  const onRemoveFile = useCallback(async () => {
+    const code = await handleRemoveFile([documentId]);
+    if (code === 0) {
+      // Prune the deleted file from the multi-selection so the bulk
+      // operation bar doesn't keep counting it.
+      setRowSelection((previous) => {
+        const next = { ...previous };
+        delete next[documentId];
+        return next;
+      });
+    }
+  }, [handleRemoveFile, documentId, setRowSelection]);
+
+  if (isSkillsFolder) {
+    return null;
+  }
 
   return (
-    <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
+    <section className="flex gap-2 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
       {isKnowledgeBase || (
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={handleShowConnectToKnowledgeModal}
         >
           <Link2 />
@@ -93,7 +110,7 @@ export function ActionCell({
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={handleShowMoveFileModal}
         >
           <FolderInput />
@@ -103,7 +120,7 @@ export function ActionCell({
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={handleShowFileRenameModal}
         >
           <FolderPen />
@@ -113,7 +130,7 @@ export function ActionCell({
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={onDownloadDocument}
         >
           <ArrowDownToLine />
@@ -124,12 +141,13 @@ export function ActionCell({
         <NewDocumentLink
           documentId={documentId}
           documentName={record.name}
+          resource="files"
           className="text-text-sub-title-invert"
         >
           <Button
             variant="transparent"
             className="border-none hover:bg-bg-card text-text-primary"
-            size={'sm'}
+            size="icon-sm"
           >
             <Eye />
           </Button>
@@ -171,7 +189,7 @@ export function ActionCell({
                     <FileIcon name={name} type={type}></FileIcon>
                   </span>
                   <span
-                    className={cn('truncate text-xs', {
+                    className={cn('truncate text-xs text-wrap', {
                       ['cursor-pointer']: isFolder,
                     })}
                   >
@@ -185,7 +203,7 @@ export function ActionCell({
           <Button
             variant="transparent"
             className="border-none hover:bg-bg-card text-text-primary"
-            size={'sm'}
+            size="icon-sm"
           >
             <Trash2 />
           </Button>

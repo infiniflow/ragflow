@@ -1,4 +1,3 @@
-import FileStatusBadge from '@/components/file-status-badge';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
@@ -11,14 +10,14 @@ import {
 } from '@/components/ui/card';
 
 import WhatIsThis from '@/components/what-is-this';
-import { RunningStatusMap } from '@/constants/knowledge';
+import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RunningStatus } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
 import { DatasetFilter } from './dataset-filter';
-import { useFetchFileLogList, useFetchOverviewTital } from './hook';
+import { useFetchFileLogList, useFetchOverviewTotal } from './hook';
 import { DocumentLog, IFileLogItem } from './interface';
 import FileLogsTable from './overview-table';
 
@@ -134,10 +133,10 @@ const FileLogsPage: FC = () => {
       failed: 0,
     },
   });
-  const { data: topData } = useFetchOverviewTital();
+  const { data: topData } = useFetchOverviewTotal();
   const {
     pagination: { total: fileTotal },
-  } = useFetchDocumentList();
+  } = useFetchDocumentList(false);
 
   useEffect(() => {
     setTopAllData((prev) => {
@@ -186,18 +185,12 @@ const FileLogsPage: FC = () => {
       {
         field: 'operation_status',
         label: t('knowledgeDetails.status'),
-        list: Object.values(RunningStatus).map((value) => {
+        list: Object.values(RunningStatusOld).map((value) => {
           // const value = key as RunningStatus;
-          console.log(value);
           return {
             id: value,
             // label: RunningStatusMap[value].label,
-            label: (
-              <FileStatusBadge
-                status={value as RunningStatus}
-                name={RunningStatusMap[value as RunningStatus]}
-              />
-            ),
+            label: RunningStatusMap[value],
           };
         }),
       },
@@ -227,7 +220,6 @@ const FileLogsPage: FC = () => {
   }, [active, t]);
 
   const tableList = useMemo(() => {
-    console.log('tableList', tableOriginData);
     if (tableOriginData && tableOriginData.logs?.length) {
       return tableOriginData.logs.map((item) => {
         return {
@@ -251,7 +243,6 @@ const FileLogsPage: FC = () => {
     page: number;
     pageSize: number;
   }) => {
-    console.log('Pagination changed:', { page, pageSize });
     setPagination({
       ...pagination,
       page,

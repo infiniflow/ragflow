@@ -30,7 +30,7 @@ class TestDocumentsList:
         "params, expected_page_size, expected_message",
         [
             ({"page": None, "page_size": 2}, 2, "not instance of"),
-            ({"page": 0, "page_size": 2}, 2, ""),
+            ({"page": 1, "page_size": 2}, 2, ""),
             ({"page": 2, "page_size": 2}, 2, ""),
             ({"page": 3, "page_size": 2}, 1, ""),
             ({"page": "3", "page_size": 2}, 1, "not instance of"),
@@ -63,7 +63,7 @@ class TestDocumentsList:
         "params, expected_page_size, expected_message",
         [
             ({"page_size": None}, 5, "not instance of"),
-            ({"page_size": 0}, 0, ""),
+            ({"page_size": 2}, 2, ""),
             ({"page_size": 1}, 1, ""),
             ({"page_size": 6}, 5, ""),
             ({"page_size": "1"}, 1, "not instance of"),
@@ -158,7 +158,7 @@ class TestDocumentsList:
             ({"name": None}, 5, ""),
             ({"name": ""}, 5, ""),
             ({"name": "ragflow_test_upload_0.txt"}, 1, ""),
-            ({"name": "unknown.txt"}, 0, "You don't own the document unknown.txt"),
+            ({"name": "unknown.txt"}, 0, "you don't own the document unknown.txt"),
         ],
     )
     def test_name(self, add_documents, params, expected_num, expected_message):
@@ -180,7 +180,7 @@ class TestDocumentsList:
             (None, 5, ""),
             ("", 5, ""),
             (lambda docs: docs[0].id, 1, ""),
-            ("unknown.txt", 0, "You don't own the document unknown.txt"),
+            ("unknown.txt", 0, "you don't own the document unknown.txt"),
         ],
     )
     def test_id(self, add_documents, document_id, expected_num, expected_message):
@@ -200,14 +200,43 @@ class TestDocumentsList:
             if params["id"] not in [None, ""]:
                 assert documents[0].id == params["id"], str(documents)
 
+    @pytest.mark.p1
+    def test_ids(self, add_documents):
+        dataset, fixture_documents = add_documents
+        expected_ids = {document.id for document in fixture_documents[:2]}
+
+        documents = dataset.list_documents(ids=list(expected_ids))
+
+        assert len(documents) == 2, str(documents)
+        assert {document.id for document in documents} == expected_ids, str(documents)
+
+    @pytest.mark.p1
+    def test_empty_ids_is_unfiltered(self, add_documents):
+        dataset, fixture_documents = add_documents
+        expected_ids = {document.id for document in fixture_documents}
+
+        documents = dataset.list_documents(ids=[])
+
+        assert len(documents) == 5, str(documents)
+        assert {document.id for document in documents} == expected_ids, str(documents)
+
+    @pytest.mark.p1
+    def test_id_and_ids_raise_value_error(self, add_documents):
+        dataset, documents = add_documents
+
+        with pytest.raises(ValueError) as exception_info:
+            dataset.list_documents(id=documents[0].id, ids=[documents[1].id])
+
+        assert str(exception_info.value) == "Cannot use both 'id' and 'ids' parameters at the same time."
+
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, name, expected_num, expected_message",
         [
             (lambda docs: docs[0].id, "ragflow_test_upload_0.txt", 1, ""),
             (lambda docs: docs[0].id, "ragflow_test_upload_1.txt", 0, ""),
-            (lambda docs: docs[0].id, "unknown", 0, "You don't own the document unknown"),
-            ("invalid_id", "ragflow_test_upload_0.txt", 0, "You don't own the document invalid_id"),
+            (lambda docs: docs[0].id, "unknown", 0, "you don't own the document unknown"),
+            ("invalid_id", "ragflow_test_upload_0.txt", 0, "you don't own the document invalid_id"),
         ],
     )
     def test_name_and_id(self, add_documents, document_id, name, expected_num, expected_message):

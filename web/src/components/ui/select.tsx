@@ -12,7 +12,13 @@ import { forwardRef, useCallback, useEffect } from 'react';
 
 const Select = SelectPrimitive.Root;
 
-const SelectGroup = SelectPrimitive.Group;
+const SelectGroup = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Group>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Group>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Group ref={ref} className={cn(className)} {...props} />
+));
+SelectGroup.displayName = SelectPrimitive.Group.displayName;
 
 const SelectValue = SelectPrimitive.Value;
 

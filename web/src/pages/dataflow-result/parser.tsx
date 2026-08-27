@@ -36,6 +36,7 @@ const ParserContainer = (props: IProps) => {
   } = props;
   const { t } = useTranslation();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
+  const [newChunkIndex, setNewChunkIndex] = useState<number | undefined>();
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
   const initialValue = useMemo(() => {
     const outputs = data?.value?.obj?.params?.outputs;
@@ -130,12 +131,13 @@ const ParserContainer = (props: IProps) => {
   );
 
   const isChunck =
-    step?.type === TimelineNodeType.characterSplitter ||
-    step?.type === TimelineNodeType.titleSplitter;
+    step?.type === TimelineNodeType.tokenChunker ||
+    step?.type === TimelineNodeType.titleChunker;
 
   const handleCreateChunk = useCallback(
     (text: string) => {
       const newText = [...initialText.value, { text: text || ' ' }];
+      setNewChunkIndex(newText.length - 1);
       setInitialText({
         ...initialText,
         value: newText as any,
@@ -143,6 +145,12 @@ const ParserContainer = (props: IProps) => {
     },
     [initialText],
   );
+
+  useEffect(() => {
+    if (newChunkIndex === undefined) return;
+    const timer = setTimeout(() => setNewChunkIndex(undefined), 3000);
+    return () => clearTimeout(timer);
+  }, [newChunkIndex]);
 
   return (
     <>
@@ -214,12 +222,13 @@ const ParserContainer = (props: IProps) => {
               isChunck={isChunck}
               textMode={textMode}
               isDelete={
-                step?.type === TimelineNodeType.characterSplitter ||
-                step?.type === TimelineNodeType.titleSplitter
+                step?.type === TimelineNodeType.tokenChunker ||
+                step?.type === TimelineNodeType.titleChunker
               }
               clickChunk={clickChunk}
               handleCheckboxClick={handleCheckboxClick}
               selectedChunkIds={selectedChunkIds}
+              newChunkIndex={newChunkIndex}
             />
           )}
           <Spotlight opcity={0.6} coverage={60} />

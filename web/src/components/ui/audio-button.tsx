@@ -8,9 +8,9 @@ import { getAuthorization } from '@/utils/authorization-util';
 import { chain, sum } from 'lodash';
 import { Loader2, Mic, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useIsDarkTheme } from '../theme-provider';
 import { Input } from './input';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
+import message from './message';
 
 const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -18,7 +18,6 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
-  const isDark = useIsDarkTheme();
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -256,7 +255,7 @@ export const AudioButton = ({
       formData.append('file', audioFile);
       formData.append('stream', 'false');
 
-      const response = await fetch(api.sequence2txt, {
+      const response = await fetch(api.chatsTranscriptions, {
         method: 'POST',
         headers: {
           [Authorization]: getAuthorization(),
@@ -273,11 +272,9 @@ export const AudioButton = ({
       //   throw new Error('ReadableStream not supported in this browser');
       // }
 
-      console.log('Response:', response);
       const { data, code } = await response.json();
       if (code === 0 && data && data.text) {
         setTranscript(data.text);
-        console.log('Transcript:', data.text);
         onOk?.(data.text);
       }
       setPopoverOpen(false);
@@ -291,6 +288,13 @@ export const AudioButton = ({
 
   //  Start recording
   const startRecording = () => {
+    if (
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== 'function'
+    ) {
+      message.error('Browser does not support getUserMedia API');
+      return;
+    }
     recorderControls.startRecording();
     setIsRecording(true);
     // setShowInputBox(true);
@@ -335,51 +339,6 @@ export const AudioButton = ({
   }, []);
   return (
     <div>
-      {false && (
-        <div className="flex flex-col items-center space-y-4">
-          <div className="relative">
-            <Popover
-              open={popoverOpen}
-              onOpenChange={(open) => {
-                setPopoverOpen(true);
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (isRecording) {
-                      stopRecording();
-                    } else {
-                      startRecording();
-                    }
-                  }}
-                  className={`w-6 h-6 p-2 rounded-full border-none bg-transparent hover:bg-transparent ${
-                    isRecording ? 'animate-pulse' : ''
-                  }`}
-                  disabled={isProcessing}
-                >
-                  <Mic size={16} className="text-text-primary" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                sideOffset={-20}
-                className="p-0 border-none"
-              >
-                <VoiceInputBox
-                  isRecording={isRecording}
-                  value={transcript}
-                  onStop={stopRecording}
-                  recordingTime={recordingTime}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-      )}
-
       <div className=" relative w-6 h-6 flex items-center justify-center">
         {isRecording && (
           <div className="absolute inset-0 size-full overflow-hidden flex items-center justify-center p-1">
@@ -396,6 +355,7 @@ export const AudioButton = ({
         )}
 
         <Button
+          type="button"
           variant="transparent"
           size="icon-xs"
           // onMouseDown={() => {

@@ -17,7 +17,10 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"context"
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // LLMDAO LLM data access object
@@ -29,9 +32,9 @@ func NewLLMDAO() *LLMDAO {
 }
 
 // GetAll gets all LLMs
-func (dao *LLMDAO) GetAll() ([]*model.LLM, error) {
-	var llms []*model.LLM
-	err := DB.Find(&llms).Error
+func (dao *LLMDAO) GetAll(ctx context.Context, db *gorm.DB) ([]*entity.LLM, error) {
+	var llms []*entity.LLM
+	err := db.WithContext(ctx).Find(&llms).Error
 	if err != nil {
 		return nil, err
 	}
@@ -39,9 +42,9 @@ func (dao *LLMDAO) GetAll() ([]*model.LLM, error) {
 }
 
 // GetAllValid gets all valid LLMs
-func (dao *LLMDAO) GetAllValid() ([]*model.LLM, error) {
-	var llms []*model.LLM
-	err := DB.Where("status = ?", "1").Find(&llms).Error
+func (dao *LLMDAO) GetAllValid(ctx context.Context, db *gorm.DB) ([]*entity.LLM, error) {
+	var llms []*entity.LLM
+	err := db.WithContext(ctx).Where("status = ?", "1").Find(&llms).Error
 	if err != nil {
 		return nil, err
 	}
@@ -49,9 +52,9 @@ func (dao *LLMDAO) GetAllValid() ([]*model.LLM, error) {
 }
 
 // GetByFactory gets LLMs by factory
-func (dao *LLMDAO) GetByFactory(factory string) ([]*model.LLM, error) {
-	var llms []*model.LLM
-	err := DB.Where("fid = ?", factory).Find(&llms).Error
+func (dao *LLMDAO) GetByFactory(ctx context.Context, db *gorm.DB, factory string) ([]*entity.LLM, error) {
+	var llms []*entity.LLM
+	err := db.WithContext(ctx).Where("fid = ?", factory).Find(&llms).Error
 	if err != nil {
 		return nil, err
 	}
@@ -59,11 +62,39 @@ func (dao *LLMDAO) GetByFactory(factory string) ([]*model.LLM, error) {
 }
 
 // GetByFactoryAndName gets LLM by factory and name
-func (dao *LLMDAO) GetByFactoryAndName(factory, name string) (*model.LLM, error) {
-	var llm model.LLM
-	err := DB.Where("fid = ? AND llm_name = ?", factory, name).First(&llm).Error
+func (dao *LLMDAO) GetByFactoryAndName(ctx context.Context, db *gorm.DB, factory, name string) (*entity.LLM, error) {
+	var llm entity.LLM
+	err := db.WithContext(ctx).Where("fid = ? AND llm_name = ?", factory, name).First(&llm).Error
 	if err != nil {
 		return nil, err
 	}
 	return &llm, nil
+}
+
+// LLMFactoryDAO LLM factory data access object
+type LLMFactoryDAO struct{}
+
+// NewLLMFactoryDAO create LLM factory DAO
+func NewLLMFactoryDAO() *LLMFactoryDAO {
+	return &LLMFactoryDAO{}
+}
+
+// GetAllValid gets all valid LLM factories
+func (dao *LLMFactoryDAO) GetAllValid(ctx context.Context, db *gorm.DB) ([]*entity.LLMFactories, error) {
+	var factories []*entity.LLMFactories
+	err := db.WithContext(ctx).Where("status = ?", "1").Find(&factories).Error
+	if err != nil {
+		return nil, err
+	}
+	return factories, nil
+}
+
+// GetByName gets LLM factory by name
+func (dao *LLMFactoryDAO) GetByName(ctx context.Context, db *gorm.DB, name string) (*entity.LLMFactories, error) {
+	var factory entity.LLMFactories
+	err := db.WithContext(ctx).Where("name = ?", name).First(&factory).Error
+	if err != nil {
+		return nil, err
+	}
+	return &factory, nil
 }

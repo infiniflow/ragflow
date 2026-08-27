@@ -28,6 +28,7 @@ export default {
       traditionalChinese: 'Традиционен китайски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
       language: 'Език',
       languageMessage: 'Моля, въведете вашия език!',
       languagePlaceholder: 'изберете вашия език',
@@ -63,6 +64,7 @@ export default {
       },
       selected: 'Избрани',
       seeAll: 'Виж всички',
+      owner: 'Собственик',
     },
     login: {
       loginTitle: 'Влезте в акаунта си',
@@ -197,7 +199,6 @@ export default {
     knowledgeDetails: {
       metadata: {
         selectFiles: 'Избрани {{count}} файла',
-        type: 'Тип',
         fieldNameInvalid:
           'Името на полето може да съдържа само букви или долни черти.',
         builtIn: 'Вградени',
@@ -227,6 +228,7 @@ export default {
         value: 'Стойност',
         action: 'Действие',
         field: 'Поле',
+        type: 'Тип',
         description: 'Описание',
         fieldName: 'Име на поле',
         editMetadata: 'Редактирай метаданни',
@@ -371,7 +373,7 @@ export default {
       changeSpecificCategory: 'Промени конкретна категория',
       uploadTitle: 'Плъзнете и пуснете файла тук за качване',
       uploadDescription:
-        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За demo.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
+        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За cloud.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
       chunk: 'Фрагмент',
       bulk: 'Групово',
       cancel: 'Отказ',
@@ -471,9 +473,6 @@ export default {
       linkSourceSetTip:
         'Управлявайте свързването на източник на данни с този набор',
       linkDataSource: 'Свържи източник на данни',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        'За съществуващи фрагменти генерира йерархично съдържание (една директория на файл). По време на заявки, когато е активирано подобряване на директория, системата ще използва голям модел, за да определи кои елементи от директорията са релевантни на въпроса на потребителя, като по този начин идентифицира съответните фрагменти.',
       deleteGenerateModalContent: `
         <p>Изтриването на генерираните резултати от <strong class='text-text-primary'>{{type}}</strong>
         ще премахне всички извлечени обекти и връзки от този набор от данни.
@@ -541,6 +540,12 @@ export default {
       dialogueExamplesTitle: 'преглед',
       methodEmpty:
         'Тук ще се покаже визуално обяснение на категориите на базата от знания',
+      audio: `<p>Поддържани файлови формати: <b>WAV, MP3, AAC, FLAC, OGG</b> и други често срещани аудио формати.</p>
+<p>Този метод транскрибира аудио файловете в текст с помощта на модел за преобразуване на реч в текст.</p>`,
+      email: `<p>Поддържани файлови формати: <b>EML</b> и <b>MSG</b>.</p>
+<p>Този метод анализира имейл файлове, извличайки полетата от заглавката (като От, До, CC, Тема и Дата), съдържанието на писмото и прикачените файлове.</p>`,
+      knowledgeCompiler: `<p>Този конвейер анализира и разделя файловете на части, след което компилира частите в структурирани единици знания (граф на знанията, уики, RAPTOR, мисловна карта или навигация в набора от данни) чрез компонента Knowledge Compiler.</p>
+<p>Компилираните единици знания се издават като части, обединени в потока от части, което е идеално за изграждане на извличаем слой знания върху разделените документи.</p>`,
       book: `<p>Поддържани файлови формати: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       За всяка книга в PDF, моля задайте <i>диапазон на страници</i>, за да премахнете нежелана информация и да намалите времето за анализ.</p>`,
       laws: `<p>Поддържани файлови формати: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -679,7 +684,8 @@ The above is the content you need to summarize.`,
       graphRagMethod: 'Метод',
       graphRagMethodTip: `
       Light: (По подразбиране) Използва подсказки от github.com/HKUDS/LightRAG за извличане на обекти и връзки. Тази опция консумира по-малко токени, памет и изчислителни ресурси.</br>
-      General: Използва подсказки от github.com/microsoft/graphrag за извличане на обекти и връзки`,
+      General: Използва подсказки от github.com/microsoft/graphrag за извличане на обекти и връзки.</br>
+      NER: Използва spaCy NER и извличане на ключови думи на базата на правила за извличане на обекти и връзки. Не се изисква LLM за самото извличане, което го прави бързо и ефективно.`,
       resolution: 'Разрешаване на обекти',
       resolutionTip: `Превключвател за дедупликация на обекти. Когато е активиран, LLM ще комбинира подобни обекти — напр. '2025' и 'годината 2025', или 'ИТ' и 'Информационни технологии' — за изграждане на по-точен граф`,
       community: 'Отчети на общности',
@@ -697,6 +703,8 @@ The above is the content you need to summarize.`,
         text: 'Текст',
       },
       chunk: 'Фрагмент',
+      createChunk: 'Създай фрагмент',
+      editChunk: 'Редактирай фрагмент',
       bulk: 'Групово',
       selectAll: 'Избери всички',
       enabledSelected: 'Активирай избраните',
@@ -725,6 +733,9 @@ The above is the content you need to summarize.`,
       delete: 'Изтрий',
     },
     chat: {
+      chatSupport: 'Чат поддръжка',
+      replyInstantly: 'Обикновено отговаряме веднага',
+      typeYourMessage: 'Напишете съобщението си...',
       messagePlaceholder: 'Въведете вашето съобщение тук...',
       exit: 'Изход',
       multipleModels: 'Множество модели',
@@ -894,6 +905,12 @@ The above is the content you need to summarize.`,
       tocEnhanceTip: `По време на обработката на документа е генерирана информация за съдържание (вижте опцията 'Активиране на извличане на съдържание' в метода General). Това позволява на големия модел да върне елементи от съдържанието, релевантни на заявката на потребителя, като използва тези елементи за извличане на свързани фрагменти и прилагане на тегло върху тях при сортирането.`,
       batchDeleteSessions: 'Групово изтриване',
       deleteSelectedConfirm: 'Изтриване на избраните {count} сесия(и)?',
+      showChunkMetadata: 'Показване на метаданни за чанк',
+      showChunkMetadataTip:
+        'Показване на метаданни на документа (напр. заглавие, номер на страница, дата на качване) заедно с извлечените текстови чанкове',
+      metadataFields: 'Полета с метаданни',
+      metadataFieldsTip:
+        'Изберете кои полета с метаданни да се показват за всеки чанк',
     },
     setting: {
       Verify: 'Провери',
@@ -901,12 +918,12 @@ The above is the content you need to summarize.`,
       keyInvalid: 'Вашият API ключ е невалиден.',
       deleteModel: 'Изтрий модел',
       bedrockCredentialsHint:
-        'Съвет: Оставете Access Key / Secret Key празни, за да използвате AWS IAM автентикация.',
-      awsAuthModeAccessKeySecret: 'Access Key',
+        'Съвет: Оставете ACCESS KEY / SECRET KEY празни, за да използвате AWS IAM автентикация.',
+      awsAuthModeAccessKeySecret: 'ACCESS KEY',
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
-      awsAccessKeyId: 'AWS Access Key ID',
-      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsAccessKeyId: 'AWS ACCESS KEY ID',
+      awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: 'Моля, въведете AWS Role ARN',
       awsAssumeRoleTip:
@@ -924,6 +941,7 @@ The above is the content you need to summarize.`,
       selectModelPlaceholder: 'Изберете модел',
       configureModelTitle: 'Конфигуриране на модел',
       connectorNameTip: 'Описателно име за конектора',
+      syncDeletedFiles: 'Синхронизирай изтритите файлове',
       confluenceIsCloudTip:
         'Отметнете, ако това е Confluence Cloud инстанция, махнете за Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -982,6 +1000,7 @@ The above is the content you need to summarize.`,
       gmailTokenTip: 'Качете OAuth JSON, генериран от Google Console.',
       dropboxDescription:
         'Свържете вашия Dropbox за синхронизиране на файлове и папки от избран акаунт.',
+      azure_devopsDescription: 'Свържете Azure DevOps, за да синхронизирате файловете на хранилището и заявките за изтегляне (pull requests).',
       bitbucketDescription:
         'Свържете Bitbucket за синхронизиране на PR съдържание.',
       bitbucketTopWorkspaceTip:
@@ -1128,15 +1147,15 @@ The above is the content you need to summarize.`,
       addedModels: 'Добавени модели',
       modelsToBeAdded: 'Модели за добавяне',
       addTheModel: 'Добави',
-      apiKey: 'API-Key',
+      apiKey: 'API Key',
       apiKeyMessage: 'Моля, въведете API ключа',
       apiKeyTip:
         'API ключът може да бъде получен чрез регистрация при съответния LLM доставчик.',
       showMoreModels: 'Преглед на модели',
       hideModels: 'Скрий модели',
-      baseUrl: 'Base-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
-        'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този base url с API ключа.',
+        'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този Base URL с API ключа.',
       tongyiBaseUrlTip:
         'За китайски потребители не е необходимо да попълвате или използвайте https://dashscope.aliyuncs.com/compatible-mode/v1. За международни потребители използвайте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -1176,8 +1195,8 @@ The above is the content you need to summarize.`,
       modelNameMessage: 'Моля, въведете името на модела!',
       modelType: 'Тип модел',
       modelTypeMessage: 'Моля, въведете типа на модела!',
-      addLlmBaseUrl: 'Base url',
-      baseUrlNameMessage: 'Моля, въведете вашия base url!',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Моля, въведете вашия Base URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:
@@ -1195,17 +1214,17 @@ The above is the content you need to summarize.`,
       FishAudioLink: 'Как да използвате FishAudio',
       TencentCloudLink: 'Как да използвате TencentCloud ASR',
       volcModelNameMessage: 'Моля, въведете името на модела!',
-      addEndpointID: 'EndpointID на модела',
-      endpointIDMessage: 'Моля, въведете EndpointID на модела',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Моля, въведете Model ID на модела',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Моля, въведете вашия ARK_API_KEY',
-      bedrockModelNameMessage: 'Моля, въведете името на модела!',
+      bedrockModelNameMessage: 'Моля, въведете името на модела',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: 'Моля, въведете вашия ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: 'Моля, въведете вашия SECRET KEY',
       bedrockRegion: 'AWS регион',
-      bedrockRegionMessage: 'Моля, изберете!',
+      bedrockRegionMessage: 'Моля, изберете',
       'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
       'us-west-1': 'US West (N. California)',
@@ -1243,26 +1262,26 @@ The above is the content you need to summarize.`,
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Моля, въведете вашия Secret ID',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Моля, въведете вашия Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Моля, въведете вашия SECRET KEY',
       SparkModelNameMessage: 'Моля, изберете Spark модел',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'Моля, въведете вашия APIPassword',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'Моля, въведете вашия APP ID',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'Моля, въведете вашия APISecret',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'Моля, въведете вашия API SECRET',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'Моля, въведете вашия APIKey',
       yiyanModelNameMessage: 'Моля, въведете име на модел',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Моля, въведете вашия API KEY',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Моля, въведете вашия Secret KEY',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Моля, въведете вашия API Key',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Моля, въведете вашия SECRET KEY',
       FishAudioModelNameMessage:
         'Моля, дайте име на вашия модел за синтез на реч',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Моля, въведете вашия API KEY',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Моля, въведете вашия API Key',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Моля, въведете Reference ID (оставете празно за използване на модела по подразбиране).',
@@ -1330,7 +1349,7 @@ The above is the content you need to summarize.`,
         chat: 'Чат',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -1389,7 +1408,7 @@ The above is the content you need to summarize.`,
       directory: 'Директория',
       uploadTitle: 'Плъзнете и пуснете файла тук за качване',
       uploadDescription:
-        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За demo.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
+        'Поддържа единично или групово качване на файлове. За локално инсталиран RAGFlow: общият лимит за размер на файловете при качване е 1GB, с лимит от 32 файла на група. Няма ограничение за общия брой файлове на акаунт. За cloud.ragflow.io, общият лимит за размер на файловете при качване е 10MB, като всеки файл не трябва да надвишава 10MB и максимум 128 файла на акаунт.',
       local: 'Локални качвания',
       s3: 'S3 качвания',
       preview: 'Преглед',
@@ -1567,10 +1586,8 @@ The above is the content you need to summarize.`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'Компонент, който търси чрез вашия SearXNG инстанция URL. Укажете TopN и URL на инстанцията.',
-      pdfGenerator: 'Генератор на документи',
-      pDFGenerator: 'Генератор на документи',
-      pdfGeneratorDescription: `Компонент, който генерира документи (PDF, DOCX, TXT) от markdown-форматирано съдържание с персонализирано стилизиране, изображения и таблици.`,
-      pDFGeneratorDescription: `Компонент, който генерира документи (PDF, DOCX, TXT) от markdown-форматирано съдържание с персонализирано стилизиране, изображения и таблици.`,
+      docGenerator: 'Генератор на документи',
+      docGeneratorDescription: `Генерира файл от Markdown съдържание.`,
       subtitle: 'Подзаглавие',
       logoImage: 'Лого изображение',
       logoPosition: 'Позиция на логото',
@@ -1615,7 +1632,7 @@ The above is the content you need to summarize.`,
       bing: 'Bing',
       bingDescription:
         'Компонент, който търси от https://www.bing.com/, позволявайки ви да укажете броя резултати с TopN. Изисква API ключ от microsoft.com.',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       country: 'Държава и регион',
       language: 'Език',
       googleScholar: 'Google Scholar',
@@ -2117,12 +2134,10 @@ The above is the content you need to summarize.`,
       tokenizerRequired: 'Моля, първо добавете възел Индексатор',
       tokenizerDescription:
         'Трансформира текст в необходимата структура от данни (напр. векторни вграждания за Embedding Search) в зависимост от избрания метод за търсене.',
-      splitter: 'Токен',
-      splitterDescription:
+      tokenChunkerDescription:
         'Разделя текст на фрагменти по дължина на токени с незадължителни разделители и припокриване.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Разделя документи на секции по йерархия на заглавия с regex правила за по-фин контрол.',
-      hierarchicalMerger: 'Заглавие',
       extractor: 'Трансформатор',
       extractorDescription:
         'Използва LLM за извличане на структурирани прозрения от фрагменти на документи — като обобщения, класификации и др.',
@@ -2134,6 +2149,8 @@ The above is the content you need to summarize.`,
         image: 'Изображение',
         email: 'Имейл',
         'text&markdown': 'Текст и маркиране',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Аудио',
@@ -2170,7 +2187,7 @@ Task
 Extract the most important keywords/phrases of a given piece of text content.
 
 Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`,
@@ -2178,10 +2195,10 @@ Requirements
 You are a text analyzer.
 
 Task
-Propose 3 questions about a given piece of text content.
+Propose {{ topn }} questions about a given piece of text content.
 
 Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.
@@ -2298,7 +2315,7 @@ Important structured information may include: names, dates, locations, events, k
         bodyTemplate: 'Шаблон за тяло',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'Api key',
+        apiKey: 'API Key',
         queryParameters: 'Параметри на заявка',
         headerParameters: 'Параметри на заглавие',
         requestBodyParameters: 'Параметри на тялото на заявка',
@@ -2310,6 +2327,10 @@ Important structured information may include: names, dates, locations, events, k
       },
       saveToMemory: 'Запази в паметта',
       retrievalFrom: 'Извличане от',
+      tags: 'Тагове',
+      canvasCategory: 'Категория на платно',
+      id: 'ID',
+      logTitle: 'Заглавие',
     },
     llmTools: {
       bad_calculator: {
@@ -2368,6 +2389,7 @@ Important structured information may include: names, dates, locations, events, k
       okText: 'Запази',
       cancelText: 'Отказ',
       chooseDataset: 'Моля, първо изберете набор от данни',
+      selectLocalePlaceholder: 'Изберете локал',
     },
     language: {
       english: 'Английски',
@@ -2380,10 +2402,12 @@ Important structured information may include: names, dates, locations, events, k
       vietnamese: 'Виетнамски',
       russian: 'Руски',
       bulgarian: 'Български',
+      arabic: 'Арабски',
+      turkish: 'Турски',
     },
     pagination: {
       total: 'Общо {{total}}',
-      page: '{{page}} /Страница',
+      page: '{{page}} / Страница',
     },
     dataflowParser: {
       result: 'Резултат',

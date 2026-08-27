@@ -40,9 +40,24 @@ class _DummyAtomic:
         return False
 
 
+class _StubResponse:
+    def __init__(self, data=None, mimetype=None):
+        self.data = data
+        self.mimetype = mimetype
+        self.headers = {}
+
+
 class _Args(dict):
     def get(self, key, default=None):
         return super().get(key, default)
+
+    def getlist(self, key):
+        val = self.get(key)
+        if val is None:
+            return []
+        if isinstance(val, list):
+            return val
+        return [val]
 
 
 class _EnumValue:
@@ -98,11 +113,12 @@ def set_tenant_info():
     return None
 
 
-def _load_search_app(monkeypatch):
+def _load_search_api(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
 
     quart_mod = ModuleType("quart")
     quart_mod.request = SimpleNamespace(args=_Args())
+    quart_mod.Response = _StubResponse
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     common_pkg = ModuleType("common")
@@ -193,6 +209,15 @@ def _load_search_app(monkeypatch):
     search_service_mod.SearchService = _SearchService
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
+    dialog_service_mod = ModuleType("api.db.services.dialog_service")
+
+    async def _async_ask(*_args, **_kwargs):
+        if False:
+            yield None
+
+    dialog_service_mod.async_ask = _async_ask
+    monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
+
     user_service_mod = ModuleType("api.db.services.user_service")
 
     class _TenantService:
@@ -233,23 +258,16 @@ def _load_search_app(monkeypatch):
 
         return _decorator
 
-    def _not_allowed_parameters(*_params):
-        def _decorator(func):
-            return func
-
-        return _decorator
-
     api_utils_mod.get_request_json = _default_request_json
     api_utils_mod.get_data_error_result = _get_data_error_result
     api_utils_mod.get_json_result = _get_json_result
     api_utils_mod.server_error_response = _server_error_response
     api_utils_mod.validate_request = _validate_request
-    api_utils_mod.not_allowed_parameters = _not_allowed_parameters
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
     utils_pkg.api_utils = api_utils_mod
 
-    module_name = "test_search_routes_unit_module"
-    module_path = repo_root / "api" / "apps" / "search_app.py"
+    module_name = "test_search_api_unit_module"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "search_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -260,7 +278,7 @@ def _load_search_app(monkeypatch):
 
 @pytest.mark.p2
 def test_create_route_matrix_unit(monkeypatch):
-    module = _load_search_app(monkeypatch)
+    module = _load_search_api(monkeypatch)
 
     _set_request_json(monkeypatch, module, {"name": 1})
     res = _run(module.create())
@@ -308,40 +326,46 @@ def test_create_route_matrix_unit(monkeypatch):
 
 @pytest.mark.p2
 def test_update_and_detail_route_matrix_unit(monkeypatch):
-    module = _load_search_app(monkeypatch)
+    module = _load_search_api(monkeypatch)
 
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": 1, "search_config": {}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    # update: name not string
+    _set_request_json(monkeypatch, module, {"name": 1, "search_config": {}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "must be string" in res["message"]
 
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "   ", "search_config": {}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    # update: empty name
+    _set_request_json(monkeypatch, module, {"name": "   ", "search_config": {}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "empty" in res["message"].lower()
 
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "a" * 256, "search_config": {}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    # update: name too long
+    _set_request_json(monkeypatch, module, {"name": "a" * 256, "search_config": {}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "large than" in res["message"]
 
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "ok", "search_config": {}, "tenant_id": "tenant-1"})
+    # update: tenant not found
+    _set_request_json(monkeypatch, module, {"name": "ok", "search_config": {}})
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tenant_id: (False, None))
-    res = _run(module.update())
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "authorized identity" in res["message"].lower()
 
+    # update: no access
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tenant_id: (True, SimpleNamespace(id=_tenant_id)))
     monkeypatch.setattr(module.SearchService, "accessible4deletion", lambda _search_id, _user_id: False)
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "ok", "search_config": {}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    _set_request_json(monkeypatch, module, {"name": "ok", "search_config": {}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
     assert "authorization" in res["message"].lower()
 
+    # update: search not found (query returns [None])
     monkeypatch.setattr(module.SearchService, "accessible4deletion", lambda _search_id, _user_id: True)
     monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [None])
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "ok", "search_config": {}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    _set_request_json(monkeypatch, module, {"name": "ok", "search_config": {}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "cannot find search" in res["message"].lower()
 
@@ -354,18 +378,21 @@ def test_update_and_detail_route_matrix_unit(monkeypatch):
             return [SimpleNamespace(id="dup")]
         return []
 
+    # update: duplicate name
     monkeypatch.setattr(module.SearchService, "query", _query_duplicate)
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "new-name", "search_config": {}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    _set_request_json(monkeypatch, module, {"name": "new-name", "search_config": {}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "duplicated" in res["message"].lower()
 
+    # update: search_config not a dict
     monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [existing])
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "old-name", "search_config": [], "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    _set_request_json(monkeypatch, module, {"name": "old-name", "search_config": []})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "json object" in res["message"].lower()
 
+    # update: update_by_id fails, verifies config merge and field exclusion
     captured = {}
 
     def _update_fail(search_id, req):
@@ -374,92 +401,96 @@ def test_update_and_detail_route_matrix_unit(monkeypatch):
         return False
 
     monkeypatch.setattr(module.SearchService, "update_by_id", _update_fail)
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "old-name", "search_config": {"top_k": 3}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    _set_request_json(monkeypatch, module, {"name": "old-name", "search_config": {"top_k": 3}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "failed to update" in res["message"].lower()
     assert captured["search_id"] == "s1"
-    assert "search_id" not in captured["req"]
-    assert "tenant_id" not in captured["req"]
     assert captured["req"]["search_config"] == {"existing": 1, "top_k": 3}
 
+    # update: get_by_id fails after successful update
     monkeypatch.setattr(module.SearchService, "update_by_id", lambda _search_id, _req: True)
     monkeypatch.setattr(module.SearchService, "get_by_id", lambda _search_id: (False, None))
-    res = _run(module.update())
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "failed to fetch" in res["message"].lower()
 
+    # update: success
     monkeypatch.setattr(
         module.SearchService,
         "get_by_id",
         lambda _search_id: (True, _SearchRecord(search_id=_search_id, name="old-name", search_config={"existing": 1, "top_k": 3})),
     )
-    res = _run(module.update())
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == 0
     assert res["data"]["id"] == "s1"
 
+    # update: exception
     def _raise_query(**_kwargs):
         raise RuntimeError("update boom")
 
     monkeypatch.setattr(module.SearchService, "query", _raise_query)
-    _set_request_json(monkeypatch, module, {"search_id": "s1", "name": "old-name", "search_config": {"top_k": 3}, "tenant_id": "tenant-1"})
-    res = _run(module.update())
+    _set_request_json(monkeypatch, module, {"name": "old-name", "search_config": {"top_k": 3}})
+    res = _run(module.update(search_id="s1"))
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "update boom" in res["message"]
 
-    _set_request_args(monkeypatch, module, {"search_id": "s1"})
+    # detail: no permission
     monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-a")])
     monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [])
-    res = module.detail()
+    res = module.detail(search_id="s1")
     assert res["code"] == module.RetCode.OPERATING_ERROR
     assert "permission" in res["message"].lower()
 
+    # detail: search not found
     monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [SimpleNamespace(id="s1")])
     monkeypatch.setattr(module.SearchService, "get_detail", lambda _search_id: None)
-    res = module.detail()
+    res = module.detail(search_id="s1")
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "can't find" in res["message"].lower()
 
+    # detail: success
     monkeypatch.setattr(module.SearchService, "get_detail", lambda _search_id: {"id": _search_id, "name": "detail-name"})
-    res = module.detail()
+    res = module.detail(search_id="s1")
     assert res["code"] == 0
     assert res["data"]["id"] == "s1"
 
+    # detail: exception
     def _raise_detail(_search_id):
         raise RuntimeError("detail boom")
 
     monkeypatch.setattr(module.SearchService, "get_detail", _raise_detail)
-    res = module.detail()
+    res = module.detail(search_id="s1")
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "detail boom" in res["message"]
 
 
 @pytest.mark.p2
-def test_list_and_rm_route_matrix_unit(monkeypatch):
-    module = _load_search_app(monkeypatch)
+def test_list_and_delete_route_matrix_unit(monkeypatch):
+    module = _load_search_api(monkeypatch)
 
+    # list: no owner_ids, with pagination
     _set_request_args(
         monkeypatch,
         module,
         {"keywords": "k", "page": "1", "page_size": "2", "orderby": "create_time", "desc": "false"},
     )
-    _set_request_json(monkeypatch, module, {"owner_ids": []})
     monkeypatch.setattr(
         module.SearchService,
         "get_by_tenant_ids",
         lambda _tenants, _uid, _page, _size, _orderby, _desc, _keywords: ([{"id": "a", "tenant_id": "tenant-1"}], 1),
     )
-    res = _run(module.list_search_app())
+    res = module.list_searches()
     assert res["code"] == 0
     assert res["data"]["total"] == 1
     assert res["data"]["search_apps"][0]["id"] == "a"
 
+    # list: with owner_ids filter and pagination
     _set_request_args(
         monkeypatch,
         module,
-        {"keywords": "k", "page": "1", "page_size": "1", "orderby": "create_time", "desc": "true"},
+        {"keywords": "k", "page": "1", "page_size": "1", "orderby": "create_time", "desc": "true", "owner_ids": ["tenant-1"]},
     )
-    _set_request_json(monkeypatch, module, {"owner_ids": ["tenant-1"]})
     monkeypatch.setattr(
         module.SearchService,
         "get_by_tenant_ids",
@@ -468,42 +499,46 @@ def test_list_and_rm_route_matrix_unit(monkeypatch):
             2,
         ),
     )
-    res = _run(module.list_search_app())
+    res = module.list_searches()
     assert res["code"] == 0
     assert res["data"]["total"] == 1
     assert len(res["data"]["search_apps"]) == 1
     assert res["data"]["search_apps"][0]["tenant_id"] == "tenant-1"
 
+    # list: exception
     def _raise_list(*_args, **_kwargs):
         raise RuntimeError("list boom")
 
     monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _raise_list)
-    _set_request_json(monkeypatch, module, {"owner_ids": []})
-    res = _run(module.list_search_app())
+    _set_request_args(monkeypatch, module, {})
+    res = module.list_searches()
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "list boom" in res["message"]
 
-    _set_request_json(monkeypatch, module, {"search_id": "search-1"})
+    # delete: no authorization
     monkeypatch.setattr(module.SearchService, "accessible4deletion", lambda _search_id, _user_id: False)
-    res = _run(module.rm())
+    res = module.delete_search(search_id="search-1")
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
     assert "authorization" in res["message"].lower()
 
+    # delete: delete_by_id fails
     monkeypatch.setattr(module.SearchService, "accessible4deletion", lambda _search_id, _user_id: True)
     monkeypatch.setattr(module.SearchService, "delete_by_id", lambda _search_id: False)
-    res = _run(module.rm())
+    res = module.delete_search(search_id="search-1")
     assert res["code"] == module.RetCode.DATA_ERROR
     assert "failed to delete" in res["message"].lower()
 
+    # delete: success
     monkeypatch.setattr(module.SearchService, "delete_by_id", lambda _search_id: True)
-    res = _run(module.rm())
+    res = module.delete_search(search_id="search-1")
     assert res["code"] == 0
     assert res["data"] is True
 
+    # delete: exception
     def _raise_delete(_search_id):
         raise RuntimeError("rm boom")
 
     monkeypatch.setattr(module.SearchService, "delete_by_id", _raise_delete)
-    res = _run(module.rm())
+    res = module.delete_search(search_id="search-1")
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "rm boom" in res["message"]

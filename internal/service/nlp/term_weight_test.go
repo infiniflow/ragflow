@@ -15,12 +15,82 @@
 package nlp
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
+
+type oovFrequencyFixture struct {
+	Term      string   `json:"term"`
+	Frequency *float64 `json:"frequency"`
+}
+
+func repositoryRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("repository root not found")
+		}
+		dir = parent
+	}
+}
+
+func TestAlphabeticOOVFrequencyMatchesSharedFixture(t *testing.T) {
+	fixturePath := filepath.Join(repositoryRoot(t), "test", "fixtures", "term_weight_oov.json")
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("read OOV fixture: %v", err)
+	}
+
+	var cases []oovFrequencyFixture
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatalf("decode OOV fixture: %v", err)
+	}
+	for _, testCase := range cases {
+		got, ok := alphabeticOOVFrequency(testCase.Term)
+		if testCase.Frequency == nil {
+			if ok {
+				t.Errorf("alphabeticOOVFrequency(%q) = %v, true; want no fallback", testCase.Term, got)
+			}
+			continue
+		}
+		if !ok || got != *testCase.Frequency {
+			t.Errorf("alphabeticOOVFrequency(%q) = %v, %v; want %v, true", testCase.Term, got, ok, *testCase.Frequency)
+		}
+	}
+}
+
+func TestOOVWeightsFavorLongerContentTerms(t *testing.T) {
+	d := NewTermWeightDealer(t.TempDir())
+	terms := []string{"was", "largest", "supplier", "equipment"}
+	weights := d.Weights(terms, false)
+	if len(weights) != len(terms) {
+		t.Fatalf("Weights returned %d terms; want %d", len(weights), len(terms))
+	}
+	for i := 1; i < len(weights); i++ {
+		if weights[i-1].Weight >= weights[i].Weight {
+			t.Fatalf("weights are not increasing with OOV term length: %v", weights)
+		}
+	}
+
+	d.df["equipment"] = 1_000_000
+	weights = d.Weights([]string{"supplier", "equipment"}, false)
+	if weights[1].Weight >= weights[0].Weight {
+		t.Fatalf("dictionary frequency should take precedence over the OOV prior: %v", weights)
+	}
+}
 
 // TestNewTermWeightDealer tests the constructor
 func TestNewTermWeightDealer(t *testing.T) {
@@ -190,7 +260,7 @@ func TestTokenMerge(t *testing.T) {
 			result := d.TokenMerge(tt.tks)
 			if !reflect.DeepEqual(result, tt.expected) {
 				// Debug: print detailed comparison
-				t.Errorf("TokenMerge(%v) = %v (len=%d), expected %v (len=%d)", 
+				t.Errorf("TokenMerge(%v) = %v (len=%d), expected %v (len=%d)",
 					tt.tks, result, len(result), tt.expected, len(tt.expected))
 				for i, r := range result {
 					t.Errorf("  result[%d] = %q (len=%d)", i, r, len(r))
@@ -250,8 +320,8 @@ func TestSplit(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "simple split",
-			txt:      "hello world test",
+			name: "simple split",
+			txt:  "hello world test",
 			// Consecutive English words ending with letters are merged
 			expected: []string{"hello world test"},
 		},
@@ -261,8 +331,8 @@ func TestSplit(t *testing.T) {
 			expected: []string{"machine learning algorithm"}, // Should merge
 		},
 		{
-			name:     "mixed Chinese and English",
-			txt:      "hello 世界 world",
+			name: "mixed Chinese and English",
+			txt:  "hello 世界 world",
 			// "hello" ends with letter, "世界" doesn't start with letter but doesn't end with letter either
 			expected: []string{"hello", "世界", "world"},
 		},
@@ -272,8 +342,8 @@ func TestSplit(t *testing.T) {
 			expected: []string{""},
 		},
 		{
-			name:     "multiple spaces",
-			txt:      "hello    world",
+			name: "multiple spaces",
+			txt:  "hello    world",
 			// Multiple spaces are normalized, then merged if both end with letters
 			expected: []string{"hello world"},
 		},
@@ -283,7 +353,7 @@ func TestSplit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := d.Split(tt.txt)
 			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("Split('%s') = %v (len=%d), expected %v (len=%d)", 
+				t.Errorf("Split('%s') = %v (len=%d), expected %v (len=%d)",
 					tt.txt, result, len(result), tt.expected, len(tt.expected))
 				for i, r := range result {
 					t.Errorf("  result[%d] = %q", i, r)
@@ -713,14 +783,7 @@ func TestPretokenWithNumbers(t *testing.T) {
 	t.Run("num=false filters single digits", func(t *testing.T) {
 		result := d.Pretoken("5", false, true)
 		// Single digit should be filtered when num=false
-		found := false
-		for _, r := range result {
-			if r == "5" {
-				found = true
-				break
-			}
-		}
-		if found {
+		if slices.Contains(result, "5") {
 			t.Error("Single digit should be filtered when num=false")
 		}
 	})

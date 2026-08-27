@@ -18,11 +18,11 @@
 Unit tests for sandbox provider abstraction layer.
 """
 
-import pytest
 from unittest.mock import Mock, patch
-import requests
 
-from agent.sandbox.providers.base import SandboxProvider, SandboxInstance, ExecutionResult
+import pytest
+import requests
+from agent.sandbox.providers.base import ExecutionResult, SandboxInstance, SandboxProvider
 from agent.sandbox.providers.manager import ProviderManager
 from agent.sandbox.providers.self_managed import SelfManagedProvider
 
@@ -32,12 +32,7 @@ class TestSandboxDataclasses:
 
     def test_sandbox_instance_creation(self):
         """Test SandboxInstance dataclass creation."""
-        instance = SandboxInstance(
-            instance_id="test-123",
-            provider="self_managed",
-            status="running",
-            metadata={"language": "python"}
-        )
+        instance = SandboxInstance(instance_id="test-123", provider="self_managed", status="running", metadata={"language": "python"})
 
         assert instance.instance_id == "test-123"
         assert instance.provider == "self_managed"
@@ -46,24 +41,13 @@ class TestSandboxDataclasses:
 
     def test_sandbox_instance_default_metadata(self):
         """Test SandboxInstance with None metadata."""
-        instance = SandboxInstance(
-            instance_id="test-123",
-            provider="self_managed",
-            status="running",
-            metadata=None
-        )
+        instance = SandboxInstance(instance_id="test-123", provider="self_managed", status="running", metadata=None)
 
         assert instance.metadata == {}
 
     def test_execution_result_creation(self):
         """Test ExecutionResult dataclass creation."""
-        result = ExecutionResult(
-            stdout="Hello, World!",
-            stderr="",
-            exit_code=0,
-            execution_time=1.5,
-            metadata={"status": "success"}
-        )
+        result = ExecutionResult(stdout="Hello, World!", stderr="", exit_code=0, execution_time=1.5, metadata={"status": "success"})
 
         assert result.stdout == "Hello, World!"
         assert result.stderr == ""
@@ -73,13 +57,7 @@ class TestSandboxDataclasses:
 
     def test_execution_result_default_metadata(self):
         """Test ExecutionResult with None metadata."""
-        result = ExecutionResult(
-            stdout="output",
-            stderr="error",
-            exit_code=1,
-            execution_time=0.5,
-            metadata=None
-        )
+        result = ExecutionResult(stdout="output", stderr="error", exit_code=1, execution_time=0.5, metadata=None)
 
         assert result.metadata == {}
 
@@ -139,13 +117,13 @@ class TestSelfManagedProvider:
         """Test provider initialization."""
         provider = SelfManagedProvider()
 
-        assert provider.endpoint == "http://localhost:9385"
+        assert provider.endpoint == "http://sandbox-executor-manager:9385"
         assert provider.timeout == 30
         assert provider.max_retries == 3
-        assert provider.pool_size == 10
+        assert provider.pool_size == 3
         assert not provider._initialized
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_initialize_success(self, mock_get):
         """Test successful initialization."""
         mock_response = Mock()
@@ -153,12 +131,7 @@ class TestSelfManagedProvider:
         mock_get.return_value = mock_response
 
         provider = SelfManagedProvider()
-        result = provider.initialize({
-            "endpoint": "http://test-endpoint:9385",
-            "timeout": 60,
-            "max_retries": 5,
-            "pool_size": 20
-        })
+        result = provider.initialize({"endpoint": "http://test-endpoint:9385", "timeout": 60, "max_retries": 5, "pool_size": 20})
 
         assert result is True
         assert provider.endpoint == "http://test-endpoint:9385"
@@ -168,7 +141,7 @@ class TestSelfManagedProvider:
         assert provider._initialized
         mock_get.assert_called_once_with("http://test-endpoint:9385/healthz", timeout=5)
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_initialize_failure(self, mock_get):
         """Test initialization failure."""
         mock_get.side_effect = Exception("Connection error")
@@ -181,7 +154,7 @@ class TestSelfManagedProvider:
 
     def test_initialize_default_config(self):
         """Test initialization with default config."""
-        with patch('requests.get') as mock_get:
+        with patch("requests.get") as mock_get:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_get.return_value = mock_response
@@ -190,7 +163,7 @@ class TestSelfManagedProvider:
             result = provider.initialize({})
 
             assert result is True
-            assert provider.endpoint == "http://localhost:9385"
+            assert provider.endpoint == "http://sandbox-executor-manager:9385"
             assert provider.timeout == 30
 
     def test_create_instance_python(self):
@@ -203,7 +176,7 @@ class TestSelfManagedProvider:
         assert instance.provider == "self_managed"
         assert instance.status == "running"
         assert instance.metadata["language"] == "python"
-        assert instance.metadata["endpoint"] == "http://localhost:9385"
+        assert instance.metadata["endpoint"] == "http://sandbox-executor-manager:9385"
         assert len(instance.instance_id) > 0  # Verify instance_id exists
 
     def test_create_instance_nodejs(self):
@@ -222,30 +195,18 @@ class TestSelfManagedProvider:
         with pytest.raises(RuntimeError, match="Provider not initialized"):
             provider.create_instance("python")
 
-    @patch('requests.post')
+    @patch("requests.post")
     def test_execute_code_success(self, mock_post):
         """Test successful code execution."""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "status": "success",
-            "stdout": '{"result": 42}',
-            "stderr": "",
-            "exit_code": 0,
-            "time_used_ms": 100.0,
-            "memory_used_kb": 1024.0
-        }
+        mock_response.json.return_value = {"status": "success", "stdout": '{"result": 42}', "stderr": "", "exit_code": 0, "time_used_ms": 100.0, "memory_used_kb": 1024.0}
         mock_post.return_value = mock_response
 
         provider = SelfManagedProvider()
         provider._initialized = True
 
-        result = provider.execute_code(
-            instance_id="test-123",
-            code="def main(): return {'result': 42}",
-            language="python",
-            timeout=10
-        )
+        result = provider.execute_code(instance_id="test-123", code="def main(): return {'result': 42}", language="python", timeout=10)
 
         assert result.stdout == '{"result": 42}'
         assert result.stderr == ""
@@ -254,7 +215,71 @@ class TestSelfManagedProvider:
         assert result.metadata["status"] == "success"
         assert result.metadata["instance_id"] == "test-123"
 
-    @patch('requests.post')
+    @patch("requests.post")
+    def test_execute_code_maps_structured_result_into_metadata(self, mock_post):
+        """Test successful code execution with structured result envelope."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "success",
+            "stdout": "debug line\n",
+            "stderr": "",
+            "exit_code": 0,
+            "time_used_ms": 100.0,
+            "memory_used_kb": 1024.0,
+            "result": {
+                "present": True,
+                "value": {"items": ["a", "b"]},
+                "type": "json",
+            },
+        }
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+
+        result = provider.execute_code(instance_id="test-123", code="def main(): return {'items': ['a', 'b']}", language="python", timeout=10)
+
+        assert result.stdout == "debug line\n"
+        assert result.metadata["result_present"] is True
+        assert result.metadata["result_value"] == {"items": ["a", "b"]}
+        assert result.metadata["result_type"] == "json"
+
+    @patch("requests.post")
+    def test_execute_code_sends_bearer_token_when_configured(self, mock_post):
+        """Test that the shared-secret token is sent to the executor manager."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "success", "stdout": "", "stderr": "", "exit_code": 0}
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+        provider.api_token = "shared-secret"
+
+        provider.execute_code(instance_id="test-123", code="def main(): return 1", language="python", timeout=10)
+
+        _, kwargs = mock_post.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer shared-secret"
+
+    @patch("requests.post")
+    def test_execute_code_omits_auth_header_without_token(self, mock_post):
+        """Test that no Authorization header is sent when no token is set."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "success", "stdout": "", "stderr": "", "exit_code": 0}
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+        provider.api_token = ""
+
+        provider.execute_code(instance_id="test-123", code="def main(): return 1", language="python", timeout=10)
+
+        _, kwargs = mock_post.call_args
+        assert "Authorization" not in kwargs["headers"]
+
+    @patch("requests.post")
     def test_execute_code_timeout(self, mock_post):
         """Test code execution timeout."""
         mock_post.side_effect = requests.Timeout()
@@ -263,14 +288,9 @@ class TestSelfManagedProvider:
         provider._initialized = True
 
         with pytest.raises(TimeoutError, match="Execution timed out"):
-            provider.execute_code(
-                instance_id="test-123",
-                code="while True: pass",
-                language="python",
-                timeout=5
-            )
+            provider.execute_code(instance_id="test-123", code="while True: pass", language="python", timeout=5)
 
-    @patch('requests.post')
+    @patch("requests.post")
     def test_execute_code_http_error(self, mock_post):
         """Test code execution with HTTP error."""
         mock_response = Mock()
@@ -282,22 +302,14 @@ class TestSelfManagedProvider:
         provider._initialized = True
 
         with pytest.raises(RuntimeError, match="HTTP 500"):
-            provider.execute_code(
-                instance_id="test-123",
-                code="invalid code",
-                language="python"
-            )
+            provider.execute_code(instance_id="test-123", code="invalid code", language="python")
 
     def test_execute_code_not_initialized(self):
         """Test executing code when provider not initialized."""
         provider = SelfManagedProvider()
 
         with pytest.raises(RuntimeError, match="Provider not initialized"):
-            provider.execute_code(
-                instance_id="test-123",
-                code="print('hello')",
-                language="python"
-            )
+            provider.execute_code(instance_id="test-123", code="print('hello')", language="python")
 
     def test_destroy_instance(self):
         """Test destroying an instance (no-op for self-managed)."""
@@ -309,7 +321,7 @@ class TestSelfManagedProvider:
 
         assert result is True
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_health_check_success(self, mock_get):
         """Test successful health check."""
         mock_response = Mock()
@@ -321,9 +333,9 @@ class TestSelfManagedProvider:
         result = provider.health_check()
 
         assert result is True
-        mock_get.assert_called_once_with("http://localhost:9385/healthz", timeout=5)
+        mock_get.assert_called_once_with("http://sandbox-executor-manager:9385/healthz", timeout=5)
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_health_check_failure(self, mock_get):
         """Test health check failure."""
         mock_get.side_effect = Exception("Connection error")
@@ -344,24 +356,45 @@ class TestSelfManagedProvider:
         assert "nodejs" in languages
         assert "javascript" in languages
 
-    def test_get_config_schema(self):
+    def test_get_config_schema(self, monkeypatch):
         """Test getting configuration schema."""
+        monkeypatch.delenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", raising=False)
         schema = SelfManagedProvider.get_config_schema()
 
         assert "endpoint" in schema
         assert schema["endpoint"]["type"] == "string"
         assert schema["endpoint"]["required"] is True
-        assert schema["endpoint"]["default"] == "http://localhost:9385"
+        assert schema["endpoint"]["default"] == "http://sandbox-executor-manager:9385"
 
         assert "timeout" in schema
         assert schema["timeout"]["type"] == "integer"
         assert schema["timeout"]["default"] == 30
 
-        assert "max_retries" in schema
-        assert schema["max_retries"]["type"] == "integer"
+        # The pool size is a deployment-level fact, not a writable runtime field, so the schema
+        # exposes it read-only under its real key. The default it reports is read from this
+        # process's own environment and falls back to 3, which can disagree with the pool
+        # sandbox-executor-manager was actually started with. Asserting a writable `pool_size`
+        # pinned a shape the provider has never returned, and the assertion failed rather than
+        # guarding anything.
+        assert "executor_manager_pool_size" in schema
+        assert schema["executor_manager_pool_size"]["type"] == "integer"
+        assert schema["executor_manager_pool_size"]["scope"] == "deployment"
+        assert schema["executor_manager_pool_size"]["readonly"] is True
+        assert schema["executor_manager_pool_size"]["default"] == 3
+        assert isinstance(schema["executor_manager_pool_size"]["default"], int)
+        assert "pool_size" not in schema
 
-        assert "pool_size" in schema
-        assert schema["pool_size"]["type"] == "integer"
+        # `max_retries` is documented, accepted and range-checked by the provider
+        # (`self_managed.py:58`, `:66`, `:386`) but get_config_schema() does not offer it, so the
+        # admin form cannot set it. The assertion here used to require it and had been failing;
+        # recording its absence keeps that gap visible rather than deleting the observation, and
+        # turns red the moment the schema grows the field.
+        assert "max_retries" not in schema
+
+        monkeypatch.setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
+        schema = SelfManagedProvider.get_config_schema()
+        assert schema["executor_manager_pool_size"]["default"] == 11
+        assert isinstance(schema["executor_manager_pool_size"]["default"], int)
 
     def test_normalize_language_python(self):
         """Test normalizing Python language identifier."""
@@ -404,20 +437,20 @@ class TestProviderInterface:
         provider = SelfManagedProvider()
 
         # Check all abstract methods are implemented
-        assert hasattr(provider, 'initialize')
+        assert hasattr(provider, "initialize")
         assert callable(provider.initialize)
 
-        assert hasattr(provider, 'create_instance')
+        assert hasattr(provider, "create_instance")
         assert callable(provider.create_instance)
 
-        assert hasattr(provider, 'execute_code')
+        assert hasattr(provider, "execute_code")
         assert callable(provider.execute_code)
 
-        assert hasattr(provider, 'destroy_instance')
+        assert hasattr(provider, "destroy_instance")
         assert callable(provider.destroy_instance)
 
-        assert hasattr(provider, 'health_check')
+        assert hasattr(provider, "health_check")
         assert callable(provider.health_check)
 
-        assert hasattr(provider, 'get_supported_languages')
+        assert hasattr(provider, "get_supported_languages")
         assert callable(provider.get_supported_languages)

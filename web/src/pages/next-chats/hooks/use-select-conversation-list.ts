@@ -1,8 +1,8 @@
 import { MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
-  useFetchConversationList,
-  useFetchDialogList,
+  useFetchChatList,
+  useFetchSessionList,
 } from '@/hooks/use-chat-request';
 import { IConversation } from '@/interfaces/database/chat';
 import { generateConversationId } from '@/utils/chat';
@@ -12,10 +12,10 @@ import { useChatUrlParams } from './use-chat-url';
 
 export const useFindPrologueFromDialogList = () => {
   const { id: dialogId } = useParams();
-  const { data } = useFetchDialogList();
+  const { data } = useFetchChatList();
 
   const prologue = useMemo(() => {
-    return data.dialogs.find((x) => x.id === dialogId)?.prompt_config.prologue;
+    return data?.chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
   }, [dialogId, data]);
 
   return prologue;
@@ -30,7 +30,8 @@ export const useSelectDerivedConversationList = () => {
     loading,
     handleInputChange,
     searchString,
-  } = useFetchConversationList();
+    setSearchString,
+  } = useFetchSessionList();
 
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
@@ -38,6 +39,9 @@ export const useSelectDerivedConversationList = () => {
 
   const addTemporaryConversation = useCallback(() => {
     const conversationId = generateConversationId();
+    // Clear the search keyword, otherwise the newly created session will be
+    // filtered out by the search after it is persisted and refetched.
+    setSearchString('');
     setList((pre) => {
       if (dialogId) {
         setConversationBoth(conversationId, 'true');
@@ -45,9 +49,9 @@ export const useSelectDerivedConversationList = () => {
           {
             id: conversationId,
             name: t('newConversation'),
-            dialog_id: dialogId,
+            chat_id: dialogId,
             is_new: true,
-            message: [
+            messages: [
               {
                 content: prologue,
                 role: MessageType.Assistant,
@@ -61,7 +65,14 @@ export const useSelectDerivedConversationList = () => {
 
       return pre;
     });
-  }, [dialogId, setConversationBoth, t, prologue, conversationList]);
+  }, [
+    dialogId,
+    setConversationBoth,
+    t,
+    prologue,
+    conversationList,
+    setSearchString,
+  ]);
 
   const removeTemporaryConversation = useCallback((conversationId: string) => {
     setList((prevList) => {
@@ -72,6 +83,17 @@ export const useSelectDerivedConversationList = () => {
   }, []);
 
   // When you first enter the page, select the top conversation card
+
+  // useEffect(() => {
+  //   setList((prevList) => {
+  //     const tempItems = prevList.filter((item) => item.is_new);
+  //     const existingTempIds = new Set(tempItems.map((t) => t.id));
+  //     const newItems = conversationList.filter(
+  //       (item) => !existingTempIds.has(item.id),
+  //     );
+  //     return [...tempItems, ...newItems];
+  //   });
+  // }, [conversationList]);
 
   useEffect(() => {
     setList([...conversationList]);

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
@@ -16,7 +32,8 @@ import { NumberInput } from '../ui/input';
 
 interface SimilaritySliderFormFieldProps {
   similarityName?: string;
-  vectorSimilarityWeightName?: string;
+  similarityWeightName?: string;
+  similarityWeightType?: 'vector' | 'keyword';
   isTooltipShown?: boolean;
   numberInputClassName?: string;
 }
@@ -31,7 +48,7 @@ export const initialKeywordsSimilarityWeightValue = {
 export const similarityThresholdSchema = { similarity_threshold: z.number() };
 
 export const keywordsSimilarityWeightSchema = {
-  keywords_similarity_weight: z.number(),
+  keywords_similarity_weight: z.number().min(0).max(1),
 };
 
 export const vectorSimilarityWeightSchema = {
@@ -44,14 +61,22 @@ export const initialVectorSimilarityWeightValue = {
 
 export function SimilaritySliderFormField({
   similarityName = 'similarity_threshold',
-  vectorSimilarityWeightName = 'vector_similarity_weight',
+  similarityWeightName = 'vector_similarity_weight',
+  similarityWeightType = 'vector',
   isTooltipShown,
   numberInputClassName,
 }: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('knowledgeDetails');
   const form = useFormContext();
-  const isVector =
-    vectorSimilarityWeightName.indexOf('vector_similarity_weight') > -1;
+  const isVector = similarityWeightType === 'vector';
+  const normalizeWeight = (weight: number) =>
+    Number(Math.min(1, Math.max(0, weight)).toFixed(2));
+  const getVectorWeight = (weight: number) =>
+    normalizeWeight(isVector ? weight : 1 - weight);
+  const getFullTextWeight = (weight: number) =>
+    normalizeWeight(isVector ? 1 - weight : weight);
+  const getStoredWeight = (vectorWeight: number) =>
+    normalizeWeight(isVector ? vectorWeight : 1 - vectorWeight);
 
   return (
     <>
@@ -66,7 +91,7 @@ export function SimilaritySliderFormField({
       ></SliderInputFormField>
       <FormField
         control={form.control}
-        name={vectorSimilarityWeightName}
+        name={similarityWeightName}
         defaultValue={0}
         render={({ field }) => (
           <FormItem
@@ -95,7 +120,7 @@ export function SimilaritySliderFormField({
                         vector
                       </label>
                       <span className="bg-bg-card rounded-md p-1 w-10 text-center text-xs">
-                        {field.value.toFixed(2)}
+                        {getVectorWeight(field.value).toFixed(2)}
                       </span>
                     </div>
                     <div className="flex  items-center gap-1">
@@ -103,12 +128,14 @@ export function SimilaritySliderFormField({
                         full-text
                       </label>
                       <span className="bg-bg-card rounded-md p-1 w-10 text-center text-xs">
-                        {(1 - field.value).toFixed(2)}
+                        {getFullTextWeight(field.value).toFixed(2)}
                       </span>
                     </div>
                   </div>
                   <SingleFormSlider
                     {...field}
+                    value={getVectorWeight(field.value)}
+                    onChange={(value) => field.onChange(getStoredWeight(value))}
                     max={1}
                     step={0.01}
                     min={0}
@@ -126,6 +153,10 @@ export function SimilaritySliderFormField({
                   min={0}
                   step={0.01}
                   {...field}
+                  value={getVectorWeight(field.value)}
+                  onChange={(value) =>
+                    field.onChange(getStoredWeight(Number(value)))
+                  }
                 ></NumberInput>
               </FormControl>
             </div>

@@ -17,9 +17,10 @@
 package server
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"strconv"
+	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 	"strings"
 	"time"
 
@@ -30,91 +31,14 @@ import (
 // DefaultConnectTimeout default connection timeout for external services
 const DefaultConnectTimeout = 5 * time.Second
 
-// Config application configuration
-type Config struct {
-	Server          ServerConfig           `mapstructure:"server"`
-	Database        DatabaseConfig         `mapstructure:"database"`
-	Redis           RedisConfig            `mapstructure:"redis"`
-	Log             LogConfig              `mapstructure:"log"`
-	DocEngine       DocEngineConfig        `mapstructure:"doc_engine"`
-	RegisterEnabled int                    `mapstructure:"register_enabled"`
-	OAuth           map[string]OAuthConfig `mapstructure:"oauth"`
-}
-
-// OAuthConfig OAuth configuration for a channel
-type OAuthConfig struct {
-	DisplayName string `mapstructure:"display_name"`
-	Icon        string `mapstructure:"icon"`
-}
-
-// ServerConfig server configuration
-type ServerConfig struct {
-	Mode string `mapstructure:"mode"` // debug, release
-	Port int    `mapstructure:"port"`
-}
-
-// DatabaseConfig database configuration
-type DatabaseConfig struct {
-	Driver   string `mapstructure:"driver"` // mysql
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Database string `mapstructure:"database"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-	Charset  string `mapstructure:"charset"`
-}
-
-// LogConfig logging configuration
-type LogConfig struct {
-	Level  string `mapstructure:"level"`  // debug, info, warn, error
-	Format string `mapstructure:"format"` // json, text
-}
-
-// DocEngineConfig document engine configuration
-type DocEngineConfig struct {
-	Type     EngineType           `mapstructure:"type"`
-	ES       *ElasticsearchConfig `mapstructure:"es"`
-	Infinity *InfinityConfig      `mapstructure:"infinity"`
-}
-
-// EngineType document engine type
-type EngineType string
-
-const (
-	EngineElasticsearch EngineType = "elasticsearch"
-	EngineInfinity      EngineType = "infinity"
-)
-
-// ElasticsearchConfig Elasticsearch configuration
-type ElasticsearchConfig struct {
-	Hosts    string `mapstructure:"hosts"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-}
-
-// InfinityConfig Infinity configuration
-type InfinityConfig struct {
-	URI          string `mapstructure:"uri"`
-	PostgresPort int    `mapstructure:"postgres_port"`
-	DBName       string `mapstructure:"db_name"`
-}
-
-// RedisConfig Redis configuration
-type RedisConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
-}
-
 var (
-	globalConfig *Config
+	globalConfig *config.Config
 	globalViper  *viper.Viper
-	zapLogger    *zap.Logger
 )
 
 // Init initialize configuration
 func Init(configPath string) error {
+
 	v := viper.New()
 
 	// Set configuration file path
@@ -126,8 +50,6 @@ func Init(configPath string) error {
 		v.SetConfigType("yaml")
 		v.AddConfigPath("./conf")
 		v.AddConfigPath(".")
-		v.AddConfigPath("./config")
-		v.AddConfigPath("./internal/config")
 		v.AddConfigPath("/etc/ragflow/")
 	}
 
@@ -138,157 +60,225 @@ func Init(configPath string) error {
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if !errors.As(err, &configFileNotFoundError) {
 			return fmt.Errorf("read config file error: %w", err)
 		}
-		zapLogger.Info("Config file not found, using environment variables only")
+		common.Info("Config file not found, using environment variables only")
 	}
 
 	// Save viper instance
 	globalViper = v
 
-	// Unmarshal configuration to globalConfig
-	// Note: This will only unmarshal fields that match the Config struct
-	if err := v.Unmarshal(&globalConfig); err != nil {
-		return fmt.Errorf("unmarshal config error: %w", err)
+	globalConfig = &config.Config{}
+	err := globalConfig.ParseGeneralConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse general config error: %w", err)
 	}
 
-	// Load REGISTER_ENABLED from environment variable (default: 1)
-	registerEnabled := 1
-	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
-		if parsed, err := strconv.Atoi(envVal); err == nil {
-			registerEnabled = parsed
-		}
-	}
-	globalConfig.RegisterEnabled = registerEnabled
-
-	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
-	if globalConfig != nil && globalConfig.Database.Host == "" {
-		// Try to map from mysql section
-		if v.IsSet("mysql") {
-			mysqlConfig := v.Sub("mysql")
-			if mysqlConfig != nil {
-				globalConfig.Database.Driver = "mysql"
-				globalConfig.Database.Host = mysqlConfig.GetString("host")
-				globalConfig.Database.Port = mysqlConfig.GetInt("port")
-				globalConfig.Database.Database = mysqlConfig.GetString("name")
-				globalConfig.Database.Username = mysqlConfig.GetString("user")
-				globalConfig.Database.Password = mysqlConfig.GetString("password")
-				globalConfig.Database.Charset = "utf8mb4"
-			}
-		}
+	err = globalConfig.ParseDatabaseConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse database config error: %w", err)
 	}
 
-	// Map ragflow section to ServerConfig
-	if globalConfig != nil && globalConfig.Server.Port == 0 {
-		// Try to map from ragflow section
-		if v.IsSet("ragflow") {
-			ragflowConfig := v.Sub("ragflow")
-			if ragflowConfig != nil {
-				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 2 // 9382, by default
-				// globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
-				// If mode is not set, default to debug
-				if globalConfig.Server.Mode == "" {
-					globalConfig.Server.Mode = "release"
-				}
-			}
-		}
+	err = globalConfig.ParseDocEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse doc engine config error: %w", err)
 	}
 
-	// Map redis section to RedisConfig
-	if globalConfig != nil && globalConfig.Redis.Host != "" {
-		if v.IsSet("redis") {
-			redisConfig := v.Sub("redis")
-			if redisConfig != nil {
-				hostStr := redisConfig.GetString("host")
-				// Handle host:port format (e.g., "localhost:6379")
-				if hostStr == "" {
-					return fmt.Errorf("Empty host of redis configuration")
-				}
-
-				if idx := strings.LastIndex(hostStr, ":"); idx != -1 {
-					globalConfig.Redis.Host = hostStr[:idx]
-					if portStr := hostStr[idx+1:]; portStr != "" {
-						if port, err := strconv.Atoi(portStr); err == nil {
-							globalConfig.Redis.Port = port
-						}
-					}
-				} else {
-					return fmt.Errorf("Error address format of redis: %s", hostStr)
-				}
-
-				globalConfig.Redis.Password = redisConfig.GetString("password")
-				globalConfig.Redis.DB = redisConfig.GetInt("db")
-			}
-		}
+	err = globalConfig.ParseStorageEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse storage engine config error: %w", err)
 	}
 
-	// Map doc_engine section to DocEngineConfig
-	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		// Try to map from doc_engine section
-		if v.IsSet("doc_engine") {
-			docEngineConfig := v.Sub("doc_engine")
-			if docEngineConfig != nil {
-				globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
-			}
-		}
-		// Also check legacy es section for backward compatibility
-		if v.IsSet("es") {
-			esConfig := v.Sub("es")
-			if esConfig != nil {
-				if globalConfig.DocEngine.Type == "" {
-					globalConfig.DocEngine.Type = EngineElasticsearch
-				}
-				if globalConfig.DocEngine.ES == nil {
-					globalConfig.DocEngine.ES = &ElasticsearchConfig{
-						Hosts:    esConfig.GetString("hosts"),
-						Username: esConfig.GetString("username"),
-						Password: esConfig.GetString("password"),
-					}
-				}
-			}
-		}
-		if v.IsSet("infinity") {
-			infConfig := v.Sub("infinity")
-			if infConfig != nil {
-				if globalConfig.DocEngine.Type == "" {
-					globalConfig.DocEngine.Type = EngineInfinity
-				}
-				if globalConfig.DocEngine.Infinity == nil {
-					globalConfig.DocEngine.Infinity = &InfinityConfig{
-						URI:          infConfig.GetString("uri"),
-						PostgresPort: infConfig.GetInt("postgres_port"),
-						DBName:       infConfig.GetString("db_name"),
-					}
-				}
-			}
-		}
+	err = globalConfig.ParseCacheEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse cache engine config error: %w", err)
+	}
+
+	err = globalConfig.ParseQueueEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse queue engine config error: %w", err)
+	}
+
+	err = globalConfig.ParseAnalyticEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse analytic engine config error: %w", err)
+	}
+
+	err = globalConfig.ParseOpenTelemetryConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse open telemetry config error: %w", err)
+	}
+
+	err = globalConfig.ParseAdminConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse admin config error: %w", err)
+	}
+
+	err = globalConfig.ParseAPIServerConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse API server config error: %w", err)
+	}
+
+	err = globalConfig.ParseIngestorConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse ingestor config error: %w", err)
+	}
+
+	err = globalConfig.ParseSyncerConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse syncer config error: %w", err)
+	}
+
+	err = globalConfig.ParseLogConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse log config error: %w", err)
+	}
+
+	err = globalConfig.ParseSMTPConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse SMTP config error: %w", err)
+	}
+
+	err = globalConfig.GetEnvironments()
+	if err != nil {
+		return fmt.Errorf("get environments error: %w", err)
+	}
+
+	err = globalConfig.ParseBillingConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse billing config error: %w", err)
+	}
+
+	err = globalConfig.ParseDefaultModelsConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse default models config error: %w", err)
+	}
+
+	err = globalConfig.ParseOAuthConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse OAuth config error: %w", err)
 	}
 
 	return nil
 }
 
-// Get get global configuration
-func GetConfig() *Config {
+// GetConfig gets the global configuration
+func GetConfig() *config.Config {
 	return globalConfig
 }
 
-// SetLogger sets the logger instance
-func SetLogger(l *zap.Logger) {
-	zapLogger = l
+func GetAllConfigs() ([]map[string]interface{}, error) {
+	var allConfigs []map[string]interface{}
+
+	// Database
+	databaseType := globalConfig.DatabaseType()
+	switch databaseType {
+	case "mysql", "oceanbase":
+		mysqlConfig := globalConfig.GetMySQLConfig()
+		exportedMySQLConfigs := mysqlConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedMySQLConfigs)
+	default:
+		return nil, fmt.Errorf("not supported database: %s", databaseType)
+	}
+
+	// Doc engine
+	docEngineType := globalConfig.DocEngineType()
+	switch docEngineType {
+	case "elasticsearch":
+		elasticConfig := globalConfig.GetElasticsearchConfig()
+		exportedESConfigs := elasticConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedESConfigs)
+	case "infinity":
+		infinityConfig := globalConfig.GetInfinityConfig()
+		exportedInfinityConfigs := infinityConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedInfinityConfigs)
+	case "oceanbase":
+		oceanBaseConfig := globalConfig.GetOceanBaseConfig()
+		allConfigs = append(allConfigs, oceanBaseConfig.ExportConfigs())
+	case "seekdb":
+		seekDBConfig := globalConfig.GetSeekDBConfig()
+		allConfigs = append(allConfigs, seekDBConfig.ExportConfigs())
+	default:
+		return nil, fmt.Errorf("not supported doc engine: %s", docEngineType)
+	}
+
+	// storage engine
+	storageType := globalConfig.StorageEngineType()
+	switch storageType {
+	case "minio":
+		minioConfig := globalConfig.GetMinioConfig()
+		exportedMinioConfigs := minioConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedMinioConfigs)
+	case "s3":
+		s3Config := globalConfig.GetS3Config()
+		exportedS3Configs := s3Config.ExportConfigs()
+		allConfigs = append(allConfigs, exportedS3Configs)
+	case "oss":
+		ossConfig := globalConfig.GetOSSConfig()
+		exportedOSSConfigs := ossConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedOSSConfigs)
+	case "gcs":
+		gcsConfig := globalConfig.GetGCSConfig()
+		exportedGCSConfigs := gcsConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedGCSConfigs)
+	default:
+		return nil, fmt.Errorf("not supported storage engine: %s", storageType)
+	}
+
+	// cache engine
+	cacheType := globalConfig.CacheEngineType()
+	switch cacheType {
+	case "redis":
+		redisConfig := globalConfig.GetRedisConfig()
+		exportedRedisConfigs := redisConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedRedisConfigs)
+	default:
+		return nil, fmt.Errorf("not supported cache engine: %s", cacheType)
+	}
+
+	// message queue
+	messageQueueType := globalConfig.QueueEngineType()
+	switch messageQueueType {
+	case "nats":
+		natsConfig := globalConfig.GetNATSConfig()
+		exportedNatsConfigs := natsConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedNatsConfigs)
+	default:
+		return nil, fmt.Errorf("not supported message queue: %s", messageQueueType)
+	}
+
+	// analytical engine
+	olapType := globalConfig.AnalyticEngineType()
+	switch olapType {
+	case "clickhouse":
+		clickhouseConfig := globalConfig.GetClickhouseConfig()
+		exportedClickhouseConfigs := clickhouseConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedClickhouseConfigs)
+	default:
+		return nil, fmt.Errorf("not supported analytical engine: %s", olapType)
+	}
+
+	// tracing engine
+	oTelConfig := globalConfig.GetOpenTelemetryConfig()
+	exportedOTELConfigs := oTelConfig.ExportConfigs()
+	allConfigs = append(allConfigs, exportedOTELConfigs)
+
+	return allConfigs, nil
 }
 
 // PrintAll prints all configuration settings
 func PrintAll() {
 	if globalViper == nil {
-		zapLogger.Info("Configuration not initialized")
+		common.Info("Configuration not initialized")
 		return
 	}
 
 	allSettings := globalViper.AllSettings()
-	zapLogger.Info("=== All Configuration Settings ===")
+	common.Info("=== All Configurations ===")
 	for key, value := range allSettings {
-		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
+		common.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
-	zapLogger.Info("=== End Configuration ===")
+	common.Info("=== End Configurations ===")
 }

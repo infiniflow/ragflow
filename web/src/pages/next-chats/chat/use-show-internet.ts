@@ -1,8 +1,8 @@
-import { useFetchDialog } from '@/hooks/use-chat-request';
-import { isEmpty } from 'lodash';
+import { useFetchChat } from '@/hooks/use-chat-request';
+import { hasWebSearchProvider } from './web-search-api-key';
 
 export function useShowInternet() {
-  const { data: currentDialog } = useFetchDialog();
+  const { data: currentDialog } = useFetchChat();
 
-  return !isEmpty(currentDialog?.prompt_config?.tavily_api_key);
+  return hasWebSearchProvider(currentDialog?.prompt_config);
 }

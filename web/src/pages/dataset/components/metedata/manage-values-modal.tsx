@@ -172,7 +172,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
       ? [
           {
             name: 'valueType',
-            label: 'Type',
+            label: t('knowledgeDetails.metadata.type'),
             type: FormFieldType.Select,
             options: metadataValueTypeOptions,
             defaultValue: metaData.valueType || metadataValueTypeEnum.string,
@@ -283,8 +283,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
                 metaData.valueType === metadataValueTypeEnum['list'] && (
                   <div>
                     <Button
-                      variant={'ghost'}
-                      className="border border-border-button"
+                      variant="outline"
+                      size="icon"
                       onClick={handleAddValue}
                       data-testid={addValueButtonTestId}
                     >

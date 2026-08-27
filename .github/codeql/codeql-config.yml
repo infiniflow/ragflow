@@ -1,0 +1,25 @@
+# CodeQL configuration. The default CodeQL Analysis workflow (managed by
+# GitHub) reads this file when scanning the repository. We use it to
+# exclude files that the Go analysis cannot compile — the rest of the
+# repo compiles fine, but the CGO-based office_oxide bindings require
+# a native header (`office_oxide.h`) that isn't present in the CodeQL
+# runner image. Without this exclusion the entire Go analysis aborts
+# with `fatal error: office_oxide.h: No such file or directory`, which
+# means no Go alerts can be re-evaluated and alerts on these files
+# stay open indefinitely even after their root cause is fixed.
+#
+# The excluded files are MS Office document parsers. They are also
+# excluded from `go test` and `go build` in local development when
+# the office_oxide C library is not installed, so this exclusion
+# brings CodeQL in line with the rest of the toolchain.
+paths-ignore:
+  - internal/ingestion/parser/doc_parser.go
+  - internal/ingestion/parser/docx_parser.go
+  - internal/ingestion/parser/ppt_parser.go
+  - internal/ingestion/parser/pptx_parser.go
+  - internal/ingestion/parser/xls_parser.go
+  - internal/ingestion/parser/xlsx_parser.go
+  # Generated / vendored — also break analysis without adding signal.
+  - "**/testdata/**"
+  - "**/node_modules/**"
+  - "**/*.pb.go"
