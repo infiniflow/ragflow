@@ -42,7 +42,7 @@ export function TemplateCard({ data, showModal }: IProps) {
             {data?.title[language]}
           </div>
         </div>
-        <p className="break-words hypens-auto" lang={language}>
+        <p className="break-words hyphens-auto" lang={language}>
           {data?.description[language]}
         </p>
         <div className="group-hover:bg-gradient-to-t from-black/70 from-10% via-black/0 via-50% to-black/0 w-full h-full group-hover:block absolute top-0 left-0 hidden rounded-xl">
