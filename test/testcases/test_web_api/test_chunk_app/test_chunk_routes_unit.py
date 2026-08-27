@@ -250,6 +250,7 @@ def _load_chunk_module(monkeypatch):
     metadata_utils_mod = ModuleType("common.metadata_utils")
     metadata_utils_mod.apply_meta_data_filter = lambda *_args, **_kwargs: {}
     metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
+    metadata_utils_mod.filter_doc_ids_by_metadata = lambda *_args, **_kwargs: []
     metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
 
@@ -560,6 +561,7 @@ def _load_chunk_module(monkeypatch):
             return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id="tm-embd-2", tenant_llm_id="tm-llm-1")
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
     services_pkg.knowledgebase_service = kb_service_mod
 
