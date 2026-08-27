@@ -88,6 +88,21 @@ def test_multiple_of_chunk_rows_splits_without_spurious_chunk():
 
 
 @pytest.mark.p2
+def test_html_col_max_uses_widest_row():
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["H1"])
+    ws.append(["a", "b", "c"])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    chunks = RAGFlowExcelParser().html(buf.read(), chunk_rows=12)
+    assert chunks[0][1][3] == 1 and chunks[0][1][4] == 3
+
+
+@pytest.mark.p2
 def test_non_multiple_unchanged():
     # 13 data rows with chunk_rows=12 -> 2 chunks (12 + 1).
     chunks = RAGFlowExcelParser().html(_make_xlsx(13), chunk_rows=12)

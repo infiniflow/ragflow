@@ -888,6 +888,7 @@ class Parser(ProcessBase):
                         {
                             "text": txt,
                             "doc_type_kwd": "text",
+                            # 0-based sheet; add_positions increments the first component.
                             "positions": [[sheet, r1, r2, c1, c2]],
                         }
                         for txt, (sheet, r1, r2, c1, c2) in spreadsheet_parser(blob)

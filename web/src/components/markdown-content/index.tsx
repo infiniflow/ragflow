@@ -186,15 +186,15 @@ const MarkdownContent = ({
       documentUrl?: string,
     ) =>
       () => {
-        if (!supportsSourceLocate(fileExtension)) {
-          if (!documentUrl) {
-            return;
-          }
-          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
-          window.open(nextLink, '_blank');
-        } else {
-          clickDocumentButton?.(documentId, chunk);
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
+          clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );

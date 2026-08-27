@@ -228,7 +228,7 @@ class RAGFlowExcelParser:
             for t in list(rows[0]):
                 tb_rows_0 += f"<th>{escape(_fmt(t.value))}</th>"
             tb_rows_0 += "</tr>"
-            col_max = max(len(rows[0]), 1)
+            col_max = max((len(r) for r in rows), default=1)
 
             # rows[0] is the header; split the remaining data rows into
             # ceil(n_data / chunk_rows) chunks. Using +1 here over-counts by one

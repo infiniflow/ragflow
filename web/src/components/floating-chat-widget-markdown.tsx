@@ -109,12 +109,15 @@ const FloatingChatWidgetMarkdown = ({
     ) =>
       () => {
         if (!documentId) return;
-        if (!supportsSourceLocate(fileExtension) && documentUrl) {
-          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
-          window.open(nextLink, '_blank');
-        } else if (clickDocumentButton) {
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );

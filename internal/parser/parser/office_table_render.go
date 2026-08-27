@@ -155,8 +155,8 @@ func buildHeaderRow(row []string) string {
 // coordinates for source location (mirrors Excel position_int semantics).
 type htmlTableChunk struct {
 	HTML     string
-	RowStart int // inclusive, 1-based Excel row (header included as headerRowAbs)
-	RowEnd   int // inclusive, 1-based Excel row
+	RowStart int // inclusive, 1-based Excel row of first data row (header-only chunks use headerRowAbs)
+	RowEnd   int // inclusive, 1-based Excel row of last data row
 	ColStart int
 	ColEnd   int
 }
@@ -186,10 +186,9 @@ func recordsToHTMLTableChunkList(records [][]string, chunkRows int, caption stri
 		headerRowAbs = 1
 	}
 	colEnd := 1
-	if len(records) > 0 {
-		colEnd = len(records[0])
-		if colEnd < 1 {
-			colEnd = 1
+	for _, row := range records {
+		if n := len(row); n > colEnd {
+			colEnd = n
 		}
 	}
 	if len(records) == 0 {
