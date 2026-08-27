@@ -48,7 +48,7 @@ from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtracto
 from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
+from rag.prompts.generator import ASK_SUMMARY, PROMPT_JINJA_ENV, append_keywords, chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in
 from common.token_utils import num_tokens_from_string
 from rag.utils.web_search_conn import create_web_search_provider, has_web_search_provider
 from rag.utils.tts_cache import synthesize_with_cache
@@ -718,7 +718,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if prompt_config.get("keyword", False):
-        questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
+        questions[-1] = append_keywords(questions[-1], await keyword_extraction(chat_mdl, questions[-1]))
     refine_question_ts = timer()
 
     thought = ""

@@ -41,7 +41,7 @@ from common.misc_utils import thread_pool_exec
 from api.utils.api_utils import get_error_data_result, get_json_result, add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
-from rag.prompts.generator import cross_languages, keyword_extraction
+from rag.prompts.generator import append_keywords, cross_languages, keyword_extraction
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
 from rag.utils.web_search_conn import has_web_search_provider
@@ -433,7 +433,7 @@ async def retrieval_test_embedded(tenant_id=None):
         if req.get("keyword", False):
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(kb.tenant_id, default_chat_model)
-            _question += await keyword_extraction(chat_mdl, _question)
+            _question = append_keywords(_question, await keyword_extraction(chat_mdl, _question))
 
         labels = label_question(_question, [kb])
         ranks = await settings.retriever.retrieval(

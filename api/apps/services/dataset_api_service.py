@@ -1044,7 +1044,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     from common.constants import LLMType
     from common.metadata_utils import apply_meta_data_filter
     from rag.app.tag import label_question
-    from rag.prompts.generator import cross_languages, keyword_extraction
+    from rag.prompts.generator import append_keywords, cross_languages, keyword_extraction
 
     logging.debug(
         "search(dataset=%s, tenant=%s, question_len=%s)",
@@ -1155,7 +1155,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     if search_config.get("keyword", req.get("keyword", False)):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
         chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
-        _question += await keyword_extraction(chat_mdl, _question)
+        _question = append_keywords(_question, await keyword_extraction(chat_mdl, _question))
 
     labels = label_question(_question, [kb])
     ranks = await settings.retriever.retrieval(
@@ -1435,7 +1435,7 @@ async def search_datasets(tenant_id: str, req: dict):
     from common.constants import LLMType
     from common.metadata_utils import apply_meta_data_filter
     from rag.app.tag import label_question
-    from rag.prompts.generator import cross_languages, keyword_extraction
+    from rag.prompts.generator import append_keywords, cross_languages, keyword_extraction
 
     kb_ids = req.get("dataset_ids", [])
     page = int(req.get("page", 1))
@@ -1556,7 +1556,7 @@ async def search_datasets(tenant_id: str, req: dict):
     if search_config.get("keyword", req.get("keyword", False)):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
         chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
-        _question += await keyword_extraction(chat_mdl, _question)
+        _question = append_keywords(_question, await keyword_extraction(chat_mdl, _question))
 
     labels = label_question(_question, kbs)
     ranks = await settings.retriever.retrieval(
