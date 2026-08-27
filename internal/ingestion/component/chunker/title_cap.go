@@ -20,12 +20,11 @@ package chunker
 // A built chunk that exceeds `chunk_token_cap` tokens is re-split on sentence
 // boundaries into <= cap sub-chunks; a single boundary-less run that still
 // exceeds the cap is hard-split so the ceiling always holds. Table/image
-// chunks are atomic and never split. The first sub-chunk keeps the source
-// chunk's merged PDF position matrix (Plan A); subsequent sub-chunks carry an
-// empty array.
+// chunks are atomic and never split. Every sub-chunk keeps the source chunk's
+// merged PDF position matrix so each one still gets its page-region preview
+// image and position highlight.
 
 import (
-	"encoding/json"
 	"strings"
 	"unicode/utf8"
 
@@ -165,8 +164,10 @@ func enforceTitleTokenCap(chunks []map[string]any, cap int) []map[string]any {
 
 // splitTitleChunkByCap re-splits one oversized text chunk into <= cap
 // sub-chunks. Sentences are tried first (greedy grouping); any remaining
-// over-cap segment is hard-split. The first sub-chunk keeps the source
-// chunk's merged PDF position matrix (Plan A); the rest carry an empty array.
+// over-cap segment is hard-split. Every sub-chunk keeps the source chunk's
+// merged PDF position matrix (the coordinates are coarse, source-chunk
+// level), so the on-demand crop pass can attach a preview image to each
+// sub-chunk.
 func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 	text := toString(chunk["text"])
 	sentences := titleSentenceSplit(text)
@@ -203,54 +204,25 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 	}
 
 	out := make([]map[string]any, 0, len(finalGroups))
-	for i, g := range finalGroups {
+	for _, g := range finalGroups {
 		sub := shallowCopyChunk(chunk)
 		sub["text"] = g
-		// Plan A: only the first sub-chunk keeps the position matrix; later
-		// sub-chunks carry an empty matrix of the same type, or drop the key
-		// when the source type is unknown.
-		if i > 0 {
-			if empty, ok := emptyPositionsLike(chunk["_pdf_positions"]); ok {
-				sub["_pdf_positions"] = empty
-			} else {
-				delete(sub, "_pdf_positions")
-			}
-			if empty, ok := emptyPositionsLike(chunk["positions"]); ok {
-				sub["positions"] = empty
-			} else {
-				delete(sub, "positions")
-			}
-		}
 		out = append(out, sub)
 	}
 	return out
 }
 
 // shallowCopyChunk returns a shallow copy of c. Coordinate matrices
-// ([][]float64) are shared by reference, but splitTitleChunkByCap replaces
-// (never mutates) them for sub-chunks, so the source chunk is never aliased.
+// ([][]float64) are deliberately shared by reference between the source
+// chunk and its cap-split sub-chunks: nothing in the split or the downstream
+// read-only passes (on-demand crop, position indexing) mutates a matrix, so
+// the sharing is intentional and safe.
 func shallowCopyChunk(c map[string]any) map[string]any {
 	m := make(map[string]any, len(c))
 	for k, v := range c {
 		m[k] = v
 	}
 	return m
-}
-
-// emptyPositionsLike returns an empty coordinate array of the same Go type as
-// the source value (mergePositionMatrix produces [][]float64; tests may feed
-// json.RawMessage), so a Plan-A sub-chunk's position field stays type-consistent
-// with the first sub-chunk's. The second result is false for unknown types;
-// the caller then DELETES the key instead of storing a nil-valued one.
-func emptyPositionsLike(v any) (any, bool) {
-	switch v.(type) {
-	case [][]float64:
-		return [][]float64{}, true
-	case json.RawMessage:
-		return json.RawMessage("[]"), true
-	default:
-		return nil, false
-	}
 }
 
 // toStringOrDefault returns the string value of v, or def when v is absent /

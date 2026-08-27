@@ -340,8 +340,12 @@ func newCoordinator(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskServi
 }
 
 func newCoordinatorWithCheckpoints(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore, checkpoints SyncCheckpointStore) *TaskCoordinator {
+	return newCoordinatorWithConfigAndCheckpoints(taskDAO, taskService, registry, sink, pruneService, store, checkpoints, SyncRunnerConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond})
+}
+
+func newCoordinatorWithConfigAndCheckpoints(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore, checkpoints SyncCheckpointStore, syncRunnerConfig SyncRunnerConfig) *TaskCoordinator {
 	executor := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 16})
-	return NewTaskCoordinator(SyncRunnerConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskDAO, taskService, registry, sink, pruneService, service.NewDocumentIDResolver(store), executor, checkpoints)
+	return NewTaskCoordinator(syncRunnerConfig, taskDAO, taskService, registry, sink, pruneService, service.NewDocumentIDResolver(store), executor, checkpoints)
 }
 
 // TestClaimBlocksSameConnectorKBRunningTasks verifies DB-backed task mutual exclusion.
@@ -1381,6 +1385,224 @@ func TestSyncCheckpointStopsBeforeFailedBatch(t *testing.T) {
 	}
 	if task.TotalDocsIndexed != 2 {
 		t.Fatalf("total docs indexed = %d, want 2", task.TotalDocsIndexed)
+	}
+}
+
+// TestSyncRunnerRestartsAfterInvalidOpenSyncResume verifies a stale resume anchor restarts
+// the same task window with a cleared checkpoint.
+func TestSyncRunnerRestartsAfterInvalidOpenSyncResume(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	checkpoints := newMemorySyncCheckpointStore()
+	windowStart := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	updatedAt := windowStart.Add(30 * time.Minute)
+	initialCheckpoint := &syncerconnector.SyncCheckpoint{Cursor: "cursor-1", SourceID: "source-1", UpdatedAt: &updatedAt}
+	if err := checkpoints.SaveSyncCheckpoint(t.Context(), "task-1", syncerconnector.SyncCheckpointState{
+		Version:       1,
+		TaskID:        "task-1",
+		ConnectorID:   "conn-1",
+		KBID:          "kb-1",
+		WindowStart:   &windowStart,
+		WindowEnd:     windowEnd,
+		NextCommitSeq: 2,
+		Checkpoint:    initialCheckpoint,
+		Added:         1,
+	}); err != nil {
+		t.Fatalf("save checkpoint: %v", err)
+	}
+
+	source := syncerconnector.SourceDocument{SourceID: "source-2", Blob: []byte("b"), UpdatedAt: windowEnd}
+	connector := &connectormock.Connector{
+		OpenSyncResumeInvalidAt: 1,
+		SyncBatches: []syncerconnector.SyncBatch{{
+			Documents:  []syncerconnector.SourceDocument{source},
+			Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-2", SourceID: "source-2", UpdatedAt: &windowEnd},
+		}},
+	}
+	sink := &fakeSink{}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithConfigAndCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}, checkpoints, SyncRunnerConfig{
+		ItemRetryCount:        1,
+		ItemRetryBaseDelay:    time.Millisecond,
+		MaxAnchorRestartCount: 2,
+	}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	if len(connector.SyncRequests) != 2 {
+		t.Fatalf("sync requests = %d, want 2", len(connector.SyncRequests))
+	}
+	initialRequest := connector.SyncRequests[0]
+	if initialRequest.Resume == nil || initialRequest.Resume.Cursor != "cursor-1" || initialRequest.Resume.SourceID != "source-1" {
+		t.Fatalf("initial resume = %+v, want cursor-1/source-1", initialRequest.Resume)
+	}
+	restartRequest := connector.SyncRequests[1]
+	if restartRequest.Resume != nil {
+		t.Fatalf("restart resume = %+v, want nil", restartRequest.Resume)
+	}
+	if initialRequest.TaskID != "task-1" || initialRequest.ConnectorID != "conn-1" || initialRequest.KBID != "kb-1" {
+		t.Fatalf("initial request identity = %+v", initialRequest)
+	}
+	if restartRequest.TaskID != initialRequest.TaskID || restartRequest.ConnectorID != initialRequest.ConnectorID || restartRequest.KBID != initialRequest.KBID {
+		t.Fatalf("restart request identity = %+v, want %+v", restartRequest, initialRequest)
+	}
+	if restartRequest.WindowStart == nil || !restartRequest.WindowStart.Equal(*initialRequest.WindowStart) || !restartRequest.WindowEnd.Equal(initialRequest.WindowEnd) {
+		t.Fatalf("restart window = %+v, want same as %+v", restartRequest.WindowStart, initialRequest.WindowStart)
+	}
+	if sink.callCount() != 1 {
+		t.Fatalf("sink calls = %d, want 1", sink.callCount())
+	}
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusDone {
+		t.Fatalf("status = %s, want done", task.Status)
+	}
+	if task.TotalDocsIndexed != 1 {
+		t.Fatalf("total docs indexed = %d, want 1", task.TotalDocsIndexed)
+	}
+}
+
+// TestSyncRunnerRestartsAfterInvalidNextBatchResume verifies pending work is collected
+// before the same source window is reprocessed from the beginning.
+func TestSyncRunnerRestartsAfterInvalidNextBatchResume(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	checkpoints := newMemorySyncCheckpointStore()
+	windowStart := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	if err := checkpoints.SaveSyncCheckpoint(t.Context(), "task-1", syncerconnector.SyncCheckpointState{
+		Version:       1,
+		TaskID:        "task-1",
+		ConnectorID:   "conn-1",
+		KBID:          "kb-1",
+		WindowStart:   &windowStart,
+		WindowEnd:     windowEnd,
+		NextCommitSeq: 1,
+	}); err != nil {
+		t.Fatalf("save checkpoint: %v", err)
+	}
+
+	firstTime := windowStart.Add(10 * time.Minute)
+	secondTime := windowStart.Add(20 * time.Minute)
+	connector := &connectormock.Connector{
+		NextBatchResumeInvalidAt:    2,
+		NextBatchResumeFirstSession: true,
+		SyncBatches: []syncerconnector.SyncBatch{
+			{
+				Documents:  []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("a"), UpdatedAt: firstTime}},
+				Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-1", SourceID: "source-1", UpdatedAt: &firstTime},
+			},
+			{
+				Documents:  []syncerconnector.SourceDocument{{SourceID: "source-2", Blob: []byte("b"), UpdatedAt: secondTime}},
+				Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-2", SourceID: "source-2", UpdatedAt: &secondTime},
+			},
+		},
+	}
+	sink := &fakeSink{}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithConfigAndCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}, checkpoints, SyncRunnerConfig{
+		ItemRetryCount:        1,
+		ItemRetryBaseDelay:    time.Millisecond,
+		MaxAnchorRestartCount: 2,
+	}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	if len(connector.SyncRequests) != 2 {
+		t.Fatalf("sync requests = %d, want 2", len(connector.SyncRequests))
+	}
+	for _, request := range connector.SyncRequests {
+		if request.Resume != nil {
+			t.Fatalf("resume = %+v, want nil for full-window restart", request.Resume)
+		}
+		if request.WindowStart == nil || !request.WindowStart.Equal(windowStart) || !request.WindowEnd.Equal(windowEnd) {
+			t.Fatalf("window = %+v/%s, want %s/%s", request.WindowStart, request.WindowEnd, windowStart, windowEnd)
+		}
+	}
+	if sink.callCount() != 3 {
+		t.Fatalf("sink calls = %d, want first-pass document plus 2 reprocessed documents", sink.callCount())
+	}
+	state, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if state != nil {
+		t.Fatalf("checkpoint = %+v, want deleted after success", state)
+	}
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusDone {
+		t.Fatalf("status = %s, want done", task.Status)
+	}
+	if task.TotalDocsIndexed != 2 {
+		t.Fatalf("total docs indexed = %d, want 2", task.TotalDocsIndexed)
+	}
+}
+
+// TestSyncRunnerStopsAfterRepeatedInvalidResumeAnchors verifies the restart budget is bounded.
+func TestSyncRunnerStopsAfterRepeatedInvalidResumeAnchors(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	checkpoints := newMemorySyncCheckpointStore()
+	windowStart := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	updatedAt := windowStart.Add(30 * time.Minute)
+	if err := checkpoints.SaveSyncCheckpoint(t.Context(), "task-1", syncerconnector.SyncCheckpointState{
+		Version:       1,
+		TaskID:        "task-1",
+		ConnectorID:   "conn-1",
+		KBID:          "kb-1",
+		WindowStart:   &windowStart,
+		WindowEnd:     windowEnd,
+		NextCommitSeq: 2,
+		Checkpoint:    &syncerconnector.SyncCheckpoint{Cursor: "cursor-1", SourceID: "source-1", UpdatedAt: &updatedAt},
+	}); err != nil {
+		t.Fatalf("save checkpoint: %v", err)
+	}
+
+	taskContext, err := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("get context: %v", err)
+	}
+	executor := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1})
+	queue, err := executor.RegisterTask(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("register task: %v", err)
+	}
+	defer executor.Close()
+	defer queue.Close()
+
+	connector := &connectormock.Connector{OpenSyncResumeInvalidAlways: true}
+	runner := NewSyncRunner(SyncRunnerConfig{
+		ItemRetryCount:        1,
+		ItemRetryBaseDelay:    time.Millisecond,
+		MaxAnchorRestartCount: 1,
+	}, taskDAO, taskService, &fakeSink{}, service.NewDocumentIDResolver(fakeStore{}), queue, checkpoints)
+	if _, err := runner.Run(t.Context(), taskContext, connector); !errors.Is(err, syncerconnector.ErrSyncResumeInvalid) {
+		t.Fatalf("Run error = %v, want ErrSyncResumeInvalid", err)
+	}
+	if len(connector.SyncRequests) != 2 {
+		t.Fatalf("sync requests = %d, want 2", len(connector.SyncRequests))
+	}
+	if connector.SyncRequests[0].Resume == nil || connector.SyncRequests[1].Resume != nil {
+		t.Fatalf("sync request resumes = %+v / %+v, want checkpoint then nil", connector.SyncRequests[0].Resume, connector.SyncRequests[1].Resume)
+	}
+	state, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if state == nil || state.RestartCount != 1 || state.Checkpoint != nil {
+		t.Fatalf("checkpoint = %+v, want restart_count 1 and cleared resume", state)
 	}
 }
 

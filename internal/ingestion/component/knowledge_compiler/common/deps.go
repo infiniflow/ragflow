@@ -158,11 +158,15 @@ type RedisClient interface {
 // interfaces so tests inject stubs; production wiring lives in
 // internal/ingestion/task (see PORT_PLAN.md §4 dependency injection seam).
 type Deps struct {
-	Chat            ChatInvoker
-	Embed           Embedder
-	Tokenizer       Tokenizer
-	HistoricalKNN   HistoricalKNN       // optional (wiki)
-	WikiPages       WikiPageStore       // optional (wiki)
+	Chat          ChatInvoker
+	Embed         Embedder
+	Tokenizer     Tokenizer
+	HistoricalKNN HistoricalKNN // optional (wiki)
+	WikiPages     WikiPageStore // optional (wiki)
+	// WikiMapVersions requires BOTH TenantID and DatasetID on every access:
+	// the DocStore-backed store keys its rows ragflow_<tenant_id>/<kb_id> and
+	// fails loudly on an empty scope. Runs missing either scope (canvas debug
+	// dry-runs) take the cache-less MAP path instead of calling the store.
 	WikiMapVersions WikiMapVersionStore // optional (wiki version cache)
 	Redis           RedisClient         // optional (datasetnav)
 	TenantID        string

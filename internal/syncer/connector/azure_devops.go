@@ -306,7 +306,9 @@ func (c *AzureDevOpsConnector) OpenSync(ctx context.Context, request SyncRequest
 		request:   request,
 		stage:     c.initialStage(),
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -973,7 +975,9 @@ func (s *azureDevOpsSyncSession) nextCodeDocuments(ctx context.Context, repo azu
 		}
 		s.items = items
 		s.itemsRepo = repo.Key()
-		s.applyFileAnchor(repo)
+		if err := s.applyFileAnchor(repo); err != nil {
+			return nil, err
+		}
 	}
 
 	documents := make([]SourceDocument, 0, limit)
@@ -1005,28 +1009,28 @@ func (s *azureDevOpsSyncSession) nextCodeDocuments(ctx context.Context, repo azu
 //
 // The listing is re-fetched on every resume and can have shifted since the
 // checkpoint was written, so the stored offset is treated as a hint: it is
-// checked first, then the whole listing is searched for the anchor. Only when
-// the anchor is gone — the file was deleted or renamed — does the offset stand
-// on its own.
-func (s *azureDevOpsSyncSession) applyFileAnchor(repo azureDevOpsRepository) {
+// checked first, then the whole listing is searched for the anchor. A missing
+// anchor means the saved progress no longer maps to the source listing.
+func (s *azureDevOpsSyncSession) applyFileAnchor(repo azureDevOpsRepository) error {
 	if s.resumeSourceID == "" || s.resumeRepoKey != repo.Key() || s.resumeStage != azureDevOpsStageCode {
-		return
+		return nil
 	}
 	defer s.clearResume()
 
 	if s.fileOffset > 0 && s.fileOffset <= len(s.items) {
 		previous := s.items[s.fileOffset-1]
 		if azureDevOpsCodeSourceID(s.connector.organization, repo, strings.TrimPrefix(previous.Path, "/")) == s.resumeSourceID {
-			return
+			return nil
 		}
 	}
 
 	for index, item := range s.items {
 		if azureDevOpsCodeSourceID(s.connector.organization, repo, strings.TrimPrefix(item.Path, "/")) == s.resumeSourceID {
 			s.fileOffset = index + 1
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("azure devops file resume anchor %q was not found in repo %s: %w", s.resumeSourceID, repo.Key(), ErrSyncResumeInvalid)
 }
 
 // filterResumedPullRequests drops the pull requests already committed.
@@ -1034,18 +1038,18 @@ func (s *azureDevOpsSyncSession) applyFileAnchor(repo azureDevOpsRepository) {
 // $skip indexes into a listing that shifts as pull requests are opened, so the
 // anchor decides where the page really resumes; the skip value only positions
 // the request.
-func (s *azureDevOpsSyncSession) filterResumedPullRequests(repo azureDevOpsRepository, pullRequests []azureDevOpsPullRequest) []azureDevOpsPullRequest {
+func (s *azureDevOpsSyncSession) filterResumedPullRequests(repo azureDevOpsRepository, pullRequests []azureDevOpsPullRequest) ([]azureDevOpsPullRequest, error) {
 	if s.resumeSourceID == "" || s.resumeRepoKey != repo.Key() || s.resumeStage != azureDevOpsStagePullRequests {
-		return pullRequests
+		return pullRequests, nil
 	}
 	defer s.clearResume()
 
 	for index, pullRequest := range pullRequests {
 		if azureDevOpsPullRequestSourceID(s.connector.organization, repo, pullRequest.PullRequestID) == s.resumeSourceID {
-			return pullRequests[index+1:]
+			return pullRequests[index+1:], nil
 		}
 	}
-	return pullRequests
+	return nil, fmt.Errorf("azure devops pull request resume anchor %q was not found in repo %s: %w", s.resumeSourceID, repo.Key(), ErrSyncResumeInvalid)
 }
 
 func (s *azureDevOpsSyncSession) clearResume() {
@@ -1062,7 +1066,10 @@ func (s *azureDevOpsSyncSession) nextPullRequestDocuments(ctx context.Context, r
 		return nil, err
 	}
 	pageSize := len(pullRequests)
-	pullRequests = s.filterResumedPullRequests(repo, pullRequests)
+	pullRequests, err = s.filterResumedPullRequests(repo, pullRequests)
+	if err != nil {
+		return nil, err
+	}
 
 	documents := make([]SourceDocument, 0, len(pullRequests))
 	for _, pullRequest := range pullRequests {
@@ -1109,13 +1116,26 @@ func (s *azureDevOpsSyncSession) advanceRepo() {
 }
 
 // applyResume advances the session to the last committed position.
-func (s *azureDevOpsSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *azureDevOpsSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("azure devops sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor azureDevOpsSyncCursor
-	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil || cursor.RepoKey == "" {
-		return
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return fmt.Errorf("azure devops sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	if cursor.RepoKey == "" {
+		return fmt.Errorf("azure devops sync cursor has no repo anchor: %w", ErrSyncResumeInvalid)
+	}
+	if cursor.Stage != azureDevOpsStageCode && cursor.Stage != azureDevOpsStagePullRequests {
+		return fmt.Errorf("azure devops sync cursor has no valid stage: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("azure devops sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, repo := range s.repos {
 		if repo.Key() != cursor.RepoKey {
@@ -1129,9 +1149,10 @@ func (s *azureDevOpsSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.prSkip = cursor.PRSkip
 		s.resumeRepoKey = cursor.RepoKey
 		s.resumeStage = s.stage
-		s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		return
+		s.resumeSourceID = sourceID
+		return nil
 	}
+	return fmt.Errorf("azure devops resume repo %q was not found in the current listing: %w", cursor.RepoKey, ErrSyncResumeInvalid)
 }
 
 type azureDevOpsPruneSession struct {

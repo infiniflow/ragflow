@@ -356,6 +356,172 @@ func TestSalesforceConnectorOpenSyncResume(t *testing.T) {
 	}
 }
 
+func TestSalesforceConnectorOpenSyncResumeRejectsInvalidCheckpoint(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	connector.objects = []string{"Account", "Contact"}
+	validCursor, err := json.Marshal(salesforceSyncCursor{Cursors: map[string]salesforceObjectCursor{
+		"Account": {SystemModstamp: "2026-01-03T01:00:00.000+0000", Id: "0015g00000Example2"},
+	}})
+	if err != nil {
+		t.Fatalf("marshal valid cursor: %v", err)
+	}
+	validCursorJSON := string(validCursor)
+	cases := []struct {
+		name       string
+		checkpoint *SyncCheckpoint
+	}{
+		{
+			name:       "missing cursor",
+			checkpoint: &SyncCheckpoint{SourceID: "Account/0015g00000Example2"},
+		},
+		{
+			name:       "invalid cursor json",
+			checkpoint: &SyncCheckpoint{Cursor: "not-json", SourceID: "Account/0015g00000Example2"},
+		},
+		{
+			name:       "missing source anchor",
+			checkpoint: &SyncCheckpoint{Cursor: validCursorJSON},
+		},
+		{
+			name:       "malformed source anchor",
+			checkpoint: &SyncCheckpoint{Cursor: validCursorJSON, SourceID: "Account"},
+		},
+		{
+			name:       "anchor object not configured",
+			checkpoint: &SyncCheckpoint{Cursor: validCursorJSON, SourceID: "Bogus/0015g00000Example2"},
+		},
+		{
+			name: "no object positions",
+			checkpoint: &SyncCheckpoint{
+				Cursor:   `{"cursors":{}}`,
+				SourceID: "Account/0015g00000Example2",
+			},
+		},
+		{
+			name: "missing anchor object cursor",
+			checkpoint: &SyncCheckpoint{
+				Cursor:   `{"cursors":{"Contact":{"system_modstamp":"2026-01-03T01:00:00.000+0000","id":"0035g00000Example2"}}}`,
+				SourceID: "Account/0015g00000Example2",
+			},
+		},
+		{
+			name: "cursor references unknown object",
+			checkpoint: &SyncCheckpoint{
+				Cursor:   `{"cursors":{"Account":{"system_modstamp":"2026-01-03T01:00:00.000+0000","id":"0015g00000Example2"},"Bogus":{"system_modstamp":"2026-01-03T01:00:00.000+0000","id":"x"}}}`,
+				SourceID: "Account/0015g00000Example2",
+			},
+		},
+		{
+			name: "object cursor missing fields",
+			checkpoint: &SyncCheckpoint{
+				Cursor:   `{"cursors":{"Account":{}}}`,
+				SourceID: "Account/0015g00000Example2",
+			},
+		},
+		{
+			name: "object cursor invalid timestamp",
+			checkpoint: &SyncCheckpoint{
+				Cursor:   `{"cursors":{"Account":{"system_modstamp":"bad","id":"0015g00000Example2"}}}`,
+				SourceID: "Account/0015g00000Example2",
+			},
+		},
+		{
+			name: "object cursor record id mismatch",
+			checkpoint: &SyncCheckpoint{
+				Cursor:   `{"cursors":{"Account":{"system_modstamp":"2026-01-03T01:00:00.000+0000","id":"0015g00000Other"}}}`,
+				SourceID: "Account/0015g00000Example2",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: tc.checkpoint})
+			if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+				t.Fatalf("OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+			}
+		})
+	}
+}
+
+func TestSalesforceConnectorOpenSyncResumeRejectsMissingAnchor(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		page := salesforceQueryPage{}
+		data, _ := json.Marshal(page)
+		return json.Unmarshal(data, out)
+	}
+	cursor, err := json.Marshal(salesforceSyncCursor{Cursors: map[string]salesforceObjectCursor{
+		"Account": {SystemModstamp: "2026-01-03T01:00:00.000+0000", Id: "0015g00000Example2"},
+	}})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: string(cursor), SourceID: "Account/0015g00000Example2"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	if _, err = session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
+func TestSalesforceConnectorOpenSyncResumeRejectsChangedAnchor(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		if !strings.Contains(apiURL, "/query?") {
+			t.Fatalf("unexpected url %s", apiURL)
+		}
+		page := salesforceQueryPage{Records: []map[string]any{{
+			"Id":             "0015g00000Example2",
+			"SystemModstamp": "2026-01-03T02:00:00.000+0000",
+		}}}
+		data, _ := json.Marshal(page)
+		return json.Unmarshal(data, out)
+	}
+	cursor, err := json.Marshal(salesforceSyncCursor{Cursors: map[string]salesforceObjectCursor{
+		"Account": {SystemModstamp: "2026-01-03T01:00:00.000+0000", Id: "0015g00000Example2"},
+	}})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: string(cursor), SourceID: "Account/0015g00000Example2"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	if _, err = session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
+func TestSalesforceConnectorOpenSyncResumeRejectsUnavailableObject(t *testing.T) {
+	connector := newSalesforceFixtureConnector()
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		return &salesforceObjectUnavailableError{message: "object gone"}
+	}
+	cursor, err := json.Marshal(salesforceSyncCursor{Cursors: map[string]salesforceObjectCursor{
+		"Account": {SystemModstamp: "2026-01-03T01:00:00.000+0000", Id: "0015g00000Example2"},
+	}})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: string(cursor), SourceID: "Account/0015g00000Example2"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	if _, err = session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
 func TestSalesforceConnectorOpenSyncPaginatedResume(t *testing.T) {
 	connector := newSalesforceFixtureConnector()
 	connector.batchSize = 2
@@ -453,9 +619,14 @@ func TestSalesforceConnectorOpenSyncPaginatedResume(t *testing.T) {
 			]}`), out)
 		}
 		if strings.Contains(apiURL, "/query?") {
-			resumedQueryCalls++
 			parsed, _ := url.Parse(apiURL)
 			soql, _ := url.QueryUnescape(parsed.Query().Get("q"))
+			if strings.Contains(soql, "WHERE Id = '0015g00000Example3'") {
+				page := salesforceQueryPage{Records: records[2:3]}
+				data, _ := json.Marshal(page)
+				return json.Unmarshal(data, out)
+			}
+			resumedQueryCalls++
 			if !strings.Contains(soql, "SystemModstamp > 2026-01-03T02:00:00Z") {
 				t.Fatalf("resumed soql missing since predicate: %q", soql)
 			}
@@ -1070,6 +1241,11 @@ func salesforceFixtureRecordsDoJSON(t *testing.T, records []map[string]any) func
 func salesforceFixtureMatchesSOQL(t *testing.T, soql string, record map[string]any) bool {
 	t.Helper()
 	lower := strings.ToLower(soql)
+	if idx := strings.Index(lower, "where id = '"); idx >= 0 {
+		value := strings.Trim(strings.TrimSpace(soql[idx+len("WHERE Id = '"):]), "'")
+		id, _ := record["Id"].(string)
+		return id == value
+	}
 	since := time.Time{}
 	until := time.Time{}
 	equalSince := false

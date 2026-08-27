@@ -1942,6 +1942,39 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     return mind_map.output
 
 
+def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -> str:
+    """Render the dialog-level system prompt for the reasoning agent path.
+
+    Mirrors the substitutions ``async_chat`` performs for the non-reasoning path
+    so that configured system prompts are honored when reasoning is enabled.
+    The ``{knowledge}`` placeholder is defaulted to an empty string because the
+    agentic graph supplies retrieved evidence through its own evidence block.
+    """
+    system = prompt_config.get("system", "")
+    if not system:
+        return ""
+
+    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    kwargs["date"] = sys_date
+
+    param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
+    if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in system:
+        param_keys.append("knowledge")
+        kwargs.setdefault("knowledge", "")
+
+    for p in prompt_config.get("parameters", []):
+        if p["key"] == "knowledge":
+            continue
+        if p["key"] not in kwargs and not p["optional"]:
+            raise KeyError("Miss parameter: " + p["key"])
+        if p["key"] not in kwargs:
+            system = system.replace("{%s}" % p["key"], " ")
+
+    fmt_kwargs = dict(kwargs)
+    fmt_kwargs.setdefault("knowledge", "")
+    return system.format(**fmt_kwargs)
+
+
 async def rag_agent(dialog, messages, stream=True, **kwargs):
     prompt_config = dialog.prompt_config or {}
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
@@ -2005,6 +2038,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         do_refer=False,
         thinking_mode=thinking_mode,
         text_attachments_content=text_attachments_content,
+        system_prompt=_render_reasoning_system_prompt(dialog, prompt_config, kwargs),
     )
 
     async def decorate_answer(answer):

@@ -107,6 +107,7 @@ export enum LLMFactory {
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
   CitySenseSpeechKit = 'CitySense-SpeechKit',
+  Synthorai = 'Synthorai',
 }
 
 // Please lowercase the file name
@@ -195,6 +196,7 @@ export const IconMap = {
   [LLMFactory.FunASR]: 'funasr',
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
+  [LLMFactory.Synthorai]: 'synthorai',
   [LLMFactory.MWS]: 'mws',
 };
 
@@ -220,6 +222,7 @@ export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
+  [LLMFactory.Synthorai]: 'https://synthorai.io',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

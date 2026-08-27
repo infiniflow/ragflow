@@ -12,13 +12,13 @@
     {
       "name": "vlm",
       "model_types": [
-        "doc_parse"
+        "ocr"
       ]
     },
     {
       "name": "MinerU-HTML",
       "model_types": [
-        "doc_parse"
+        "ocr"
       ]
     }
   ]

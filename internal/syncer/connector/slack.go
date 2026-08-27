@@ -150,7 +150,9 @@ func (c *SlackConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 		seenThreads: map[string]struct{}{},
 	}
 	if request.Resume != nil {
-		session.applyResume(request.Resume)
+		if err := session.applyResume(request.Resume); err != nil {
+			return nil, err
+		}
 	}
 	return session, nil
 }
@@ -601,7 +603,7 @@ func (c *SlackConnector) joinChannel(ctx context.Context, channel slackChannel) 
 		var apiErr *slackAPIError
 		if errors.As(err, &apiErr) {
 			if _, ok := slackUnjoinableErrors[apiErr.code]; ok {
-				return fmt.Errorf("%w: %v", errSlackChannelUnavailable, err)
+				return fmt.Errorf("%w: %w", errSlackChannelUnavailable, err)
 			}
 		}
 		return err
@@ -960,17 +962,26 @@ func (s *slackSyncSession) Close() error {
 	return nil
 }
 
-func (s *slackSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *slackSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	const prefix = "slack_channel_"
-	if !strings.HasPrefix(sourceID, prefix) {
-		return
+	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
+		return fmt.Errorf("slack sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	channelID := strings.TrimPrefix(sourceID, prefix)
 	if channelID == "" {
-		return
+		return fmt.Errorf("slack sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
-	s.resumeAfterChannelID = channelID
+	for _, channel := range s.channels {
+		if channel.ID == channelID {
+			s.resumeAfterChannelID = channelID
+			return nil
+		}
+	}
+	return fmt.Errorf("slack resume channel %q was not found in the current listing: %w", channelID, ErrSyncResumeInvalid)
 }
 
 // channelDocuments builds the documents for one channel.

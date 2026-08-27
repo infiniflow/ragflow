@@ -229,7 +229,7 @@ func extractBySchema(data map[string]any, schema map[string]any, name string) (m
 		// 3. Auto cast (only matters for string→typed; pass-through otherwise).
 		casted, err := autoCastValue(raw, fieldType)
 		if err != nil {
-			return nil, fmt.Errorf("%s.%s auto-cast failed: %s", name, field, err.Error())
+			return nil, fmt.Errorf("%s.%s auto-cast failed: %w", name, field, err)
 		}
 
 		// 4. Type validation.

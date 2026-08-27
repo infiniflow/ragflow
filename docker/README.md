@@ -187,7 +187,7 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-  - `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+  - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 - `deepdoc`
   The OSS DeepDoc vision service provides DLA, OCR, and TSR inference via ONNX Runtime.

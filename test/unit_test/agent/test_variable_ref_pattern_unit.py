@@ -55,6 +55,18 @@ These tests pin four contracts:
    actually use that regex end-to-end.
 4. Bare `{line}` (no cpn_id prefix) remains unmatched by design so the
    literal text surfaces to the user until they wire it up.
+
+Whitespace contract (#18665 / #18720): after `_build_template_ref_pattern`
+(PR #18666, a1131167), whitespace is only consumed inside a balanced
+outer brace pair, so `a {X@y} b` keeps its spaces and wrapped forms
+`{{X@y}}` / `{ {X@y} }` / `{ {X@y}}` still match as a whole. The
+`test_reference_patterns_preserve_adjacent_literal_whitespace` cases
+assert the complete match (`group(0)`) so a regression that matches only
+the inner `{X@y}` cannot pass silently.
+
+This suite lives under `test/unit_test` (the normal unit-test preflight)
+and was consolidated here from `test/testcases/test_web_api/test_canvas_app`
+so the reference-pattern contracts have exactly one home.
 """
 
 import importlib.util
@@ -80,7 +92,7 @@ def base_module(monkeypatch):
     We also avoid importing the real `agent.canvas` (and its transitive
     deps) because only the regex + helper methods are exercised here.
     """
-    repo_root = Path(__file__).resolve().parents[4]
+    repo_root = Path(__file__).resolve().parents[3]
 
     fake_pandas = ModuleType("pandas")
     fake_pandas.DataFrame = type("DataFrame", (), {})
@@ -103,7 +115,7 @@ def base_module(monkeypatch):
 @pytest.fixture
 def retrieval_module(monkeypatch, base_module):
     """Load the Retrieval class without its service-layer dependencies."""
-    repo_root = Path(__file__).resolve().parents[4]
+    repo_root = Path(__file__).resolve().parents[3]
 
     def install_module(name, *, package=False, **attributes):
         module = ModuleType(name)
@@ -392,6 +404,27 @@ def test_rejected_incomplete_match_is_logged_without_template_value(base_module,
             {"item": "VALUE"},
             ["{item}"],
             "before VALUE after",
+        ),
+        (
+            "variable_ref_patt_re",
+            "a { {X@y}} b",
+            {"X@y": "VALUE"},
+            ["{ {X@y}}"],
+            "a VALUE b",
+        ),
+        (
+            "variable_ref_patt_re",
+            "a {sys.query} b",
+            {"sys.query": "X"},
+            ["{sys.query}"],
+            "a X b",
+        ),
+        (
+            "iteration_alias_patt_re",
+            "{ {result} }",
+            {"result": "VALUE"},
+            ["{ {result} }"],
+            "VALUE",
         ),
     ],
 )

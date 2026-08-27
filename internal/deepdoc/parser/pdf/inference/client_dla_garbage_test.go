@@ -1,7 +1,6 @@
 package inference
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +39,7 @@ func TestDeepDocHTTP_DLA_GarbageGate(t *testing.T) {
 		client := newClient(t, [][]float64{
 			{50, 10, 500, 50, 0.30, referenceClass}, // reference, low confidence
 		})
-		regions, err := client.DLA(context.Background(), testImage())
+		regions, err := client.DLA(t.Context(), testImage())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -53,7 +52,7 @@ func TestDeepDocHTTP_DLA_GarbageGate(t *testing.T) {
 		client := newClient(t, [][]float64{
 			{50, 10, 500, 50, 0.90, referenceClass}, // reference, high confidence
 		})
-		regions, err := client.DLA(context.Background(), testImage())
+		regions, err := client.DLA(t.Context(), testImage())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +66,7 @@ func TestDeepDocHTTP_DLA_GarbageGate(t *testing.T) {
 		client := newClient(t, [][]float64{
 			{50, 10, 500, 50, 0.40, referenceClass}, // reference, exactly 0.4
 		})
-		regions, err := client.DLA(context.Background(), testImage())
+		regions, err := client.DLA(t.Context(), testImage())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,7 +83,7 @@ func TestDeepDocHTTP_DLA_GarbageGate(t *testing.T) {
 			{50, 10, 500, 50, 0.30, referenceClass}, // reference, low confidence -> dropped
 			{50, 100, 500, 300, 0.90, 1},            // text, high confidence -> kept
 		})
-		regions, err := client.DLA(context.Background(), testImage())
+		regions, err := client.DLA(t.Context(), testImage())
 		if err != nil {
 			t.Fatal(err)
 		}

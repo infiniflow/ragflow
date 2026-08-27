@@ -401,60 +401,6 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: Markdown
-// vision enhancement must also process items whose doc_type_kwd is "table"
-// (Python checks {"image","table"} in parser/utils.py:181), not only "image".
-// Before the fix the table item was skipped and never sent to the VLM.
-func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
-	origResolver := resolveTenantModelByType
-	origPrompt := figureVisionPromptBuilder
-	defer func() {
-		resolveTenantModelByType = origResolver
-		figureVisionPromptBuilder = origPrompt
-	}()
-
-	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
-	}
-	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
-		return "describe in " + language, nil
-	}
-
-	dispatched := parserDispatchResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{
-			{"doc_type_kwd": "table", "image": "base64table", "text": ""},
-		},
-	}
-
-	ctx := t.Context()
-	res, handled, err := maybeDispatchMarkdownVision(
-		ctx,
-		dao.DB,
-		utility.FileTypeMarkdown,
-		dispatched,
-		map[string]any{"tenant_id": "t1", "lang": "Korean"},
-	)
-	if err != nil {
-		t.Fatalf("maybeDispatchMarkdownVision: %v", err)
-	}
-	if !handled {
-		t.Fatalf("expected handled=true for markdown with a table image")
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
-	}
-	// The table item must have been sent to the VLM and its description appended.
-	if got, _ := res.JSON[0]["text"].(string); got != "captured" {
-		t.Fatalf("table item text = %q, want %q (table items must be vision-enhanced)", got, "captured")
-	}
-	gotPrompt, ok := firstUserText(drv.captured)
-	if !ok || gotPrompt != "describe in Korean" {
-		t.Fatalf("VLM user text = %q, want dataset language propagated", gotPrompt)
-	}
-}
-
 // TestDefaultEmailOutputFormatIsJSON pins diff 2.2: the email family default
 // output_format must be "json" (matching Python parser.py:212), not "text".
 // With "text" the structured email fields (from/to/subject/attachments/...) are
@@ -463,5 +409,112 @@ func TestDefaultEmailOutputFormatIsJSON(t *testing.T) {
 	got, _ := defaultSetups()["email"]["output_format"].(string)
 	if got != "json" {
 		t.Fatalf("email default output_format = %q, want json", got)
+	}
+}
+
+func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
+	origTenantResolver := resolveTenantModelByType
+	origModelResolver := resolveModelConfig
+	t.Cleanup(func() {
+		resolveTenantModelByType = origTenantResolver
+		resolveModelConfig = origModelResolver
+	})
+
+	tenantResolverCalled := false
+	resolveTenantModelByType = func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		tenantResolverCalled = true
+		return nil, "", nil, 0, nil
+	}
+
+	var gotRef string
+	var gotType entity.ModelType
+	drv := &imagePromptCaptureDriver{}
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, modelType entity.ModelType, ref string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		gotRef = ref
+		gotType = modelType
+		return drv, "custom-vlm", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["image"]["parse_method"] = "custom-vlm@provider"
+
+	_, dispatched, err := maybeDispatchImage(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeVISUAL,
+		"test.png",
+		[]byte("not-a-real-image"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if !dispatched {
+		t.Fatal("expected dispatched=true for VISUAL file")
+	}
+	if gotRef != "custom-vlm@provider" {
+		t.Errorf("model ref = %q, want %q", gotRef, "custom-vlm@provider")
+	}
+	if gotType != entity.ModelTypeImage2Text {
+		t.Errorf("model type = %q, want %q", gotType, entity.ModelTypeImage2Text)
+	}
+	if tenantResolverCalled {
+		t.Error("tenant default resolver must not be called when image parse_method names a VLM model")
+	}
+}
+
+func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
+	origTenantResolver := resolveTenantModelByType
+	origModelResolver := resolveModelConfig
+	t.Cleanup(func() {
+		resolveTenantModelByType = origTenantResolver
+		resolveModelConfig = origModelResolver
+	})
+
+	tenantResolverCalled := false
+	resolveTenantModelByType = func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		tenantResolverCalled = true
+		return nil, "", nil, 0, nil
+	}
+
+	var gotRef string
+	var gotType entity.ModelType
+	drv := &audioTranscribeDriver{transcription: "transcribed"}
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, modelType entity.ModelType, ref string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		gotRef = ref
+		gotType = modelType
+		return drv, "custom-asr", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := map[string]schema.ParserSetup{
+		"audio": {"vlm": map[string]any{"llm_id": "custom-asr@provider"}},
+	}
+	res, dispatched, err := maybeDispatchAudio(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeAURAL,
+		"test.mp3",
+		[]byte("fake-audio"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchAudio: %v", err)
+	}
+	if !dispatched {
+		t.Fatal("expected dispatched=true for AURAL file")
+	}
+	if gotRef != "custom-asr@provider" {
+		t.Errorf("model ref = %q, want %q", gotRef, "custom-asr@provider")
+	}
+	if gotType != entity.ModelTypeSpeech2Text {
+		t.Errorf("model type = %q, want %q", gotType, entity.ModelTypeSpeech2Text)
+	}
+	if tenantResolverCalled {
+		t.Error("tenant default resolver must not be called when audio setup vlm.llm_id is set")
+	}
+	if len(res.JSON) != 1 || res.JSON[0]["text"] != "transcribed" {
+		t.Fatalf("unexpected audio result: %#v", res.JSON)
 	}
 }

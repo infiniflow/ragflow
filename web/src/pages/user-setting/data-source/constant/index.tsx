@@ -18,7 +18,7 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -51,6 +51,7 @@ export enum DataSourceKey {
   GITHUB = 'github',
   MOODLE = 'moodle',
   DISCORD = 'discord',
+  XQUIK = 'xquik',
   ZENDESK = 'zendesk',
   WEBDAV = 'webdav',
   AIRTABLE = 'airtable',
@@ -246,6 +247,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Discord',
       description: t(`setting.${DataSourceKey.DISCORD}Description`),
       icon: <SvgIcon name={'data-source/discord'} width={38} />,
+    },
+    [DataSourceKey.XQUIK]: {
+      name: 'Xquik',
+      description: t(`setting.${DataSourceKey.XQUIK}Description`),
+      icon: <Search className="text-text-primary" size={22} />,
     },
     [DataSourceKey.CONFLUENCE]: {
       name: 'Confluence',
@@ -899,6 +905,73 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.channels',
       type: FormFieldType.Tag,
       required: false,
+    },
+  ],
+  [DataSourceKey.XQUIK]: [
+    {
+      label: t('setting.dataSourceFieldXquikApiKey'),
+      name: 'config.credentials.xquik_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.xquikApiKeyTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQuery'),
+      name: 'config.query',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'ragflow lang:en',
+      tooltip: t('setting.xquikQueryTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQueryType'),
+      name: 'config.query_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'Latest', value: 'Latest' },
+        { label: 'Top', value: 'Top' },
+      ],
+      defaultValue: 'Latest',
+    },
+    {
+      label: t('setting.dataSourceFieldXquikPageSize'),
+      name: 'config.page_size',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 100,
+      tooltip: t('setting.xquikPageSizeTip'),
+      validation: {
+        min: 1,
+        max: 10000,
+        message: t('setting.xquikPageSizeValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldMaxPages'),
+      name: 'config.max_pages',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 10,
+      tooltip: t('setting.xquikMaxPagesTip'),
+      validation: {
+        min: 1,
+        max: 1000,
+        message: t('setting.xquikMaxPagesValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 32,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
     },
   ],
 
@@ -2063,6 +2136,21 @@ export const DataSourceFormDefaultValues = {
       channels: [],
       credentials: {
         discord_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.XQUIK]: {
+    name: '',
+    source: DataSourceKey.XQUIK,
+    config: {
+      query: '',
+      query_type: 'Latest',
+      page_size: 100,
+      max_pages: 10,
+      batch_size: 32,
+      request_delay: 0.5,
+      credentials: {
+        xquik_api_key: '',
       },
     },
   },

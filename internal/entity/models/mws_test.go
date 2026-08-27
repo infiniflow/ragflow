@@ -17,7 +17,6 @@
 package models
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -88,7 +87,7 @@ func TestMWSListModelsUsesOpenAIEndpointAndFiltersTypes(t *testing.T) {
 	defer server.Close()
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
-	models, err := driver.ListModels(context.Background(), apiConfig)
+	models, err := driver.ListModels(t.Context(), apiConfig)
 	if err != nil {
 		t.Fatalf("list models: %v", err)
 	}
@@ -131,7 +130,7 @@ func TestMWSChatSendsOnlyDocumentedFields(t *testing.T) {
 	topP := 0.9
 	stop := []string{"ignored"}
 	response, err := driver.ChatWithMessages(
-		context.Background(),
+		t.Context(),
 		"qwen3-32b",
 		[]Message{
 			{Role: "system", Content: "Be concise."},
@@ -178,7 +177,7 @@ func TestMWSChatStreamingUsesDocumentedFields(t *testing.T) {
 	config := &ChatConfig{Stream: &stream}
 	var chunks []string
 	err := driver.ChatStreamlyWithSender(
-		context.Background(),
+		t.Context(),
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "Hello"}},
 		apiConfig,
@@ -219,7 +218,7 @@ func TestMWSEmbedSendsOnlyDocumentedFieldsAndOrdersVectors(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	embeddings, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"first", "second"}}, apiConfig, &EmbeddingConfig{Dimension: 256}, nil)
+	embeddings, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{"first", "second"}}, apiConfig, &EmbeddingConfig{Dimension: 256}, nil)
 	if err != nil {
 		t.Fatalf("embed: %v", err)
 	}
@@ -250,7 +249,7 @@ func TestMWSRerankUsesCohereEndpointAndOriginalIndexOrder(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-reranker-v2-m3"
-	result, err := driver.Rerank(context.Background(), &modelName, RerankRequest{Query: "query", Documents: []string{"first", "second"}}, apiConfig, &RerankConfig{TopN: 1}, nil)
+	result, err := driver.Rerank(t.Context(), &modelName, RerankRequest{Query: "query", Documents: []string{"first", "second"}}, apiConfig, &RerankConfig{TopN: 1}, nil)
 	if err != nil {
 		t.Fatalf("rerank: %v", err)
 	}
@@ -270,7 +269,7 @@ func TestMWSRejectsEmptyTokenWithoutRequest(t *testing.T) {
 	empty := "  "
 	apiConfig.ApiKey = &empty
 	modelName := "bge-m3"
-	_, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
+	_, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected an API key error, got %v", err)
 	}
@@ -288,11 +287,11 @@ func TestMWSEmptyInputsDoNotSendRequests(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	embeddings, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{}}, apiConfig, nil, nil)
+	embeddings, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{}}, apiConfig, nil, nil)
 	if err != nil || len(embeddings) != 0 {
 		t.Fatalf("empty embedding input: data=%#v err=%v", embeddings, err)
 	}
-	ranked, err := driver.Rerank(context.Background(), &modelName, RerankRequest{Query: "query", Documents: []string{}}, apiConfig, nil, nil)
+	ranked, err := driver.Rerank(t.Context(), &modelName, RerankRequest{Query: "query", Documents: []string{}}, apiConfig, nil, nil)
 	if err != nil || len(ranked.Data) != 0 {
 		t.Fatalf("empty rerank input: data=%#v err=%v", ranked, err)
 	}
@@ -309,7 +308,7 @@ func TestMWSErrorResponseIsReturned(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	_, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
+	_, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 503") || !strings.Contains(err.Error(), "MWS unavailable") {
 		t.Fatalf("unexpected MWS error: %v", err)
 	}

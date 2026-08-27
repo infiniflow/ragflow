@@ -183,7 +183,7 @@ func runParallel(
 			continue
 		}
 		if normalErr == nil {
-			normalErr = fmt.Errorf("%w: item %d: %v", ErrParallelItemFailed, r.index, r.err)
+			normalErr = fmt.Errorf("%w: item %d: %w", ErrParallelItemFailed, r.index, r.err)
 		}
 	}
 

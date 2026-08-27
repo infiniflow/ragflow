@@ -458,6 +458,8 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 	// current section's page span (typically one page, a few at most for a
 	// cross-page section) instead of caching the whole PDF.
 	pageCache := make(map[int]image.Image)
+	var lastMinPage = -1
+	sectionsOrdered := true
 	renderPage := func(pn int) image.Image {
 		if img, ok := pageCache[pn]; ok {
 			return img
@@ -499,11 +501,21 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 				}
 			}
 		}
+		if lastMinPage >= 0 && minPage < lastMinPage {
+			if sectionsOrdered {
+				slog.Warn("cropMediaSections: sections out of page order; disabling page cache eviction",
+					"min_page", minPage, "last_min_page", lastMinPage)
+			}
+			sectionsOrdered = false
+		}
+		lastMinPage = minPage
 		// Evict page images that no later section can reference (all future
 		// sections start at page >= minPage).
-		for pn := range pageCache {
-			if pn < minPage {
-				delete(pageCache, pn)
+		if sectionsOrdered {
+			for pn := range pageCache {
+				if pn < minPage {
+					delete(pageCache, pn)
+				}
 			}
 		}
 		// Collect every distinct page this section spans so CropSectionByDLA

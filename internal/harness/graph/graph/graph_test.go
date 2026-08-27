@@ -196,7 +196,7 @@ func TestGraphExecution(t *testing.T) {
 		t.Fatalf("Failed to compile graph: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	initialState := map[string]interface{}{
 		"counter": 0,
 	}
