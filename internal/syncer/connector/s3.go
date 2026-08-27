@@ -197,16 +197,24 @@ func (c *S3Connector) ensureClient(ctx context.Context) (*s3.Client, error) {
 }
 
 func (c *S3Connector) listObjectPage(ctx context.Context, startAfter string, maxKeys int32) ([]s3Object, string, bool, error) {
-	if c.listObjects != nil {
-		return c.listObjects(ctx, startAfter, maxKeys)
+	return listS3ObjectPage(ctx, c.listObjects, c.ensureClient, c.bucketName, c.prefix, s3Source, startAfter, maxKeys)
+}
+
+func (c *S3Connector) download(ctx context.Context, key string) ([]byte, error) {
+	return downloadS3Object(ctx, c.downloadObject, c.ensureClient, c.bucketName, key, c.sizeThreshold)
+}
+
+func listS3ObjectPage(ctx context.Context, listObjects func(ctx context.Context, startAfter string, maxKeys int32) ([]s3Object, string, bool, error), ensureClient func(context.Context) (*s3.Client, error), bucketName, prefix, source, startAfter string, maxKeys int32) ([]s3Object, string, bool, error) {
+	if listObjects != nil {
+		return listObjects(ctx, startAfter, maxKeys)
 	}
-	client, err := c.ensureClient(ctx)
+	client, err := ensureClient(ctx)
 	if err != nil {
 		return nil, "", false, err
 	}
 	input := &s3.ListObjectsV2Input{
-		Bucket:     aws.String(c.bucketName),
-		Prefix:     aws.String(c.prefix),
+		Bucket:     aws.String(bucketName),
+		Prefix:     aws.String(prefix),
 		StartAfter: aws.String(startAfter),
 	}
 	if maxKeys > 0 {
@@ -222,28 +230,28 @@ func (c *S3Connector) listObjectPage(ctx context.Context, startAfter string, max
 	}
 	nextStartAfter := ""
 	if len(objects) > 0 {
-		nextStartAfter = s3SourceID(s3Source, c.bucketName, objects[len(objects)-1].Key)
+		nextStartAfter = s3SourceID(source, bucketName, objects[len(objects)-1].Key)
 	}
 	return objects, nextStartAfter, aws.ToBool(output.IsTruncated), nil
 }
 
-func (c *S3Connector) download(ctx context.Context, key string) ([]byte, error) {
-	if c.downloadObject != nil {
-		return c.downloadObject(ctx, key, c.sizeThreshold)
+func downloadS3Object(ctx context.Context, downloadObject func(ctx context.Context, key string, sizeThreshold int64) ([]byte, error), ensureClient func(context.Context) (*s3.Client, error), bucketName, key string, sizeThreshold int64) ([]byte, error) {
+	if downloadObject != nil {
+		return downloadObject(ctx, key, sizeThreshold)
 	}
-	client, err := c.ensureClient(ctx)
+	client, err := ensureClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 	output, err := client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(c.bucketName),
+		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
 	if err != nil {
 		return nil, err
 	}
 	defer output.Body.Close()
-	return readS3Body(output.Body, key, c.sizeThreshold)
+	return readS3Body(output.Body, key, sizeThreshold)
 }
 
 type s3Object struct {
@@ -266,15 +274,23 @@ func s3ObjectFromAWS(object types.Object) s3Object {
 	}
 }
 
+type s3ObjectStore interface {
+	sourceName() string
+	listObjectPage(ctx context.Context, startAfter string, maxKeys int32) ([]s3Object, string, bool, error)
+	sourceID(key string) string
+	sourceDocument(sourceID string, object s3Object) (SourceDocument, bool)
+	Fetch(ctx context.Context, ref FetchReference) ([]byte, error)
+}
+
 type s3SyncSession struct {
-	connector  *S3Connector
+	connector  s3ObjectStore
 	request    SyncRequest
 	batchSize  int
 	startAfter string
 	done       bool
 }
 
-// NextBatch returns the next AWS S3 document batch.
+// NextBatch returns the next S3 or S3-compatible document batch.
 func (s *s3SyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	for {
 		if s.done {
@@ -289,15 +305,15 @@ func (s *s3SyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			s.done = true
 		}
 		if nextStartAfter != "" {
-			s.startAfter = strings.TrimPrefix(nextStartAfter, s3SourceID(s3Source, s.connector.bucketName, ""))
+			s.startAfter = strings.TrimPrefix(nextStartAfter, s.connector.sourceID(""))
 		}
 		if hasMore && s.startAfter == previousStartAfter {
-			return SyncBatch{}, fmt.Errorf("S3 listing did not advance from %q", previousStartAfter)
+			return SyncBatch{}, fmt.Errorf("%s listing did not advance from %q", s.connector.sourceName(), previousStartAfter)
 		}
 
 		documents := make([]SourceDocument, 0, len(objects))
 		for _, object := range objects {
-			sourceID := s3SourceID(s3Source, s.connector.bucketName, object.Key)
+			sourceID := s.connector.sourceID(object.Key)
 			if !includeS3Object(s.request, sourceID, object) {
 				continue
 			}
@@ -322,12 +338,12 @@ func (s *s3SyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	}
 }
 
-// Close closes the AWS S3 sync session.
+// Close closes the S3 or S3-compatible sync session.
 func (s *s3SyncSession) Close() error {
 	return nil
 }
 
-// Fetch downloads a delayed AWS S3 object body.
+// Fetch downloads a delayed S3 or S3-compatible object body.
 func (s *s3SyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
 	return s.connector.Fetch(ctx, ref)
 }
@@ -337,13 +353,13 @@ func (s *s3SyncSession) applyResume(ctx context.Context, checkpoint *SyncCheckpo
 		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
-	prefix := s3SourceID(s3Source, s.connector.bucketName, "")
+	prefix := s.connector.sourceID("")
 	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
-		return fmt.Errorf("S3 sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+		return fmt.Errorf("%s sync checkpoint has no source anchor: %w", s.connector.sourceName(), ErrSyncResumeInvalid)
 	}
 	anchor := strings.TrimPrefix(sourceID, prefix)
 	if anchor == "" {
-		return fmt.Errorf("S3 sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+		return fmt.Errorf("%s sync checkpoint has no source anchor: %w", s.connector.sourceName(), ErrSyncResumeInvalid)
 	}
 
 	startAfter := ""
@@ -358,7 +374,7 @@ func (s *s3SyncSession) applyResume(ctx context.Context, checkpoint *SyncCheckpo
 				return nil
 			}
 			if object.Key > anchor {
-				return fmt.Errorf("S3 resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
+				return fmt.Errorf("%s resume anchor %q was not found in the current listing: %w", s.connector.sourceName(), anchor, ErrSyncResumeInvalid)
 			}
 		}
 		if !hasMore {
@@ -366,7 +382,15 @@ func (s *s3SyncSession) applyResume(ctx context.Context, checkpoint *SyncCheckpo
 		}
 		startAfter = strings.TrimPrefix(nextStartAfter, prefix)
 	}
-	return fmt.Errorf("S3 resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
+	return fmt.Errorf("%s resume anchor %q was not found in the current listing: %w", s.connector.sourceName(), anchor, ErrSyncResumeInvalid)
+}
+
+func (c *S3Connector) sourceName() string {
+	return "S3"
+}
+
+func (c *S3Connector) sourceID(key string) string {
+	return s3SourceID(s3Source, c.bucketName, key)
 }
 
 func (c *S3Connector) sourceDocument(sourceID string, object s3Object) (SourceDocument, bool) {
@@ -400,14 +424,14 @@ func validateAWSRegion(region string) error {
 }
 
 type s3PruneSession struct {
-	connector  *S3Connector
+	connector  s3ObjectStore
 	batchSize  int
 	startAfter string
 	done       bool
 	buffer     []SlimDocument
 }
 
-// NextBatch returns the next AWS S3 prune snapshot batch.
+// NextBatch returns the next S3 or S3-compatible prune snapshot batch.
 func (s *s3PruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 	documents := make([]SlimDocument, 0, s.batchSize)
 	if len(s.buffer) > 0 {
@@ -425,7 +449,7 @@ func (s *s3PruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 		}
 		previousStartAfter := s.startAfter
 		if hasMore {
-			next := strings.TrimPrefix(nextStartAfter, s3SourceID(s3Source, s.connector.bucketName, ""))
+			next := strings.TrimPrefix(nextStartAfter, s.connector.sourceID(""))
 			if next == "" || next == previousStartAfter {
 				s.done = true
 			} else {
@@ -439,7 +463,7 @@ func (s *s3PruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 			if object.Key == "" || strings.HasSuffix(object.Key, "/") {
 				continue
 			}
-			doc := SlimDocument{SourceID: s3SourceID(s3Source, s.connector.bucketName, object.Key)}
+			doc := SlimDocument{SourceID: s.connector.sourceID(object.Key)}
 			if remaining > 0 {
 				documents = append(documents, doc)
 				remaining--
@@ -457,7 +481,7 @@ func (s *s3PruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 	return PruneBatch{Documents: documents}, nil
 }
 
-// Close closes the AWS S3 prune session.
+// Close closes the S3 or S3-compatible prune session.
 func (s *s3PruneSession) Close() error {
 	return nil
 }

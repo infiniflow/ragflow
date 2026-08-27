@@ -393,7 +393,7 @@ func TestNewS3CompatibleConnectorDefaultsAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewS3CompatibleConnector defaults: %v", err)
 	}
-	if defaults.batchSize != defaultS3CompatibleBatchSize || defaults.sizeThreshold != defaultS3CompatibleSizeThreshold || defaults.region != defaultS3CompatibleRegion || defaults.addressingStyle != "virtual" {
+	if defaults.batchSize != defaultS3BatchSize || defaults.sizeThreshold != defaultS3SizeThreshold || defaults.region != defaultS3CompatibleRegion || defaults.addressingStyle != "virtual" {
 		t.Fatalf("defaults = batch %d threshold %d region %q style %q", defaults.batchSize, defaults.sizeThreshold, defaults.region, defaults.addressingStyle)
 	}
 }

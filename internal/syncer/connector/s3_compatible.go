@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/url"
 	"strings"
 
@@ -31,11 +30,8 @@ import (
 )
 
 const (
-	defaultS3CompatibleBatchSize     = 2
-	defaultS3CompatibleSizeThreshold = 20 * 1024 * 1024
-	defaultS3CompatibleRegion        = "us-east-1"
-	s3CompatibleListPageSize         = 1000
-	s3CompatibleSource               = "s3_compatible"
+	defaultS3CompatibleRegion = "us-east-1"
+	s3CompatibleSource        = "s3_compatible"
 )
 
 // S3CompatibleConnector reads objects from any S3-compatible object store.
@@ -60,10 +56,10 @@ type S3CompatibleConnector struct {
 // Python-compatible config.
 func NewS3CompatibleConnector(config map[string]any) (*S3CompatibleConnector, error) {
 	credentials := configAnyMap(config["credentials"])
-	batchSize := configInt(firstNonEmpty(stringConfig(config["sync_batch_size"]), stringConfig(config["batch_size"])), defaultS3CompatibleBatchSize)
-	sizeThreshold := int64(configInt(config["size_threshold"], defaultS3CompatibleSizeThreshold))
+	batchSize := configInt(firstNonEmpty(stringConfig(config["sync_batch_size"]), stringConfig(config["batch_size"])), defaultS3BatchSize)
+	sizeThreshold := int64(configInt(config["size_threshold"], defaultS3SizeThreshold))
 	if sizeThreshold <= 0 {
-		sizeThreshold = defaultS3CompatibleSizeThreshold
+		sizeThreshold = defaultS3SizeThreshold
 	}
 	addressingStyle := firstNonEmpty(stringConfig(credentials["addressing_style"]), "virtual")
 	return &S3CompatibleConnector{
@@ -126,7 +122,7 @@ func (c *S3CompatibleConnector) OpenSync(ctx context.Context, request SyncReques
 	if err := c.Validate(ctx); err != nil {
 		return nil, err
 	}
-	session := &s3CompatibleSyncSession{
+	session := &s3SyncSession{
 		connector: c,
 		request:   request,
 		batchSize: c.batchSize,
@@ -144,7 +140,7 @@ func (c *S3CompatibleConnector) OpenPrune(ctx context.Context, request PruneRequ
 	if err := c.Validate(ctx); err != nil {
 		return nil, err
 	}
-	return &s3CompatiblePruneSession{connector: c, batchSize: c.batchSize}, nil
+	return &s3PruneSession{connector: c, batchSize: c.batchSize}, nil
 }
 
 // Fetch downloads an S3-compatible object body.
@@ -183,156 +179,19 @@ func (c *S3CompatibleConnector) ensureClient(ctx context.Context) (*s3.Client, e
 }
 
 func (c *S3CompatibleConnector) listObjectPage(ctx context.Context, startAfter string, maxKeys int32) ([]s3Object, string, bool, error) {
-	if c.listObjects != nil {
-		return c.listObjects(ctx, startAfter, maxKeys)
-	}
-	client, err := c.ensureClient(ctx)
-	if err != nil {
-		return nil, "", false, err
-	}
-	input := &s3.ListObjectsV2Input{
-		Bucket:     aws.String(c.bucketName),
-		Prefix:     aws.String(c.prefix),
-		StartAfter: aws.String(startAfter),
-	}
-	if maxKeys > 0 {
-		input.MaxKeys = aws.Int32(maxKeys)
-	}
-	output, err := client.ListObjectsV2(ctx, input)
-	if err != nil {
-		return nil, "", false, err
-	}
-	objects := make([]s3Object, 0, len(output.Contents))
-	for _, object := range output.Contents {
-		objects = append(objects, s3ObjectFromAWS(object))
-	}
-	nextStartAfter := ""
-	if len(objects) > 0 {
-		nextStartAfter = s3SourceID(s3CompatibleSource, c.bucketName, objects[len(objects)-1].Key)
-	}
-	return objects, nextStartAfter, aws.ToBool(output.IsTruncated), nil
+	return listS3ObjectPage(ctx, c.listObjects, c.ensureClient, c.bucketName, c.prefix, s3CompatibleSource, startAfter, maxKeys)
 }
 
 func (c *S3CompatibleConnector) download(ctx context.Context, key string) ([]byte, error) {
-	if c.downloadObject != nil {
-		return c.downloadObject(ctx, key, c.sizeThreshold)
-	}
-	client, err := c.ensureClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	output, err := client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(c.bucketName),
-		Key:    aws.String(key),
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer output.Body.Close()
-	return readS3Body(output.Body, key, c.sizeThreshold)
+	return downloadS3Object(ctx, c.downloadObject, c.ensureClient, c.bucketName, key, c.sizeThreshold)
 }
 
-type s3CompatibleSyncSession struct {
-	connector  *S3CompatibleConnector
-	request    SyncRequest
-	batchSize  int
-	startAfter string
-	done       bool
+func (c *S3CompatibleConnector) sourceName() string {
+	return "S3-compatible"
 }
 
-// NextBatch returns the next S3-compatible document batch.
-func (s *s3CompatibleSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	for {
-		if s.done {
-			return SyncBatch{}, io.EOF
-		}
-		previousStartAfter := s.startAfter
-		objects, nextStartAfter, hasMore, err := s.connector.listObjectPage(ctx, s.startAfter, int32(s.batchSize))
-		if err != nil {
-			return SyncBatch{}, err
-		}
-		if !hasMore {
-			s.done = true
-		}
-		if nextStartAfter != "" {
-			s.startAfter = strings.TrimPrefix(nextStartAfter, s3SourceID(s3CompatibleSource, s.connector.bucketName, ""))
-		}
-		if hasMore && s.startAfter == previousStartAfter {
-			return SyncBatch{}, fmt.Errorf("S3-compatible listing did not advance from %q", previousStartAfter)
-		}
-
-		documents := make([]SourceDocument, 0, len(objects))
-		for _, object := range objects {
-			sourceID := s3SourceID(s3CompatibleSource, s.connector.bucketName, object.Key)
-			if !includeS3Object(s.request, sourceID, object) {
-				continue
-			}
-			document, ok := s.connector.sourceDocument(sourceID, object)
-			if ok {
-				documents = append(documents, document)
-			}
-		}
-		if len(documents) == 0 {
-			continue
-		}
-		last := documents[len(documents)-1]
-		updatedAt := last.UpdatedAt
-		return SyncBatch{
-			Documents: documents,
-			Checkpoint: &SyncCheckpoint{
-				Cursor:    last.SourceID,
-				SourceID:  last.SourceID,
-				UpdatedAt: &updatedAt,
-			},
-		}, nil
-	}
-}
-
-// Close closes the S3-compatible sync session.
-func (s *s3CompatibleSyncSession) Close() error {
-	return nil
-}
-
-// Fetch downloads a delayed S3-compatible object body.
-func (s *s3CompatibleSyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
-	return s.connector.Fetch(ctx, ref)
-}
-
-func (s *s3CompatibleSyncSession) applyResume(ctx context.Context, checkpoint *SyncCheckpoint) error {
-	if checkpoint == nil {
-		return nil
-	}
-	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
-	prefix := s3SourceID(s3CompatibleSource, s.connector.bucketName, "")
-	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
-		return fmt.Errorf("S3-compatible sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
-	}
-	anchor := strings.TrimPrefix(sourceID, prefix)
-	if anchor == "" {
-		return fmt.Errorf("S3-compatible sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
-	}
-
-	startAfter := ""
-	for {
-		objects, nextStartAfter, hasMore, err := s.connector.listObjectPage(ctx, startAfter, int32(s.batchSize))
-		if err != nil {
-			return err
-		}
-		for _, object := range objects {
-			if object.Key == anchor {
-				s.startAfter = anchor
-				return nil
-			}
-			if object.Key > anchor {
-				return fmt.Errorf("S3-compatible resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
-			}
-		}
-		if !hasMore {
-			break
-		}
-		startAfter = strings.TrimPrefix(nextStartAfter, prefix)
-	}
-	return fmt.Errorf("S3-compatible resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
+func (c *S3CompatibleConnector) sourceID(key string) string {
+	return s3SourceID(s3CompatibleSource, c.bucketName, key)
 }
 
 func (c *S3CompatibleConnector) sourceDocument(sourceID string, object s3Object) (SourceDocument, bool) {
@@ -370,68 +229,5 @@ func validateS3CompatibleEndpoint(raw string) error {
 	if parsed.Fragment != "" {
 		return fmt.Errorf("invalid S3-compatible endpoint_url %q: fragment is not allowed", raw)
 	}
-	return nil
-}
-
-type s3CompatiblePruneSession struct {
-	connector  *S3CompatibleConnector
-	batchSize  int
-	startAfter string
-	done       bool
-	buffer     []SlimDocument
-}
-
-// NextBatch returns the next S3-compatible prune snapshot batch.
-func (s *s3CompatiblePruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
-	documents := make([]SlimDocument, 0, s.batchSize)
-	if len(s.buffer) > 0 {
-		n := s.batchSize
-		if n > len(s.buffer) {
-			n = len(s.buffer)
-		}
-		documents = append(documents, s.buffer[:n]...)
-		s.buffer = s.buffer[n:]
-	}
-	for len(documents) < s.batchSize && !s.done {
-		page, nextStartAfter, hasMore, err := s.connector.listObjectPage(ctx, s.startAfter, s3CompatibleListPageSize)
-		if err != nil {
-			return PruneBatch{}, err
-		}
-		previousStartAfter := s.startAfter
-		if hasMore {
-			next := strings.TrimPrefix(nextStartAfter, s3SourceID(s3CompatibleSource, s.connector.bucketName, ""))
-			if next == "" || next == previousStartAfter {
-				s.done = true
-			} else {
-				s.startAfter = next
-			}
-		} else {
-			s.done = true
-		}
-		remaining := s.batchSize - len(documents)
-		for _, object := range page {
-			if object.Key == "" || strings.HasSuffix(object.Key, "/") {
-				continue
-			}
-			doc := SlimDocument{SourceID: s3SourceID(s3CompatibleSource, s.connector.bucketName, object.Key)}
-			if remaining > 0 {
-				documents = append(documents, doc)
-				remaining--
-			} else {
-				s.buffer = append(s.buffer, doc)
-			}
-		}
-		if remaining <= 0 {
-			break
-		}
-	}
-	if len(documents) == 0 && len(s.buffer) == 0 && s.done {
-		return PruneBatch{}, io.EOF
-	}
-	return PruneBatch{Documents: documents}, nil
-}
-
-// Close closes the S3-compatible prune session.
-func (s *s3CompatiblePruneSession) Close() error {
 	return nil
 }
