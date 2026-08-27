@@ -91,6 +91,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
+	assignHTMLCharPositions(items)
 	return ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
@@ -98,6 +99,19 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 			"encoding": "utf-8",
 		},
 		JSON: items,
+	}
+}
+
+// assignHTMLCharPositions writes 1-indexed positions
+// [1, charStart, charEnd, 0, 0] onto each item for source location.
+func assignHTMLCharPositions(items []map[string]any) {
+	offset := 0
+	for _, item := range items {
+		text, _ := item["text"].(string)
+		start := offset
+		end := start + len(text)
+		item["positions"] = [][]float64{{1, float64(start), float64(end), 0, 0}}
+		offset = end
 	}
 }
 

@@ -73,7 +73,8 @@ def test_exact_multiple_does_not_emit_header_only_chunk():
     # 12 data rows with chunk_rows=12 (the value rag/app/naive.py uses).
     chunks = RAGFlowExcelParser().html(_make_xlsx(12), chunk_rows=12)
     assert len(chunks) == 1
-    assert all(not _chunk_has_no_data_cells(c) for c in chunks)
+    assert all(not _chunk_has_no_data_cells(c[0]) for c in chunks)
+    assert chunks[0][1][0] == 0 and chunks[0][1][1] == 1
 
 
 @pytest.mark.p2
@@ -81,7 +82,7 @@ def test_multiple_of_chunk_rows_splits_without_spurious_chunk():
     # 24 data rows with chunk_rows=12 -> exactly 2 data chunks, no trailing header-only chunk.
     chunks = RAGFlowExcelParser().html(_make_xlsx(24), chunk_rows=12)
     assert len(chunks) == 2
-    assert all(not _chunk_has_no_data_cells(c) for c in chunks)
+    assert all(not _chunk_has_no_data_cells(c[0]) for c in chunks)
 
 
 @pytest.mark.p2
@@ -89,7 +90,7 @@ def test_non_multiple_unchanged():
     # 13 data rows with chunk_rows=12 -> 2 chunks (12 + 1).
     chunks = RAGFlowExcelParser().html(_make_xlsx(13), chunk_rows=12)
     assert len(chunks) == 2
-    assert all(not _chunk_has_no_data_cells(c) for c in chunks)
+    assert all(not _chunk_has_no_data_cells(c[0]) for c in chunks)
 
 
 def _make_xlsx_with_values(header, row):
@@ -111,13 +112,14 @@ def test_call_keeps_zero_valued_cells():
     # is real data, not an empty cell, so it must survive. The header is only
     # emitted alongside a kept value, so a dropped 0 also loses its "stock" label.
     lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", "stock"], ["widget", 0]))
-    joined = " ".join(lines)
+    joined = " ".join(text for text, _ in lines)
     assert "stock" in joined and "0" in joined, lines
+    assert lines[0][1][1] == 2
 
 
 @pytest.mark.p2
 def test_call_skips_truly_empty_cells():
     # None / empty-string cells carry no value and should still be skipped.
     lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", "note"], ["widget", None]))
-    joined = " ".join(lines)
+    joined = " ".join(text for text, _ in lines)
     assert "note" not in joined, lines
