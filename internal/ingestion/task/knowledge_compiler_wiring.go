@@ -35,6 +35,7 @@ import (
 
 	appcommon "ragflow/internal/common"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -548,6 +549,10 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// surrounding pipeline supplies the backing services.
 			ModelContextLen: llmMax,
 			ModelMaxOutput:  llmMaxOutput,
+			// Precompute the common JSON-mode generation cap once, so every
+			// knowledge-compiler stage reads the same MaxTokens (mirrors the
+			// EffectiveGenMaxTokens fallback when this is 0).
+			GenMaxTokens: kc.OutputMaxTokens(llmMax, llmMaxOutput),
 		}, nil
 	}
 }
@@ -589,17 +594,49 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// is never cached, so each attempt issues a fresh request. Permanent
 	// configuration/model errors (auth, unknown model) are not retried.
 	var resp *models.ChatResponse
+	var maxTokens int
+	if config != nil && config.MaxTokens != nil {
+		maxTokens = *config.MaxTokens
+	}
+	var promptChars, systemChars int
+	for i := range msgs {
+		if s, ok := msgs[i].Content.(string); ok {
+			promptChars += len(s)
+			if msgs[i].Role == "system" {
+				systemChars = len(s)
+			}
+		}
+	}
+	appcommon.Debug("kcChatCall", zap.String("model", llmID), zap.Int("systemChars", systemChars),
+		zap.Int("promptChars", promptChars), zap.Int("maxTokens", maxTokens),
+		zap.Bool("disableRetry", req.DisableRetry))
+	attempt := 0
 	call := func() error {
 		// Bound each attempt to a short deadline so a stalled LLM provider (e.g.
 		// MiniMax hanging on a large merge-judge prompt) surfaces a timeout
 		// quickly instead of blocking a compile sub-batch for minutes; the
 		// retry/backoff loop above then handles it as a transient failure.
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
-		defer cancel()
+		start := time.Now()
 		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
+		cancel()
+		elapsed := time.Since(start)
 		if err != nil {
+			appcommon.Warn("kcChatAttemptFailed", zap.Int("attempt", attempt),
+				zap.String("model", llmID), zap.Int("maxTokens", maxTokens),
+				zap.Int("systemChars", systemChars), zap.Int("promptChars", promptChars),
+				zap.String("elapsed", elapsed.String()), zap.Error(err))
+			attempt++
 			return err
 		}
+		usage := ""
+		if r != nil && r.Usage != nil {
+			usage = fmt.Sprintf("prompt=%d completion=%d total=%d", r.Usage.PromptTokens, r.Usage.CompletionTokens, r.Usage.TotalTokens)
+		}
+		appcommon.Info("kcChatSucceeded", zap.Int("attempt", attempt),
+			zap.String("model", llmID), zap.Int("maxTokens", maxTokens),
+			zap.String("elapsed", elapsed.String()), zap.String("usage", usage),
+			zap.Int("replyChars", len(*r.Answer)))
 		resp = r
 		return nil
 	}

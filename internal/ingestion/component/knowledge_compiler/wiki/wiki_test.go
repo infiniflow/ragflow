@@ -104,22 +104,29 @@ func TestPackWikiPlanBatches_SplitsLargeInput(t *testing.T) {
 // TestWikiMapMaxTokens_OutputBudgetTracksInputBudget locks the input/output
 // budget coupling: the extraction MaxTokens must leave at least the whole
 // wikiMapTokenBudget input budget of headroom and, with a roomy model, give the
-// output the rest of the context window after the batch's input is reserved.
+// output the rest of the context window after the batch's input is reserved —
+// but never exceed the model's real max_output cap (the truncation fix: an
+// uncapped window-derived value like 16384-2048=14336 gets rejected by servers
+// such as glm-4-flash, whose max_output is 4095).
 func TestWikiMapMaxTokens_OutputBudgetTracksInputBudget(t *testing.T) {
 	// Unknown model context -> default window (DefaultLLMContextLength). Output
 	// gets the whole window minus the input budget.
-	got := wikiMapMaxTokens(0)
+	got := common.OutputMaxTokens(0, 0)
 	if want := common.DefaultLLMContextLength - wikiMapTokenBudget; got != want {
-		t.Fatalf("wikiMapMaxTokens(0) = %d, want %d", got, want)
+		t.Fatalf("OutputMaxTokens(0,0) = %d, want %d", got, want)
 	}
 	// A model window that barely fits one batch must still grant at least the
 	// input budget of output space (never starve the output).
-	if got := wikiMapMaxTokens(2048); got != wikiMapTokenBudget {
-		t.Fatalf("wikiMapMaxTokens(2048) = %d, want %d (floor at input budget)", got, wikiMapTokenBudget)
+	if got := common.OutputMaxTokens(2048, 0); got != wikiMapTokenBudget {
+		t.Fatalf("OutputMaxTokens(2048,0) = %d, want %d (floor at input budget)", got, wikiMapTokenBudget)
 	}
-	// A roomy model: output = window - input budget.
-	if got := wikiMapMaxTokens(16384); got != 16384-wikiMapTokenBudget {
-		t.Fatalf("wikiMapMaxTokens(16384) = %d, want %d", got, 16384-wikiMapTokenBudget)
+	// A roomy model but a small max_output: the cap wins (the fix).
+	if got := common.OutputMaxTokens(16384, 4095); got != 4095 {
+		t.Fatalf("OutputMaxTokens(16384,4095) = %d, want %d (clamped to max_output)", got, 4095)
+	}
+	// A roomy model with no known max_output: output = window - input budget.
+	if got := common.OutputMaxTokens(16384, 0); got != 16384-wikiMapTokenBudget {
+		t.Fatalf("OutputMaxTokens(16384,0) = %d, want %d", got, 16384-wikiMapTokenBudget)
 	}
 }
 

@@ -39,11 +39,19 @@ var fencedJSONRE = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)\\s*```")
 // or retries rather than silently dropping the extraction — the
 // highest-frequency LLM integration must not lose knowledge units on a
 // formatting hiccup.
-// GenJSON asks the model for a JSON reply and parses it. retryMax is an
-// optional override for jsonRetryMax: pass 0 to disable retries entirely
-// (used where the caller already budgets external calls itself, e.g. the
-// entity-merge disambiguator — retrying there would blow through the budget).
-func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ...int) (map[string]any, error) {
+// GenJSON asks the model for a JSON reply and parses it. The generation cap
+// (max_tokens) is taken from deps.EffectiveGenMaxTokens() unless the caller
+// explicitly sets ChatRequest.MaxTokens — so every JSON-mode stage shares the
+// single common budget resolved by the wiring, and no caller has to thread or
+// recompute it. retryMax is an optional override for jsonRetryMax: pass 0 to
+// disable retries entirely (used where the caller already budgets external
+// calls itself, e.g. the entity-merge disambiguator — retrying there would
+// blow through the budget).
+func GenJSON(ctx context.Context, deps Deps, req ChatRequest, retryMax ...int) (map[string]any, error) {
+	if req.MaxTokens == nil {
+		mt := deps.EffectiveGenMaxTokens()
+		req.MaxTokens = &mt
+	}
 	maxRetries := jsonRetryMax
 	if len(retryMax) > 0 {
 		maxRetries = retryMax[0]
@@ -56,7 +64,7 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	var lastErr error
 	delay := jsonRetryDelay
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		resp, err := chat.Chat(ctx, req)
+		resp, err := deps.Chat.Chat(ctx, req)
 		if err != nil {
 			// Permanent chat errors (auth, unknown model, context-length,
 			// cancelled ctx) cannot succeed on a retry; escape immediately.
