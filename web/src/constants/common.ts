@@ -238,3 +238,5 @@ export enum ThemeEnum {
   Light = 'light',
   System = 'system',
 }
+
+export const DESCRIPTION_MAX_LENGTH = 512;

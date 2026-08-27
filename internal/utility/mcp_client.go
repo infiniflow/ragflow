@@ -751,7 +751,7 @@ func formatMCPError(method string, e *jsonRPCError) error {
 // when a low-level connection fails (authentication / network).
 func mapMCPConnectionError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return errors.New("timeout connecting to MCP server")
+		return fmt.Errorf("timeout connecting to MCP server: %w", err)
 	}
-	return fmt.Errorf("connection failed (possibly due to auth error). Please check authentication settings first: %v", err)
+	return fmt.Errorf("connection failed (possibly due to auth error). Please check authentication settings first: %w", err)
 }

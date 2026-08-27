@@ -149,7 +149,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### `ragflow`
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-- `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+- `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 ### `mysql`
 

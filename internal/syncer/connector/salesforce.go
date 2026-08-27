@@ -250,7 +250,9 @@ func (c *SalesforceConnector) OpenSync(ctx context.Context, request SyncRequest)
 		windowEnd:   request.WindowEnd,
 		cursors:     map[string]salesforceObjectCursor{},
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -451,7 +453,7 @@ func (c *SalesforceConnector) apiURL(snap salesforceToken, path string) (string,
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		parsed, err := url.Parse(path)
 		if err != nil {
-			return "", fmt.Errorf("Salesforce pagination URL is invalid: %v", err)
+			return "", fmt.Errorf("Salesforce pagination URL is invalid: %w", err)
 		}
 		if !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
 			return "", fmt.Errorf("Salesforce pagination URL must use HTTPS on an approved Salesforce host")
@@ -725,6 +727,9 @@ type salesforceSyncSession struct {
 	latestISO   string
 	latestID    string
 	buffer      []salesforceBufferedDocument
+
+	resumeAnchor  *salesforceResumeAnchor
+	resumeChecked bool
 }
 
 type salesforceBufferedDocument struct {
@@ -732,22 +737,159 @@ type salesforceBufferedDocument struct {
 	checkpoint *SyncCheckpoint
 }
 
+type salesforceResumeAnchor struct {
+	sourceID     string
+	object       string
+	recordID     string
+	objectCursor salesforceObjectCursor
+}
+
 // applyResume restores the per-object cursor map from a saved checkpoint.
-func (s *salesforceSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+// A checkpoint must carry a source anchor and a valid cursor for that object;
+// remote anchor existence is checked by validateResume on the first NextBatch.
+func (s *salesforceSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("salesforce sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor salesforceSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("salesforce sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
-	if len(cursor.Cursors) > 0 {
-		s.cursors = cursor.Cursors
+	object, recordID, ok := salesforceSourceIDParts(checkpoint.SourceID)
+	if !ok {
+		return fmt.Errorf("salesforce sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
+	if !salesforceHasObject(s.objects, object) {
+		return fmt.Errorf("salesforce resume anchor %q was not found in the current object listing: %w", checkpoint.SourceID, ErrSyncResumeInvalid)
+	}
+	if len(cursor.Cursors) == 0 {
+		return fmt.Errorf("salesforce sync cursor has no object positions: %w", ErrSyncResumeInvalid)
+	}
+	for name, objectCursor := range cursor.Cursors {
+		if !salesforceHasObject(s.objects, name) {
+			return fmt.Errorf("salesforce sync cursor references unknown object %q: %w", name, ErrSyncResumeInvalid)
+		}
+		if objectCursor.SystemModstamp == "" || objectCursor.Id == "" {
+			return fmt.Errorf("salesforce sync cursor has an invalid position for object %q: %w", name, ErrSyncResumeInvalid)
+		}
+		if _, err := parseSalesforceTime(objectCursor.SystemModstamp); err != nil {
+			return fmt.Errorf("salesforce sync cursor has an invalid timestamp for object %q: %w", name, ErrSyncResumeInvalid)
+		}
+	}
+	objectCursor, ok := cursor.Cursors[object]
+	if !ok {
+		return fmt.Errorf("salesforce sync cursor has no position for object %q: %w", object, ErrSyncResumeInvalid)
+	}
+	if objectCursor.Id != recordID {
+		return fmt.Errorf("salesforce sync cursor does not match source anchor %q: %w", checkpoint.SourceID, ErrSyncResumeInvalid)
+	}
+	s.cursors = cursor.Cursors
+	s.resumeAnchor = &salesforceResumeAnchor{
+		sourceID:     checkpoint.SourceID,
+		object:       object,
+		recordID:     recordID,
+		objectCursor: objectCursor,
+	}
+	return nil
+}
+
+// validateResume verifies the saved anchor still exists at the same position
+// before the resumed session emits any documents.
+func (s *salesforceSyncSession) validateResume(ctx context.Context) error {
+	if s.resumeAnchor == nil || s.resumeChecked {
+		return nil
+	}
+	s.resumeChecked = true
+	anchor := s.resumeAnchor
+	expectedModified, err := parseSalesforceTime(anchor.objectCursor.SystemModstamp)
+	if err != nil {
+		return fmt.Errorf("salesforce sync cursor has an invalid timestamp for object %q: %w", anchor.object, ErrSyncResumeInvalid)
+	}
+	if s.windowStart != nil && expectedModified.Before(*s.windowStart) {
+		return fmt.Errorf("salesforce resume anchor %q is outside the sync window: %w", anchor.sourceID, ErrSyncResumeInvalid)
+	}
+	if !s.windowEnd.IsZero() && expectedModified.After(s.windowEnd) {
+		return fmt.Errorf("salesforce resume anchor %q is outside the sync window: %w", anchor.sourceID, ErrSyncResumeInvalid)
+	}
+
+	soql := fmt.Sprintf("SELECT Id,SystemModstamp FROM %s WHERE Id = '%s'", anchor.object, salesforceDataLiteral(anchor.recordID))
+	var page salesforceQueryPage
+	if err := s.connector.getJSON(ctx, "/query?q="+url.QueryEscape(soql), &page); err != nil {
+		var unavailable *salesforceObjectUnavailableError
+		if errors.As(err, &unavailable) {
+			return fmt.Errorf("salesforce resume object %q is no longer available: %w", anchor.object, ErrSyncResumeInvalid)
+		}
+		return err
+	}
+	for _, record := range page.Records {
+		if stringRecordValue(record, "Id") != anchor.recordID {
+			continue
+		}
+		modified, err := parseSalesforceTime(stringRecordValue(record, "SystemModstamp"))
+		if err != nil || !modified.Equal(expectedModified) {
+			return fmt.Errorf("salesforce resume anchor %q is no longer at the saved position: %w", anchor.sourceID, ErrSyncResumeInvalid)
+		}
+		return nil
+	}
+	return fmt.Errorf("salesforce resume anchor %q was not found in the current source: %w", anchor.sourceID, ErrSyncResumeInvalid)
+}
+
+// salesforceSourceIDParts splits the document SourceID anchor into an SObject
+// name and record ID. Salesforce IDs do not contain slashes, so a SourceID with
+// any extra separator or invalid character is not a usable resume anchor.
+func salesforceSourceIDParts(sourceID string) (string, string, bool) {
+	object, recordID, ok := strings.Cut(sourceID, "/")
+	if !ok || !salesforceObjectNameValid(object) || !salesforceRecordIDValid(recordID) {
+		return "", "", false
+	}
+	return object, recordID, true
+}
+
+func salesforceObjectNameValid(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func salesforceRecordIDValid(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func salesforceDataLiteral(value string) string {
+	return strings.ReplaceAll(value, "'", "\\'")
+}
+
+func salesforceHasObject(objects []string, name string) bool {
+	for _, object := range objects {
+		if object == name {
+			return true
+		}
+	}
+	return false
 }
 
 // NextBatch returns the next Salesforce document batch.
 func (s *salesforceSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
+	if err := s.validateResume(ctx); err != nil {
+		return SyncBatch{}, err
+	}
 	documents := make([]SourceDocument, 0, s.batchSize)
 	var checkpoint *SyncCheckpoint
 	if len(s.buffer) > 0 {

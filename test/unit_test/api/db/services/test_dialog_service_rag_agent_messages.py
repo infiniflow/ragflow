@@ -176,3 +176,32 @@ def test_rag_agent_preserves_multimodal_content_parts(monkeypatch):
     chat_mdl = _drive_rag_agent(monkeypatch, messages)
 
     assert chat_mdl.sent_messages[0]["content"] == content
+
+
+@pytest.mark.p2
+def test_render_reasoning_system_prompt_substitutes_date_and_knowledge():
+    """The reasoning path should honor the dialog system prompt like async_chat does."""
+    dialog = SimpleNamespace(kb_ids=["kb-1"])
+    prompt_config = {"system": "Role: pirate. Date: {date}. Context: '{knowledge}'."}
+    kwargs = {}
+
+    rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, kwargs)
+
+    assert rendered.startswith("Role: pirate. Date: 2")
+    assert "Context: ''." in rendered
+
+
+@pytest.mark.p2
+def test_render_reasoning_system_prompt_replaces_optional_missing_parameters():
+    """Optional parameters missing from kwargs are blanked out, not left as placeholders."""
+    dialog = SimpleNamespace(kb_ids=[])
+    prompt_config = {
+        "system": "Lang: {language}.",
+        "parameters": [{"key": "language", "optional": True}],
+    }
+    kwargs = {"date": "2026-08-27"}
+
+    rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, kwargs)
+
+    # Missing optional parameters are replaced with a space, matching async_chat.
+    assert rendered == "Lang:  ."

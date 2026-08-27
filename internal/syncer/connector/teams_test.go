@@ -281,6 +281,72 @@ func TestTeamsConnectorOpenSyncResume(t *testing.T) {
 	}
 }
 
+func TestTeamsConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newFixtureTeamsConnector()
+	connector.doJSON = teamsFixtureDoJSON(t)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+func TestTeamsConnectorOpenSyncResumeRejectsMissingRemoteAnchor(t *testing.T) {
+	connector := newFixtureTeamsConnector()
+	connector.batchSize = 1
+	connector.doJSON = teamsFixtureDoJSON(t)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if len(first.Documents) != 1 || first.Documents[0].SourceID != "team-1__channel-1__msg-1" {
+		t.Fatalf("first documents = %+v", first.Documents)
+	}
+	if first.Checkpoint == nil {
+		t.Fatalf("first checkpoint is nil")
+	}
+
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		switch {
+		case strings.Contains(apiURL, "/channels/channel-1/messages/msg-2/replies"):
+			*out.(*teamsMessagesPage) = teamsMessagesPage{}
+		case strings.Contains(apiURL, "/channels/channel-1/messages"):
+			*out.(*teamsMessagesPage) = teamsMessagesPage{
+				Value: []teamsMessage{{
+					ID:                   "msg-2",
+					Body:                 teamsMessageBody{Content: "Second message", ContentType: "text"},
+					LastModifiedDateTime: "2026-01-03T02:00:00Z",
+					WebURL:               "https://teams.example/message/msg-2",
+				}},
+			}
+		case strings.Contains(apiURL, "/teams/team-1/channels"):
+			*out.(*teamsChannelsPage) = teamsChannelsPage{
+				Value: []teamsChannel{{ID: "channel-1", DisplayName: "General"}},
+			}
+		case strings.Contains(apiURL, "/teams"):
+			*out.(*teamsPage) = teamsPage{
+				Value: []teamsTeam{{ID: "team-1", DisplayName: "Engineering"}},
+			}
+		default:
+			t.Fatalf("unexpected api url %s", apiURL)
+		}
+		return nil
+	}
+
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	if _, err = resumed.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
 func TestTeamsConnectorOpenPrune(t *testing.T) {
 	connector := newFixtureTeamsConnector()
 	connector.doJSON = teamsFixtureDoJSON(t)

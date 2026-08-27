@@ -156,7 +156,9 @@ func (c *TeamsConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 	if request.FromBeginning {
 		session.windowStart = nil
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -439,23 +441,31 @@ type teamsBufferedDocument struct {
 }
 
 // applyResume advances the session to the last committed Teams position.
-func (s *teamsSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *teamsSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("teams sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor teamsSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("teams sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("teams sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.TeamIndex < 0 || cursor.TeamIndex >= len(s.teams) {
-		return
+		return fmt.Errorf("teams resume team %d was not found in the current listing: %w", cursor.TeamIndex, ErrSyncResumeInvalid)
 	}
 	s.teamIndex = cursor.TeamIndex
 	s.resumeChannelIndex = cursor.ChannelIndex
 	s.resumePageURL = cursor.MessagesPage
 	s.resumeOffset = cursor.MessageOffset
-	s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	s.resumeSourceID = sourceID
 	s.pageURL = cursor.MessagesPage
+	return nil
 }
 
 // NextBatch returns the next Teams document batch.
@@ -522,6 +532,9 @@ func (s *teamsSyncSession) nextDocumentPage(ctx context.Context) ([]teamsBuffere
 				s.resumeChannelIndex = 0
 			}
 		}
+		if s.resumeSourceID != "" && s.channelIndex >= len(s.channels) {
+			return nil, fmt.Errorf("teams resume channel %d was not found in team %s: %w", s.channelIndex, s.teams[s.teamIndex].ID, ErrSyncResumeInvalid)
+		}
 		if s.channelIndex >= len(s.channels) {
 			s.advanceTeam()
 			continue
@@ -564,7 +577,10 @@ func (s *teamsSyncSession) nextDocumentPage(ctx context.Context) ([]teamsBuffere
 			})
 		}
 
-		documents := s.filterResumedDocuments(requestURL, candidates)
+		documents, err := s.filterResumedDocuments(requestURL, candidates)
+		if err != nil {
+			return nil, err
+		}
 		if page.NextLink != "" {
 			s.pageURL = page.NextLink
 			return documents, nil
@@ -625,34 +641,20 @@ func (s *teamsSyncSession) checkpoint(cursor teamsSyncCursor, doc SourceDocument
 }
 
 // filterResumedDocuments drops documents through the committed checkpoint.
-func (s *teamsSyncSession) filterResumedDocuments(pageURL string, candidates []teamsBufferedDocument) []teamsBufferedDocument {
-	if s.resumePageURL == "" {
-		return candidates
+func (s *teamsSyncSession) filterResumedDocuments(pageURL string, candidates []teamsBufferedDocument) ([]teamsBufferedDocument, error) {
+	if s.resumeSourceID == "" {
+		return candidates, nil
 	}
 	if pageURL != s.resumePageURL {
-		s.clearResumeOffset()
-		return candidates
+		return nil, fmt.Errorf("teams resume page no longer matches checkpoint page: %w", ErrSyncResumeInvalid)
 	}
-	if s.resumeOffset <= 0 {
-		s.clearResumeOffset()
-		return candidates
-	}
-	if s.resumeSourceID != "" {
-		for index, candidate := range candidates {
-			if candidate.document.SourceID == s.resumeSourceID {
-				s.clearResumeOffset()
-				return candidates[index+1:]
-			}
+	for index, candidate := range candidates {
+		if candidate.document.SourceID == s.resumeSourceID {
+			s.clearResumeOffset()
+			return candidates[index+1:], nil
 		}
 	}
-	filtered := candidates[:0]
-	for _, candidate := range candidates {
-		if candidate.offset > s.resumeOffset {
-			filtered = append(filtered, candidate)
-		}
-	}
-	s.clearResumeOffset()
-	return filtered
+	return nil, fmt.Errorf("teams resume anchor %q was not found on %s: %w", s.resumeSourceID, pageURL, ErrSyncResumeInvalid)
 }
 
 func (s *teamsSyncSession) clearResumeOffset() {
