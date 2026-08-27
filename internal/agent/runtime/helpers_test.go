@@ -278,15 +278,12 @@ func TestTrackElapsed_AddsCreatedAndElapsedFields(t *testing.T) {
 	if _, ok := got["_created_time"]; !ok {
 		t.Fatal("result missing _created_time")
 	}
-	// Python parity: ProcessBase stamps time.perf_counter() (a float), so
-	// _created_time must be float64 seconds on the monotonic clock rather
-	// than a wall-clock string — both bookkeeping keys share one type.
-	ct, ok := got["_created_time"].(float64)
-	if !ok {
-		t.Fatalf("_created_time = %v (type %T), want float64", got["_created_time"], got["_created_time"])
+	ct, ok := got["_created_time"].(string)
+	if !ok || ct == "" {
+		t.Fatalf("_created_time = %v (type %T), want non-empty string", got["_created_time"], got["_created_time"])
 	}
-	if ct < 0 {
-		t.Errorf("_created_time = %f, want >= 0", ct)
+	if _, err := time.Parse(time.RFC3339Nano, ct); err != nil {
+		t.Errorf("_created_time %q is not RFC3339Nano: %v", ct, err)
 	}
 	elapsed, ok := got["_elapsed_time"].(float64)
 	if !ok {

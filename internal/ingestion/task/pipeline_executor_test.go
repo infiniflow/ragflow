@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"sync"
 	"testing"
@@ -934,19 +935,49 @@ func TestRunPipelineWithDSL_LogDSLCarriesOutputs(t *testing.T) {
 	if _, ok := et["value"].(float64); !ok {
 		t.Errorf("c outputs._elapsed_time.value=%#v want float64", et["value"])
 	}
-	// _created_time is a perf_counter-style float on both backends
-	// (Python rag/flow/base.py:42), not a wall-clock string.
+	// TrackElapsed stamps _created_time as an RFC3339Nano wall-clock string;
+	// the outputs wrapper carries it verbatim with its type string.
 	if cct, ok := cOutputs["_created_time"].(map[string]any); ok {
-		if _, ok := cct["value"].(float64); !ok {
-			t.Errorf("c outputs._created_time.value=%#v want float64", cct["value"])
+		cs, ok := cct["value"].(string)
+		if !ok || cs == "" {
+			t.Errorf("c outputs._created_time.value=%#v want non-empty string", cct["value"])
+		} else if _, err := time.Parse(time.RFC3339Nano, cs); err != nil {
+			t.Errorf("c outputs._created_time.value %q is not RFC3339Nano: %v", cs, err)
+		}
+		if cct["type"] != "<class 'str'>" {
+			t.Errorf("c outputs._created_time.type=%#v want <class 'str'>", cct["type"])
 		}
 	} else {
 		t.Errorf("c outputs._created_time missing: %#v", cOutputs)
 	}
-	// Top-level parity: Python's Graph.__str__ carries every non-components
-	// key, and this fixture's DSL declares "path" — the round-tripped log
-	// must keep it for rerun-flow consumers.
+	// Non-components top-level keys are carried verbatim; this fixture's DSL
+	// declares "path" — the round-tripped log must keep it for rerun-flow
+	// consumers.
 	if p, _ := doc["path"].([]any); len(p) != 3 || p[0] != "begin" || p[2] != "d" {
 		t.Errorf("log DSL path=%#v want [begin c d]", doc["path"])
+	}
+}
+
+// TestBuildLogDSL_FallbackToStaticDSL pins the guarantee that log recording
+// never fails a run: when the run-result DSL cannot be built or cannot be
+// marshaled, buildLogDSL must return the static dsl unchanged rather than a
+// half-written payload.
+func TestBuildLogDSL_FallbackToStaticDSL(t *testing.T) {
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-logdsl-fallback", 0)
+
+	// Marshal failure: NaN is a valid float64 payload, so the run-result DSL
+	// builds fine but json.Marshal rejects it.
+	dsl := `{"dsl":{"components":{"a":{"obj":{"component_name":"X","params":{}}}}}}`
+	if got := svc.buildLogDSL(dsl, map[string]any{
+		"a": map[string]any{"text": math.NaN()},
+	}); got != dsl {
+		t.Errorf("marshal failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, dsl)
+	}
+
+	// Build failure: a DSL without a components map cannot produce a
+	// run-result DSL at all.
+	badDSL := `{"dsl":{"path":["a"]}}`
+	if got := svc.buildLogDSL(badDSL, nil); got != badDSL {
+		t.Errorf("build failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, badDSL)
 	}
 }

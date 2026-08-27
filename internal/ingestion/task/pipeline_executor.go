@@ -960,21 +960,34 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		return nil, dsl, err
 	}
 
-	// Build the run-result DSL (static canvas structure + each component's
-	// runtime outputs merged into obj.params.outputs) once, right where the
-	// full run output is still in scope — the extracted payload returned
-	// below no longer carries output["state"], so the merge cannot happen
-	// later. Two consumers:
-	//   - canvas-debug runs hand the map to the DebugLogSink END marker via
-	//     the ResultSink capability, mirroring Python's END-marker `dsl`
-	//     attachment (rag/flow/pipeline.py:98);
-	//   - persist (dataset parse) runs return its JSON as the log DSL so the
-	//     pipeline operation log carries every component's output, mirroring
-	//     Python's dsl=str(pipeline)
-	//     (rag/svr/task_executor_refactor/dataflow_service.py) — without it
-	//     the dataset log "View result" page renders blank panels.
-	// The sink probe stays an optional capability: non-debug (DB-backed)
-	// sinks ignore it and the ProgressSink contract is unchanged.
+	logDSL := s.buildLogDSL(dsl, output)
+
+	payload, err := pipelinepkg.ExtractPayload(dsl, output)
+	if err != nil {
+		return nil, dsl, err
+	}
+	return payload, logDSL, nil
+}
+
+// buildLogDSL returns the DSL string recorded for a pipeline run: the
+// run-result DSL (static canvas structure + each component's runtime outputs
+// merged into obj.params.outputs) when it can be built and marshaled,
+// otherwise the static dsl unchanged — log recording must never fail a run.
+//
+// BuildDebugResultDSL needs the full run output, which is in scope only inside
+// runPipelineWithDSL: the extracted payload returned there no longer carries
+// output["state"]. Two consumers:
+//   - canvas-debug runs hand the map to the DebugLogSink END marker via the
+//     ResultSink capability (END-marker `dsl` attachment,
+//     rag/flow/pipeline.py:98);
+//   - persist (dataset parse) runs return its JSON as the log DSL so the
+//     pipeline operation log carries every component's output
+//     (dsl=str(pipeline), rag/svr/task_executor_refactor/dataflow_service.py)
+//     — without it the dataset log "View result" page renders blank panels.
+//
+// The sink probe stays an optional capability: non-debug (DB-backed) sinks
+// ignore it and the ProgressSink contract is unchanged.
+func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
 	logDSL := dsl
 	if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
 		if rs, ok := s.progressSink.(ResultSink); ok {
@@ -988,12 +1001,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	} else {
 		common.Warn(fmt.Sprintf("build run-result dsl for pipeline log: %v", e))
 	}
-
-	payload, err := pipelinepkg.ExtractPayload(dsl, output)
-	if err != nil {
-		return nil, dsl, err
-	}
-	return payload, logDSL, nil
+	return logDSL
 }
 
 // debugPageCapPages is the number of leading pages a canvas-debug

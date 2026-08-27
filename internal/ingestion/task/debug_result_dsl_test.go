@@ -81,9 +81,9 @@ func TestBuildDebugResultDSL(t *testing.T) {
 		t.Fatalf("want 3 components (begin,a,b), got %d: %#v", len(components), components)
 	}
 
-	// Top-level parity: Python's Graph.__str__ (agent/canvas.py:126) carries
-	// every non-components key, so the persisted log DSL round-tripped by the
-	// rerun flow must not drop path/task_id/canvas_type/graph.
+	// Non-components top-level keys are carried verbatim (agent/canvas.py:126):
+	// the persisted log DSL round-tripped by the rerun flow must not drop
+	// path/task_id/canvas_type/graph.
 	if p, _ := result["path"].([]any); len(p) != 3 || p[0] != "begin" || p[2] != "b" {
 		t.Errorf("result.path=%#v want [begin a b]", result["path"])
 	}
@@ -129,8 +129,8 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	if !ok || of["value"] != "chunks" {
 		t.Errorf("components.a output_format=%#v want {value:\"chunks\"}", aOutputs["output_format"])
 	}
-	// Python's set_output stores str(type(value)) (agent/component/base.py:467),
-	// so the outputs wrapper carries Python-style type strings, not "".
+	// The outputs wrapper records str(type(value)) type strings
+	// (agent/component/base.py:467), not "".
 	if of["type"] != "<class 'str'>" {
 		t.Errorf("components.a output_format.type=%#v want <class 'str'>", of["type"])
 	}
@@ -177,7 +177,7 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	if bOutputs["output_format"].(map[string]any)["value"] != "text" {
 		t.Errorf("components.b output_format=%#v want {value:\"text\"}", bOutputs["output_format"])
 	}
-	if tt, _ := bOutputs["text"].(map[string]any)["type"]; tt != "<class 'str'>" {
+	if tt := bOutputs["text"].(map[string]any)["type"]; tt != "<class 'str'>" {
 		t.Errorf("components.b outputs.text.type=%#v want <class 'str'>", tt)
 	}
 	// static params.field_name carried (used by front-end chunk text key).
@@ -483,6 +483,38 @@ func TestDetectFormat_Priority(t *testing.T) {
 			got, _ := detectFormat(c.in)
 			if got != c.want {
 				t.Errorf("detectFormat(%#v) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestPythonTypeName locks the type-string mapping: scalar kinds map to their
+// Python scalar classes, and every sequence/mapping reports list/dict
+// regardless of the Go element type — typed containers like []int must not
+// leak Go type syntax into the persisted log.
+func TestPythonTypeName(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{"nil", nil, "<class 'NoneType'>"},
+		{"bool", true, "<class 'bool'>"},
+		{"string", "s", "<class 'str'>"},
+		{"int", 3, "<class 'int'>"},
+		{"int64", int64(3), "<class 'int'>"},
+		{"float64", 0.5, "<class 'float'>"},
+		{"[]any", []any{1, "a"}, "<class 'list'>"},
+		{"[]map[string]any", []map[string]any{{"k": 1}}, "<class 'list'>"},
+		{"typed slice []int", []int{1, 2}, "<class 'list'>"},
+		{"array", [2]int{1, 2}, "<class 'list'>"},
+		{"map[string]any", map[string]any{"k": 1}, "<class 'dict'>"},
+		{"typed map", map[string]string{"k": "v"}, "<class 'dict'>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := pythonTypeName(c.in); got != c.want {
+				t.Errorf("pythonTypeName(%#v) = %q, want %q", c.in, got, c.want)
 			}
 		})
 	}
