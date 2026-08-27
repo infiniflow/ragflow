@@ -11,7 +11,7 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v0.27.1
 
-Released on Aug 27, 2026.
+Released on Aug 28, 2026.
 
 ### New features
 - New Azure DevOps connector for data sources ([#18715](https://github.com/infiniflow/ragflow/pull/18715))
