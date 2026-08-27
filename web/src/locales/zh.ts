@@ -1016,7 +1016,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingDefault: '系统默认',
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
-      thinkingLevelNone: 'None',
+      thinkingLevelNone: 'Naive',
       thinkingLevelLow: 'Low',
       thinkingLevelLowDescription: '快速响应',
       thinkingLevelMedium: 'Medium',
