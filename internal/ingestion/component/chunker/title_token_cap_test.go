@@ -286,9 +286,7 @@ func TestEnforceTitleTokenCap_SubChunksKeepPositions(t *testing.T) {
 		t.Fatalf("expected split, got %d", len(got))
 	}
 	// Every sub-chunk keeps the original position matrix: the on-demand crop
-	// pass and the position index derive from it, so dropping it on
-	// continuation chunks left them without a preview image (issue: some
-	// chunks missing their page image under book/paper parsing).
+	// pass and the position index derive from it.
 	for i := range got {
 		v, ok := got[i]["positions"].([][]float64)
 		if !ok || len(v) == 0 {

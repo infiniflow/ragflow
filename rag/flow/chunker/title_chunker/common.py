@@ -188,9 +188,10 @@ class BaseTitleChunker(ABC):
             sub["text"] = group
             # Every sub-chunk keeps the original (coarse, page-level)
             # coordinates so the preview-image/position restore pass covers
-            # continuation chunks too, not just the first sub-chunk.
+            # all sub-chunks. Each sub-chunk owns a deep copy so no two of
+            # them alias the same position list.
             if has_positions:
-                sub[PDF_POSITIONS_KEY] = orig_positions
+                sub[PDF_POSITIONS_KEY] = deepcopy(orig_positions)
             out.append(sub)
         return out
 

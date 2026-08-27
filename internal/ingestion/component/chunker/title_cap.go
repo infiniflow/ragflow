@@ -22,8 +22,7 @@ package chunker
 // exceeds the cap is hard-split so the ceiling always holds. Table/image
 // chunks are atomic and never split. Every sub-chunk keeps the source chunk's
 // merged PDF position matrix so each one still gets its page-region preview
-// image and position highlight (the pre-fix behavior attached the matrix to
-// the first sub-chunk only, which left continuation chunks without an image).
+// image and position highlight.
 
 import (
 	"strings"
@@ -214,8 +213,10 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 }
 
 // shallowCopyChunk returns a shallow copy of c. Coordinate matrices
-// ([][]float64) are shared by reference, but splitTitleChunkByCap never
-// mutates them, so the source chunk is never aliased.
+// ([][]float64) are deliberately shared by reference between the source
+// chunk and its cap-split sub-chunks: nothing in the split or the downstream
+// read-only passes (on-demand crop, position indexing) mutates a matrix, so
+// the sharing is intentional and safe.
 func shallowCopyChunk(c map[string]any) map[string]any {
 	m := make(map[string]any, len(c))
 	for k, v := range c {
