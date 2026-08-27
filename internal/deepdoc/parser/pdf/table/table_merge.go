@@ -117,9 +117,26 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 				if anchorPageH, ok := pageHeights[anchorPg]; ok && anchorPageH > 0 {
 					yDis += anchorPageH
 				}
-			}
-			if yDis > mh*23 {
-				continue
+				if yDis > mh*23 {
+					continue
+				}
+			} else {
+				// A NEGATIVE page-local yDis means the continuation sits at the
+				// TOP of the next page (in page-local coordinates it is "above"
+				// the anchor). A genuine cross-page split is cut off at the page
+				// boundary, so its anchor must END NEAR THE BOTTOM of its page.
+				// Two independent tables that merely both start near the top of
+				// consecutive pages (e.g. ZoomNeXt's R3→R5) also produce a
+				// negative yDis but their anchor ends high on its page — merging
+				// them wrongly collapses the second table into the first and
+				// silently drops it. Reject the merge unless the anchor bottom is
+				// within mh*23 of the page bottom (the same proximity used for
+				// the Y gate), so only real page-boundary continuations merge.
+				if anchorPageH, ok := pageHeights[anchorPg]; ok && anchorPageH > 0 {
+					if maxBottomOnPage(anchor.Positions, anchorPg) < anchorPageH-mh*23 {
+						continue
+					}
+				}
 			}
 			// Merge: combine cells and positions.
 			anchor.Cells = append(anchor.Cells, tables[jt.idx].Cells...)
@@ -213,6 +230,31 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		}
 	}
 	return result
+}
+
+// maxBottomOnPage returns the largest Bottom among the table's positions that
+// carry page number pg. Page-local Y resets to 0 at each page top, so a
+// multi-page anchor's positions across different pages are not directly
+// comparable; this isolates the anchor's extent on the specific page it is
+// being tested against for a cross-page continuation.
+func maxBottomOnPage(positions []pdf.Position, pg int) float64 {
+	var mb float64
+	for _, p := range positions {
+		onPage := false
+		for _, pn := range p.PageNumbers {
+			if pn == pg {
+				onPage = true
+				break
+			}
+		}
+		if !onPage {
+			continue
+		}
+		if p.Bottom > mb {
+			mb = p.Bottom
+		}
+	}
+	return mb
 }
 
 // stackGrids concatenates per-page grids (each already built correctly by
