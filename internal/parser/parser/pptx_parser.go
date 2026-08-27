@@ -125,10 +125,18 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// still parse (mirrors the magic-byte correction office_oxide::Open
 	// performs on file paths).
 	// File["format"] in the success case reflects effFormat, i.e. the
-	// real container ("ppt" for OLE fallback), not just the extension.
+	// real container ("ppt" for OLE fallback, "pptx" for OOXML fallback),
+	// not just the extension.
 	effFormat := p.format
-	if effFormat == "pptx" && officeContainer(data) == "ole" {
-		effFormat = "ppt"
+	switch officeContainer(data) {
+	case "ole":
+		if effFormat == "pptx" {
+			effFormat = "ppt"
+		}
+	case "ooxml":
+		if effFormat == "ppt" {
+			effFormat = "pptx"
+		}
 	}
 	doc, err := pptxOpenFromBytes(data, effFormat)
 	if err != nil {

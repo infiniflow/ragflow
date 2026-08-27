@@ -145,6 +145,37 @@ func TestPPTXParser_FallsBackToPPTForOLEHeader(t *testing.T) {
 	}
 }
 
+// TestPPTParser_FallsBackToPPTXForOOXMLHeader ensures an OOXML .pptx
+// payload uploaded as .ppt ( PPTParser with p.format == "ppt") is
+// correctly routed to "pptx" via the bidirectional container sniffing.
+func TestPPTParser_FallsBackToPPTXForOOXMLHeader(t *testing.T) {
+	ctx := t.Context()
+	p := NewPPTParser() // underlying PPTXParser{format:"ppt"}
+
+	orig := pptxOpenFromBytes
+	defer func() { pptxOpenFromBytes = orig }()
+
+	var gotFormat string
+	pptxOpenFromBytes = func(data []byte, format string) (*officeOxide.Document, error) {
+		gotFormat = format
+		return nil, fmt.Errorf("stub ppt open: %s", format)
+	}
+
+	// Minimal OOXML ZIP local file header.
+	data := []byte{0x50, 0x4B, 0x03, 0x04, 0x00, 0x00}
+	res := p.ParseWithResult(ctx, "renamed.ppt", data)
+	if res.Err == nil {
+		t.Fatal("expected parse error for OOXML header stub, got nil")
+	}
+	if gotFormat != "pptx" {
+		t.Fatalf("pptxOpenFromBytes format = %q, want %q (OOXML fallback ppt->pptx)", gotFormat, "pptx")
+	}
+	// Underlying PPTXParser must not be mutated permanently.
+	if p.pptx.format != "ppt" {
+		t.Fatalf("PPTParser.pptx.format mutated to %q, want %q (must use local effFormat)", p.pptx.format, "ppt")
+	}
+}
+
 // TestPPTXParser_NoStatePollution verifies that after an OLE file mutates
 // the effective format for that call, a subsequent OOXML file still uses
 // "pptx" — i.e., the parser instance is not permanently polluted.
