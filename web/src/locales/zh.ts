@@ -2750,6 +2750,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       optional: '可选项',
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
+      debugRunLimits:
+        '调试运行用于验证流程能否正常执行：PDF 仅解析前 2 页（其他格式解析全部）；若含分块节点，仅取前 3 个分块预览；若含知识编译节点，仅本地验证、不会触发知识库重建或通知。',
       template: '模板转换',
       templateDescription:
         '该组件用于排版各种组件的输出。1、支持 Jinja2 模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',

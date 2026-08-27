@@ -30,6 +30,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/globals"
 
 	"gorm.io/gorm"
 )
@@ -95,6 +96,16 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		for _, ck := range chunks {
 			delete(ck, "image")
 		}
+	}
+
+	// Canvas-debug (dry-run) chunk cap: when set (>=1), keep only the leading
+	// N chunks for preview. This is the single choke point every chunker
+	// variant flows through, so the cap applies regardless of variant. It
+	// also limits downstream compiler/tokenizer work in the debug run, which
+	// is the intended cost saving. No chunker node (or cap == 0) → untouched.
+	if chunkCap := globals.DebugChunkCap(ctx); chunkCap > 0 && len(chunks) > chunkCap {
+		chunks = chunks[:chunkCap]
+		out["chunks"] = chunks
 	}
 	return out, nil
 }
