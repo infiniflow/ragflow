@@ -374,6 +374,13 @@ class TaskHandler:
                 try:
                     embd_model_config = get_model_config_by_id(task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id)
                 except LookupError:
+                    # The cached tenant-model binding may disappear after a task is queued; record the recovery context.
+                    logging.info(
+                        "Recovering stale embedding model binding for task %s in tenant %s with model %s",
+                        ctx.id,
+                        task_tenant_id,
+                        task_embedding_id or "tenant-default",
+                    )
                     if task_embedding_id:
                         embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
                     else:

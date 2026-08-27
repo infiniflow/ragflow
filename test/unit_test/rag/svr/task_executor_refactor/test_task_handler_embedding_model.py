@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -148,7 +149,7 @@ async def test_bind_embedding_model_keeps_keyless_local_model(task_context):
 
 
 @pytest.mark.asyncio
-async def test_bind_embedding_model_uses_default_for_stale_model_without_name(task_context):
+async def test_bind_embedding_model_uses_default_for_stale_model_without_name(task_context, caplog):
     """A stale cached model without embd_id must resolve the current tenant default."""
     task_context.raw_task["tenant_embd_id"] = "stale-instance"
     task_context.raw_task["embd_id"] = ""
@@ -158,6 +159,7 @@ async def test_bind_embedding_model_uses_default_for_stale_model_without_name(ta
     default_config = {"llm_factory": "OpenAI", "api_key": "current-key"}
 
     with (
+        caplog.at_level(logging.INFO),
         patch(
             "rag.svr.task_executor_refactor.task_handler.get_model_config_by_id",
             return_value={"llm_factory": "OpenAI", "api_key": ""},
@@ -175,6 +177,7 @@ async def test_bind_embedding_model_uses_default_for_stale_model_without_name(ta
 
     get_default_model.assert_called_once_with(task_context.tenant_id, "embedding")
     llm_bundle.assert_called_once_with(task_context.tenant_id, default_config, lang=task_context.language)
+    assert (f"Recovering stale embedding model binding for task {task_context.id} in tenant {task_context.tenant_id} with model tenant-default") in caplog.messages
     assert result == (embedding_model, 2)
 
 
