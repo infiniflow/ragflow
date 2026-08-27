@@ -70,6 +70,17 @@ def test_single_heading_long_body_respects_chunk_token_num():
 
 
 @pytest.mark.p2
+def test_single_heading_long_body_every_chunk_keeps_title():
+    # Regression for continuation chunks silently dropping the heading: a
+    # split must repeat "Article 1" on every emitted piece, not just the first.
+    sections = ["Article 1"] + _body(40)
+    chunks = tree_merge(BULL, sections, 2, chunk_token_num=20)
+    assert len(chunks) > 1
+    for c in chunks:
+        assert "Article 1" in c
+
+
+@pytest.mark.p2
 def test_structured_subheadings_still_split_by_structure():
     # Three articles, each with a short body well under the budget. Structure
     # (one chunk per heading) must be unchanged by adding a budget.
