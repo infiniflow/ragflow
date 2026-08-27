@@ -216,6 +216,14 @@ else
     echo "Default: applied nginx config: ragflow.conf.python"
 fi
 
+if [[ -x /ragflow/docker/nginx/apply_web_base_path.sh ]]; then
+    /ragflow/docker/nginx/apply_web_base_path.sh
+elif [[ -x /etc/nginx/conf.d/apply_web_base_path.sh ]]; then
+    /etc/nginx/conf.d/apply_web_base_path.sh
+elif [[ -x ./docker/nginx/apply_web_base_path.sh ]]; then
+    ./docker/nginx/apply_web_base_path.sh
+fi
+
 # -----------------------------------------------------------------------------
 # Function(s)
 # -----------------------------------------------------------------------------
