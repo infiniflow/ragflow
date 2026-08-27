@@ -356,6 +356,8 @@ export default function SearchingView({
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
+                    data-testid="search-mindmap-trigger"
+                    aria-label={t('chunk.mind')}
                     onClick={showMindMapModal}
                     variant={'outline'}
                     className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
