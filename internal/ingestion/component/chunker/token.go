@@ -625,15 +625,55 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	out := make([]schema.ChunkDoc, 0, len(parts))
+	// Collect non-empty parts first so we can slice positions proportionally.
+	var kept []string
 	for _, p := range parts {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		kept = append(kept, p)
 	}
-	if len(out) == 0 {
+	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
+	}
+	// If the item carries PDF positions, slice them proportionally so each
+	// delimiter-split piece's screenshot crops only its own region instead of
+	// the whole item bbox (fix for chunk-screenshot mismatch).
+	if len(it.PDFPositions) == 0 && len(it.Positions) == 0 {
+		out := make([]schema.ChunkDoc, 0, len(kept))
+		for _, p := range kept {
+			out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		}
+		return out
+	}
+	totalRunes := 0
+	for _, p := range kept {
+		totalRunes += utf8.RuneCountInString(p)
+	}
+	if totalRunes == 0 {
+		out := make([]schema.ChunkDoc, 0, len(kept))
+		for _, p := range kept {
+			out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		}
+		return out
+	}
+	out := make([]schema.ChunkDoc, 0, len(kept))
+	cumRunes := 0
+	for _, p := range kept {
+		pcRunes := utf8.RuneCountInString(p)
+		startRatio := float64(cumRunes) / float64(totalRunes)
+		endRatio := float64(cumRunes+pcRunes) / float64(totalRunes)
+		ck := buildChunkDoc(it, "text", p, "", "")
+		ck.PDFPositions = slicePositionsByTextRatio(it.PDFPositions, startRatio, endRatio)
+		ck.Positions = slicePositionsByTextRatio(it.Positions, startRatio, endRatio)
+		if len(ck.PDFPositions) == 0 && len(it.PDFPositions) > 0 {
+			ck.PDFPositions = it.PDFPositions
+		}
+		if len(ck.Positions) == 0 && len(it.Positions) > 0 {
+			ck.Positions = it.Positions
+		}
+		out = append(out, ck)
+		cumRunes += pcRunes
 	}
 	return out
 }
@@ -1133,13 +1173,54 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	}
 	// Every sub-piece inherits the source unit's metadata (coarse positions +
 	// item attributes); each is built from a clone so every ChunkDoc field
-	// survives the split and each piece keeps its page-region preview.
-	for i := range pieces {
+	// survives the split. PDF positions are proportionally sliced vertically so
+	// each piece's screenshot crops only its own region instead of the whole
+	// paragraph (fix for chunk-screenshot mismatch).
+	if len(ck.PDFPositions) == 0 && len(ck.Positions) == 0 {
+		for i := range pieces {
+			inherited := cloneChunkDoc(ck)
+			inherited.Text = pieces[i].Text
+			inherited.TKNums = pieces[i].TKNums
+			inherited.CKType = "text"
+			pieces[i] = inherited
+		}
+		return pieces
+	}
+	totalRunes := 0
+	for _, p := range pieces {
+		totalRunes += utf8.RuneCountInString(p.Text)
+	}
+	if totalRunes == 0 {
+		for i := range pieces {
+			inherited := cloneChunkDoc(ck)
+			inherited.Text = pieces[i].Text
+			inherited.TKNums = pieces[i].TKNums
+			inherited.CKType = "text"
+			pieces[i] = inherited
+		}
+		return pieces
+	}
+	cumRunes := 0
+	for i, p := range pieces {
+		pcRunes := utf8.RuneCountInString(p.Text)
+		startRatio := float64(cumRunes) / float64(totalRunes)
+		endRatio := float64(cumRunes+pcRunes) / float64(totalRunes)
 		inherited := cloneChunkDoc(ck)
-		inherited.Text = pieces[i].Text
-		inherited.TKNums = pieces[i].TKNums
+		inherited.Text = p.Text
+		inherited.TKNums = p.TKNums
 		inherited.CKType = "text"
+		inherited.PDFPositions = slicePositionsByTextRatio(ck.PDFPositions, startRatio, endRatio)
+		inherited.Positions = slicePositionsByTextRatio(ck.Positions, startRatio, endRatio)
+		// Fall back to original positions if slicing produced nothing (e.g.
+		// malformed matrix) so the piece still gets a preview rather than none.
+		if len(inherited.PDFPositions) == 0 && len(ck.PDFPositions) > 0 {
+			inherited.PDFPositions = ck.PDFPositions
+		}
+		if len(inherited.Positions) == 0 && len(ck.Positions) > 0 {
+			inherited.Positions = ck.Positions
+		}
 		pieces[i] = inherited
+		cumRunes += pcRunes
 	}
 	return pieces
 }
