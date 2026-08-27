@@ -39,3 +39,12 @@ For an isolated check, use a Python 3.11 virtual environment with `beartype`,
 `pytest`, `requests`, `pillow`, `python-docx`, `markdown`, `numpy`, and
 `pdfplumber` installed. The live test additionally requires the MonkeyOCRv2
 service and vLLM endpoint to be running.
+
+The adapter conversion test was also executed inside a Docker container
+(`python:3.11-slim`) with the beartype-enabled test environment mounted in:
+
+```text
+docker parser integration: PASS
+sections=[('hello', '@@2\\t1\\t30\\t2\\t40##')]
+tables=[((None, 'a|b'), [(0, 0, 0, 10, 10)])]
+```
