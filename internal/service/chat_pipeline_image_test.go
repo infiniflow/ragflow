@@ -168,3 +168,35 @@ func TestSplitFileAttachmentsRawImagesFeedMultimodalConversion(t *testing.T) {
 		t.Fatalf("no image part in converted content: %v", rendered)
 	}
 }
+
+// Regression (KB chat path, "chat"-typed model config): file-dict
+// attachments must resolve to image data URIs with raw=false as well.
+// The KB path feeds these into ConvertLastUserMsgToMultimodal for
+// chat-typed models, mirroring Python's convert_last_user_msg_to_multimodal
+// (api/db/services/dialog_service.py). They used to be dropped at the call
+// site, silently ignoring the attached image for any model whose enrolled
+// type lacks the image2text bit.
+func TestSplitFileAttachmentsChatModeKeepsFileDictImages(t *testing.T) {
+	seedChatImageStorage(t)
+
+	_, images := splitFileAttachments(t.Context(), "user-1", []interface{}{chatImageFileDict}, false)
+	if len(images) != 1 {
+		t.Fatalf("expected 1 image with raw=false, got %v", images)
+	}
+	want := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte("jpeg-bytes"))
+	if images[0] != want {
+		t.Fatalf("image = %q, want data URI %q", images[0], want)
+	}
+
+	converted, err := common.ConvertLastUserMsgToMultimodal(
+		map[string]interface{}{"role": "user", "content": "describe the image"},
+		images,
+		"openai-api-compatible",
+	)
+	if err != nil {
+		t.Fatalf("ConvertLastUserMsgToMultimodal failed: %v", err)
+	}
+	if _, ok := converted["content"].([]map[string]interface{}); !ok {
+		t.Fatalf("content not rendered as parts: %T", converted["content"])
+	}
+}

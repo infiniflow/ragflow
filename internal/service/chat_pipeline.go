@@ -321,17 +321,18 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Parse file attachments from the last message.
 		// Split text-file URLs (joined with "\n\n") and image URLs.
-		// Vision (image2text) model: images → imageFiles for the multimodal
-		// conversion below. Text-only chat model: images are dropped —
-		// sending image content blocks makes such providers reject the
-		// request (e.g. Zhipu GLM error 1210: messages.content.type only
-		// allows 'text').
+		// Images feed the multimodal conversion below for every model
+		// type, mirroring Python's convert_last_user_msg_to_multimodal
+		// (api/db/services/dialog_service.py): a "chat"-typed model
+		// config also receives image_url content parts, so attached
+		// images are never silently dropped.
 		var textAttachmentsList []string
 		var imageFiles []string
 		// Joined text attachments (appended to system prompt).
 		var attachments string
 		// When files are file dicts, splitFileAttachments fetches blobs
-		// from storage. When plain strings, falls back to string splitting.
+		// from storage. When plain strings, falls back to string splitting;
+		// raw only changes that split for pre-separated image payloads.
 		if files, hasFiles := lastMsg["files"]; hasFiles {
 			modelType := "chat"
 			if llmModelConfig != nil {
@@ -339,17 +340,7 @@ func (s *ChatPipelineService) AsyncChat(
 					modelType = mt
 				}
 			}
-			if modelType == "image2text" {
-				textAttachmentsList, imageFiles = splitFileAttachments(ctx, userID, files, true)
-			} else {
-				var droppedImages []string
-				textAttachmentsList, droppedImages = splitFileAttachments(ctx, userID, files, false)
-				if len(droppedImages) > 0 {
-					common.Warn("AsyncChat: dropping image attachments for text-only chat model",
-						zap.String("llm_id", chat.LLMID),
-						zap.Int("dropped_images", len(droppedImages)))
-				}
-			}
+			textAttachmentsList, imageFiles = splitFileAttachments(ctx, userID, files, modelType == "image2text")
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			common.Debug("Resolved attachments",
 				zap.Strings("text_attachments_list", textAttachmentsList),
@@ -949,9 +940,9 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Int("used_token_count", usedTokenCount),
 			zap.Int("msg_count", len(llmMessages)))
 
-		// Multimodal conversion. imageFiles is only populated for
-		// vision-capable (image2text) models; text-only chat models never
-		// reach this with images.
+		// Multimodal conversion. imageFiles is populated whenever the last
+		// message carried image attachments (any model type), mirroring
+		// Python's convert_last_user_msg_to_multimodal.
 		if len(llmMessages) >= 2 && len(imageFiles) > 0 {
 			lastIdx := len(llmMessages) - 1
 			if role, _ := llmMessages[lastIdx]["role"].(string); role == "user" {
@@ -1351,11 +1342,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
 
-		// 2. Process file attachments. Only vision-capable (image2text)
-		// models receive image content; text-only chat models reject image
-		// blocks at the provider (e.g. Zhipu GLM error 1210:
-		// messages.content.type only allows 'text'), so their image
-		// attachments are dropped here.
+		// 2. Process file attachments. Images are kept for every model
+		// type and feed the multimodal conversion below, mirroring
+		// Python's convert_last_user_msg_to_multimodal: a "chat"-typed
+		// model config also receives image_url content parts, so
+		// attached images are never silently dropped.
 		attachmentsStr := ""
 		var imageFiles []string
 		modelType := "chat"
@@ -1367,14 +1358,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				var images []string
-				attachmentsStr, images = s.splitChatAttachments(ctx, userID, files)
-				if isImage2Text {
-					imageFiles = images
-				} else {
-					common.Debug("AsyncChatSolo: dropping image attachments for text-only chat model",
-						zap.String("llm_id", chat.LLMID))
-				}
+				attachmentsStr, imageFiles = s.splitChatAttachments(ctx, userID, files)
 				common.Info("AsyncChatSolo: file attachments resolved",
 					zap.Bool("vision_model", isImage2Text),
 					zap.Int("image_files", len(imageFiles)),
@@ -1876,10 +1860,10 @@ func tokenizeText(text string) string {
 //	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
 // The returned `cfg` map's "model_type" field carries the chosen type.
-// Downstream code gates image attachments on it: only image2text
-// (vision-capable) models receive image content blocks; text-only chat
-// models reject them at the provider (e.g. Zhipu GLM error 1210:
-// messages.content.type only allows 'text').
+// Downstream code uses it only to pick the attachment split mode: raw
+// payloads for image2text models, per-entry splitting otherwise. Images
+// feed the multimodal conversion for every model type, mirroring
+// Python's convert_last_user_msg_to_multimodal.
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
@@ -1918,8 +1902,8 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 // resolveChatModelType probes the enrolled model types for llmRef and
 // returns "image2text" when the model is vision-capable (enrolled with an
 // image2text / "vision" type), "chat" otherwise. Probe failures are
-// conservative: they yield "chat", which drops image attachments instead
-// of risking a provider-side rejection.
+// conservative: they yield "chat", which only changes the attachment
+// split mode; images still reach the multimodal conversion.
 func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
 	modelTypes, err := s.ModelProviderSvc.ResolveModelType(ctx, tenantID, llmRef)
 	if err != nil {

@@ -1975,11 +1975,56 @@ def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -
     return system.format(**fmt_kwargs)
 
 
+def message_has_image_attachments(message: dict) -> bool:
+    """True when the message carries at least one image attachment.
+
+    Covers both shapes the web client sends: file dicts with a ``mime_type``
+    produced by the upload flow, and legacy pre-resolved ``data:image/...``
+    strings.
+    """
+    files = message.get("files") or []
+    if isinstance(files, dict):
+        files = [files]
+    if not isinstance(files, list):
+        return False
+    for f in files:
+        if isinstance(f, dict):
+            if str(f.get("mime_type") or "").lower().startswith("image/"):
+                return True
+        elif isinstance(f, str) and f.startswith("data:image"):
+            return True
+    return False
+
+
+def dialog_model_vision_capable(dialog) -> bool:
+    """True when the dialog's explicitly configured chat model is enrolled as
+    vision-capable (``ModelTypeBinary.VISION`` bit). Unresolvable models are
+    conservatively treated as text-only."""
+    llm_id = getattr(dialog, "llm_id", "") or ""
+    if not llm_id:
+        return False
+    try:
+        return "vision" in resolve_model_type(dialog.tenant_id, llm_id)
+    except LookupError:
+        return False
+
+
 async def rag_agent(dialog, messages, stream=True, **kwargs):
     prompt_config = dialog.prompt_config or {}
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     reasoning = kwargs["reasoning"] if "reasoning" in kwargs else prompt_config.get("reasoning", 0)
     if not reasoning or str(reasoning).strip() == "0":
+        async for ans in async_chat(dialog, messages, stream, **kwargs):
+            yield ans
+        return
+    # The agentic loop below composes the final answer from retrieval results
+    # only: the terminal `rag` tool streams the inner graph's cited answer, so
+    # an image attached to the question can never influence it. When the chat
+    # model is vision-capable and the user attached images, answer through
+    # async_chat instead — it embeds the images into the model messages and
+    # still retrieves from the KBs and adds citations.
+    if message_has_image_attachments(messages[-1]) and dialog_model_vision_capable(dialog):
+        logging.info("rag_agent: vision-capable model with image attachments; routing to async_chat so the model sees the images")
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
