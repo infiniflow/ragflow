@@ -41,7 +41,7 @@ import {
   HtmlFormFields,
   TextMarkdownFormFields,
 } from './text-html-form-fields';
-import { buildFieldNameWithPrefix } from './utils';
+import { buildFieldNameWithPrefix, getInitialParseMethod } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 import { WordFormFields } from './word-form-fields';
 
@@ -133,6 +133,11 @@ function ParserItem({
       form.setValue(
         `setups.${index}.output_format`,
         InitialOutputFormatMap[value],
+        { shouldDirty: true, shouldValidate: true, shouldTouch: true },
+      );
+      form.setValue(
+        `setups.${index}.parse_method`,
+        getInitialParseMethod(value),
         { shouldDirty: true, shouldValidate: true, shouldTouch: true },
       );
     },
