@@ -32,7 +32,7 @@ from quart import request
 
 from api.apps import login_required
 from api.apps.services import structure_graph_common as sgc
-from api.db.db_models import Document, Task
+from api.db.db_models import DB, Document, Task
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type,
     resolve_model_config,
@@ -1122,23 +1122,34 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     stop_event = threading.Event()
+    index_name = search.index_name(dataset_tenant_id)
 
     def _add_chunk_sync():
         """Embed, index, and count one chunk as one consistency unit."""
         if stop_event.is_set():
-            return
+            return None
+        existing = settings.docStoreConn.get(chunk_id, index_name, [dataset_id])
+        if existing is not None:
+            return existing
         v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
         if stop_event.is_set():
-            return
+            return None
         v = 0.1 * v[0] + 0.9 * v[1]
         d[f"q_{len(v)}_vec"] = v.tolist()
         if stop_event.is_set():
-            return
-        settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
+            return None
+        with DB.lock(f"add_chunk:{chunk_id}", max(1, math.ceil(_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS))):
+            if stop_event.is_set():
+                return None
+            existing = settings.docStoreConn.get(chunk_id, index_name, [dataset_id])
+            if existing is not None:
+                return existing
+            settings.docStoreConn.insert([d], index_name, dataset_id)
         DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+        return d
 
     try:
-        await _run_add_chunk_operation(_add_chunk_sync, stop_event=stop_event)
+        stored_chunk = await _run_add_chunk_operation(_add_chunk_sync, stop_event=stop_event)
     except _AddChunkOperationTimeout:
         message = f"Chunk creation timed out after {_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS:g} seconds"
         logging.error("%s; the worker may still be running. dataset_id=%s document_id=%s chunk_id=%s", message, dataset_id, document_id, chunk_id)
@@ -1158,7 +1169,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "img_id": "image_id",
         "doc_type_kwd": "doc_type_kwd",
     }
-    renamed_chunk = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
+    renamed_chunk = {new_key: stored_chunk[key] for key, new_key in key_mapping.items() if key in stored_chunk}
     _ = Chunk(**renamed_chunk)
     return get_result(data={"chunk": renamed_chunk})
 

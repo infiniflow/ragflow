@@ -21,6 +21,7 @@ import inspect
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -111,6 +112,7 @@ class _DummyDocStore:
     def __init__(self):
         self.updated = []
         self.inserted = []
+        self.inserted_by_id = {}
         self.deleted_inputs = []
         self.to_delete = [1]
         self.chunk = {
@@ -125,8 +127,11 @@ class _DummyDocStore:
             "content_sm_ltks": ["c"],
         }
 
-    def get(self, *_args, **_kwargs):
-        return dict(self.chunk) if self.chunk is not None else None
+    def get(self, chunk_id, *_args, **_kwargs):
+        if self.chunk is not None and self.chunk.get("id") == chunk_id:
+            return dict(self.chunk)
+        chunk = self.inserted_by_id.get(chunk_id)
+        return dict(chunk) if chunk is not None else None
 
     def update(self, condition, payload, *_args, **_kwargs):
         self.updated.append((condition, payload))
@@ -140,6 +145,7 @@ class _DummyDocStore:
 
     def insert(self, docs, *_args, **_kwargs):
         self.inserted.extend(docs)
+        self.inserted_by_id.update({doc["id"]: dict(doc) for doc in docs})
 
     def index_exist(self, *_args, **_kwargs):
         return True
@@ -436,10 +442,23 @@ def _load_chunk_module(monkeypatch):
     class _StubTaskModel:
         doc_id = _FakeField()
 
+    class _StubDB:
+        def __init__(self):
+            self._locks = {}
+            self._locks_guard = threading.Lock()
+
+        @staticmethod
+        def atomic():
+            return contextlib.nullcontext()
+
+        def lock(self, key, _timeout):
+            with self._locks_guard:
+                return self._locks.setdefault(key, threading.Lock())
+
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.Document = _StubDocumentModel
     db_models_mod.Task = _StubTaskModel
-    db_models_mod.DB = SimpleNamespace(atomic=lambda: contextlib.nullcontext())
+    db_models_mod.DB = _StubDB()
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     file2document_service_mod = ModuleType("api.db.services.file2document_service")
@@ -903,7 +922,54 @@ def test_restful_add_chunk_timeout_during_vector_preparation_skips_insert(monkey
 
 
 @pytest.mark.p2
-def test_restful_add_chunk_insert_timeout_updates_count_after_insert_succeeds(monkeypatch):
+def test_restful_add_chunk_timeout_waiting_for_idempotency_lock_skips_insert(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.DocumentService.increment_calls.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS", 0.2)
+    lock_wait_started = threading.Event()
+    release_lock = threading.Event()
+    lock_released = threading.Event()
+    lock_timeout = []
+
+    class _BlockingLock:
+        def __enter__(self):
+            lock_wait_started.set()
+            release_lock.wait()
+
+        def __exit__(self, *_args):
+            lock_released.set()
+
+    def _lock(_key, timeout):
+        lock_timeout.append(timeout)
+        return _BlockingLock()
+
+    monkeypatch.setattr(module.DB, "lock", _lock)
+    _set_request_json(monkeypatch, module, {"content": "chunk"})
+
+    async def _exercise():
+        task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        assert await asyncio.to_thread(lock_wait_started.wait, 1), "worker did not wait for the idempotency lock"
+        return await task
+
+    fallback_release = threading.Timer(2, release_lock.set)
+    fallback_release.start()
+    try:
+        res = _run(_exercise())
+    finally:
+        release_lock.set()
+        fallback_release.cancel()
+
+    assert lock_released.wait(1), "worker did not leave the idempotency lock after timeout"
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "Chunk creation timed out" in res["message"], res
+    assert lock_timeout == [1]
+    assert module.settings.docStoreConn.inserted == []
+    assert module.DocumentService.increment_calls == []
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_insert_timeout_retry_is_idempotent(monkeypatch):
     module = _load_chunk_api_module(monkeypatch)
     module.request = SimpleNamespace(args={}, headers={})
     module.DocumentService.increment_calls.clear()
@@ -912,9 +978,12 @@ def test_restful_add_chunk_insert_timeout_updates_count_after_insert_succeeds(mo
     release = threading.Event()
     counted = threading.Event()
 
-    def _blocking_insert(*_args, **_kwargs):
+    original_insert = module.settings.docStoreConn.insert
+
+    def _blocking_insert(*args, **kwargs):
         started.set()
         release.wait()
+        return original_insert(*args, **kwargs)
 
     monkeypatch.setattr(module.settings.docStoreConn, "insert", _blocking_insert)
     original_increment = module.DocumentService.increment_chunk_num
@@ -931,24 +1000,69 @@ def test_restful_add_chunk_insert_timeout_updates_count_after_insert_succeeds(mo
         assert await asyncio.to_thread(started.wait, 1), "document-store worker did not start"
         await asyncio.sleep(0.01)
         heartbeat_ran_before_response = not task.done()
-        return await task, heartbeat_ran_before_response
+        result = await task
+        counted_before_retry = bool(module.DocumentService.increment_calls)
+        retry_task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        await asyncio.sleep(0.01)
+        retry_waited_for_insert = not retry_task.done()
+        release.set()
+        return result, await retry_task, heartbeat_ran_before_response, counted_before_retry, retry_waited_for_insert
 
     fallback_release = threading.Timer(2, release.set)
     fallback_release.start()
     started_at = time.monotonic()
     try:
-        res, heartbeat_ran_before_response = _run(_exercise())
+        res, retry_res, heartbeat_ran_before_response, counted_before_retry, retry_waited_for_insert = _run(_exercise())
         assert time.monotonic() - started_at < 1.5
         assert started.is_set()
         assert heartbeat_ran_before_response
         assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
         assert "Chunk creation timed out" in res["message"], res
-        assert module.DocumentService.increment_calls == []
+        assert not counted_before_retry
+        assert retry_waited_for_insert
+        assert retry_res["code"] == module.RetCode.SUCCESS, retry_res
     finally:
         release.set()
         fallback_release.cancel()
 
     assert counted.wait(1), "chunk count was not updated after the timed-out insert eventually succeeded"
+    assert len(module.settings.docStoreConn.inserted) == 1
+    assert len(module.DocumentService.increment_calls) == 1
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_concurrent_duplicate_is_idempotent(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.DocumentService.increment_calls.clear()
+    _set_request_json(monkeypatch, module, {"content": "chunk"})
+    both_requests_reached_embedding = threading.Barrier(2)
+
+    class _ConcurrentEmbeddingModel:
+        def encode(self, _inputs):
+            both_requests_reached_embedding.wait(timeout=1)
+            return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
+
+    monkeypatch.setattr(module.TenantLLMService, "model_instance", lambda _config: _ConcurrentEmbeddingModel())
+    original_executor = module._ADD_CHUNK_EXECUTOR
+    module._ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(max_workers=2)
+
+    async def _exercise():
+        return await asyncio.gather(
+            _route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"),
+            _route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"),
+        )
+
+    try:
+        first, second = _run(_exercise())
+    finally:
+        module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+        module._ADD_CHUNK_EXECUTOR = original_executor
+
+    assert first["code"] == second["code"] == module.RetCode.SUCCESS
+    assert first["data"]["chunk"]["id"] == second["data"]["chunk"]["id"]
+    assert len(module.settings.docStoreConn.inserted) == 1
+    assert len(module.DocumentService.increment_calls) == 1
 
 
 @pytest.mark.p2
@@ -962,6 +1076,35 @@ def test_add_chunk_operation_preserves_timeout_from_blocking_callable(monkeypatc
         _run(module._run_add_chunk_operation(_raise_sdk_timeout))
 
     assert not isinstance(exc_info.value, module._AddChunkOperationTimeout)
+
+
+@pytest.mark.p2
+def test_add_chunk_operation_propagates_cancellation_and_signals_worker(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    started = threading.Event()
+    release = threading.Event()
+    stop_event = threading.Event()
+
+    def _blocking_callable():
+        started.set()
+        release.wait()
+
+    async def _exercise():
+        task = asyncio.create_task(module._run_add_chunk_operation(_blocking_callable, stop_event=stop_event))
+        assert await asyncio.to_thread(started.wait, 1), "worker did not start"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    fallback_release = threading.Timer(2, release.set)
+    fallback_release.start()
+    try:
+        _run(_exercise())
+    finally:
+        release.set()
+        fallback_release.cancel()
+
+    assert stop_event.is_set()
 
 
 @pytest.mark.p2
