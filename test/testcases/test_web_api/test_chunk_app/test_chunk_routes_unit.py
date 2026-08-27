@@ -327,6 +327,9 @@ def _load_chunk_module(monkeypatch):
 
     image_utils_mod = ModuleType("api.utils.image_utils")
     image_utils_mod.store_chunk_image = lambda *_args, **_kwargs: None
+    image_utils_mod.remove_chunk_image = lambda *_args, **_kwargs: None
+    image_utils_mod.IMAGE_UPDATE_MODE_REMOVE = "remove"
+    image_utils_mod.IMAGE_UPDATE_MODES = frozenset({"append", "replace", "remove"})
     monkeypatch.setitem(sys.modules, "api.utils.image_utils", image_utils_mod)
 
     services_pkg = ModuleType("api.db.services")
@@ -848,3 +851,61 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
     assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_replace_image_mode(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.settings.docStoreConn.chunk = {
+        "id": "chunk-1",
+        "doc_id": "doc-1",
+        "content_with_weight": "chunk",
+        "img_id": "kb-1-chunk-1",
+    }
+    store_calls = []
+    module.store_chunk_image = lambda bucket, name, binary, mode="append": store_calls.append((bucket, name, mode))
+
+    valid_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"image_base64": valid_b64, "image_update_mode": "replace"}),
+    )
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == 0, res
+    assert store_calls == [("kb-1", "chunk-1", "replace")], store_calls
+    updated = module.settings.docStoreConn.updated[-1][1]
+    assert updated["img_id"] == "kb-1-chunk-1", updated
+    assert updated["doc_type_kwd"] == "image", updated
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_remove_image_mode(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.settings.docStoreConn.chunk = {
+        "id": "chunk-1",
+        "doc_id": "doc-1",
+        "content_with_weight": "chunk",
+        "img_id": "kb-1-chunk-1",
+    }
+    remove_calls = []
+    module.remove_chunk_image = lambda bucket, name: remove_calls.append((bucket, name))
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"image_update_mode": "remove"}))
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == 0, res
+    assert remove_calls == [("kb-1", "chunk-1")], remove_calls
+    updated = module.settings.docStoreConn.updated[-1][1]
+    assert updated["img_id"] == "", updated
+    assert updated["doc_type_kwd"] == "text", updated
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_replace_requires_image_base64(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.settings.docStoreConn.chunk = {"id": "chunk-1", "doc_id": "doc-1", "content_with_weight": "chunk"}
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"image_update_mode": "replace"}))
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "`image_base64` is required" in res["message"], res
+    assert module.settings.docStoreConn.updated == [], res
