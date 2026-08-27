@@ -112,10 +112,10 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'A leading RAG engine for LLM context',
+      title: 'Netstars-KB',
       start: "Let's get started",
       description:
-        'Sign up for free to explore top RAG technology. Create datasets and AIs to empower your business.',
+        'Knowledge base for your business — datasets, retrieval, and assistants.',
       review: 'from 500+ reviews',
       seeAll: 'See all',
     },
@@ -3746,7 +3746,7 @@ Important structured information may include: names, dates, locations, events, k
 
     admin: {
       loginTitle: 'Admin console',
-      title: 'RAGFlow',
+      title: 'Netstars-KB',
       confirm: 'Confirm',
       close: 'Close',
       yes: 'Yes',
