@@ -63,7 +63,7 @@ async def wiki_query(tools, query: str, keywords: str = "") -> dict:
             exprs = [match_text]
             if getattr(tools, "embed_mdl", None):
                 try:
-                    match_dense = await settings.retriever.get_vector(text, tools.embed_mdl, _WIKI_QUERY_TOP_N, 0.1)
+                    match_dense = await settings.retriever.get_vector(text, tools.embed_mdl, top_k=_WIKI_QUERY_TOP_N, num_candidates=_WIKI_QUERY_TOP_N * 2, similarity=0.1)
                     exprs = [match_text, match_dense, FusionExpr("weighted_sum", _WIKI_QUERY_TOP_N, {"weights": "0.001, 1"})]
                 except Exception:
                     _LOG.exception("[Wiki lookup] dense expr build failed; BM25 only")

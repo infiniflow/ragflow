@@ -509,6 +509,17 @@ func TestWebDAVConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	}
 }
 
+func TestWebDAVConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
+	connector := webDAVTestConnector(t, server.URL, false, 2)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestWebDAVConnectorOpenPrune(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
 	server, _, getRequests := newWebDAVTestServer(t, webDAVTestTree())

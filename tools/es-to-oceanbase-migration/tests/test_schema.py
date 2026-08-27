@@ -138,6 +138,21 @@ class TestRAGFlowDataConverter:
         assert row["content_with_weight"] == "This is test content"
         assert row["available_int"] == 1
 
+    def test_convert_document_defaults_missing_chunk_order(self):
+        """Test missing chunk order defaults to the first chunk position."""
+        converter = RAGFlowDataConverter()
+
+        row = converter.convert_document(
+            {
+                "_id": "test-id-123",
+                "_source": {
+                    "kb_id": "kb-001",
+                },
+            }
+        )
+
+        assert row["chunk_order_int"] == 0
+
     def test_convert_with_vector(self):
         """Test converting document with vector embedding."""
         converter = RAGFlowDataConverter()
@@ -368,6 +383,9 @@ class TestConstants:
         # JSON columns
         assert RAGFLOW_COLUMNS["metadata"]["is_json"] is True
         assert RAGFLOW_COLUMNS["extra"]["is_json"] is True
+
+        assert RAGFLOW_COLUMNS["_order_id"]["default"] == 0
+        assert RAGFLOW_COLUMNS["chunk_order_int"]["default"] == 0
 
 
 class TestRAGFlowSchemaConverterEdgeCases:

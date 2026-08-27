@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.T) {
+func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
@@ -34,17 +34,19 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 	threshold := 0.5
 	vectorWeight := 1.0
 	aggs := false
+	rerankCandidatesCount := 70
 
 	result, err := service.Retrieval(context.Background(), &RetrievalRequest{
 		Question:               "alpha",
 		TenantIDs:              []string{"tenant-1"},
 		Page:                   1,
 		PageSize:               10,
-		Top:                    &top,
+		KNNTopK:                &top,
 		SimilarityThreshold:    &threshold,
 		VectorSimilarityWeight: &vectorWeight,
 		Aggs:                   &aggs,
 		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
+		RerankCandidatesCount:  &rerankCandidatesCount,
 	})
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
@@ -52,11 +54,11 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 	if len(result.Chunks) != 10 {
 		t.Fatalf("page chunk count = %d, want 10", len(result.Chunks))
 	}
-	if result.Total != 75 {
-		t.Fatalf("total = %d, want 75", result.Total)
+	if result.Total != 70 {
+		t.Fatalf("total = %d, want 70", result.Total)
 	}
-	if len(engine.searchLimits) != 2 || engine.searchLimits[0] != 70 || engine.searchLimits[1] != 100 {
-		t.Fatalf("search limits = %v, want [70 100]", engine.searchLimits)
+	if len(engine.searchLimits) != 1 || engine.searchLimits[0] != rerankCandidatesCount {
+		t.Fatalf("search limits = %v, want [%d]", engine.searchLimits, rerankCandidatesCount)
 	}
 	for _, filters := range engine.searchFilters {
 		mustNot, ok := filters["must_not"].(map[string]interface{})
@@ -265,7 +267,7 @@ func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
 	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineInfinity)}
 	service := NewRetrievalService(docEngine, nil)
 	_, err := service.Search(context.Background(), &RetrievalSearchRequest{
-		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, Top: 10,
+		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: 10,
 		RankFeature: map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
 	if err != nil {
@@ -286,7 +288,7 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 	}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	_, err := service.Retrieval(context.Background(), &RetrievalRequest{
-		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, Top: &top,
+		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: &top,
 		RankFeature: &map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
 	if err != nil {
@@ -332,7 +334,7 @@ func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
 		KbIDs:                  []string{"kb-1"},
 		Page:                   1,
 		PageSize:               10,
-		Top:                    10,
+		KNNTopK:                10,
 		RankFeature:            map[string]float64{},
 		EmbeddingModel:         &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
 		VectorSimilarityWeight: &vectorWeight,

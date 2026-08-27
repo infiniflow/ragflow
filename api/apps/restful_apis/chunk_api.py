@@ -378,9 +378,32 @@ async def retrieval_test(tenant_id):
             doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    top = int(req.get("top_k", 1024))
-    if top <= 0:
-        return get_error_data_result("`top_k` must be greater than 0")
+    if "top_k" in req:
+        logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
+    knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
+    try:
+        knn_top_k = int(req.get(knn_top_k_parameter, 1024))
+    except (TypeError, ValueError):
+        return get_error_data_result(f"`{knn_top_k_parameter}` should be an integer")
+    if knn_top_k <= 0:
+        return get_error_data_result(f"`{knn_top_k_parameter}` must be greater than 0")
+    try:
+        knn_num_candidates = int(req.get("knn_num_candidates", max(2048, knn_top_k)))
+    except (TypeError, ValueError):
+        return get_error_data_result("`knn_num_candidates` should be an integer")
+    if knn_num_candidates < knn_top_k:
+        return get_error_data_result("`knn_num_candidates` must be greater than or equal to `knn_top_k`")
+    try:
+        rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
+    except (TypeError, ValueError):
+        return get_error_data_result("`rerank_candidates_count` should be an integer")
+    if rerank_candidates_count <= 0:
+        return get_error_data_result("`rerank_candidates_count` must be greater than 0")
+    if rerank_candidates_count < page * size:
+        return get_error_data_result(f"`rerank_candidates_count` must be at least `page` multiplied by `page_size` ({page * size})")
+    include_knowledge_compilation = req.get("include_knowledge_compilation", True)
+    if not isinstance(include_knowledge_compilation, bool):
+        return get_error_data_result("`include_knowledge_compilation` should be a boolean")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False
@@ -419,11 +442,14 @@ async def retrieval_test(tenant_id):
             size,
             similarity_threshold,
             vector_similarity_weight,
-            top,
-            doc_ids,
+            doc_ids=doc_ids,
+            knn_top_k=knn_top_k,
+            knn_num_candidates=knn_num_candidates,
             rerank_mdl=rerank_mdl,
             highlight=highlight,
             rank_feature=label_question(question, kbs),
+            must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
+            rerank_candidates_count=rerank_candidates_count,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)

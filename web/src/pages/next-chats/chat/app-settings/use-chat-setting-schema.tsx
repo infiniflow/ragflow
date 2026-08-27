@@ -3,7 +3,7 @@ import {
   LlmSettingFieldSchema,
 } from '@/components/llm-setting-items/next';
 import { MetadataFilterSchema } from '@/components/metadata-filter';
-import { prefetchSizeSchema } from '@/components/prefetch-size-item';
+import { rerankCandidatesCountSchema } from '@/components/rerank-candidates-count-item';
 import { rerankFormSchema } from '@/components/rerank';
 import {
   similarityThresholdSchema,
@@ -45,7 +45,8 @@ export function useChatSettingSchema() {
         WebSearchProvider.Serply,
         WebSearchProvider.YouCom,
       ])
-      .optional(),
+      .optional()
+      .or(z.literal('')),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
     reference_metadata: z
@@ -72,7 +73,7 @@ export function useChatSettingSchema() {
       ...vectorSimilarityWeightSchema,
       ...similarityThresholdSchema,
       ...topnSchema,
-      ...prefetchSizeSchema,
+      ...rerankCandidatesCountSchema,
       ...MetadataFilterSchema,
     })
     .superRefine((value, ctx) => {

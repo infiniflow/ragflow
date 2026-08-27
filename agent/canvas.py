@@ -108,7 +108,7 @@ class Graph:
         for k, cpn in self.components.items():
             cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
 
-        self.path = self.dsl["path"]
+        self.path = self.dsl.get("path", [])
 
     @staticmethod
     def validate_component_parameters(dsl):
@@ -215,30 +215,19 @@ class Graph:
         # Reference the canonical pre-compiled regex from ComponentBase so
         # the source-pattern and the runtime-pattern can never drift apart.
         pat = ComponentBase.variable_ref_patt_re
-        out_parts = []
-        last = 0
 
-        for m in pat.finditer(value):
-            out_parts.append(value[last : m.start()])
+        def replace(m):
             key = m.group(1)
             v = self.get_variable_value(key)
             if v is None:
-                rep = ""
+                return ""
             elif isinstance(v, partial):
-                buf = []
-                for chunk in v():
-                    buf.append(chunk)
-                rep = "".join(buf)
+                return "".join(v())
             elif isinstance(v, str):
-                rep = v
-            else:
-                rep = json.dumps(v, ensure_ascii=False)
+                return v
+            return json.dumps(v, ensure_ascii=False)
 
-            out_parts.append(rep)
-            last = m.end()
-
-        out_parts.append(value[last:])
-        return "".join(out_parts)
+        return ComponentBase._replace_template_matches(pat, value, replace)
 
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
@@ -667,8 +656,15 @@ class Canvas(Graph):
                 cpn_obj = self.get_component_obj(self.path[i])
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
-                        tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
-                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        try:
+                            tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
+                            tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        except Exception as e:
+                            # A missing/unresolvable default TTS model must not
+                            # fail the whole run: skip auto play and keep the
+                            # textual answer flowing.
+                            _logger.warning("Auto play skipped: default TTS model is not available: %s", e)
+                            tts_mdl = None
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""

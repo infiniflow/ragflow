@@ -50,6 +50,67 @@ ADMIN_DEFAULT_PASSWORD_ENV = "ADMIN_DEFAULT_PASSWORD"
 DEFAULT_SUPERUSER_PASSWORD_ENV = "DEFAULT_SUPERUSER_PASSWORD"
 
 
+# The admin server reports DEFAULT_SUPERUSER_EMAIL via
+# `services.EnvironmentsMgr.get_all()` and the admin CLI's "list envs"
+# output, so operators reasonably expect the env value to drive the
+# bootstrap admin account's email. (DEFAULT_SUPERUSER_PASSWORD is
+# deliberately NOT exposed through the env-listing API — it would
+# leak the bootstrap credential into any audit log that records the
+# full env map.) Read once at module load so the bootstrap functions
+# below can reference the values as module-level constants, matching
+# `api/db/init_data.py:init_superuser`. See infiniflow/ragflow#16876.
+#
+# Reject empty env values explicitly: ``os.getenv(name, fallback)``
+# only uses the fallback when the variable is *unset*, so a misconfigured
+# operator setting ``DEFAULT_SUPERUSER_EMAIL=`` would otherwise
+# propagate an empty email into the bootstrap flow. We deliberately
+# preserve raw password values (no whitespace stripping) so a password
+# like ``"  s3cret  "`` keeps its leading/trailing whitespace and isn't
+# silently mutated before being hashed/stored. Email/nickname strip
+# separately because whitespace there would be invalid.
+def _required_env(name, default):
+    value = os.getenv(name, default)
+    if not value:
+        logging.error(
+            "admin server: %s is set but empty; either unset it (the default %r will be used) or provide a real value",
+            name,
+            default,
+        )
+        raise RuntimeError(f"admin server: {name} is set but empty; either unset it (the default {default!r} will be used) or provide a real value")
+    return value
+
+
+def _required_env_stripped(name, default):
+    """Like ``_required_env`` but rejects whitespace-only values.
+
+    A raw value of ``" "`` would survive the empty-check in
+    ``_required_env`` and then collapse to ``""`` after the caller
+    ``.strip()``s it, propagating an empty nickname/email into the
+    bootstrap flow and silently failing later checks. Strip before
+    the empty check so the failure surfaces at startup with the
+    intended config-error message."""
+    raw = os.getenv(name, default)
+    stripped = raw.strip()
+    if not stripped:
+        logging.error(
+            "admin server: %s is set to whitespace-only value; either unset it (the default %r will be used) or provide a real value",
+            name,
+            default,
+        )
+        raise RuntimeError(f"admin server: {name} is set to whitespace-only value; either unset it (the default {default!r} will be used) or provide a real value")
+    return stripped
+
+
+DEFAULT_SUPERUSER_NICKNAME = _required_env_stripped("DEFAULT_SUPERUSER_NICKNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = _required_env_stripped("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+# NOTE: there is deliberately no DEFAULT_SUPERUSER_PASSWORD module constant
+# here. The bootstrap password resolves at startup via
+# _resolve_bootstrap_admin_password() — ADMIN_DEFAULT_PASSWORD, then
+# DEFAULT_SUPERUSER_PASSWORD, then a random password delivered through a
+# 0600 file — instead of falling back to the literal "admin" that
+# api/db/init_data.py still uses.
+
+
 def setup_auth(login_manager):
     @login_manager.request_loader
     def load_user(web_request):
@@ -147,9 +208,9 @@ def init_default_admin():
             # against base64(<plain password>) - same convention as
             # api/db/init_data.py.
             "password": encode_to_base64(password),
-            "nickname": "admin",
+            "nickname": DEFAULT_SUPERUSER_NICKNAME,
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": DEFAULT_SUPERUSER_EMAIL,
             "creator": "system",
             "status": "1",
         }
@@ -157,33 +218,70 @@ def init_default_admin():
             raise AdminException("Can't init admin.", 500)
         add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
         if env_name:
-            logging.info(f"Created default superuser admin@ragflow.io with the password from {env_name}. Change it after the first login.")
+            logging.info(f"Created default superuser {DEFAULT_SUPERUSER_EMAIL} with the password from {env_name}. Change it after the first login.")
         else:
             password_file = _write_bootstrap_password_file(password)
             if password_file:
                 logging.warning(
                     f"No superuser found and neither {ADMIN_DEFAULT_PASSWORD_ENV} nor {DEFAULT_SUPERUSER_PASSWORD_ENV} is set. "
-                    f"Created default superuser admin@ragflow.io; its randomly generated password was written once to {password_file} (mode 0600). Read it there and change it immediately after the first login."
+                    f"Created default superuser {DEFAULT_SUPERUSER_EMAIL}; its randomly generated password was written once to {password_file} (mode 0600). Read it there and change it immediately after the first login."
                 )
             else:
                 logging.error(
                     f"No superuser found and neither {ADMIN_DEFAULT_PASSWORD_ENV} nor {DEFAULT_SUPERUSER_PASSWORD_ENV} is set, "
-                    f"and the bootstrap password file could not be written. The randomly generated password for admin@ragflow.io is NOT recoverable: "
+                    f"and the bootstrap password file could not be written. The randomly generated password for {DEFAULT_SUPERUSER_EMAIL} is NOT recoverable: "
                     f"delete the account and re-run with {ADMIN_DEFAULT_PASSWORD_ENV} set."
                 )
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
-        default_admin_rows = [u for u in users if u.email == "admin@ragflow.io"]
+        # Filter existing superuser rows by the configured
+        # ``DEFAULT_SUPERUSER_EMAIL``. Per @Lynn-Inf's review on
+        # PR #17674, this intentionally does NOT also filter on
+        # ``is_active`` — an inactive row matching the configured
+        # email must still be treated as the configured bootstrap
+        # admin, otherwise the tenant-backfill branch above could
+        # silently create a duplicate entry for the (already-existing,
+        # just-disabled) default admin. Activity gating already lives
+        # in ``login_admin`` (``is_active == INACTIVE`` rejects the
+        # session at login time), so the bootstrap path stays
+        # read-only.
+        default_admin_rows = [u for u in users if u.email == DEFAULT_SUPERUSER_EMAIL]
         if default_admin_rows:
             default_admin = default_admin_rows[0].to_dict()
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
             if not exist:
                 add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
+        elif any(u.email != DEFAULT_SUPERUSER_EMAIL for u in users):
+            # Active superuser(s) exist but none match the configured
+            # DEFAULT_SUPERUSER_EMAIL — the operator set the env var to a
+            # value that doesn't match any existing admin row. Don't
+            # silently fall back to the original "admin@ragflow.io"
+            # identity (that would diverge the bootstrap credential
+            # from the env), and don't auto-create a new admin (the
+            # user may have intentionally kept the old admin). Surface
+            # the mismatch with explicit migration guidance.
+            existing_emails = sorted({u.email for u in users})
+            logging.error(
+                "admin server: configured DEFAULT_SUPERUSER_EMAIL (%r) "
+                "does not match any active superuser row; existing admin "
+                "emails: %r. Refusing to bootstrap to avoid diverging the "
+                "credential from the env value.",
+                DEFAULT_SUPERUSER_EMAIL,
+                existing_emails,
+            )
+            raise AdminException(
+                f"Active superuser(s) exist but none match DEFAULT_SUPERUSER_EMAIL "
+                f"({DEFAULT_SUPERUSER_EMAIL!r}). Either unset the env var to "
+                f"keep the existing admin, or run the API-side migration "
+                f"(``python -m api.ragflow_server --init-superuser``) to align "
+                f"the configured email with an existing admin row before "
+                f"restarting.",
+                500,
+            )
 
 
 def add_tenant_for_admin(user_info: dict, role: str):
-
     tenant = {
         "id": user_info["id"],
         "name": user_info["nickname"] + "‘s Kingdom",

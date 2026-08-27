@@ -260,10 +260,23 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// KnowledgeCompiler component and stamped with `compile_kwd`) are persisted
 	// as available_int=0: invisible to the normal retriever until the dataset-level
 	// post-processing consumer (§11) merges them into available_int=1 products.
-	// Ordinary source chunks stay available_int=1 (the index default).
+	// Ordinary source chunks stay available_int=1 (the index default) unless the
+	// document itself is disabled (status=0).
 	markCompiledProductsHidden(chunks)
+	// Reload status immediately before write: LoadFromIngestionTask copied a
+	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
+	docStatus := s.taskCtx.Doc.Status
+	if dao.DB != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
+			docStatus = persisted.Status
+			s.taskCtx.Doc.Status = persisted.Status
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s status before availability stamp: %v", s.taskCtx.Doc.ID, err))
+		}
+	}
+	applyDocumentAvailability(chunks, docStatus)
 
-	oldCompiledProductIDs, err := s.loadDocumentCompiledProductIDs(ctx)
+	oldCompiledProductIDs, oldCompiledVariants, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -288,13 +301,17 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// and is best-effort / non-fatal — a delivery failure is logged but does not
 	// fail the pipeline task.
 	//
-	// The variants passed to PublishCompleted are the compile types this document
-	// produced, derived from the authoritative `compilation_template_kind_kwd` the
-	// KnowledgeCompiler component stamps on each compiled product (the resolved
-	// template's kind → KindToVariant, O2a whitelist). This is the compiler's
-	// runtime inference surfaced here, NOT a re-derivation from `compile_kwd`.
-	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, compiledVariants(chunks)); err != nil {
-		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
+	// The variants passed to PublishCompleted are the union of the compile types
+	// in the previous and current document generations. They are derived from the
+	// authoritative `compilation_template_kind_kwd` the KnowledgeCompiler
+	// component stamps on each compiled product (the resolved template's kind →
+	// KindToVariant, O2a whitelist). Keeping the previous types lets the dataset
+	// consumer retract stale merged products when a template is removed.
+	eventVariants := mergeCompiledVariants(oldCompiledVariants, compiledVariants(chunks))
+	if len(eventVariants) > 0 {
+		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants); err != nil {
+			common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
+		}
 	}
 
 	// Compilation products are derived artifacts and must not inflate the
@@ -423,28 +440,29 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 	}
 }
 
-// loadDocumentCompiledProductIDs snapshots the previous successful document
+// loadDocumentCompiledState snapshots the previous successful document
 // compiler generation before the new pipeline output is written. Reading first
 // avoids relying on immediate search visibility after a bulk index write.
-func (s *PipelineExecutor) loadDocumentCompiledProductIDs(ctx context.Context) ([]string, error) {
+func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, error) {
 	docEngine := engine.Get()
 	if docEngine == nil || s == nil || s.taskCtx == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	const pageSize = 1000
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
 	oldIDs := make([]string, 0)
+	oldProducts := make([]map[string]any, 0)
 	for offset := 0; ; offset += pageSize {
 		result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{s.taskCtx.Doc.KbID},
 			Offset:       offset,
 			Limit:        pageSize,
-			SelectFields: []string{"id", "compile_kwd"},
+			SelectFields: []string{"id", "compile_kwd", "compilation_template_kind_kwd"},
 			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("load document compiler products: %w", err)
+			return nil, nil, fmt.Errorf("load document compiler products: %w", err)
 		}
 		if result == nil || len(result.Chunks) == 0 {
 			break
@@ -453,6 +471,7 @@ func (s *PipelineExecutor) loadDocumentCompiledProductIDs(ctx context.Context) (
 			if strings.TrimSpace(asCompiledKwd(row)) == "" {
 				continue
 			}
+			oldProducts = append(oldProducts, row)
 			if id := strings.TrimSpace(anyString(row["id"])); id != "" {
 				oldIDs = append(oldIDs, id)
 			}
@@ -461,7 +480,7 @@ func (s *PipelineExecutor) loadDocumentCompiledProductIDs(ctx context.Context) (
 			break
 		}
 	}
-	return oldIDs, nil
+	return oldIDs, compiledVariants(oldProducts), nil
 }
 
 // reconcileDocumentCompiledProducts advances the document-level compiler
@@ -501,6 +520,22 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 		}
 	}
 	return nil
+}
+
+// applyDocumentAvailability stamps ordinary source chunks with available_int=0
+// when Document.status is "0" (disabled). Disabling before any chunks exist only
+// updates MySQL; without this, later parsing would still write searchable
+// available_int=1 rows. Compiled products (compile_kwd) stay at 0 regardless.
+func applyDocumentAvailability(chunks []map[string]any, status *string) {
+	if status == nil || *status != "0" {
+		return
+	}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; ok {
+			continue
+		}
+		ck["available_int"] = 0
+	}
 }
 
 // compiledVariants returns the sorted, de-duplicated set of compile types a
@@ -548,6 +583,32 @@ func compiledVariants(chunks []map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// mergeCompiledVariants returns the union of the previous and current
+// document-level compiler variants. A reparse that removes a compiler template
+// still needs to notify the dataset consumer so it can retract stale merged
+// products; a document that never had compiler products produces an empty set
+// and does not wake the dataset consumer at all.
+func mergeCompiledVariants(previous, current []string) []string {
+	seen := make(map[string]struct{}, len(previous)+len(current))
+	for _, variants := range [][]string{previous, current} {
+		for _, variant := range variants {
+			variant = strings.TrimSpace(variant)
+			if variant != "" {
+				seen[variant] = struct{}{}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	merged := make([]string, 0, len(seen))
+	for variant := range seen {
+		merged = append(merged, variant)
+	}
+	sort.Strings(merged)
+	return merged
 }
 
 // asCompiledKwd extracts the compile_kwd keyword value from a chunk map,

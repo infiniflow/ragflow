@@ -48,7 +48,7 @@ func TestWithModelRetry_SuccessFirstTry(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 3}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	msgs := []Message{schema.UserMessage("hi")}
 	resp, err := wrapped.Generate(ctx, msgs)
 	if err != nil {
@@ -68,7 +68,7 @@ func TestWithModelRetry_RetriesOnFailure(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 5, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	msgs := []Message{schema.UserMessage("retry me")}
 	_, err := wrapped.Generate(ctx, msgs)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestWithModelRetry_Exhausted(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 2, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := wrapped.Generate(ctx, []Message{schema.UserMessage("")})
 	if err == nil {
 		t.Error("expected error after exhausting retries")

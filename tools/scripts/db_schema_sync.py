@@ -89,6 +89,11 @@ def create_database_connection(host: str, port: int, user: str, password: str, d
 
 
 # MySQL type to Peewee field type mapping
+# Fields peewee/BaseModel manage on their own. compare_fields() and both of its
+# callers must exclude the same set, or columns filtered out on one side get
+# reported as removed on the other.
+AUTO_GENERATED_FIELDS = {"id", "create_time", "create_date", "update_time", "update_date"}
+
 MYSQL_TO_PEEWEE_TYPE = {
     "varchar": "CharField",
     "char": "CharField",
@@ -233,8 +238,8 @@ def compare_fields(model_fields: dict, db_columns: dict) -> dict:
         "removed": {},
     }
 
-    # Skip auto-generated fields like id, create_time, etc.
-    skip_fields = {"id"}
+    skip_fields = AUTO_GENERATED_FIELDS
+    logger.debug("Excluding auto-generated fields from schema comparison: %s", sorted(skip_fields))
 
     for field_name, field in model_fields.items():
         if field_name in skip_fields:
@@ -676,7 +681,7 @@ def create_migration(router: Router, models: list, db, name: str = "auto", drop_
                 model_fields = {}
                 for field_name, field in model._meta.fields.items():
                     # Skip id and base model fields
-                    if field_name in ("id", "create_time", "create_date", "update_time", "update_date"):
+                    if field_name in AUTO_GENERATED_FIELDS:
                         continue
                     if hasattr(field, "_auto_created") and field._auto_created:
                         continue
@@ -803,7 +808,7 @@ def diff_schema(models: list, db):
             # Get model fields
             model_fields = {}
             for field_name, field in model._meta.fields.items():
-                if field_name in ("id", "create_time", "create_date", "update_time", "update_date"):
+                if field_name in AUTO_GENERATED_FIELDS:
                     continue
                 model_fields[field_name] = field
 

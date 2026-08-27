@@ -99,6 +99,13 @@ const normalizeWidgetFooterLink = (value: string | null) => {
 };
 
 /**
+ * Stable id for the seeded agent prologue. `addNewestOneAnswer` dedupes by
+ * message id, so a re-invoked effect (e.g. under React StrictMode) merges
+ * into the seeded message instead of appending a duplicate.
+ */
+const PROLOGUE_MESSAGE_ID = 'prologue';
+
+/**
  * Renders the embeddable floating chat widget and applies URL-driven widget settings.
  */
 const FloatingChatWidget = () => {
@@ -164,6 +171,14 @@ const FloatingChatWidget = () => {
     hasError,
   } = hookResult;
   const findReferenceByMessageId = (hookResult as any).findReferenceByMessageId;
+  // Only the agent flow exposes these. The chat flow receives its prologue
+  // through the completions handshake instead, so both stay optional here.
+  const { addNewestOneAnswer, isTaskMode } = hookResult as Partial<
+    Pick<
+      ReturnType<typeof useSendNextSharedMessage>,
+      'addNewestOneAnswer' | 'isTaskMode'
+    >
+  >;
 
   // Sync our local input with the hook's value when needed
   useEffect(() => {
@@ -175,6 +190,23 @@ const FloatingChatWidget = () => {
   const { data } = (
     isFromAgent ? useFetchExternalAgentInputs : useFetchExternalChatInfo
   )();
+
+  // Seed the agent's opening statement. The agent send hook derives the
+  // prologue from the agent canvas graph store, which is never populated on
+  // the widget page, so mirror pages/agent/share and take the prologue from
+  // the agentbots inputs endpoint instead. The chat flow already gets its
+  // prologue from the completions handshake.
+  useEffect(() => {
+    if (!isFromAgent || isTaskMode) {
+      return;
+    }
+    if (data?.prologue) {
+      addNewestOneAnswer?.({
+        answer: data.prologue,
+        id: PROLOGUE_MESSAGE_ID,
+      });
+    }
+  }, [isFromAgent, isTaskMode, data?.prologue, addNewestOneAnswer]);
 
   const title = data.title;
   const displayTitle = widgetTitle || title || t('chat.chatSupport');
@@ -625,7 +657,7 @@ const FloatingChatWidget = () => {
                   className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`group max-w-[280px] px-4 py-2 rounded-2xl ${
+                    className={`max-w-[280px] px-4 py-2 rounded-2xl ${
                       message.role === MessageType.User
                         ? 'text-white rounded-br-md'
                         : 'rounded-bl-md'
@@ -646,7 +678,11 @@ const FloatingChatWidget = () => {
                     ) : (
                       <div className="space-y-2">
                         <FloatingChatWidgetMarkdown
-                          loading={false}
+                          loading={
+                            enableStreaming &&
+                            sendLoading &&
+                            index === displayMessages.length - 1
+                          }
                           content={message.content}
                           reference={
                             findReferenceByMessageId?.(message.id) ||
@@ -658,10 +694,7 @@ const FloatingChatWidget = () => {
                           }
                           clickDocumentButton={clickDocumentButton}
                         />
-                        <div
-                          className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100"
-                          role="toolbar"
-                        >
+                        <div className="flex justify-end" role="toolbar">
                           <CopyToClipboard
                             text={removeThinkSection(message.content)}
                             className="border-0"
@@ -840,7 +873,7 @@ const FloatingChatWidget = () => {
                     className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`group max-w-[280px] px-4 py-2 rounded-2xl ${
+                      className={`max-w-[280px] px-4 py-2 rounded-2xl ${
                         message.role === MessageType.User
                           ? 'text-white rounded-br-md'
                           : 'rounded-bl-md'
@@ -861,7 +894,11 @@ const FloatingChatWidget = () => {
                       ) : (
                         <div className="space-y-2">
                           <FloatingChatWidgetMarkdown
-                            loading={false}
+                            loading={
+                              enableStreaming &&
+                              sendLoading &&
+                              index === displayMessages.length - 1
+                            }
                             content={message.content}
                             reference={
                               findReferenceByMessageId?.(message.id) ||
@@ -873,10 +910,7 @@ const FloatingChatWidget = () => {
                             }
                             clickDocumentButton={clickDocumentButton}
                           />
-                          <div
-                            className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100"
-                            role="toolbar"
-                          >
+                          <div className="flex justify-end" role="toolbar">
                             <CopyToClipboard
                               text={removeThinkSection(message.content)}
                               className="border-0"

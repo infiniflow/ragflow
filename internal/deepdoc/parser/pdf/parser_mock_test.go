@@ -1,7 +1,6 @@
 package pdf
 
 import (
-	"context"
 	"fmt"
 	"image"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
@@ -28,11 +27,11 @@ func TestMockDocAnalyzer(t *testing.T) {
 	if !mock.Health() {
 		t.Error("mock should be healthy")
 	}
-	regions, _ := mock.DLA(context.Background(), nil)
+	regions, _ := mock.DLA(t.Context(), nil)
 	if len(regions) != 1 || regions[0].Label != "table" {
 		t.Error("mock DLA returned wrong data")
 	}
-	cells, _ := mock.TSR(context.Background(), nil)
+	cells, _ := mock.TSR(t.Context(), nil)
 	if len(cells) != 1 || cells[0].Text != "A" {
 		t.Error("mock TSR returned wrong data")
 	}
@@ -57,7 +56,7 @@ func TestEnrichOnePageWithDeepDoc_Noop(t *testing.T) {
 
 	p := NewParser(pdf.DefaultParserConfig())
 	mock := &MockDocAnalyzer{Healthy: false}
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 0 {
 		t.Error("unhealthy DeepDoc → 0 Tables")
 	}
@@ -87,7 +86,7 @@ func TestEnrichOnePageWithDeepDoc_Mock(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig())
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 1 {
 		t.Fatalf("expected 1 pdf.TableItem, got %d", len(tables))
 	}
@@ -108,7 +107,7 @@ func TestEnrichOnePageWithDeepDoc_NoTables(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true, DLARegions: []pdf.DLARegion{}}
 	p := NewParser(pdf.DefaultParserConfig())
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 0 {
 		t.Errorf("0 tables expected, got %d", len(tables))
 	}
@@ -124,7 +123,7 @@ func TestEnrichOnePageWithDeepDoc_NonTableRegions(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 2000))
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 0 {
 		t.Errorf("non-table regions → 0 tables, got %d", len(tables))
 	}
@@ -142,7 +141,7 @@ func TestEnrichOnePageWithDeepDoc_NoOverlap(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummy, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 0 {
 		t.Errorf("no overlap → 0 tables, got %d", len(tables))
 	}
@@ -161,7 +160,7 @@ func TestEnrichOnePageWithDeepDoc_TSRError(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummy, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 1 {
 		t.Fatalf("TSR failure: expected 1 pdf.TableItem with image+positions, got %d", len(tables))
 	}
@@ -183,7 +182,7 @@ func TestEnrichOnePageWithDeepDoc_DLAError(t *testing.T) {
 	}}
 	p := NewParser(pdf.DefaultParserConfig())
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 0 {
 		t.Errorf("non-table DLA → 0 tables, got %d", len(tables))
 	}
@@ -241,7 +240,7 @@ func TestEnrichOnePageWithDeepDoc_InvalidRegion(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, nil, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 0 {
 		t.Errorf("invalid DLA region should be skipped, got %d tables", len(tables))
 	}
@@ -262,7 +261,7 @@ func TestParse_CollectsFigures(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -291,7 +290,7 @@ func TestParse_NoFigures(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -307,7 +306,7 @@ func TestParse_NoDeepDoc_NoFigures(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -335,7 +334,7 @@ func TestParse_UsesOCRDetectForEmbeddedChars(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -360,7 +359,7 @@ func TestParse_FallsBackToCharsToBoxes_NoDeepDoc(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -383,7 +382,7 @@ func TestParse_FallsBackToCharsToBoxes_EmptyOCRBoxes(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -405,7 +404,7 @@ func TestMockDocAnalyzer_DLAError_DoesNotCrash(t *testing.T) {
 		{PageNumber: 0, X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "text"},
 	}
 	// enrichOnePageWithDeepDoc should return nil (not panic) on DLA error.
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), img, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), img, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 0 {
 		t.Errorf("DLA error should produce 0 tables, got %d", len(tables))
 	}
@@ -426,7 +425,7 @@ func TestMockDocAnalyzer_TSRError_DoesNotCrash(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{PageNumber: 0, X0: 10, X1: 90, Top: 10, Bottom: 90, Text: "in table region"},
 	}
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), img, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), img, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	// DLA detects the table region → 1 pdf.TableItem is created.  TSR failure
 	// means it has no cells, but the pipeline must not panic.
 	if len(tables) != 1 {
@@ -446,7 +445,7 @@ func TestMockDocAnalyzer_OCRDetectError_DoesNotCrash(t *testing.T) {
 		Chars:    map[int][]pdf.TextChar{}, // empty → triggers OCR path
 	}
 	p := NewParser(pdf.DefaultParserConfig())
-	_, err := p.ParseRaw(context.Background(), eng, mock)
+	_, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}

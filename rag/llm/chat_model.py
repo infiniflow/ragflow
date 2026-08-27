@@ -1778,6 +1778,23 @@ class _StreamSanitizer:
         return out
 
 
+class SynthoraiChat(Base):
+    """Synthorai OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. Synthorai is a hosted
+    gateway on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the Synthorai API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "Synthorai"
+
+    _BASE_URL = "https://synthorai.io/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -2515,6 +2532,7 @@ class LiteLLMBase(ABC):
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
+            from botocore.utils import validate_region_name
 
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
@@ -2526,6 +2544,9 @@ class LiteLLMBase(ABC):
                 raise ValueError("Bedrock auth_mode must be provided in the key")
 
             bedrock_region = bedrock_key.get("bedrock_region")
+            if not bedrock_region:
+                raise ValueError("Bedrock region must be provided in the key")
+            validate_region_name(bedrock_region)
 
             if mode == "access_key_secret":
                 completion_args.update({"aws_region_name": bedrock_region})
@@ -2540,8 +2561,20 @@ class LiteLLMBase(ABC):
                 completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
                 completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
                 completion_args.update({"aws_session_token": creds["SessionToken"]})
-            else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
+            elif mode == "assume_role":
                 completion_args.update({"aws_region_name": bedrock_region})
+            elif mode == "bedrock_api_key":
+                api_key = bedrock_key.get("bedrock_api_key")
+                if not api_key:
+                    raise ValueError("Bedrock API key must be provided")
+                completion_args.update(
+                    {
+                        "api_key": api_key,
+                        "aws_region_name": bedrock_region,
+                    }
+                )
+            else:
+                raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             if self.provider_order:

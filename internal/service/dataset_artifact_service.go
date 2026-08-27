@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
 )
 
@@ -174,7 +175,7 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 		filter["page_type_kwd"] = []string{pageType}
 	}
 	if topic != "" {
-		filter["topic_kwd"] = []string{topic}
+		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
 	}
 	offset := (page - 1) * pageSize
 	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
@@ -197,7 +198,7 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 			Slug:     bareSlug,
 			Title:    firstStringValue(c["title_kwd"]),
 			PageType: pageType,
-			Topic:    firstStringValue(c["topic_kwd"]),
+			Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 			Summary:  firstStringValue(c["summary_with_weight"]),
 		})
 	}
@@ -264,7 +265,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		Slug:           detailSlug,
 		Title:          firstStringValue(c["title_kwd"]),
 		PageType:       detailPageType,
-		Topic:          firstStringValue(c["topic_kwd"]),
+		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 		ContentMd:      content,
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
@@ -334,44 +335,29 @@ type WikiTopicItem struct {
 	PageCount int    `json:"page_count"`
 }
 
-// ListWikiTopics aggregates wiki topics for a dataset.
+// ListWikiTopics aggregates materialized Wiki topic paths for a dataset. Topic
+// is the complete path and Title is its leaf segment; the frontend may derive a
+// navigation tree by splitting Topic on '/'.
 func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID string) ([]WikiTopicItem, int64, error) {
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
-		"page_type_kwd": []string{"concept", "entity"},
+		"page_type_kwd": []string{"concept", "entity", "topic"},
 		"available_int": 1, // count only merged pages, not per-doc source rows
 	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"topic_kwd", "title_kwd", "slug_kwd", "page_type_kwd"}, 0, 1000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	counts := map[string]int{}
-	metas := map[string]WikiTopicItem{}
-	for _, c := range chunks {
-		t := firstStringValue(c["topic_kwd"])
-		if t == "" {
-			continue
+	const batchSize = 1000
+	fields := []string{"topic_kwd"}
+	chunks := make([]map[string]interface{}, 0, batchSize)
+	for offset := 0; ; offset += batchSize {
+		batch, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, fields, offset, batchSize, nil)
+		if err != nil {
+			return nil, 0, err
 		}
-		pageType := firstStringValue(c["page_type_kwd"])
-		bareSlug := firstStringValue(c["slug_kwd"])
-		if pageType != "" {
-			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
-		}
-		counts[t]++
-		if _, ok := metas[t]; !ok {
-			metas[t] = WikiTopicItem{
-				Topic: t,
-				Title: firstStringValue(c["title_kwd"]),
-				Slug:  bareSlug,
-			}
+		chunks = append(chunks, batch...)
+		if len(batch) == 0 || int64(len(chunks)) >= total {
+			break
 		}
 	}
-	items := make([]WikiTopicItem, 0, len(metas))
-	for t, it := range metas {
-		it.PageCount = counts[t]
-		items = append(items, it)
-	}
+	items := aggregateWikiTopicItems(chunks)
 	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
 	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
 	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
@@ -381,6 +367,37 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
 	})
 	return items, int64(len(items)), nil
+}
+
+func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
+	type aggregate struct {
+		topic string
+		count int
+	}
+	byKey := make(map[string]*aggregate)
+	for _, c := range chunks {
+		t := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		item := byKey[key]
+		if item == nil {
+			item = &aggregate{topic: t}
+			byKey[key] = item
+		}
+		item.count++
+	}
+	items := make([]WikiTopicItem, 0, len(byKey))
+	for _, aggregate := range byKey {
+		items = append(items, WikiTopicItem{
+			Topic:     aggregate.topic,
+			Title:     kccommon.WikiTopicLeaf(aggregate.topic),
+			Slug:      aggregate.topic,
+			PageCount: aggregate.count,
+		})
+	}
+	return items
 }
 
 // wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese

@@ -35,7 +35,7 @@ func TestFault_NodeReturnsUnknownKey(t *testing.T) {
 	}
 
 	// Should not panic — unknown keys are ignored.
-	_, err = cg.Invoke(context.Background(), map[string]any{})
+	_, err = cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestFault_SingleNodeGraph(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestFault_LargeReturnValue(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestFault_DeepStateMutation(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestFault_ConditionalEdge_MissingKey(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestFault_ConditionalEdge_MissingKey(t *testing.T) {
 // TestFault_ConcurrentPutList verifies concurrent Put+List on same thread.
 func TestFault_ConcurrentPutList(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "cp-conc-put-list"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -247,7 +247,7 @@ func TestFault_100SequentialInvocations(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	for i := 0; i < 100; i++ {
 		_, err := cg.Invoke(ctx, map[string]any{"i": i})
 		if err != nil {
@@ -284,7 +284,7 @@ func TestFault_ParallelAppend(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestFault_AnyValueChannel(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]any{})
+	_, err = cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestFault_EnumStateValue(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

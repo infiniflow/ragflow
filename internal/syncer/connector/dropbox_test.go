@@ -19,6 +19,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -242,6 +243,20 @@ func TestDropboxConnectorOpenPruneAndResume(t *testing.T) {
 	}
 	if len(resumed.Documents) != 2 || resumed.Documents[0].SourceID != "dropbox:id:dup-2" || resumed.Documents[1].SourceID != "dropbox:id:image" {
 		t.Fatalf("resumed docs = %#v", resumed.Documents)
+	}
+}
+
+func TestDropboxConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	fixture := newDropboxTestServer(t)
+	connector := newDropboxTestConnector(t, fixture, false)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+		Resume:        &SyncCheckpoint{},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 

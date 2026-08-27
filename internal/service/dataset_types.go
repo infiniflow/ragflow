@@ -41,9 +41,12 @@ type SearchDatasetsRequest struct {
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
+	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
 	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
@@ -68,9 +71,12 @@ type SearchDatasetRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
+	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
 	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
@@ -91,9 +97,12 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Question:               req.Question,
 		Page:                   req.Page,
 		Size:                   req.Size,
+		RerankCandidatesCount:  req.RerankCandidatesCount,
 		DocIDs:                 req.DocIDs,
 		UseKG:                  req.UseKG,
+		KNNTopK:                req.KNNTopK,
 		TopK:                   req.TopK,
+		KNNNumCandidates:       req.KNNNumCandidates,
 		CrossLanguages:         req.CrossLanguages,
 		SearchID:               req.SearchID,
 		MetadataFilter:         req.MetadataFilter,

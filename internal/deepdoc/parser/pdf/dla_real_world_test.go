@@ -56,7 +56,7 @@ func TestDLARealWorldCompare(t *testing.T) {
 				savePNGFile(imgPath, pageImg)
 
 				// Call DLA.
-				regions, err := client.DLA(context.Background(), pageImg)
+				regions, err := client.DLA(t.Context(), pageImg)
 				if err != nil {
 					t.Fatalf("DLA: %v", err)
 				}

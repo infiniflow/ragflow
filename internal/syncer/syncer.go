@@ -83,8 +83,9 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 	}
 
 	coordinator := NewTaskCoordinator(SyncRunnerConfig{
-		ItemRetryCount:     config.ItemRetryCount,
-		ItemRetryBaseDelay: config.ItemRetryBaseDelay,
+		ItemRetryCount:        config.ItemRetryCount,
+		ItemRetryBaseDelay:    config.ItemRetryBaseDelay,
+		MaxAnchorRestartCount: config.MaxAnchorRestartCount,
 	}, taskDAO, taskService, registry, sink, pruneService, idResolver, executor, checkpoints)
 
 	scheduler := NewScheduler(queue, taskDAO)

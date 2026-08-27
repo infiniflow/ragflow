@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -63,6 +64,40 @@ func TestWikiActiveStatesDecodeCheckpointValues(t *testing.T) {
 	}
 	if len(states) != 1 || states[0].Key != "state-1" || string(states[0].Payload) != `{"plan":[]}` {
 		t.Fatalf("decoded states = %#v", states)
+	}
+}
+
+// TestApplyDocumentAvailability verifies disabled documents (status=0) force
+// ordinary source chunks to available_int=0 while compiled products stay hidden.
+func TestApplyDocumentAvailability(t *testing.T) {
+	chunks := []map[string]any{
+		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
+		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A", "available_int": 0},
+		{"id": "src-2", "content_with_weight": "another source chunk"},
+	}
+	markCompiledProductsHidden(chunks)
+	applyDocumentAvailability(chunks, strPtr("0"))
+
+	if chunks[0]["available_int"] != 0 {
+		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[0]["available_int"])
+	}
+	if chunks[1]["available_int"] != 0 {
+		t.Fatalf("compiled product should stay available_int=0, got %v", chunks[1]["available_int"])
+	}
+	if chunks[2]["available_int"] != 0 {
+		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[2]["available_int"])
+	}
+
+	enabled := []map[string]any{
+		{"id": "src-3", "content_with_weight": "enabled source"},
+	}
+	applyDocumentAvailability(enabled, strPtr("1"))
+	if v, ok := enabled[0]["available_int"]; ok {
+		t.Fatalf("enabled doc should keep default available_int, got %v", v)
+	}
+	applyDocumentAvailability(enabled, nil)
+	if v, ok := enabled[0]["available_int"]; ok {
+		t.Fatalf("nil status should keep default available_int, got %v", v)
 	}
 }
 
@@ -839,5 +874,17 @@ func TestCountOriginalChunkIDs(t *testing.T) {
 	}
 	if n := countOriginalChunkIDs(chunks); n != 2 {
 		t.Fatalf("compiler products: got %d, want 2", n)
+	}
+}
+
+func TestMergeCompiledVariants(t *testing.T) {
+	if got := mergeCompiledVariants(nil, nil); got != nil {
+		t.Fatalf("empty variants = %v, want nil", got)
+	}
+
+	got := mergeCompiledVariants([]string{"wiki", "structure"}, []string{"wiki", "tree"})
+	want := []string{"structure", "tree", "wiki"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("merged variants = %v, want %v", got, want)
 	}
 }
