@@ -206,3 +206,19 @@ class TestDecryptFailureClassification:
             # verdicts: they propagate instead of answering "wrong password".
             with pytest.raises(RuntimeError, match="private key file missing"):
                 auth.login_admin("admin@ragflow.io", "anything")
+
+
+class TestDecryptAcceptsLineWrappedBase64:
+    def test_round_trip_with_embedded_newlines(self):
+        """b64decode(validate=True) rejects embedded newlines; decrypt must
+        strip internal whitespace first or line-wrapped base64 payloads
+        (test fixtures, PEM-style senders) are treated as bad credentials."""
+        import base64 as b64
+
+        from api.utils.crypt import crypt, decrypt
+
+        blob = crypt("123")
+        wrapped = "\n".join(blob[i : i + 16] for i in range(0, len(blob), 16))
+
+        assert decrypt(wrapped) == b64.b64encode(b"123").decode()
+        assert decrypt(blob) == b64.b64encode(b"123").decode()

@@ -48,9 +48,13 @@ def decrypt(line):
     # Key-file read/import failures are server faults and propagate as-is.
     rsa_key = RSA.importKey(Path(file_path).read_text(), "Welcome")
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    # Everything below concerns the client-supplied payload.
+    # Everything below concerns the client-supplied payload. Strip internal
+    # whitespace first: line-wrapped base64 (as test fixtures and PEM-style
+    # senders produce) is legal base64, but b64decode(validate=True) would
+    # reject the embedded newlines. After the strip, validate=True still
+    # catches genuinely malformed payloads (non-alphabet characters).
     try:
-        ciphertext = base64.b64decode(line, validate=True)
+        ciphertext = base64.b64decode("".join(line.split()), validate=True)
     except ValueError as e:
         raise CryptPayloadError("password payload is not valid base64") from e
     try:
