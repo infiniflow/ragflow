@@ -7,11 +7,13 @@ function Harness({
   initialValue = 0,
   min = 0,
   max = 1,
+  hideIcons = true,
 }: {
   step?: number;
   initialValue?: number;
   min?: number;
   max?: number;
+  hideIcons?: boolean;
 }) {
   const [value, setValue] = useState(initialValue);
   return (
@@ -21,10 +23,13 @@ function Harness({
       step={step}
       min={min}
       max={max}
-      hideIcons
+      hideIcons={hideIcons}
     />
   );
 }
+
+const getButtons = () =>
+  Array.from(document.querySelectorAll('button'));
 
 const getInput = () => document.querySelector('input') as HTMLInputElement;
 
@@ -74,5 +79,47 @@ describe('NumberInput', () => {
     fireEvent.change(input, { target: { value: '0.5' } });
 
     expect(input.value).toBe('0.5');
+  });
+
+  it('derives precision from exponent-notation steps', () => {
+    render(<Harness step={1e-7} />);
+    const input = getInput();
+
+    fireEvent.change(input, { target: { value: '0.3333333333333333' } });
+
+    expect(input.value).toBe('0.3333333');
+  });
+
+  it('rounds to the fractional precision of steps greater than one', () => {
+    render(<Harness step={1.5} max={10} />);
+    const input = getInput();
+
+    fireEvent.change(input, { target: { value: '1.234' } });
+
+    expect(input.value).toBe('1.2');
+  });
+
+  it('steps by the configured step from the icon buttons', () => {
+    render(<Harness step={0.01} initialValue={0.3} hideIcons={false} />);
+    const input = getInput();
+    const [decrement, increment] = getButtons();
+
+    fireEvent.click(increment);
+    expect(input.value).toBe('0.31');
+
+    fireEvent.click(decrement);
+    fireEvent.click(decrement);
+    expect(input.value).toBe('0.29');
+  });
+
+  it('clamps icon-button stepping to the configured range', () => {
+    render(<Harness step={0.01} initialValue={0} hideIcons={false} />);
+    const input = getInput();
+    const [decrement] = getButtons();
+
+    // A full step below min would emit -0.01; the button stays at min.
+    fireEvent.click(decrement);
+
+    expect(input.value).toBe('0');
   });
 });

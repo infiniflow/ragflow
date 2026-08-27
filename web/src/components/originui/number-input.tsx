@@ -30,20 +30,33 @@ interface NumberInputProps {
 // integer mode; blocked on keydown so a decimal point can never be typed.
 const BlockedIntegerKeys = ['.', 'e', 'E', '+'];
 
-// Decimal places implied by a fractional step (e.g. 0.01 -> 2, 0.1 -> 1).
-// Undefined or whole-number steps keep the value untouched so integer
-// sliders are not affected.
+// Decimal places implied by a fractional step (e.g. 0.01 -> 2, 1e-7 -> 7).
+// Undefined, zero, non-finite and whole-number steps keep the value
+// untouched so integer sliders are not affected.
 const getStepDecimals = (step?: number): number => {
-  if (!step || step >= 1) {
+  if (step === undefined || !Number.isFinite(step) || Number.isInteger(step)) {
     return 0;
   }
-  return String(step).split('.')[1]?.length ?? 0;
+  // String(step) switches to exponent notation for tiny values (1e-7 has no
+  // '.'), so derive the precision from the mantissa and the exponent rather
+  // than counting fraction digits alone.
+  const [mantissa, exponent = '0'] = String(step).split('e');
+  const fractionLength = mantissa.split('.')[1]?.length ?? 0;
+  return Math.max(0, fractionLength - Number(exponent));
 };
 
 const roundToStepPrecision = (value: number, step?: number): number => {
   const decimals = getStepDecimals(step);
   return decimals > 0 ? Number(value.toFixed(decimals)) : value;
 };
+
+// Amount used by the +/- icon buttons; falls back to 1 like a plain
+// <input type="number"> without a step.
+const getStepAmount = (step?: number): number =>
+  step !== undefined && step > 0 ? step : 1;
+
+const clampToRange = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
 
 const NumberInput = forwardRef<
   HTMLInputElement,
@@ -79,23 +92,26 @@ const NumberInput = forwardRef<
     }
   }, [initialValue, step]);
 
-  const handleDecrement = () => {
-    if (isNumber(value) && value > min) {
-      setValue(value - 1);
-      onChange?.(value - 1);
-    }
-  };
-
-  const handleIncrement = () => {
+  // Move by one step from the +/- buttons, keeping the result inside
+  // [min, max] so fractional steps cannot emit out-of-range values.
+  const applyStep = (delta: number) => {
     if (!isNumber(value)) {
       return;
     }
-    if (value > max - 1) {
-      return;
+    const next = clampToRange(
+      roundToStepPrecision(value + delta * getStepAmount(step), step),
+      min,
+      max,
+    );
+    if (next !== value) {
+      setValue(next);
+      onChange?.(next);
     }
-    setValue(value + 1);
-    onChange?.(value + 1);
   };
+
+  const handleDecrement = () => applyStep(-1);
+
+  const handleIncrement = () => applyStep(1);
 
   const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
     if (
