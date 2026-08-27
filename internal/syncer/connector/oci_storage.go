@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -40,6 +41,8 @@ const (
 	ociStorageListPageSize         = 1000
 	ociStorageSource               = "oci_storage"
 )
+
+var ociStorageNamespacePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // OCIStorageConnector reads objects from Oracle Cloud Infrastructure Object
 // Storage through its S3-compatible API.
@@ -91,6 +94,9 @@ func (c *OCIStorageConnector) Validate(ctx context.Context) error {
 	}
 	if c.namespace == "" || c.region == "" || c.accessKeyID == "" || c.secretKey == "" {
 		return fmt.Errorf("OCI Storage credentials are required")
+	}
+	if err := validateOCIStorageNamespace(c.namespace); err != nil {
+		return err
 	}
 	if c.batchSize <= 0 {
 		return fmt.Errorf("batch_size must be a positive integer")
@@ -152,6 +158,9 @@ func (c *OCIStorageConnector) Fetch(ctx context.Context, ref FetchReference) ([]
 }
 
 func (c *OCIStorageConnector) ensureClient(ctx context.Context) (*s3.Client, error) {
+	if err := validateOCIStorageNamespace(c.namespace); err != nil {
+		return nil, err
+	}
 	if c.client != nil {
 		return c.client, nil
 	}
@@ -472,6 +481,13 @@ func normalizeOCIStoragePrefix(prefix string) string {
 		prefix += "/"
 	}
 	return prefix
+}
+
+func validateOCIStorageNamespace(namespace string) error {
+	if !ociStorageNamespacePattern.MatchString(namespace) {
+		return fmt.Errorf("invalid OCI Storage namespace %q: must be a lowercase DNS label containing only letters, numbers, and hyphens", namespace)
+	}
+	return nil
 }
 
 func ociStorageEndpoint(namespace, region string) string {

@@ -303,6 +303,29 @@ func TestOCIStorageConnectorValidate(t *testing.T) {
 	}
 }
 
+func TestOCIStorageConnectorRejectsInvalidNamespaceBeforeClientCreation(t *testing.T) {
+	for _, namespace := range []string{
+		"namespace.example.com",
+		"https://evil.example.org",
+		"evil.example.org:443",
+		"namespace/tenant",
+		"namespace space",
+		"-namespace",
+		"namespace-",
+		"Namespace",
+	} {
+		connector := newTestOCIStorageConnector(t, nil)
+		connector.namespace = namespace
+		connector.client = nil
+		if _, err := connector.ensureClient(context.Background()); err == nil {
+			t.Fatalf("expected invalid namespace %q to be rejected", namespace)
+		}
+		if connector.client != nil {
+			t.Fatalf("client was created for invalid namespace %q", namespace)
+		}
+	}
+}
+
 func TestOCIStorageConnectorValidateSetting(t *testing.T) {
 	connector := newTestOCIStorageConnector(t, []ociStorageObject{
 		{Key: "docs/a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
