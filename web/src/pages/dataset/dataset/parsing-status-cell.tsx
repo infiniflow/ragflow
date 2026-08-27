@@ -13,6 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { normalizeRunningStatus } from '@/constants/knowledge';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { CircleQuestionMark, CircleX } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
@@ -110,7 +111,8 @@ export function ParsingStatusCell({
   showLog: (record: IDocumentInfo) => void;
 } & UseChangeDocumentParserShowType) {
   const { run, progress, chunk_count, id } = record;
-  const operationIcon = IconMap[run];
+  const normalizedRun = normalizeRunningStatus(run);
+  const operationIcon = normalizedRun ? IconMap[normalizedRun] : undefined;
   const p = Number((progress * 100).toFixed(2));
   const {
     handleRunDocumentByIds,
@@ -139,7 +141,9 @@ export function ParsingStatusCell({
     <section
       className="flex gap-8 items-center"
       data-testid="document-parse-status"
-      data-state={ParseStatusStateMap[run] ?? 'unknown'}
+      data-state={
+        normalizedRun ? ParseStatusStateMap[normalizedRun] : 'unknown'
+      }
     >
       {showParse && (
         <div className="flex items-center gap-2">

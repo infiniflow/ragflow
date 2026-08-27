@@ -17,7 +17,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 
 import message from '@/components/ui/message';
-import { RunningStatus } from '@/constants/knowledge';
+import { normalizeRunningStatus, RunningStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/dataset';
@@ -178,7 +178,9 @@ export const useFetchDocumentList = (loop = true) => {
     initialData: { docs: [], total: 0 },
     refetchInterval: (query) =>
       loop &&
-      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
+      query.state.data?.docs.some(
+        (doc) => normalizeRunningStatus(doc.run) === RunningStatus.RUNNING,
+      )
         ? 5000
         : false,
     enabled: !!knowledgeId || !!id,

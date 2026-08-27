@@ -41,6 +41,35 @@ export enum RunningStatusOld {
   SCHEDULE = '5',
 }
 
+export type RunningStatusValue = RunningStatus | RunningStatusOld | number;
+
+export const normalizeRunningStatus = (
+  status: unknown,
+): RunningStatus | undefined => {
+  switch (String(status)) {
+    case RunningStatus.UNSTART:
+    case RunningStatusOld.UNSTART:
+      return RunningStatus.UNSTART;
+    case RunningStatus.RUNNING:
+    case RunningStatusOld.RUNNING:
+      return RunningStatus.RUNNING;
+    case RunningStatus.CANCEL:
+    case RunningStatusOld.CANCEL:
+      return RunningStatus.CANCEL;
+    case RunningStatus.DONE:
+    case RunningStatusOld.DONE:
+      return RunningStatus.DONE;
+    case RunningStatus.FAIL:
+    case RunningStatusOld.FAIL:
+      return RunningStatus.FAIL;
+    case RunningStatus.SCHEDULE:
+    case RunningStatusOld.SCHEDULE:
+      return RunningStatus.SCHEDULE;
+    default:
+      return undefined;
+  }
+};
+
 export const RunningStatusMap = {
   [RunningStatus.UNSTART]: 'Pending',
   [RunningStatus.RUNNING]: 'Running',
