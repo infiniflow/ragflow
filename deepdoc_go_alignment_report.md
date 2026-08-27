@@ -162,8 +162,8 @@ ORT version (controlled experiments ruled out ORT version):
   - `parser_concurrency.go`: optional `batchRecognizer` interface
     (`OCRRecognizeBatch`); `inferOCRRecognizeBatch` occupies one limiter slot for
     the whole batch; `docSupportsBatchOCR` detects batch capability. Analyzers
-    that do not implement the interface (MockDocAnalyzer / DocAnalyzerCache /
-    replay analyzer) fall back to the per-crop path — zero interface breakage.
+    that do not implement the interface (MockDocAnalyzer / replay analyzer)
+    fall back to the per-crop path — zero interface breakage.
   - `parser_ocr.go`: `ocrDetectAndRecognize` collects each box's layer-2 rotation
     candidates, accumulates a 1-D `cropAcc`, and if `docSupportsBatchOCR` issues
     a single `inferOCRRecognizeBatch` (one Run), otherwise falls back per-crop;
@@ -245,7 +245,7 @@ been **removed**, along with the pure Python comparison tests that referenced it
 | `internal/deepdoc/parser/pdf/inference/native_analyzer/native_analyzer.go` | `NativeAnalyzer` (incl. `OCRRecognizeBatch`) |
 | `internal/deepdoc/parser/pdf/parser_concurrency.go` | `batchRecognizer` interface / `inferOCRRecognizeBatch` / `docSupportsBatchOCR` |
 | `internal/deepdoc/parser/pdf/parser_ocr.go` | `ocrDetectAndRecognize` / `buildTextBoxes` (batch call site) |
-| `internal/deepdoc/parser/pdf/inference/cache.go` | `DocAnalyzerCache` (retained) |
+| `internal/deepdoc/parser/type/labels.go` | `DefaultDLALabels` / `DefaultTSRLabels` (DLA/TSR wire-contract taxonomies; moved here from the removed `inference` HTTP-service cache package) |
 | `internal/parser/parser/pdf_parser_common.go` | `deepDocAnalyzerFromEnv` (ignores `DEEPDOC_URL`) |
 | `build.sh` | `setup_cgo_env` (cgo flags), `--test-native` |
 | `cmd/ragflow_server.go` | `registerNativeDeepDoc` (registers in-process only) |

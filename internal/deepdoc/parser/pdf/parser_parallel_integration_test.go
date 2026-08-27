@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"reflect"
 	"testing"
 

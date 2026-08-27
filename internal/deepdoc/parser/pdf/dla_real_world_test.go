@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"

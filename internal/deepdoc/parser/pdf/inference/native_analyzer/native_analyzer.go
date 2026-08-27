@@ -23,7 +23,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/deepdoc/native"
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
@@ -74,7 +73,7 @@ func NewAnalyzer(modelDir string, dropScore float64) (*NativeAnalyzer, error) {
 // OCRRecognize to blank low-confidence text, mirroring the Python service's
 // Recognizer.drop_score. The factory returns false when the backend cannot
 // serve, so the parser degrades to the empty analyzer rather than crashing.
-func Register(modelDir, dropScore float64) error {
+func Register(modelDir string, dropScore float64) error {
 	registeredModelDir = modelDir
 	if err := native.InitORT(); err != nil {
 		return fmt.Errorf("deepdoc native: init onnxruntime: %w", err)
@@ -117,7 +116,7 @@ func (a *NativeAnalyzer) DLA(ctx context.Context, img image.Image) ([]deepdoctyp
 	if err != nil {
 		return nil, err
 	}
-	labels := inference.DefaultDLALabels()
+	labels := deepdoctype.DefaultDLALabels()
 	out := make([]deepdoctype.DLARegion, 0, len(res.Boxes))
 	for _, b := range res.Boxes {
 		label := ""

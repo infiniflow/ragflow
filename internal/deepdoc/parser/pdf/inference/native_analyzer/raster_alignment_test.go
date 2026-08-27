@@ -44,8 +44,8 @@ import (
 	"testing"
 
 	"ragflow/internal/deepdoc/native"
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	pdfium "ragflow/internal/deepdoc/parser/pdf/pdfium"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // repoRoot climbs from this test's directory to the repository root so the
@@ -165,7 +165,7 @@ func TestRasterAlignmentDLA(t *testing.T) {
 	a := analyzerWithModels(t)
 	ctx := context.Background()
 	root := repoRoot(t)
-	labels := inference.DefaultDLALabels()
+	labels := deepdoctype.DefaultDLALabels()
 
 	for _, rp := range rasterPages {
 		rp := rp
@@ -328,7 +328,7 @@ func TestRasterAlignmentTSR(t *testing.T) {
 	a := analyzerWithModels(t)
 	ctx := context.Background()
 	root := repoRoot(t)
-	labels := inference.DefaultTSRLabels()
+	labels := deepdoctype.DefaultTSRLabels()
 
 	for _, rp := range tsrRasterPages {
 		rp := rp
@@ -394,7 +394,7 @@ func TestTSRFloorFullPageTables(t *testing.T) {
 	a := analyzerWithModels(t)
 	ctx := context.Background()
 	root := repoRoot(t)
-	labels := inference.DefaultTSRLabels()
+	labels := deepdoctype.DefaultTSRLabels()
 
 	worst := 0.0
 	for _, rp := range tsrFullPageTables {

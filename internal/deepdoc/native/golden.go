@@ -1,4 +1,4 @@
-//go:build cgo && integration
+//go:build cgo
 
 package native
 
@@ -12,9 +12,9 @@ package native
 //     deepdoc service using the very same Python-reference goldens.
 //
 // Keeping one implementation avoids two diverging copies of the matching math.
-// This file is gated by the integration build tag (like native_integration_test.go):
-// it is compiled both when the native suite runs (-tags integration) and when
-// the infnative package imports this module (-tags "cgo integration").
+// These are pure comparison helpers with no runtime model dependency, so the
+// file is gated by `cgo` only (not `integration`): the manual-tier
+// raster-alignment tests reuse them without pulling in the integration tag.
 
 import (
 	"encoding/json"

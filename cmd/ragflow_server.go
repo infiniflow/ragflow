@@ -292,7 +292,7 @@ func main() {
 	// routes) and "ingestor" runs the ingestion pipeline. "admin"/"syncer"
 	// never instantiate the analyzer, so they must not fail-fast when ORT and
 	// models are absent on their node.
-	if servermode.NeedsDeepDoc(*args.mode) {
+	if servermode.NeedsDeepDoc(*arguments.mode) {
 		registerNativeDeepDoc()
 	}
 

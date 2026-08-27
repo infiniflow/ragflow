@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"ragflow/internal/deepdoc/native"
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
@@ -63,9 +62,6 @@ func TestNativeAnalyzerUninitializedNegative(t *testing.T) {
 // the in-process DeepDoc backend (static ORT + models). CI/runner images that
 // bake both set DEEPDOC_NATIVE_REQUIRED=1 so a missing prerequisite fails loud
 // instead of silently skipping and painting CI green while ORT is never tested.
-func deepdocNativeRequired() bool {
-	return os.Getenv("DEEPDOC_NATIVE_REQUIRED") == "1"
-}
 
 func TestNativeAnalyzerInProcess(t *testing.T) {
 	modelDir := os.Getenv("MODEL_DIR")
@@ -77,7 +73,7 @@ func TestNativeAnalyzerInProcess(t *testing.T) {
 	}
 	// ONNX Runtime is resolved statically via dlopen(NULL). If the binary was
 	// not built with static ORT, Register fails and we skip rather than fail.
-	if err := Register(modelDir, "", DefaultDropScore); err != nil {
+	if err := Register(modelDir, DefaultDropScore); err != nil {
 		if deepdocNativeRequired() {
 			t.Fatalf("in-process backend unavailable (not statically linked) but required (DEEPDOC_NATIVE_REQUIRED=1): %v", err)
 		}
@@ -249,52 +245,13 @@ func openFixture(t *testing.T, stem string) image.Image {
 // labelKey maps a layout/TSR label to a stable integer key so the analyzer's
 // string Label can be matched against the golden's integer class under the
 // same key space. Duplicate labels (DLA has two "table caption" entries) map to
-// their first index on BOTH sides, mirroring the analyzer's class->label
-// expansion.
-func labelKey(labels []string, label string) int {
-	for i, l := range labels {
-		if l == label {
-			return i
-		}
-	}
-	return -1
-}
-
-// analyzerWithModels builds a NativeAnalyzer after ensuring ONNX Runtime is
-// initialized. It mirrors skipIfNoModels in the native suite: MODEL_DIR is
-// always required, and ONNX Runtime is resolved statically via dlopen(NULL).
-// If the binary was not built with static ORT, InitORT() fails and the test
-// skips rather than fails. InitORT is idempotent so it composes with the other
-// analyzer tests in this file.
-func analyzerWithModels(t *testing.T) *NativeAnalyzer {
-	t.Helper()
-	modelDir := os.Getenv("MODEL_DIR")
-	if modelDir == "" {
-		if deepdocNativeRequired() {
-			t.Fatalf("MODEL_DIR must be set: the in-process DeepDoc backend is required (DEEPDOC_NATIVE_REQUIRED=1)")
-		}
-		t.Skip("MODEL_DIR required (in-process backend integration)")
-	}
-	if err := native.InitORT(); err != nil {
-		if deepdocNativeRequired() {
-			t.Fatalf("ONNX Runtime not statically linked but required (DEEPDOC_NATIVE_REQUIRED=1): %v", err)
-		}
-		t.Skipf("ORT not available (not statically linked): %v", err)
-	}
-	a, err := NewAnalyzer(modelDir, DefaultDropScore)
-	if err != nil {
-		t.Fatalf("NewAnalyzer: %v", err)
-	}
-	return a
-}
-
 // TestAnalyzerDLAGolden proves the analyzer's DLA output matches the Python
 // reference golden (class + coordinates + confidence) within the documented
 // sub-pixel floor, across the same fixtures the native suite uses.
 func TestAnalyzerDLAGolden(t *testing.T) {
 	a := analyzerWithModels(t)
 	ctx := context.Background()
-	labels := inference.DefaultDLALabels()
+	labels := deepdoctype.DefaultDLALabels()
 	stems := []string{"page0", "mp_textbook_en_p0", "mp_whitepaper_cn_p0", "mp_paper_eq_p0", "mp_zhtw_ent_p0",
 		"dla_2510_figcap", "dla_bookrag_figcap", "dla_2510_eq",
 		"dla_real_cn_report", "dla_real_zhtw", "dla_real_en_paper"}
@@ -332,7 +289,7 @@ func TestAnalyzerDLAGolden(t *testing.T) {
 func TestAnalyzerTSRGolden(t *testing.T) {
 	a := analyzerWithModels(t)
 	ctx := context.Background()
-	labels := inference.DefaultTSRLabels()
+	labels := deepdoctype.DefaultTSRLabels()
 	stems := []string{"table0", "tsr_table_normal", "tsr_table_rotation",
 		"tsr_06_table_content", "tsr_18_table_caption", "tsr_13_crosspage", "tsr_14_interleaved",
 		"tsr_real_report"}

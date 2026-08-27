@@ -226,7 +226,7 @@ func (p *Parser) inferOCRRecognize(ctx context.Context, doc pdf.DocAnalyzer, cro
 // batchRecognizer is an OPTIONAL capability a pdf.DocAnalyzer may implement to
 // recognize a page's OCR crops in one batched forward pass (see
 // NativeAnalyzer.OCRRecognizeBatch). The production in-process backend
-// implements it; test doubles (MockDocAnalyzer, DocAnalyzerCache, replay
+// implements it; test doubles (MockDocAnalyzer, replay
 // analyzer) and any analyzer that prefers per-crop recognition do not.
 // Callers MUST fall back to inferOCRRecognize when the analyzer does not
 // implement it, so adding this capability never forces changes onto mocks or

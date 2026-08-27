@@ -37,7 +37,7 @@ type DLAResult struct {
 
 var (
 	// yoloDlaLabels mirrors LayoutRecognizer4YOLOv10.labels (10 classes). It
-	// must stay element-for-element identical to inference.DefaultDLALabels
+	// must stay element-for-element identical to doctype.DefaultDLALabels
 	// (same order, same duplicate indices 4/7/9) — that list is the wire
 	// contract the in-process detector serialises through. The two live in
 	// separate modules so they cannot share one constant; keep them in sync by
