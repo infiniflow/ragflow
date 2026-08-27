@@ -30,6 +30,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -98,7 +99,7 @@ func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 // file extension against the image extension whitelist. The actual
 // OCR and VLM description happens via maybeDispatchImage at the
 // component layer (mirrors Python's picture.py:chunk()).
-func (p *PictureParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if len(ext) > 1 && ext[0] == '.' {
 		ext = ext[1:]
@@ -120,9 +121,12 @@ func (p *PictureParser) ParseWithResult(filename string, data []byte) ParseResul
 
 	// OutputFormat, VLMModelID, ImageContextSize, and LayoutRecognize
 	// are consumed by maybeDispatchImage at the component layer.
+	// Image family only allows json (schema/parser.go, Python parser.py),
+	// so default empty to json. Strict: explicit text is kept as-is
+	// and will be rejected by the dispatch whitelist.
 	outFmt := p.OutputFormat
 	if outFmt == "" {
-		outFmt = "text"
+		outFmt = "json"
 	}
 
 	return ParseResult{

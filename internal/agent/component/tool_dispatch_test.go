@@ -49,7 +49,7 @@ func TestPhase3_5_ToolDispatchViaEinoReact(t *testing.T) {
 }
 
 // TestPhase3_6_ToolDSLLoading exercises the Python-equivalent of
-// _load_tool_obj: buildAgentTools(p) maps AgentParam.Tools (a slice
+// _load_tool_obj: buildAgentTools(ctx, p) maps AgentParam.Tools (a slice
 // of registered tool names) to einotool.BaseTool instances via
 // agenttool.BuildAll. The factory validates each name against the
 // registry; an unknown name surfaces a build-time error (not a
@@ -64,12 +64,13 @@ func TestPhase3_6_ToolDSLLoading(t *testing.T) {
 		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
 	})
 
+	ctx := t.Context()
 	c := NewAgentComponent(AgentParam{
 		ModelID:   "stub",
 		MaxRounds: 1,
 		Tools:     []string{"retrieval"}, // known tool
 	})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"user_prompt": "test",
 	})
 	if err != nil {
@@ -102,7 +103,7 @@ func TestAgent_GoogleToolDSLParamsLoading(t *testing.T) {
 		t.Fatalf("google tool form missing q: %+v", googleForm)
 	}
 
-	if _, err := buildAgentTools(c.param); err != nil {
+	if _, err := buildAgentTools(t.Context(), c.param); err != nil {
 		t.Fatalf("buildAgentTools with google params: %v", err)
 	}
 }

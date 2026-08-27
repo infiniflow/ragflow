@@ -51,7 +51,7 @@ def chunk(
     main_res = []
     attachment_res = []
 
-    if binary:
+    if binary is not None:
         with io.BytesIO(binary) as buffer:
             msg = BytesParser(policy=policy.default).parse(buffer)
     else:

@@ -28,6 +28,7 @@ type response struct {
 	Code    ErrorCode   `json:"code"`
 	Data    interface{} `json:"data"`
 	Message interface{} `json:"message"`
+	Total   interface{} `json:"total,omitempty"`
 }
 
 // errorResponse error response
@@ -41,6 +42,16 @@ func SuccessWithData(c *gin.Context, data interface{}, message interface{}) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
 		Data:    data,
+		Message: message,
+	})
+}
+
+// SuccessWithDataAndTotal returns success response with data and total number
+func SuccessWithDataAndTotal(c *gin.Context, data, total, message interface{}) {
+	c.JSON(http.StatusOK, response{
+		Code:    CodeSuccess,
+		Data:    data,
+		Total:   total,
 		Message: message,
 	})
 }

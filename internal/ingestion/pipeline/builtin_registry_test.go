@@ -20,8 +20,11 @@ func TestRegistryLoadsSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistryFromDir: %v", err)
 	}
-	if got := len(r.List()); got != 2 {
+	if got := len(r.List().BuiltinPipelines); got != 2 {
 		t.Fatalf("len(List()) = %d, want 2", got)
+	}
+	if got := r.List().Total; got != 2 {
+		t.Fatalf("Total = %d, want 2", got)
 	}
 	tpl, ok := r.Get("general")
 	if !ok {
@@ -85,9 +88,7 @@ func TestRegistryVsHardcodedList(t *testing.T) {
 		"picture":      true,
 		"presentation": true,
 		"qa":           true,
-		"resume":       true,
 		"table":        true,
-		"tag":          true,
 	}
 	for h := range hardcoded {
 		t.Logf("Hardcoded has: %s", h)
@@ -164,7 +165,7 @@ func TestRegistryAliasNaiveResolvesGeneral(t *testing.T) {
 			t.Error("Refs() contains alias naive; aliases must be hidden from listing")
 		}
 	}
-	for _, meta := range r.List() {
+	for _, meta := range r.List().BuiltinPipelines {
 		if meta.ParserID == "naive" {
 			t.Error("List() contains alias naive; aliases must be hidden from listing")
 		}

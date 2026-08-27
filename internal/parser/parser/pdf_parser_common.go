@@ -18,7 +18,6 @@ package parser
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
@@ -33,6 +32,7 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/utility"
 )
 
 // ErrPDFEngineUnavailable is returned by PDFParser.ParseWithResult
@@ -58,12 +58,16 @@ type PDFParser struct {
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
 
-	FlattenMediaToText                bool
-	RemoveTOC                         bool
-	RemoveHeaderFooter                bool
-	EnableMultiColumn                 bool
-	OutputFormat                      string
-	ParseMethod                       string
+	FlattenMediaToText bool
+	RemoveTOC          bool
+	RemoveHeaderFooter bool
+	EnableMultiColumn  bool
+	OutputFormat       string
+	ParseMethod        string
+	// Pages restricts parsing to these 1-indexed inclusive page ranges.
+	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
+	// the filetype setup map and forwarded to the deepdoc ParserConfig.
+	Pages                             [][]int
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
@@ -109,7 +113,7 @@ func NewPDFParser() *PDFParser {
 		MinerUPollTimeout:              minerUPollTimeout,
 		PaddleOCRAlgorithm:             "PaddleOCR-VL",
 		OpenDataLoaderTimeout:          600,
-		SoMarkBaseURL:                  "https://somark.tech/api/v1",
+		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
 		SoMarkFormulaFormat:            "latex",
 		SoMarkTableFormat:              "html",
@@ -250,6 +254,18 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
+	if raw, ok := setup["pages"]; ok {
+		// Request-layer validation (NormalizeParserConfigPages) already
+		// rejects invalid ranges at the API boundary. At parse time the input
+		// should already be normalized; degrade to "parse all pages" rather
+		// than failing the parse if an unexpected shape slips through.
+		if pages, err := utility.NormalizePDFPages(raw); err != nil {
+			slog.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
+				"raw", raw, "err", err)
+		} else {
+			p.Pages = pages
+		}
+	}
 }
 
 func normalizePDFParseMethod(raw string) string {
@@ -328,6 +344,8 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
 	applyPDFPostProcess(&processed, opts)
+	defer processed.Close()
+	cropMediaSections(&processed)
 
 	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
@@ -346,12 +364,9 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		}
 		normalizePDFDocType(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
-			items[i]["image"] = "data:image/png;base64," + img
+			items[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
 	}
-	// JSON is consumed by the chunker, which re-acquires the source PDF
-	// and crops image/table sections on demand. Release the engine now.
-	processed.Close()
 	return ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
@@ -374,11 +389,8 @@ func pdfParseResultToMarkdownWithOptions(filename string, parsed *deepdoctype.Pa
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
 	applyPDFPostProcess(&processed, opts)
-	// Markdown embeds figure images inline, so crop figures here while
-	// the engine is still alive. The chunker path crops image/table
-	// chunks on demand instead.
-	cropMarkdownFigures(&processed)
-	processed.Close()
+	defer processed.Close()
+	cropMediaSections(&processed)
 
 	return ParseResult{
 		OutputFormat: "markdown",
@@ -423,58 +435,28 @@ func firstPageNumber(raw any) int {
 	}
 }
 
-func inlinePNGDataURL(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	if strings.HasPrefix(raw, "data:image/") {
-		return raw
-	}
-	if _, err := base64.StdEncoding.DecodeString(raw); err != nil {
-		return raw
-	}
-	return "data:image/png;base64," + raw
-}
-
 func sectionsToMarkdown(sections []deepdoctype.Section) string {
-	var b strings.Builder
-	for _, section := range sections {
-		layoutType := strings.TrimSpace(section.LayoutType)
-		if layoutType == deepdoctype.LayoutTypeTitle {
-			b.WriteString("\n## ")
-		}
-		if layoutType == deepdoctype.LayoutTypeFigure && section.Image != "" {
-			b.WriteString("\n![Image](")
-			b.WriteString(inlinePNGDataURL(section.Image))
-			b.WriteString(")")
-			continue
-		}
-		b.WriteString(section.Text)
-		b.WriteByte('\n')
-	}
-	return b.String()
+	return pdflayout.SectionsToMarkdown(sections)
 }
 
-// cropMarkdownFigures crops inline images for figure sections so the
-// markdown output can embed them. It mirrors the figure branch of the
-// former Parse.fillSectionImages, but runs only for the markdown path
-// (the JSON path defers cropping to the chunker). The engine is read
-// from result.Engine; callers must Close the result afterwards.
-func cropMarkdownFigures(result *deepdoctype.ParseResult) {
+// cropMediaSections crops figure and table sections from rendered PDF page
+// images while the engine is still alive, populating sec.Image.
+// It is used by both the JSON and Markdown serialization paths.
+func cropMediaSections(result *deepdoctype.ParseResult) {
 	engine := result.Engine
 	if engine == nil || len(result.PageHeight) == 0 {
 		return
 	}
-	// Render each page at most once across all figures. A PDF can have many
-	// figures on the same page, so a cache shared across the section loop
-	// avoids re-rendering the page for every figure.
+	// Render each page at most once across all media sections. A PDF can have many
+	// figures/tables on the same page, so a cache shared across the section loop
+	// avoids re-rendering the page for every section.
 	//
-	// result.Sections is ordered by page, so once we advance to a figure whose
-	// minimum page is P, no later figure references a page < P. We therefore
+	// result.Sections is ordered by page, so once we advance to a section whose
+	// minimum page is P, no later section references a page < P. We therefore
 	// keep only a sliding window of page images: pages strictly below the
-	// current figure's minimum page are evicted. This bounds memory to the
-	// current figure's page span (typically one page, a few at most for a
-	// cross-page figure) instead of caching the whole PDF.
+	// current section's minimum page are evicted. This bounds memory to the
+	// current section's page span (typically one page, a few at most for a
+	// cross-page section) instead of caching the whole PDF.
 	pageCache := make(map[int]image.Image)
 	renderPage := func(pn int) image.Image {
 		if img, ok := pageCache[pn]; ok {
@@ -482,7 +464,7 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 		}
 		img, err := deepdocpdf.RenderPageToImage(engine, pn)
 		if err != nil || img == nil {
-			slog.Warn("cropMarkdownFigures: render failed, skipping figure",
+			slog.Warn("cropMediaSections: render failed, skipping section",
 				"page", pn, "err", err)
 			pageCache[pn] = nil
 			return nil
@@ -493,13 +475,19 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 
 	for i := range result.Sections {
 		sec := &result.Sections[i]
-		if sec.LayoutType != deepdoctype.LayoutTypeFigure {
+		if strings.TrimSpace(sec.Image) != "" {
+			continue
+		}
+		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&
+			sec.LayoutType != deepdoctype.LayoutTypeTable &&
+			strings.TrimSpace(sec.LayoutType) != "image" &&
+			sec.DocTypeKwd != "image" && sec.DocTypeKwd != "table" {
 			continue
 		}
 		if len(sec.Positions) == 0 {
 			continue
 		}
-		// Minimum page this figure touches; used both to prune stale cache
+		// Minimum page this section touches; used both to prune stale cache
 		// entries and to bound the window.
 		minPage := -1
 		pages := make(map[int]struct{})
@@ -511,8 +499,8 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 				}
 			}
 		}
-		// Evict page images that no later figure can reference (all future
-		// figures start at page >= minPage).
+		// Evict page images that no later section can reference (all future
+		// sections start at page >= minPage).
 		for pn := range pageCache {
 			if pn < minPage {
 				delete(pageCache, pn)
@@ -520,9 +508,9 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 		}
 		// Collect every distinct page this section spans so CropSectionByDLA
 		// can crop and vertically concatenate each page (mirroring Python's
-		// cropout multi-page branch). Single-page figures still render exactly
+		// cropout multi-page branch). Single-page sections still render exactly
 		// one page, and the pageCache above guarantees a page is rendered at
-		// most once even when several figures share it.
+		// most once even when several sections share it.
 		single := make(map[int]image.Image, len(pages))
 		for pn := range pages {
 			if img := renderPage(pn); img != nil {
@@ -532,9 +520,17 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 		if len(single) == 0 {
 			continue
 		}
-		if dla := util.CropSectionByDLA(*sec, result.DLARegions, single); dla != "" {
-			sec.Image = dla
-			continue
+		if sec.LayoutType == deepdoctype.LayoutTypeFigure {
+			if dla := util.CropSectionByDLA(*sec, result.DLARegions, single); dla != "" {
+				sec.Image = dla
+				continue
+			}
+		}
+		if len(sec.Positions) > 0 {
+			if img := util.CropSectionPositions(sec.Positions, single, deepdoctype.DlaScale); img != "" {
+				sec.Image = img
+				continue
+			}
 		}
 		sec.Image = util.CropSectionImage(sec.PositionTag, single, deepdoctype.DlaScale)
 	}
@@ -582,13 +578,18 @@ func normalizePDFPositions(raw any) [][]any {
 	return normalized
 }
 
+// normalizePDFPageNumber converts a DeepDoc 0-indexed page number to the
+// 1-indexed form stored in _pdf_positions / positions. It is the SINGLE
+// 0→1 conversion point: DeepDoc (pdf_oxide/pdfium) emits 0-indexed pages,
+// and every downstream consumer (AddPositions for ES storage,
+// PositionsFromMatrix for the PDFium render path) expects 1-indexed input.
+// Adding +1 unconditionally — instead of only for v<=0 — keeps all pages
+// consistent; the old heuristic left page>=1 unconverted, which AddPositions
+// then double-incremented and PositionsFromMatrix mis-decremented.
 func normalizePDFPageNumber(raw any) (int, bool) {
 	switch v := raw.(type) {
 	case int:
-		if v <= 0 {
-			return v + 1, true
-		}
-		return v, true
+		return v + 1, true
 	case int64:
 		return normalizePDFPageNumber(int(v))
 	case float64:
@@ -666,7 +667,7 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	}
 	for i := range res.JSON {
 		if img, _ := res.JSON[i]["image"].(string); img != "" {
-			res.JSON[i]["image"] = inlinePNGDataURL(img)
+			res.JSON[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
 	}
 	return res

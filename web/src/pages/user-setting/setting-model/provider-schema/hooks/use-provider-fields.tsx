@@ -127,9 +127,13 @@ export const useProviderFields = ({
           return (values: any) => {
             const mt = values?.model_type;
             if (Array.isArray(mt)) {
-              return mt.includes('chat') || mt.includes('image2text');
+              return (
+                mt.includes('chat') ||
+                mt.includes('vision') ||
+                mt.includes('image2text')
+              );
             }
-            return mt === 'chat' || mt === 'image2text';
+            return mt === 'chat' || mt === 'vision' || mt === 'image2text';
           };
         case 'modelTypeIncludesTtsAndNotExists':
           return (values: any) => {
@@ -209,6 +213,7 @@ export const useProviderFields = ({
             value: o.value,
           })) as any,
           defaultValue: field.defaultValue,
+          autoComplete: field.autoComplete,
           validation,
           shouldRender: resolveShouldRender(field.shouldRender),
           // In viewMode, only the model-related fields are editable.
@@ -243,9 +248,14 @@ export const useProviderFields = ({
                   onChange={(value) => fieldProps.onChange(value)}
                   options={inputSelectOptions as any}
                   placeholder={placeholderText}
+                  autoComplete={field.autoComplete}
                 />
               ) : (
-                <Input {...fieldProps} placeholder={placeholderText} />
+                <Input
+                  {...fieldProps}
+                  placeholder={placeholderText}
+                  autoComplete={field.autoComplete}
+                />
               );
             },
           };

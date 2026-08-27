@@ -34,11 +34,14 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"strconv"
 	"strings"
 	"time"
 
 	"ragflow/internal/agent/runtime"
+
+	"go.uber.org/zap"
 )
 
 // nodeBodyFn is the plain function shape compose.InvokableLambda accepts.
@@ -74,8 +77,8 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // Outputs bucket. UserFillUpNodeBody tags its output itself so the
 // interrupt-driven branch still attributes the resume payload to the
 // right cpn.
-// ctxKeyOverrideParams carries the run-level setups override map into
-// BuildWorkflow so a component's `params["setups"]` can be merged with it
+// ctxKeyOverrideParams carries the run-level override map into
+// BuildWorkflow so a component's params can be merged with it
 // at compile time. The map is keyed by cpnID; each component only sees the
 // entry for its own id (an arbitrary string-keyed map). It mirrors the ctx
 // plumbing used for the per-run component factory
@@ -84,7 +87,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // package ever importing the ingestion layer.
 const ctxKeyOverrideParams ctxKey = "canvas_override_params"
 
-// withOverrideParams attaches a run-level setups override map to ctx. It is
+// withOverrideParams attaches a run-level override map to ctx. It is
 // a no-op when m is nil so callers can pass a possibly-nil run parameter
 // straight through.
 func withOverrideParams(ctx context.Context, m map[string]any) context.Context {
@@ -100,42 +103,30 @@ func overrideParamsFromContext(ctx context.Context) map[string]any {
 }
 
 // applyOverrideParams returns a clone of params with the per-component
-// setups override (already resolved for this cpnID by the caller) merged
-// into params["setups"]. The override wins on top-level key collisions. The
-// original params map is never mutated — the merge result is a fresh map —
+// override (already resolved for this cpnID by the caller) merged into
+// params. The override wins on top-level key collisions. The original
+// params map is never mutated — the merge result is a fresh map —
 // because the params come from the shared *Canvas and a per-run override
 // must not leak into the next Run on the same Pipeline.
 func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	if len(cpnOverride) == 0 {
 		return params
 	}
-	out := make(map[string]any, len(params)+1)
+	out := make(map[string]any, len(params)+len(cpnOverride))
 	for k, v := range params {
 		out[k] = v
 	}
-	base, _ := out["setups"].(map[string]any)
-	out["setups"] = mergeSetups(base, cpnOverride)
+	for k, v := range cpnOverride {
+		out[k] = v
+	}
 	return out
 }
 
-// mergeSetups merges a component-level setups map (base) with a run-level
-// override map. The maps are arbitrary string-keyed maps; when the same
-// top-level key exists in both, the override value wins (a full replacement
-// of that entry). The merge is shallow: only the top-level key-value pairs
-// are considered. (The Parser component happens to use file-type keys such
-// as "pdf"/"docx" as one example, but that is not required by this merge.)
-func mergeSetups(base, override map[string]any) map[string]any {
-	merged := make(map[string]any, len(base)+len(override))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, ov := range override {
-		merged[k] = ov
-	}
-	return merged
+func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
+	return buildNodeBodyWithOptions(ctx, cpnID, name, params, runtime.ComponentExecutionOptions{})
 }
 
-func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
+func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params map[string]any, opts runtime.ComponentExecutionOptions) (nodeBodyFn, error) {
 	if overrides := overrideParamsFromContext(ctx); len(overrides) > 0 {
 		// overrides is keyed by cpnID; a component only sees its own
 		// entry. Components absent from the map are left untouched.
@@ -165,13 +156,11 @@ func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]an
 		if comp == nil {
 			return nil, fmt.Errorf("canvas: component %q (%s): factory returned nil component", cpnID, name)
 		}
-		// Pass the class name through to the body so the per-class
-		// timeout resolver (resolveTimeout) can pick the right
-		// timeout without the runtime.Component interface needing
-		// to expose Name(). The factory returns the class name as
-		// the DSL's `component_name` field, which is also what
-		// ComponentBase.Name() would have returned.
-		return realComponentBody(cpnID, name, comp), nil
+		// Pass the class name through to the body for structured logging
+		// without the runtime.Component interface needing to expose Name().
+		// The factory returns the class name as the DSL's `component_name`
+		// field, which is also what ComponentBase.Name() would have returned.
+		return realComponentBodyWithOptions(cpnID, name, comp, opts), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
@@ -232,11 +221,11 @@ func componentTimeout() time.Duration {
 // reach components here. Cross-cutting concerns therefore belong here,
 // not inside each component's Invoke:
 //
-//   - per-class timeout: context.WithTimeout from resolveTimeout
-//     (4-level: per-class env → per-class defaults table → uniform env
-//     → 600s fallback). The lookup is per-invocation (not per-body) so
-//     operators can tune COMPONENT_EXEC_TIMEOUT[_<CLASS>] at runtime
-//     without rebuilding graphs.
+//   - execution context: derived from the parent with cancellation only — no
+//     framework-level wall-clock deadline is imposed on any component, so a
+//     long knowledge-compilation step (many LLM calls) is not cut short by a
+//     fixed ceiling. A cancelled task still interrupts via the parent cancel;
+//     per-call model deadlines stay at the model driver.
 //   - progress: runtime.TrackProgress, with the callback pulled from
 //     ctx (nil ⇒ no observer). This makes progress a framework-level
 //     concern — components no longer wrap themselves.
@@ -254,24 +243,40 @@ func componentTimeout() time.Duration {
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
 func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
+	return realComponentBodyWithOptions(cpnID, componentClass, comp, runtime.ComponentExecutionOptions{})
+}
+
+func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		timeout := resolveTimeoutFromContext(ctx, componentClass)
-		cctx, cancel := context.WithTimeout(ctx, timeout)
+		// The framework imposes no wall-clock deadline on component execution.
+		// Long-running components (notably knowledge compilation, which fans out
+		// over many model calls) exceed any fixed ceiling and would otherwise
+		// fail with "context deadline exceeded". We derive a cancellation-only
+		// context so a cancelled task (parent cancel) still interrupts the
+		// component mid-run, while no arbitrary timeout is applied. Per-call
+		// model deadlines remain enforced at the model driver.
+		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		var out map[string]any
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(cctx, in)
+				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
 			})
 			return e
 		})
 		if invokeErr != nil {
+			// Surface the failure as a structured log line. The wrapped error
+			// already carries the full cause chain (e.g. deepseek DNS/timeout),
+			// but without this the failure only showed up as a generic
+			// "Task ... failed" line with no clear cause in the logs.
+			common.Error("canvas: component invoke failed", invokeErr,
+				zap.String("component_id", cpnID),
+				zap.String("component_class", componentClass))
 			switch {
 			case errors.Is(invokeErr, context.DeadlineExceeded):
-				return nil, fmt.Errorf("canvas: component %q invoke: timeout after %s: %w",
-					cpnID, timeout, invokeErr)
+				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
 			case errors.Is(invokeErr, context.Canceled):
 				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, invokeErr)
 			}
@@ -316,10 +321,12 @@ func placeholderBody(cpnID string) nodeBodyFn {
 // the body directly), the wrapper degrades to a plain invocation:
 // the body still runs, its output is still tagged with __cpn_id__,
 // but no state snapshot is injected and no result is persisted.
-func withStateBracket(body nodeBodyFn) nodeBodyFn {
+func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+		originalIn := in
 		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 		if state != nil {
+			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
 			if in == nil {
 				in = map[string]any{}
 			}
@@ -333,20 +340,35 @@ func withStateBracket(body nodeBodyFn) nodeBodyFn {
 		}
 		out, err := body(ctx, in)
 		if err != nil {
+			if state != nil {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
+			}
 			return nil, err
 		}
-		if state == nil || out == nil {
+		if state == nil {
 			return out, nil
 		}
-		cpnID, _ := out["__cpn_id__"].(string)
-		if cpnID == "" {
+		if out == nil {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			return out, nil
+		}
+		outputCpnID, _ := out["__cpn_id__"].(string)
+		if outputCpnID == "" {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 			return out, nil
 		}
 		for k, v := range out {
 			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 				continue
 			}
-			state.SetVar(cpnID, k, v)
+			state.SetVar(outputCpnID, k, v)
+		}
+		if runtime.IsDeferredStream(out["content"]) {
+			runtime.RegisterDeferredNode(ctx, cpnID, func() {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			})
+		} else {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 		}
 		return out, nil
 	}

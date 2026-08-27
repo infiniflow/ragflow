@@ -26,7 +26,7 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "TokenChunker:FastFoxesJump"
+                    "TableChunker:FastFoxesJump"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -49,43 +49,31 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "spreadsheet": {
-                                "flatten_media_to_text": false,
-                                "output_format": "html",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "xls",
-                                    "xlsx",
-                                    "csv"
-                                ],
-                                "vlm": {}
-                            },
-                            "text&code": {
-                                "output_format": "json",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "txt",
-                                    "py",
-                                    "js",
-                                    "java",
-                                    "c",
-                                    "cpp",
-                                    "h",
-                                    "php",
-                                    "go",
-                                    "ts",
-                                    "sh",
-                                    "cs",
-                                    "kt",
-                                    "sql"
-                                ]
-                            }
+                        "spreadsheet": {
+                            "flatten_media_to_text": false,
+                            "output_format": "html",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "xls",
+                                "xlsx",
+                                "csv"
+                            ],
+                            "vlm": {},
+                            "column_mode": "auto",
+                            "column_roles": {},
+                            "column_names": []
+                        },
+                        "text&code": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "txt"
+                            ]
                         }
                     }
                 },
@@ -93,7 +81,7 @@
                     "File"
                 ]
             },
-            "TokenChunker:FastFoxesJump": {
+            "TableChunker:FastFoxesJump": {
                 "downstream": [
                     "Tokenizer:DeepLakesShine"
                 ],
@@ -127,7 +115,7 @@
                     }
                 },
                 "upstream": [
-                    "TokenChunker:FastFoxesJump"
+                    "TableChunker:FastFoxesJump"
                 ]
             }
         },
@@ -144,18 +132,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:FastFoxesJumpend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-TableChunker:FastFoxesJumpend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "TokenChunker:FastFoxesJump",
+                    "target": "TableChunker:FastFoxesJump",
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__TokenChunker:FastFoxesJumpstart-Tokenizer:DeepLakesShineend",
-                    "source": "TokenChunker:FastFoxesJump",
+                    "id": "xy-edge__TableChunker:FastFoxesJumpstart-Tokenizer:DeepLakesShineend",
+                    "source": "TableChunker:FastFoxesJump",
                     "sourceHandle": "start",
                     "target": "Tokenizer:DeepLakesShine",
                     "targetHandle": "end"
@@ -250,9 +235,9 @@
                             }
                         },
                         "label": "TableChunker",
-                        "name": "TableChunker_0"
+                        "name": "Table Chunker_0"
                     },
-                    "id": "TokenChunker:FastFoxesJump",
+                    "id": "TableChunker:FastFoxesJump",
                     "measured": {
                         "height": 74,
                         "width": 200

@@ -26,7 +26,7 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "PresentationChunker:HappyHillsGlow"
+                    "PageChunker:HappyHillsGlow"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -49,30 +49,28 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "pdf": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "pdf"
-                                ],
-                                "vlm": {}
-                            },
-                            "slides": {
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "pptx",
-                                    "ppt"
-                                ]
-                            }
+                        "pdf": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pdf"
+                            ],
+                            "vlm": {}
+                        },
+                        "slides": {
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pptx",
+                                "ppt"
+                            ]
                         }
                     }
                 },
@@ -95,15 +93,15 @@
                     }
                 },
                 "upstream": [
-                    "PresentationChunker:HappyHillsGlow"
+                    "Extractor:AutoExtractDefault"
                 ]
             },
-            "PresentationChunker:HappyHillsGlow": {
+            "PageChunker:HappyHillsGlow": {
                 "downstream": [
-                    "Tokenizer:TallTreesDance"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
-                    "component_name": "PresentationChunker",
+                    "component_name": "PageChunker",
                     "params": {
                         "outputs": {
                             "chunks": {
@@ -116,6 +114,38 @@
                 "upstream": [
                     "Parser:HipSignsRhyme"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "PageChunker:HappyHillsGlow"
+                ],
+                "downstream": [
+                    "Tokenizer:TallTreesDance"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "llm_id": "",
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
+                    }
+                }
             }
         },
         "globals": {
@@ -131,18 +161,22 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-PresentationChunker:HappyHillsGlowend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-PageChunker:HappyHillsGlowend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "PresentationChunker:HappyHillsGlow",
+                    "target": "PageChunker:HappyHillsGlow",
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__PresentationChunker:HappyHillsGlowstart-Tokenizer:TallTreesDanceend",
-                    "source": "PresentationChunker:HappyHillsGlow",
+                    "id": "xy-edge__PageChunker:HappyHillsGlowstart-Extractor:AutoExtractDefaultend",
+                    "source": "PageChunker:HappyHillsGlow",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:TallTreesDanceend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:TallTreesDance",
                     "targetHandle": "end"
@@ -237,10 +271,10 @@
                                 }
                             }
                         },
-                        "label": "PresentationChunker",
+                        "label": "PageChunker",
                         "name": "Presentation Chunker_0"
                     },
-                    "id": "PresentationChunker:HappyHillsGlow",
+                    "id": "PageChunker:HappyHillsGlow",
                     "measured": {
                         "height": 74,
                         "width": 200
@@ -280,6 +314,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

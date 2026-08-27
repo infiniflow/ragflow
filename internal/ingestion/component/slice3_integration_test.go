@@ -35,7 +35,7 @@ func TestTokenizer_FallsBackToContentWithWeight(t *testing.T) {
 	c.param.Fields = []string{"text"}
 	c.param.FilenameEmbdWeight = 0
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc",
 		"output_format": "chunks",
 		"chunks": []map[string]any{
@@ -66,7 +66,7 @@ func TestTokenizer_DoesNotChangeChunkText(t *testing.T) {
 	c.param.Fields = []string{"text"}
 	c.param.FilenameEmbdWeight = 0
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc",
 		"output_format": "chunks",
 		"chunks": []map[string]any{

@@ -25,16 +25,17 @@ from pydantic import BaseModel, Field, validator
 from quart import request
 
 from api.apps import login_required
-from api.db.joint_services.tenant_model_service import (
-    split_model_name,
-    resolve_model_config,
-    get_tenant_default_model_by_type,
-)
+from api.apps.services import structure_graph_common as sgc
 from api.db.db_models import Document, Task
+from api.db.joint_services.tenant_model_service import (
+    get_tenant_default_model_by_type,
+    resolve_model_config,
+)
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -47,8 +48,8 @@ from api.utils.api_utils import (
     get_result,
     server_error_response,
 )
-from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
@@ -56,14 +57,13 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, meta_filter
+from common.metadata_utils import convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
 from rag.app.tag import label_question
 from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
-
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
@@ -104,6 +104,7 @@ class Chunk(BaseModel):
     questions: list = Field(default_factory=list)
     question_tks: str = ""
     image_id: str = ""
+    doc_type_kwd: str = ""
     available: bool = True
     positions: list[list[int]] = Field(default_factory=list)
 
@@ -166,10 +167,7 @@ def _get_dataset_tenant_id(dataset_id):
 def _compilation_template_kind(kind) -> str:
     if not isinstance(kind, str):
         return ""
-    normalized = kind.strip().lower().replace("-", "_")
-    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
-        return "timeline"
-    return normalized
+    return kind.strip().lower().replace("-", "_")
 
 
 def _resolve_reference_metadata(req: dict, search_config: dict | None = None):
@@ -178,6 +176,22 @@ def _resolve_reference_metadata(req: dict, search_config: dict | None = None):
 
 def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=None) -> None:
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
+
+
+def _release_doc_counters(doc):
+    """Roll back the document's and knowledgebase's chunk/token/duration counters
+    so a re-parse starts from zero. Callers that delete a document's chunks must
+    do this, otherwise the removed counts stay in the knowledgebase total. The
+    release re-reads the row under a lock (see release_reparse_counters) so it is
+    safe against a worker still parsing the document. Returns an error result if
+    the document is gone, else None.
+    """
+    try:
+        release_reparse_counters(doc.id)
+    except LookupError:
+        logging.exception("Failed to release counters for document %s in knowledgebase %s", doc.id, doc.kb_id)
+        return get_error_data_result(message=f"Document {doc.id} not found")
+    return None
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
@@ -211,8 +225,8 @@ async def parse(tenant_id, dataset_id):
             not_found.append(id)
             continue
         if not doc:
-            return get_error_data_result(message=f"You don't own the document {id}.")
-        info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
+            return get_error_data_result(message=f"you don't own the document {id}")
+        info = {"run": "1", "progress": 0, "progress_msg": ""}
         if (
             DocumentService.filter_update(
                 [
@@ -224,6 +238,8 @@ async def parse(tenant_id, dataset_id):
             == 0
         ):
             return get_error_data_result("Can't parse document that is currently being processed")
+        if err := _release_doc_counters(doc[0]):
+            return err
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
@@ -276,7 +292,7 @@ async def stop_parsing(tenant_id, dataset_id):
     for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
-            return get_error_data_result(message=f"You don't own the document {id}.")
+            return get_error_data_result(message=f"you don't own the document {id}")
         if doc[0].run != TaskStatus.RUNNING.value:
             return construct_json_result(
                 code=RetCode.DATA_ERROR,
@@ -284,8 +300,10 @@ async def stop_parsing(tenant_id, dataset_id):
                 data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
             )
         cancel_all_task_of(id)
-        info = {"run": "2", "progress": 0, "chunk_num": 0}
+        info = {"run": "2", "progress": 0}
         DocumentService.update_by_id(id, info)
+        if err := _release_doc_counters(doc[0]):
+            return err
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)
@@ -322,13 +340,13 @@ async def retrieval_test(tenant_id):
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
-    if len(embd_nms) != 1:
-        return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
+    embd_err = validate_dataset_embedding_models(kbs)
+    if embd_err:
+        return get_result(message=embd_err, code=RetCode.DATA_ERROR)
     if "question" not in req:
         return get_error_data_result("`question` is required.")
-    page = int(req.get("page", 1))
-    size = validate_rest_api_page_size(int(req.get("page_size", 30)))
+    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+    size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
     question = req["question"].strip() if isinstance(req["question"], str) else req["question"]
     if not question:
         return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
@@ -346,8 +364,12 @@ async def retrieval_test(tenant_id):
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
-            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+            doc_ids = filter_doc_ids_by_metadata(
+                kb_ids,
+                convert_conditions(metadata_condition),
+                metadata_condition.get("logic", "and"),
+                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            )
             if not doc_ids and metadata_condition.get("conditions"):
                 return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
             if metadata_condition and not doc_ids:
@@ -356,9 +378,32 @@ async def retrieval_test(tenant_id):
             doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    top = int(req.get("top_k", 1024))
-    if top <= 0:
-        return get_error_data_result("`top_k` must be greater than 0")
+    if "top_k" in req:
+        logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
+    knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
+    try:
+        knn_top_k = int(req.get(knn_top_k_parameter, 1024))
+    except (TypeError, ValueError):
+        return get_error_data_result(f"`{knn_top_k_parameter}` should be an integer")
+    if knn_top_k <= 0:
+        return get_error_data_result(f"`{knn_top_k_parameter}` must be greater than 0")
+    try:
+        knn_num_candidates = int(req.get("knn_num_candidates", max(2048, knn_top_k)))
+    except (TypeError, ValueError):
+        return get_error_data_result("`knn_num_candidates` should be an integer")
+    if knn_num_candidates < knn_top_k:
+        return get_error_data_result("`knn_num_candidates` must be greater than or equal to `knn_top_k`")
+    try:
+        rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
+    except (TypeError, ValueError):
+        return get_error_data_result("`rerank_candidates_count` should be an integer")
+    if rerank_candidates_count <= 0:
+        return get_error_data_result("`rerank_candidates_count` must be greater than 0")
+    if rerank_candidates_count < page * size:
+        return get_error_data_result(f"`rerank_candidates_count` must be at least `page` multiplied by `page_size` ({page * size})")
+    include_knowledge_compilation = req.get("include_knowledge_compilation", True)
+    if not isinstance(include_knowledge_compilation, bool):
+        return get_error_data_result("`include_knowledge_compilation` should be a boolean")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False
@@ -397,11 +442,14 @@ async def retrieval_test(tenant_id):
             size,
             similarity_threshold,
             vector_similarity_weight,
-            top,
-            doc_ids,
+            doc_ids=doc_ids,
+            knn_top_k=knn_top_k,
+            knn_num_candidates=knn_num_candidates,
             rerank_mdl=rerank_mdl,
             highlight=highlight,
             rank_feature=label_question(question, kbs),
+            must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
+            rerank_candidates_count=rerank_candidates_count,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -451,13 +499,17 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     doc = doc[0]
     req = request.args
-    page = int(req.get("page", 1))
-    size = validate_rest_api_page_size(int(req.get("page_size", 30)))
+    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+    size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
     question = req.get("keywords", "")
     chunk_ids = _get_query_id_list(req, "chunk_ids")
+    try:
+        validate_rest_api_ids(chunk_ids, "chunk_ids")
+    except ValueError as e:
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     query = {
         "doc_ids": [document_id],
         "page": page,
@@ -491,6 +543,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "questions": chunk.get("question_kwd", []),
             "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
             "image_id": chunk.get("img_id", ""),
+            "doc_type_kwd": chunk.get("doc_type_kwd") if isinstance(chunk.get("doc_type_kwd"), str) else "text",
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
             "tag_kwd": chunk.get("tag_kwd", []),
@@ -518,6 +571,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "questions": sres.field[chunk_id].get("question_kwd", []),
                 "dataset_id": sres.field[chunk_id].get("kb_id", sres.field[chunk_id].get("dataset_id")),
                 "image_id": sres.field[chunk_id].get("img_id", ""),
+                "doc_type_kwd": sres.field[chunk_id].get("doc_type_kwd") if isinstance(sres.field[chunk_id].get("doc_type_kwd"), str) else "text",
                 "available": bool(int(sres.field[chunk_id].get("available_int", "1"))),
                 "positions": sres.field[chunk_id].get("position_int", []),
             }
@@ -539,7 +593,7 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     try:
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
@@ -579,8 +633,9 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     migration doesn't drop their data on the floor. Empty templates
     (zero entities AND zero relations) are filtered out.
     """
-    from rag.nlp import search
     from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -589,7 +644,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
 
     # Resolve the doc's configured template group → child template ids
     # so we can render tabs in the order the user picked them.
@@ -624,6 +679,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     seen_configured_ids: set[str] = set()
     template_meta: dict[str, dict] = {}
     template_meta_by_kind: dict[str, list[dict]] = {}
+    template_meta_by_id: dict[str, dict] = {}
     for group_id in group_ids:
         group = CompilationTemplateGroupService.get_saved(group_id, tenant_id)
         if not group:
@@ -637,7 +693,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             config = template.get("config") if isinstance(template.get("config"), dict) else {}
             raw_kind = (config.get("kind") if isinstance(config, dict) else "") or template.get("kind") or ""
             kind_norm = _compilation_template_kind(raw_kind)
-            if kind_norm == "artifacts":
+            if kind_norm == "wiki":
                 continue
             seen_configured_ids.add(template_id)
             configured_ids.append(template_id)
@@ -648,59 +704,11 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
                 "kind_norm": kind_norm,
             }
             template_meta[template_id] = meta
+            template_meta_by_id[template_id] = meta
             template_meta_by_kind.setdefault(kind_norm, []).append(meta)
 
-    # Load every graph row for this doc in one shot. Each row corresponds
-    # to one (compile_kwd, template_id) tuple — written by
-    # ``_struct_upsert_graph_json``.
     index_name = search.index_name(dataset_tenant_id)
-    fields = [
-        "content_with_weight",
-        "compile_kwd",
-        "compilation_template_ids",
-        "compilation_template_kind_kwd",
-    ]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            {"doc_id": [document_id], "knowledge_graph_kwd": ["graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_name,
-            [dataset_id],
-        )
-        rows = settings.docStoreConn.get_fields(res, fields)
-
-        # The RAPTOR graph row is identified by ``compile_kwd``
-        # alone — it intentionally doesn't carry ``knowledge_graph_kwd``
-        # (which belongs to the KG feature). Query it separately and
-        # union into the same bucket map below.
-        res_raptor = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            16,
-            index_name,
-            [dataset_id],
-        )
-        raptor_rows = settings.docStoreConn.get_fields(res_raptor, fields)
-    except Exception as e:
-        return server_error_response(e)
-
-    # Merge the two field-maps so the grouping loop below treats them
-    # identically. Raptor rows clobber by id, which is fine — both
-    # sources produce stable per-row ids.
-    if raptor_rows:
-        rows = dict(rows or {})
-        rows.update(raptor_rows)
+    keywords = (request.args.get("keywords") or "").strip()
 
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
@@ -712,72 +720,216 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             return raw.strip()
         return None
 
-    # Group: template_id → {entities, relations, kind}
-    grouped: dict[str, dict] = {}
-    for row in (rows or {}).values():
-        graph = {}
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-        entities = graph.get("entities") or []
-        relations = graph.get("relations") or []
-        if not entities and not relations:
-            continue
+    def _resolve_bucket(row: dict) -> tuple[dict, dict]:
+        """``(bucket_meta, scope_filter)`` for a graph/entity row.
 
+        ``bucket_meta`` = ``{template_id, template_name, kind}``;
+        ``scope_filter`` is the raw entity/relation-row filter (doc +
+        template, or legacy compile_kwd) WITHOUT ``knowledge_graph_kwd``.
+        """
         tid = _row_template_id(row)
         compile_kwd_val = row.get("compile_kwd") or ""
         kind_val = row.get("compilation_template_kind_kwd") or compile_kwd_val
-
-        # The RAPTOR graph row has no ``compilation_template_ids`` (it
-        # isn't derived from a user-authored template). Treat it as its
-        # own first-class bucket, not a legacy fallback.
-        is_raptor = compile_kwd_val == "raptor_graph"
-
         if tid:
             bucket_id = tid
             row_kind_norm = _compilation_template_kind(kind_val)
             meta = template_meta.get(bucket_id)
+            if not meta:
+                # Pipeline Compiler receives template groups as component
+                # parameters and does not persist those group ids in the
+                # document parser_config. Resolve the exact template id
+                # directly so Pipeline-produced rows do not fall back to
+                # exposing the opaque id as the display name.
+                if bucket_id not in template_meta_by_id:
+                    saved_template = CompilationTemplateService.get_saved(bucket_id, tenant_id)
+                    if saved_template:
+                        template_meta_by_id[bucket_id] = {
+                            "template_id": bucket_id,
+                            "template_name": saved_template.get("name") or bucket_id,
+                            "kind": saved_template.get("kind") or kind_val,
+                            "kind_norm": _compilation_template_kind(saved_template.get("kind")),
+                        }
+                    else:
+                        template_meta_by_id[bucket_id] = {}
+                meta = template_meta_by_id[bucket_id] or None
             if not meta:
                 kind_matches = template_meta_by_kind.get(row_kind_norm) or []
                 if len(kind_matches) == 1:
                     meta = kind_matches[0]
             bucket_name = (meta or {}).get("template_name") or bucket_id
             bucket_kind = (meta or {}).get("kind") or kind_val
-        elif is_raptor:
-            bucket_id = "raptor"
-            bucket_name = "RAPTOR Summary"
-            bucket_kind = "raptor"
+            scope = {"doc_id": [document_id], "compilation_template_ids": [bucket_id]}
         else:
-            # Legacy row: synthesize a stable id keyed by compile_kwd so
-            # multiple legacy kinds (e.g. ``list`` + ``hypergraph``) on
-            # the same doc surface as separate tabs.
+            # Legacy row (pre-dates the template stamp): keyed by compile_kwd
+            # so multiple legacy kinds surface as separate tabs. Scope excludes
+            # rows that DO carry a template id so it can't shadow a real bucket.
             bucket_id = f"legacy:{compile_kwd_val}"
             bucket_name = f"Legacy ({compile_kwd_val})"
             bucket_kind = kind_val
+            scope = {"doc_id": [document_id], "compile_kwd": [compile_kwd_val], "must_not": {"exists": "compilation_template_ids"}}
+        return {"template_id": bucket_id, "template_name": bucket_name, "kind": bucket_kind}, scope
 
-        if bucket_id not in grouped:
-            grouped[bucket_id] = {
-                "template_id": bucket_id,
-                "template_name": bucket_name,
-                "kind": bucket_kind,
-                "entities": [],
-                "relations": [],
-            }
-        grouped[bucket_id]["entities"].extend(entities)
-        grouped[bucket_id]["relations"].extend(relations)
+    # ── keywords mode: name matching/KNN → matched entities' subgraph ──
+    if keywords:
+        try:
+            embd_id = DocumentService.get_embd_id(document_id)
+            model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+            embd_mdl = TenantLLMService.model_instance(model_config)
+        except Exception:
+            logging.exception("structure graph: embedding bind failed for doc=%s", document_id)
+            return get_result(data={"templates": []})
+        try:
+            bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
+                index_name,
+                dataset_id,
+                embd_mdl,
+                {"doc_id": [document_id], "knowledge_graph_kwd": ["entity"]},
+                keywords,
+                _resolve_bucket,
+                log_ctx=f"doc={document_id}",
+            )
+        except Exception as e:
+            return server_error_response(e)
+        if not bucket_meta or (not kw_entities and not kw_relations):
+            return get_result(data={"templates": []})
+        bucket = dict(bucket_meta)
+        bucket["entities"] = kw_entities
+        bucket["relations"] = kw_relations
+        return get_result(data={"templates": [bucket]})
+
+    # ── normal mode: per-template subgraph sampling from the raw rows ──
+    # Metadata-only scan of the per-doc graph blob rows (one per
+    # (compile_kwd, template_id)) purely to discover buckets and resolve their
+    # display name/kind — WITHOUT loading the (potentially huge)
+    # content_with_weight. Each bucket's entities/relations are then fetched
+    # from the raw ``knowledge_graph_kwd`` rows with subgraph sampling.
+    meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            meta_fields,
+            [],
+            {"doc_id": [document_id], "knowledge_graph_kwd": ["graph"]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index_name,
+            [dataset_id],
+        )
+        meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+    except Exception as e:
+        return server_error_response(e)
+
+    # Discover unique buckets. A template can own multiple compile_kwd blob
+    # rows; scoping by template_id folds them together, matching prior behavior.
+    bucket_metas: dict[str, dict] = {}
+    bucket_scopes: dict[str, dict] = {}
+    for row in meta_rows.values():
+        meta, scope = _resolve_bucket(row)
+        bid = meta["template_id"]
+        if bid not in bucket_metas:
+            bucket_metas[bid] = meta
+            bucket_scopes[bid] = scope
+
+    grouped: dict[str, dict] = {}
+    for bid, meta in bucket_metas.items():
+        try:
+            entities, relations = await sgc.build_bucket(index_name, dataset_id, bucket_scopes[bid])
+        except Exception as e:
+            return server_error_response(e)
+        if not entities and not relations:
+            continue
+        grouped[bid] = {**meta, "entities": entities, "relations": relations}
+
+    # RAPTOR summary graph: a standalone blob (no ``knowledge_graph_kwd``, and
+    # no raw entity/relation rows), so read its content directly and don't
+    # sample it.
+    try:
+        res_raptor = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["content_with_weight", "compile_kwd"],
+            [],
+            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
+            [],
+            OrderByExpr(),
+            0,
+            16,
+            index_name,
+            [dataset_id],
+        )
+        raptor_rows = settings.docStoreConn.get_fields(res_raptor, ["content_with_weight", "compile_kwd"]) or {}
+    except Exception:
+        logging.exception("structure graph: RAPTOR blob load failed for doc=%s", document_id)
+        raptor_rows = {}
+    for row in raptor_rows.values():
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        r_entities = graph.get("entities") or []
+        r_relations = graph.get("relations") or []
+        if not r_entities and not r_relations:
+            continue
+        rb = grouped.setdefault("raptor", {"template_id": "raptor", "template_name": "RAPTOR Summary", "kind": "raptor", "entities": [], "relations": []})
+        rb["entities"].extend(r_entities)
+        rb["relations"].extend(r_relations)
 
     # Order: configured templates first (in the user's chosen order),
-    # then any legacy buckets after.
+    # then any discovered / legacy / raptor buckets after.
     ordered_ids: list[str] = []
     for tid in configured_ids:
         if tid in grouped and tid not in ordered_ids:
             ordered_ids.append(tid)
-    for bucket_id in grouped.keys():
+    for bucket_id in grouped:
         if bucket_id not in ordered_ids:
             ordered_ids.append(bucket_id)
+
+    page_index_groups = [group for group in grouped.values() if _compilation_template_kind(group.get("kind")) in {"page_index", "pageindex"}]
+    if page_index_groups:
+        # PageIndex nodes should follow the document's chunk order. Use the
+        # current chunk query order directly. Do not derive the order
+        # from page/position metadata because some document formats do not
+        # populate those fields.
+        chunk_order: dict[str, int] = {}
+        try:
+            chunk_res = await settings.retriever.search(
+                {
+                    "doc_ids": [document_id],
+                    "page": 1,
+                    "size": 10000,
+                    "question": "",
+                    "sort": True,
+                    "must_not": {"exists": "compile_kwd"},
+                },
+                index_name,
+                [dataset_id],
+                emb_mdl=None,
+                highlight=True,
+            )
+            for index, chunk_id in enumerate(chunk_res.ids or []):
+                chunk_id = str(chunk_id)
+                if chunk_id:
+                    chunk_order[chunk_id] = index
+        except Exception:
+            logging.exception("structure graph: failed to load document chunk order for PageIndex ordering")
+
+        for group in page_index_groups:
+            original_entities = list(group.get("entities") or [])
+
+            def entity_position(entity: dict, fallback: int):
+                chunk_indexes = [chunk_order[chunk_id] for chunk_id in entity.get("source_chunk_ids") or [] if isinstance(chunk_id, str) and chunk_id in chunk_order]
+                return (min(chunk_indexes), fallback) if chunk_indexes else (float("inf"), fallback)
+
+            group["entities"] = [
+                entity
+                for _, entity in sorted(
+                    enumerate(original_entities),
+                    key=lambda item: entity_position(item[1], item[0]),
+                )
+            ]
 
     templates_out = [grouped[bid] for bid in ordered_ids if grouped[bid]["entities"] or grouped[bid]["relations"]]
     return get_result(data={"templates": templates_out})
@@ -806,7 +958,7 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
 
     req = await get_request_json()
     template_id = str(req.get("template_id") or "").strip()
@@ -852,21 +1004,28 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     doc = doc[0]
     req = await get_request_json()
     if is_content_empty(req.get("content")):
         return get_error_data_result(message="`content` is required")
-    if "important_keywords" in req and not isinstance(req["important_keywords"], list):
-        return get_error_data_result("`important_keywords` is required to be a list")
-    if "questions" in req and not isinstance(req["questions"], list):
-        return get_error_data_result("`questions` is required to be a list")
+    if "important_keywords" in req:
+        if not isinstance(req["important_keywords"], list):
+            return get_error_data_result("`important_keywords` is required to be a list")
+        if not all(isinstance(k, str) for k in req["important_keywords"]):
+            return get_error_data_result("`important_keywords` must be a list of strings")
+    if "questions" in req:
+        if not isinstance(req["questions"], list):
+            return get_error_data_result("`questions` is required to be a list")
+        if not all(isinstance(q, str) for q in req["questions"]):
+            return get_error_data_result("`questions` must be a list of strings")
 
     chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
     d = {
         "id": chunk_id,
         "content_ltks": rag_tokenizer.tokenize(req["content"]),
         "content_with_weight": req["content"],
+        "doc_type_kwd": "text",
     }
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req.get("important_keywords", [])
@@ -922,6 +1081,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "create_time": "create_time",
         "document_keyword": "document",
         "img_id": "image_id",
+        "doc_type_kwd": "doc_type_kwd",
     }
     renamed_chunk = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
     _ = Chunk(**renamed_chunk)
@@ -941,7 +1101,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     req = await get_request_json()
     if not req:
         return get_result()
@@ -995,7 +1155,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     doc = doc[0]
     chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
     if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
@@ -1092,9 +1252,9 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
         def _switch_sync():
             e, doc = DocumentService.get_by_id(document_id)
             if not e:
-                return get_error_data_result(message="Document not found!")
+                return get_error_data_result(message="document not found")
             if not doc or str(doc.kb_id) != str(dataset_id):
-                return get_error_data_result(message="Document not found!")
+                return get_error_data_result(message="document not found")
             for cid in req["chunk_ids"]:
                 if not settings.docStoreConn.update(
                     {"id": cid},

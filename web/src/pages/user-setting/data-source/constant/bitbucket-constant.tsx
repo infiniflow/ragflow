@@ -1,44 +1,65 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FilterFormField, FormFieldType } from '@/components/dynamic-form';
 import { TFunction } from 'i18next';
 
 export const bitbucketConstant = (t: TFunction) => [
   {
-    label: 'Bitbucket Account Email',
+    label: t('setting.dataSourceFieldBitbucketAccountEmail'),
     name: 'config.credentials.bitbucket_account_email',
     type: FormFieldType.Email,
     required: true,
   },
   {
-    label: 'Bitbucket API Token',
+    label: t('setting.dataSourceFieldBitbucketApiToken'),
     name: 'config.credentials.bitbucket_api_token',
     type: FormFieldType.Password,
     required: true,
   },
   {
-    label: 'Workspace',
+    label: t('setting.dataSourceFieldWorkspace'),
     name: 'config.workspace',
     type: FormFieldType.Text,
     required: true,
     tooltip: t('setting.bitbucketTopWorkspaceTip'),
   },
   {
-    label: 'Index Mode',
+    label: t('setting.dataSourceFieldIndexMode'),
     name: 'config.index_mode',
     type: FormFieldType.Segmented,
     options: [
-      { label: 'Repositories', value: 'repositories' },
-      { label: 'Project(s)', value: 'projects' },
-      { label: 'Workspace', value: 'workspace' },
+      {
+        label: t('setting.dataSourceOptionRepositories'),
+        value: 'repositories',
+      },
+      { label: t('setting.dataSourceOptionProjects'), value: 'projects' },
+      { label: t('setting.dataSourceOptionWorkspace'), value: 'workspace' },
     ],
   },
   {
-    label: 'Repository Slugs',
+    label: t('setting.dataSourceFieldRepositorySlugs'),
     name: 'config.repository_slugs',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
       if (!val && index_mode === 'repositories') {
-        return 'Repository Slugs is required';
+        return t('setting.dataSourceValidationFieldRequired', {
+          label: t('setting.dataSourceFieldRepositorySlugs'),
+        });
       }
       return true;
     },
@@ -49,13 +70,15 @@ export const bitbucketConstant = (t: TFunction) => [
     tooltip: t('setting.bitbucketRepositorySlugsTip'),
   },
   {
-    label: 'Projects',
+    label: t('setting.dataSourceFieldProjects'),
     name: 'config.projects',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
       if (!val && index_mode === 'projects') {
-        return 'Projects is required';
+        return t('setting.dataSourceValidationFieldRequired', {
+          label: t('setting.dataSourceFieldProjects'),
+        });
       }
       return true;
     },

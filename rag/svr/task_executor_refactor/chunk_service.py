@@ -38,12 +38,12 @@ from common.connection_utils import timeout
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.misc_utils import thread_pool_exec
 from common.float_utils import normalize_overlapped_percent
+from api.db.services.document_service import DocumentService
+from api.db.services.task_service import TaskService
 from rag.nlp import search
+from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 from rag.svr.task_executor_refactor.task_context import TaskContext
 from rag.utils.base64_image import image2id
-
-from api.db.services.task_service import TaskService
-from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 
 # Re-export for backward compatibility
 from rag.svr.task_executor_refactor.chunk_builder import (
@@ -58,6 +58,52 @@ from rag.svr.task_executor_refactor.chunk_post_processor import (
     apply_built_in_metadata,
     apply_tags,
 )
+
+
+def apply_document_availability(chunks: List[Dict[str, Any]], status) -> int:
+    """Stamp ordinary source chunks available_int=0 when document status is disabled.
+
+    Compiled products (compile_kwd) are left alone — they are already non-searchable.
+    Returns the number of ordinary source chunks stamped.
+    """
+    if str(status if status is not None else "1") != "0":
+        return 0
+    stamped = 0
+    for ck in chunks:
+        if ck.get("compile_kwd"):
+            continue
+        ck["available_int"] = 0
+        stamped += 1
+    return stamped
+
+
+def apply_source_chunks_document_availability(chunks: List[Dict[str, Any]]) -> None:
+    """Apply each source document's status to its ordinary (non-RAPTOR) chunks.
+
+    Mixed RAPTOR batches can carry chunks from multiple documents; stamp each
+    group from its own document status instead of the first doc_id in the batch.
+    """
+    source_chunks_by_doc_id: Dict[str, List[Dict[str, Any]]] = {}
+    for ck in chunks:
+        if ck.get("raptor_kwd"):
+            continue
+        doc_id = ck.get("doc_id")
+        if not doc_id or doc_id == GRAPH_RAPTOR_FAKE_DOC_ID:
+            continue
+        source_chunks_by_doc_id.setdefault(doc_id, []).append(ck)
+
+    for doc_id, source_chunks in source_chunks_by_doc_id.items():
+        ok, doc = DocumentService.get_by_id(doc_id)
+        if not ok or doc is None:
+            continue
+        status = getattr(doc, "status", "1")
+        stamped = apply_document_availability(source_chunks, status)
+        if stamped:
+            logging.info(
+                "document %s is disabled; stamped available_int=0 on %d ordinary source chunk(s)",
+                doc_id,
+                stamped,
+            )
 
 
 class ChunkService:
@@ -91,6 +137,7 @@ class ChunkService:
     async def build_chunks(
         self,
         storage_binary: bytes,
+        on_chunking_start=None,
     ) -> List[Dict[str, Any]]:
         """Build chunks from document binary.
 
@@ -133,7 +180,7 @@ class ChunkService:
         ctx.recording_context.record("chunk_config", chunk_config)
 
         # Run chunking (delegated)
-        cks = await run_chunking(chunker, storage_binary, ctx)
+        cks = await run_chunking(chunker, storage_binary, ctx, on_chunking_start)
 
         # Record raw chunks
         self._task_context.recording_context.record("raw_chunks", cks)
@@ -258,6 +305,8 @@ class ChunkService:
         """
         doc_bulk_size = doc_bulk_size or settings.DOC_BULK_SIZE
 
+        self._apply_document_availability(chunks)
+
         # Create mother chunks (summary chunks)
         mothers = self._create_mother_chunks(chunks)
 
@@ -267,6 +316,26 @@ class ChunkService:
 
         # Insert main chunks
         return await self._insert_main_chunks(task_id, task_tenant_id, task_dataset_id, chunks, doc_bulk_size)
+
+    def _apply_document_availability(self, chunks: List[Dict[str, Any]]) -> None:
+        """Hide source chunks when the owning document is disabled (status=0).
+
+        Disabling before parse only updates MySQL; later inserts would otherwise
+        default to available_int=1 and remain retrievable.
+        """
+        doc_id = self._task_context.doc_id
+        if not doc_id or doc_id == GRAPH_RAPTOR_FAKE_DOC_ID:
+            return
+        ok, doc = DocumentService.get_by_id(doc_id)
+        if not ok or doc is None:
+            return
+        stamped = apply_document_availability(chunks, getattr(doc, "status", "1"))
+        if stamped:
+            logging.info(
+                "document %s is disabled; stamped available_int=0 on %d ordinary source chunk(s)",
+                doc_id,
+                stamped,
+            )
 
     @classmethod
     def _create_mother_chunks(cls, chunks: List[Dict]) -> List[Dict]:
@@ -314,7 +383,7 @@ class ChunkService:
     ) -> bool:
         """Insert mother chunks in batches."""
         for b in range(0, len(mothers), doc_bulk_size):
-            await self._intercept_doc_store_insert(mothers[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
+            await self._intercept_doc_store_insert(mothers[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id, refresh=False)
 
             if self._task_context.has_canceled_func(task_id):
                 self._task_context.progress_cb(-1, msg="Task has been canceled.")
@@ -328,13 +397,13 @@ class ChunkService:
         else:
             return await thread_pool_exec(settings.docStoreConn.delete, condition, index_name, task_dataset_id)
 
-    async def _intercept_doc_store_insert(self, chunks: list, index_name: str, task_dataset_id: str) -> Any:
+    async def _intercept_doc_store_insert(self, chunks: list, index_name: str, task_dataset_id: str, refresh: str | bool = "wait_for") -> Any:
         if self._task_context.write_interceptor:
             if self._task_context.doc_id == GRAPH_RAPTOR_FAKE_DOC_ID:  # raptor - non-determinisic
                 return self._task_context.write_interceptor.intercept("docStoreConn.insert", [])
             return self._task_context.write_interceptor.intercept("docStoreConn.insert")
         else:
-            return await thread_pool_exec(settings.docStoreConn.insert, chunks, index_name, task_dataset_id)
+            return await thread_pool_exec(settings.docStoreConn.insert, chunks, index_name, task_dataset_id, refresh)
 
     async def _insert_main_chunks(
         self,
@@ -345,8 +414,13 @@ class ChunkService:
         doc_bulk_size: int,
     ) -> bool:
         """Insert main chunks in batches with cancellation handling."""
+        # Persist task chunk IDs periodically instead of once per bulk request.
+        # This keeps the task resumable while avoiding one MySQL transaction for
+        # every small document-store batch.
+        checkpoint_batches = max(1, 256 // doc_bulk_size)
+        last_checkpoint = 0
         for b in range(0, len(chunks), doc_bulk_size):
-            doc_store_result = await self._intercept_doc_store_insert(chunks[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
+            doc_store_result = await self._intercept_doc_store_insert(chunks[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id, refresh=False)
 
             if self._task_context.has_canceled_func(task_id):
                 # Roll back partial RAPTOR summary inserts
@@ -362,13 +436,20 @@ class ChunkService:
                 self._task_context.progress_cb(-1, msg=error_message)
                 raise Exception(error_message)
 
-            # Update chunk IDs in task
-            chunk_ids = [chunk["id"] for chunk in chunks[: b + doc_bulk_size]]
-            if not await self._update_task_chunk_ids(task_id, chunk_ids):
-                # Roll back on failure
-                await self._rollback_insertion(task_tenant_id, task_dataset_id, chunk_ids)
-                self._task_context.progress_cb(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
-                return False
+            batch_end = min(b + doc_bulk_size, len(chunks))
+            is_last_batch = batch_end == len(chunks)
+            if is_last_batch or batch_end - last_checkpoint >= checkpoint_batches * doc_bulk_size:
+                chunk_ids = [chunk["id"] for chunk in chunks[:batch_end]]
+                if not await self._update_task_chunk_ids(task_id, chunk_ids):
+                    # Roll back on failure
+                    await self._rollback_insertion(task_tenant_id, task_dataset_id, chunk_ids)
+                    self._task_context.progress_cb(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
+                    return False
+                last_checkpoint = batch_end
+
+        refresh_idx = getattr(settings.docStoreConn, "refresh_idx", None)
+        if callable(refresh_idx):
+            await thread_pool_exec(refresh_idx, search.index_name(task_tenant_id))
 
         return True
 

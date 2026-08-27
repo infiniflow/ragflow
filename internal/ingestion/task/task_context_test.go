@@ -23,7 +23,7 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) {
+func TestLoadFromIngestionTask_DoesNotFallbackToKnowledgebasePipelineID(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -56,7 +56,8 @@ func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) 
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	ctx, err := LoadFromIngestionTask(&entity.IngestionTask{
+	ctx := t.Context()
+	taskCtx, err := LoadFromIngestionTask(ctx, &entity.IngestionTask{
 		ID:         "task-1",
 		DocumentID: "doc-1",
 		DatasetID:  "kb-1",
@@ -64,8 +65,8 @@ func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) 
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
-	if ctx.PipelineID != kbPipelineID {
-		t.Fatalf("PipelineID = %q, want %q", ctx.PipelineID, kbPipelineID)
+	if taskCtx.PipelineID != "" {
+		t.Fatalf("PipelineID = %q, want empty document pipeline selection", taskCtx.PipelineID)
 	}
 }
 
@@ -104,7 +105,8 @@ func TestLoadFromIngestionTask_PrefersDocumentPipelineID(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 
-	ctx, err := LoadFromIngestionTask(&entity.IngestionTask{
+	ctx := t.Context()
+	taskCtx, err := LoadFromIngestionTask(ctx, &entity.IngestionTask{
 		ID:         "task-1",
 		DocumentID: "doc-1",
 		DatasetID:  "kb-1",
@@ -112,7 +114,7 @@ func TestLoadFromIngestionTask_PrefersDocumentPipelineID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
-	if ctx.PipelineID != docPipelineID {
-		t.Fatalf("PipelineID = %q, want %q", ctx.PipelineID, docPipelineID)
+	if taskCtx.PipelineID != docPipelineID {
+		t.Fatalf("PipelineID = %q, want %q", taskCtx.PipelineID, docPipelineID)
 	}
 }

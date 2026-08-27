@@ -1,0 +1,7 @@
+{
+  "note": "Locked Go-side product-count gate for structure/wiki (PORT_PLAN.md 缺口 E). These counts are the golden contract for the fixed corpus with the deterministic mock LLM/embedder. They must be reconciled against the Python baseline (rag/advanced_rag/knowlege_compile/structure.py, wiki.py) when a live run is available; a change here is a deliberate, reviewed contract update. 2026-07-27: structure gate now feeds a graph-kind parser_config (hypergraph path): 12 corpus chunks pack into one batch, the mock extracts 5 entities (Alpha..Epsilon) + 6 relations (fixed Greek pairs) + 1 graph summary = 12 (previously 6 under the legacy tuples contract).",
+  "schema_version": 1,
+  "fixed_corpus_chunks": 12,
+  "structure_products": 12,
+  "wiki_products": 1
+}

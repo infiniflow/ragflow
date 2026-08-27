@@ -91,6 +91,11 @@ func toInternalMessages(msgs []*schema.Message) []Message {
 			role = "user"
 		}
 		msg := Message{Role: role, Content: mm.Content}
+		if len(mm.UserInputMultiContent) > 0 {
+			if blocks := openAIContentBlocksFromEino(mm.UserInputMultiContent); len(blocks) > 0 {
+				msg.Content = blocks
+			}
+		}
 		if len(mm.ToolCalls) > 0 {
 			msg.ToolCalls = toolCallsToInternal(mm.ToolCalls)
 		}
@@ -100,6 +105,62 @@ func toInternalMessages(msgs []*schema.Message) []Message {
 		out = append(out, msg)
 	}
 	return out
+}
+
+// openAIContentBlocksFromEino converts eino multi-modal input parts into
+// OpenAI-style content blocks ("text" / "image_url"). Message.Content is
+// interface{} and every driver already understands this block shape: the
+// generic OpenAI-compatible request builder marshals it verbatim
+// (buildChatMessages in base_model.go), while the native anthropic /
+// google converters type-switch on []interface{} (anthropicContent /
+// googleMessageParts). The slice MUST therefore be []interface{}, not
+// []map[string]interface{}, or googleMessageParts misses it. Unsupported
+// part types are skipped; a nil return tells the caller to fall back to
+// the plain string Content.
+func openAIContentBlocksFromEino(parts []schema.MessageInputPart) []interface{} {
+	blocks := make([]interface{}, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			if part.Text == "" {
+				continue
+			}
+			blocks = append(blocks, map[string]interface{}{"type": "text", "text": part.Text})
+		case schema.ChatMessagePartTypeImageURL:
+			url := einoImagePartURL(part.Image)
+			if url == "" {
+				continue
+			}
+			blocks = append(blocks, map[string]interface{}{
+				"type":      "image_url",
+				"image_url": map[string]interface{}{"url": url},
+			})
+		}
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	return blocks
+}
+
+// einoImagePartURL resolves an image part to a single URL string: either
+// the direct URL (the agent component carries data URIs this way) or a
+// reassembled data URI from Base64Data + MIMEType.
+func einoImagePartURL(img *schema.MessageInputImage) string {
+	if img == nil {
+		return ""
+	}
+	if img.URL != nil && *img.URL != "" {
+		return *img.URL
+	}
+	if img.Base64Data != nil && *img.Base64Data != "" {
+		mime := img.MIMEType
+		if mime == "" {
+			mime = "image/png"
+		}
+		return "data:" + mime + ";base64," + *img.Base64Data
+	}
+	return ""
 }
 
 // fromInternalResponse converts a *ChatResponse to *schema.Message. The
@@ -147,7 +208,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg)
+	resp, err := m.inner.ModelDriver.ChatWithMessages(ctx, *m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
 	}
@@ -155,7 +216,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	// Langfuse) can compute the run total. Mirrors Python's
 	// LLMBundle._report_usage() / self.mdl.last_usage pattern.
 	if resp != nil && resp.Usage != nil {
-		m.inner.LastUsage = &ChatUsage{
+		m.inner.LastUsage = &TokenUsage{
 			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens, TotalTokens: resp.Usage.TotalTokens,
 		}
 		recordUsageFromResponse(ctx, m.inner)
@@ -276,34 +337,50 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if m.inner.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
-	if len(m.tools) > 0 {
-		msg, err := m.Generate(ctx, msgs, opts...)
-		if err != nil {
-			return nil, err
-		}
-		return schema.StreamReaderFromArray([]*schema.Message{msg}), nil
+	internalMessage := toInternalMessages(msgs)
+	chatCfg, err := m.chatConfigForGenerate()
+	if err != nil {
+		return nil, err
 	}
-	internal := toInternalMessages(msgs)
 
 	sr, sw := schema.Pipe[*schema.Message](1)
 	var sendMu sync.Mutex
-	sender := func(content *string, _ *string) error {
+	sender := func(content *string, reasoning *string) error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
-		if content == nil {
+		if content == nil && reasoning == nil {
 			return nil
 		}
-		// Copy the string — the underlying buffer may be reused.
-		chunk := *content
-		if closed := sw.Send(&schema.Message{Role: schema.Assistant, Content: chunk}, nil); closed {
+		// Provider drivers use the OpenAI-compatible [DONE] sentinel to
+		// signal the end of their transport stream. It is not assistant
+		// content and must not reach Eino's message stream or callback.
+		if content != nil && *content == "[DONE]" {
+			return nil
+		}
+		msg := &schema.Message{Role: schema.Assistant}
+		if content != nil {
+			msg.Content = *content
+		}
+		if reasoning != nil {
+			msg.ReasoningContent = *reasoning
+		}
+		if closed := sw.Send(msg, nil); closed {
 			return fmt.Errorf("models: stream closed before send completed")
 		}
 		return nil
 	}
 	go func() {
 		defer sw.Close()
-		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internal, m.inner.APIConfig, m.chatCfg, sender); err != nil {
+		if err := m.inner.ModelDriver.ChatStreamlyWithSender(ctx, *m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
 			_ = sw.Send(nil, err)
+			return
+		}
+		if chatCfg != nil && chatCfg.ToolCallsResult != nil && len(*chatCfg.ToolCallsResult) > 0 {
+			msg := &schema.Message{
+				Role:      schema.Assistant,
+				ToolCalls: toolCallsFromInternal(*chatCfg.ToolCallsResult),
+			}
+			_ = sw.Send(msg, nil)
 		}
 	}()
 	return sr, nil

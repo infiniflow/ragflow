@@ -31,6 +31,8 @@
 
 package parser
 
+import "context"
+
 // ParseResult is the structured return value of a successful parse.
 // Exactly one of the payload fields (JSON / Markdown / Text / HTML)
 // is populated on success, matching the Python contract — see
@@ -59,7 +61,7 @@ type ParseResult struct {
 	// Shape depends on the parser family: PDF emits
 	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
 	// optional `image` / `layout` / `positions` fields);
-	// markdown / html / text emit normalized
+	// Markdown / HTML / text emit normalized
 	// `{text, doc_type_kwd}` items; image emits OCR/VLM result
 	// items. Exactly one payload family is populated on success.
 	JSON []map[string]any
@@ -79,10 +81,13 @@ type ParseResult struct {
 	// Err is the failure reason. On non-nil Err, all payload
 	// fields are zero values.
 	Err error
+
+	// Warnings contains non-fatal issues encountered while parsing.
+	Warnings []string
 }
 
 // ParseResultProducer is the parser package's single structured-output
 // contract. Every parser returned by GetParser must implement it.
 type ParseResultProducer interface {
-	ParseWithResult(filename string, data []byte) ParseResult
+	ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult
 }

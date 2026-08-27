@@ -20,8 +20,8 @@
 //   - Poll with exponential backoff until "done" or "failed"
 //   - Fetch result JSONL and extract text
 //
-// For image parsing, only parse_image() semantics are needed;
-// parse_pdf() is handled by the PDF vision dispatch path.
+// Both image (parse_image) and PDF (parse_pdf) parsing go through the same
+// Job API; the file extension selects the service-side file type.
 
 package parser
 
@@ -72,14 +72,23 @@ type PaddleOCRClient struct {
 //	PADDLEOCR_ACCESS_TOKEN   – bearer token
 //	PADDLEOCR_ALGORITHM      – algorithm name (default PaddleOCR-VL)
 func NewPaddleOCRClientFromEnv() *PaddleOCRClient {
-	baseURL := common.GetEnv(common.EnvPaddleOCRBaseUrl)
-	if baseURL == "" {
+	return newPaddleOCRClient(
+		common.GetEnv(common.EnvPaddleOCRBaseUrl),
+		common.GetEnv(common.EnvPaddleOCRAccessToken),
+		common.GetEnv(common.EnvPaddleOCRAlgorithm),
+	)
+}
+
+// newPaddleOCRClient builds a client, falling back to the default base URL and
+// algorithm when the given values are empty.
+func newPaddleOCRClient(baseURL, accessToken, algorithm string) *PaddleOCRClient {
+	if strings.TrimSpace(baseURL) == "" {
 		baseURL = defaultPaddleOCRBaseURL
 	}
 	return &PaddleOCRClient{
-		BaseURL:     strings.TrimRight(baseURL, "/"),
-		AccessToken: common.GetEnv(common.EnvPaddleOCRAccessToken),
-		Algorithm:   firstNonEmpty(common.GetEnv(common.EnvPaddleOCRAlgorithm), defaultPaddleOCRAlgo),
+		BaseURL:     strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		AccessToken: strings.TrimSpace(accessToken),
+		Algorithm:   firstNonEmpty(strings.TrimSpace(algorithm), defaultPaddleOCRAlgo),
 		Timeout:     defaultPaddleOCRTimeout,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second, // per-request timeout; polling uses deadline
@@ -95,31 +104,50 @@ func (c *PaddleOCRClient) Enabled() bool {
 // ParseImage submits the image to PaddleOCR and returns extracted text.
 // Mirrors Python's PaddleOCRParser.parse_image().
 func (c *PaddleOCRClient) ParseImage(binary []byte, filename string) (string, error) {
-	deadline := time.Now().Add(c.Timeout)
-
-	// Step 1: Submit job
-	jobID, err := c.submitJob(binary, filename, deadline)
+	raw, err := c.submitAndFetch(binary, filename)
 	if err != nil {
-		return "", fmt.Errorf("paddleocr submit: %w", err)
+		return "", err
 	}
-
-	// Step 2: Poll until done
-	resultData, err := c.pollJob(jobID, deadline)
-	if err != nil {
-		return "", fmt.Errorf("paddleocr poll: %w", err)
-	}
-
-	// Step 3: Fetch result JSONL
-	raw, err := c.fetchResult(resultData, deadline)
-	if err != nil {
-		return "", fmt.Errorf("paddleocr fetch: %w", err)
-	}
-
-	// Step 4: Parse result
 	return c.extractImageText(raw), nil
 }
 
-// submitJob POSTs the image file to /api/v2/ocr/jobs and returns the job ID.
+// ParsePDF submits the PDF to PaddleOCR and returns extracted markdown text.
+// Mirrors Python's PaddleOCRParser.parse_pdf(): the file is uploaded through
+// the same async Job API under a ".pdf" name so the service applies PDF
+// parsing, then the JSONL results are flattened exactly like parse_image
+// (layout blocks with a fallback to rec_texts).
+func (c *PaddleOCRClient) ParsePDF(binary []byte, filename string) (string, error) {
+	pdfName := strings.TrimSpace(filename)
+	if !strings.HasSuffix(strings.ToLower(pdfName), ".pdf") {
+		pdfName = "document.pdf" // Python always submits the PDF as document.pdf
+	}
+	raw, err := c.submitAndFetch(binary, pdfName)
+	if err != nil {
+		return "", err
+	}
+	return c.extractImageText(raw), nil
+}
+
+// submitAndFetch runs the async Job API round trip: submit, poll, fetch.
+func (c *PaddleOCRClient) submitAndFetch(binary []byte, filename string) ([]map[string]any, error) {
+	deadline := time.Now().Add(c.Timeout)
+
+	jobID, err := c.submitJob(binary, filename, deadline)
+	if err != nil {
+		return nil, fmt.Errorf("paddleocr submit: %w", err)
+	}
+	resultData, err := c.pollJob(jobID, deadline)
+	if err != nil {
+		return nil, fmt.Errorf("paddleocr poll: %w", err)
+	}
+	raw, err := c.fetchResult(resultData, deadline)
+	if err != nil {
+		return nil, fmt.Errorf("paddleocr fetch: %w", err)
+	}
+	return raw, nil
+}
+
+// submitJob POSTs the file to /api/v2/ocr/jobs and returns the job ID.
 func (c *PaddleOCRClient) submitJob(binary []byte, filename string, deadline time.Time) (string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -358,7 +386,7 @@ func (c *PaddleOCRClient) extractImageText(resultLines []map[string]any) string 
 						}
 						content, _ := blockMap["block_content"].(string)
 						content = strings.TrimSpace(content)
-						// Remove markdown image blocks
+						// Remove Markdown image blocks
 						content = removeMarkdownImages(content)
 						if content != "" {
 							texts = append(texts, content)

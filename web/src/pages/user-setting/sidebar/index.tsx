@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import ThemeSwitch from '@/components/theme-switch';
@@ -12,7 +28,6 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
-  Columns3Cog,
   LucideBox,
   LucideLogOut,
   LucideMessagesSquare,
@@ -27,6 +42,12 @@ import { useHandleMenuClick } from './hooks';
 
 const menuItems = (t: TFunction) => [
   {
+    icon: <LucideBox className="size-[1em]" />,
+    label: t('setting.model'),
+    key: Routes.Model,
+    'data-testid': 'settings-nav-model-providers',
+  },
+  {
     icon: <LucideServer className="size-[1em]" />,
     label: t('setting.dataSources'),
     key: Routes.DataSource,
@@ -37,20 +58,9 @@ const menuItems = (t: TFunction) => [
     key: Routes.ChatChannel,
   },
   {
-    icon: <LucideBox className="size-[1em]" />,
-    label: t('setting.model'),
-    key: Routes.Model,
-    'data-testid': 'settings-nav-model-providers',
-  },
-  {
     icon: <IconFontFill name="mcp" className="size-[1em]" />,
     label: 'MCP',
     key: Routes.Mcp,
-  },
-  {
-    icon: <Columns3Cog className="size-[1em]" />,
-    label: t('setting.compilationTemplates'),
-    key: Routes.CompilationTemplates,
   },
   {
     icon: <LucideUsers className="size-[1em]" />,
