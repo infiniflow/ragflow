@@ -254,27 +254,22 @@ function AgentForm({ node }: INextOperatorForm) {
                 )}
               />
               {mcpIds.length > 0 && (
-                <FormField
-                  control={form.control}
-                  name={`tool_timeout`}
-                  render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel tooltip={t('flow.toolTimeoutTip')}>
-                        {t('flow.toolTimeout')}
-                      </FormLabel>
-                      <FormControl>
-                        <div className="flex gap-2 items-center">
-                          <NumberInputStepper
-                            value={field.value}
-                            onChange={field.onChange}
-                            min={1}
-                          />{' '}
-                          {t('flow.seconds')}
-                        </div>
-                      </FormControl>
-                    </FormItem>
+                <RAGFlowFormItem
+                  label={t('flow.toolTimeout')}
+                  tooltip={t('flow.toolTimeoutTip')}
+                  name="tool_timeout"
+                >
+                  {(field) => (
+                    <div className="flex gap-2 items-center">
+                      <NumberInputStepper
+                        value={field.value}
+                        onChange={field.onChange}
+                        min={1}
+                      />{' '}
+                      {t('flow.seconds')}
+                    </div>
                   )}
-                />
+                </RAGFlowFormItem>
               )}
               {hasSubAgentOrTool(edges, node?.id) && (
                 <FormField
