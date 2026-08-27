@@ -27,19 +27,10 @@ from common.constants import LLMType
 from deepdoc.parser.figure_parser import VisionFigureParser
 from rag.nlp import is_english, random_choices, remove_contents_table
 
-# Table-of-contents entry shape: a leader run (dots, ellipses, midline
-# ellipses, middots, or wide spaces) followed by a page number, optionally
-# with a trailing roman-numeral fragment, e.g. "第1章 道可道…………3",
-# "Introduction ....... 12", "……18 I". Extends the leader heuristic already
-# used by remove_toc_word below so the PDF path also drops TOCs whose pages
-# carry no "目录"/"contents" heading.
-TOC_ENTRY_RE = re.compile(r"(\.{2,}|…{2,}|⋯{2,}|·{2,}|[ ]{2,})\s*\d{1,4}\s*[IVXLCivxlc]{0,5}\s*$")
-
 
 def remove_toc(items):
     indexed = [(_item_text(item), i) for i, item in enumerate(items)]
     remove_contents_table(indexed, eng=_is_english(indexed))
-    indexed = [(text, i) for text, i in indexed if not TOC_ENTRY_RE.search(text.split("@@")[0])]
     kept_indices = [i for _, i in indexed]
     return [items[i] for i in kept_indices], kept_indices
 

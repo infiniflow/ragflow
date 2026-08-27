@@ -82,9 +82,8 @@ func TestBuildNodeBody_OverrideParams(t *testing.T) {
 	if v, _ := captured["docx"].(map[string]any); v == nil || v["output_format"] != "one" {
 		t.Errorf("docx injection missing: %#v", captured["docx"])
 	}
-	// pdf: nested maps deep-merge — the override wins per leaf key while the
-	// base-only parse_method survives (a page-cap override must not drop
-	// sibling DSL keys such as remove_toc).
+	// pdf: the override fully replaces the base entry, so output_format is
+	// overridden and the base-only parse_method is dropped (shallow merge).
 	pdf, _ := captured["pdf"].(map[string]any)
 	if pdf == nil {
 		t.Fatalf("pdf setup missing: %#v", captured)
@@ -92,8 +91,8 @@ func TestBuildNodeBody_OverrideParams(t *testing.T) {
 	if pdf["output_format"] != "detailed" {
 		t.Errorf("pdf.output_format not overridden: %#v", pdf)
 	}
-	if pdf["parse_method"] != "naive" {
-		t.Errorf("pdf.parse_method should be preserved by deep merge: %#v", pdf)
+	if _, ok := pdf["parse_method"]; ok {
+		t.Errorf("pdf.parse_method should be dropped by shallow merge: %#v", pdf)
 	}
 }
 
