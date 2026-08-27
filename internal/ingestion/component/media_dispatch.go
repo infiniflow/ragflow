@@ -31,7 +31,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
-	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
 	_ "golang.org/x/image/webp"
@@ -43,7 +42,6 @@ import (
 	"sort"
 	"strings"
 
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -426,10 +424,10 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 	return client.ParseImage(binary, filename)
 }
 
-// runLocalImageOCR uses the DeepDoc inference service (/predict/ocr) to
-// detect and recognize text in an image. Mirrors Python's
-// deepdoc.vision.OCR (local ONNX pipeline), but routed through the
-// DeepDoc HTTP service which wraps the same ONNX models.
+// runLocalImageOCR detects and recognizes text in an image using the
+// in-process DeepDoc analyzer (ONNX models served locally via the native
+// backend). Mirrors Python's deepdoc.vision.OCR local ONNX pipeline; the
+// external HTTP service is no longer a backend (see parser.GetDocAnalyzer).
 //
 // Pipeline:
 //  1. Decode image bytes → image.Image
@@ -438,15 +436,7 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
 func runLocalImageOCR(binary []byte) (string, error) {
-	deepdocURL := common.GetEnv(common.EnvDeepDocURL)
-	if deepdocURL == "" {
-		deepdocURL = common.GetEnv(common.EnvTensorrtDLAServer)
-	}
-	if deepdocURL == "" {
-		return "", fmt.Errorf("local OCR: DEEPDOC_URL not configured")
-	}
-
-	client, err := inference.NewClient(deepdocURL)
+	analyzer, err := parser.GetDocAnalyzer()
 	if err != nil {
 		return "", fmt.Errorf("local OCR: %w", err)
 	}
@@ -458,7 +448,7 @@ func runLocalImageOCR(binary []byte) (string, error) {
 
 	// Step 1: Detect text regions.
 	ctx := context.Background()
-	boxes, err := client.OCRDetect(ctx, img)
+	boxes, err := analyzer.OCRDetect(ctx, img)
 	if err != nil {
 		return "", fmt.Errorf("local OCR: detect: %w", err)
 	}
@@ -514,7 +504,7 @@ func runLocalImageOCR(binary []byte) (string, error) {
 			continue
 		}
 
-		recTexts, err := client.OCRRecognize(ctx, crop)
+		recTexts, err := analyzer.OCRRecognize(ctx, crop)
 		if err != nil {
 			continue // skip boxes that fail recognition
 		}

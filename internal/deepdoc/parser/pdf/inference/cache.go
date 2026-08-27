@@ -154,7 +154,8 @@ func cacheKeyOrEmpty(method string, img image.Image) string {
 
 // DLA see doctype.DocAnalyzer.
 func (c *DocAnalyzerCache) DLA(ctx context.Context, img image.Image) ([]doctype.DLARegion, error) {
-	if key := cacheKeyOrEmpty("dla", img); key != "" && c.store.Enabled() {
+	key := cacheKeyOrEmpty("dla", img)
+	if key != "" && c.store.Enabled() {
 		var cached []doctype.DLARegion
 		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
@@ -164,7 +165,7 @@ func (c *DocAnalyzerCache) DLA(ctx context.Context, img image.Image) ([]doctype.
 	if err != nil || img == nil {
 		return out, err
 	}
-	if key := cacheKeyOrEmpty("dla", img); key != "" && c.store.Enabled() {
+	if key != "" && c.store.Enabled() {
 		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
@@ -172,7 +173,8 @@ func (c *DocAnalyzerCache) DLA(ctx context.Context, img image.Image) ([]doctype.
 
 // TSR see doctype.DocAnalyzer.
 func (c *DocAnalyzerCache) TSR(ctx context.Context, img image.Image) ([]doctype.TSRCell, error) {
-	if key := cacheKeyOrEmpty("tsr", img); key != "" && c.store.Enabled() {
+	key := cacheKeyOrEmpty("tsr", img)
+	if key != "" && c.store.Enabled() {
 		var cached []doctype.TSRCell
 		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
@@ -182,7 +184,7 @@ func (c *DocAnalyzerCache) TSR(ctx context.Context, img image.Image) ([]doctype.
 	if err != nil || img == nil {
 		return out, err
 	}
-	if key := cacheKeyOrEmpty("tsr", img); key != "" && c.store.Enabled() {
+	if key != "" && c.store.Enabled() {
 		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
@@ -190,7 +192,8 @@ func (c *DocAnalyzerCache) TSR(ctx context.Context, img image.Image) ([]doctype.
 
 // OCRDetect see doctype.DocAnalyzer.
 func (c *DocAnalyzerCache) OCRDetect(ctx context.Context, img image.Image) ([]doctype.OCRBox, error) {
-	if key := cacheKeyOrEmpty("ocr_detect", img); key != "" && c.store.Enabled() {
+	key := cacheKeyOrEmpty("ocr_detect", img)
+	if key != "" && c.store.Enabled() {
 		var cached []doctype.OCRBox
 		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
@@ -200,7 +203,7 @@ func (c *DocAnalyzerCache) OCRDetect(ctx context.Context, img image.Image) ([]do
 	if err != nil || img == nil {
 		return out, err
 	}
-	if key := cacheKeyOrEmpty("ocr_detect", img); key != "" && c.store.Enabled() {
+	if key != "" && c.store.Enabled() {
 		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
@@ -208,7 +211,8 @@ func (c *DocAnalyzerCache) OCRDetect(ctx context.Context, img image.Image) ([]do
 
 // OCRRecognize see doctype.DocAnalyzer.
 func (c *DocAnalyzerCache) OCRRecognize(ctx context.Context, img image.Image) ([]doctype.OCRText, error) {
-	if key := cacheKeyOrEmpty("ocr_recognize", img); key != "" && c.store.Enabled() {
+	key := cacheKeyOrEmpty("ocr_recognize", img)
+	if key != "" && c.store.Enabled() {
 		var cached []doctype.OCRText
 		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
@@ -218,7 +222,7 @@ func (c *DocAnalyzerCache) OCRRecognize(ctx context.Context, img image.Image) ([
 	if err != nil || img == nil {
 		return out, err
 	}
-	if key := cacheKeyOrEmpty("ocr_recognize", img); key != "" && c.store.Enabled() {
+	if key != "" && c.store.Enabled() {
 		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
@@ -237,3 +241,31 @@ func (c *DocAnalyzerCache) Health() bool {
 // Compile-time guarantee that DocAnalyzerCache satisfies the
 // doctype.DocAnalyzer interface.
 var _ doctype.DocAnalyzer = (*DocAnalyzerCache)(nil)
+
+// DefaultDLALabels returns the 10-class DLA taxonomy matching Python's
+// deepdoc/vision/dla_cli.py:10-21. Duplicates at indices 4, 7, 9 are
+// kept verbatim for backward compatibility with existing inference servers.
+//
+// This list is the wire contract: the in-process detector (native)
+// serialises its DLA output through these same indices, and its internal
+// yoloDlaLabels must stay element-for-element identical to this (same order,
+// same duplicate indices 4/7/9). The two live in separate modules, so they
+// cannot share one Go constant; keep them in sync by hand.
+func DefaultDLALabels() []string {
+	return []string{
+		doctype.LayoutTypeTitle, doctype.LayoutTypeText, doctype.LayoutTypeReference,
+		doctype.LayoutTypeFigure, doctype.DLALabelFigureCaption,
+		doctype.LayoutTypeTable, doctype.DLALabelTableCaption, doctype.DLALabelTableCaption,
+		doctype.LayoutTypeEquation, doctype.DLALabelFigureCaption,
+	}
+}
+
+// DefaultTSRLabels returns the 6-class TSR taxonomy matching Python's
+// deepdoc/server/adapters/tsr_adapter.py:21-26.
+func DefaultTSRLabels() []string {
+	return []string{
+		"table", "table column", "table row",
+		"table column header", "table projected row header",
+		"table spanning cell",
+	}
+}

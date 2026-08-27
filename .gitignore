@@ -6,6 +6,7 @@ __pycache__/
 hudet/
 cv/
 layout_app.py
+/client.py
 api/flask_session
 venv/
 # Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
@@ -267,3 +268,6 @@ internal/deepdoc/parser/docx/tool/
 internal/ingestion/task/tool/generate_dataflow_golden.py
 internal/ingestion/task/tool/README.md
 internal/cpp/cmake-build-release
+
+# downloaded native static-lib artifacts (fetched by ragflow_deps/download_deps.py)
+ragflow_deps/*.zip
