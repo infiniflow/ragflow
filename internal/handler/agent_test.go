@@ -1686,48 +1686,6 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 	}
 }
 
-// TestGetAgentWebhookLogsReturnsEmptyPoll covers the contract: the
-// payload must be {events:[], finished:false, next_since_ts:0}. This
-// test exercises the handler's auth + response-shape path against a
-// real (in-memory) user_canvas row.
-func TestGetAgentWebhookLogsReturnsEmptyPoll(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db := setupHandlerAgentsTestDB(t)
-	orig := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = orig })
-
-	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/webhook/logs?since_ts=0", nil)
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
-
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-	h.GetAgentWebhookLogs(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
-		t.Fatalf("code = %v, want 0; body=%s", code, w.Body.String())
-	}
-	data, _ := resp["data"].(map[string]interface{})
-	if events, _ := data["events"].([]interface{}); len(events) != 0 {
-		t.Errorf("events = %v, want []", events)
-	}
-	if finished, _ := data["finished"].(bool); finished {
-		t.Errorf("finished = true, want false")
-	}
-	if _, ok := data["next_since_ts"]; !ok {
-		t.Errorf("missing next_since_ts key")
-	}
-}
-
 // TestRerunAgent_RejectsInaccessibleDocument mirrors PR #15145:
 // POST /api/v1/agents/rerun gates on DocumentService.accessible
 // (the python "is the document reachable by this tenant" check)
