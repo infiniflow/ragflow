@@ -170,6 +170,39 @@ func TestJinaChatStreamAcceptsNDJSONAndCleanEOF(t *testing.T) {
 	}
 }
 
+func TestParseJinaStreamAcceptsMultilineSSEData(t *testing.T) {
+	var events []map[string]any
+	done, count, err := parseJinaStream(strings.NewReader("data: {\"choices\":\n"+
+		"data: [{\"delta\":{\"content\":\"hello\"}}]}\n\n"), func(event map[string]any) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("parseJinaStream: %v", err)
+	}
+	if done || count != 1 || len(events) != 1 {
+		t.Fatalf("done=%v count=%d events=%d, want false/1/1", done, count, len(events))
+	}
+}
+
+func TestJinaThinkingFlushPreservesUTF8(t *testing.T) {
+	var reasoning strings.Builder
+	err := handleJinaStreamingResponse(strings.NewReader("{"+
+		"\"choices\":[{\"delta\":{\"content\":\"思考过程很长\",\"type\":\"think\"}}]}\n"), nil, nil,
+		func(_ *string, reason *string) error {
+			if reason != nil {
+				reasoning.WriteString(*reason)
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("handleJinaStreamingResponse: %v", err)
+	}
+	if !strings.Contains(reasoning.String(), "思考过程很长") {
+		t.Errorf("reasoning=%q, want valid UTF-8 content", reasoning.String())
+	}
+}
+
 func TestJinaChatStreamForwardsHTTPError(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {

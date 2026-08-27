@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/common"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 )
@@ -249,6 +250,7 @@ func handleJinaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, 
 	thinkingClosed := false
 	var pending strings.Builder
 	streamModel := ""
+	streamResponseID := ""
 
 	emit := func(text string, reasoning bool) error {
 		if text == "" {
@@ -263,7 +265,11 @@ func handleJinaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, 
 	flushThinking := func(final bool) error {
 		value := pending.String()
 		if !final && len(value) > len("</think>")-1 {
-			safe := value[:len(value)-(len("</think>")-1)]
+			safeEnd := len(value) - (len("</think>") - 1)
+			for safeEnd > 0 && !utf8.RuneStart(value[safeEnd]) {
+				safeEnd--
+			}
+			safe := value[:safeEnd]
 			pending.Reset()
 			pending.WriteString(value[len(safe):])
 			return emit(safe, true)
@@ -301,6 +307,9 @@ func handleJinaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, 
 	}
 
 	_, eventCount, err := parseJinaStream(body, func(event map[string]any) error {
+		if id, ok := event["id"].(string); ok && id != "" {
+			streamResponseID = id
+		}
 		if u, ok := OpenAIParserConfig.StreamParser(event); ok {
 			streamUsage = u
 		}
@@ -342,7 +351,7 @@ func handleJinaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, 
 		setSortedToolCallsResult(chatConfig, accumulatedToolCalls)
 	}
 	if streamUsage != nil {
-		recordResponseUsage(modelUsage, "", streamUsage, "chat")
+		recordResponseUsage(modelUsage, streamResponseID, streamUsage, "chat")
 		if chatConfig != nil {
 			chatConfig.UsageResult = streamUsage
 			common.Info("StreamUsage", zap.String("model", streamModel), zap.Int("prompt", streamUsage.PromptTokens), zap.Int("completion", streamUsage.CompletionTokens), zap.Int("total", streamUsage.TotalTokens))
@@ -358,35 +367,63 @@ func handleJinaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, 
 func parseJinaStream(body io.Reader, onEvent func(map[string]any) error) (done bool, eventCount int, err error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var sseData []string
+	flushSSE := func() error {
+		if len(sseData) == 0 {
+			return nil
+		}
+		line := strings.Join(sseData, "\n")
+		sseData = nil
+		if line == "[DONE]" {
+			done = true
+			return nil
+		}
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			return fmt.Errorf("invalid Jina stream event: %w", err)
+		}
+		eventCount++
+		return onEvent(event)
+	}
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := strings.TrimRight(scanner.Text(), "\r")
 		if line == "" {
+			if err := flushSSE(); err != nil {
+				return false, eventCount, err
+			}
+			if done {
+				return true, eventCount, nil
+			}
 			continue
 		}
 		if strings.HasPrefix(line, "data:") {
-			line = strings.TrimSpace(line[len("data:"):])
+			sseData = append(sseData, strings.TrimSpace(line[len("data:"):]))
+			continue
 		} else if strings.Contains(line, ":") && !strings.HasPrefix(line, "{") && !strings.HasPrefix(line, "[") {
 			// Ignore non-data SSE fields such as event:, id:, and retry:.
 			continue
 		}
-		if line == "" {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
+			var event map[string]any
+			if err := json.Unmarshal([]byte(line), &event); err != nil {
+				return false, eventCount, fmt.Errorf("invalid Jina stream event: %w", err)
+			}
+			eventCount++
+			if err := onEvent(event); err != nil {
+				return false, eventCount, err
+			}
 			continue
-		}
-		if line == "[DONE]" {
-			return true, eventCount, nil
-		}
-
-		var event map[string]any
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			return false, eventCount, fmt.Errorf("invalid Jina stream event: %w", err)
-		}
-		eventCount++
-		if err := onEvent(event); err != nil {
-			return false, eventCount, err
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return false, eventCount, err
+	}
+	if err := flushSSE(); err != nil {
+		return false, eventCount, err
+	}
+	if done {
+		return true, eventCount, nil
 	}
 	return false, eventCount, nil
 }
