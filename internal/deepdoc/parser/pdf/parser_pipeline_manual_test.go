@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"encoding/base64"
 	"os"
 	"path/filepath"
