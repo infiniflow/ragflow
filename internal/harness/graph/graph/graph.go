@@ -4,6 +4,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/constants"
@@ -158,14 +159,7 @@ func (g *stateGraph) AddEdge(from, to string) error {
 		g.entryPoint = to
 	}
 	if to == constants.End {
-		found := false
-		for _, fp := range g.finishPoints {
-			if fp == from {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(g.finishPoints, from) {
 			g.finishPoints = append(g.finishPoints, from)
 		}
 	}

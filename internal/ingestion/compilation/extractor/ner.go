@@ -20,6 +20,8 @@
 //
 // The architecture mirrors the Python rag/graphrag/ner package so that both
 // code paths produce identical output (verified by test).
+//go:build cgo_thincner
+
 package extractor
 
 // #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/../../..
@@ -165,7 +167,7 @@ func (e *Extractor) Extract(text string, extractRelations bool) (*ExtractionResu
 		tokensJSON := tokenizeText(text, e.Lang)
 		if tokensJSON != "" {
 			var rawTokens []string
-			if err := json.Unmarshal([]byte(tokensJSON), &rawTokens); err == nil {
+			if err = json.Unmarshal([]byte(tokensJSON), &rawTokens); err == nil {
 				for i, t := range rawTokens {
 					tokensMeta = append(tokensMeta, map[string]interface{}{
 						"text":  t,
@@ -291,7 +293,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		End        int     `json:"end"`
 		Confidence float64 `json:"confidence"`
 	}
-	if err := json.Unmarshal([]byte(resultJSON), &rawEntities); err != nil {
+	if err = json.Unmarshal([]byte(resultJSON), &rawEntities); err != nil {
 		return nil, fmt.Errorf("failed to parse NER result: %w", err)
 	}
 
@@ -307,7 +309,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		if re.Confidence < e.ConfidenceThreshold {
 			continue
 		}
-		text := re.Text
+		text = re.Text
 		if isCJK {
 			text = strings.ReplaceAll(text, " ", "")
 		}
@@ -343,7 +345,7 @@ func (e *Extractor) findModelDir() string {
 	if dirExists(base) {
 		return base
 	}
-	if p := getenv("SPACY_MODEL_DIR"); p != "" {
+	if p := common.GetEnv(common.EnvSpacyModelDir); p != "" {
 		return p
 	}
 	return base
@@ -368,10 +370,6 @@ func tokenizeText(text, lang string) string {
 	}
 	defer C.ThincNER_FreeString(cTokens)
 	return C.GoString(cTokens)
-}
-
-func getenv(key string) string {
-	return os.Getenv(key)
 }
 
 // DetectLanguage detects text language based on Unicode ranges.

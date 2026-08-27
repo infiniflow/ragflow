@@ -473,9 +473,6 @@ export default {
       linkSourceSetTip:
         'Управлявайте свързването на източник на данни с този набор',
       linkDataSource: 'Свържи източник на данни',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        'За съществуващи фрагменти генерира йерархично съдържание (една директория на файл). По време на заявки, когато е активирано подобряване на директория, системата ще използва голям модел, за да определи кои елементи от директорията са релевантни на въпроса на потребителя, като по този начин идентифицира съответните фрагменти.',
       deleteGenerateModalContent: `
         <p>Изтриването на генерираните резултати от <strong class='text-text-primary'>{{type}}</strong>
         ще премахне всички извлечени обекти и връзки от този набор от данни.
@@ -543,6 +540,12 @@ export default {
       dialogueExamplesTitle: 'преглед',
       methodEmpty:
         'Тук ще се покаже визуално обяснение на категориите на базата от знания',
+      audio: `<p>Поддържани файлови формати: <b>WAV, MP3, AAC, FLAC, OGG</b> и други често срещани аудио формати.</p>
+<p>Този метод транскрибира аудио файловете в текст с помощта на модел за преобразуване на реч в текст.</p>`,
+      email: `<p>Поддържани файлови формати: <b>EML</b> и <b>MSG</b>.</p>
+<p>Този метод анализира имейл файлове, извличайки полетата от заглавката (като От, До, CC, Тема и Дата), съдържанието на писмото и прикачените файлове.</p>`,
+      knowledgeCompiler: `<p>Този конвейер анализира и разделя файловете на части, след което компилира частите в структурирани единици знания (граф на знанията, уики, RAPTOR, мисловна карта или навигация в набора от данни) чрез компонента Knowledge Compiler.</p>
+<p>Компилираните единици знания се издават като части, обединени в потока от части, което е идеално за изграждане на извличаем слой знания върху разделените документи.</p>`,
       book: `<p>Поддържани файлови формати: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       За всяка книга в PDF, моля задайте <i>диапазон на страници</i>, за да премахнете нежелана информация и да намалите времето за анализ.</p>`,
       laws: `<p>Поддържани файлови формати: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -915,12 +918,12 @@ The above is the content you need to summarize.`,
       keyInvalid: 'Вашият API ключ е невалиден.',
       deleteModel: 'Изтрий модел',
       bedrockCredentialsHint:
-        'Съвет: Оставете Access Key / Secret Key празни, за да използвате AWS IAM автентикация.',
-      awsAuthModeAccessKeySecret: 'Access Key',
+        'Съвет: Оставете ACCESS KEY / SECRET KEY празни, за да използвате AWS IAM автентикация.',
+      awsAuthModeAccessKeySecret: 'ACCESS KEY',
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
-      awsAccessKeyId: 'AWS Access Key ID',
-      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsAccessKeyId: 'AWS ACCESS KEY ID',
+      awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: 'Моля, въведете AWS Role ARN',
       awsAssumeRoleTip:
@@ -997,6 +1000,7 @@ The above is the content you need to summarize.`,
       gmailTokenTip: 'Качете OAuth JSON, генериран от Google Console.',
       dropboxDescription:
         'Свържете вашия Dropbox за синхронизиране на файлове и папки от избран акаунт.',
+      azure_devopsDescription: 'Свържете Azure DevOps, за да синхронизирате файловете на хранилището и заявките за изтегляне (pull requests).',
       bitbucketDescription:
         'Свържете Bitbucket за синхронизиране на PR съдържание.',
       bitbucketTopWorkspaceTip:
@@ -1143,15 +1147,15 @@ The above is the content you need to summarize.`,
       addedModels: 'Добавени модели',
       modelsToBeAdded: 'Модели за добавяне',
       addTheModel: 'Добави',
-      apiKey: 'API-Key',
+      apiKey: 'API Key',
       apiKeyMessage: 'Моля, въведете API ключа',
       apiKeyTip:
         'API ключът може да бъде получен чрез регистрация при съответния LLM доставчик.',
       showMoreModels: 'Преглед на модели',
       hideModels: 'Скрий модели',
-      baseUrl: 'Base-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
-        'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този base url с API ключа.',
+        'Ако вашият API ключ е от OpenAI, просто го игнорирайте. Всеки друг междинен доставчик ще предостави този Base URL с API ключа.',
       tongyiBaseUrlTip:
         'За китайски потребители не е необходимо да попълвате или използвайте https://dashscope.aliyuncs.com/compatible-mode/v1. За международни потребители използвайте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -1191,8 +1195,8 @@ The above is the content you need to summarize.`,
       modelNameMessage: 'Моля, въведете името на модела!',
       modelType: 'Тип модел',
       modelTypeMessage: 'Моля, въведете типа на модела!',
-      addLlmBaseUrl: 'Base url',
-      baseUrlNameMessage: 'Моля, въведете вашия base url!',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Моля, въведете вашия Base URL',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:
@@ -1214,13 +1218,13 @@ The above is the content you need to summarize.`,
       endpointIDMessage: 'Моля, въведете Model ID на модела',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Моля, въведете вашия ARK_API_KEY',
-      bedrockModelNameMessage: 'Моля, въведете името на модела!',
+      bedrockModelNameMessage: 'Моля, въведете името на модела',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: 'Моля, въведете вашия ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: 'Моля, въведете вашия SECRET KEY',
       bedrockRegion: 'AWS регион',
-      bedrockRegionMessage: 'Моля, изберете!',
+      bedrockRegionMessage: 'Моля, изберете',
       'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
       'us-west-1': 'US West (N. California)',
@@ -1258,26 +1262,26 @@ The above is the content you need to summarize.`,
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Моля, въведете вашия Secret ID',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Моля, въведете вашия Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Моля, въведете вашия SECRET KEY',
       SparkModelNameMessage: 'Моля, изберете Spark модел',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'Моля, въведете вашия APIPassword',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'Моля, въведете вашия APP ID',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'Моля, въведете вашия APISecret',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'Моля, въведете вашия API SECRET',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'Моля, въведете вашия APIKey',
       yiyanModelNameMessage: 'Моля, въведете име на модел',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Моля, въведете вашия API KEY',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Моля, въведете вашия Secret KEY',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Моля, въведете вашия API Key',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Моля, въведете вашия SECRET KEY',
       FishAudioModelNameMessage:
         'Моля, дайте име на вашия модел за синтез на реч',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Моля, въведете вашия API KEY',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Моля, въведете вашия API Key',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Моля, въведете Reference ID (оставете празно за използване на модела по подразбиране).',
@@ -1345,7 +1349,7 @@ The above is the content you need to summarize.`,
         chat: 'Чат',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -1628,7 +1632,7 @@ The above is the content you need to summarize.`,
       bing: 'Bing',
       bingDescription:
         'Компонент, който търси от https://www.bing.com/, позволявайки ви да укажете броя резултати с TopN. Изисква API ключ от microsoft.com.',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       country: 'Държава и регион',
       language: 'Език',
       googleScholar: 'Google Scholar',
@@ -2183,7 +2187,7 @@ Task
 Extract the most important keywords/phrases of a given piece of text content.
 
 Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`,
@@ -2191,10 +2195,10 @@ Requirements
 You are a text analyzer.
 
 Task
-Propose 3 questions about a given piece of text content.
+Propose {{ topn }} questions about a given piece of text content.
 
 Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.
@@ -2311,7 +2315,7 @@ Important structured information may include: names, dates, locations, events, k
         bodyTemplate: 'Шаблон за тяло',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'Api key',
+        apiKey: 'API Key',
         queryParameters: 'Параметри на заявка',
         headerParameters: 'Параметри на заглавие',
         requestBodyParameters: 'Параметри на тялото на заявка',

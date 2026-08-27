@@ -27,7 +27,7 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
-import OperatorIcon from '../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import ToolTimelineItem from './tool-timeline-item';
 type LogFlowTimelineProps = Pick<
   ReturnType<typeof useCacheChatLog>,
@@ -51,6 +51,7 @@ export const typeMap = {
   textProcessing: t('flow.logTimeline.textProcessing'),
   tavilySearch: t('flow.logTimeline.tavilySearch'),
   tavilyExtract: t('flow.logTimeline.tavilyExtract'),
+  queritSearch: t('flow.logTimeline.queritSearch'),
   exeSQL: t('flow.logTimeline.exeSQL'),
   google: t('flow.logTimeline.google'),
   duckDuckGo: t('flow.logTimeline.google'),

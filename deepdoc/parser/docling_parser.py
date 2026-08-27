@@ -33,9 +33,14 @@ from PIL import Image
 from common.constants import MAXIMUM_PAGE_NUMBER
 
 try:
-    from docling.document_converter import DocumentConverter
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
 except Exception:
     DocumentConverter = None
+    PdfFormatOption = None
+    InputFormat = None
+    PdfPipelineOptions = None
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
@@ -169,6 +174,26 @@ class DoclingParser(RAGFlowPdfParser):
         if not poss:
             return (None, None) if need_position else None
 
+        # a position tag is emitted even when page rendering failed (__images__ leaves
+        # page_images empty), and a tag can name a page beyond the rendered range, so
+        # indexing page_images below would raise IndexError. mirror
+        # cropout_docling_table and the sibling parsers: bail out when there are no
+        # page images and drop positions that fall outside them.
+        if not getattr(self, "page_images", None):
+            self.logger.warning("[Docling] crop called without page images; skipping image generation.")
+            return (None, None) if need_position else None
+
+        page_count = len(self.page_images)
+        valid_poss = []
+        for p in poss:
+            if p[0] and all(0 <= pn < page_count for pn in p[0]):
+                valid_poss.append(p)
+            else:
+                self.logger.warning(f"[Docling] Position on pages {p[0]} is out of range for {page_count} rendered page(s); skipping it.")
+        poss = valid_poss
+        if not poss:
+            return (None, None) if need_position else None
+
         GAP = 6
         pos = poss[0]
         poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
@@ -217,19 +242,19 @@ class DoclingParser(RAGFlowPdfParser):
 
     def _iter_doc_items(self, doc) -> Iterable[tuple[str, Any, Optional[_BBox]]]:
         for t in getattr(doc, "texts", []):
+            label = getattr(t, "label", "")
+            if label in ("formula",):
+                text = getattr(t, "text", "") or getattr(t, "orig", "")
+                bbox = _extract_bbox_from_prov(t)
+                yield (DoclingContentType.EQUATION.value, text, bbox)
+                continue
+
             parent = getattr(t, "parent", "")
             ref = getattr(parent, "cref", "")
-            label = getattr(t, "label", "")
             if (label in ("section_header", "text") and ref in ("#/body",)) or label in ("list_item",):
                 text = getattr(t, "text", "") or ""
                 bbox = _extract_bbox_from_prov(t)
                 yield (DoclingContentType.TEXT.value, text, bbox)
-
-        for item in getattr(doc, "texts", []):
-            if getattr(item, "label", "") in ("FORMULA",):
-                text = getattr(item, "text", "") or ""
-                bbox = _extract_bbox_from_prov(item)
-                yield (DoclingContentType.EQUATION.value, text, bbox)
 
     def _transfer_to_sections(self, doc, parse_method: str) -> list[tuple[str, ...]]:
         sections: list[tuple[str, ...]] = []
@@ -240,6 +265,8 @@ class DoclingParser(RAGFlowPdfParser):
                     continue
             elif typ == DoclingContentType.EQUATION.value:
                 section = payload.strip()
+                if not section:
+                    continue
             else:
                 continue
 
@@ -340,6 +367,26 @@ class DoclingParser(RAGFlowPdfParser):
             return docs
         return []
 
+    @staticmethod
+    def _looks_like_chunk_response(payload: Any) -> bool:
+        """Return True iff ``payload`` looks like a chunking endpoint response.
+
+        A chunk response is either a non-empty top-level list or a dict that
+        carries a non-empty ``results`` or ``chunks`` list. A standard
+        conversion response (``{"document": ..., "status": ...}``) does not
+        match, so a server that silently ignored the ``do_chunking`` flag is
+        correctly classified as standard even when the request payload asked
+        for chunking.
+        """
+        if isinstance(payload, list):
+            return bool(payload)
+        if isinstance(payload, dict):
+            for key in ("results", "chunks"):
+                value = payload.get(key)
+                if isinstance(value, list) and value:
+                    return True
+        return False
+
     def _parse_pdf_remote(
         self,
         filepath: str | PathLike[str],
@@ -353,9 +400,13 @@ class DoclingParser(RAGFlowPdfParser):
         """
         Parses a PDF document using a remote Docling server.
 
-        Prioritizes native chunking endpoints (/v1/chunk/source, /v1alpha/chunk/source)
-        to prevent token overflow, with a graceful fallback to standard conversion
-        endpoints if chunking is unavailable.
+        Sends the document with chunking options first, then falls back to a
+        standard conversion payload if the server rejects the chunking parameters.
+        The chunked-vs-standard parsing decision is made from the **response
+        shape**, not the request shape: Docling Serve silently drops unknown
+        fields such as ``do_chunking`` and returns a standard conversion
+        response, so the response is treated as standard even when chunking
+        was requested.
         """
         server_url = self._effective_server_url(docling_server_url)
         if not server_url:
@@ -430,10 +481,13 @@ class DoclingParser(RAGFlowPdfParser):
                 )
                 if resp.status_code < 300:
                     response_json = resp.json()
-                    is_chunked_response = chunk_flag
+                    response_is_chunk = self._looks_like_chunk_response(response_json)
+                    is_chunked_response = chunk_flag and response_is_chunk
 
-                    if chunk_flag:
+                    if chunk_flag and response_is_chunk:
                         self.logger.info(f"[Docling] Successfully used native chunking on: {endpoint}")
+                    elif chunk_flag:
+                        self.logger.warning(f"[Docling] Server ignored chunking request on {endpoint}; treating response as standard conversion.")
                     else:
                         self.logger.info(f"[Docling] Chunking unavailable, fell back to standard: {endpoint}")
                     break
@@ -556,7 +610,11 @@ class DoclingParser(RAGFlowPdfParser):
         except Exception as e:
             self.logger.warning(f"[Docling] render pages failed: {e}")
 
-        conv = DocumentConverter()
+        do_formula_enrichment = os.environ.get("DOCLING_FORMULA_ENRICHMENT", "0").strip().lower() in ("1", "true", "yes", "on")
+        self.logger.info(f"[Docling] Local conversion (formula_enrichment={do_formula_enrichment}): {src_path}")
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_formula_enrichment = do_formula_enrichment
+        conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
         conv_res = conv.convert(str(src_path))
         doc = conv_res.document
         if callback:

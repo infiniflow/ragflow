@@ -4,7 +4,10 @@
 
 package extractor
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Verb lemmatization — multi-language
 var verbLemma = map[string]string{
@@ -617,15 +620,15 @@ func extractCopula(text string, rootIdx int, tokens []DepToken, entityMap map[st
 	var prepObj *Entity
 
 	for _, c := range childrenOf(rootIdx, tokens) {
-		if !containsDep(c.Dep, cd.attrDeps) {
+		if !slices.Contains(cd.attrDeps, c.Dep) {
 			continue
 		}
 		for _, cc := range childrenOf(c.Index, tokens) {
-			if !containsDep(cc.Dep, cd.prepDeps) {
+			if !slices.Contains(cd.prepDeps, cc.Dep) {
 				continue
 			}
 			for _, gc := range childrenOf(cc.Index, tokens) {
-				if containsDep(gc.Dep, cd.objDeps) {
+				if slices.Contains(cd.objDeps, gc.Dep) {
 					if ent := findEntityInSubtree(gc.Index, tokens, entityMap); ent != nil {
 						prepObj = ent
 						titleLemma = strings.ToLower(c.Text)
@@ -676,15 +679,6 @@ func lookupVerb(verb, prep string) string {
 		return ""
 	}
 	return depVerbRelations[verb]
-}
-
-func containsDep(dep string, deps []string) bool {
-	for _, d := range deps {
-		if dep == d {
-			return true
-		}
-	}
-	return false
 }
 
 func childrenOf(idx int, tokens []DepToken) []DepToken {

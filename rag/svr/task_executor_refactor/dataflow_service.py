@@ -38,7 +38,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_model_config_by_id
 from common.connection_utils import timeout
 from common.constants import LLMType, PipelineTaskType
 from common.metadata_utils import update_metadata_to
@@ -109,7 +109,14 @@ class DataflowService:
             dataflow_id = corrected_id
 
             # Run pipeline
-            pipeline = Pipeline(dsl, tenant_id=ctx.tenant_id, doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
+            pipeline = Pipeline(
+                dsl,
+                tenant_id=ctx.tenant_id,
+                doc_id=doc_id,
+                task_id=task_id,
+                flow_id=dataflow_id,
+                language=ctx.language,
+            )
             chunks = await pipeline.run(file=ctx.file) if ctx.file else await pipeline.run()
 
             if doc_id == CANVAS_DEBUG_DOC_ID:
@@ -159,13 +166,21 @@ class DataflowService:
 
             time_cost = timer() - start_ts
             task_time_cost = timer() - task_start_ts
-            self._progress(prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
 
-            # Update document stats
+            # Update document stats (chunk counters) BEFORE marking the task
+            # as done, so the async _sync_progress loop never observes DONE
+            # with stale chunk_num=0.  If the stats update fails, the task
+            # is still marked DONE — chunk counters are not critical to the
+            # parse result.
             if ctx.write_interceptor:
                 ctx.write_interceptor.intercept("DocumentService.increment_chunk_num")
             else:
-                DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+                try:
+                    DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+                except Exception:
+                    logging.exception("increment_chunk_num failed for doc %s", doc_id)
+
+            self._progress(prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
 
             logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
             ctx.recording_context.record("dataflow_chunks", chunks)
@@ -235,7 +250,13 @@ class DataflowService:
             self._progress(prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = self._get_kb_by_id(ctx.kb_id)
             embedding_id = kb.embd_id
-            embd_model_config = get_model_config_from_provider_instance(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
+            if kb.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(ctx.tenant_id, LLMType.EMBEDDING, kb.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
+            else:
+                embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
             from api.db.services.llm_service import LLMBundle
 
             with LLMBundle(ctx.tenant_id, embd_model_config) as embedding_model:
@@ -313,7 +334,7 @@ class DataflowService:
                 del ck["metadata"]
 
             if "content_with_weight" not in ck:
-                ck["content_with_weight"] = ck["text"]
+                ck["content_with_weight"] = ck["text"] or ""
             del ck["text"]
 
             if "positions" in ck:

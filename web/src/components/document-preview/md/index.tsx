@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import { MarkdownRemarkPluginsLite } from '@/constants/markdown-remark-plugins';
@@ -80,9 +96,11 @@ export const Md: React.FC<MdProps> = ({ url, className }) => {
         </div>
       )}
       {!loading && (
-        <ReactMarkdown remarkPlugins={MarkdownRemarkPluginsLite}>
-          {content}
-        </ReactMarkdown>
+        <article className="prose max-w-none dark:prose-invert prose-headings:text-text-primary prose-p:text-text-primary prose-strong:text-text-primary prose-li:text-text-primary prose-blockquote:text-text-secondary prose-blockquote:border-border-secondary prose-a:text-accent-primary prose-a:no-underline hover:prose-a:underline prose-code:text-text-primary prose-code:bg-bg-elevated prose-code:rounded prose-code:px-1.5 prose-code:py-0.5 prose-code:before:content-[''] prose-code:after:content-[''] prose-pre:bg-bg-elevated prose-th:bg-bg-elevated prose-th:text-text-primary prose-td:text-text-primary prose-hr:border-border-secondary">
+          <ReactMarkdown remarkPlugins={MarkdownRemarkPluginsLite}>
+            {content}
+          </ReactMarkdown>
+        </article>
       )}
     </div>
   );

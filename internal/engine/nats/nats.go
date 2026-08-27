@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -37,6 +38,16 @@ type NatsEngine struct {
 	jetStream jetstream.JetStream
 	stream    jetstream.Stream
 	consumer  jetstream.Consumer
+
+	// dataset-level compile consumer (§11) state.
+	knowledgeCompileStream   jetstream.Stream
+	knowledgeCompileConsumer jetstream.Consumer
+	kv                       jetstream.KeyValue
+
+	syncerStream     jetstream.Stream
+	syncerConsumer   jetstream.PushConsumer
+	syncCheckpointKV jetstream.KeyValue
+	syncerMu         sync.Mutex
 }
 
 func NewNatsEngine(host string, port int) *NatsEngine {
@@ -92,7 +103,15 @@ func (n *NatsEngine) Init() error {
 	return nil
 }
 
+func (n *NatsEngine) Type() string {
+	return "nats"
+}
+
 func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
+	if n.jetStream == nil {
+		return errors.New("NATS jetstream is nil, engine not properly initialized")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -105,6 +124,10 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 }
 
 func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
+	if n.jetStream == nil || n.stream == nil {
+		return nil, errors.New("NATS jetstream/stream is nil, engine not properly initialized")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	accountInfo, err := n.jetStream.AccountInfo(ctx)
@@ -123,18 +146,18 @@ func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
 	result["message_count"] = strconv.FormatUint(info.State.Msgs, 10)
 
 	consumer, err := n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get existing consumer: %w", err)
+	if err == nil {
+		var consumerInfo *jetstream.ConsumerInfo
+		consumerInfo, err = consumer.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get consumer info: %w", err)
+		}
+		result["pending_count"] = strconv.FormatUint(consumerInfo.NumPending, 10)
+		result["waiting_count"] = strconv.Itoa(consumerInfo.NumWaiting)
+		result["ack_pending_count"] = strconv.Itoa(consumerInfo.NumAckPending)
+		result["redelivered_count"] = strconv.Itoa(consumerInfo.NumRedelivered)
 	}
 
-	consumerInfo, err := consumer.Info(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get consumer info: %w", err)
-	}
-	result["pending_count"] = strconv.FormatUint(consumerInfo.NumPending, 10)
-	result["waiting_count"] = strconv.Itoa(consumerInfo.NumWaiting)
-	result["ack_pending_count"] = strconv.Itoa(consumerInfo.NumAckPending)
-	result["redelivered_count"] = strconv.Itoa(consumerInfo.NumRedelivered)
 	return result, nil
 }
 
@@ -211,6 +234,10 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	return nil
 }
 func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) {
+	if n.consumer == nil {
+		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
+	}
+
 	resultMessages := make([]common.TaskHandle, 0)
 	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
 	if err != nil {
@@ -223,6 +250,9 @@ func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) 
 }
 
 func (n *NatsEngine) CheckStatus() string {
+	if n.nc == nil {
+		return "NATS connection is nil, engine not properly initialized"
+	}
 	n.nc.Stats()
 	return n.nc.Status().String()
 }
@@ -252,4 +282,8 @@ func (m *NatsMessageHandle) Ack() error {
 
 func (m *NatsMessageHandle) Nack() error {
 	return m.message.Nak()
+}
+
+func (m *NatsMessageHandle) InProgress() error {
+	return m.message.InProgress()
 }

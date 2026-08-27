@@ -109,7 +109,7 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 	return nil
 }
 
-func (c *CLI) PingByCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) PingServerByCommand(cmd *Command) (ResponseIf, error) {
 	iterations := 1
 	if iterationsParam, ok := cmd.Params["iterations"]; ok {
 		iterations = int(iterationsParam.(float64))

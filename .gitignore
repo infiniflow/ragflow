@@ -22,6 +22,7 @@ Cargo.lock
 .idea/
 .vscode/
 .cursor/settings.json
+.opencode/
 
 # Exclude Mac generated files
 .DS_Store
@@ -46,6 +47,9 @@ chrome*
 huggingface.co/
 nltk_data/
 uv-x86_64*.tar.gz
+office_oxide*.tar.gz
+pdf_oxide*.tar.gz
+stagehand-server*
 
 # Exclude hash-like temporary files like 9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 *[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*
@@ -218,11 +222,14 @@ backup
 
 /target
 
-# Do not include in PR (local dev / build artifacts)
+# Do not include in PR (local dev / build artifacts / working notes)
 ragflow.egg-info/
 uv-aarch64*.tar.gz
 uv-aarch64-unknown-linux-gnu.tar.gz
 docker/launch_backend_service_windows.sh
+
+# Scratch/working notes (agent task planning & self-review docs; not PR material)
+tasks/*.md
 
 # C++ build directories
 internal/binding/cpp/build/
@@ -235,15 +242,28 @@ internal/binding/cpp/cmake-build-debug/
 # Go server build output
 bin/*
 !bin/.gitkeep
+/ragflow_server
 .claude/settings.local.json
 
 .run/
 # Local agent tooling state (per-developer; not for commit)
 .omc/
 .marscode/
+.omx/
 
 # Parser test fixtures and python tools
 internal/deepdoc/parser/pdf/testdata/
 internal/deepdoc/parser/pdf/tools-py/
+
+# IDE tooling artifacts
+.codebuddy/
+
+# Local build output
+build/
 internal/deepdoc/parser/docx/testdata/
 internal/deepdoc/parser/docx/tool/
+
+# test data compare tool
+internal/ingestion/task/tool/generate_dataflow_golden.py
+internal/ingestion/task/tool/README.md
+internal/cpp/cmake-build-release

@@ -15,9 +15,15 @@ export function useHandleClickConversationCard() {
   const handleConversationCardClick = useCallback(
     (conversationId: string, isNew: boolean) => {
       setConversationBoth(conversationId, isNew ? 'true' : '');
-      stopOutputMessage();
+      // Switch to a fresh controller WITHOUT aborting the previous one.
+      // Aborting the in-flight completion request can cancel server-side
+      // persistence of the just-asked question, so switching conversations
+      // right after asking would lose the question. Let the old SSE finish
+      // in the background; the unmounted SingleChatBox's setState becomes
+      // a no-op and the server keeps the message.
+      setController(new AbortController());
     },
-    [setConversationBoth, stopOutputMessage],
+    [setConversationBoth],
   );
 
   return { controller, handleConversationCardClick, stopOutputMessage };

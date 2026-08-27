@@ -16,7 +16,7 @@
 
 from quart import Response
 
-from api.apps import current_user, login_required
+from api.apps import login_required
 from api.apps.restful_apis.utils.compilation_template_validation import validate_template_payload
 from api.db.services.compilation_template_service import CompilationTemplateService
 from api.utils.api_utils import get_json_result, server_error_response
@@ -25,7 +25,7 @@ from api.utils.api_utils import get_json_result, server_error_response
 _validate_template_payload = validate_template_payload
 
 
-@manager.route("/compilation_templates/builtins", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-templates/builtins", methods=["GET"])  # noqa: F821
 @login_required
 def list_builtin_templates() -> Response:
     """Built-in template palette — used as the per-child pre-fill in the
@@ -48,20 +48,19 @@ def list_builtin_templates() -> Response:
                 }
                 for template in CompilationTemplateService.load_builtins_from_files()
             ]
-        templates = CompilationTemplateService.fill_default_llm_for_templates(templates, current_user.id)
         return get_json_result(data=templates)
     except Exception as exc:
         return server_error_response(exc)
 
 
-@manager.route("/compilation_templates/wiki_presets", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-templates/wiki-presets", methods=["GET"])  # noqa: F821
 @login_required
 def list_wiki_presets() -> Response:
     """Wiki page-structure presets loaded from
     ``api/db/init_data/compilation_templates/wiki/*.yaml``.
 
     Each entry carries ``id`` (filename stem) + ``topic`` +
-    ``instruction`` + ``page_example`` so the artifact-template editor
+    ``instruction`` + ``example`` so the artifact-template editor
     can pre-fill its "Page-structure example" / "Global rules" fields
     from a canned skeleton. Filesystem-fresh per request; no DB seed.
     """

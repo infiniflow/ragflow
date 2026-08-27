@@ -182,14 +182,13 @@ class DocGenerator(Message, ABC):
                     logging.warning("Error resolving variable %s: %s", match, str(e))
                     return f"[ERROR: {str(e)}]"
 
-            content = re.sub(
-                self.variable_ref_patt,
-                _replace_variable,
+            content = self._replace_template_matches(
+                re.compile(self.variable_ref_patt, flags=re.DOTALL),
                 content,
-                flags=re.DOTALL,
+                _replace_variable,
             )
 
-        return content
+        return self._strip_thinking(content)
 
     def _get_output_directory(self) -> str:
         os.makedirs(self._default_output_directory, exist_ok=True)

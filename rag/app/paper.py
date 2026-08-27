@@ -23,6 +23,7 @@ from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
 from deepdoc.parser import PdfParser
 import numpy as np
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
@@ -138,7 +139,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     """
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -164,6 +172,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 pdf_cls=Pdf,
                 layout_recognizer=layout_recognizer,
                 mineru_llm_name=parser_model_name,
+                mistral_ocr_llm_name=parser_model_name,
                 parse_method="paper",
                 **kwargs,
             )
@@ -171,12 +180,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             paper = {"title": filename, "authors": " ", "abstract": "", "sections": sections, "tables": tables}
 
         tbls = paper["tables"]
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        if name != "mineru":
+            tbls = vision_figure_parser_pdf_wrapper(
+                tbls=tbls,
+                sections=sections,
+                callback=callback,
+                lang=lang,
+                **kwargs,
+            )
         paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
@@ -188,7 +199,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     eng = lang.lower() == "english"  # pdf_parser.is_english
     logging.debug("It's English.....{}".format(eng))
 
-    res = tokenize_table(paper["tables"], doc, eng)
+    res = tokenize_table(paper["tables"], doc, eng, language=lang)
 
     if paper["abstract"]:
         d = copy.deepcopy(doc)
@@ -197,7 +208,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         d["important_tks"] = " ".join(d["important_kwd"])
         d["image"], poss = pdf_parser.crop(paper["abstract"], need_position=True)
         add_positions(d, poss)
-        tokenize(d, txt, eng)
+        tokenize(d, txt, eng, language=lang)
         res.append(d)
 
     sorted_sections = paper["sections"]
@@ -223,7 +234,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 continue
         chunks.append(txt)
         last_sid = sec_id
-    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
     table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
     if table_ctx or image_ctx:
@@ -264,7 +275,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             txt += "\n" + pdf_parser.remove_tag(p)
             d["image"], poss = pdf_parser.crop(p, need_position=True)
             add_positions(d, poss)
-            tokenize(d, txt, eng)
+            tokenize(d, txt, eng, language=lang)
             res.append(d)
 
     i = 0
@@ -274,7 +285,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         nonlocal chunk, res, doc, pdf_parser, tk_cnt
         d = copy.deepcopy(doc)
         ck = "\n".join(chunk)
-        tokenize(d, pdf_parser.remove_tag(ck), pdf_parser.is_english)
+        tokenize(d, pdf_parser.remove_tag(ck), pdf_parser.is_english, language=lang)
         d["image"], poss = pdf_parser.crop(ck, need_position=True)
         add_positions(d, poss)
         res.append(d)

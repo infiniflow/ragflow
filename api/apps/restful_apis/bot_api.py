@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import copy
-import hashlib
 import json
 import re
 
@@ -24,7 +23,6 @@ from quart import Response, request
 
 from agent.canvas import Canvas
 from api.apps import AUTH_BETA, login_required
-from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
@@ -37,7 +35,8 @@ from api.db.services.user_service import TenantService
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
+from api.db.services.llm_service import resolve_llm_setting
 from common.misc_utils import thread_pool_exec
 from api.utils.api_utils import get_error_data_result, get_json_result, add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
 from rag.app.tag import label_question
@@ -45,19 +44,14 @@ from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
+from rag.utils.web_search_conn import has_web_search_provider
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 
 logger = logging.getLogger(__name__)
-
-
-def _get_sdk_authorization_token():
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return ""
-    return auth_header[len("Bearer ") :].strip()
 
 
 @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
@@ -148,12 +142,14 @@ async def chatbots_inputs(dialog_id, tenant_id=None):
             request_session_id,
         )
         return get_error_data_result(message="Authentication error: no access to this chatbot!")
+    has_web_search = has_web_search_provider(dialog.prompt_config)
     return get_result(
         data={
             "title": dialog.name,
             "avatar": dialog.icon,
             "prologue": dialog.prompt_config.get("prologue", ""),
-            "has_tavily_key": bool(dialog.prompt_config.get("tavily_api_key", "").strip()),
+            "has_tavily_key": has_web_search,
+            "has_web_search_provider": has_web_search,
             "llm_id": dialog.llm_id or "",
         }
     )
@@ -275,47 +271,20 @@ async def begin_inputs(agent_id, tenant_id=None):
 
 
 @manager.route("/agentbots/<shared_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
-async def agent_bot_logs(shared_id, message_id):
-    # Beta-token sibling of /agents/<agent_id>/logs/<message_id>.
-    # Used by the shared/embedded chat page's "Thinking" button (fixes #14985).
-    # The <shared_id> path segment is just the value the client passed in the
-    # URL (it equals the beta token in the share flow); authentication comes
-    # from the Authorization header and the real agent_id is read from the
-    # looked-up APIToken so we never trust client-supplied identifiers.
+@login_required(auth_types=AUTH_BETA)
+@add_tenant_id_to_kwargs
+async def agent_bot_logs(shared_id, message_id, tenant_id=None):
+    if not await thread_pool_exec(UserCanvasService.accessible, shared_id, tenant_id):
+        logger.warning(
+            "agent bot logs access denied tenant_id=%s agent_id=%s",
+            tenant_id,
+            shared_id,
+        )
+        return get_error_data_result(f"Can't find agent by ID: {shared_id}")
     from rag.utils.redis_conn import REDIS_CONN
 
-    token = _get_sdk_authorization_token()
-    if not token:
-        logger.warning(
-            "agent_bot_logs: missing Authorization header (shared_id=%s message_id=%s)",
-            shared_id,
-            message_id,
-        )
-        return get_error_data_result(message="Authorization is not valid!")
-    # Non-reversible fingerprint of the share token: lets operators correlate
-    # auth-failure log lines for the same token without leaking a guessable
-    # substring of the secret itself.
-    token_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        logger.warning(
-            "agent_bot_logs: invalid beta token (fingerprint=%s shared_id=%s)",
-            token_fp,
-            shared_id,
-        )
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-
-    agent_id = objs[0].dialog_id
-    if not agent_id:
-        logger.warning(
-            "agent_bot_logs: APIToken has no dialog_id (tenant_id=%s fingerprint=%s)",
-            objs[0].tenant_id,
-            token_fp,
-        )
-        return get_error_data_result(message="API token is not bound to an agent.")
-
     try:
-        binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
+        binary = await thread_pool_exec(REDIS_CONN.get, f"{shared_id}-{message_id}-logs")
         if not binary:
             return get_json_result(data={})
         payload = binary.decode("utf-8") if isinstance(binary, bytes) else binary
@@ -367,8 +336,8 @@ async def ask_about_embedded(tenant_id=None):
 @validate_request("kb_id", "question")
 async def retrieval_test_embedded(tenant_id=None):
     req = await get_request_json()
-    page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+    size = validate_rest_api_page_size(req.get("size", DEFAULT_PAGE_SIZE))
     question = req["question"]
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
@@ -380,6 +349,7 @@ async def retrieval_test_embedded(tenant_id=None):
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
+    rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     if top <= 0:
         return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
@@ -389,7 +359,7 @@ async def retrieval_test_embedded(tenant_id=None):
     search_config = {}
 
     async def _retrieval():
-        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
+        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id, rerank_candidates_count
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
@@ -405,7 +375,7 @@ async def retrieval_test_embedded(tenant_id=None):
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_id = search_config.get("chat_id", "")
                 if chat_id:
-                    chat_model_config = await thread_pool_exec(get_model_config_from_provider_instance, tenant_id, LLMType.CHAT, chat_id)
+                    chat_model_config = await thread_pool_exec(resolve_model_config, tenant_id, LLMType.CHAT, chat_id)
                 else:
                     chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -418,6 +388,8 @@ async def retrieval_test_embedded(tenant_id=None):
                 top = int(search_config.get("top_k", top))
             if not req.get("rerank_id"):
                 rerank_id = search_config.get("rerank_id", "")
+            if not req.get("rerank_candidates_count"):
+                rerank_candidates_count = int(search_config.get("rerank_candidates_count", 100))
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
@@ -450,12 +422,12 @@ async def retrieval_test_embedded(tenant_id=None):
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
-        embd_model_config = await thread_pool_exec(get_model_config_from_provider_instance, kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = await thread_pool_exec(resolve_model_config, kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
         if rerank_id:
-            rerank_model_config = await thread_pool_exec(get_model_config_from_provider_instance, tenant_id, LLMType.RERANK, rerank_id)
+            rerank_model_config = await thread_pool_exec(resolve_model_config, tenant_id, LLMType.RERANK, rerank_id)
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if req.get("keyword", False):
@@ -473,11 +445,12 @@ async def retrieval_test_embedded(tenant_id=None):
             size,
             similarity_threshold,
             vector_similarity_weight,
-            top,
-            local_doc_ids,
+            doc_ids=local_doc_ids,
+            knn_top_k=top,
             rerank_mdl=rerank_mdl,
             highlight=req.get("highlight"),
             rank_feature=labels,
+            rerank_candidates_count=rerank_candidates_count,
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)
@@ -523,12 +496,12 @@ async def related_questions_embedded(tenant_id=None):
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = await thread_pool_exec(get_model_config_from_provider_instance, tenant_id, LLMType.CHAT, chat_id)
+        chat_model_config = await thread_pool_exec(resolve_model_config, tenant_id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
-    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
     prompt = load_prompt("related_question")
     ans = await chat_mdl.async_chat(
         prompt,

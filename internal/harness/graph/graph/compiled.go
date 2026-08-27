@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/google/uuid"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/types"
+
+	"github.com/google/uuid"
 )
 
 // CompiledStateGraph represents a compiled state graph with full subgraph support.
@@ -229,5 +230,5 @@ func buildTaskPath(namespace, subgraphName string) string {
 
 // generateCheckpointID generates a new checkpoint ID.
 func generateCheckpointID() string {
-	return "cp_" + uuid.New().String()
+	return "ckp_" + uuid.New().String()
 }

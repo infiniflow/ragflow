@@ -1,14 +1,13 @@
 package plantask
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 )
 
 func TestManager_CreateAndGet(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	task, err := m.Create(ctx, "Test task", "A test task description")
 	if err != nil {
@@ -43,7 +42,7 @@ func TestManager_GetNotFound(t *testing.T) {
 
 func TestManager_List(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	m.Create(ctx, "Task 1", "Desc 1")
 	m.Create(ctx, "Task 2", "Desc 2")
@@ -59,7 +58,7 @@ func TestManager_List(t *testing.T) {
 
 func TestManager_ListByState(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t1, _ := m.Create(ctx, "Pending", "")
 	t2, _ := m.Create(ctx, "Running", "", WithInitialState(TaskRunning))
@@ -77,7 +76,7 @@ func TestManager_ListByState(t *testing.T) {
 
 func TestManager_Update(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	task, _ := m.Create(ctx, "Original", "")
 
@@ -102,7 +101,7 @@ func TestManager_Update(t *testing.T) {
 
 func TestManager_SetResultAndError(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	task, _ := m.Create(ctx, "Task", "")
 
@@ -126,7 +125,7 @@ func TestManager_SetResultAndError(t *testing.T) {
 
 func TestManager_Delete(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	task, _ := m.Create(ctx, "To delete", "")
 
@@ -148,7 +147,7 @@ func TestManager_DeleteNotFound(t *testing.T) {
 
 func TestManager_Subtasks(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	parent, _ := m.Create(ctx, "Parent task", "")
 	sub, err := m.AddSubtask(parent.ID, "Subtask", "A sub-task")
@@ -170,7 +169,7 @@ func TestManager_Subtasks(t *testing.T) {
 
 func TestManager_Count(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if m.Count() != 0 {
 		t.Error("empty manager should have 0 count")
@@ -184,7 +183,7 @@ func TestManager_Count(t *testing.T) {
 
 func TestManager_Options(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	withDeps, _ := m.Create(ctx, "", "",
 		WithDependencies("dep1", "dep2"),
@@ -248,7 +247,7 @@ func TestAllTools(t *testing.T) {
 
 func TestTaskJSON(t *testing.T) {
 	m := NewManager()
-	ctx := context.Background()
+	ctx := t.Context()
 	task, _ := m.Create(ctx, "JSON test", "serializable")
 
 	data, err := json.Marshal(task)
@@ -272,7 +271,7 @@ func TestInitManager(t *testing.T) {
 	if m == nil {
 		t.Fatal("nil manager")
 	}
-	task, err := m.Create(context.Background(), "test", "desc")
+	task, err := m.Create(t.Context(), "test", "desc")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

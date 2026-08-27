@@ -27,7 +27,7 @@ func TestCheckpointMigration_ParentChild_Mapping(t *testing.T) {
 		t.Fatalf("AddSubgraph: %v", err)
 	}
 
-	subCPID, err := csg.MigrateCheckpoint(context.Background(), "thread1", "parent_cp_1", "sub")
+	subCPID, err := csg.MigrateCheckpoint(t.Context(), "thread1", "parent_cp_1", "sub")
 	if err != nil {
 		t.Fatalf("MigrateCheckpoint to sub: %v", err)
 	}

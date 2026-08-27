@@ -644,6 +644,90 @@ async def run_graphrag_for_kb(
     }
 
 
+
+import re as _re
+
+_GRAPH_FIELD_SEP = "<SEP>"
+
+_NEGATIVE_JUDGMENT_PATTERN = _re.compile(
+    "|".join([
+        r"no clear relationship",
+        r"no direct relationship",
+        r"no explicit relation(ship)?",
+        r"does not provide (a )?(clear |specific )?relationship",
+        r"does not (directly )?(link|mention)",
+        r"not (clearly )?(mentioned|specified|provided) (in|within) the text",
+        r"unrelated entities",
+        r"there is no (direct |clear )?relationship",
+        r"no relationship (is )?(mentioned|found|indicated)",
+        r"different contexts,? with no",
+        r"not directly (linked|related|connected)",
+    ]),
+    _re.IGNORECASE,
+)
+
+_SUBJECT_PATTERN = _re.compile(
+    r"^(?:Lord |Lady |Sir |Dr\.? |Mr\.? |Mrs\.? |Ms\.? )?"
+    r"([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+)?)"
+    r"(?:'s\b|\s+(?:is|was|has|does|are|were|shows|owns|plays|works|practices|idolizes|recognized|listed|another|also|lives|resides))"
+)
+
+
+def _relationship_looks_valid(rel: dict) -> bool:
+    """Returns False if this relationship should be dropped: either the
+    extraction model explicitly judged there to be no relationship, or the
+    description text's subject doesn't plausibly match either endpoint
+    (a sign the fact was misattributed to the wrong entity during batch
+    extraction/gleaning).
+
+    Conservative by design: only drops when we have positive evidence of a
+    problem. When in doubt, keeps the edge.
+
+    Logs a debug-level trace at each drop point (distinguishing the two
+    drop reasons) so individual decisions can be diagnosed in production
+    without changing the filtering behavior itself.
+    """
+    desc = rel.get("description", "") or ""
+    src_id = rel.get("src_id", "")
+    tgt_id = rel.get("tgt_id", "")
+
+    if not desc:
+        return True
+
+    if _NEGATIVE_JUDGMENT_PATTERN.search(desc):
+        logging.debug(
+            "GraphRAG: dropping relation %r -> %r reason=negative_judgment description=%r",
+            src_id, tgt_id, desc[:160],
+        )
+        return False
+
+    src_id_u = (src_id or "").upper()
+    tgt_id_u = (tgt_id or "").upper()
+
+    segments = desc.split(_GRAPH_FIELD_SEP)
+    subjects = []
+    for seg in segments:
+        m = _SUBJECT_PATTERN.match(seg.strip())
+        if m:
+            subjects.append(m.group(1).strip().upper())
+
+    if not subjects:
+        return True
+
+    def matches_endpoint(name: str) -> bool:
+        return name in src_id_u or src_id_u in name or name in tgt_id_u or tgt_id_u in name
+
+    mismatches = [s for s in subjects if not matches_endpoint(s)]
+    is_valid = len(mismatches) < len(subjects)
+    if not is_valid:
+        logging.debug(
+            "GraphRAG: dropping relation %r -> %r reason=subject_mismatch "
+            "detected_subjects=%r matched_neither_endpoint description=%r",
+            src_id, tgt_id, subjects, desc[:160],
+        )
+    return is_valid
+
+
 async def generate_subgraph(
     extractor: Extractor,
     tenant_id: str,
@@ -681,12 +765,16 @@ async def generate_subgraph(
         subgraph.add_node(ent["entity_name"], **ent)
 
     ignored_rels = 0
+    ignored_invalid_rels = 0
     for rel in rels:
         _has_cancel_and_exit(task_id, f"Task {task_id} cancelled during relationship processing for doc {doc_id}.", callback)
 
         assert "description" in rel, f"relation {rel} does not have description"
         if not subgraph.has_node(rel["src_id"]) or not subgraph.has_node(rel["tgt_id"]):
             ignored_rels += 1
+            continue
+        if not _relationship_looks_valid(rel):
+            ignored_invalid_rels += 1
             continue
         rel["source_id"] = [doc_id]
         subgraph.add_edge(
@@ -696,6 +784,8 @@ async def generate_subgraph(
         )
     if ignored_rels:
         callback(msg=f"ignored {ignored_rels} relations due to missing entities.")
+    if ignored_invalid_rels:
+        callback(msg=f"ignored {ignored_invalid_rels} relations due to negative-judgment or misattributed description text.")
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before tidying subgraph for doc {doc_id}.", callback)
     tidy_graph(subgraph, callback, check_attribute=False)
 

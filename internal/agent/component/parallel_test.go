@@ -34,7 +34,7 @@
 package component
 
 import (
-	"context"
+	"slices"
 	"testing"
 )
 
@@ -45,14 +45,7 @@ import (
 // assert their absence here.
 func TestParallel_Registered(t *testing.T) {
 	names := RegisteredNames()
-	hasParallel := false
-	for _, n := range names {
-		if n == "parallel" {
-			hasParallel = true
-			break
-		}
-	}
-	if !hasParallel {
+	if !slices.Contains(names, "parallel") {
 		t.Errorf("Parallel not registered; RegisteredNames=%v", names)
 	}
 }
@@ -81,7 +74,9 @@ func TestParallel_InvokeIsNoOp(t *testing.T) {
 		ItemsRef:       "sys.arr",
 		MaxConcurrency: 3,
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{"in": 1})
+	ctx := t.Context()
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"in": 1})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -94,7 +89,9 @@ func TestParallel_InvokeIsNoOp(t *testing.T) {
 // empty-map chunk and closes.
 func TestParallel_StreamMirrorsInvoke(t *testing.T) {
 	c := NewParallelComponent(ParallelParam{})
-	ch, err := c.Stream(context.Background(), nil)
+	ctx := t.Context()
+
+	ch, err := c.Stream(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}

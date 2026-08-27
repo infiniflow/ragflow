@@ -202,6 +202,21 @@ def test_load_oidc_metadata_success_and_wraps_failure(monkeypatch):
 
 
 @pytest.mark.p2
+def test_load_oidc_metadata_strips_trailing_slash_from_issuer(monkeypatch):
+    _, oidc_module = _load_auth_modules(monkeypatch)
+
+    calls = {}
+
+    def _ok_sync_request(method, url, timeout):
+        calls["url"] = url
+        return _FakeResponse(_metadata("https://issuer.example"))
+
+    monkeypatch.setattr(oidc_module, "sync_request", _ok_sync_request)
+    oidc_module.OIDCClient._load_oidc_metadata("https://issuer.example/")
+    assert calls["url"] == "https://issuer.example/.well-known/openid-configuration"
+
+
+@pytest.mark.p2
 def test_parse_id_token_success_and_error(monkeypatch):
     _, oidc_module = _load_auth_modules(monkeypatch)
     client = _make_client(monkeypatch, oidc_module)

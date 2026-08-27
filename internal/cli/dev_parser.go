@@ -733,7 +733,7 @@ func (p *Parser) parseDevChunk(explain bool) (*Command, error) {
 
 	dsl, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected DSL: %w", err)
+		return nil, fmt.Errorf("expected chunk options file: %w", err)
 	}
 
 	// Semicolon is optional

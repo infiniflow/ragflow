@@ -358,6 +358,18 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
         self.include_issues = include_issues
         self.github_client: Github | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "GithubConnector":
+        credentials = config.get("credentials") or {}
+        connector = cls(
+            repo_owner=config.get("repository_owner"),
+            repositories=config.get("repository_name"),
+            include_prs=config.get("include_pull_requests", True),
+            include_issues=config.get("include_issues", True),
+        )
+        connector.load_credentials({"github_access_token": credentials["github_access_token"]})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         # defaults to 30 items per page, can be set to as high as 100
         token = credentials["github_access_token"]
@@ -690,9 +702,8 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
                             continue
 
                         try:
-                            test_repo = self.github_client.get_repo(f"{self.repo_owner}/{repo_name}")
+                            self.github_client.get_repo(f"{self.repo_owner}/{repo_name}")
                             logging.info(f"Successfully accessed repository: {self.repo_owner}/{repo_name}")
-                            test_repo.get_contents("")
                             valid_repos = True
                             # If at least one repo is valid, we can proceed
                             break
@@ -705,8 +716,7 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
                         raise ConnectorValidationError(error_msg)
                 else:
                     # Single repository (backward compatibility)
-                    test_repo = self.github_client.get_repo(f"{self.repo_owner}/{self.repositories}")
-                    test_repo.get_contents("")
+                    self.github_client.get_repo(f"{self.repo_owner}/{self.repositories}")
             else:
                 # Try to get organization first
                 try:

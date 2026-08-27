@@ -20,10 +20,11 @@ import time
 from quart import request, g
 from common.constants import RetCode
 from common.exceptions import ArgumentException, NotFoundException
-from api.apps import login_required, current_user
+from api.apps import AUTH_API, login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.apps.services import memory_api_service
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.db.joint_services.tenant_model_service import ensure_tenant_model_ids_for_params
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 
 
 @manager.route("/memories", methods=["POST"])  # noqa: F821
@@ -35,7 +36,10 @@ async def create_memory():
     req = await get_request_json()
     t_parsed = time.perf_counter() if timing_enabled else None
     try:
+        # Resolve tenant_model IDs from model names
+        tenant_id = current_user.id
         memory_info = {"name": req["name"], "memory_type": req["memory_type"], "embd_id": req["embd_id"], "llm_id": req["llm_id"]}
+        ensure_tenant_model_ids_for_params(tenant_id, memory_info)
         success, res = await memory_api_service.create_memory(memory_info)
         if timing_enabled:
             logging.info(
@@ -79,6 +83,8 @@ async def create_memory():
 @login_required
 async def update_memory(memory_id):
     req = await get_request_json()
+    # Resolve tenant_model IDs from model names when name is provided but id is not
+    ensure_tenant_model_ids_for_params(current_user.id, req)
     new_settings = {
         k: req[k]
         for k in [
@@ -133,10 +139,17 @@ async def delete_memory(memory_id):
 @manager.route("/memories", methods=["GET"])  # noqa: F821
 @login_required
 async def list_memory():
-    filter_params = {k: request.args.get(k) for k in ["memory_type", "tenant_id", "owner_ids", "storage_type"] if k in request.args}
+    filter_params = {k: request.args.get(k) for k in ["memory_type", "tenant_id", "owner_ids", "ids", "storage_type"] if k in request.args}
     keywords = request.args.get("keywords")
-    page = int(request.args.get("page", 1))
-    page_size = validate_rest_api_page_size(int(request.args.get("page_size", 50)))
+    page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+    page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    try:
+        for field_name in ("owner_ids", "ids"):
+            values = [item.strip() for item in str(filter_params.get(field_name) or "").split(",") if item.strip()]
+            validate_rest_api_ids(values, field_name)
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+
     try:
         res = await memory_api_service.list_memory(filter_params, keywords, page, page_size)
         return get_json_result(message=True, data=res)
@@ -168,8 +181,13 @@ async def get_memory_messages(memory_id):
         agent_ids = agent_ids[0].split(",")
     keywords = args.get("keywords", "")
     keywords = keywords.strip()
-    page = int(args.get("page", 1))
-    page_size = validate_rest_api_page_size(int(args.get("page_size", 50)))
+    page = validate_rest_api_page(args.get("page", 1))
+    page_size = validate_rest_api_page_size(args.get("page_size", 50))
+    try:
+        validate_rest_api_ids(agent_ids, "agent_id")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+
     try:
         res = await memory_api_service.get_memory_messages(memory_id, agent_ids, keywords, page, page_size)
         return get_json_result(message=True, data=res)
@@ -190,13 +208,19 @@ async def add_message():
 
     # JWT / session users cannot spoof attribution; API-key callers may supply an external subject id.
     try:
-        trust_client_subject = bool(getattr(g, "auth_via_api_token", False))
+        trust_client_subject = getattr(g, "auth_type", None) == AUTH_API
     except RuntimeError:
         trust_client_subject = False
+    effective_user_id = current_user.id
+    from_client = False
     if trust_client_subject:
-        effective_user_id = req.get("user_id", "")
-    else:
-        effective_user_id = current_user.id
+        requested_user_id = req.get("user_id")
+        if isinstance(requested_user_id, str) and requested_user_id.strip():
+            effective_user_id = requested_user_id.strip()
+            from_client = True
+    # The stored subject alone cannot say which path ran, since a client may send the
+    # principal's own id. Record the decision, never the id, which identifies an end user.
+    logging.info("memory message attribution: trusted_client=%s subject=%s", trust_client_subject, "client" if from_client else "principal")
 
     message_dict = {
         "user_id": effective_user_id,
@@ -260,7 +284,11 @@ async def search_message():
     query = args.get("query")
     similarity_threshold = float(args.get("similarity_threshold", 0.2))
     keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
-    top_n = int(args.get("top_n", 5))
+    try:
+        validate_rest_api_ids(memory_ids, "memory_id")
+        top_n = validate_rest_api_page_size(int(args.get("top_n", 5)))
+    except ValueError as exc:
+        return get_error_argument_result(str(exc))
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
     user_id = args.get("user_id", "")
@@ -280,7 +308,11 @@ async def get_messages():
         memory_ids = memory_ids[0].split(",")
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
-    limit = int(args.get("limit", 10))
+    try:
+        validate_rest_api_ids(memory_ids, "memory_id")
+        limit = validate_rest_api_page_size(int(args.get("limit", 10)))
+    except ValueError as exc:
+        return get_error_argument_result(str(exc))
     if not memory_ids:
         return get_error_argument_result("memory_ids is required.")
     try:

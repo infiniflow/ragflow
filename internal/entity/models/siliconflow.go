@@ -42,7 +42,7 @@ func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Silico
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -52,22 +52,11 @@ func (s *SiliconflowModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (s *SiliconflowModel) Name() string {
-	return "siliconflow"
-}
-
-// SiliconflowRerankRequest represents SILICONFLOW rerank request
-type SiliconflowRerankRequest struct {
-	Model           string   `json:"model"`
-	Query           string   `json:"query"`
-	Documents       []string `json:"documents"`
-	TopN            int      `json:"top_n"`
-	ReturnDocuments bool     `json:"return_documents"`
-	MaxChunksPerDoc int      `json:"max_chunks_per_doc"`
-	OverlapTokens   int      `json:"overlap_tokens"`
+	return "SILICONFLOW"
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -82,143 +71,27 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   false,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
-			// SiliconFlow's chat completions API expects a boolean
-			// `enable_thinking` field, not a `thinking: {type: ...}` map
-			// (the latter is the DeepSeek format and is silently ignored
-			// by SiliconFlow, breaking the thinking feature).
 			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
 	}
-
-	// Qwen3 family: disable thinking by default (matches Python's
-	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
 	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
 		reqBody["enable_thinking"] = false
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := s.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := s.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			// If reasoning_content not in response, try parsing from content tags
-			reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
-			if reasoning != nil {
-				reasonContent = *reasoning
-				content = *answer
-			}
-		} else {
-			// if first char of reasonContent is \n remove the '\n'
-			if reasonContent != "" && reasonContent[0] == '\n' {
-				reasonContent = reasonContent[1:]
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -233,171 +106,58 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
-	}
-
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
+		chatModelConfig.ToolCallsResult = nil
+		if chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
 	}
-
-	// Qwen3 family: disable thinking by default (matches Python's
-	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
 	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
 		reqBody["enable_thinking"] = false
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := s.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	sawTerminal := false
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-
-		return nil
+	return s.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("siliconflow: stream ended before [DONE] or finish_reason")
-	}
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 type siliconflowEmbeddingResponse struct {
-	Object string                     `json:"object"`
-	Model  string                     `json:"model"`
-	Data   []siliconflowEmbeddingData `json:"data"`
-	Usage  siliconflowUsage           `json:"usage"`
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
-
-type siliconflowEmbeddingData struct {
-	Object    string    `json:"object"`
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
-}
-
-type siliconflowUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
-// siliconflowMaxBatchSize is the per-request input limit documented at
-const siliconflowMaxBatchSize = 32
 
 // Embed embeds a list of texts into embeddings
-func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-	if len(texts) > siliconflowMaxBatchSize {
-		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", siliconflowMaxBatchSize)
+	// Per-request input cap: resolved from the provider capability (batch_size
+	// added to all_models.json by #17877/#17878) and falling back to a safe
+	// default. This defends against callers that bypass batch splitting upstream.
+	var modelNameStr string
+	if modelName != nil {
+		modelNameStr = *modelName
+	}
+	maxBatch := GetEmbeddingBatchSize(modelNameStr)
+	if len(request.Texts) > maxBatch {
+		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", maxBatch)
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -414,7 +174,7 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 
 	reqBody := map[string]interface{}{
 		"model": modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -425,7 +185,7 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -466,11 +226,15 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 		embeddingData.Index = dataElem.Index
 		embeddings = append(embeddings, embeddingData)
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }
 
-func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (s *SiliconflowModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -489,7 +253,7 @@ func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -534,7 +298,7 @@ type siliconflowBalanceResponse struct {
 	} `json:"data"`
 }
 
-func (s *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (s *SiliconflowModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -546,7 +310,7 @@ func (s *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), s.baseModel.URLSuffix.Balance)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -603,8 +367,8 @@ func (s *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}
 	}, nil
 }
 
-func (s *SiliconflowModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := s.ListModels(apiConfig)
+func (s *SiliconflowModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := s.ListModels(ctx, apiConfig)
 	if err != nil {
 		return err
 	}
@@ -637,21 +401,36 @@ type SiliconflowRerankResponse struct {
 	} `json:"meta"`
 }
 
+// SiliconflowRerankRequest represents SILICONFLOW rerank request
+type SiliconflowRerankRequest struct {
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            int      `json:"top_n"`
+	ReturnDocuments bool     `json:"return_documents"`
+	MaxChunksPerDoc int      `json:"max_chunks_per_doc"`
+	OverlapTokens   int      `json:"overlap_tokens"`
+}
+
 // Rerank calculates similarity scores between query and documents
-func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	apiKey := *apiConfig.ApiKey
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN == 0 {
-		topN = len(documents)
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		topN = rerankConfig.TopN
 	}
 
 	reqBody := SiliconflowRerankRequest{
@@ -675,7 +454,7 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Rerank)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(jsonData)))
@@ -713,11 +492,16 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 			RelevanceScore: result.RelevanceScore,
 		})
 	}
+	recordResponseUsage(modelUsage, siliconflowRerankResp.ID, &TokenUsage{
+		PromptTokens:     siliconflowRerankResp.Meta.Tokens.InputTokens,
+		CompletionTokens: siliconflowRerankResp.Meta.Tokens.OutputTokens,
+		TotalTokens:      siliconflowRerankResp.Meta.Tokens.InputTokens + siliconflowRerankResp.Meta.Tokens.OutputTokens,
+	}, "rerank")
 	return &rerankResponse, nil
 }
 
 // TranscribeAudio transcribe audio
-func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (s *SiliconflowModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -798,7 +582,7 @@ func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 	}
 
 	// build request
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
@@ -838,12 +622,12 @@ func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (s *SiliconflowModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (s *SiliconflowModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", s.Name())
 }
 
 // AudioSpeech convert text to audio
-func (s *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (s *SiliconflowModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -878,7 +662,7 @@ func (s *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -907,7 +691,7 @@ func (s *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, 
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (s *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (s *SiliconflowModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -942,7 +726,7 @@ func (s *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -987,19 +771,19 @@ func (s *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent
 }
 
 // OCRFile OCR file
-func (s *SiliconflowModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (s *SiliconflowModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
 
 // ParseFile parse file
-func (s *SiliconflowModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (s *SiliconflowModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
 
-func (s *SiliconflowModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (s *SiliconflowModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
 
-func (s *SiliconflowModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (s *SiliconflowModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }

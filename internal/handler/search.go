@@ -51,7 +51,7 @@ func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProvid
 	h.askService = askService
 }
 
-func getSearchOwnerIDs(c *gin.Context) []string {
+func getOwnerIDs(c *gin.Context) []string {
 	values := c.QueryArray("owner_ids")
 	if len(values) == 0 {
 		values = c.QueryArray("owner_id")
@@ -85,7 +85,7 @@ func getSearchOwnerIDs(c *gin.Context) []string {
 func (h *SearchHandler) ListSearches(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -114,37 +114,28 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	ownerIDs := getSearchOwnerIDs(c)
+	ownerIDs := getOwnerIDs(c)
 
 	// Keep body parsing as a compatibility fallback for existing callers that
 	// send owner_ids in a GET body. Python reads owner_ids from the query.
 	var req service.ListSearchAppsRequest
 	if len(ownerIDs) == 0 && c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": err.Error(),
-			})
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
 			return
 		}
 		ownerIDs = req.OwnerIDs
 	}
 
 	// List search apps with filtering
-	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, ownerIDs)
+	ctx := c.Request.Context()
+	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // CreateSearch create a new search app
@@ -158,15 +149,15 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 // @Router /api/v1/searches [post]
 
 type CreateSearchRequest struct {
-	Name        string  `json:"name" binding:"required"` // required field, max 255 bytes
-	Description *string `json:"description,omitempty"`   // optional description
+	Name        string  `json:"name"`                  // required, validated via common.ValidateName (max 255 bytes)
+	Description *string `json:"description,omitempty"` // optional description
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -174,40 +165,25 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	// Parse request body (same as Python get_request_json())
 	var req CreateSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "Invalid request body: " + err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
 	if err := common.ValidateName(req.Name); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	// Create search (same as Python SearchService.save within DB.atomic())
-	result, err := h.searchService.CreateSearch(userID, req.Name, req.Description)
+	ctx := c.Request.Context()
+	result, err := h.searchService.CreateSearch(ctx, userID, req.Name, req.Description)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    common.CodeServerError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
 	// Return success response (same as Python get_json_result(data={"search_id": req["id"]}))
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetSearch get search app detail
@@ -223,7 +199,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -231,32 +207,21 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "search_id is required",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
 	// Get search detail with permission check
-	search, err := h.searchService.GetSearchDetail(userID, searchID)
+	ctx := c.Request.Context()
+	search, err := h.searchService.GetSearchDetail(ctx, userID, searchID)
 	if err != nil {
 		// Check if it's a permission error
 		if err.Error() == "has no permission for this operation" {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeOperatingError,
-				"data":    false,
-				"message": "Has no permission for this operation.",
-			})
+			common.ResponseWithCodeData(c, common.CodeOperatingError, false, "Has no permission for this operation.")
 			return
 		}
 		// Not found error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -277,11 +242,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 // DeleteSearch delete a search app
@@ -297,7 +258,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -305,41 +266,26 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "search_id is required",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
 	// Delete search with permission check
-	err := h.searchService.DeleteSearch(userID, searchID)
+	ctx := c.Request.Context()
+	err := h.searchService.DeleteSearch(ctx, userID, searchID)
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "no authorization" {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeAuthenticationError,
-				"data":    false,
-				"message": "No authorization.",
-			})
+			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
 			return
 		}
 		// Delete failed error
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	// Return success response (same as Python get_json_result(data=True))
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    true,
-		"message": "success",
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // UpdateSearch update a search app
@@ -356,7 +302,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -364,66 +310,39 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "search_id is required",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
 	// Parse request body
 	var req service.UpdateSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"data":    nil,
-			"message": "Invalid request body: " + err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
 	// Validate name (same as Python validation)
 	if err := common.ValidateName(req.Name); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	// Update search
-	updatedSearch, err := h.searchService.UpdateSearch(userID, searchID, &req)
+	ctx := c.Request.Context()
+	updatedSearch, err := h.searchService.UpdateSearch(ctx, userID, searchID, &req)
 	if err != nil {
 		errMsg := err.Error()
 		switch errMsg {
 		case "no authorization":
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeAuthenticationError,
-				"data":    false,
-				"message": "No authorization.",
-			})
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 		case "duplicated search name":
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeDataError,
-				"data":    nil,
-				"message": "Duplicated search name.",
-			})
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:
 			// Check if it's a "cannot find search" error
 			if len(errMsg) > 18 && errMsg[:18] == "cannot find search" {
-				c.JSON(http.StatusOK, gin.H{
-					"code":    common.CodeDataError,
-					"data":    false,
-					"message": errMsg,
-				})
+				common.ResponseWithCodeData(c, common.CodeDataError, false, errMsg)
 			} else {
-				c.JSON(http.StatusOK, gin.H{
-					"code":    common.CodeDataError,
-					"data":    nil,
-					"message": errMsg,
-				})
+				common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
 			}
 		}
 		return
@@ -447,23 +366,20 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	}
 
 	// Return success response
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    result,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *SearchHandler) Completion(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	var req service.SearchCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeArgumentError, "question is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+			"question is required")
 		return
 	}
 
@@ -471,26 +387,22 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	if searchSvc == nil {
 		searchSvc = service.NewSearchService()
 	}
-
-	plan, code, err := searchSvc.PrepareCompletion(user.ID, c.Param("search_id"), &req)
+	ctx := c.Request.Context()
+	plan, code, err := searchSvc.PrepareCompletion(ctx, user.ID, c.Param("search_id"), &req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    code,
-				"data":    false,
-				"message": err.Error(),
-			})
+			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
 		}
 		if code == common.CodeServerError {
 			jsonInternalError(c, err)
 			return
 		}
-		jsonError(c, code, err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	if plan == nil {
-		jsonError(c, common.CodeServerError, "completion plan is nil")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "completion plan is nil")
 		return
 	}
 
@@ -520,7 +432,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
-	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {
+	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
 			writer.Write(c, sseAnswer(delta.Value, nil, false))

@@ -4,6 +4,7 @@ import ArXivForm from '../form/arxiv-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
 import BrowserForm from '../form/browser-use-form';
+import CompilationForm from '../form/compilation-form';
 import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
@@ -20,11 +21,14 @@ import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import KeenableForm from '../form/keenable-form';
+import YouComForm from '../form/youcom-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
+import QueritContentsForm from '../form/querit-contents-form';
+import QueritForm from '../form/querit-form';
 import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
@@ -74,6 +78,9 @@ export const FormConfigMap = {
   },
   [Operator.KeenableSearch]: {
     component: KeenableForm,
+  },
+  [Operator.YouComSearch]: {
+    component: YouComForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
@@ -144,6 +151,12 @@ export const FormConfigMap = {
   [Operator.TavilySearch]: {
     component: TavilyForm,
   },
+  [Operator.QueritContents]: {
+    component: QueritContentsForm,
+  },
+  [Operator.QueritSearch]: {
+    component: QueritForm,
+  },
   [Operator.UserFillUp]: {
     component: UserFillUpForm,
   },
@@ -174,6 +187,9 @@ export const FormConfigMap = {
   },
   [Operator.Extractor]: {
     component: ExtractorForm,
+  },
+  [Operator.Compiler]: {
+    component: CompilationForm,
   },
   [Operator.DataOperations]: {
     component: DataOperationsForm,

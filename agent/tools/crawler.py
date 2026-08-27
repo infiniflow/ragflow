@@ -17,7 +17,7 @@ import logging
 import os
 from abc import ABC
 import asyncio
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
 from common.connection_utils import timeout
 
@@ -48,12 +48,7 @@ class CrawlerParam(ToolParamBase):
         self.check_valid_value(self.extract_type, "Type of content from the crawler", ["html", "markdown", "content"])
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "URL",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "URL", "type": "line"}}
 
 
 class Crawler(ToolBase, ABC):
@@ -104,8 +99,18 @@ class Crawler(ToolBase, ABC):
             return
 
         proxy = self._param.proxy if self._param.proxy else None
-        async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
-            result = await crawler.arun(url=url, bypass_cache=True)
+
+        browser_config = BrowserConfig(
+            verbose=True,
+            proxy_config=proxy,
+        )
+
+        run_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+        )
+
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            result = await crawler.arun(url=url, config=run_config)
 
             if self.check_if_canceled("Crawler async operation"):
                 return

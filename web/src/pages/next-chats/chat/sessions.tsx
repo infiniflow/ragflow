@@ -30,6 +30,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { useChatStreamStore } from '../chat-stream/store';
 import { useChatUrlParams } from '../hooks/use-chat-url';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
@@ -53,6 +54,9 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { removeSessions } = useRemoveSessions();
   const { setConversationBoth } = useChatUrlParams();
   const { conversationId } = useGetChatSearchParams();
+  const removeStreamSessions = useChatStreamStore(
+    (state) => state.removeSessions,
+  );
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false);
@@ -83,10 +87,22 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     });
   }, []);
 
+  // Selected items that are still visible under the current search filter.
+  // Batch deletion and the selected count must act on this set — selectedIds
+  // alone would include items filtered out of view by the search.
+  const visibleSelectedIds = useMemo(
+    () =>
+      conversationList.filter((x) => selectedIds.has(x.id)).map((x) => x.id),
+    [conversationList, selectedIds],
+  );
+
   // Toggle select all
   const toggleSelectAll = useCallback(() => {
     setSelectedIds((prev) => {
-      if (prev.size === conversationList.length) {
+      const allVisibleSelected =
+        conversationList.length > 0 &&
+        conversationList.every((x) => prev.has(x.id));
+      if (allVisibleSelected) {
         return new Set();
       }
       return new Set(conversationList.map((x) => x.id));
@@ -95,22 +111,23 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   // Batch delete
   const handleBatchDelete = useCallback(async () => {
-    if (selectedIds.size === 0) {
+    if (visibleSelectedIds.length === 0) {
       return;
     }
 
-    const selectedIdList = Array.from(selectedIds);
     const currentConversationDeleted = conversationId
-      ? selectedIdList.includes(conversationId)
+      ? visibleSelectedIds.includes(conversationId)
       : false;
     const temporaryIdSet = new Set(
       conversationList.filter((item) => item.is_new).map((item) => item.id),
     );
     const persistedIds: string[] = [];
+    const removedTemporaryIds: string[] = [];
 
-    selectedIdList.forEach((id) => {
+    visibleSelectedIds.forEach((id) => {
       if (temporaryIdSet.has(id)) {
         removeTemporaryConversation(id);
+        removedTemporaryIds.push(id);
       } else {
         persistedIds.push(id);
       }
@@ -120,6 +137,13 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     if (persistedIds.length > 0) {
       removeCode = await removeSessions(persistedIds);
     }
+
+    // Purge the streaming store for every id that actually went away, aborting
+    // any in-flight stream so it can't keep writing into a dead session.
+    removeStreamSessions([
+      ...removedTemporaryIds,
+      ...(removeCode === 0 ? persistedIds : []),
+    ]);
 
     if (currentConversationDeleted && conversationId) {
       const currentIsTemporary = temporaryIdSet.has(conversationId);
@@ -131,16 +155,17 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     }
     exitSelectionMode();
   }, [
-    selectedIds,
+    visibleSelectedIds,
     conversationId,
     conversationList,
     setConversationBoth,
     removeTemporaryConversation,
     removeSessions,
+    removeStreamSessions,
     exitSelectionMode,
   ]);
 
-  const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
+  const selectedCount = visibleSelectedIds.length;
 
   const { id } = useParams();
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =

@@ -27,7 +27,7 @@ from api.db.db_models import Task
 from api.db.services.task_service import TaskService
 from api.db.services.memory_service import MemoryService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_model_config_by_id
 from api.utils.memory_utils import get_memory_type_human
 from memory.services.messages import MessageService
 from memory.services.query import MsgTextQuery, get_vector
@@ -60,6 +60,8 @@ async def save_to_memory(memory_id: str, message_dict: dict):
             get_memory_type_human(memory.memory_type),
             message_dict.get("user_input", ""),
             message_dict.get("agent_response", ""),
+            system_prompt=memory.system_prompt,
+            user_prompt=memory.user_prompt,
             llm_id=memory.llm_id,
         )
         if memory.memory_type != MemoryType.RAW.value
@@ -124,6 +126,8 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
         message_dict.get("agent_response", ""),
+        system_prompt=memory.system_prompt,
+        user_prompt=memory.user_prompt,
         task_id=task_id,
         llm_id=memory.llm_id,
     )
@@ -157,7 +161,7 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
 
 async def extract_by_llm(
     tenant_id: str,
-    tenant_llm_id: int,
+    tenant_llm_id: str | None,
     extract_conf: dict,
     memory_type: List[str],
     user_input: str,
@@ -177,7 +181,13 @@ async def extract_by_llm(
         user_prompts.append({"role": "user", "content": f"Conversation: {conversation_content}\nConversation Time: {conversation_time}\nCurrent Time: {conversation_time}"})
     else:
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
-    llm_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
+    if tenant_llm_id:
+        try:
+            llm_config = get_model_config_by_id(tenant_id, LLMType.CHAT, tenant_llm_id)
+        except LookupError:
+            llm_config = resolve_model_config(tenant_id, LLMType.CHAT, llm_id)
+    else:
+        llm_config = resolve_model_config(tenant_id, LLMType.CHAT, llm_id)
     with LLMBundle(tenant_id, llm_config) as llm:
         if task_id:
             TaskService.update_progress(task_id, {"progress": 0.15, "progress_msg": timestamp_to_date(current_timestamp()) + " " + "Prepared prompts and LLM."})
@@ -188,8 +198,8 @@ async def extract_by_llm(
         return [
             {
                 "content": extracted_content["content"],
-                "valid_at": format_iso_8601_to_ymd_hms(extracted_content["valid_at"]),
-                "invalid_at": format_iso_8601_to_ymd_hms(extracted_content["invalid_at"]) if extracted_content.get("invalid_at") else "",
+                "valid_at": format_iso_8601_to_ymd_hms(extracted_content.get("valid_at", ""), fallback=conversation_time),
+                "invalid_at": format_iso_8601_to_ymd_hms(extracted_content["invalid_at"], fallback="") if extracted_content.get("invalid_at") else "",
                 "message_type": message_type,
             }
             for message_type, extracted_content_list in res_json.items()
@@ -198,7 +208,13 @@ async def extract_by_llm(
 
 
 async def embed_and_save(memory, message_list: list[dict], task_id: str = None):
-    embd_model_config = get_model_config_from_provider_instance(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
+    if memory.tenant_embd_id:
+        try:
+            embd_model_config = get_model_config_by_id(memory.tenant_id, LLMType.EMBEDDING, memory.tenant_embd_id)
+        except LookupError:
+            embd_model_config = resolve_model_config(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
+    else:
+        embd_model_config = resolve_model_config(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     with LLMBundle(memory.tenant_id, embd_model_config) as embedding_model:
         if task_id:
             TaskService.update_progress(task_id, {"progress": 0.65, "progress_msg": timestamp_to_date(current_timestamp()) + " " + "Prepared embedding model."})
@@ -217,7 +233,7 @@ async def embed_and_save(memory, message_list: list[dict], task_id: str = None):
                 return False, error_msg
 
         new_msg_size = sum([MessageService.calculate_message_size(m) for m in message_list])
-        current_memory_size = get_memory_size_cache(memory.tenant_id, memory.id)
+        current_memory_size = get_memory_size_cache(memory.id, memory.tenant_id)
         if new_msg_size + current_memory_size > memory.memory_size:
             size_to_delete = current_memory_size + new_msg_size - memory.memory_size
             if memory.forgetting_policy == "FIFO":
@@ -268,7 +284,7 @@ def query_message(filter_dict: dict, params: dict):
     question = params["query"]
     question = question.strip()
     memory = memory_list[0]
-    embd_model_config = get_model_config_from_provider_instance(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
+    embd_model_config = resolve_model_config(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     embd_model = LLMBundle(memory.tenant_id, embd_model_config)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
     match_text, _ = MsgTextQuery().question(question, min_match=params["similarity_threshold"])
@@ -350,7 +366,7 @@ def fix_missing_tokenized_memory():
 
 def judge_system_prompt_is_default(system_prompt: str, memory_type: int | list[str]):
     memory_type_list = memory_type if isinstance(memory_type, list) else get_memory_type_human(memory_type)
-    return system_prompt == PromptAssembler.assemble_system_prompt({"memory_type": memory_type_list})
+    return PromptAssembler.is_default_system_prompt(system_prompt, {"memory_type": memory_type_list})
 
 
 async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
