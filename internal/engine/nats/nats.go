@@ -80,7 +80,7 @@ func (n *NatsEngine) Init() error {
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
 		MaxMsgs:   1024 * 128,
-		MaxBytes:  1024 * 1024,
+		MaxBytes:  1024 * 1024 * 64,
 	}
 
 	n.stream, err = n.jetStream.CreateStream(ctx, streamCfg)
@@ -95,6 +95,16 @@ func (n *NatsEngine) Init() error {
 		if err != nil {
 			n.nc.Close()
 			return fmt.Errorf("fail to get existing stream at %s: %w", natsURL, err)
+		}
+		if info, infoErr := n.stream.Info(ctx); infoErr == nil && info.Config.MaxBytes != streamCfg.MaxBytes {
+			info.Config.MaxBytes = streamCfg.MaxBytes
+			info.Config.MaxMsgs = streamCfg.MaxMsgs
+			if updated, updErr := n.jetStream.UpdateStream(ctx, info.Config); updErr == nil {
+				n.stream = updated
+				common.Info(fmt.Sprintf("NATS stream MaxBytes updated to %d", streamCfg.MaxBytes))
+			} else {
+				common.Warn(fmt.Sprintf("failed to update NATS stream MaxBytes: %v", updErr))
+			}
 		}
 	} else {
 		common.Info(fmt.Sprintf("NATS stream create successfully at %s", natsURL))
