@@ -29,9 +29,15 @@ import { DynamicVariableForm } from './dynamic-variable';
 
 interface ChatPromptEngineProps {
   prefix?: string;
+  collapseOpen?: boolean;
+  onCollapseOpenChange?: (open: boolean) => void;
 }
 
-export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
+export function ChatPromptEngine({
+  prefix = '',
+  collapseOpen,
+  onCollapseOpenChange,
+}: ChatPromptEngineProps) {
   const { t } = useTranslation();
   const form = useFormContext();
   const systemPromptValue = form.watch(
@@ -90,7 +96,11 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
   }, [kbIds, metadataKeys, metadataKeysLoading, metadataInclude, form, prefix]);
 
   return (
-    <Collapse title={t('flow.advancedSettings')}>
+    <Collapse
+      title={t('flow.advancedSettings')}
+      open={collapseOpen}
+      onOpenChange={onCollapseOpenChange}
+    >
       <div className="space-y-8">
         <FormField
           control={form.control}

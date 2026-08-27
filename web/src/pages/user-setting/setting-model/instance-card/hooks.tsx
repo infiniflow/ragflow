@@ -352,10 +352,9 @@ export function useVerifyProvider(
         verifyArgs = {
           api_key: transformed.apiKey,
           base_url: transformed.baseUrl,
-          model_info:
-            transformed.modelInfo?.length
-              ? transformed.modelInfo
-              : (selectedModels ?? values.model_info),
+          model_info: transformed.modelInfo?.length
+            ? transformed.modelInfo
+            : (selectedModels ?? values.model_info),
           region: transformed.region,
         };
       } else {

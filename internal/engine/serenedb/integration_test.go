@@ -64,7 +64,7 @@ func liveEngine(t *testing.T) *serenedbEngine {
 // last write (SereneDB refreshes the index ~1s after insert, like ES).
 func waitForFulltext(t *testing.T, e *serenedbEngine, req *types.SearchRequest) *types.SearchResult {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	deadline := time.Now().Add(15 * time.Second)
 	for {
 		res, err := e.Search(ctx, req)
@@ -100,7 +100,7 @@ func contains(ids []string, want string) bool {
 func TestIntegrationChunkLifecycle(t *testing.T) {
 	e := liveEngine(t)
 	defer e.Close()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	const base = "ragflow_gotest"
 	const kb = "kb1"
@@ -222,7 +222,7 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 func TestIntegrationMetadata(t *testing.T) {
 	e := liveEngine(t)
 	defer e.Close()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	const tenant = "gotest_tenant"
 	_ = e.DropMetadataStore(ctx, tenant)

@@ -41,7 +41,7 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 		TenantIDs:              []string{"tenant-1"},
 		Page:                   1,
 		PageSize:               10,
-		Top:                    &top,
+		KNNTopK:                &top,
 		SimilarityThreshold:    &threshold,
 		VectorSimilarityWeight: &vectorWeight,
 		Aggs:                   &aggs,
@@ -267,7 +267,7 @@ func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
 	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineInfinity)}
 	service := NewRetrievalService(docEngine, nil)
 	_, err := service.Search(context.Background(), &RetrievalSearchRequest{
-		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, Top: 10,
+		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: 10,
 		RankFeature: map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
 	if err != nil {
@@ -288,7 +288,7 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 	}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	_, err := service.Retrieval(context.Background(), &RetrievalRequest{
-		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, Top: &top,
+		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: &top,
 		RankFeature: &map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
 	if err != nil {
@@ -334,7 +334,7 @@ func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
 		KbIDs:                  []string{"kb-1"},
 		Page:                   1,
 		PageSize:               10,
-		Top:                    10,
+		KNNTopK:                10,
 		RankFeature:            map[string]float64{},
 		EmbeddingModel:         &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
 		VectorSimilarityWeight: &vectorWeight,

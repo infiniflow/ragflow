@@ -4,6 +4,7 @@ import { MinusIcon, PlusIcon } from 'lucide-react';
 import React, {
   FocusEventHandler,
   forwardRef,
+  KeyboardEventHandler,
   useCallback,
   useEffect,
   useMemo,
@@ -20,6 +21,7 @@ interface NumberInputProps {
   min?: number;
   max?: number;
   hideIcons?: boolean;
+  integer?: boolean;
   inputClassName?: string;
   precision?: number;
 }
@@ -38,6 +40,10 @@ function limitDecimals(value: number, decimals: number) {
   );
 }
 
+// Keys that would introduce a fractional part or exponent notation in
+// integer mode; blocked on keydown so a decimal point can never be typed.
+const BlockedIntegerKeys = ['.', 'e', 'E', '+'];
+
 const NumberInput = forwardRef<
   HTMLInputElement,
   Omit<InputProps, 'onChange' | 'value'> & NumberInputProps
@@ -51,6 +57,7 @@ const NumberInput = forwardRef<
     min = 0,
     max = Infinity,
     hideIcons = false,
+    integer = false,
     inputClassName,
     precision,
     ...props
@@ -87,6 +94,15 @@ const NumberInput = forwardRef<
     onChange?.(value + 1);
   };
 
+  const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (
+      integer &&
+      (BlockedIntegerKeys.includes(e.key) || (e.key === '-' && min >= 0))
+    ) {
+      e.preventDefault();
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const currentValue = e.target.value;
     const newValue = Number(currentValue);
@@ -110,6 +126,11 @@ const NumberInput = forwardRef<
         e.target.value = String(limitedValue);
       }
 
+      // Pasted decimals bypass the keydown guard; reject them in integer
+      // mode instead of rounding silently.
+      if (integer && !Number.isInteger(newValue)) {
+        return;
+      }
       // Show the raw typed value as-is, even when it falls outside [min, max]
       // (e.g. deleting "1024" → "102" when min=512), so the controlled input
       // never snaps back mid-edit. Out-of-range values are not propagated to
@@ -193,6 +214,7 @@ const NumberInput = forwardRef<
           type="number"
           value={value}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           onBlur={handleBlur}
           className={cn(
             'w-full flex-1 text-center bg-transparent focus-visible:outline-none number-input-hide-spin',

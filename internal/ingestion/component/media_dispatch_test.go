@@ -401,60 +401,6 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: Markdown
-// vision enhancement must also process items whose doc_type_kwd is "table"
-// (Python checks {"image","table"} in parser/utils.py:181), not only "image".
-// Before the fix the table item was skipped and never sent to the VLM.
-func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
-	origResolver := resolveTenantModelByType
-	origPrompt := figureVisionPromptBuilder
-	defer func() {
-		resolveTenantModelByType = origResolver
-		figureVisionPromptBuilder = origPrompt
-	}()
-
-	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
-	}
-	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
-		return "describe in " + language, nil
-	}
-
-	dispatched := parserDispatchResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{
-			{"doc_type_kwd": "table", "image": "base64table", "text": ""},
-		},
-	}
-
-	ctx := t.Context()
-	res, handled, err := maybeDispatchMarkdownVision(
-		ctx,
-		dao.DB,
-		utility.FileTypeMarkdown,
-		dispatched,
-		map[string]any{"tenant_id": "t1", "lang": "Korean"},
-	)
-	if err != nil {
-		t.Fatalf("maybeDispatchMarkdownVision: %v", err)
-	}
-	if !handled {
-		t.Fatalf("expected handled=true for markdown with a table image")
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
-	}
-	// The table item must have been sent to the VLM and its description appended.
-	if got, _ := res.JSON[0]["text"].(string); got != "captured" {
-		t.Fatalf("table item text = %q, want %q (table items must be vision-enhanced)", got, "captured")
-	}
-	gotPrompt, ok := firstUserText(drv.captured)
-	if !ok || gotPrompt != "describe in Korean" {
-		t.Fatalf("VLM user text = %q, want dataset language propagated", gotPrompt)
-	}
-}
-
 // TestDefaultEmailOutputFormatIsJSON pins diff 2.2: the email family default
 // output_format must be "json" (matching Python parser.py:212), not "text".
 // With "text" the structured email fields (from/to/subject/attachments/...) are

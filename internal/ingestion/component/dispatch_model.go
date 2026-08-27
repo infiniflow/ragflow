@@ -87,8 +87,8 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 	providerDAO := dao.NewTenantModelProviderDAO()
 	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
-		// Some OCR providers are registered under sibling names: the local
-		// "PaddleOCR" provider and the cloud "PaddleOCR.Net" provider expose
+		// Some OCR providers are registered under sibling names: the cloud
+		// "PaddleOCR" provider and the local "PaddleOCR.local" provider expose
 		// the same OCR capability. Tolerate the alternate spelling before
 		// giving up so a tenant configured with either name resolves.
 		for _, alias := range paddleOCRProviderAliases() {
@@ -126,11 +126,11 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 }
 
 // paddleOCRProviderAliases returns the registered provider names that expose
-// PaddleOCR OCR models: the local "PaddleOCR" provider and the cloud
-// "PaddleOCR.Net" provider. Both carry OCR-typed models and route through the
-// PaddleOCR PDF dispatch regardless of which spelling a tenant configured.
+// PaddleOCR OCR models: the cloud "PaddleOCR" provider and the local
+// "PaddleOCR.local" provider. Both carry OCR-typed models and route through
+// the PaddleOCR PDF dispatch regardless of which spelling a tenant configured.
 func paddleOCRProviderAliases() []string {
-	return []string{"PaddleOCR", "PaddleOCR.Net"}
+	return []string{"PaddleOCR", "PaddleOCR.local"}
 }
 
 func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {

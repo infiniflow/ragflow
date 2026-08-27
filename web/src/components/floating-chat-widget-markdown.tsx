@@ -314,7 +314,13 @@ const FloatingChatWidgetMarkdown = ({
         );
       });
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick, loading, t],
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      t,
+    ],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));

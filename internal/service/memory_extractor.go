@@ -119,7 +119,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 
 	if err = s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
 		s.updateTaskProgress(ctx, taskID, -1, err.Error())
-		return fmt.Errorf("%w: %v", ErrMemoryTaskTerminal, err)
+		return fmt.Errorf("%w: %w", ErrMemoryTaskTerminal, err)
 	}
 	return nil
 }

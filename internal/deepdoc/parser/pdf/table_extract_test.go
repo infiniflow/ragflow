@@ -99,7 +99,7 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 		},
 	}
 
-	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 	if len(item.Cells) != 1 {
 		t.Fatalf("cells = %d, want 1", len(item.Cells))
 	}
@@ -163,7 +163,7 @@ func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
 		},
 	}
 
-	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 
 	const wantOffX = regionX0 - util.TSRRegionMarginPx // 100 - 30 = 70
 	const wantOffY = regionY0 - util.TSRRegionMarginPx // 140 - 30 = 110
@@ -216,7 +216,7 @@ func TestProcessOneTable_NoPerCellOCR(t *testing.T) {
 				},
 			}
 
-			item := p.processOneTable(context.Background(), pageImg, boxes, 0, doc, builder, match, pdf.DlaScale)
+			item := p.processOneTable(t.Context(), pageImg, boxes, 0, doc, builder, match, pdf.DlaScale)
 			if len(item.Cells) != 1 {
 				t.Fatalf("cells = %d, want 1", len(item.Cells))
 			}
@@ -281,7 +281,7 @@ func TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill(t *testing.T) {
 		},
 	}
 
-	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 	// Python's construct_table groups boxes by their R/C labels, producing a
 	// row only for an R that carries a box. Both boxes land in the SAME row
 	// (they overlap vertically), so the grid is 1x1 — not 2x1.

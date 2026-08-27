@@ -445,8 +445,8 @@ async def retrieval_test_embedded(tenant_id=None):
             size,
             similarity_threshold,
             vector_similarity_weight,
-            top,
-            local_doc_ids,
+            doc_ids=local_doc_ids,
+            knn_top_k=top,
             rerank_mdl=rerank_mdl,
             highlight=req.get("highlight"),
             rank_feature=labels,
@@ -466,7 +466,6 @@ async def retrieval_test_embedded(tenant_id=None):
             enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ranks["labels"] = labels
-        ranks["total"] = len(ranks["chunks"])
 
         return get_json_result(data=ranks)
 

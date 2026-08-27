@@ -199,7 +199,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 	}
 	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
@@ -647,7 +647,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	// Add models to the instance.
@@ -730,7 +730,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	return common.CodeSuccess, nil
@@ -774,7 +774,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := utility.GenerateToken()
@@ -789,7 +789,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
@@ -857,7 +857,6 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 
 func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -1005,6 +1004,20 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		ApiKey:  &apiKey,
 		Region:  &region,
 		BaseURL: &baseURL,
+	}
+
+	// The cloud PaddleOCR provider carries its config inside the api_key JSON
+	// payload (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm),
+	// mirroring Python's PaddleOCROcrModel. Unwrap the access token and base url
+	// so the OCR driver authenticates with a plain bearer token. Non-JSON
+	// api_keys (e.g. PaddleOCR.local) pass through untouched.
+	if keyBaseURL, keyAccessToken, _ := modelModule.PaddleOCRConfigFromAPIKey(apiKey); keyAccessToken != "" {
+		apiKey = keyAccessToken
+		if baseURL == "" {
+			baseURL = keyBaseURL
+		}
+		apiConfig.ApiKey = &apiKey
+		apiConfig.BaseURL = &baseURL
 	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
@@ -1318,7 +1331,7 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	if err != nil {
 		return err
 	}
-	if resp == nil || resp.Text == "" {
+	if resp == nil {
 		return fmt.Errorf("ASR model %s returned no transcription", modelName)
 	}
 	return nil
@@ -2038,7 +2051,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	instanceUpdates["extra"] = string(extraBytes)
 	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
 	// Use the (possibly updated) instance_name for model operations.
@@ -2582,6 +2595,9 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 }
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
+	if providerName == nil || instanceName == nil || modelName == nil {
+		return nil, errors.New("provider name, instance name and model name are required when model id is absent")
+	}
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
@@ -2589,7 +2605,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 	}
 
 	if len(tenants) == 0 {
-		return nil, err
+		return nil, fmt.Errorf("no tenant found for user %s", userID)
 	}
 
 	tenantID := tenants[0].TenantID
@@ -3164,6 +3180,28 @@ func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, in
 		if err != nil || info == nil {
 			return nil, common.CodeNotFound, err
 		}
+	} else if providerName == nil && instanceName == nil && modelName == nil {
+		// No explicit model selection: synthesize through the tenant's
+		// default TTS model, mirroring Python's canvas auto_play which
+		// always resolves get_tenant_default_model_by_type(LLMType.TTS).
+		// A missing default surfaces as a typed error ("no default tts
+		// model is set") instead of a nil-pointer panic.
+		driver, name, defaultConfig, _, derr := m.GetTenantDefaultModelByType(ctx, userID, entity.ModelTypeTTS)
+		if derr != nil {
+			return nil, common.CodeNotFound, derr
+		}
+		if modelConfig == nil {
+			modelConfig = &modelModule.TTSConfig{}
+		}
+		var response *modelModule.TTSResponse
+		response, derr = driver.AudioSpeech(ctx, &name, audioContent, defaultConfig, modelConfig, nil)
+		if derr != nil {
+			return nil, common.CodeServerError, derr
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+		return response, common.CodeSuccess, nil
 	} else {
 		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
 		if err != nil || info == nil {
@@ -3559,9 +3597,9 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	case entity.ModelTypeImage2Text:
 		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return *tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+		return ptrStringValue(tenant.TTSID), ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return *tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
 	default:
 		return "", ""
 	}
@@ -3860,7 +3898,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %w", modelName, err)
 	}
 
 	return common.CodeSuccess, nil

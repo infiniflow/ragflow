@@ -14,11 +14,7 @@ import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
-import {
-  RerankFormFields,
-  initialTopKValue,
-  topKSchema,
-} from '@/components/rerank';
+import { RerankFormFields } from '@/components/rerank';
 import {
   SimilaritySliderFormField,
   initialSimilarityThresholdValue,
@@ -44,7 +40,7 @@ import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
+import { useOwnerTenantId } from '../contexts/knowledge-base-context';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -58,6 +54,7 @@ export default function TestingForm({
 }: TestingFormProps) {
   const { t } = useTranslation();
   const { id } = useParams();
+  const ownerTenantId = useOwnerTenantId();
   const knowledgeBaseId = id;
 
   const formSchema = z
@@ -67,7 +64,6 @@ export default function TestingForm({
       }),
       ...similarityThresholdSchema,
       ...vectorSimilarityWeightSchema,
-      ...topKSchema,
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
       size: z.number().int().min(1).max(100),
@@ -83,7 +79,6 @@ export default function TestingForm({
     defaultValues: {
       ...initialSimilarityThresholdValue,
       ...initialVectorSimilarityWeightValue,
-      ...initialTopKValue,
       dataset_ids: [knowledgeBaseId],
       size: 10,
       rerank_candidates_count: 64,
@@ -113,9 +108,7 @@ export default function TestingForm({
             <SimilaritySliderFormField
               isTooltipShown={true}
             ></SimilaritySliderFormField>
-            <RerankFormFields
-              ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
-            ></RerankFormFields>
+            <RerankFormFields ownerTenantId={ownerTenantId}></RerankFormFields>
             <CrossLanguageFormField
               name={'cross_languages'}
             ></CrossLanguageFormField>
