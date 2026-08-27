@@ -20,6 +20,7 @@ import { SafeImg } from '@/components/safe-img';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import request from '@/utils/request';
 import DOMPurify from 'dompurify';
@@ -230,7 +231,7 @@ function MarkdownContent({
       documentUrl?: string,
     ) =>
       () => {
-        if (fileExtension !== 'pdf') {
+        if (!supportsSourceLocate(fileExtension)) {
           if (!documentUrl) {
             return;
           }

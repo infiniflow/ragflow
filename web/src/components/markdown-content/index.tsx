@@ -20,6 +20,7 @@ import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo } from 'react';
@@ -185,7 +186,7 @@ const MarkdownContent = ({
       documentUrl?: string,
     ) =>
       () => {
-        if (fileExtension !== 'pdf') {
+        if (!supportsSourceLocate(fileExtension)) {
           if (!documentUrl) {
             return;
           }

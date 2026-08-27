@@ -34,6 +34,7 @@ import {
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
@@ -108,7 +109,7 @@ const FloatingChatWidgetMarkdown = ({
     ) =>
       () => {
         if (!documentId) return;
-        if (fileExtension !== 'pdf' && documentUrl) {
+        if (!supportsSourceLocate(fileExtension) && documentUrl) {
           const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
           window.open(nextLink, '_blank');
         } else if (clickDocumentButton) {
