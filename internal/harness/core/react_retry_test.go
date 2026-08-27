@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -284,7 +285,7 @@ func TestRetry_ShouldRetry_Generate_RewriteError(t *testing.T) {
 			if rc.Err != nil {
 				return &RetryDecision{
 					Retry:        false,
-					RewriteError: errors.New("rewritten: " + rc.Err.Error()),
+					RewriteError: fmt.Errorf("rewritten: %w", rc.Err),
 				}
 			}
 			return &RetryDecision{Retry: false}

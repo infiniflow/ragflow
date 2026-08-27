@@ -199,7 +199,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 	}
 	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
@@ -647,7 +647,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	// Add models to the instance.
@@ -730,7 +730,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	return common.CodeSuccess, nil
@@ -774,7 +774,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := utility.GenerateToken()
@@ -789,7 +789,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
@@ -2051,7 +2051,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	instanceUpdates["extra"] = string(extraBytes)
 	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
 	// Use the (possibly updated) instance_name for model operations.
@@ -3898,7 +3898,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %w", modelName, err)
 	}
 
 	return common.CodeSuccess, nil
