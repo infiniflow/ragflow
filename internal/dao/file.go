@@ -49,7 +49,7 @@ func (dao *FileDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
-func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, orderBy string, desc bool, keywords string) ([]*entity.File, int64, error) {
+func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, orderBy string, desc bool, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
 
@@ -65,6 +65,9 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 			Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	} else {
 		query = query.Where("parent_id = ?", pfID)
+	}
+	if excludeSkills {
+		query = query.Where("NOT (parent_id = ? AND name = ?)", pfID, SkillsFolderName)
 	}
 
 	// Count total
@@ -435,6 +438,9 @@ func reparentAndDeleteFolder(ctx context.Context, db *gorm.DB, dupID, keepID str
 
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
+
+// SkillsFolderName is the folder name for skills
+const SkillsFolderName = "skills"
 
 // InitDatasetDocs initializes dataset documents for tenant.
 // This matches Python's FileService.init_dataset_docs method.
