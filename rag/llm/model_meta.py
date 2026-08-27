@@ -1000,11 +1000,45 @@ class GreenPT(OpenAIAPICompatible):
 class Synthorai(OpenAIAPICompatible):
     """Synthorai catalog lister.
 
-    The gateway returns a plain OpenAI-shaped /v1/models payload, so the
-    inherited formatting applies without an override.
+    ``/v1/models`` returns the whole catalog, which includes image, audio,
+    video and realtime entries alongside chat ones. The inherited formatter
+    infers the type from the model id and falls back to ``chat``, so those
+    non-chat entries would be offered as chat models and fail at the
+    chat-completions endpoint. Only the ids declared in
+    ``conf/models/synthorai.json`` are surfaced.
     """
 
     _FACTORY_NAME = "Synthorai"
+
+    def _format_model_list(self, raw_model_list):
+        models = super()._format_model_list(raw_model_list)
+        allowed = self._allowed_model_names()
+        if not allowed:
+            return models
+        return [m for m in models if m.get("name") in allowed]
+
+    @staticmethod
+    def _allowed_model_names() -> set:
+        """Chat model ids declared for this provider, or an empty set."""
+        import json
+        import os
+
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "conf",
+            "models",
+            "synthorai.json",
+        )
+        try:
+            with open(path, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except (OSError, ValueError):
+            return set()
+        return {
+            m["name"]
+            for m in cfg.get("models", [])
+            if isinstance(m, dict) and m.get("name") and "chat" in (m.get("model_types") or [])
+        }
 
 
 class HuggingFace(Base):
