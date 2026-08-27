@@ -212,6 +212,11 @@ func maybeDispatchVisionEnhancement(
 	var err error
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if err != nil {
+			slog.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
+				"family", family, "modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	}

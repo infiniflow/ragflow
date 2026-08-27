@@ -31,6 +31,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"log/slog"
 	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
@@ -172,6 +173,11 @@ func maybeDispatchImage(
 	var err error
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if err != nil {
+			slog.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	}
@@ -276,6 +282,11 @@ func maybeDispatchAudio(
 	var err error
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeSpeech2Text, modelRef)
+		if err != nil {
+			slog.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+		}
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
 	}
