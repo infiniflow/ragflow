@@ -14,6 +14,7 @@ import { upperFirst } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { withAppBasePath } from '@/utils/base-path';
 import { BeginId } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import { WorkFlowTimeline } from './timeline';
@@ -28,7 +29,7 @@ enum WebhookTraceTabType {
 const WebhookSheet = ({ hideModal }: RunSheetProps) => {
   const { t } = useTranslation();
   const { id } = useParams();
-  const text = `${location.protocol}//${location.host}/api/v1/agents/${id}/webhook/test`;
+  const text = `${location.origin}${withAppBasePath(`/api/v1/agents/${id}/webhook/test`)}`;
 
   const { data } = useFetchWebhookTrace(true);
 

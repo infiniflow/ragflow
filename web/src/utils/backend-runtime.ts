@@ -14,6 +14,8 @@
  *  limitations under the License.
  */
 
+import { withAppBasePath } from './base-path';
+
 /**
  * Backend runtime language detection.
  *
@@ -31,7 +33,7 @@ const listeners = new Set<Listener>();
 let backendLanguage: string | null = null;
 
 // Kick off the fetch at module load — app start, not component mount.
-const promise: Promise<string> = fetch('/api/v1/language')
+const promise: Promise<string> = fetch(withAppBasePath('/api/v1/language'))
   .then((r) => r.json())
   .then((body: { data?: { language?: string } }) => {
     backendLanguage = body.data?.language === 'go' ? 'go' : 'python';
