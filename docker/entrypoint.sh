@@ -262,8 +262,21 @@ function ensure_db_init() {
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
-ensure_docling
-ensure_db_init
+
+run_with_restart() {
+  local process_name="$1"
+  shift
+
+  while true; do
+    echo "Attempt to start ${process_name}..."
+    set +e
+    "$@"
+    local exit_code=$?
+    set -e
+    echo "${process_name} exited with code ${exit_code}. Restarting in 1 second..."
+    sleep 1
+  done
+}
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
@@ -278,83 +291,39 @@ if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-        while true; do
-            echo "Attempt to start Admin python server..."
-            set +e
-            "$PY" admin/server/admin_server.py
-            status=$?
-            set -e
-            if [ "$status" -eq 0 ]; then
-                echo "Admin python server exited cleanly, restarting in 1s..."
-            else
-                echo "Admin python server exited with status $status, restarting in 1s..."
-            fi
-            sleep 1
-        done &
+        echo "Attempt to start Admin python server..."
+        run_with_restart "Admin python server" "$PY" admin/server/admin_server.py &
     fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Starting Admin go server..."
-            set +e
-            bin/ragflow_server --admin
-            status=$?
-            set -e
-            if [ "$status" -eq 0 ]; then
-                echo "Admin go server exited cleanly, restarting in 1s..."
-            else
-                echo "Admin go server exited with status $status, restarting in 1s..."
-            fi
-            sleep 1
-        done &
+        echo "Starting Admin go server..."
+        run_with_restart "Admin go server" bin/ragflow_server --admin &
     fi
 fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+    ensure_docling
+    ensure_db_init
+
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-        while true; do
-            echo "Attempt to start RAGFlow python server..."
-            set +e
-            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-            status=$?
-            set -e
-            if [ "$status" -eq 0 ]; then
-                echo "RAGFlow python server exited cleanly, restarting in 1s..."
-            else
-                echo "RAGFlow python server exited with status $status, restarting in 1s..."
-            fi
-            sleep 1
-        done &
+        echo "Attempt to start RAGFlow python server..."
+        run_with_restart "RAGFlow python server" "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
     fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Starting RAGFlow go server..."
-            set +e
-            bin/ragflow_server --api
-            status=$?
-            set -e
-            if [ "$status" -eq 0 ]; then
-                echo "RAGFlow go server exited cleanly, restarting in 1s..."
-            else
-                echo "RAGFlow go server exited with status $status, restarting in 1s..."
-            fi
-            sleep 1
-        done &
+        echo "Starting RAGFlow go server..."
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api &
     fi
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
-    while true; do
-        "$PY" rag/svr/sync_data_source.py &
-        wait;
-        sleep 1;
-    done &
+    run_with_restart "Data sync" "$PY" rag/svr/sync_data_source.py &
 fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
@@ -373,45 +342,23 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
         fi
 
         if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-            while true; do
-                echo "Starting go ingestor..."
-                set +e
-                bin/ragflow_server --ingestor
-                status=$?
-                set -e
-                if [ "$status" -eq 0 ]; then
-                    echo "Go ingestor exited cleanly, restarting in 1s..."
-                else
-                    echo "Go ingestor exited with status $status, restarting in 1s..."
-                fi
-                sleep 1
-            done &
+            echo "Starting ingestor..."
+            run_with_restart "ingestor" bin/ragflow_server --ingestor &
         fi
     else
         # Otherwise, start a fixed number of workers
         echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
         for (( i=0; i<WORKERS; i++ ))
         do
-          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-              echo "Starting python task executor..."
-              task_exe "${i}" "${HOST_ID}" &
-              sleep 1;
-          fi
+            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+                echo "Starting python task executor..."
+                task_exe "${i}" "${HOST_ID}" &
+                sleep 1;
+            fi
 
-          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-              while true; do
-                  echo "Starting go ingestor..."
-                  set +e
-                  bin/ragflow_server --ingestor
-                  status=$?
-                  set -e
-                  if [ "$status" -eq 0 ]; then
-                      echo "Go ingestor exited cleanly, restarting in 1s..."
-                  else
-                      echo "Go ingestor exited with status $status, restarting in 1s..."
-                  fi
-                  sleep 1
-              done &
+            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+                echo "Starting ingestor..."
+                run_with_restart "ingestor" bin/ragflow_server --ingestor &
           fi
         done
     fi
