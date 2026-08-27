@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 
 # ONNX Runtime is statically linked (libonnxruntime.a) and resolved via
 # dlopen(NULL); no ORT_LIB is needed.
-MODEL_DIR="${MODEL_DIR:-/home/shenyushi/workspace/ragflow/rag/res/deepdoc}"
+MODEL_DIR="${MODEL_DIR:?Set MODEL_DIR to the deepdoc model directory (e.g. .../rag/res/deepdoc)}"
 export MODEL_DIR
 
 run_task() {

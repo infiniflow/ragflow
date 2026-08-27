@@ -80,10 +80,6 @@ func uvBin() string {
 	if p, err := exec.LookPath("uv"); err == nil {
 		return p
 	}
-	// Common user-local install location.
-	if p, err := exec.LookPath("/home/shenyushi/.local/bin/uv"); err == nil {
-		return p
-	}
 	return ""
 }
 
