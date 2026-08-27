@@ -778,7 +778,7 @@ async def _kg_search(
         knn_topn = pool or top_n
         if getattr(tools, "embed_mdl", None):
             try:
-                exprs.append(await settings.retriever.get_vector(text, tools.embed_mdl, knn_topn, similarity))
+                exprs.append(await settings.retriever.get_vector(text, tools.embed_mdl, top_k=knn_topn, num_candidates=knn_topn * 2, similarity=similarity))
             except Exception:
                 _LOG.exception("[Graph exploration] vector build failed; using keyword match")
         if not exprs:

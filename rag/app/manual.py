@@ -249,6 +249,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         def tag(pn, left, right, top, bottom):
             if pn + left + right + top + bottom == 0:
                 return ""
+            if name == "mineru":
+                # MinerU tags stay local and one-based for crop(); crop() adds
+                # the task's page offset when it emits final positions.
+                pn += 1
             return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, left, right, top, bottom)
 
         chunks = []
@@ -283,7 +287,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
         return res
 
-    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        raise NotImplementedError("Legacy .doc files are not supported by the Manual parser. Please convert the file to .docx or PDF and try again.")
+
+    elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(

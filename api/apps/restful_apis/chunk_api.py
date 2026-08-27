@@ -57,7 +57,7 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, meta_filter
+from common.metadata_utils import convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
@@ -364,8 +364,12 @@ async def retrieval_test(tenant_id):
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
-            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+            doc_ids = filter_doc_ids_by_metadata(
+                kb_ids,
+                convert_conditions(metadata_condition),
+                metadata_condition.get("logic", "and"),
+                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            )
             if not doc_ids and metadata_condition.get("conditions"):
                 return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
             if metadata_condition and not doc_ids:
@@ -374,9 +378,32 @@ async def retrieval_test(tenant_id):
             doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    top = int(req.get("top_k", 1024))
-    if top <= 0:
-        return get_error_data_result("`top_k` must be greater than 0")
+    if "top_k" in req:
+        logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
+    knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
+    try:
+        knn_top_k = int(req.get(knn_top_k_parameter, 1024))
+    except (TypeError, ValueError):
+        return get_error_data_result(f"`{knn_top_k_parameter}` should be an integer")
+    if knn_top_k <= 0:
+        return get_error_data_result(f"`{knn_top_k_parameter}` must be greater than 0")
+    try:
+        knn_num_candidates = int(req.get("knn_num_candidates", max(2048, knn_top_k)))
+    except (TypeError, ValueError):
+        return get_error_data_result("`knn_num_candidates` should be an integer")
+    if knn_num_candidates < knn_top_k:
+        return get_error_data_result("`knn_num_candidates` must be greater than or equal to `knn_top_k`")
+    try:
+        rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
+    except (TypeError, ValueError):
+        return get_error_data_result("`rerank_candidates_count` should be an integer")
+    if rerank_candidates_count <= 0:
+        return get_error_data_result("`rerank_candidates_count` must be greater than 0")
+    if rerank_candidates_count < page * size:
+        return get_error_data_result(f"`rerank_candidates_count` must be at least `page` multiplied by `page_size` ({page * size})")
+    include_knowledge_compilation = req.get("include_knowledge_compilation", True)
+    if not isinstance(include_knowledge_compilation, bool):
+        return get_error_data_result("`include_knowledge_compilation` should be a boolean")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False
@@ -415,11 +442,14 @@ async def retrieval_test(tenant_id):
             size,
             similarity_threshold,
             vector_similarity_weight,
-            top,
-            doc_ids,
+            doc_ids=doc_ids,
+            knn_top_k=knn_top_k,
+            knn_num_candidates=knn_num_candidates,
             rerank_mdl=rerank_mdl,
             highlight=highlight,
             rank_feature=label_question(question, kbs),
+            must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
+            rerank_candidates_count=rerank_candidates_count,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)

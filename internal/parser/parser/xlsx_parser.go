@@ -98,8 +98,8 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "XLSX",
+		return parseWithTCADP(
+			ctx, filename, data, "XLSX",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
@@ -125,14 +125,26 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		chunkRows = defaultTableChunkRows
 	}
 
-	var html strings.Builder
+	items := make([]map[string]any, 0)
+	warnings := make([]string, 0)
 	for _, sheet := range sheets {
-		html.WriteString(renderSheetTables(f, sheet, chunkRows))
+		for _, table := range renderSheetTableChunks(f, sheet, chunkRows) {
+			items = append(items, map[string]any{
+				"text":         table,
+				"doc_type_kwd": "table",
+				"ck_type":      "table",
+				"sheet":        sheet,
+			})
+		}
+		images, imageWarnings := extractXLSXImages(f, sheet)
+		items = append(items, images...)
+		warnings = append(warnings, imageWarnings...)
 	}
 
 	return ParseResult{
-		OutputFormat: "html",
+		OutputFormat: "json",
 		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": len(sheets)},
-		HTML:         html.String(),
+		JSON:         items,
+		Warnings:     warnings,
 	}
 }

@@ -894,6 +894,9 @@ export default {
       created: '作成日',
       action: 'アクション',
       embedModalTitle: 'ウェブサイトに埋め込む',
+      embedUserIdPlaceholder: '例: user-001',
+      embedUserIdTooltip:
+        '埋め込みページのエンドユーザーを識別する文字列（最大255文字）です。埋め込みURLに userId パラメータとして付加されます。',
       comingSoon: '近日公開',
       fullScreenTitle: '全画面埋め込み',
 
@@ -1335,6 +1338,7 @@ export default {
         'Microsoft Graph経由でSharePointサイトに接続し、ドキュメントライブラリを同期します。',
       sharepointSiteUrlTip:
         'インデックス対象のSharePointサイトの完全なURLです（例: https://contoso.sharepoint.com/sites/MySite）。Sites.Read.AllおよびFiles.Read.Allのアプリケーション権限（管理者の同意）を持つAzure ADアプリが必要です。',
+      azure_devopsDescription: 'Azure DevOps に接続し、リポジトリのファイルとプルリクエストを同期します。',
       bitbucketDescription: 'Bitbucketに接続し、PRの内容を同期します。',
       bitbucketTopWorkspaceTip:
         'インデックス対象のBitbucketワークスペースです（例: https://bitbucket.org/atlassian/workspace の「atlassian」）。',
@@ -1777,6 +1781,8 @@ export default {
       listModelsLoading: 'モデルを読み込み中…',
       selectModelBeforeVerify:
         '検証する前に、少なくとも1つのモデルを選択してください。',
+      selectModelBeforeSave:
+        '保存する前に、少なくとも1つのモデルを検出して選択してください。',
       addCustomModel: 'カスタムモデルを追加',
       addCustomModelTitle: 'カスタムモデルを追加',
       batchAddModels: '表示中のモデルをすべて追加',

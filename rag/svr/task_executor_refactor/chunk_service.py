@@ -38,12 +38,12 @@ from common.connection_utils import timeout
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.misc_utils import thread_pool_exec
 from common.float_utils import normalize_overlapped_percent
+from api.db.services.document_service import DocumentService
+from api.db.services.task_service import TaskService
 from rag.nlp import search
+from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 from rag.svr.task_executor_refactor.task_context import TaskContext
 from rag.utils.base64_image import image2id
-
-from api.db.services.task_service import TaskService
-from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 
 # Re-export for backward compatibility
 from rag.svr.task_executor_refactor.chunk_builder import (
@@ -58,6 +58,52 @@ from rag.svr.task_executor_refactor.chunk_post_processor import (
     apply_built_in_metadata,
     apply_tags,
 )
+
+
+def apply_document_availability(chunks: List[Dict[str, Any]], status) -> int:
+    """Stamp ordinary source chunks available_int=0 when document status is disabled.
+
+    Compiled products (compile_kwd) are left alone — they are already non-searchable.
+    Returns the number of ordinary source chunks stamped.
+    """
+    if str(status if status is not None else "1") != "0":
+        return 0
+    stamped = 0
+    for ck in chunks:
+        if ck.get("compile_kwd"):
+            continue
+        ck["available_int"] = 0
+        stamped += 1
+    return stamped
+
+
+def apply_source_chunks_document_availability(chunks: List[Dict[str, Any]]) -> None:
+    """Apply each source document's status to its ordinary (non-RAPTOR) chunks.
+
+    Mixed RAPTOR batches can carry chunks from multiple documents; stamp each
+    group from its own document status instead of the first doc_id in the batch.
+    """
+    source_chunks_by_doc_id: Dict[str, List[Dict[str, Any]]] = {}
+    for ck in chunks:
+        if ck.get("raptor_kwd"):
+            continue
+        doc_id = ck.get("doc_id")
+        if not doc_id or doc_id == GRAPH_RAPTOR_FAKE_DOC_ID:
+            continue
+        source_chunks_by_doc_id.setdefault(doc_id, []).append(ck)
+
+    for doc_id, source_chunks in source_chunks_by_doc_id.items():
+        ok, doc = DocumentService.get_by_id(doc_id)
+        if not ok or doc is None:
+            continue
+        status = getattr(doc, "status", "1")
+        stamped = apply_document_availability(source_chunks, status)
+        if stamped:
+            logging.info(
+                "document %s is disabled; stamped available_int=0 on %d ordinary source chunk(s)",
+                doc_id,
+                stamped,
+            )
 
 
 class ChunkService:
@@ -259,6 +305,8 @@ class ChunkService:
         """
         doc_bulk_size = doc_bulk_size or settings.DOC_BULK_SIZE
 
+        self._apply_document_availability(chunks)
+
         # Create mother chunks (summary chunks)
         mothers = self._create_mother_chunks(chunks)
 
@@ -268,6 +316,26 @@ class ChunkService:
 
         # Insert main chunks
         return await self._insert_main_chunks(task_id, task_tenant_id, task_dataset_id, chunks, doc_bulk_size)
+
+    def _apply_document_availability(self, chunks: List[Dict[str, Any]]) -> None:
+        """Hide source chunks when the owning document is disabled (status=0).
+
+        Disabling before parse only updates MySQL; later inserts would otherwise
+        default to available_int=1 and remain retrievable.
+        """
+        doc_id = self._task_context.doc_id
+        if not doc_id or doc_id == GRAPH_RAPTOR_FAKE_DOC_ID:
+            return
+        ok, doc = DocumentService.get_by_id(doc_id)
+        if not ok or doc is None:
+            return
+        stamped = apply_document_availability(chunks, getattr(doc, "status", "1"))
+        if stamped:
+            logging.info(
+                "document %s is disabled; stamped available_int=0 on %d ordinary source chunk(s)",
+                doc_id,
+                stamped,
+            )
 
     @classmethod
     def _create_mother_chunks(cls, chunks: List[Dict]) -> List[Dict]:

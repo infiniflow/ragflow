@@ -328,19 +328,11 @@ var ErrAgentNotOwner = errors.New("agent not owned by user")
 // same Agent session before the current run reaches a terminal state.
 var ErrAgentSessionBusy = errors.New("agent session is already running")
 
-// ErrAgentStorageError is returned by RunAgent when the underlying
-// version / canvas / tenant DAO surfaces a non-sentinel error (DB
-// connectivity, schema drift, deadlock, etc.). The handler's
-// mapAgentError recognises this sentinel and maps it to
-// common.CodeServerError (500) with a SANITIZED message — the raw
-// DAO error string is never echoed to the client, so internal
-// connection-string / table-name leaks are avoided.
-//
-// v3.5.2 follow-up: the prior af2ac2eda commit claimed "DB error ->
-// 500" in the branch table, but the handler's mapAgentError did not
-// actually classify those errors as CodeServerError — every DAO
-// failure fell through to CodeDataError with the raw err.Error()
-// string. This sentinel closes that gap.
+// ErrAgentStorageError identifies internal Agent service failures such as
+// database connectivity, schema drift, or persistence errors. Synchronous
+// callers map this sentinel to a sanitized 500 response; failures raised after
+// streaming starts are wrapped with canvas.NewInternalRunError so Runner emits
+// the same safe message in its terminal event.
 var ErrAgentStorageError = errors.New("agent storage error")
 
 // AgentService agent service
@@ -1464,6 +1456,10 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
 	lockToken := utility.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
+	// Keep workflow cancellation separate from event-consumer cancellation.
+	// An explicit session cancellation should still reach an attached client,
+	// while a disconnected HTTP request must stop event delivery promptly.
+	runCtx = canvas.WithEventContext(runCtx, ctx)
 	active := &activeAgentRun{
 		userID:     userID,
 		canvasID:   canvasID,
@@ -1692,6 +1688,12 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
+	// The session row above was created by this request (first touch);
+	// if the run then fails, the run closure drops the row again so a
+	// failed exploration never shows up in the session list.
+	if !sessionFound || newSession {
+		root["__drop_session_on_failure__"] = true
+	}
 	// The stable run id is derived from the canvas and session. It is only a
 	// checkpoint/status storage key; session_id remains the public run and
 	// cancellation identity.
@@ -1838,7 +1840,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 // compose.WithInterruptBeforeNodes) resumes and reads the user's
 // follow-up via compose.GetResumeContext.
 func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanvasVersion, dsl map[string]any) canvas.RunFunc {
-	return func(ctx context.Context, root map[string]any) (*canvas.CanvasState, error) {
+	return func(ctx context.Context, root map[string]any) (runState *canvas.CanvasState, runErr error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -1855,6 +1857,31 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		sessionID, _ := root["__session_id__"].(string)
 		userID, _ := root["user_id"].(string)
 
+		// A failed first-touch run must not leave the freshly-created
+		// empty session row behind — otherwise every failed exploration
+		// inflates the session list with a title-less conversation.
+		// Interrupts (UserFillUp waits) and user-initiated cancels keep
+		// the row: both are resumable, visible states, not failures.
+		if dropOnFailure, _ := root["__drop_session_on_failure__"].(bool); dropOnFailure {
+			delete(root, "__drop_session_on_failure__")
+			defer func() {
+				if runErr == nil || canvas.IsInterruptError(runErr) || errors.Is(runErr, context.Canceled) {
+					return
+				}
+				if s.api4ConversationDAO == nil || dao.DB == nil {
+					return
+				}
+				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(cleanupCtx, dao.DB, sessionID, canvasID); err != nil {
+					common.Warn("agent run: drop failed-run session failed",
+						zap.String("canvas_id", canvasID),
+						zap.String("session_id", sessionID),
+						zap.Error(err))
+				}
+			}()
+		}
+
 		// Install per-run Langfuse correlation attrs so LLM calls inside
 		// this turn are grouped by session/user. Mirrors Python's
 		// Canvas.run() setting langfuse_run_attrs.
@@ -1868,7 +1895,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if events == nil {
 				return
 			}
-			canvas.PushEvent(events, canvas.RunEvent{
+			canvas.PushEvent(ctx, events, canvas.RunEvent{
 				Type: typ, Data: data,
 				MessageID: messageID,
 				CreatedAt: time.Now().Unix(),
@@ -2064,7 +2091,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
-			return nil, fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err)
+			return nil, canvas.NewInternalRunError(
+				fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err),
+			)
 		}
 
 		cpID := ""
@@ -2163,7 +2192,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
 				}
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
-					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
 				}
 				if answer != "" && shouldEmitMessage {
 					if !messageEventsEmitted {
@@ -2181,7 +2212,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				appendAssistantHistory(state, assistantOutput)
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
 				}
 				if !messageEventsEmitted && shouldEmitMessage {
 					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
@@ -2217,7 +2250,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		appendAssistantHistory(state, assistantOutput)
 		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+			return nil, canvas.NewInternalRunError(
+				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+			)
 		}
 		if !messageEventsEmitted && shouldEmitMessage {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
@@ -2297,7 +2332,24 @@ func (s *AgentService) createAgentRunSession(
 // session name defaults to the first 250 runes of the user's input
 // so the exploration sidebar shows a meaningful title.
 func deriveAgentSessionName(userInput any) string {
-	text := stringifyAgentUserInput(userInput)
+	var text string
+	if m, ok := userInput.(map[string]any); ok {
+		// A dict-shaped input carries the user's message under
+		// query/question; serialising the whole dict would leak
+		// `{"query":...}` — or `{}` for an empty dict — into the
+		// session list as the title.
+		for _, key := range []string{"query", "question"} {
+			if s, ok := m[key].(string); ok && s != "" {
+				text = s
+				break
+			}
+		}
+		if text == "" && len(m) > 0 {
+			text = stringifyAgentUserInput(m)
+		}
+	} else {
+		text = stringifyAgentUserInput(userInput)
+	}
 	runes := []rune(text)
 	if len(runes) > 250 {
 		runes = runes[:250]

@@ -403,7 +403,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 			clearCancelFlag(ctx, existing.ID)
 			if err = s.enqueueTask(existing.ID); err != nil {
 				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
-					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
+					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
 				}
 				return nil, err
 			}
@@ -418,7 +418,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	}
 	if err = s.enqueueTask(created.ID); err != nil {
 		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
-			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", created.ID, err, rollbackErr)
+			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", created.ID, err, rollbackErr)
 		}
 		return nil, err
 	}
@@ -515,9 +515,8 @@ func (s *IngestionTaskService) lastRunCount(ctx context.Context, taskID string) 
 // failure. ListAllForAdmin reads run_count back to render the attempt number.
 //
 // A corrupted run_count value in an existing row is skipped (the row is
-// ignored). A failure to persist the new row is best-effort (logged) and
-// does not return an error — matching the legacy semantics that the run
-// proceeds even if the counter write fails.
+// ignored). A failure to persist the new row is returned so the caller can
+// fail the task before running the pipeline.
 func (s *IngestionTaskService) IncrementRunCount(ctx context.Context, taskID string) error {
 	prevCount, _ := s.lastRunCount(ctx, taskID)
 
@@ -525,8 +524,5 @@ func (s *IngestionTaskService) IncrementRunCount(ctx context.Context, taskID str
 		TaskID:     taskID,
 		Checkpoint: entity.JSONMap{stepKeyRunCount: prevCount + 1},
 	}
-	if err := s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry); err != nil {
-		common.Error(fmt.Sprintf("Failed to persist run_count for task %s", taskID), err)
-	}
-	return nil
+	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
 }

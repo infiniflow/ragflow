@@ -21,7 +21,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		runDocCalled = true
@@ -79,7 +79,7 @@ func TestRunTask_CorruptedRunCountSkipped(t *testing.T) {
 		t.Fatalf("insert bad log: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		runDocCalled = true
@@ -115,7 +115,7 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return errors.New("boom")
 	}
@@ -153,7 +153,7 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 		t.Fatalf("set task STOPPING: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return context.Canceled
 	}
@@ -186,7 +186,7 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return context.DeadlineExceeded
 	}
@@ -227,7 +227,7 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 		t.Fatalf("set task COMPLETED: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
@@ -263,7 +263,7 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
 		// Simulate the user pressing Stop mid-pipeline: RUNNING->STOPPING.
 		if _, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
@@ -298,7 +298,7 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}

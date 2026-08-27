@@ -475,7 +475,13 @@ run() {
     print_section "Starting admin server (background)"
     "$RAGFLOW_SERVER_BINARY" --admin &
     ADMIN_PID=$!
-    trap 'kill "$ADMIN_PID" 2>/dev/null || true' EXIT INT TERM
+    # One trap for both background services: a second `trap ... EXIT INT TERM`
+    # would replace this one rather than add to it, leaving admin_server holding
+    # port 9383 after the foreground server exits. INGESTOR_PID is cleared first
+    # so a value inherited from the environment cannot be signalled during the
+    # window before the ingestor starts.
+    INGESTOR_PID=""
+    trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
 
     # Give admin_server a moment to bind its listening port (9383) before
     # ragflow_server starts sending heartbeats to it.
@@ -484,7 +490,6 @@ run() {
     print_section "Starting ingestor (background)"
     "$RAGFLOW_SERVER_BINARY" --ingestor &
     INGESTOR_PID=$!
-    trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
@@ -503,7 +508,7 @@ Build script for RAGFlow Go server with C++ bindings.
 OPTIONS:
     --all, -a       Build everything (C++ library + Go server) [default]
     --cpp, -c       Build only C++ static library
-    --cpp-test      Build C++ test executable (requires --cpp first)
+    --cpp-test      Build C++ test executable (builds the C++ library if needed)
     --go, -g        Build only Go server (requires C++ library to be built)
     --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
                     native static libs (office_oxide/pdfium/pdf_oxide) needed to
@@ -539,8 +544,8 @@ EXAMPLES:
 
 DEPENDENCIES:
     - cmake >= 4.0
-    - go >= 1.24
-    - g++ with C++17/23 support
+    - go >= 1.26.4
+    - clang++ with C++20 support
     - office_oxide native library (download with: uv run python3 ragflow_deps/download_go_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
@@ -636,7 +641,7 @@ main() {
             echo "Binary: $RAGFLOW_SERVER_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
-            echo -e "${RED}Unknown option: $1${NC}"
+            echo -e "${RED}Unknown option: ${args[0]}${NC}"
             show_help
             exit 1
             ;;

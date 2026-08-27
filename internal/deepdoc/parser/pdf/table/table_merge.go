@@ -10,7 +10,13 @@ import (
 // MergeTablesAcrossPages merges TableItems on consecutive pages with
 // overlapping X and close Y proximity.  Matches Python's
 // _extract_table_figure table merge (pdf_parser.py:1061-1080).
-func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float64) []pdf.TableItem {
+//
+// pageHeights maps each 0-based page number to its PDF-point page height. It
+// is required to measure the cross-page Y gap in a page-absolute frame: the
+// continuation table's page-local Top must be offset by the anchor page's
+// height, otherwise two tables whose page-local Y merely repeats every page
+// look adjacent and get wrongly merged.
+func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights map[int]float64) []pdf.TableItem {
 	if len(tables) <= 1 {
 		return tables
 	}
@@ -97,9 +103,40 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 					mh = h
 				}
 			}
+			// page-local yDis (Y resets to 0 on each page). A genuine
+			// cross-page continuation sits at the TOP of the next page, which
+			// in page-local coordinates is "above" the anchor, so yDis is
+			// NEGATIVE — merge it as-is. Two separate tables that merely
+			// repeat their page-local Y every page have a POSITIVE yDis; only
+			// then shift into the page-absolute frame (by the anchor page
+			// height) so the over-merge is rejected. This restates the
+			// icbccs-crosspage-table-overmerge guard from #18688 without also
+			// rejecting legitimate continuations.
 			yDis := (bp.Top + bp.Bottom - anchorBtm - ap.Bottom) / 2
-			if yDis > mh*23 {
-				continue
+			if yDis >= 0 {
+				if anchorPageH, ok := pageHeights[anchorPg]; ok && anchorPageH > 0 {
+					yDis += anchorPageH
+				}
+				if yDis > mh*23 {
+					continue
+				}
+			} else {
+				// A NEGATIVE page-local yDis means the continuation sits at the
+				// TOP of the next page (in page-local coordinates it is "above"
+				// the anchor). A genuine cross-page split is cut off at the page
+				// boundary, so its anchor must END NEAR THE BOTTOM of its page.
+				// Two independent tables that merely both start near the top of
+				// consecutive pages (e.g. ZoomNeXt's R3→R5) also produce a
+				// negative yDis but their anchor ends high on its page — merging
+				// them wrongly collapses the second table into the first and
+				// silently drops it. Reject the merge unless the anchor bottom is
+				// within mh*23 of the page bottom (the same proximity used for
+				// the Y gate), so only real page-boundary continuations merge.
+				if anchorPageH, ok := pageHeights[anchorPg]; ok && anchorPageH > 0 {
+					if maxBottomOnPage(anchor.Positions, anchorPg) < anchorPageH-mh*23 {
+						continue
+					}
+				}
 			}
 			// Merge: combine cells and positions.
 			anchor.Cells = append(anchor.Cells, tables[jt.idx].Cells...)
@@ -193,6 +230,31 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 		}
 	}
 	return result
+}
+
+// maxBottomOnPage returns the largest Bottom among the table's positions that
+// carry page number pg. Page-local Y resets to 0 at each page top, so a
+// multi-page anchor's positions across different pages are not directly
+// comparable; this isolates the anchor's extent on the specific page it is
+// being tested against for a cross-page continuation.
+func maxBottomOnPage(positions []pdf.Position, pg int) float64 {
+	var mb float64
+	for _, p := range positions {
+		onPage := false
+		for _, pn := range p.PageNumbers {
+			if pn == pg {
+				onPage = true
+				break
+			}
+		}
+		if !onPage {
+			continue
+		}
+		if p.Bottom > mb {
+			mb = p.Bottom
+		}
+	}
+	return mb
 }
 
 // stackGrids concatenates per-page grids (each already built correctly by

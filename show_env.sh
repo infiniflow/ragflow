@@ -17,10 +17,21 @@ get_distro_info() {
 
 # get Git repository name
 git_repo_name=''
-if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-    git_repo_name=$(basename "$(git rev-parse --show-toplevel)")
-    if [ $? -ne 0 ]; then
-        git_repo_name="(Can't get repo name)"
+if git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null); then
+    git_repo_name=$(basename "$git_toplevel")
+elif git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null); then
+    # Inside .git, or in a bare repo: there is no work tree to name, but this is
+    # still a repository. Ask git whether it is bare rather than reading the
+    # path, since a bare repo may itself be called ".git". A bare repository
+    # names itself; otherwise the git directory's parent is the repository.
+    if [ "$(git rev-parse --is-bare-repository 2>/dev/null)" = "true" ]; then
+        git_repo_name=$(basename "$git_dir")
+    else
+        # A linked worktree's git dir lives under .git/worktrees, so the main
+        # repository is found through the common dir. That is reported relative
+        # to the git dir (plain "." inside .git), hence resolving it here.
+        git_common=$(cd "$git_dir" && cd "$(git rev-parse --git-common-dir)" && pwd)
+        git_repo_name=$(basename "$(dirname "$git_common")")
     fi
 else
     git_repo_name="It is NOT a Git repo"
@@ -47,7 +58,7 @@ python_version=$(python3 --version 2>&1 || python --version 2>&1 || echo "Python
 echo "Current Repository: $git_repo_name"
 
 # get Commit ID
-git_version=$(git log -1 --pretty=format:'%h')
+git_version=$(git log -1 --pretty=format:'%h' 2>/dev/null)
 
 if [ -z "$git_version" ]; then
     echo "Commit Id: The current directory is not a Git repository, or the Git command is not installed."

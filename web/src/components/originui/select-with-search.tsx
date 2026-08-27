@@ -290,7 +290,11 @@ export const SelectWithSearch = forwardRef<
           <Command className="p-5" filter={filterFn}>
             {showSearch && (
               <CommandInput
-                placeholder={t('common.search') + '...'}
+                placeholder={
+                  allowCustomValue
+                    ? t('common.searchOrEnterToAdd') + '...'
+                    : t('common.search') + '...'
+                }
                 className=" placeholder:text-text-disabled"
                 value={searchValue}
                 onValueChange={setSearchValue}

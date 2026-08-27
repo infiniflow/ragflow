@@ -2,6 +2,8 @@ package task
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -62,6 +64,40 @@ func TestWikiActiveStatesDecodeCheckpointValues(t *testing.T) {
 	}
 	if len(states) != 1 || states[0].Key != "state-1" || string(states[0].Payload) != `{"plan":[]}` {
 		t.Fatalf("decoded states = %#v", states)
+	}
+}
+
+// TestApplyDocumentAvailability verifies disabled documents (status=0) force
+// ordinary source chunks to available_int=0 while compiled products stay hidden.
+func TestApplyDocumentAvailability(t *testing.T) {
+	chunks := []map[string]any{
+		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
+		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A", "available_int": 0},
+		{"id": "src-2", "content_with_weight": "another source chunk"},
+	}
+	markCompiledProductsHidden(chunks)
+	applyDocumentAvailability(chunks, strPtr("0"))
+
+	if chunks[0]["available_int"] != 0 {
+		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[0]["available_int"])
+	}
+	if chunks[1]["available_int"] != 0 {
+		t.Fatalf("compiled product should stay available_int=0, got %v", chunks[1]["available_int"])
+	}
+	if chunks[2]["available_int"] != 0 {
+		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[2]["available_int"])
+	}
+
+	enabled := []map[string]any{
+		{"id": "src-3", "content_with_weight": "enabled source"},
+	}
+	applyDocumentAvailability(enabled, strPtr("1"))
+	if v, ok := enabled[0]["available_int"]; ok {
+		t.Fatalf("enabled doc should keep default available_int, got %v", v)
+	}
+	applyDocumentAvailability(enabled, nil)
+	if v, ok := enabled[0]["available_int"]; ok {
+		t.Fatalf("nil status should keep default available_int, got %v", v)
 	}
 }
 
@@ -312,6 +348,44 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 	}
 	if captured.DSL["raw"] != nil {
 		t.Fatalf("DSL should be parsed JSON, not fallback raw; got %v", captured.DSL)
+	}
+}
+
+func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	docName := "terminal.pdf"
+	run := "1"
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+		Document: entity.Document{
+			ID:           "doc-1",
+			KbID:         "kb-1",
+			ParserID:     "naive",
+			ParserConfig: entity.JSONMap{},
+			SourceType:   "local",
+			Type:         "pdf",
+			Name:         &docName,
+			Suffix:       ".pdf",
+			Run:          &run,
+		},
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "document_id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want explicit terminal status", log.OperationStatus)
+	}
+	if len(log.DSL) != 0 {
+		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
 	}
 }
 
@@ -609,6 +683,50 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	}
 }
 
+func TestPipelineExecutor_Execute_DoesNotLogFailedRun(t *testing.T) {
+	logged := false
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			return nil, dsl, errors.New("pipeline failed")
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			logged = true
+			return nil
+		})
+
+	if _, err := svc.Execute(context.Background()); err == nil {
+		t.Fatal("Execute error = nil, want failure")
+	}
+	if logged {
+		t.Fatal("executor must not log failed runs before ingestor writes final document status")
+	}
+}
+
+func TestPipelineExecutor_Execute_DoesNotLogCanceledRun(t *testing.T) {
+	logged := false
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			return nil, dsl, context.Canceled
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			logged = true
+			return nil
+		})
+
+	if _, err := svc.Execute(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context.Canceled", err)
+	}
+	if logged {
+		t.Fatal("executor must not log canceled runs before ingestor writes final document status")
+	}
+}
+
 // TestPipelineExecutor_Execute_PropagatesContext verifies the ctx passed to
 // Execute is the ctx received by runPipelineFunc - the task context must flow
 // through to the pipeline run.
@@ -756,5 +874,17 @@ func TestCountOriginalChunkIDs(t *testing.T) {
 	}
 	if n := countOriginalChunkIDs(chunks); n != 2 {
 		t.Fatalf("compiler products: got %d, want 2", n)
+	}
+}
+
+func TestMergeCompiledVariants(t *testing.T) {
+	if got := mergeCompiledVariants(nil, nil); got != nil {
+		t.Fatalf("empty variants = %v, want nil", got)
+	}
+
+	got := mergeCompiledVariants([]string{"wiki", "structure"}, []string{"wiki", "tree"})
+	want := []string{"structure", "tree", "wiki"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("merged variants = %v, want %v", got, want)
 	}
 }

@@ -53,7 +53,7 @@ func TestChatStreamWithContextStripsDoneSentinel(t *testing.T) {
 		APIConfig: &modelModule.APIConfig{},
 	}
 
-	ch := chatStreamWithContext(context.Background(), chatModel, nil, &modelModule.ChatConfig{})
+	ch, _ := chatStreamWithContext(context.Background(), chatModel, nil, &modelModule.ChatConfig{})
 	var sb strings.Builder
 	for delta := range ch {
 		sb.WriteString(delta)

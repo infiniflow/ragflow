@@ -36,14 +36,18 @@
 //     id. Persist the id so the next call can resume via
 //     compose.ResumeWithData (signalled through root:
 //     __resume_interrupt_id__ + __resume_data__).
-//  3. Cancel / timeout (errors.Is(err, context.Canceled) etc.):
-//     silently close. The HTTP handler has already detached.
+//  3. Cancellation (errors.Is(err, context.Canceled)):
+//     emit `cancelled` so protocol adapters do not mistake an aborted run
+//     for a successful empty completion. The HTTP handler may already have
+//     detached; in that case the event is simply dropped by the forwarding
+//     layer.
 //  4. Other errors: emit `error` event with the err.Error() string.
 //
 // SSE wire contract (matches the handler envelope):
 //   - RunEvent.Type == "message"          → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
-//   - RunEvent.Type == "error"            → {message: <string>}
+//   - RunEvent.Type == "error"            → {message: <string>, kind?: <string>}
+//   - RunEvent.Type == "cancelled"        → {message: <string>}
 package canvas
 
 import (
@@ -131,9 +135,43 @@ type WaitingForUserEvent struct {
 	Inputs map[string]any `json:"inputs,omitempty"`
 }
 
-// ErrorEvent is the JSON payload for Type=="error" frames.
+// ErrorEvent is the JSON payload for Type=="error" frames. Kind is present
+// only when adapters must apply special handling, such as internal redaction.
 type ErrorEvent struct {
 	Message string `json:"message"`
+	Kind    string `json:"kind,omitempty"`
+}
+
+// CancelledEvent is an alias for ErrorEvent because both terminal payloads
+// carry the same message-only schema.
+type CancelledEvent = ErrorEvent
+
+type eventContextKey struct{}
+
+// WithEventContext attaches the context that represents the event consumer.
+// It is intentionally separate from the workflow context: an explicit run
+// cancellation should still deliver a terminal cancelled event to an active
+// client, while a disconnected client must be able to stop event delivery.
+func WithEventContext(ctx, eventCtx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if eventCtx == nil {
+		eventCtx = ctx
+	}
+	return context.WithValue(ctx, eventContextKey{}, eventCtx)
+}
+
+// getEventContext returns the consumer context attached to a workflow context,
+// falling back to the workflow context when no separate consumer exists.
+func getEventContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	if eventCtx, ok := ctx.Value(eventContextKey{}).(context.Context); ok && eventCtx != nil {
+		return eventCtx
+	}
+	return ctx
 }
 
 // RunFunc is the canvas execution contract the Runner depends on.
@@ -227,7 +265,7 @@ func (r *Runner) Run(
 	out := make(chan RunEvent, 8)
 
 	if run == nil {
-		pushErr(out, "canvas: nil RunFunc", sessionID)
+		pushErr(ctx, out, "canvas: nil RunFunc", sessionID)
 		close(out)
 		return out
 	}
@@ -276,6 +314,13 @@ func (r *Runner) Run(
 		_, runErr := safeInvoke(ctx, run, root)
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) {
+				push(ctx, out, RunEvent{
+					Type:      "cancelled",
+					Data:      safeEventJSON(CancelledEvent{Message: "Agent run was cancelled."}),
+					MessageID: messageID,
+					CreatedAt: nowUnix(),
+					SessionID: sessionID,
+				})
 				return
 			}
 			if ctxs := ExtractInterruptContexts(runErr); len(ctxs) > 0 {
@@ -303,7 +348,7 @@ func (r *Runner) Run(
 						}
 					}
 				}
-				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
+				push(ctx, out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
 				return
 			}
 			if IsInterruptError(runErr) {
@@ -312,10 +357,22 @@ func (r *Runner) Run(
 				// without a cpn id — the front-end falls back to
 				// the first paused session it knows about.
 				r.saveInterruptID(canvasID, sessionID, runErr.Error())
-				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
+				push(ctx, out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
 				return
 			}
-			pushErr(out, runErr.Error(), sessionID)
+			errorEvent := runErrorEvent(runErr)
+			if errorEvent.Kind == RunErrorKindInternal {
+				common.Error("canvas runner internal error", runErr,
+					zap.String("canvas", canvasID),
+					zap.String("session", sessionID))
+			}
+			push(ctx, out, RunEvent{
+				Type:      "error",
+				Data:      safeEventJSON(errorEvent),
+				MessageID: messageID,
+				CreatedAt: nowUnix(),
+				SessionID: sessionID,
+			})
 			return
 		}
 	}()
@@ -376,22 +433,31 @@ func safeInvoke(ctx context.Context, run RunFunc, root map[string]any) (*CanvasS
 // has gone away (handler cancelled). Exported so the service layer's
 // buildRunFunc can emit intermediate workflow events through the
 // same channel during execution.
-func PushEvent(ch chan<- RunEvent, ev RunEvent) {
+func PushEvent(ctx context.Context, ch chan<- RunEvent, ev RunEvent) {
+	if ch == nil {
+		return
+	}
 	defer func() { _ = recover() }()
-	ch <- ev
+	eventCtx := getEventContext(ctx)
+	if eventCtx.Err() != nil {
+		return
+	}
+	select {
+	case ch <- ev:
+	case <-eventCtx.Done():
+	}
 }
 
 // push sends an event to the channel, dropping it if the consumer
 // has gone away (handler cancelled). Errors on send are intentional
 // and ignored — the handler is the only consumer and its
 // `for-range` loop exits when the request context is cancelled.
-func push(out chan<- RunEvent, ev RunEvent) {
-	defer func() { _ = recover() }()
-	out <- ev
+func push(ctx context.Context, out chan<- RunEvent, ev RunEvent) {
+	PushEvent(ctx, out, ev)
 }
 
 // pushErr serialises an ErrorEvent and pushes it on the channel.
-func pushErr(out chan<- RunEvent, msg, sessionID string) {
+func pushErr(ctx context.Context, out chan<- RunEvent, msg, sessionID string) {
 	payload, err := json.Marshal(ErrorEvent{Message: msg})
 	if err != nil {
 		common.Warn("runner: pushErr json.Marshal failed, falling back",
@@ -400,7 +466,7 @@ func pushErr(out chan<- RunEvent, msg, sessionID string) {
 		// Fall back to a hard-coded minimal JSON.
 		payload = []byte(`{"message":"event serialization failed"}`)
 	}
-	push(out, RunEvent{Type: "error", Data: string(payload), SessionID: sessionID, CreatedAt: nowUnix()})
+	push(ctx, out, RunEvent{Type: "error", Data: string(payload), SessionID: sessionID, CreatedAt: nowUnix()})
 }
 
 // safeEventJSON marshals v to a JSON string, falling back to

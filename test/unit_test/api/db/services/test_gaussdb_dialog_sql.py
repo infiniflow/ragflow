@@ -1692,10 +1692,11 @@ def test_tc_sql_1001_use_sql_none_falls_back_to_retrieval(
         0.2,
         0.3,
         doc_ids=None,
-        top=32,
+        knn_top_k=32,
         aggs=True,
         rerank_mdl=None,
         rank_feature=None,
+        rerank_candidates_count=64,
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
@@ -1740,10 +1741,11 @@ def test_tc_sql_1002_validator_rejection_falls_back_to_retrieval(
         0.2,
         0.3,
         doc_ids=None,
-        top=32,
+        knn_top_k=32,
         aggs=True,
         rerank_mdl=None,
         rank_feature=None,
+        rerank_candidates_count=64,
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
@@ -1790,10 +1792,11 @@ def test_tc_sql_1003_sql_timeout_falls_back_to_retrieval(
         0.2,
         0.3,
         doc_ids=None,
-        top=32,
+        knn_top_k=32,
         aggs=True,
         rerank_mdl=None,
         rank_feature=None,
+        rerank_candidates_count=64,
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
