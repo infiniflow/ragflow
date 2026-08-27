@@ -164,6 +164,32 @@ func TestApplyPDFPostProcess_RemoveTOCEntryLines(t *testing.T) {
 	}
 }
 
+// TestApplyPDFPostProcess_RemoveTOCEntryLinesWithPageOneOutlines covers the
+// book-PDF shape: the first outline sits on page 1 and none of its titles
+// names the TOC ("目录"/"contents"), so removePDFTOCByOutlines finds no page
+// range and is a no-op. The leader+page-number entry filter must still run on
+// this dispatch branch, otherwise a TOC without a 目录 heading survives it.
+func TestApplyPDFPostProcess_RemoveTOCEntryLinesWithPageOneOutlines(t *testing.T) {
+	result := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			makePDFSection("《道德经》全文及翻译", "text", 1, 50, 550, 100, 120),
+			makePDFSection("前言：……………………………………………………………………1", "text", 2, 50, 550, 100, 120),
+			makePDFSection("第1章 “道”…………………………………………………………3", "text", 2, 50, 550, 120, 140),
+			makePDFSection("Introduction to the Dao ....... 12", "text", 2, 50, 550, 140, 160),
+			makePDFSection("道可道，非常道。名可名，非常名。", "text", 3, 50, 550, 100, 120),
+		},
+		Outlines: []deepdoctype.Outline{
+			{Title: "前言", Level: 0, PageNumber: 1},
+			{Title: "Chapter 1", Level: 1, PageNumber: 3},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	want := []string{"《道德经》全文及翻译", "道可道，非常道。名可名，非常名。"}
+	if !slices.Equal(sectionTexts(result.Sections), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(result.Sections), want)
+	}
+}
+
 func sectionTexts(sections []deepdoctype.Section) []string {
 	texts := make([]string, 0, len(sections))
 	for _, s := range sections {
@@ -231,6 +257,54 @@ func TestFilterPDFTOCEntries_KeepsProseWithSingleLeaderRun(t *testing.T) {
 		"更多说明见第三章……12 的表格。",
 		"天下皆知美之为美，斯恶已。",
 	}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCEntries_KeepsProseEndingInWideSpaces pins that a wide-space
+// run is not a TOC leader: prose ending in "  12" survives, while the same
+// shape with a dot leader is a real entry and is dropped.
+func TestFilterPDFTOCEntries_KeepsProseEndingInWideSpaces(t *testing.T) {
+	sections := []deepdoctype.Section{
+		makePDFSection("See the installation guide for details  12", "text", 1, 50, 550, 100, 120),
+		makePDFSection("Troubleshooting ....... 27", "text", 2, 50, 550, 100, 120),
+	}
+	got := filterPDFTOCEntries(sections)
+	want := []string{"See the installation guide for details  12"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCEntries_TwoRunProseTradeOff pins the accepted trade-off of
+// the merged-block heuristic: prose quoting two leader+number references is
+// dropped, because a DeepDoc-merged TOC page has exactly that shape and the
+// anchored pattern alone never fires for it. A single run keeps the prose
+// (see KeepsProseWithSingleLeaderRun); raising the threshold would
+// under-delete real merged TOC blocks.
+func TestFilterPDFTOCEntries_TwoRunProseTradeOff(t *testing.T) {
+	sections := []deepdoctype.Section{
+		makePDFSection("见第三章……12 和第五章……34 的说明。", "text", 1, 50, 550, 100, 120),
+	}
+	got := filterPDFTOCEntries(sections)
+	if len(got) != 0 {
+		t.Fatalf("sections = %v, want empty: two leader+number runs read as a merged TOC block", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCEntries_ChapterTitleWithoutBarePageRefSurvives pins the
+// guard of the wrapped-entry pairing: a "第N章"/"Chapter N" line is only
+// dropped when the following section is a bare leader+page-number reference
+// (see WrappedEntryTitlePairsPageRef); followed by ordinary prose it is body
+// content and must stay.
+func TestFilterPDFTOCEntries_ChapterTitleWithoutBarePageRefSurvives(t *testing.T) {
+	sections := []deepdoctype.Section{
+		makePDFSection("第1章 道可道，非常道", "text", 3, 50, 550, 100, 120),
+		makePDFSection("道可道，非常道。名可名，非常名。", "text", 3, 50, 550, 120, 140),
+	}
+	got := filterPDFTOCEntries(sections)
+	want := []string{"第1章 道可道，非常道", "道可道，非常道。名可名，非常名。"}
 	if !slices.Equal(sectionTexts(got), want) {
 		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
 	}

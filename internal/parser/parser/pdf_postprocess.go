@@ -17,13 +17,15 @@ var pdfHeaderFooterPattern = regexp.MustCompile(`(?i)header|footer|number`)
 var pdfTOCTitlePattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
 
 // pdfTOCEntryPattern matches table-of-contents entry lines: a leader run
-// (dots, ellipses, midline ellipses, middots, or wide spaces) followed by a
+// (dots, ellipses, midline ellipses, or middots) followed by a
 // page number, optionally with a trailing roman-numeral fragment, e.g.
 // "第1章 道可道…………3", "Introduction ....... 12", "……18 I". It extends the
 // leader heuristic Python already uses in remove_toc_word
 // (rag/flow/parser/utils.py) to the PDF path on both sides, so a TOC without
-// a "目录"/"contents" heading is still dropped.
-var pdfTOCEntryPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,}|[ ]{2,})\s*\d{1,4}\s*[IVXLCivxlc]{0,5}\s*$`)
+// a "目录"/"contents" heading is still dropped. Wide-space runs are NOT a
+// leader here, mirroring pdfTOCEntryAnywherePattern: they are too common in
+// prose, so a line merely ending in "  12" is not a TOC entry.
+var pdfTOCEntryPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*\d{1,4}\s*[IVXLCivxlc]{0,5}\s*$`)
 
 // pdfTOCEntryAnywherePattern is the non-anchored form of pdfTOCEntryPattern.
 // DeepDoc merges the lines of a text block into ONE section whose text joins
@@ -143,7 +145,10 @@ func sortSectionsByPosition(result *deepdoctype.ParseResult) {
 
 // applyRemoveTOC mirrors Python parser.py:663-681 three-way dispatch:
 //   - No outlines → pattern-based remove_toc on all sections
-//   - First outline on page 1 → outline-based remove_toc_pdf
+//   - First outline on page 1 → outline-based remove_toc_pdf, then the entry
+//     filter: the outline pass only drops pages when an outline title names
+//     the TOC ("目录"/"contents"), so a headingless TOC must still run
+//     through filterPDFTOCEntries instead of being left in place
 //   - First outline after page 1 → pattern-based on pages before the first outline
 func applyRemoveTOC(result *deepdoctype.ParseResult) {
 	if result == nil {
@@ -157,6 +162,7 @@ func applyRemoveTOC(result *deepdoctype.ParseResult) {
 	firstOutlinePage := outlines[0].PageNumber
 	if firstOutlinePage <= 1 {
 		removePDFTOCByOutlines(result, outlines)
+		result.Sections = filterPDFTOCEntries(result.Sections)
 		return
 	}
 	splitAt := len(result.Sections)
