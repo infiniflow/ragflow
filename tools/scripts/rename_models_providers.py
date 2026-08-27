@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Rename provider name fields in conf/models/*.json to match llm_factories.json."""
+
 import json
 import os
 
@@ -8,28 +9,29 @@ MODELS_DIR = os.path.join(REPO_ROOT, "conf", "models")
 
 # Valid mappings: models current name → llm_factories name
 CHANGES = {
-    "avian":          "Avian",
-    "Baichuan":       "BaiChuan",
-    "Baidu":          "BaiduYiyan",
-    "CoHere":         "Cohere",
-    "FishAudio":      "Fish Audio",
-    "Gitee":          "GiteeAI",
-    "Google":         "Gemini",
-    "JieKouAI":       "Jiekou.AI",
-    "lmstudio":       "LM-Studio",
-    "localai":        "LocalAI",
-    "modelscope":     "ModelScope",
-    "Novita":         "NovitaAI",
-    "Nvidia":         "NVIDIA",
-    "ollama":         "Ollama",
-    "SiliconFlow":    "SILICONFLOW",
-    "HunYuan":        "Tencent Hunyuan",
-    "Aliyun":         "Tongyi-Qianwen",
-    "vllm":           "VLLM",
-    "Voyage":         "Voyage AI",
-    "xinference":     "Xinference",
-    "XunFei":         "XunFei Spark",
+    "avian": "Avian",
+    "Baichuan": "BaiChuan",
+    "Baidu": "BaiduYiyan",
+    "CoHere": "Cohere",
+    "FishAudio": "Fish Audio",
+    "Gitee": "GiteeAI",
+    "Google": "Gemini",
+    "JieKouAI": "Jiekou.AI",
+    "lmstudio": "LM-Studio",
+    "localai": "LocalAI",
+    "modelscope": "ModelScope",
+    "Novita": "NovitaAI",
+    "Nvidia": "NVIDIA",
+    "ollama": "Ollama",
+    "SiliconFlow": "SILICONFLOW",
+    "HunYuan": "Tencent Hunyuan",
+    "Aliyun": "Tongyi-Qianwen",
+    "vllm": "VLLM",
+    "Voyage": "Voyage AI",
+    "xinference": "Xinference",
+    "XunFei": "XunFei Spark",
 }
+
 
 def main():
     # Build current name → filename mapping
@@ -51,6 +53,7 @@ def main():
             json.dump(d, f, indent=2, ensure_ascii=False)
             f.write("\n")
         print(f'{fn}: "{old_name}" -> "{new_name}"')
+
 
 if __name__ == "__main__":
     main()
