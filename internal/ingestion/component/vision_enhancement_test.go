@@ -140,8 +140,7 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 				dao.DB,
 				tc.fileType,
 				dispatched,
-				map[string]any{"tenant_id": "t1", "lang": "Japanese"},
-			)
+				map[string]any{"tenant_id": "t1", "lang": "Japanese"}, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -199,8 +198,7 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -229,8 +227,7 @@ func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypeOTHER,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,8 +254,7 @@ func TestVisionEnhancement_EmptyOrNoTenantSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
-		map[string]any{},
-	)
+		map[string]any{}, nil)
 	if err != nil || handled {
 		t.Errorf("handled=%v, err=%v, want false, nil for missing tenant_id", handled, err)
 	}
@@ -284,8 +280,7 @@ func TestVisionEnhancement_DispatchedErrSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -322,8 +317,7 @@ func TestVisionEnhancement_ContextCancellation(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -364,8 +358,7 @@ func TestVisionEnhancement_NonStringImageFieldFiltered(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -407,8 +400,7 @@ func TestVisionEnhancement_MoreThanConcurrencyItems(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -447,8 +439,7 @@ func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -486,8 +477,7 @@ func TestVisionEnhancement_PromptBuilderErrorSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -525,8 +515,7 @@ func TestVisionEnhancement_ModelResolveFailureSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -577,8 +566,7 @@ func TestVisionEnhancement_CancellationStopsSchedulingWithManyItems(t *testing.T
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -832,8 +820,7 @@ func TestVisionEnhancement_InvalidImageDataSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
-	)
+		map[string]any{"tenant_id": "t1"}, nil)
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}

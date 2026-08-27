@@ -164,7 +164,7 @@ func maybeDispatchVisionEnhancement(
 	fileType utility.FileType,
 	dispatched parserDispatchResult,
 	inputs map[string]any,
-	setups ...map[string]schema.ParserSetup,
+	setups map[string]schema.ParserSetup,
 ) (parserDispatchResult, bool, error) {
 	// 0. FileType allowlist guard.
 	if !isVisionEnhancementAllowed(fileType) {
@@ -204,10 +204,7 @@ func maybeDispatchVisionEnhancement(
 	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
 	// default. Mirror Python's vlm_conf["llm_id"] preference.
 	family := resolveParserFamily(fileType)
-	var setup schema.ParserSetup
-	if len(setups) > 0 && setups[0] != nil {
-		setup = setups[0][family]
-	}
+	setup := setups[family]
 	modelRef := configuredMediaModelID(setup, family)
 	var driver modelModule.ModelDriver
 	var modelName string
