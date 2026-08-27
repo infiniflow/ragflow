@@ -140,3 +140,31 @@ def test_call_skips_truly_empty_cells():
     lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", "note"], ["widget", None]))
     joined = " ".join(text for text, _ in lines)
     assert "note" not in joined, lines
+
+
+def _make_two_sheet_xlsx():
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "s1"
+    ws1.append(["H"])
+    ws1.append(["a"])
+    ws2 = wb.create_sheet("s2")
+    ws2.append(["H"])
+    ws2.append(["b"])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+@pytest.mark.p2
+def test_call_emits_zero_based_sheet_index():
+    # Flow JSON stores this index unchanged; add_positions later does pn+1 so
+    # sheet 2 is stored as 2 and the preview selects xs.datas[1].
+    lines = RAGFlowExcelParser()(_make_two_sheet_xlsx())
+    sheets = {pos[0] for _, pos in lines}
+    assert sheets == {0, 1}
+    second = next(pos for _, pos in lines if pos[0] == 1)
+    assert second[0] + 1 == 2

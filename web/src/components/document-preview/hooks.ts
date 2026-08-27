@@ -246,7 +246,7 @@ type XsInstance = {
 };
 
 /** Locate inside @js-preview/excel: switch sheet, paint range via Data API, scroll. */
-function applyExcelSourceLocate(
+export function applyExcelSourceLocate(
   previewer: ReturnType<typeof jsPreviewExcel.init>,
   pos: ExcelLocatePos,
 ) {
@@ -268,9 +268,10 @@ function applyExcelSourceLocate(
   const data = xs.datas[sheetIdx];
   if (!data?.addStyle || !data.rows?.setCell) return;
 
+  const theme = getComputedStyle(document.documentElement);
   const styleIdx = data.addStyle({
-    bgcolor: '#ffe58f',
-    color: '#1a1a1a',
+    bgcolor: theme.getPropertyValue('--background-highlight').trim(),
+    color: theme.getPropertyValue('--text-title').trim(),
   });
   for (let r = r1; r <= r2; r++) {
     for (let c = c1; c <= c2; c++) {

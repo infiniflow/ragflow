@@ -17,6 +17,7 @@
 /** File types that support in-app citation source location. */
 export const SourceLocateExtensions = ['pdf', 'xlsx', 'xls'] as const;
 
+/** True when the citation should open the in-app preview locate drawer. */
 export const supportsSourceLocate = (ext?: string) =>
   !!ext &&
   (SourceLocateExtensions as readonly string[]).includes(ext.toLowerCase());
