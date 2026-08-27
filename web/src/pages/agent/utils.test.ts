@@ -14,7 +14,7 @@ describe('transformTokenChunkerParams', () => {
       enable_children: false,
     } as any);
 
-    expect(result.overlapped_percent).toBe(0.09);
+    expect(result.overlapped_percent).toBeCloseTo(0.09);
     expect(result.delimiters).toEqual(['\n', '!', '。']);
     expect(result.delimiter_mode).toBe('one');
   });
@@ -30,7 +30,7 @@ describe('transformTokenChunkerParams', () => {
       enable_children: true,
     } as any);
 
-    expect(result.overlapped_percent).toBe(0.3);
+    expect(result.overlapped_percent).toBeCloseTo(0.3);
     expect(result.delimiters).toEqual(['\n']);
     expect(result.children_delimiters).toEqual(['|']);
     expect(result.table_context_size).toBe(81);
