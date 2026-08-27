@@ -646,11 +646,8 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 		}
 		return out
 	}
-	totalRunes := 0
-	for _, p := range kept {
-		totalRunes += utf8.RuneCountInString(p)
-	}
-	if totalRunes == 0 {
+	runCount := totalRunes(kept)
+	if runCount == 0 {
 		out := make([]schema.ChunkDoc, 0, len(kept))
 		for _, p := range kept {
 			out = append(out, buildChunkDoc(it, "text", p, "", ""))
@@ -661,8 +658,8 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	cumRunes := 0
 	for _, p := range kept {
 		pcRunes := utf8.RuneCountInString(p)
-		startRatio := float64(cumRunes) / float64(totalRunes)
-		endRatio := float64(cumRunes+pcRunes) / float64(totalRunes)
+		startRatio := float64(cumRunes) / float64(runCount)
+		endRatio := float64(cumRunes+pcRunes) / float64(runCount)
 		ck := buildChunkDoc(it, "text", p, "", "")
 		ck.PDFPositions = slicePositionsByTextRatio(it.PDFPositions, startRatio, endRatio)
 		ck.Positions = slicePositionsByTextRatio(it.Positions, startRatio, endRatio)
@@ -1186,11 +1183,24 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 		}
 		return pieces
 	}
-	totalRunes := 0
-	for _, p := range pieces {
-		totalRunes += utf8.RuneCountInString(p.Text)
+	// Ratio basis: rune counts of the real source content. The synthetic
+	// leading "\n" glue (text-path units are built as "\n"+paragraph) carries
+	// no visual height, so it is excluded from the first piece's count to keep
+	// the slice proportions aligned with the original text.
+	counts := make([]int, len(pieces))
+	runCount := 0
+	for i, p := range pieces {
+		n := utf8.RuneCountInString(p.Text)
+		if i == 0 && lead != "" {
+			n -= utf8.RuneCountInString(lead)
+			if n < 0 {
+				n = 0
+			}
+		}
+		counts[i] = n
+		runCount += n
 	}
-	if totalRunes == 0 {
+	if runCount == 0 {
 		for i := range pieces {
 			inherited := cloneChunkDoc(ck)
 			inherited.Text = pieces[i].Text
@@ -1202,9 +1212,8 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	}
 	cumRunes := 0
 	for i, p := range pieces {
-		pcRunes := utf8.RuneCountInString(p.Text)
-		startRatio := float64(cumRunes) / float64(totalRunes)
-		endRatio := float64(cumRunes+pcRunes) / float64(totalRunes)
+		startRatio := float64(cumRunes) / float64(runCount)
+		endRatio := float64(cumRunes+counts[i]) / float64(runCount)
 		inherited := cloneChunkDoc(ck)
 		inherited.Text = p.Text
 		inherited.TKNums = p.TKNums
@@ -1220,7 +1229,7 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 			inherited.Positions = ck.Positions
 		}
 		pieces[i] = inherited
-		cumRunes += pcRunes
+		cumRunes += counts[i]
 	}
 	return pieces
 }
