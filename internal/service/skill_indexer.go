@@ -681,7 +681,7 @@ func (s *SkillIndexerService) getSpaceFolderIDByName(ctx context.Context, tenant
 	}
 
 	// Find skills folder under root
-	files, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, rootFolder.ID, 0, 0, "name", false, "")
+	files, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, rootFolder.ID, 0, 0, "name", false, "", false)
 	if err != nil {
 		return "", fmt.Errorf("failed to list root folder contents: %w", err)
 	}
@@ -699,7 +699,7 @@ func (s *SkillIndexerService) getSpaceFolderIDByName(ctx context.Context, tenant
 	}
 
 	// Find space folder by name under skills folder
-	spaceFolders, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, skillsFolderID, 0, 0, "name", false, "")
+	spaceFolders, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, skillsFolderID, 0, 0, "name", false, "", false)
 	if err != nil {
 		return "", fmt.Errorf("failed to list skills folder contents: %w", err)
 	}
