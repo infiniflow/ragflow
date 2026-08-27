@@ -411,7 +411,7 @@ def by_mistral_ocr(
 
 def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
-    if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
+    if (not layout_recognizer) or layout_recognizer.replace(" ", "").lower() == "plaintext":
         pdf_parser = PlainParser()
     else:
         tenant_id = kwargs.get("tenant_id")
@@ -1061,7 +1061,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             urls = extract_links_from_pdf(binary)
 
         if isinstance(layout_recognizer, bool):
-            layout_recognizer = "DeepDOC" if layout_recognizer else "PlainText"
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
