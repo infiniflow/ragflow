@@ -278,6 +278,14 @@ Version must be in format `vxx.xx.xx` where `xx` are digits:
 - Valid: `v0.27.0`, `v1.0.0`, `v10.20.30`
 - Invalid: `0.27.0`, `v0.25`, `v0.27.0.1`
 
+### Release Reference Check
+
+Run this lightweight check before publishing a release to catch drift between the pinned Docker image, README instructions, and migration-directory examples:
+
+```bash
+python tools/scripts/check_release_version_refs.py
+```
+
 ### Migration File Location
 
 Migration files are stored in:
