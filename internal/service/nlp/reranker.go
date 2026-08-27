@@ -235,7 +235,8 @@ func NormalizeRerankScores(scores []float64) []float64 {
 	// Spreadless out-of-range batch: clamp per element instead of
 	// collapsing to zero or dividing by ~0.
 	span := maxScore - minScore
-	if span < 1e-3 {
+	if span < 1e-3 || maxScore <= 0 {
+		// maxScore <= 0 from PR 16712
 		for i, s := range scores {
 			if s < 0.0 {
 				scores[i] = 0.0
