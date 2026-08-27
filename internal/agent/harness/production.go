@@ -62,6 +62,9 @@ type ProductionRunner struct {
 	// by chatPipelineOnce against concurrent runSQLTool calls.
 	chatPipeline     *service.ChatPipelineService
 	chatPipelineOnce sync.Once
+	// SystemPrompt, when non-empty, is prepended to the final-answer system
+	// prompt (mirrors Python RAGTools.system_prompt).
+	SystemPrompt string
 }
 
 // NewProductionRunner builds a ProductionRunner backed by the real tools. The
@@ -166,7 +169,7 @@ func newProductionRunnerWithTools(db *gorm.DB, tenantID string, datasetIDs []str
 // tries wiki_query first and falls back to general hybrid search on an empty
 // result; otherwise it uses hybrid search. Web fallback is only reachable when a
 // web provider is configured (P8). Returns the final answer.
-func (r *ProductionRunner) Run(ctx context.Context, question, keywords, modeLabel string) AnswerResult {
+func (r *ProductionRunner) Run(ctx context.Context, question, keywords, modeLabel, systemPrompt string) AnswerResult {
 	if r.searchTool == nil {
 		log.Printf("agentic_rag: production runner not fully wired (search tool missing)")
 		return AnswerResult{FinalAnswer: emptyResultMessage, Empty: true}
@@ -196,15 +199,15 @@ func (r *ProductionRunner) Run(ctx context.Context, question, keywords, modeLabe
 	// not the SearchFn closure used by low/medium. This is the P5 strategy
 	// dispatch: high/ultra is a strict superset of medium.
 	if route.ExecutionStrategy == "agentic_research" || route.ExecutionStrategy == "deep_research" {
-		return r.runAgentic(ctx, question, keywords, modeLabel, route)
+		return r.runAgentic(ctx, question, keywords, modeLabel, route, systemPrompt)
 	}
-	return RunAgenticRAGWithRoute(ctx, r.db, question, keywords, modeLabel, route, searchFn)
+	return RunAgenticRAGWithRoute(ctx, r.db, question, keywords, modeLabel, route, searchFn, systemPrompt)
 }
 
 // runAgentic drives the high/ultra two-level loop over a Pipeline. It shares the
 // same route/planner as RunAgenticRAGWithRoute but researches claims via the
 // research agent (inner tool loop) rather than a single hybrid search.
-func (r *ProductionRunner) runAgentic(ctx context.Context, question, keywords, modeLabel string, route RouteDecision) AnswerResult {
+func (r *ProductionRunner) runAgentic(ctx context.Context, question, keywords, modeLabel string, route RouteDecision, systemPrompt string) AnswerResult {
 	mode, _ := GetMode(modeLabel)
 	if mode.Label == "" {
 		mode = THINKING_MODES["high"]
@@ -227,7 +230,7 @@ func (r *ProductionRunner) runAgentic(ctx context.Context, question, keywords, m
 
 	orch := AgenticResearch(ctx, r.db, pipeline, question, claims, mode)
 
-	return FormalizeAnswer(ctx, r.db, question, orch.Kbinfos, orch.PartialAnswer, orch.Abstain, orch.EmptyResult, orch.Caveat, orch.ForceLLM)
+	return FormalizeAnswer(ctx, r.db, question, orch.Kbinfos, orch.PartialAnswer, orch.Abstain, orch.EmptyResult, orch.Caveat, orch.ForceLLM, systemPrompt)
 }
 
 // buildCompilationMap reports which compiled artifacts each bound KB carries,
