@@ -881,22 +881,35 @@ def with_retry(max_retries=3, retry_delay=1.0):
 
 
 class PostgresDatabaseLock:
+    database_label = "postgres"
+    poll_interval = 0.1
+
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
         self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31 - 1)
-        self.timeout = int(timeout)
+        self.timeout = float(timeout)
         self.db = db if db else DB
 
-    @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
-        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
-        ret = cursor.fetchone()
-        if ret[0] == 0:
-            raise Exception(f"acquire postgres lock {self.lock_name} timeout")
-        elif ret[0] == 1:
+        if self.timeout < 0:
+            cursor = self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+            cursor.fetchone()
             return True
-        else:
-            raise Exception(f"failed to acquire lock {self.lock_name}")
+
+        deadline = time.monotonic() + self.timeout
+        while True:
+            cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
+            row = cursor.fetchone()
+            value = row[0] if row else None
+            if value in (1, True):
+                return True
+            if value not in (0, False):
+                raise Exception(f"failed to acquire lock {self.lock_name}")
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise Exception(f"acquire {self.database_label} lock {self.lock_name} timeout")
+            time.sleep(min(self.poll_interval, remaining))
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def unlock(self):

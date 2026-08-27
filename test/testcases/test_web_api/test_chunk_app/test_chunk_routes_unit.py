@@ -446,14 +446,32 @@ def _load_chunk_module(monkeypatch):
         def __init__(self):
             self._locks = {}
             self._locks_guard = threading.Lock()
+            self.lock_contended = threading.Event()
 
         @staticmethod
         def atomic():
             return contextlib.nullcontext()
 
-        def lock(self, key, _timeout):
+        def lock(self, key, timeout):
             with self._locks_guard:
-                return self._locks.setdefault(key, threading.Lock())
+                lock = self._locks.setdefault(key, threading.Lock())
+
+            stub_db = self
+
+            class _LockContext:
+                def __enter__(self):
+                    if lock.acquire(blocking=False):
+                        return self
+                    stub_db.lock_contended.set()
+                    acquired = lock.acquire() if timeout < 0 else lock.acquire(timeout=timeout)
+                    if not acquired:
+                        raise TimeoutError(f"acquire stub lock {key} timeout")
+                    return self
+
+                def __exit__(self, *_args):
+                    lock.release()
+
+            return _LockContext()
 
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.Document = _StubDocumentModel
@@ -1031,12 +1049,14 @@ def test_restful_add_chunk_insert_timeout_retry_is_idempotent(monkeypatch):
 
 
 @pytest.mark.p2
-def test_restful_add_chunk_concurrent_duplicate_is_idempotent(monkeypatch):
+def test_restful_add_chunk_concurrent_duplicate_waits_through_lock_contention(monkeypatch):
     module = _load_chunk_api_module(monkeypatch)
     module.request = SimpleNamespace(args={}, headers={})
     module.DocumentService.increment_calls.clear()
     _set_request_json(monkeypatch, module, {"content": "chunk"})
     both_requests_reached_embedding = threading.Barrier(2)
+    insert_started = threading.Event()
+    release_insert = threading.Event()
 
     class _ConcurrentEmbeddingModel:
         def encode(self, _inputs):
@@ -1044,18 +1064,31 @@ def test_restful_add_chunk_concurrent_duplicate_is_idempotent(monkeypatch):
             return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
 
     monkeypatch.setattr(module.TenantLLMService, "model_instance", lambda _config: _ConcurrentEmbeddingModel())
+    original_insert = module.settings.docStoreConn.insert
+
+    def _blocking_insert(*args, **kwargs):
+        insert_started.set()
+        assert release_insert.wait(1), "test did not release the first insert"
+        return original_insert(*args, **kwargs)
+
+    monkeypatch.setattr(module.settings.docStoreConn, "insert", _blocking_insert)
     original_executor = module._ADD_CHUNK_EXECUTOR
     module._ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 
     async def _exercise():
-        return await asyncio.gather(
+        requests = asyncio.gather(
             _route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"),
             _route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"),
         )
+        assert await asyncio.to_thread(insert_started.wait, 1), "first request did not start inserting"
+        assert await asyncio.to_thread(module.DB.lock_contended.wait, 1), "second request did not encounter lock contention"
+        release_insert.set()
+        return await requests
 
     try:
         first, second = _run(_exercise())
     finally:
+        release_insert.set()
         module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
         module._ADD_CHUNK_EXECUTOR = original_executor
 
