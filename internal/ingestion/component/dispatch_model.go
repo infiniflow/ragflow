@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
@@ -38,6 +39,29 @@ type tenantModelExtra struct {
 }
 
 var resolveTenantModelByType = defaultResolveTenantModelByType
+
+// resolveModelConfig resolves a specific model reference (tenant-model ID or
+// "name@instance@provider" composite) to a driver. Exposed as a package var so
+// per-call model-selection tests can inject a fake without a live MySQL.
+var resolveModelConfig = defaultResolveModelConfig
+
+// configuredMediaModelID extracts a per-call model reference from a parser setup.
+// Image parsing stores the VLM model reference in parse_method when it is not
+// "ocr" (mirroring Python rag/flow/parser/parser.py:_image). Other media
+// families use vlm.llm_id, matching the frontend parser form.
+func configuredMediaModelID(setup schema.ParserSetup, family string) string {
+	if family == "image" {
+		if ref := getStringOr(setup, "parse_method", ""); ref != "" && !strings.EqualFold(ref, "ocr") {
+			return ref
+		}
+	}
+	if vlm, ok := setup["vlm"].(map[string]any); ok {
+		if ref, _ := vlm["llm_id"].(string); ref != "" {
+			return ref
+		}
+	}
+	return getStringOr(setup, "llm_id", "")
+}
 
 func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	tenantDAO := dao.NewTenantDAO()
@@ -164,7 +188,7 @@ func stringValue(value *string) string {
 	return *value
 }
 
-func resolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelDAO := dao.NewTenantModelDAO()
 	if _, err := modelDAO.GetByID(ctx, db, modelRef); err == nil {
 		return resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)

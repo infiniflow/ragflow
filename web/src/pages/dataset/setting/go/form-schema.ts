@@ -1,3 +1,4 @@
+import { DESCRIPTION_MAX_LENGTH } from '@/constants/common';
 import { ParseType } from '@/constants/knowledge';
 import { t } from 'i18next';
 import { z } from 'zod';
@@ -11,7 +12,14 @@ export const formSchema = z
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),
-    description: z.string().optional(),
+    description: z
+      .string()
+      .max(DESCRIPTION_MAX_LENGTH, {
+        message: t('common.descriptionMaxLength', {
+          max: DESCRIPTION_MAX_LENGTH,
+        }),
+      })
+      .optional(),
     parser_id: z.string().optional(),
     avatar: z.any().nullish(),
     permission: z.string().optional(),

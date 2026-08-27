@@ -24,6 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { pick } from 'lodash';
 import {
@@ -45,8 +46,15 @@ import { useEditMcp } from './use-edit-mcp';
 import { useImportMcp } from './use-import-mcp';
 
 export default function McpServer() {
-  const { data, setPagination, searchString, handleInputChange, pagination } =
-    useListMcpServer();
+  const {
+    data,
+    setPagination,
+    searchString,
+    handleInputChange,
+    pagination,
+    loading: listLoading,
+  } = useListMcpServer();
+  useGoToPreviousPageOnEmpty(data.mcp_servers?.length, listLoading);
   const { editVisible, showEditModal, hideEditModal, handleOk, id, loading } =
     useEditMcp();
   const {

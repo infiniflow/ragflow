@@ -977,8 +977,8 @@ func TestRestAPISyncSessionPageResume(t *testing.T) {
 		t.Fatalf("documents=%v want ids 1,2", batch.Documents)
 	}
 	cursor := restAPICheckpointCursor(t, batch)
-	if cursor.Page != 2 {
-		t.Fatalf("cursor=%+v want page 2", cursor)
+	if cursor.Page != 1 || cursor.SourceID != restAPIHash128("rest_api:2") {
+		t.Fatalf("cursor=%+v want page 1 source id 2", cursor)
 	}
 
 	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
@@ -1006,8 +1006,8 @@ func TestRestAPISyncSessionPageResume(t *testing.T) {
 	mu.Lock()
 	got := append([]string(nil), requested...)
 	mu.Unlock()
-	if len(got) != 3 || got[0] != "1" || got[1] != "2" || got[2] != "3" {
-		t.Fatalf("requested pages=%v want [1 2 3]", got)
+	if len(got) != 4 || got[0] != "1" || got[1] != "1" || got[2] != "2" || got[3] != "3" {
+		t.Fatalf("requested pages=%v want [1 1 2 3]", got)
 	}
 }
 
@@ -1064,8 +1064,8 @@ func TestRestAPISyncSessionOffsetResume(t *testing.T) {
 		t.Fatalf("documents=%v want ids 1,2", batch.Documents)
 	}
 	cursor := restAPICheckpointCursor(t, batch)
-	if cursor.Offset != 2 {
-		t.Fatalf("cursor=%+v want offset 2", cursor)
+	if cursor.Offset != 0 || cursor.SourceID != restAPIHash128("rest_api:2") {
+		t.Fatalf("cursor=%+v want offset 0 source id 2", cursor)
 	}
 
 	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
@@ -1093,8 +1093,8 @@ func TestRestAPISyncSessionOffsetResume(t *testing.T) {
 	mu.Lock()
 	got := append([]string(nil), requested...)
 	mu.Unlock()
-	if len(got) != 3 || got[0] != "0" || got[1] != "2" || got[2] != "4" {
-		t.Fatalf("requested offsets=%v want [0 2 4]", got)
+	if len(got) != 4 || got[0] != "0" || got[1] != "0" || got[2] != "2" || got[3] != "4" {
+		t.Fatalf("requested offsets=%v want [0 0 2 4]", got)
 	}
 }
 
@@ -1153,8 +1153,8 @@ func TestRestAPISyncSessionCursorResume(t *testing.T) {
 		t.Fatalf("documents=%v want ids 1,2", batch.Documents)
 	}
 	cursor := restAPICheckpointCursor(t, batch)
-	if cursor.Cursor != "t2" {
-		t.Fatalf("cursor=%+v want cursor t2", cursor)
+	if cursor.Cursor != "" || cursor.SourceID != restAPIHash128("rest_api:2") {
+		t.Fatalf("cursor=%+v want empty cursor source id 2", cursor)
 	}
 
 	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
@@ -1182,15 +1182,20 @@ func TestRestAPISyncSessionCursorResume(t *testing.T) {
 	mu.Lock()
 	got := append([]string(nil), requested...)
 	mu.Unlock()
-	if len(got) != 3 || got[0] != "" || got[1] != "t2" || got[2] != "t3" {
-		t.Fatalf("requested cursors=%v want [\"\" t2 t3]", got)
+	if len(got) != 4 || got[0] != "" || got[1] != "" || got[2] != "t2" || got[3] != "t3" {
+		t.Fatalf("requested cursors=%v want [\"\" \"\" t2 t3]", got)
 	}
 }
 
-func TestRestAPISyncSessionCheckpointWaitsForPageBoundary(t *testing.T) {
+func TestRestAPISyncSessionCheckpointResumesInsidePage(t *testing.T) {
 	withRestAPITestHooks(t)
+	var mu sync.Mutex
+	var requested []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page := r.URL.Query().Get("page")
+		mu.Lock()
+		requested = append(requested, page)
+		mu.Unlock()
 		items := []any{}
 		switch page {
 		case "1":
@@ -1228,8 +1233,9 @@ func TestRestAPISyncSessionCheckpointWaitsForPageBoundary(t *testing.T) {
 	if len(first.Documents) != 2 {
 		t.Fatalf("documents=%d want 2", len(first.Documents))
 	}
-	if first.Checkpoint != nil {
-		t.Fatalf("mid-page checkpoint=%+v want nil", first.Checkpoint)
+	firstCursor := restAPICheckpointCursor(t, first)
+	if firstCursor.Page != 1 || firstCursor.SourceID != restAPIHash128("rest_api:2") {
+		t.Fatalf("first cursor=%+v want page 1 source id 2", firstCursor)
 	}
 	second, err := session.NextBatch(context.Background())
 	session.Close()
@@ -1240,8 +1246,8 @@ func TestRestAPISyncSessionCheckpointWaitsForPageBoundary(t *testing.T) {
 		t.Fatalf("documents=%d want 2", len(second.Documents))
 	}
 	cursor := restAPICheckpointCursor(t, second)
-	if cursor.Page != 2 {
-		t.Fatalf("cursor=%+v want page 2", cursor)
+	if cursor.Page != 1 || cursor.SourceID != restAPIHash128("rest_api:4") {
+		t.Fatalf("cursor=%+v want page 1 source id 4", cursor)
 	}
 
 	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: second.Checkpoint})
@@ -1258,5 +1264,101 @@ func TestRestAPISyncSessionCheckpointWaitsForPageBoundary(t *testing.T) {
 	}
 	if _, err := resumed.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("err=%v want EOF", err)
+	}
+	mu.Lock()
+	got := append([]string(nil), requested...)
+	mu.Unlock()
+	if len(got) != 3 || got[0] != "1" || got[1] != "1" || got[2] != "2" {
+		t.Fatalf("requested pages=%v want [1 1 2]", got)
+	}
+}
+
+func TestRestAPISyncSessionResumeRejectsInvalidCheckpoint(t *testing.T) {
+	withRestAPITestHooks(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
+	}))
+	defer server.Close()
+
+	c := mustRestAPIConnector(t, map[string]any{
+		"url":               server.URL,
+		"content_fields":    "title",
+		"id_field":          "id",
+		"pagination_type":   "page",
+		"pagination_config": map[string]any{"page_size": 2},
+		"request_delay":     0,
+	})
+	mismatched, _ := json.Marshal(restAPISyncCursor{Offset: 2, SourceID: "anchor"})
+	noAnchor, _ := json.Marshal(restAPISyncCursor{Page: 1})
+	cases := []struct {
+		name       string
+		checkpoint *SyncCheckpoint
+	}{
+		{name: "missing cursor", checkpoint: &SyncCheckpoint{}},
+		{name: "malformed cursor", checkpoint: &SyncCheckpoint{Cursor: "{"}},
+		{name: "pagination mismatch", checkpoint: &SyncCheckpoint{Cursor: string(mismatched)}},
+		{name: "missing source anchor", checkpoint: &SyncCheckpoint{Cursor: string(noAnchor)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: tc.checkpoint})
+			if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+				t.Fatalf("OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+			}
+		})
+	}
+}
+
+func TestRestAPISyncSessionResumeRejectsMissingAnchor(t *testing.T) {
+	withRestAPITestHooks(t)
+	var mu sync.Mutex
+	var requested []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		mu.Lock()
+		requested = append(requested, page)
+		mu.Unlock()
+		items := []any{}
+		switch page {
+		case "1":
+			items = []any{
+				map[string]any{"id": "10", "title": "Ten"},
+				map[string]any{"id": "11", "title": "Eleven"},
+			}
+		default:
+			items = []any{
+				map[string]any{"id": "2", "title": "Two"},
+				map[string]any{"id": "3", "title": "Three"},
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"items": items})
+	}))
+	defer server.Close()
+
+	c := mustRestAPIConnector(t, map[string]any{
+		"url":               server.URL,
+		"content_fields":    "title",
+		"id_field":          "id",
+		"pagination_type":   "page",
+		"pagination_config": map[string]any{"page_size": 2},
+		"batch_size":        2,
+		"request_delay":     0,
+	})
+	raw, _ := json.Marshal(restAPISyncCursor{Page: 1, SourceID: restAPIHash128("rest_api:2")})
+	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Cursor: string(raw)}})
+	if err != nil {
+		t.Fatalf("resume OpenSync: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("NextBatch = %v, want ErrSyncResumeInvalid", err)
+	}
+	mu.Lock()
+	got := append([]string(nil), requested...)
+	mu.Unlock()
+	if len(got) != 1 || got[0] != "1" {
+		t.Fatalf("requested pages=%v want [1]", got)
 	}
 }

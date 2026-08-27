@@ -192,67 +192,60 @@ def naive_module():
             DoclingParser=_ByDocling,
             TCADPParser=_Parser,
         )
-        _stub("deepdoc.parser.figure_parser",
-              VisionFigureParser=_Parser,
-              vision_figure_parser_docx_wrapper_naive=lambda *a, **k: None,
-              vision_figure_parser_pdf_wrapper=lambda *a, **k: None)
-        _stub("deepdoc.parser.pdf_parser",
-              PlainParser=_ByPlaintext,
-              VisionParser=_Parser,
-              RAGFlowPdfParser=_Parser)
+        _stub("deepdoc.parser.figure_parser", VisionFigureParser=_Parser, vision_figure_parser_docx_wrapper_naive=lambda *a, **k: None, vision_figure_parser_pdf_wrapper=lambda *a, **k: None)
+        _stub("deepdoc.parser.pdf_parser", PlainParser=_ByPlaintext, VisionParser=_Parser, RAGFlowPdfParser=_Parser)
         _stub("deepdoc.parser.docling_parser", DoclingParser=_ByDocling)
         _stub("deepdoc.parser.tcadp_parser", TCADPParser=_Parser)
         _stub("deepdoc.parser.utils", extract_pdf_outlines=lambda *a, **k: [])
 
-        _stub("common.parser_config_utils",
-              normalize_layout_recognizer=normalize_layout_recognizer,
-              MINERU_OPTION_KEYS=MINERU_OPTION_KEYS,
-              has_mineru_options=has_mineru_options)
+        _stub("common.parser_config_utils", normalize_layout_recognizer=normalize_layout_recognizer, MINERU_OPTION_KEYS=MINERU_OPTION_KEYS, has_mineru_options=has_mineru_options)
         _stub("common.float_utils", normalize_overlapped_percent=lambda x: x)
         _stub("common.text_utils", normalize_arabic_presentation_forms=lambda x: x)
         _stub("common.token_utils", num_tokens_from_string=lambda s: len((s or "").split()))
 
-        _stub("rag.utils.file_utils",
-              extract_embed_file=lambda *a, **k: None,
-              extract_links_from_pdf=lambda *a, **k: [],
-              extract_links_from_docx=lambda *a, **k: [],
-              extract_html=lambda *a, **k: (None, None))
+        _stub(
+            "rag.utils.file_utils",
+            extract_embed_file=lambda *a, **k: None,
+            extract_links_from_pdf=lambda *a, **k: [],
+            extract_links_from_docx=lambda *a, **k: [],
+            extract_html=lambda *a, **k: (None, None),
+        )
 
-        _stub("rag.nlp",
-              num_tokens_from_string=lambda s: len((s or "").split()),
-              find_codec=lambda b: "utf-8",
-              rag_tokenizer=types.SimpleNamespace(tokenize=lambda s: ((s or "").split(), [])),
-              concat_img=lambda *a, **k: None,
-              naive_merge=lambda *a, **k: [],
-              naive_merge_with_images=lambda *a, **k: [],
-              naive_merge_docx=lambda *a, **k: [],
-              tokenize_chunks=lambda *a, **k: [],
-              doc_tokenize_chunks_with_images=lambda *a, **k: [],
-              tokenize_chunks_with_images=lambda *a, **k: [],
-              tokenize_table=lambda *a, **k: [],
-              append_context2table_image4pdf=lambda *a, **k: [])
+        _stub(
+            "rag.nlp",
+            num_tokens_from_string=lambda s: len((s or "").split()),
+            find_codec=lambda b: "utf-8",
+            rag_tokenizer=types.SimpleNamespace(tokenize=lambda s: ((s or "").split(), [])),
+            concat_img=lambda *a, **k: None,
+            naive_merge=lambda *a, **k: [],
+            naive_merge_with_images=lambda *a, **k: [],
+            naive_merge_docx=lambda *a, **k: [],
+            tokenize_chunks=lambda *a, **k: [],
+            doc_tokenize_chunks_with_images=lambda *a, **k: [],
+            tokenize_chunks_with_images=lambda *a, **k: [],
+            tokenize_table=lambda *a, **k: [],
+            append_context2table_image4pdf=lambda *a, **k: [],
+        )
 
-        _stub("rag.llm.ocr_model",
-              ensure_mineru_from_env=lambda *a, **k: None,
-              get_first_provider_model_name=lambda *a, **k: None)
+        _stub("rag.llm.ocr_model", ensure_mineru_from_env=lambda *a, **k: None, get_first_provider_model_name=lambda *a, **k: None)
 
-        _stub("api.db.joint_services.tenant_model_service",
-              resolve_model_config=lambda *a, **k: None,
-              ensure_mineru_from_env=lambda *a, **k: None,
-              get_tenant_default_model_by_type=lambda *a, **k: None,
-              ensure_opendataloader_from_env=lambda *a, **k: None,
-              ensure_paddleocr_from_env=lambda *a, **k: None,
-              ensure_somark_from_env=lambda *a, **k: None,
-              get_first_provider_model_name=lambda *a, **k: None,
-              get_composite_model_name_by_id=lambda *a, **k: (_ for _ in ()).throw(LookupError()))
+        _stub(
+            "api.db.joint_services.tenant_model_service",
+            resolve_model_config=lambda *a, **k: None,
+            ensure_mineru_from_env=lambda *a, **k: None,
+            get_tenant_default_model_by_type=lambda *a, **k: None,
+            ensure_opendataloader_from_env=lambda *a, **k: None,
+            ensure_paddleocr_from_env=lambda *a, **k: None,
+            ensure_somark_from_env=lambda *a, **k: None,
+            get_first_provider_model_name=lambda *a, **k: None,
+            get_composite_model_name_by_id=lambda *a, **k: (_ for _ in ()).throw(LookupError()),
+        )
 
         _stub("api.db.services.llm_service", LLMBundle=_Parser)
 
         # Stub the docx stack so the file_format checks at import time succeed.
         _stub("docx", Document=_Parser)
-        _stub("docx.opc.pkgreader",
-              _SerializedRelationships=_Parser,
-              _SerializedRelationship=_Parser)
+        _stub("docx.opc.pkgreader", _SerializedRelationships=_Parser, _SerializedRelationship=_Parser)
         _stub("docx.table", Table=_Parser)
         _stub("docx.text.paragraph", Paragraph=_Parser)
         _stub("docx.opc.oxml", parse_xml=lambda *a, **k: None)
@@ -262,9 +255,7 @@ def naive_module():
         # Load naive.py from source — we can do this even with stubs in place
         # because the module only imports the names listed above.
         repo_root = Path(__file__).resolve().parents[3]
-        spec = importlib.util.spec_from_file_location(
-            "rag.app.naive_test_module", repo_root / "rag" / "app" / "naive.py"
-        )
+        spec = importlib.util.spec_from_file_location("rag.app.naive_test_module", repo_root / "rag" / "app" / "naive.py")
         module = importlib.util.module_from_spec(spec)
         sys.modules["rag.app.naive_test_module"] = module
         spec.loader.exec_module(module)
@@ -301,7 +292,9 @@ def test_dispatch_does_not_fall_back_to_mineru_for_plain_text_with_mineru_option
     """layout_recognize='Plain Text' is a known keyword — the dispatcher
     must keep routing to by_plaintext even if mineru_* options are set."""
     parser, name, _lr, _op, _model = _dispatch(
-        naive_module, "Plain Text", {"mineru_lang": "English"},
+        naive_module,
+        "Plain Text",
+        {"mineru_lang": "English"},
     )
     assert name == "plaintext"
     assert parser is _ByPlaintext
@@ -309,7 +302,9 @@ def test_dispatch_does_not_fall_back_to_mineru_for_plain_text_with_mineru_option
 
 def test_dispatch_does_not_fall_back_to_mineru_for_plaintext_with_mineru_options(naive_module):
     parser, name, _lr, _op, _model = _dispatch(
-        naive_module, "plaintext", {"mineru_lang": "English"},
+        naive_module,
+        "plaintext",
+        {"mineru_lang": "English"},
     )
     assert name == "plaintext"
     assert parser is _ByPlaintext
@@ -317,7 +312,9 @@ def test_dispatch_does_not_fall_back_to_mineru_for_plaintext_with_mineru_options
 
 def test_dispatch_does_not_fall_back_to_mineru_for_deepdoc_with_mineru_options(naive_module):
     parser, name, _lr, _op, _model = _dispatch(
-        naive_module, "DeepDOC", {"mineru_lang": "English"},
+        naive_module,
+        "DeepDOC",
+        {"mineru_lang": "English"},
     )
     assert name == "deepdoc"
     assert parser is _ByDeepdoc
@@ -329,7 +326,9 @@ def test_dispatch_falls_back_to_mineru_only_for_unknown_layout_recognize(naive_m
     by_mineru so the operator's MinerU intent is honored (issue #17114)."""
     stale_uuid = "06d85f8e819111f1995ef33d60f3a479"
     parser, name, _lr, _op, _model = _dispatch(
-        naive_module, stale_uuid, {"mineru_lang": "English"},
+        naive_module,
+        stale_uuid,
+        {"mineru_lang": "English"},
     )
     assert name == "mineru"
     # The fallback branch reassigns parser=by_mineru directly (not via
