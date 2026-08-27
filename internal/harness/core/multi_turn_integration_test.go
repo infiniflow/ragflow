@@ -605,7 +605,7 @@ func TestMultiTurn_ConcurrentSameRunner(t *testing.T) {
 					break
 				}
 				if ev.Err != nil {
-					errCh <- fmt.Errorf("run %d err: %v", id, ev.Err)
+					errCh <- fmt.Errorf("run %d err: %w", id, ev.Err)
 				}
 			}
 		}(i)

@@ -983,7 +983,7 @@ func assertRestAPIURLSafe(ctx context.Context, rawURL string) (string, net.IP, e
 	if restAPISSRFAllowLoopback {
 		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 		if err != nil {
-			return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
+			return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
 		}
 		if len(addrs) == 0 {
 			return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
@@ -993,7 +993,7 @@ func assertRestAPIURLSafe(ctx context.Context, rawURL string) (string, net.IP, e
 
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
+		return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
 	}
 	var first net.IP
 	for _, addr := range addrs {

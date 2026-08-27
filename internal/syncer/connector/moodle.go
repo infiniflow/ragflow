@@ -935,7 +935,7 @@ func moodleAssertURLSafe(ctx context.Context, rawURL, originURL string) (string,
 	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
+		return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
 	}
 	if len(addrs) == 0 {
 		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
