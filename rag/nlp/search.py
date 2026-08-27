@@ -18,6 +18,7 @@ import logging
 import re
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
+from html import unescape
 
 from rag.nlp import rag_tokenizer, query
 import numpy as np
@@ -29,6 +30,22 @@ from common.tag_feature_utils import parse_tag_features
 from common import settings
 
 from common.misc_utils import thread_pool_exec
+
+
+def _validated_highlight(highlight, content):
+    """Return a highlight only when one of its fragments occurs in the chunk."""
+    if not isinstance(highlight, str) or not highlight.strip() or not isinstance(content, str):
+        return None
+
+    def normalize(value):
+        value = unescape(re.sub(r"<[^>]*>", " ", value))
+        return re.sub(r"\s+", " ", value).strip().casefold()
+
+    normalized_content = normalize(content)
+    fragments = [normalize(fragment) for fragment in re.split(r"\.\.\.|…", highlight)]
+    if any(fragment and fragment in normalized_content for fragment in fragments):
+        return highlight
+    return None
 
 
 def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
@@ -745,10 +762,9 @@ class Dealer:
                 "row_id": chunk.get("row_id()"),
             }
             if highlight and sres.highlight:
-                if id in sres.highlight:
-                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
-                else:
-                    d["highlight"] = d["content_with_weight"]
+                highlight_value = _validated_highlight(sres.highlight.get(id), d["content_with_weight"])
+                if highlight_value is not None:
+                    d["highlight"] = remove_redundant_spaces(highlight_value)
             ranks["chunks"].append(d)
 
         if aggs:

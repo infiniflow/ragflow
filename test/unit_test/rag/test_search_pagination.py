@@ -35,7 +35,7 @@ sys.modules.setdefault("rag.nlp.query", _fake_query)
 sys.modules.setdefault("rag.nlp.rag_tokenizer", _fake_tokenizer)
 sys.modules.setdefault("common.settings", types.ModuleType("common.settings"))
 
-from rag.nlp.search import Dealer, settings  # noqa: E402
+from rag.nlp.search import Dealer, _validated_highlight, settings  # noqa: E402
 
 
 def _search_result(total):
@@ -52,6 +52,12 @@ def _search_result(total):
         for chunk_id in ids
     }
     return Dealer.SearchResult(total=total, ids=ids, query_vector=[0.1], field=fields, highlight={})
+
+
+def test_validated_highlight_requires_same_chunk_content_overlap():
+    assert _validated_highlight("prefix <em>needle</em> suffix", "prefix needle suffix") == "prefix <em>needle</em> suffix"
+    assert _validated_highlight("<em>other</em>", "prefix needle suffix") is None
+    assert _validated_highlight("<em>needle</em>", "") is None
 
 
 @pytest.mark.asyncio
