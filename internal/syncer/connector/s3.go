@@ -451,10 +451,9 @@ func (s *s3PruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 		if hasMore {
 			next := strings.TrimPrefix(nextStartAfter, s.connector.sourceID(""))
 			if next == "" || next == previousStartAfter {
-				s.done = true
-			} else {
-				s.startAfter = next
+				return PruneBatch{}, fmt.Errorf("%s listing did not advance from %q", s.connector.sourceName(), previousStartAfter)
 			}
+			s.startAfter = next
 		} else {
 			s.done = true
 		}

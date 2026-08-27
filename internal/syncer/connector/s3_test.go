@@ -298,6 +298,38 @@ func TestS3ConnectorOpenPruneStreamsAcrossPages(t *testing.T) {
 	}
 }
 
+func TestS3ConnectorOpenPruneErrorsWhenPaginationDoesNotAdvance(t *testing.T) {
+	tests := []struct {
+		name           string
+		nextStartAfter string
+	}{
+		{name: "empty cursor", nextStartAfter: ""},
+		{name: "unchanged cursor", nextStartAfter: s3SourceID(s3Source, "bucket", "docs/a.txt")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			connector := newTestS3Connector(t, []s3Object{{Key: "docs/a.txt", Size: 1}})
+			connector.listObjects = func(ctx context.Context, startAfter string, maxKeys int32) ([]s3Object, string, bool, error) {
+				return []s3Object{{Key: "docs/a.txt", Size: 1}}, test.nextStartAfter, true, nil
+			}
+			session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+			if err != nil {
+				t.Fatalf("OpenPrune: %v", err)
+			}
+			batch, err := session.NextBatch(context.Background())
+			if err == nil || errors.Is(err, io.EOF) {
+				t.Fatalf("NextBatch error = %v, want non-EOF pagination error", err)
+			}
+			if !strings.Contains(err.Error(), "listing did not advance") {
+				t.Fatalf("NextBatch error = %q, want listing did not advance", err)
+			}
+			if len(batch.Documents) != 0 {
+				t.Fatalf("NextBatch returned partial documents = %+v", batch.Documents)
+			}
+		})
+	}
+}
+
 func TestS3ConnectorValidate(t *testing.T) {
 	ctx := context.Background()
 	missingBucket := &S3Connector{authMethod: "access_key", accessKeyID: "access", secretKey: "secret", batchSize: 2}
