@@ -662,7 +662,7 @@ def _run_configured_chat(
     kb_id = "abcdefabcdefabcdefabcdefabcdefab"
     if embd_mdl is None:
         embd_mdl = object()
-    resolved_field_map = field_map or {"amount": "number"}
+    resolved_field_map = field_map if field_map is not None else {"amount": "number"}
     get_field_map = Mock(return_value=resolved_field_map)
     monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
     monkeypatch.setattr(
