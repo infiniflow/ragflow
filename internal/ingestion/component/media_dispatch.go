@@ -35,6 +35,8 @@ import (
 	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -43,6 +45,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
@@ -154,15 +157,9 @@ func maybeDispatchImage(
 	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
 	// then use OCR text only; otherwise call cv_mdl.describe().
 	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
-	eng := strings.EqualFold(lang, "english")
-
-	if ocrText != "" {
-		wordCount := len(strings.Fields(ocrText))
-		charCount := len([]rune(ocrText))
-		if (eng && wordCount > 32) || charCount > 32 {
-			// OCR returned substantial text — skip VLM.
-			return imageDispatchResult(ocrText, dataURI), true, nil
-		}
+	if vlmGateShouldSkip(ocrText, lang) {
+		// OCR returned substantial text — skip VLM.
+		return imageDispatchResult(ocrText, dataURI), true, nil
 	}
 
 	// Short OCR text (or no text): supplement with VLM describe.
@@ -443,6 +440,23 @@ func videoMIME(filename string) string {
 }
 
 // --- OCR helpers for picture dispatch ---
+
+// vlmGateShouldSkip determines whether the OCR text is substantial enough
+// to skip the secondary VLM description call.
+// Mirrors Python picture.py:chunk():
+//
+//	txt = txt.strip()
+//	if (eng and len(txt.split()) > 32) or len(txt) > 32 -> skip VLM
+func vlmGateShouldSkip(ocrText, lang string) bool {
+	ocrText = strings.TrimSpace(ocrText)
+	if ocrText == "" {
+		return false
+	}
+	eng := strings.EqualFold(lang, "english")
+	wordCount := len(strings.Fields(ocrText))
+	charCount := utf8.RuneCountInString(ocrText)
+	return (eng && wordCount > 32) || charCount > 32
+}
 
 // runPaddleOCRImage tries PaddleOCR remote API for image text extraction.
 // Mirrors Python's picture.py:_try_paddleocr_image() which creates a
