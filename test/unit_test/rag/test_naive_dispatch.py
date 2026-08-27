@@ -90,10 +90,16 @@ def test_normalize_layout_recognizer_passes_through_known_keywords():
 
 
 def test_normalize_layout_recognizer_strips_known_provider_suffix():
+    assert normalize_layout_recognizer("my-llm@my-instance@my-provider@monkeyocrv2") == ("MonkeyOCRv2", "my-llm@my-instance@my-provider@monkeyocrv2")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@mineru") == ("MinerU", "my-llm@my-instance@my-provider@mineru")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@paddleocr") == ("PaddleOCR", "my-llm@my-instance@my-provider@paddleocr")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@opendataloader") == ("OpenDataLoader", "my-llm@my-instance@my-provider@opendataloader")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@somark") == ("SoMark", "my-llm@my-instance@my-provider@somark")
+
+
+def test_normalize_layout_recognizer_accepts_monkeyocrv2_keywords():
+    assert normalize_layout_recognizer("MonkeyOCRv2") == ("MonkeyOCRv2", None)
+    assert normalize_layout_recognizer("MonkeyOCRv2-Parsing") == ("MonkeyOCRv2", None)
 
 
 def test_normalize_layout_recognizer_passes_stale_uuid_through():

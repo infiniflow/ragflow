@@ -29,9 +29,19 @@ class MonkeyOCRv2Parser:
     def _convert_zip(self, archive_bytes):
         sections, tables = [], []
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-            roots = {n.split("/", 1)[0] for n in archive.namelist() if n.endswith(".md")}
+            names = archive.namelist()
+            roots = {
+                name.split("/", 1)[0]
+                for name in names
+                if "/" in name
+                and (
+                    name.endswith(".md")
+                    or "/jsons/" in name and name.endswith(".json")
+                    or name.endswith("/all_results.json")
+                )
+            }
             for root in roots:
-                candidates = [n for n in archive.namelist() if n.startswith(root + "/jsons/") and n.endswith(".json")]
+                candidates = [n for n in names if n.startswith(root + "/jsons/") and n.endswith(".json")]
                 records = []
                 for name in candidates:
                     try:
@@ -40,7 +50,7 @@ class MonkeyOCRv2Parser:
                         pass
                 if not records:
                     summary = f"{root}/all_results.json"
-                    if summary in archive.namelist():
+                    if summary in names:
                         try:
                             records = json.loads(archive.read(summary))
                             if isinstance(records, dict):
