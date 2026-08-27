@@ -496,6 +496,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if dispatched.Err != nil && fileTypeExt != utility.FileTypeOTHER {
 		return nil, dispatched.Err
 	}
+	reportParserWarnings(ctx, dispatched.Warnings)
 
 	// 3. Build the legacy `pages` slice. When the dispatch path
 	//    produced a JSON payload, we re-shape it into the page
@@ -582,6 +583,12 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.
 	return out, nil
+}
+
+func reportParserWarnings(ctx context.Context, warnings []string) {
+	for _, warning := range warnings {
+		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
+	}
 }
 
 // buildPagesFromBytes reshapes already-prepared page bytes into the

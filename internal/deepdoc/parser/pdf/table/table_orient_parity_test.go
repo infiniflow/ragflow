@@ -115,7 +115,7 @@ func TestEvaluateTableOrientation_MatchesPythonRecognitionConfidence(t *testing.
 	}
 
 	// ── Go's actual behavior ──
-	goAngle, _, goScores := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+	goAngle, _, goScores := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 
 	t.Logf("Python-expected angle: %d° (score0=%.3f, best=%.3f)", pyBest, pyScore0, pyBestScore)
 	t.Logf("Go angle: %d° scores=%v", goAngle, goScores)

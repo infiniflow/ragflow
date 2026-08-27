@@ -17,7 +17,6 @@
 package dao
 
 import (
-	"context"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -75,7 +74,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	db := setupFileTestDB(t)
 	seedFileTree(t, db)
 	d := NewFileDAO()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "report")
 	if err != nil {
@@ -108,7 +107,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	db := setupFileTestDB(t)
 	seedFileTree(t, db)
 	d := NewFileDAO()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Searching inside dirA must not match files outside that subtree.
 	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, "create_time", true, "report")
@@ -133,7 +132,7 @@ func TestFileDAO_GetByPfID_NoKeywordsListsDirectChildren(t *testing.T) {
 	db := setupFileTestDB(t)
 	seedFileTree(t, db)
 	d := NewFileDAO()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "")
 	if err != nil {

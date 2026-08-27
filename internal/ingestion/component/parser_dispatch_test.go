@@ -223,12 +223,17 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 
 // TestResolveOutputFormat_DefaultsAndWhitelist pins the two-layer
 // behavior of resolveOutputFormat: it returns the setup's
-// output_format when present (or "text" when absent), and
-// rejects values not in the allowed_output_format list.
+// output_format when present (or the per-family default when absent,
+// e.g. markdown→json, spreadsheet→html), and rejects values not in
+// the allowed_output_format list. Explicit image:text is rejected.
 func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	allowed := map[string][]string{
-		"pdf":      {"json", "markdown"},
-		"markdown": {"text", "json"},
+		"pdf":         {"json", "markdown"},
+		"markdown":    {"text", "json"},
+		"image":       {"json"},
+		"spreadsheet": {"json", "markdown", "html"},
+		"email":       {"text", "json"},
+		"audio":       {"text", "json"},
 	}
 	cases := []struct {
 		name    string
@@ -256,10 +261,40 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			want:   "markdown",
 		},
 		{
-			name:   "setup without output_format → default text",
+			name:   "setup without output_format → per-family default (markdown→json)",
 			setups: map[string]schema.ParserSetup{"markdown": {}},
 			family: "markdown",
+			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (spreadsheet→html)",
+			setups: map[string]schema.ParserSetup{"spreadsheet": {}},
+			family: "spreadsheet",
+			want:   "html",
+		},
+		{
+			name:   "setup without output_format → per-family default (image→json)",
+			setups: map[string]schema.ParserSetup{"image": {}},
+			family: "image",
+			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (email→text)",
+			setups: map[string]schema.ParserSetup{"email": {}},
+			family: "email",
 			want:   "text",
+		},
+		{
+			name:    "image explicit text (legacy) → strict reject",
+			setups:  map[string]schema.ParserSetup{"image": {"output_format": "text"}},
+			family:  "image",
+			wantErr: true,
+		},
+		{
+			name:    "image explicit TEXT uppercase → strict reject",
+			setups:  map[string]schema.ParserSetup{"image": {"output_format": "TEXT"}},
+			family:  "image",
+			wantErr: true,
 		},
 		{
 			name:    "pdf asking for html (not allowed) → reject",
@@ -268,10 +303,28 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:   "setup without output_format → per-family default (audio→json)",
+			setups: map[string]schema.ParserSetup{"audio": {}},
+			family: "audio",
+			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (pdf→json)",
+			setups: map[string]schema.ParserSetup{"pdf": {}},
+			family: "pdf",
+			want:   "json",
+		},
+		{
 			name:   "family with no whitelist → accept setup value",
 			setups: map[string]schema.ParserSetup{"video": {"output_format": "json"}},
 			family: "video",
 			want:   "json",
+		},
+		{
+			name:   "family with no whitelist empty → default text",
+			setups: map[string]schema.ParserSetup{"video": {}},
+			family: "video",
+			want:   "text",
 		},
 	}
 	for _, tc := range cases {
@@ -305,6 +358,65 @@ func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
 	}
 	if got != "json" {
 		t.Errorf("docx.output_format = %q, want %q", got, "json")
+	}
+}
+
+// TestDefaultOutputFormatForFamily_Sync verifies the dispatch default
+// stays in sync with the allowed whitelist and, except for the two
+// intentional overrides (email:text, audio:json), with defaultSetups.
+func TestDefaultOutputFormatForFamily_Sync(t *testing.T) {
+	allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
+	overrides := map[string]string{"email": "text", "audio": "json"}
+	for family, def := range map[string]string{
+		"pdf":         "json",
+		"spreadsheet": "html",
+		"doc":         "json",
+		"docx":        "json",
+		"slides":      "json",
+		"image":       "json",
+		"markdown":    "json",
+		"text&code":   "json",
+		"html":        "json",
+		"epub":        "json",
+		"json":        "json",
+		"email":       "text",
+		"audio":       "json",
+		"video":       "text",
+	} {
+		got, ok := defaultOutputFormatForFamily(family)
+		if !ok {
+			t.Errorf("defaultOutputFormatForFamily(%q) missing", family)
+			continue
+		}
+		if got != def {
+			t.Errorf("defaultOutputFormatForFamily(%q)=%q, want %q", family, got, def)
+		}
+		if list, hasWL := allowed[family]; hasWL && len(list) > 0 {
+			found := false
+			for _, c := range list {
+				if strings.EqualFold(c, got) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("default %q for %q not in allowed %v", got, family, list)
+			}
+		}
+		if ov, isOverride := overrides[family]; isOverride {
+			if got != ov {
+				t.Errorf("override %q got %q want %q", family, got, ov)
+			}
+			continue
+		}
+		if ds, ok := defaultSetups()[family]; ok {
+			if want, ok := ds["output_format"].(string); ok && want != got {
+				t.Errorf("family %q dispatch default %q != defaultSetups %q (should be synced or listed as override)", family, got, want)
+			}
+		}
+	}
+	if _, ok := defaultOutputFormatForFamily("unknown"); ok {
+		t.Errorf("unknown family should return !ok")
 	}
 }
 
