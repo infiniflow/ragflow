@@ -33,12 +33,6 @@ import (
 
 	"github.com/AkmalOt/gomsg"
 	"golang.org/x/net/html"
-	"golang.org/x/text/encoding"
-	"golang.org/x/text/encoding/charmap"
-	"golang.org/x/text/encoding/japanese"
-	"golang.org/x/text/encoding/korean"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/utility"
@@ -217,35 +211,6 @@ func targetFieldsSet(fields []string) map[string]bool {
 }
 
 // -- header decoding (RFC 2047) --
-
-// charsetEncoding maps a MIME charset label to its decoder, covering the
-// charsets common in real-world mail beyond utf-8: the Chinese families
-// (gb2312/gbk/gb18030, big5), shift_jis, euc-kr, and latin-1. It is shared by
-// the RFC 2047 header decoder and decodeMailPayload so headers and bodies
-// resolve a charset label identically.
-//
-// The "gb2312" label maps to GBK, not HZGB2312: mail labeled gb2312 carries
-// plain 8-bit GB2312 bytes, while HZGB2312 only decodes the 7-bit HZ escape
-// form used under the distinct "hz-gb-2312" label.
-func charsetEncoding(charset string) (encoding.Encoding, bool) {
-	switch strings.ToLower(strings.TrimSpace(charset)) {
-	case "gb2312", "gbk":
-		return simplifiedchinese.GBK, true
-	case "gb18030":
-		return simplifiedchinese.GB18030, true
-	case "hz-gb-2312":
-		return simplifiedchinese.HZGB2312, true
-	case "big5":
-		return traditionalchinese.Big5, true
-	case "shift_jis", "shift-jis", "sjis":
-		return japanese.ShiftJIS, true
-	case "euc-kr":
-		return korean.EUCKR, true
-	case "iso-8859-1", "iso8859-1", "latin1":
-		return charmap.ISO8859_1, true
-	}
-	return nil, false
-}
 
 // rfc2047Decoder decodes RFC 2047 encoded-words (e.g. "=?utf-8?B?...?=") in
 // header values. utf-8 is handled natively by mime; the CharsetReader covers
@@ -553,16 +518,8 @@ func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	charsets := buildCharsetChain(charset)
-	for _, enc := range charsets {
-		if enc == "" {
-			// raw bytes → already fallthrough
-			return string(payload)
-		}
-		decoded, err := decodeWithCharset(payload, enc)
-		if err == nil {
-			return decoded
-		}
+	if decoded, _, ok := decodeFirstCharsetMatch(payload, buildCharsetChain(charset)); ok {
+		return decoded
 	}
 	return string(payload)
 }
@@ -574,39 +531,6 @@ func buildCharsetChain(declared string) []string {
 	}
 	chain = append(chain, "utf-8", "gb2312", "gbk", "gb18030", "latin1")
 	return chain
-}
-
-func decodeWithCharset(payload []byte, charset string) (string, error) {
-	charset = strings.ToLower(strings.TrimSpace(charset))
-	switch charset {
-	case "utf-8", "utf8", "":
-		s := string(payload)
-		if !strings.ContainsRune(s, '\ufffd') {
-			return s, nil
-		}
-		return "", fmt.Errorf("invalid utf-8")
-	}
-	if enc, ok := charsetEncoding(charset); ok {
-		return decodeTransform(payload, enc.NewDecoder())
-	}
-	// Unknown charset: treat as latin-1.
-	runes := make([]rune, len(payload))
-	for i, b := range payload {
-		runes[i] = rune(b)
-	}
-	return string(runes), nil
-}
-
-func decodeTransform(payload []byte, decoder *encoding.Decoder) (string, error) {
-	reader := transform.NewReader(bytes.NewReader(payload), decoder)
-	decoded, err := io.ReadAll(reader)
-	if err != nil {
-		return "", err
-	}
-	if !strings.ContainsRune(string(decoded), '\ufffd') {
-		return string(decoded), nil
-	}
-	return "", fmt.Errorf("decode produced replacement characters")
 }
 
 // parseMSG parses an Outlook .msg (OLE2 compound document) file using the
