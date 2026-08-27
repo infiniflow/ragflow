@@ -241,6 +241,12 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	)
 
 	chunks := buildChunksFromRecordGroups(recordGroups, p, isPlainTextFormat(inputs))
+	// Enforce the title-family token ceiling (chunk_token_cap) right after
+	// build_chunks and BEFORE the on-demand crop, mirroring Python's
+	// invoke() order (build -> cap -> set_chunks).
+	if p.ChunkTokenCap > 0 {
+		chunks = enforceTitleTokenCap(chunks, p.ChunkTokenCap)
+	}
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
 		zap.String("variant", "hierarchy"),

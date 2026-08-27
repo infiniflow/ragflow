@@ -647,7 +647,8 @@ func TestDiscordResumeFingerprintMismatch(t *testing.T) {
 	}
 	session.Close()
 
-	// Run 2 filters to one channel, changing the enumeration: resume is ignored.
+	// Run 2 filters to one channel, changing the enumeration: resume must be
+	// rejected so the runner can restart the same fixed window.
 	secondConnector := newDiscordTestConnector(t, map[string]any{
 		"server_ids":  []any{"1001"},
 		"channels":    []any{"general"},
@@ -659,17 +660,8 @@ func TestDiscordResumeFingerprintMismatch(t *testing.T) {
 		FromBeginning: true,
 		Resume:        batch.Checkpoint,
 	})
-	if err != nil {
-		t.Fatalf("resumed OpenSync: %v", err)
-	}
-	defer resumed.Close()
-
-	first, err := resumed.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("resumed NextBatch: %v", err)
-	}
-	if first.Documents[0].SourceID != "DISCORD_m1" {
-		t.Fatalf("resumed doc = %q, want full re-scan from DISCORD_m1", first.Documents[0].SourceID)
+	if resumed != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resumed OpenSync = session %v, err %v, want ErrSyncResumeInvalid", resumed, err)
 	}
 }
 
@@ -690,17 +682,8 @@ func TestDiscordResumeInvalidCursor(t *testing.T) {
 		FromBeginning: true,
 		Resume:        &SyncCheckpoint{Cursor: "not-json"},
 	})
-	if err != nil {
-		t.Fatalf("OpenSync: %v", err)
-	}
-	defer session.Close()
-
-	batch, err := session.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("NextBatch: %v", err)
-	}
-	if batch.Documents[0].SourceID != "DISCORD_m1" {
-		t.Fatalf("doc = %q, want full re-scan from DISCORD_m1", batch.Documents[0].SourceID)
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 

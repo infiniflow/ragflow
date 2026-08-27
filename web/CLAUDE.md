@@ -25,6 +25,26 @@ npm run test       # Jest tests
 
 ## Development Conventions
 
+### Dual-Backend Variant Conventions (Go / Python)
+
+The frontend serves two backends, Go and Python. The active one is detected at runtime by `src/utils/backend-runtime.ts` (`/api/v1/language`, fetched once; `src/main.tsx` gates first render on it, so below the gate the variant never changes for the session lifetime). In dev, `API_PROXY_SCHEME` in `.env.development` selects which backend the dev server proxies to.
+
+All divergence between the two backends is funneled through dispatch points. Business code never branches on backend identity.
+
+1. Never import `@/utils/backend-runtime` anywhere except its two sanctioned boundaries (enforced by oxlint `no-restricted-imports`):
+   - `src/utils/backend-variant.tsx` — the dispatch primitives;
+   - `src/main.tsx` — the bootstrap gate.
+2. Branch only through the primitives from `@/utils/backend-variant`:
+   - JSX: `<BackendVariant go={...} python={...} />` inside a dispatcher file (a page `index.tsx` or form dispatcher) — never inline in business components.
+   - Values (field names, defaults, payload transforms): `pickByBackend({ go, python })` inside an adapter file.
+   - Hook-level needs (e.g. a query `enabled` flag): `useIsGoBackend()`.
+3. Routes never fork per backend: one route, one dispatcher component, with the variant implementations under `go/` and `python/` subdirectories. Reference example: `src/pages/dataset/setting/`.
+4. Variant file naming: `Xxx.go.tsx` / `Xxx.python.ts(x)` siblings behind a same-named dispatcher, or `go/` + `python/` subdirectories for whole pages. No temporal names (`Next`, `Legacy`, `New`).
+5. Small differences (a field's visibility, a field name) belong in capability-style adapter/config files reached through `pickByBackend`, not scattered inline ternaries in shared components.
+6. Runtime detection (`/api/v1/language`) is the ONLY source of backend identity in app code. Never read `API_PROXY_SCHEME` / `__API_PROXY_SCHEME__` or declare that global in `src/`, and never create another backend-detection helper (a deleted `api-proxy-scheme.ts` did exactly this — do not recreate it). The env var only configures the dev-server proxy in `vite.config.ts`; it is build-time, dev-only, and defaults to `python`, so it cannot say which backend is actually serving (enforced by oxlint `no-restricted-globals` for bare reads; the Vite `define` that injected it into the client bundle is removed).
+
+Migration status: complete. All former `isGoBackend()` call sites go through the primitives — per-variant transforms are dispatched inside `src/pages/agent/utils.ts` and `src/utils/pipeline-operator.ts`, extractor initial values inside `src/pages/agent/constant/pipeline.tsx`, the parser-change dialog inside `src/pages/dataset/dataset/change-parser-dialog.tsx`, and the dataset configuration route is a single dispatcher (`src/pages/dataset/setting/`). `no-restricted-imports` is enforced at `error`.
+
 ### CSS and Layout Debugging
 
 When fixing CSS/layout issues (especially flex truncation, ellipsis, or element sizing), **always inspect the full parent hierarchy** for `flex-shrink`, `min-width`, and `overflow` constraints before applying fixes like `min-w-0`. Do not repeatedly apply the same fix without verifying the root cause.

@@ -65,9 +65,9 @@
 - 🎬 [Pengelolaan Mandiri](#-pengelolaan-mandiri)
 - 🔧 [Konfigurasi](#-konfigurasi)
 - 🔧 [Membangun Image Docker](#-membangun-docker-image)
-- 🔨 [Meluncurkan aplikasi dari Sumber untuk Pengembangan](#-meluncurkan-aplikasi-dari-sumber-untuk-pengembangan)
+- 🔨 [Meluncurkan aplikasi dari Sumber untuk Pengembangan](#-menjalankan-aplikasi-dari-sumber-untuk-pengembangan)
 - 📚 [Dokumentasi](#-dokumentasi)
-- 📜 [Peta Jalan](#-peta-jalan)
+- 📜 [Peta Jalan](#-roadmap)
 - 🏄 [Komunitas](#-komunitas)
 - 🙌 [Kontribusi](#-kontribusi)
 
@@ -290,7 +290,7 @@ docker build --platform linux/amd64 \
   -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
-## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
+## 🔨 Menjalankan Aplikasi dari Sumber untuk Pengembangan
 
 1. Instal `uv`, atau lewati langkah ini jika sudah terinstal:
 

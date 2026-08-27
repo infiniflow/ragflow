@@ -8,7 +8,7 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -41,6 +41,7 @@ export function PdfFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
   const ownerTenantId = useOwnerTenantId();
+  const isGo = useIsGoBackend();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
   const parseMethod = useWatch({
@@ -109,7 +110,7 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <RmdirFormField prefix={prefix} />
       <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
-      {isGoBackend() && <DynamicPageRange prefix={prefix} />}
+      {isGo && <DynamicPageRange prefix={prefix} />}
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
         <ModelTreeSelectFormField

@@ -131,7 +131,7 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 			return fmt.Errorf("remote path '%s' does not exist on WebDAV server", c.remotePath)
 		}
 	}
-	return fmt.Errorf("WebDAV validation failed for path '%s': %v", testPath, err)
+	return fmt.Errorf("WebDAV validation failed for path '%s': %w", testPath, err)
 }
 
 // ValidateConnectorSetting validates WebDAV settings from an unsaved config.
@@ -177,7 +177,9 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 
 	session := &webdavSyncSession{documents: documents, batchSize: c.batchSize}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -257,20 +259,21 @@ func (s *webdavSyncSession) Close() error {
 }
 
 // applyResume advances past the last committed WebDAV document when retrying a task.
-func (s *webdavSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *webdavSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	if sourceID == "" {
-		return
+		return fmt.Errorf("webdav sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, doc := range s.documents {
 		if doc.SourceID == sourceID {
 			s.index = index + 1
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("webdav resume anchor %q was not found in the current listing: %w", sourceID, ErrSyncResumeInvalid)
 }
 
 // webdavSyncCheckpoint returns a resume point after a committed WebDAV document.

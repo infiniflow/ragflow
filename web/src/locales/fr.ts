@@ -1029,6 +1029,9 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       created: 'Créé',
       action: 'Action',
       embedModalTitle: 'Intégrer dans une page web',
+      embedUserIdPlaceholder: 'ex. user-001',
+      embedUserIdTooltip:
+        'Chaîne de texte (255 caractères maximum) identifiant l\'utilisateur final de la page intégrée. Elle est ajoutée à l\'URL d\'intégration comme paramètre userId.',
       comingSoon: 'Bientôt disponible',
       fullScreenTitle: 'Intégration complète',
       fullScreenDescription:
@@ -1501,6 +1504,7 @@ Exemple : Virtual Hosted Style`,
         'Connectez un site SharePoint via Microsoft Graph pour synchroniser ses bibliothèques de documents.',
       sharepointSiteUrlTip:
         'URL complète du site SharePoint à indexer, ex. : https://contoso.sharepoint.com/sites/MonSite. Nécessite une application Azure AD avec les permissions applicatives Sites.Read.All et Files.Read.All (consentement administrateur).',
+      azure_devopsDescription: 'Connectez Azure DevOps pour synchroniser les fichiers du dépôt et les pull requests.',
       bitbucketDescription:
         'Connectez Bitbucket pour synchroniser le contenu des PR.',
       bitbucketTopWorkspaceTip:
@@ -1815,6 +1819,8 @@ Exemple : Virtual Hosted Style`,
       listModelsLoading: 'Chargement des modèles…',
       selectModelBeforeVerify:
         'Veuillez sélectionner au moins un modèle avant la vérification.',
+      selectModelBeforeSave:
+        'Veuillez découvrir et sélectionner au moins un modèle avant l’enregistrement.',
       addCustomModel: 'Ajouter un modèle personnalisé',
       addCustomModelTitle: 'Ajouter un modèle personnalisé',
       editCustomModelTitle: 'Modifier le modèle',

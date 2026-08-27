@@ -373,8 +373,11 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	t.Cleanup(func() { dao.DB = orig })
 
 	dsl := map[string]any{
-		"globals": map[string]any{"sys.history": []any{}},
-		"history": []any{},
+		"globals": map[string]any{
+			"sys.history": []any{"user: stale replica turn"},
+			"env.topic":   "preserved",
+		},
+		"history": []any{[]any{"user", "stale replica turn"}},
 		"memory":  []any{},
 		"components": map[string]any{
 			"begin_0": map[string]any{
@@ -386,7 +389,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 				"upstream": []any{"begin_0"},
 			},
 		},
-		"path": []any{"begin_0", "message_0"},
+		"path": []any{"begin_0", "stale_fillup"},
 	}
 	makeCanvasWithDSL(t, "canvas-new-session", "user-1", "tenant-1", "v-new-session", dsl)
 
@@ -409,6 +412,16 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	}
 	if session.ID == "" {
 		t.Fatal("persisted session has an empty ID")
+	}
+	if history, ok := session.DSL["history"].([]any); !ok || len(history) != 2 {
+		t.Fatalf("new session inherited replica history: %#v", session.DSL["history"])
+	}
+	if path, ok := session.DSL["path"].([]any); !ok || len(path) != 0 {
+		t.Fatalf("new session inherited replica path: %#v", session.DSL["path"])
+	}
+	globals, _ := session.DSL["globals"].(map[string]any)
+	if globals["env.topic"] != "preserved" {
+		t.Fatalf("new session lost reusable env state: %#v", globals["env.topic"])
 	}
 
 	events, err = svc.RunAgent(context.Background(), "user-1", "canvas-new-session", session.ID, "", "1", nil)
@@ -1485,13 +1498,9 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	}
 }
 
-// TestRunAgent_RealCanvas_CompileFails pins the schema-failure
-// branch: when the DSL references a component name that is not
-// registered against runtime.DefaultFactory, canvas.Compile fails
-// (buildNodeBody returns 'factory: component: unknown component'),
-// and RunAgent must surface that as a wrapped ErrAgentStorageError
-// so mapAgentError classifies it as CodeServerError (500) with a
-// sanitized message — NOT the raw build error string.
+// TestRunAgent_RealCanvas_CompileFails pins the asynchronous compile-failure
+// branch. Once streaming has started, Runner must emit a typed internal error
+// with a stable public message rather than the raw component factory failure.
 func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
@@ -1544,13 +1553,13 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error event from Compile of DSL with unknown component name")
 	}
-	// The error message should mention ErrAgentStorageError but NOT
-	// contain the raw factory error substring (sanitised at the
-	// service layer). The factory error is wrapped inside the
-	// buildNodeBody / BuildWorkflow chain — its full text is
-	// preserved for the logs but not echoed as the SSE message.
-	if !strings.Contains(errs[0].Message, "agent storage error") {
-		t.Errorf("error message %q does not mention sanitised label", errs[0].Message)
+	// The raw factory error remains available to server logs, while the event
+	// carries an explicit internal kind and a stable public message.
+	if errs[0].Kind != canvas.RunErrorKindInternal {
+		t.Errorf("error kind = %q, want %q", errs[0].Kind, canvas.RunErrorKindInternal)
+	}
+	if errs[0].Message != canvas.InternalRunErrorMessage {
+		t.Errorf("error message = %q, want %q", errs[0].Message, canvas.InternalRunErrorMessage)
 	}
 }
 

@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import json
-import re
 from functools import partial
 
 from agent.component.base import ComponentParamBase, ComponentBase
@@ -81,7 +80,7 @@ class UserFillUp(ComponentBase):
                     ans = v
                 if not ans:
                     ans = ""
-                content = re.sub(r"\{%s\}" % k, ans, content)
+                content = content.replace("{%s}" % k, ans)
 
             self.set_output("tips", content)
         layout_recognize = self._param.layout_recognize or None

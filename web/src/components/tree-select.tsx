@@ -145,11 +145,18 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
           const titleMatch = node.title
             .toLowerCase()
             .includes(term.toLowerCase());
+          // A matching parent keeps its entire subtree so its children stay
+          // visible; otherwise only branches containing matching descendants
+          // are kept.
+          if (titleMatch) {
+            acc.push(node);
+            return acc;
+          }
           const filteredChildren = node.children
             ? filterTree(node.children, term)
             : undefined;
-          if (titleMatch || filteredChildren?.length) {
-            acc.push({ ...node, children: filteredChildren ?? node.children });
+          if (filteredChildren?.length) {
+            acc.push({ ...node, children: filteredChildren });
           }
           return acc;
         }, []);

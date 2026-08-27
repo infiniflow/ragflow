@@ -165,6 +165,7 @@ export interface IRetrievalForm {
   similarity_threshold?: number;
   keywords_similarity_weight?: number;
   top_n?: number;
+  rerank_candidates_count?: number;
   top_k?: number;
   rerank_id?: string;
   tenant_rerank_id?: string;

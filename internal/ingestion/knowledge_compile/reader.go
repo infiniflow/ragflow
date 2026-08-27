@@ -65,6 +65,10 @@ type mergedWikiPageReader interface {
 	LoadMergedWikiPages(ctx context.Context, tenant, kb string) ([]kccommon.Product, error)
 }
 
+type documentWikiPageReader interface {
+	LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error)
+}
+
 // engineReader loads the per-document compiled products through the global
 // DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
 // process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
@@ -229,6 +233,46 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 		return nil, nil
 	}
 	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "compile_kwd": compileKwdWikiPage}
+	var pages []kccommon.Product
+	for offset := 0; ; offset += loadDocProductsLimit {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
+			Limit: loadDocProductsLimit, Offset: offset,
+			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
+			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
+			Filter:       filter,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if res == nil || len(res.Chunks) == 0 {
+			break
+		}
+		for _, row := range res.Chunks {
+			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && metaString(product.Meta, "kind") == "page" {
+				pages = append(pages, product)
+			}
+		}
+		if len(res.Chunks) < loadDocProductsLimit {
+			break
+		}
+	}
+	return pages, nil
+}
+
+func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error) {
+	eng := r.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil || len(slugs) == 0 {
+		return nil, nil
+	}
+	filter := map[string]interface{}{
+		"available_int": 0,
+		"compile_kwd":   compileKwdWikiPage,
+		"slug_kwd":      slugs,
+	}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
 		res, err := eng.Search(ctx, &types.SearchRequest{

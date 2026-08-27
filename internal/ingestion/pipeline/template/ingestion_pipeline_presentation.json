@@ -26,7 +26,7 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "PresentationChunker:HappyHillsGlow"
+                    "PageChunker:HappyHillsGlow"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -96,12 +96,12 @@
                     "Extractor:AutoExtractDefault"
                 ]
             },
-            "PresentationChunker:HappyHillsGlow": {
+            "PageChunker:HappyHillsGlow": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
-                    "component_name": "PresentationChunker",
+                    "component_name": "PageChunker",
                     "params": {
                         "outputs": {
                             "chunks": {
@@ -117,7 +117,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "PresentationChunker:HappyHillsGlow"
+                    "PageChunker:HappyHillsGlow"
                 ],
                 "downstream": [
                     "Tokenizer:TallTreesDance"
@@ -161,15 +161,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-PresentationChunker:HappyHillsGlowend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-PageChunker:HappyHillsGlowend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "PresentationChunker:HappyHillsGlow",
+                    "target": "PageChunker:HappyHillsGlow",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__PresentationChunker:HappyHillsGlowstart-Extractor:AutoExtractDefaultend",
-                    "source": "PresentationChunker:HappyHillsGlow",
+                    "id": "xy-edge__PageChunker:HappyHillsGlowstart-Extractor:AutoExtractDefaultend",
+                    "source": "PageChunker:HappyHillsGlow",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -271,10 +271,10 @@
                                 }
                             }
                         },
-                        "label": "PresentationChunker",
+                        "label": "PageChunker",
                         "name": "Presentation Chunker_0"
                     },
-                    "id": "PresentationChunker:HappyHillsGlow",
+                    "id": "PageChunker:HappyHillsGlow",
                     "measured": {
                         "height": 74,
                         "width": 200

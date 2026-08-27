@@ -52,7 +52,7 @@ import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
-import { isGoDatasetBackend } from '../../utils/api-proxy-scheme';
+import { useIsGoBackend } from '../../utils/backend-variant';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -102,11 +102,11 @@ export function FilesTable({
     fileRenameLoading,
   } = useRenameCurrentFile();
 
-  // Check if skills feature is enabled (only in hybrid or go mode)
-  const isSkillsEnabled = useMemo(() => isGoDatasetBackend(), []);
+  // Skills are only served by the Go backend
+  const isSkillsEnabled = useIsGoBackend();
 
   // Sort files with skills folder first, then by time
-  // Filter out skills folder if not in hybrid/go mode
+  // Filter out the skills folder on the Python backend
   const { sortedFiles, hiddenCount } = useMemo(() => {
     if (!files) return { sortedFiles: [] as IFile[], hiddenCount: 0 };
 
@@ -133,7 +133,10 @@ export function FilesTable({
       return (b.create_time || 0) - (a.create_time || 0);
     });
 
-    return { sortedFiles: sorted, hiddenCount: files.length - filteredFiles.length };
+    return {
+      sortedFiles: sorted,
+      hiddenCount: files.length - filteredFiles.length,
+    };
   }, [files, isSkillsEnabled]);
 
   // Keep the displayed total consistent with the rows actually shown:
@@ -287,6 +290,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
+            setRowSelection={setRowSelection}
           />
         );
       },
@@ -414,6 +418,7 @@ export function FilesTable({
           onOk={onFileRenameOk}
           initialName={initialFileName}
           loading={fileRenameLoading}
+          forbidSlash
         ></RenameDialog>
       )}
     </>

@@ -43,6 +43,48 @@ from rag.prompts.generator import content_tagging, gen_metadata, keyword_extract
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
 
+# Elasticsearch keyword fields reject terms whose UTF-8 encoding exceeds
+# 32766 bytes. Split oversized terms so ingestion never fails because a
+# malformed LLM response produced a single huge "keyword".
+_ES_KEYWORD_MAX_TERM_BYTES = 32766
+
+
+def _sanitize_keyword_term(term: str) -> list[str]:
+    """Return keyword pieces that fit into an Elasticsearch keyword field.
+
+    If ``term`` is small enough it is returned as-is. Otherwise it is
+    truncated at a character boundary so the UTF-8 encoding never exceeds
+    the ES keyword limit. This avoids corrupting multi-byte characters by
+    slicing raw bytes.
+    """
+    term = term.strip()
+    if not term:
+        return []
+    term_byte_length = len(term.encode("utf-8"))
+    if term_byte_length <= _ES_KEYWORD_MAX_TERM_BYTES:
+        return [term]
+
+    logging.warning(
+        "Sanitizing oversized keyword term (%d bytes, limit %d)",
+        term_byte_length,
+        _ES_KEYWORD_MAX_TERM_BYTES,
+    )
+    length = 0
+    end = 0
+    for index, character in enumerate(term):
+        character_bytes = len(character.encode("utf-8"))
+        if length + character_bytes > _ES_KEYWORD_MAX_TERM_BYTES:
+            end = index
+            break
+        length += character_bytes
+    else:
+        end = len(term)
+    truncated = term[:end].rstrip()
+    if not truncated:
+        return []
+    return [truncated]
+
+
 async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:
     """Extract keywords for chunks.
 
@@ -67,7 +109,7 @@ async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", cached) if k.strip()]
+                d["important_kwd"] = [kw for k in re.split(r"[,，;；、\r\n]+", cached) for kw in _sanitize_keyword_term(k)]
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
 
@@ -422,16 +464,8 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     return template_ids
 
 
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order: template ``llm_id`` → doc ``parser_config.llm_id``
-    → ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
+def _resolve_ingestion_chat_llm_id(ctx) -> str:
+    """Pick the ingestion model id for a knowledge-compilation template."""
     doc_cfg = getattr(ctx, "parser_config", None) or {}
     if isinstance(doc_cfg, dict):
         did = doc_cfg.get("llm_id")
@@ -1058,36 +1092,14 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     if not active_templates:
         return
 
-    llm_bundle_cache: dict[str, LLMBundle] = {}
-    chat_mdl_by_tid: dict[str, LLMBundle] = {}
-    filtered_templates: list[tuple[str, dict]] = []
-    for template_id, parser_cfg in active_templates:
-        chat_llm_id = _resolve_template_chat_llm_id(parser_cfg, ctx)
-        if chat_llm_id not in llm_bundle_cache:
-            try:
-                cfg = resolve_model_config(
-                    ctx.tenant_id,
-                    LLMType.CHAT,
-                    chat_llm_id,
-                )
-                llm_bundle_cache[chat_llm_id] = LLMBundle(
-                    ctx.tenant_id,
-                    cfg,
-                    lang=ctx.language,
-                )
-            except Exception:
-                logging.exception(
-                    "document_structure_compile: cannot resolve chat model %s for template %s; skipping",
-                    chat_llm_id,
-                    template_id,
-                )
-                continue
-        chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
-        filtered_templates.append((template_id, parser_cfg))
-
-    if not filtered_templates:
+    chat_llm_id = _resolve_ingestion_chat_llm_id(ctx)
+    try:
+        cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, chat_llm_id)
+        chat_mdl = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
+    except Exception:
+        logging.exception("document_structure_compile: cannot resolve ingestion chat model %s", chat_llm_id)
         return
-    active_templates = filtered_templates
+    chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
 
     tree_templates: list[tuple[str, dict]] = []
     non_tree_templates: list[tuple[str, dict]] = []

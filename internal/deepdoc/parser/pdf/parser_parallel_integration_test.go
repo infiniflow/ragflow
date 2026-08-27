@@ -29,7 +29,7 @@ func TestParser_PageParallel_DeterministicOrder(t *testing.T) {
 		t.Helper()
 		setPoolSize(t, poolSize)
 		p := NewParser(pdf.DefaultParserConfig())
-		result, err := p.Parse(context.Background(), mustReadPDF(t, name), client)
+		result, err := p.Parse(t.Context(), mustReadPDF(t, name), client)
 		if err != nil {
 			t.Fatalf("fixture=%s poolSize=%d: Parse: %v", name, poolSize, err)
 		}

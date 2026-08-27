@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/tokenizer"
 )
 
 // setupHandlerAgentsTestDB sets up SQLite in-memory DB with tables needed for agent handler tests.
@@ -713,14 +714,18 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 // SSE tests. It emits a pre-configured sequence of canvas.RunEvent
 // values on its RunAgent channel and then closes — enough to verify
 // the SSE wire format (Content-Type, one `data: {...}\n\n` frame per
-// event, trailing `data:[DONE]\n\n`) without standing up the eino
+// event, trailing `data: [DONE]\n\n`) without standing up the eino
 // runner or a live DB.
 type stubChatRunner struct {
-	events []canvas.RunEvent
-	err    error
+	events    []canvas.RunEvent
+	err       error
+	sessionID string
+	userInput any
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+	s.sessionID = sessionID
+	s.userInput = userInput
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -734,7 +739,7 @@ func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any, _
 
 // TestAgentChatCompletions_StreamSetsContentType covers the SSE
 // path: the handler streams canvas.RunEvent frames as
-// `data: {...}\n\n` with a trailing `data:[DONE]\n\n` terminator.
+// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator.
 // The frame shape is the Python agent-canvas envelope
 // {event,message_id,task_id,session_id,data:{content}}. task_id is a wire alias
 // for session_id. See
@@ -1035,32 +1040,554 @@ func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userI
 	return ch, nil
 }
 
-// TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices covers
-// the openai-compatible non-stream branch — the test contract requires
-// "choices" at the top level (not inside data).
-func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T) {
+// TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion verifies
+// the non-stream branch returns the direct OpenAI completion object and that
+// Agent events are converted into one final assistant message.
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
-		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"model":"m","messages":[{"role":"user","content":"hi"}]}`))
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"model":"m","messages":[
+			{"role":"system","content":"Be concise."},
+			{"role":"user","content":"What is 1+1?"},
+			{"role":"assistant","content":"2"},
+			{"role":"user","content":"hi"}
+		]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"content":"hello "}`},
+		{Type: "message", Data: `{"content":"world"}`},
+		{Type: "message_end", Data: `{"reference":{"chunks":[]}}`},
+		{Type: "workflow_finished", Data: `{"outputs":"hello world"}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
+	if runner.userInput != "hi" {
+		t.Errorf("runner userInput = %v, want hi", runner.userInput)
+	}
+	if runner.sessionID == "" {
+		t.Error("runner sessionID should be generated for a new OpenAI-compatible request")
+	}
 
 	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	data, _ := resp["data"].(map[string]interface{})
-	if data == nil {
-		t.Fatalf("response should contain 'data', got keys: %v", resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
 	}
-	if _, ok := data["choices"]; !ok {
-		t.Errorf("response data should contain 'choices', got keys: %v", data)
+	if resp["object"] != "chat.completion" {
+		t.Fatalf("object = %v, want chat.completion; response=%v", resp["object"], resp)
 	}
+	if resp["id"] != runner.sessionID {
+		t.Errorf("id = %v, want generated session id %q", resp["id"], runner.sessionID)
+	}
+	if resp["model"] != "a1" {
+		t.Errorf("model = %v, want agent id a1", resp["model"])
+	}
+	if _, wrapped := resp["code"]; wrapped {
+		t.Fatalf("OpenAI response must not use the RAGFlow REST envelope: %v", resp)
+	}
+	choices, ok := resp["choices"].([]interface{})
+	if !ok || len(choices) != 1 {
+		t.Fatalf("choices = %#v, want one choice", resp["choices"])
+	}
+	choice := choices[0].(map[string]interface{})
+	message := choice["message"].(map[string]interface{})
+	if message["content"] != "hello world" {
+		t.Errorf("content = %v, want hello world", message["content"])
+	}
+	if message["role"] != "assistant" {
+		t.Errorf("role = %v, want assistant", message["role"])
+	}
+	if choice["finish_reason"] != "stop" {
+		t.Errorf("finish_reason = %v, want stop", choice["finish_reason"])
+	}
+	if _, ok := message["reference"]; !ok {
+		t.Errorf("message should include reference, got %v", message)
+	}
+	usage, ok := resp["usage"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("usage = %#v, want object", resp["usage"])
+	}
+	wantPromptTokens := tokenizer.NumTokensFromString("Be concise.") +
+		tokenizer.NumTokensFromString("What is 1+1?") +
+		tokenizer.NumTokensFromString("2") +
+		tokenizer.NumTokensFromString("hi")
+	if got := int(usage["prompt_tokens"].(float64)); got != wantPromptTokens {
+		t.Errorf("prompt_tokens = %d, want all message content counted as %d", got, wantPromptTokens)
+	}
+	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
+		t.Errorf("usage totals do not add up: %v", usage)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "error", Data: `{"message":"retrieval backend failed"}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "server_error" {
+		t.Errorf("error.type = %q, want server_error", response.Error.Type)
+	}
+	if response.Error.Message != "retrieval backend failed" {
+		t.Errorf("error.message = %q, want runner error", response.Error.Message)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_NonStreamRedactsInternalRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "server_error" {
+		t.Errorf("error.type = %q, want server_error", response.Error.Type)
+	}
+	if response.Error.Message != canvas.InternalRunErrorMessage {
+		t.Errorf("error.message = %q, want %q", response.Error.Message, canvas.InternalRunErrorMessage)
+	}
+	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("response leaked internal error details: %s", w.Body.String())
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsWaitingForUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "waiting_for_user", Data: `{"cpn_id":"input-1","tips":"Please choose an option."}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "invalid_request_error" {
+		t.Errorf("error.type = %q, want invalid_request_error", response.Error.Type)
+	}
+	if !strings.Contains(response.Error.Message, "waiting for user input") ||
+		!strings.Contains(response.Error.Message, "input-1") {
+		t.Errorf("error.message = %q, want waiting state and cpn id", response.Error.Message)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "cancelled", Data: `{"message":"Agent run was cancelled."}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "invalid_request_error" {
+		t.Errorf("error.type = %q, want invalid_request_error", response.Error.Type)
+	}
+	if response.Error.Message != "Agent run was cancelled." {
+		t.Errorf("error.message = %q, want cancellation message", response.Error.Message)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_MapsErrors(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		status      int
+		errorType   string
+		wantMessage string
+	}{
+		{
+			name:        "session busy",
+			err:         service.ErrAgentSessionBusy,
+			status:      http.StatusConflict,
+			errorType:   "invalid_request_error",
+			wantMessage: "already running",
+		},
+		{
+			name:        "operating error",
+			err:         service.ErrAgentNotOwner,
+			status:      http.StatusForbidden,
+			errorType:   "permission_error",
+			wantMessage: "Only the owner",
+		},
+		{
+			name:        "data error",
+			err:         errors.New("invalid workflow input"),
+			status:      http.StatusBadRequest,
+			errorType:   "invalid_request_error",
+			wantMessage: "invalid workflow input",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions", strings.NewReader(`{
+				"agent_id":"a1",
+				"openai-compatible":true,
+				"messages":[{"role":"user","content":"hi"}]
+			}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("user", &entity.User{ID: "u1"})
+			c.Set("user_id", "u1")
+
+			runner := &stubChatRunner{err: tt.err}
+			h := &AgentHandler{chatRunner: runner}
+			h.AgentChatCompletions(c)
+
+			if w.Code != tt.status {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tt.status, w.Body.String())
+			}
+			var response struct {
+				Error struct {
+					Message string `json:"message"`
+					Type    string `json:"type"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if response.Error.Type != tt.errorType {
+				t.Errorf("error.type = %q, want %q", response.Error.Type, tt.errorType)
+			}
+			if !strings.Contains(response.Error.Message, tt.wantMessage) {
+				t.Errorf("error.message = %q, want substring %q", response.Error.Message, tt.wantMessage)
+			}
+		})
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamUsesOpenAIChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"content":"hello"}`},
+		{Type: "message_end", Data: `{"reference":{"chunks":[]}}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `"code":0`) || strings.Contains(body, `"data":{"choices"`) {
+		t.Fatalf("OpenAI stream must not use the RAGFlow REST envelope: %s", body)
+	}
+	chunks, done := decodeOpenAICompatStream(t, body)
+	if !done {
+		t.Fatal("stream should end with [DONE]")
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("decoded %d chunks, want message, message_end, and final usage chunk", len(chunks))
+	}
+	for i, chunk := range chunks {
+		if chunk["id"] != runner.sessionID {
+			t.Errorf("chunk[%d].id = %v, want %q", i, chunk["id"], runner.sessionID)
+		}
+		if chunk["model"] != "a1" {
+			t.Errorf("chunk[%d].model = %v, want a1", i, chunk["model"])
+		}
+		if chunk["object"] != "chat.completion.chunk" {
+			t.Errorf("chunk[%d].object = %v, want chat.completion.chunk", i, chunk["object"])
+		}
+	}
+	firstChoices, _ := chunks[0]["choices"].([]interface{})
+	if len(firstChoices) != 1 {
+		t.Fatalf("first choices = %#v, want one choice", chunks[0]["choices"])
+	}
+	firstDelta := firstChoices[0].(map[string]interface{})["delta"].(map[string]interface{})
+	if firstDelta["content"] != "hello" {
+		t.Errorf("first delta content = %v, want hello", firstDelta["content"])
+	}
+	messageEndChoices, _ := chunks[1]["choices"].([]interface{})
+	if len(messageEndChoices) != 1 {
+		t.Fatalf("message_end choices = %#v, want one choice", chunks[1]["choices"])
+	}
+	messageEndDelta := messageEndChoices[0].(map[string]interface{})["delta"].(map[string]interface{})
+	if _, ok := messageEndDelta["reference"]; !ok {
+		t.Errorf("message_end delta should include reference: %#v", messageEndDelta)
+	}
+	lastChoices, _ := chunks[2]["choices"].([]interface{})
+	if len(lastChoices) != 1 {
+		t.Fatalf("final choices = %#v, want one choice", chunks[2]["choices"])
+	}
+	lastChoice := lastChoices[0].(map[string]interface{})
+	if lastChoice["finish_reason"] != "stop" {
+		t.Errorf("final finish_reason = %v, want stop", lastChoice["finish_reason"])
+	}
+	usage, ok := chunks[2]["usage"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("final usage = %#v, want object", chunks[2]["usage"])
+	}
+	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
+		t.Errorf("stream usage totals do not add up: %v", usage)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamSurfacesRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"content":"partial"}`},
+		{Type: "error", Data: `{"message":"LLM failed"}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("failed stream must not end with [DONE]")
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("decoded %d chunks, want partial content and error", len(chunks))
+	}
+	choices := chunks[1]["choices"].([]interface{})
+	choice := choices[0].(map[string]interface{})
+	if choice["finish_reason"] != "error" {
+		t.Errorf("finish_reason = %v, want error", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	if delta["content"] != "**ERROR**: LLM failed" {
+		t.Errorf("error content = %v, want decorated runner error", delta["content"])
+	}
+	errorPayload := delta["error"].(map[string]interface{})
+	if errorPayload["message"] != "LLM failed" {
+		t.Errorf("error payload = %v, want runner message", errorPayload)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamRedactsInternalRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("failed stream must not end with [DONE]")
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("decoded %d chunks, want one internal error", len(chunks))
+	}
+	choice := chunks[0]["choices"].([]interface{})[0].(map[string]interface{})
+	if choice["finish_reason"] != "error" {
+		t.Errorf("finish_reason = %v, want error", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	if delta["content"] != "**ERROR**: "+canvas.InternalRunErrorMessage {
+		t.Errorf("error content = %v, want redacted error", delta["content"])
+	}
+	errorPayload := delta["error"].(map[string]interface{})
+	if errorPayload["message"] != canvas.InternalRunErrorMessage {
+		t.Errorf("error payload = %v, want redacted message", errorPayload)
+	}
+	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("stream leaked internal error details: %s", w.Body.String())
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamSurfacesWaitingForUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "waiting_for_user", Data: `{"cpn_id":"input-1","tips":"Please choose an option.","inputs":{"choice":{"type":"line"}}}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("waiting stream must not end with [DONE]")
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("decoded %d chunks, want waiting state", len(chunks))
+	}
+	choices := chunks[0]["choices"].([]interface{})
+	choice := choices[0].(map[string]interface{})
+	if choice["finish_reason"] != "waiting_for_user" {
+		t.Errorf("finish_reason = %v, want waiting_for_user", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	waiting := delta["waiting_for_user"].(map[string]interface{})
+	if waiting["cpn_id"] != "input-1" {
+		t.Errorf("waiting_for_user = %v, want cpn_id input-1", waiting)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamSurfacesCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "cancelled", Data: `{"message":"Agent run was cancelled."}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("cancelled stream must not end with [DONE]")
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("decoded %d chunks, want cancellation state", len(chunks))
+	}
+	choices := chunks[0]["choices"].([]interface{})
+	choice := choices[0].(map[string]interface{})
+	if choice["finish_reason"] != "cancelled" {
+		t.Errorf("finish_reason = %v, want cancelled", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	cancelled := delta["cancelled"].(map[string]interface{})
+	if cancelled["message"] != "Agent run was cancelled." {
+		t.Errorf("cancelled payload = %v, want cancellation message", cancelled)
+	}
+}
+
+func decodeOpenAICompatStream(t *testing.T, body string) ([]map[string]interface{}, bool) {
+	t.Helper()
+	frames := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n")
+	chunks := make([]map[string]interface{}, 0, len(frames))
+	done := false
+	for _, frame := range frames {
+		switch {
+		case frame == "data: [DONE]":
+			done = true
+		case strings.HasPrefix(frame, "data: "):
+			var chunk map[string]interface{}
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &chunk); err != nil {
+				t.Fatalf("decode SSE frame %q: %v", frame, err)
+			}
+			chunks = append(chunks, chunk)
+		default:
+			t.Fatalf("unexpected SSE frame %q", frame)
+		}
+	}
+	return chunks, done
 }
 
 // TestRerunAgent_RequiresAllFields covers the 101 branch: missing
@@ -1156,48 +1683,6 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 		if _, ok := data[key]; !ok {
 			t.Errorf("prompts.data should contain %q, got: %v", key, data)
 		}
-	}
-}
-
-// TestGetAgentWebhookLogsReturnsEmptyPoll covers the contract: the
-// payload must be {events:[], finished:false, next_since_ts:0}. This
-// test exercises the handler's auth + response-shape path against a
-// real (in-memory) user_canvas row.
-func TestGetAgentWebhookLogsReturnsEmptyPoll(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db := setupHandlerAgentsTestDB(t)
-	orig := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = orig })
-
-	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/webhook/logs?since_ts=0", nil)
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
-
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-	h.GetAgentWebhookLogs(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
-		t.Fatalf("code = %v, want 0; body=%s", code, w.Body.String())
-	}
-	data, _ := resp["data"].(map[string]interface{})
-	if events, _ := data["events"].([]interface{}); len(events) != 0 {
-		t.Errorf("events = %v, want []", events)
-	}
-	if finished, _ := data["finished"].(bool); finished {
-		t.Errorf("finished = true, want false")
-	}
-	if _, ok := data["next_since_ts"]; !ok {
-		t.Errorf("missing next_since_ts key")
 	}
 }
 

@@ -36,7 +36,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
 | **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
 | **POST** `/api/v1/chats/{chat_id}/completions`                                    | **POST** `/api/v1/chat/completions`                                                 |
-| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommandation`                                              |
+| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommendation`                                              |
 | **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
 | **GET** `/v1/system/healthz`                                                      | **GET** `/api/v1/system/healthz`                                                    |
 | **POST** `/v1/document/upload_info`                                               | **POST** `/api/v1/documents/upload`                                                 |
@@ -1518,13 +1518,13 @@ Failure:
 
 ### Update document
 
-**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 
 Updates configurations for a specified document.
 
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
   - `'content-Type: application/json'`
@@ -1538,7 +1538,7 @@ Updates configurations for a specified document.
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --header 'Content-Type: application/json' \
@@ -2810,7 +2810,10 @@ Retrieves chunks from specified datasets.
   - `"page_size"`: `integer`
   - `"similarity_threshold"`: `float`
   - `"vector_similarity_weight"`: `float`
-  - `"top_k"`: `integer`
+  - `"top_k"`: `integer` (deprecated; use `"knn_top_k"`)
+  - `"knn_top_k"`: `integer`
+  - `"knn_num_candidates"`: `integer`
+  - `"rerank_candidates_count"`: `integer`
   - `"rerank_id"`: `string`
   - `"keyword"`: `boolean`
   - `"highlight"`: `boolean`
@@ -2818,6 +2821,7 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"toc_enhance"`: `boolean`
+  - `"include_knowledge_compilation"`: `boolean`
 
 ##### Request example
 
@@ -2831,6 +2835,10 @@ curl --request POST \
           "question": "What is advantage of ragflow?",
           "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
           "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"],
+          "knn_top_k": 1024,
+          "knn_num_candidates": 2048,
+          "rerank_candidates_count": 64,
+          "include_knowledge_compilation": true,
           "metadata_condition": {
             "logic": "and",
             "conditions": [
@@ -2866,7 +2874,15 @@ curl --request POST \
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*), `integer`
+  **Deprecated.** An alias for `"knn_top_k"`. If both parameters are provided, `"knn_top_k"` takes precedence.
+- `"knn_top_k"`: (*Body parameter*), `integer`
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
+- `"knn_num_candidates"`: (*Body parameter*), `integer`
+  The number of approximate nearest-neighbor candidates considered for vector search. It must be greater than or equal to `"knn_top_k"`. Defaults to the greater of `2048` and `"knn_top_k"`. This parameter currently applies only to Elasticsearch.
+- `"rerank_candidates_count"`: (*Body parameter*), `integer`
+  The number of initial retrieval candidates to rank. It must be at least `"page"` multiplied by `"page_size"`. Defaults to `64`.
+- `"include_knowledge_compilation"`: (*Body parameter*), `boolean`
+  Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
 - `"use_kg"`: (*Body parameter*), `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
 - `"toc_enhance"`: (*Body parameter*), `boolean`
@@ -2890,7 +2906,7 @@ curl --request POST \
     - `"or"`: Return results that satisfy *any* condition.
   - `"conditions"`: (*Body parameter*), `array`
     A list of metadata filter conditions.
-    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
+    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/metadata_management.md) for details.
     - `comparison_operator`: `string` - The comparison operator. Can be one of:
       - `"contains"`
       - `"not contains"`
@@ -3032,9 +3048,11 @@ curl --request POST \
   - `"use_kg"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"` and `"querit"`. Defaults to `"tavily"` when omitted.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"`, `"querit"`, `"serply"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"tavily_api_key"`: `string`
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
+  - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
+  - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
   - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
@@ -5423,7 +5441,7 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/api/v1/chat/recommandation`
+**POST** `/api/v1/chat/recommendation`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -5442,7 +5460,7 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chat/recommandation`
+- URL: `/api/v1/chat/recommendation`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -5454,7 +5472,7 @@ The chat model autonomously determines the number of questions to generate based
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chat/recommandation \
+     --url http://{address}/api/v1/chat/recommendation \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{
@@ -6436,7 +6454,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: (*Body parameter*), `string`, *Optional*
 
-  The user participating in the conversation with the agent. Defaults to `None`.
+  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. Any other authentication, whether a JWT bearer token or a browser session, ignores it and attributes the message to the authenticated user. Surrounding whitespace is stripped, and a value that is missing, blank or not a string falls back to the API key owner.
 
 - `user_input`: (*Body parameter*), `string`, *Required*
 

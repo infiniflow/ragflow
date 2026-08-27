@@ -18,13 +18,14 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
@@ -44,10 +45,12 @@ export enum DataSourceKey {
   BOX = 'box',
   DROPBOX = 'dropbox',
   BITBUCKET = 'bitbucket',
+  AZURE_DEVOPS = 'azure_devops',
   GITLAB = 'gitlab',
   GITHUB = 'github',
   MOODLE = 'moodle',
   DISCORD = 'discord',
+  XQUIK = 'xquik',
   ZENDESK = 'zendesk',
   WEBDAV = 'webdav',
   AIRTABLE = 'airtable',
@@ -124,6 +127,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.BITBUCKET]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AZURE_DEVOPS]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.AIRTABLE]: {
@@ -232,6 +238,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.DISCORD}Description`),
       icon: <SvgIcon name={'data-source/discord'} width={38} />,
     },
+    [DataSourceKey.XQUIK]: {
+      name: 'Xquik',
+      description: t(`setting.${DataSourceKey.XQUIK}Description`),
+      icon: <Search className="text-text-primary" size={22} />,
+    },
     [DataSourceKey.CONFLUENCE]: {
       name: 'Confluence',
       description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
@@ -332,6 +343,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Bitbucket',
       description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
       icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
+    },
+    [DataSourceKey.AZURE_DEVOPS]: {
+      name: 'Azure DevOps',
+      description: t(`setting.${DataSourceKey.AZURE_DEVOPS}Description`),
+      icon: <SvgIcon name={'data-source/azure-devops'} width={38} />,
     },
     [DataSourceKey.ZENDESK]: {
       name: 'Zendesk',
@@ -880,6 +896,73 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
     },
   ],
+  [DataSourceKey.XQUIK]: [
+    {
+      label: t('setting.dataSourceFieldXquikApiKey'),
+      name: 'config.credentials.xquik_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.xquikApiKeyTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQuery'),
+      name: 'config.query',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'ragflow lang:en',
+      tooltip: t('setting.xquikQueryTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQueryType'),
+      name: 'config.query_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'Latest', value: 'Latest' },
+        { label: 'Top', value: 'Top' },
+      ],
+      defaultValue: 'Latest',
+    },
+    {
+      label: t('setting.dataSourceFieldXquikPageSize'),
+      name: 'config.page_size',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 100,
+      tooltip: t('setting.xquikPageSizeTip'),
+      validation: {
+        min: 1,
+        max: 10000,
+        message: t('setting.xquikPageSizeValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldMaxPages'),
+      name: 'config.max_pages',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 10,
+      tooltip: t('setting.xquikMaxPagesTip'),
+      validation: {
+        min: 1,
+        max: 1000,
+        message: t('setting.xquikMaxPagesValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 32,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
+  ],
 
   [DataSourceKey.CONFLUENCE]: confluenceConstant(t),
   [DataSourceKey.GOOGLE_DRIVE]: [
@@ -1342,6 +1425,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
+  [DataSourceKey.AZURE_DEVOPS]: azureDevOpsConstant(t),
   [DataSourceKey.ZENDESK]: [
     {
       label: t('setting.dataSourceFieldZendeskDomain'),
@@ -2034,6 +2118,21 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.XQUIK]: {
+    name: '',
+    source: DataSourceKey.XQUIK,
+    config: {
+      query: '',
+      query_type: 'Latest',
+      page_size: 100,
+      max_pages: 10,
+      batch_size: 32,
+      request_delay: 0.5,
+      credentials: {
+        xquik_api_key: '',
+      },
+    },
+  },
   [DataSourceKey.CONFLUENCE]: {
     name: '',
     source: DataSourceKey.CONFLUENCE,
@@ -2278,6 +2377,20 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.AZURE_DEVOPS]: {
+    name: '',
+    source: DataSourceKey.AZURE_DEVOPS,
+    config: {
+      organization: '',
+      index_mode: 'organization',
+      projects: '',
+      repositories: '',
+      content_types: 'both',
+      credentials: {
+        azure_devops_pat: '',
       },
     },
   },

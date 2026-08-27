@@ -314,7 +314,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "json",
+			"output_format": "text",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
@@ -482,30 +482,21 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
-		// DOCX vision figure enhancement: on the JSON output path,
-		// append vision-model descriptions to embedded image items
-		// (doc_type_kwd "image"). Mirrors Python's
-		// enhance_media_sections_with_vision in parser.py:_doc.
-		dispatched, _, _ = maybeDispatchDOCXVision(ctx, db, fileTypeExt, dispatched, inputs, c.Setups)
-
-		// Markdown vision figure enhancement: enrich parsed
-		// Markdown JSON items with LLM-generated descriptions of
-		// referenced images (![alt](url)). Mirrors Python's
-		// enhance_media_sections_with_vision in _Markdown.
-		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, db, fileTypeExt, dispatched, inputs)
-
-		// PDF vision figure enhancement: enrich parsed PDF JSON
-		// items with vision-model descriptions of embedded
-		// images/tables (doc_type_kwd "image"/"table" with non-empty
-		// image field). Mirrors Python's enhance_media_sections_with_vision
-		// in parser.py:_pdf
-		dispatched, _, _ = maybeDispatchPDFVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
+		// Vision figure enhancement: on the JSON output path,
+		// append vision-model descriptions to embedded image and
+		// table items. Mirrors Python's enhance_media_sections_with_vision
+		// (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
+		// Errors (including context cancellation) are intentionally
+		// discarded — enhancement is best-effort, matching Python's
+		// try/except pass pattern.
+		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
 	if dispatched.Err != nil && fileTypeExt != utility.FileTypeOTHER {
 		return nil, dispatched.Err
 	}
+	reportParserWarnings(ctx, dispatched.Warnings)
 
 	// 3. Build the legacy `pages` slice. When the dispatch path
 	//    produced a JSON payload, we re-shape it into the page
@@ -592,6 +583,12 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.
 	return out, nil
+}
+
+func reportParserWarnings(ctx context.Context, warnings []string) {
+	for _, warning := range warnings {
+		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
+	}
 }
 
 // buildPagesFromBytes reshapes already-prepared page bytes into the

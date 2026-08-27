@@ -18,7 +18,7 @@ func TestIntegration_DeepDoc_TableStructure(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestIntegration_DeepDoc_TableRows(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestIntegration_DeepDoc_Idempotency(t *testing.T) {
 
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), data, client)
+		result, err := p.Parse(t.Context(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -121,7 +121,7 @@ func TestIntegration_DeepDoc_EmptyPage(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	_, err := p.Parse(context.Background(), data, client)
+	_, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

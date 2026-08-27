@@ -23,6 +23,7 @@ import {
 } from '@/components/llm-setting-items/next';
 import { MetadataFilterSchema } from '@/components/metadata-filter';
 import { ModelTypeMap } from '@/components/model-tree-select';
+import { rerankCandidatesCountSchema } from '@/components/rerank-candidates-count-item';
 import { useModelValidIds } from '@/hooks/use-llm-request';
 import { useEffect, useMemo } from 'react';
 import { Control, UseFormTrigger, useWatch } from 'react-hook-form';
@@ -43,7 +44,7 @@ export const SearchSettingFormSchema = z
       use_kg: z.boolean(),
       rerank_id: z.string(),
       use_rerank: z.boolean(),
-      top_k: z.number(),
+      ...rerankCandidatesCountSchema,
       summary: z.boolean(),
       llm_setting: z.object({ ...LlmSettingFieldSchema, ...LLMIdFormField }),
       related_search: z.boolean(),

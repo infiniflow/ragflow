@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -362,9 +363,13 @@ func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchAudio_DefaultOutputFormatJson covers Parser 2.11:
-// the default audio output_format must be "json" (matching Python
-// parser.py:232 and AllowedOutputFormat["audio"]={"json"}).
+// TestMaybeDispatchAudio_DefaultOutputFormatJson covers the
+// maybeDispatchAudio fallback: when an audio setup omits
+// output_format entirely, the dispatch defaults to "json" and wraps
+// the transcription as a JSON item. (The defaultSetups value is
+// "text" to mirror the Python audio setup in parser.py; this test
+// deliberately supplies an empty setup to exercise the fallback
+// inside the dispatch itself.)
 func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	const want = "hello world"
 	drv := &audioTranscribeDriver{transcription: want}
@@ -373,8 +378,9 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
 	}
-	setups := defaultSetups()
-	// Do NOT set output_format — exercise the default path.
+	// No output_format key — exercise the default path inside
+	// maybeDispatchAudio.
+	setups := map[string]schema.ParserSetup{"audio": {}}
 	res, dispatched, err := maybeDispatchAudio(
 		context.Background(),
 		nil,
@@ -392,60 +398,6 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	}
 	if res.OutputFormat != "json" {
 		t.Fatalf("default OutputFormat = %q, want json", res.OutputFormat)
-	}
-}
-
-// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: Markdown
-// vision enhancement must also process items whose doc_type_kwd is "table"
-// (Python checks {"image","table"} in parser/utils.py:181), not only "image".
-// Before the fix the table item was skipped and never sent to the VLM.
-func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
-	origResolver := resolveTenantModelByType
-	origPrompt := figureVisionPromptBuilder
-	defer func() {
-		resolveTenantModelByType = origResolver
-		figureVisionPromptBuilder = origPrompt
-	}()
-
-	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
-	}
-	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
-		return "describe in " + language, nil
-	}
-
-	dispatched := parserDispatchResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{
-			{"doc_type_kwd": "table", "image": "base64table", "text": ""},
-		},
-	}
-
-	ctx := t.Context()
-	res, handled, err := maybeDispatchMarkdownVision(
-		ctx,
-		dao.DB,
-		utility.FileTypeMarkdown,
-		dispatched,
-		map[string]any{"tenant_id": "t1", "lang": "Korean"},
-	)
-	if err != nil {
-		t.Fatalf("maybeDispatchMarkdownVision: %v", err)
-	}
-	if !handled {
-		t.Fatalf("expected handled=true for markdown with a table image")
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
-	}
-	// The table item must have been sent to the VLM and its description appended.
-	if got, _ := res.JSON[0]["text"].(string); got != "captured" {
-		t.Fatalf("table item text = %q, want %q (table items must be vision-enhanced)", got, "captured")
-	}
-	gotPrompt, ok := firstUserText(drv.captured)
-	if !ok || gotPrompt != "describe in Korean" {
-		t.Fatalf("VLM user text = %q, want dataset language propagated", gotPrompt)
 	}
 }
 

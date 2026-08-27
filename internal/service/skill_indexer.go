@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -280,7 +281,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 	timestamp := now.UnixMilli()
 	isES := isElasticsearch(docEngine)
 
-	var indexErrors []string
+	var indexErrors []error
 	for i, skill := range skills {
 		// Delete old versions (both new format and old format with version suffix)
 		// This ensures only the latest version is indexed
@@ -345,13 +346,13 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 		common.Info("Batch: Calling IndexDocument", zap.String("indexName", indexName), zap.String("docID", docID), zap.Int("index", i))
 		if err := docEngine.IndexDocument(ctx, indexName, docID, doc); err != nil {
 			common.Error(fmt.Sprintf("Failed to index skill %s", skill.ID), err)
-			indexErrors = append(indexErrors, fmt.Sprintf("%s: %v", skill.ID, err))
+			indexErrors = append(indexErrors, fmt.Errorf("%s: %w", skill.ID, err))
 			continue
 		}
 	}
 
 	if len(indexErrors) > 0 {
-		return fmt.Errorf("failed to index %d skill(s): %s", len(indexErrors), strings.Join(indexErrors, "; "))
+		return fmt.Errorf("failed to index %d skill(s): %w", len(indexErrors), errors.Join(indexErrors...))
 	}
 
 	return nil

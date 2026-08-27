@@ -276,7 +276,7 @@ async def retrieval(tenant_id):
             page_size=top,
             similarity_threshold=similarity_threshold,
             vector_similarity_weight=0.3,
-            top=top,
+            knn_top_k=top,
             doc_ids=doc_ids,
             rank_feature=label_question(question, [kb]),
         )

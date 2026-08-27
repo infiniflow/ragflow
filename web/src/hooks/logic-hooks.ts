@@ -414,6 +414,12 @@ export const useSpeechWithSse = (url: string = api.chatsTts) => {
 
 //#region chat hooks
 
+// Firefox reports a fractional `scrollTop`, while `scrollHeight` / `clientHeight`
+// are rounded. `scrollToBottom` therefore lands a sub-pixel *below* the position
+// a native clamp had produced, which reads as a decreasing `scrollTop`. Require a
+// real gesture's worth of movement so that jitter is not mistaken for one.
+const UserScrollUpThreshold = 2;
+
 export const useScrollToBottom = (
   messages?: unknown,
   containerRef?: React.RefObject<HTMLDivElement>,
@@ -421,15 +427,36 @@ export const useScrollToBottom = (
   const ref = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isAtBottomRef = useRef(true);
+  // `null` means "no baseline yet", so the very first measurement has to fall
+  // back to the distance check instead of guessing a scroll direction.
+  const lastScrollTopRef = useRef<number | null>(null);
 
   useEffect(() => {
     isAtBottomRef.current = isAtBottom;
   }, [isAtBottom]);
 
-  const checkIfUserAtBottom = useCallback(() => {
+  // We pin the transcript to the bottom ourselves, so browser scroll anchoring is
+  // pure interference: when a streamed answer re-lays out (markdown turning a
+  // paragraph into a code block, a line re-wrapping), Firefox shifts `scrollTop`
+  // to hold its anchor node still. That shift is indistinguishable from a user
+  // scrolling up in the handler below, so it latched auto-follow off mid-answer.
+  // Chrome suppresses the adjustment while pinned to the bottom, which is why
+  // only Firefox drifted away from the bottom.
+  useEffect(() => {
+    if (!containerRef?.current) return;
+    containerRef.current.style.overflowAnchor = 'none';
+  }, [containerRef]);
+
+  const checkIfNearBottom = useCallback(() => {
     if (!containerRef?.current) return true;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    return Math.abs(scrollTop + clientHeight - scrollHeight) < 25;
+    // Content shorter than the viewport has nothing to scroll, so it is
+    // trivially "at the bottom". Returning false here would latch auto-follow
+    // off when a stream starts from a short transcript: growing content does
+    // not fire a `scroll` event, so no later check would ever re-arm the flag
+    // and the view would never track the incoming message.
+    if (scrollHeight <= clientHeight) return true;
+    return Math.abs(scrollTop + clientHeight - scrollHeight) < 60;
   }, [containerRef]);
 
   useEffect(() => {
@@ -437,11 +464,35 @@ export const useScrollToBottom = (
     const container = containerRef.current;
 
     const handleScroll = () => {
+      const previousScrollTop = lastScrollTopRef.current;
+      const { scrollTop } = container;
+      lastScrollTopRef.current = scrollTop;
+
+      const nearBottom = checkIfNearBottom();
+      let atBottom: boolean;
+      if (nearBottom) {
+        atBottom = true;
+      } else if (
+        previousScrollTop === null ||
+        scrollTop < previousScrollTop - UserScrollUpThreshold
+      ) {
+        // With scroll anchoring off, only a user gesture (wheel, drag, keys,
+        // touch) can shrink `scrollTop` by a meaningful amount, so this is the
+        // one reliable signal that they want to leave the bottom.
+        atBottom = false;
+      } else {
+        // We are far from the bottom yet `scrollTop` did not move: the gap comes
+        // from content that grew after `scrollToBottom` ran but before this
+        // event was dispatched. Disarming here would strand auto-follow forever,
+        // because growing content never fires another `scroll` event to re-arm
+        // it. Keep whatever the user last asked for.
+        atBottom = isAtBottomRef.current;
+      }
+
       // Write the ref here rather than relying on the effect that mirrors
       // `isAtBottom`: that effect only runs after the next render, and while the
       // main thread is busy rendering a streaming answer an already scheduled
       // auto-scroll would still see the stale `true`.
-      const atBottom = checkIfUserAtBottom();
       isAtBottomRef.current = atBottom;
       setIsAtBottom(atBottom);
     };
@@ -449,14 +500,17 @@ export const useScrollToBottom = (
     container.addEventListener('scroll', handleScroll);
     handleScroll();
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [containerRef, checkIfUserAtBottom]);
+  }, [containerRef, checkIfNearBottom]);
 
   // Imperative scroll function
   const scrollToBottom = useCallback(() => {
     if (containerRef?.current) {
       const container = containerRef.current;
+      // Overshoot and let the browser clamp. `scrollHeight - clientHeight` is a
+      // difference of two rounded values, so in Firefox — where the real maximum
+      // is fractional — it can land just short of the bottom.
       container.scrollTo({
-        top: container.scrollHeight - container.clientHeight,
+        top: container.scrollHeight,
         behavior: 'auto',
       });
     }

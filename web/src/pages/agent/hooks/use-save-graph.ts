@@ -31,6 +31,10 @@ export const useSaveGraph = (
       },
       release?: boolean,
     ) => {
+      if (!id) {
+        return;
+      }
+
       const params: Record<string, any> = {
         id,
         title: data.title,
@@ -71,8 +75,37 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   return { handleRun, loading };
 };
 
+export function shouldAutosaveCanvas({
+  chatDrawerVisible,
+  agentId,
+  agentLoaded,
+  nodeCount,
+  edgeCount,
+}: {
+  chatDrawerVisible: boolean;
+  agentId?: string;
+  agentLoaded: boolean;
+  nodeCount: number;
+  edgeCount: number;
+}): boolean {
+  if (chatDrawerVisible) {
+    return false;
+  }
+  if (!agentId || !agentLoaded) {
+    return false;
+  }
+  // An empty store is the Zustand default and also the fallback when DSL has
+  // not been applied yet. Autosaving it would PUT components:{} over a real
+  // pipeline (#18771). Explicit Save still persists an empty canvas.
+  if (nodeCount === 0 && edgeCount === 0) {
+    return false;
+  }
+  return true;
+}
+
 export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const [time, setTime] = useState<string>();
+  const { id } = useParams();
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
   const { saveGraph } = useSaveGraph(false, true);
@@ -87,11 +120,30 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   }, [flowDetail, setSaveTime]);
 
   const saveAgent = useCallback(async () => {
-    if (!chatDrawerVisible) {
-      const ret = await saveGraph();
-      setSaveTime(ret.data.update_time ?? Date.now());
+    if (
+      !shouldAutosaveCanvas({
+        chatDrawerVisible,
+        agentId: id,
+        agentLoaded: Boolean(flowDetail?.id),
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+      })
+    ) {
+      return;
     }
-  }, [chatDrawerVisible, saveGraph, setSaveTime]);
+    const ret = await saveGraph();
+    if (ret?.data?.update_time) {
+      setSaveTime(ret.data.update_time);
+    }
+  }, [
+    chatDrawerVisible,
+    edges.length,
+    flowDetail?.id,
+    id,
+    nodes.length,
+    saveGraph,
+    setSaveTime,
+  ]);
 
   useDebounceEffect(
     () => {

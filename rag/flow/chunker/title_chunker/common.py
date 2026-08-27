@@ -151,8 +151,8 @@ class BaseTitleChunker(ABC):
         """Re-split one oversized text chunk into <= cap sub-chunks.
 
         Sentence boundaries are tried first; any remaining over-cap segment is
-        hard-split. PDF coordinates follow plan A: the original (coarse,
-        page-level) positions attach to the first sub-chunk only.
+        hard-split. Every sub-chunk keeps the original (coarse, page-level)
+        positions so each still gets its preview image and highlight.
         """
         text = chunk.get("text") or ""
         sentences = self._split_text_by_sentences(text)
@@ -183,13 +183,15 @@ class BaseTitleChunker(ABC):
         has_positions = PDF_POSITIONS_KEY in chunk
         orig_positions = chunk.get(PDF_POSITIONS_KEY)
         out = []
-        for i, group in enumerate(final_groups):
+        for group in final_groups:
             sub = dict(chunk)
             sub["text"] = group
-            # Plan A: the original (coarse, page-level) coordinates attach to the
-            # first sub-chunk only; subsequent sub-chunks carry none.
+            # Every sub-chunk keeps the original (coarse, page-level)
+            # coordinates so the preview-image/position restore pass covers
+            # all sub-chunks. Each sub-chunk owns a deep copy so no two of
+            # them alias the same position list.
             if has_positions:
-                sub[PDF_POSITIONS_KEY] = orig_positions if i == 0 else []
+                sub[PDF_POSITIONS_KEY] = deepcopy(orig_positions)
             out.append(sub)
         return out
 

@@ -14,14 +14,11 @@
  *  limitations under the License.
  */
 
-import {
-  getBackendLanguage,
-  subscribeBackendLanguage,
-} from '@/utils/backend-runtime';
-import { memo, useSyncExternalStore } from 'react';
+import { BackendVariant } from '@/utils/backend-variant';
+import { memo } from 'react';
 import { INextOperatorForm } from '../../interface';
 import GoExtractorForm from './go-form';
-import LegacyExtractorForm from './legacy-form';
+import PythonExtractorForm from './python-form';
 
 export { FormSchema } from './go-form';
 export type { ExtractorFormSchemaType } from './go-form';
@@ -29,17 +26,11 @@ export type { ExtractorFormSchemaType } from './go-form';
 // The Go backend supports the modularized extractor config (per-feature
 // sub-tabs with nested params), while the Python backend only understands the
 // legacy flat fields — pick the matching form per backend.
-const ExtractorForm = (props: INextOperatorForm) => {
-  const backendLanguage = useSyncExternalStore(
-    subscribeBackendLanguage,
-    getBackendLanguage,
-  );
-
-  return backendLanguage === 'go' ? (
-    <GoExtractorForm {...props} />
-  ) : (
-    <LegacyExtractorForm {...props} />
-  );
-};
+const ExtractorForm = (props: INextOperatorForm) => (
+  <BackendVariant
+    go={<GoExtractorForm {...props} />}
+    python={<PythonExtractorForm {...props} />}
+  />
+);
 
 export default memo(ExtractorForm);

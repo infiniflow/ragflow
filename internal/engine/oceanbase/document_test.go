@@ -17,7 +17,6 @@
 package oceanbase
 
 import (
-	"context"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -31,10 +30,10 @@ func TestDocumentWritesValidateIdentifiers(t *testing.T) {
 	defer db.Close()
 	engine := newEngineWithDB("oceanbase", "legacy_doc", db)
 
-	if err := engine.IndexDocument(context.Background(), "skill_bad`name", "skill-1", map[string]interface{}{}); err == nil {
+	if err := engine.IndexDocument(t.Context(), "skill_bad`name", "skill-1", map[string]interface{}{}); err == nil {
 		t.Fatal("IndexDocument() error = nil, want invalid identifier error")
 	}
-	if _, err := engine.BulkIndex(context.Background(), "skill_bad`name", nil); err == nil {
+	if _, err := engine.BulkIndex(t.Context(), "skill_bad`name", nil); err == nil {
 		t.Fatal("BulkIndex() error = nil, want invalid identifier error")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -50,7 +49,7 @@ func TestBulkIndexRejectsEmptyIdentifiers(t *testing.T) {
 	defer db.Close()
 	engine := newEngineWithDB("oceanbase", "legacy_doc", db)
 
-	if _, err := engine.BulkIndex(context.Background(), "skill_tenant", []interface{}{map[string]interface{}{"name": "missing ID"}}); err == nil {
+	if _, err := engine.BulkIndex(t.Context(), "skill_tenant", []interface{}{map[string]interface{}{"name": "missing ID"}}); err == nil {
 		t.Fatal("BulkIndex() error = nil, want empty identifier error")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -28,6 +28,7 @@ import Markdown, { defaultUrlTransform } from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -369,7 +370,7 @@ function MarkdownContent({
           <HoverCard key={i}>
             <HoverCardTrigger>
               <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                Fig. {chunkIndex + 1}
+                {t('common.figure')} {chunkIndex + 1}
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
@@ -381,7 +382,7 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [renderPopoverContent],
+    [renderPopoverContent, t],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
@@ -390,7 +391,12 @@ function MarkdownContent({
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         urlTransform={(url, key) => {
           if (

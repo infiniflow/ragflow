@@ -304,7 +304,7 @@ export const traceIndex = (datasetId: string, indexType: string) =>
   request.get(api.traceIndex(datasetId, indexType));
 
 // getDatasetCompilationStatus reads the Go scheduler compile-status contract
-// (GET /datasets/:id/compilation/status), used by API_PROXY_SCHEME=go/hybrid to
+// (GET /datasets/:id/compilation/status), used on the Go backend to
 // replace the legacy traceIndex task-progress endpoint. Route it through the
 // service-layer proxy (registerNextServer -> next-request) like the rest of the
 // *-service.ts HTTP proxies.

@@ -35,7 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.llm_service import LLMBundle
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -222,6 +222,7 @@ class DialogService(CommonService):
             cls.model.similarity_threshold,
             cls.model.vector_similarity_weight,
             cls.model.top_n,
+            cls.model.rerank_candidates_count,
             cls.model.top_k,
             cls.model.do_refer,
             cls.model.rerank_id,
@@ -263,7 +264,7 @@ class DialogService(CommonService):
     def get_all_dialogs_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         dialogs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        dialogs.order_by(cls.model.create_time.asc())
+        dialogs = dialogs.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
@@ -522,6 +523,11 @@ def convert_last_user_msg_to_multimodal(msg: list[dict], image_data_uris: list[s
         return
 
 
+# Keys the chat-completions message schema defines. Stored messages also carry
+# RAGFlow bookkeeping such as id, created_at and doc_ids, plus the conversationId
+# the web client stamps on every turn, and strict providers reject those.
+LLM_MESSAGE_FIELDS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"})
+
 BAD_CITATION_PATTERNS = [
     re.compile(r"\(\s*ID\s*[: ]*\s*(\d+)\s*\)"),  # (ID: 12)
     re.compile(r"\[\s*ID\s*[: ]*\s*(\d+)\s*\]"),  # [ID: 12]
@@ -664,6 +670,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], llm_model_config["model_type"])
 
     prompt_config = dialog.prompt_config
+    rerank_candidates_count = getattr(dialog, "rerank_candidates_count", 64)
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
@@ -737,6 +744,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     similarity_threshold=0.2,
                     vector_similarity_weight=0.3,
                     doc_ids=scoped_doc_ids,
+                    rerank_candidates_count=rerank_candidates_count,
                 ),
                 internet_enabled=use_web_search,
             )
@@ -772,10 +780,11 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     dialog.similarity_threshold,
                     dialog.vector_similarity_weight,
                     doc_ids=scoped_doc_ids,
-                    top=dialog.top_k,
+                    knn_top_k=dialog.top_k,
                     aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
+                    rerank_candidates_count=rerank_candidates_count,
                 )
                 if prompt_config.get("toc_enhance"):
                     cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -1818,12 +1827,13 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.1),
         vector_similarity_weight=vector_similarity_weight,
-        top=search_config.get("top_k", 1024),
+        knn_top_k=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=True,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     if include_reference_metadata:
         logging.debug(
@@ -1859,7 +1869,10 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         refs["chunks"] = chunks_format(refs)
         return {"answer": answer, "reference": refs}
 
-    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, {"temperature": 0.1})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
+    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, gen_conf)
     last_state = None
     async for kind, value, state in _stream_with_think_delta(stream_iter):
         last_state = state
@@ -1917,15 +1930,49 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.2),
         vector_similarity_weight=search_config.get("vector_similarity_weight", 0.3),
-        top=search_config.get("top_k", 1024),
+        knn_top_k=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=False,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
     return mind_map.output
+
+
+def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -> str:
+    """Render the dialog-level system prompt for the reasoning agent path.
+
+    Mirrors the substitutions ``async_chat`` performs for the non-reasoning path
+    so that configured system prompts are honored when reasoning is enabled.
+    The ``{knowledge}`` placeholder is defaulted to an empty string because the
+    agentic graph supplies retrieved evidence through its own evidence block.
+    """
+    system = prompt_config.get("system", "")
+    if not system:
+        return ""
+
+    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    kwargs["date"] = sys_date
+
+    param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
+    if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in system:
+        param_keys.append("knowledge")
+        kwargs.setdefault("knowledge", "")
+
+    for p in prompt_config.get("parameters", []):
+        if p["key"] == "knowledge":
+            continue
+        if p["key"] not in kwargs and not p["optional"]:
+            raise KeyError("Miss parameter: " + p["key"])
+        if p["key"] not in kwargs:
+            system = system.replace("{%s}" % p["key"], " ")
+
+    fmt_kwargs = dict(kwargs)
+    fmt_kwargs.setdefault("knowledge", "")
+    return system.format(**fmt_kwargs)
 
 
 async def rag_agent(dialog, messages, stream=True, **kwargs):
@@ -1940,7 +1987,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     model_type = chat_mdl.model_config["model_type"]
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
-    agent_messages = deepcopy(messages)
+    agent_messages = [{k: deepcopy(v) for k, v in m.items() if k in LLM_MESSAGE_FIELDS} for m in messages]
     if text_attachments_content and agent_messages:
         agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:
@@ -1991,6 +2038,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         do_refer=False,
         thinking_mode=thinking_mode,
         text_attachments_content=text_attachments_content,
+        system_prompt=_render_reasoning_system_prompt(dialog, prompt_config, kwargs),
     )
 
     async def decorate_answer(answer):

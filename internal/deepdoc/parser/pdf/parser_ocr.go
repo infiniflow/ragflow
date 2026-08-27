@@ -29,7 +29,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 	imgH := float64(pageImg.Bounds().Dy()) / pdf.DlaScale
 
 	var result []pdf.TextBox
-	for _, b := range boxes {
+	for i, b := range boxes {
 		x0 := int(math.Min(b.X0, math.Min(b.X1, math.Min(b.X2, b.X3))))
 		y0 := int(math.Min(b.Y0, math.Min(b.Y1, math.Min(b.Y2, b.Y3))))
 		x1 := int(math.Max(b.X0, math.Max(b.X1, math.Max(b.X2, b.X3))))
@@ -50,7 +50,11 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 			{X: b.X2, Y: b.Y2},
 			{X: b.X3, Y: b.Y3},
 		})
-		texts, recErr := p.ocrRecognizeWithRotation(ctx, doc, cropped)
+		// Stamp the detect-box index so a replay DocAnalyzer can route this
+		// recognition back to the Python-dumped text for the same box. The
+		// production analyzer ignores the key.
+		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, i)
+		texts, recErr := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
 		if recErr != nil {
 			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
 			continue
@@ -150,6 +154,10 @@ func ocrBestScore(texts []pdf.OCRText) float64 {
 type ocrDetectBox struct {
 	box            pdf.TextBox
 	x0, y0, x1, y1 float64
+	// srcIdx is the box's index in the OCRDetect result (before detectBoxes
+	// re-sorts). It routes per-box OCR fallback (buildTextBoxes) back to the
+	// same Python-dumped box in replay, matching ocrDetectAndRecognize.
+	srcIdx int
 }
 
 func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int) []pdf.TextBox {
@@ -174,7 +182,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 	imgH := float64(imgBounds.Dy()) / scale
 
 	boxes := make([]ocrDetectBox, 0, len(ocrDetectBoxes))
-	for _, b := range ocrDetectBoxes {
+	for i, b := range ocrDetectBoxes {
 		x0 := min(b.X0, b.X1, b.X2, b.X3) / scale
 		y0 := min(b.Y0, b.Y1, b.Y2, b.Y3) / scale
 		x1 := max(b.X0, b.X1, b.X2, b.X3) / scale
@@ -196,7 +204,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 		}
 		boxes = append(boxes, ocrDetectBox{box: pdf.TextBox{
 			X0: x0, X1: x1, Top: y0, Bottom: y1, PageNumber: pageNum,
-		}, x0: x0, y0: y0, x1: x1, y1: y1})
+		}, x0: x0, y0: y0, x1: x1, y1: y1, srcIdx: i})
 	}
 
 	if len(boxes) > 1 {
@@ -218,13 +226,36 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 
 func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextChar {
 	boxChars := make([][]pdf.TextChar, len(boxes))
+	// deferred holds fully-contained small glyphs (candidates for inline text)
+	// until we know whether the box also carries any normal-height content. A
+	// box whose ONLY char-layer chars are small (ratio >= 0.7) must stay empty
+	// so buildTextBoxes' OCR fallback can recognize the full line from the
+	// image — keeping the small glyphs alone would emit a partial fragment and
+	// suppress the OCR fill (三国人物/反间谍法 regressed under that rule).
+	deferred := make([][]pdf.TextChar, len(boxes))
 	for _, c := range chars {
 		bestIdx := -1
 		bestOverlap := 1e-6
+		bestArea := 0.0
 		for i := range boxes {
 			overlap := charBoxOverlapRatio(c, boxes[i].x0, boxes[i].x1, boxes[i].y0, boxes[i].y1)
-			if overlap >= bestOverlap {
+			if overlap < bestOverlap {
+				continue
+			}
+			area := (boxes[i].x1 - boxes[i].x0) * (boxes[i].y1 - boxes[i].y0)
+			// Tie-break: when a char is fully inside several boxes (a full-line
+			// box and a contained OCR fragment that over-segments it), prefer
+			// the LARGER container so the fragment cannot steal the glyph and
+			// truncate the container. Mirrors Python's Recognizer.find_overlapped
+			// (recognizer.py:223), which keeps the max-overlapped (largest-area)
+			// box on ties via a strict `>`. The previous `>=`-with-last-wins
+			// rule let the smaller fragment win, truncating the container; after
+			// DedupSubstringOverlaps could no longer recognise the fragment as a
+			// substring, NaiveVerticalMerge glued it back on and duplicated text
+			// (ocr_real RAG分词 doubling).
+			if overlap > bestOverlap || area > bestArea {
 				bestOverlap = overlap
+				bestArea = area
 				bestIdx = i
 			}
 		}
@@ -236,12 +267,116 @@ func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextC
 			ch = 1
 		}
 		bh := boxes[bestIdx].y1 - boxes[bestIdx].y0
-		if math.Abs(ch-bh)/math.Max(ch, bh) >= 0.7 && c.Text != " " {
-			continue
+		// Char-height filter (mirrors Python pdf_parser.py:798): drop chars
+		// whose height differs greatly from the box height — they belong to
+		// another line. A fully-contained small glyph (overlap >= 0.90,
+		// ratio < 0.9) is an inline-text candidate (e.g. a code span like
+		// "certifi", ~8pt, inside a tall two-line detect box ~36pt — the Python
+		// golden keeps it, plugin-daemon box[16]): it cannot be from an
+		// adjacent line because it lies almost entirely inside the box. The
+		// 0.90 bound (not 0.95) absorbs a sub-point detection overshoot where
+		// the glyph's top pokes ~0.6pt above the box edge (刑法's footnote ①,
+		// overlap 0.92) while still excluding a true partial-overlap adjacent
+		// line (overlap well below 0.90). It is deferred and re-kept only when
+		// the box also carries normal-height content, so an isolated small
+		// glyph cannot suppress the OCR fallback.
+		ratio := math.Abs(ch-bh) / math.Max(ch, bh)
+		if ratio < 0.7 || c.Text == " " {
+			boxChars[bestIdx] = append(boxChars[bestIdx], c)
+		} else if bestOverlap >= 0.90 && ratio < 0.9 {
+			deferred[bestIdx] = append(deferred[bestIdx], c)
 		}
-		boxChars[bestIdx] = append(boxChars[bestIdx], c)
+	}
+	for i := range boxChars {
+		// Re-keep the deferred inline glyphs only when the box actually carries
+		// a non-space normal-height char: a box whose only normal chars are
+		// spaces (the real line text lives in a tighter neighbor box) must not
+		// absorb the small glyphs — they are another line's content there.
+		hasText := false
+		for _, c := range boxChars[i] {
+			if strings.TrimSpace(c.Text) != "" {
+				hasText = true
+				break
+			}
+		}
+		if hasText {
+			boxChars[i] = append(boxChars[i], deferred[i]...)
+		}
 	}
 	return boxChars
+}
+
+// boxIsCoveredLeftFragment reports whether detect box i is a spurious
+// over-segmentation fragment whose content was already resolved into a
+// same-line RIGHT neighbor by the char layer, so OCR-filling i would only
+// re-read and duplicate that neighbor's text. The detector sometimes splits a
+// single TOC line into a narrow left box plus the real text box; the char
+// layer assigns the glyphs to the real box, leaving the left box with no
+// usable text (its stray char was deferred then dropped by the height gate,
+// so its assembled text is empty). If we then OCR-fill the left box we
+// duplicate its glyph (刑法's 妨妨).
+//
+// selfText is box i's assembled char-layer text. i is a covered left fragment
+// when: selfText is empty (no usable content of its own); some same-line
+// neighbor j (Y-overlap >= 0.9) carries real char text; j starts INSIDE i's
+// x-span (j.x0 in (i.x0, i.x1]) and i ends at/before j (i.x1 <= j.x1) — i is
+// a left overhang of j; and i is much narrower than j (width < j.width/2), so
+// it is a fragment, not a genuine second column. The narrow gate plus the
+// right-neighbor requirement keep legitimate char-less boxes (font-encoded
+// captions with no same-line right neighbor) OCR-filled.
+func boxIsCoveredLeftFragment(boxes []ocrDetectBox, boxChars [][]pdf.TextChar, i int, selfText string) bool {
+	if i < 0 || i >= len(boxes) || len(boxChars) != len(boxes) {
+		return false
+	}
+	if strings.TrimSpace(selfText) != "" {
+		return false // i has usable text of its own; not a fragment
+	}
+	ai := boxes[i]
+	aw := ai.x1 - ai.x0
+	if aw <= 0 {
+		return false
+	}
+	for j := range boxes {
+		if j == i {
+			continue
+		}
+		bj := boxes[j]
+		// Same line: Y-overlap ratio against the shorter box >= 0.9.
+		interY := math.Min(ai.y1, bj.y1) - math.Max(ai.y0, bj.y0)
+		if interY <= 0 {
+			continue
+		}
+		minH := math.Min(ai.y1-ai.y0, bj.y1-bj.y0)
+		if minH <= 0 {
+			continue
+		}
+		if interY/minH < 0.9 {
+			continue
+		}
+		// Neighbor must carry real (non-space) char content.
+		hasText := false
+		for _, c := range boxChars[j] {
+			if strings.TrimSpace(c.Text) != "" {
+				hasText = true
+				break
+			}
+		}
+		if !hasText {
+			continue
+		}
+		// i overhangs to the LEFT of j: j starts inside i's x-span and i does
+		// not extend right past j.
+		if !(bj.x0 > ai.x0 && bj.x0 < ai.x1 && ai.x1 <= bj.x1) {
+			continue
+		}
+		// i is a small fragment, not a genuine column.
+		bw := bj.x1 - bj.x0
+		if aw >= bw*0.5 {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // sortCharsYFirstly sorts chars by Y (fuzzy group by threshold), then by X.
@@ -316,7 +451,13 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 		}
 		if strings.TrimSpace(tb.Text) == "" {
 			tb.Text = ""
-			needOCR = append(needOCR, i)
+			// A char-less detect box that is a left-overhang fragment of a
+			// same-line neighbor (which already carries the glyphs via the
+			// char layer) would only re-read and duplicate the neighbor's text
+			// if OCR-filled. Leave it empty; the trailing filter drops it.
+			if !boxIsCoveredLeftFragment(boxes, boxChars, i, tb.Text) {
+				needOCR = append(needOCR, i)
+			}
 		}
 		result = append(result, tb)
 	}
@@ -335,7 +476,12 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
 				{X: boxes[idx].x0 * scale, Y: boxes[idx].y1 * scale},
 			})
-			texts, err := p.ocrRecognizeWithRotation(ctx, doc, cropped)
+			// Stamp the source detect-box index so a replay DocAnalyzer routes
+			// this fallback to the same Python-dumped box (detectBoxes may have
+			// re-sorted, so use srcIdx, not the loop index). The production
+			// analyzer ignores the key.
+			recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, boxes[idx].srcIdx)
+			texts, err := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
 			if err != nil {
 				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", err)
 				continue

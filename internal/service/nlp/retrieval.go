@@ -53,7 +53,9 @@ type RetrievalRequest struct {
 	DocIDs                 []string
 	Page                   int
 	PageSize               int
-	Top                    *int
+	RerankCandidatesCount  *int
+	KNNTopK                *int
+	KNNNumCandidates       *int
 	SimilarityThreshold    *float64
 	VectorSimilarityWeight *float64
 	RankFeature            *map[string]float64
@@ -72,9 +74,11 @@ type RetrievalResult struct {
 }
 
 // Retrieval performs hybrid search + reranking + pagination
-// - Calculate rerank limit and call Search() to fetch rerankLimit candidates for reranking
+// - Retrieve candidates for reranking
 // - Perform reranking via Rerank()
 // - Sort indices by score descending and filter by threshold
+// - Require Page * PageSize to fit within RerankCandidatesCount
+// - Support only the first page when a rerank model is configured
 // - Calculate pagination to extract actual page returned from reranked results
 // - Build chunks
 // - Build document aggregation if specified
@@ -85,8 +89,11 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}
 
 	// Apply default values
-	if req.Top == nil {
-		req.Top = func() *int { v := 1024; return &v }()
+	if req.KNNTopK == nil {
+		req.KNNTopK = func() *int { v := 1024; return &v }()
+	}
+	if req.KNNNumCandidates == nil {
+		req.KNNNumCandidates = func() *int { v := 2048; return &v }()
 	}
 	if req.SimilarityThreshold == nil {
 		req.SimilarityThreshold = func() *float64 { v := 0.2; return &v }()
@@ -107,53 +114,39 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if req.PageSize <= 0 {
 		req.PageSize = 1
 	}
+	if req.RerankCandidatesCount == nil {
+		req.RerankCandidatesCount = func() *int { v := 64; return &v }()
+	}
 
-	// Calculate rerank limit to ensure we get enough results for proper pagination
 	pageSize := req.PageSize
-	rerankLimit := pageSize
-	if pageSize > 1 {
-		rerankLimit = int(math.Ceil(64.0/float64(pageSize))) * pageSize
-	} else {
-		rerankLimit = 1
+	rerankCandidatesCount := *req.RerankCandidatesCount
+	if rerankCandidatesCount <= 0 || req.Page > rerankCandidatesCount/pageSize {
+		return nil, fmt.Errorf("rerank_candidates_count(%d) must be greater than or equal to page(%d) * page_size(%d)", rerankCandidatesCount, req.Page, pageSize)
 	}
-	if rerankLimit < 30 {
-		rerankLimit = 30
+	if req.RerankModel != nil && req.Page != 1 {
+		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
 	}
-	// Cap rerank limit when external rerank model is used
-	if req.RerankModel != nil && *req.Top > 0 {
-		if rerankLimit > *req.Top {
-			rerankLimit = *req.Top
-		}
-		if rerankLimit > 64 {
-			rerankLimit = 64
-		}
-	}
-
-	page := req.Page
-	globalOffset := (page - 1) * pageSize
-	searchPage := globalOffset/rerankLimit + 1
-	common.Debug("Retrieval rerank params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize),
-		zap.Int("searchPage", searchPage), zap.Int("rerankLimit", rerankLimit), zap.Int("globalOffset", globalOffset))
+	common.Debug("Retrieval rerank candidate params", zap.Int("page", req.Page), zap.Int("pageSize", pageSize), zap.Int("rerankCandidatesCount", rerankCandidatesCount))
 
 	// Execute search via Search()
 	searchReq := &RetrievalSearchRequest{
-		TenantIDs:      req.TenantIDs,
-		Question:       req.Question,
-		KbIDs:          req.KbIDs,
-		DocIDs:         req.DocIDs,
-		Page:           searchPage,
-		PageSize:       rerankLimit,
-		Top:            *req.Top,
-		RankFeature:    *req.RankFeature,
-		EmbeddingModel: req.EmbeddingModel,
-		Filter:         req.Filter,
+		TenantIDs:              req.TenantIDs,
+		Question:               req.Question,
+		KbIDs:                  req.KbIDs,
+		DocIDs:                 req.DocIDs,
+		Page:                   1,
+		PageSize:               rerankCandidatesCount,
+		KNNTopK:                *req.KNNTopK,
+		KNNNumCandidates:       *req.KNNNumCandidates,
+		RankFeature:            *req.RankFeature,
+		EmbeddingModel:         req.EmbeddingModel,
+		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		Filter:                 req.Filter,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
-	searchTotal := searchResult.Total
-
 	// Prune deleted chunks
 	searchResult, err = s.PruneDeletedChunks(ctx, searchResult)
 	if err != nil {
@@ -202,7 +195,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 
 	// Calculate pagination
 	// begin and end define which of validIdx to return as the page
-	begin := globalOffset % rerankLimit
+	begin := (req.Page - 1) * pageSize
 	end := begin + pageSize
 
 	// Get page indices
@@ -216,17 +209,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	common.Info("Pagination result info", zap.Int("totalValid", len(validIdx)), zap.Int("begin", begin),
 		zap.Int("end", end), zap.Int("chunkCount", len(pageIdx)), zap.Float64("postThreshold", postThreshold))
 
-	//searchTotal > len(searchResult.IDs): The total number reported by the engine exceeds the number actually retrieved this time,
-	//indicating that there are still unretrieved chunks in the candidate set; the current count may be an underestimate
-	//*req.Top > rerankLimit: The Top value requested by the caller exceeds the re-ranking limit, indicating that we have indeed
-	//‘only examined a portion’ rather than having covered all target results
 	total := int64(len(validIdx))
-	if searchTotal > int64(len(searchResult.IDs)) && *req.Top > rerankLimit {
-		total, err = s.countThresholdValidMatches(ctx, req, *req.Top, postThreshold)
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	// Build chunks for pageIdx, transforms raw search results into the API response format
 	var filteredChunks []map[string]interface{}
@@ -425,41 +408,6 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}, nil
 }
 
-func (s *RetrievalService) countThresholdValidMatches(ctx context.Context, req *RetrievalRequest, limit int, postThreshold float64) (int64, error) {
-	searchReq := &RetrievalSearchRequest{
-		TenantIDs:      req.TenantIDs,
-		Question:       req.Question,
-		KbIDs:          req.KbIDs,
-		DocIDs:         req.DocIDs,
-		Page:           1,
-		PageSize:       limit,
-		Top:            *req.Top,
-		RankFeature:    *req.RankFeature,
-		EmbeddingModel: req.EmbeddingModel,
-		Filter:         req.Filter,
-	}
-	searchResult, err := s.Search(ctx, searchReq)
-	if err != nil {
-		return 0, fmt.Errorf("search count failed: %w", err)
-	}
-	searchResult, err = s.PruneDeletedChunks(ctx, searchResult)
-	if err != nil {
-		return 0, fmt.Errorf("PruneDeletedChunks count failed: %w", err)
-	}
-	if searchResult.Total == 0 {
-		return 0, nil
-	}
-
-	sim, _, _ := s.scoreSearchResult(ctx, req, searchResult)
-	var total int64
-	for _, score := range sim {
-		if score >= postThreshold {
-			total++
-		}
-	}
-	return total, nil
-}
-
 func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64) {
 	// sim = tkWeight*tsim + vtWeight*vsim
 	vtWeight := *req.VectorSimilarityWeight
@@ -546,19 +494,49 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 
 // RetrievalSearchRequest is the request struct for RetrievalService.Search()
 type RetrievalSearchRequest struct {
-	Question            string
-	TenantIDs           []string
-	KbIDs               []string
-	DocIDs              []string
-	Top                 int
-	Page                int
-	PageSize            int
-	Sort                bool
-	Highlight           *bool
-	SimilarityThreshold float64
-	RankFeature         map[string]float64
-	Filter              map[string]interface{}
-	EmbeddingModel      *models.EmbeddingModel
+	Question               string
+	TenantIDs              []string
+	KbIDs                  []string
+	DocIDs                 []string
+	KNNTopK                int
+	KNNNumCandidates       int
+	Page                   int
+	PageSize               int
+	Sort                   bool
+	Highlight              *bool
+	SimilarityThreshold    float64
+	RankFeature            map[string]float64
+	Filter                 map[string]interface{}
+	EmbeddingModel         *models.EmbeddingModel
+	VectorSimilarityWeight *float64
+}
+
+func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
+	vectorWeight := 0.3
+	if vectorSimilarityWeight != nil {
+		vectorWeight = *vectorSimilarityWeight
+	}
+	termWeight := math.Round((1.0-vectorWeight)*10000) / 10000
+
+	return &types.FusionExpr{
+		Method: "weighted_sum",
+		TopN:   topn,
+		FusionParams: map[string]interface{}{
+			"weights": fmt.Sprintf("%g,%g", termWeight, vectorWeight),
+		},
+	}
+}
+
+func buildRetrievalFusionExpr(docEngineType string, topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
+	if docEngineType == string(engine.EngineInfinity) {
+		return buildInfinityFusionExpr(topn, vectorSimilarityWeight)
+	}
+
+	return &types.FusionExpr{
+		Method:       "weighted_sum",
+		TopN:         topn,
+		FusionParams: map[string]interface{}{"weights": "0.05,0.95"},
+	}
 }
 
 type RetrievalSearchResult struct {
@@ -589,13 +567,18 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		filters["available_int"] = 1
 	}
 	pg := max(req.Page-1, 0)
-	topk := req.Top
-	if topk <= 0 {
-		topk = 1024
+	knnTopK := req.KNNTopK
+	if knnTopK <= 0 {
+		knnTopK = 1024
 	}
+	numCandidates := req.KNNNumCandidates
+	if numCandidates <= 0 {
+		numCandidates = 2048
+	}
+	// Result pagination is independent of the KNN candidate pool size.
 	pageSize := req.PageSize
 	if pageSize <= 0 {
-		pageSize = topk
+		pageSize = 30
 	}
 	limit := pageSize
 
@@ -665,17 +648,13 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			if similarityForGetVector <= 0 {
 				similarityForGetVector = 0.1
 			}
-			matchDense, err := s.GetVector(ctx, req.Question, req.EmbeddingModel, topk, similarityForGetVector)
+			matchDense, err := s.GetVector(ctx, req.Question, req.EmbeddingModel, knnTopK, numCandidates, similarityForGetVector)
 			if err != nil {
 				return nil, fmt.Errorf("GetVector failed: %w", err)
 			}
 
 			// Execute search with fusion
-			fusionExpr := &types.FusionExpr{
-				Method:       "weighted_sum",
-				TopN:         topk,
-				FusionParams: map[string]interface{}{"weights": "0.05,0.95"},
-			}
+			fusionExpr := buildRetrievalFusionExpr(s.docEngine.GetType(), knnTopK, req.VectorSimilarityWeight)
 
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
@@ -794,7 +773,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 }
 
 // GetVector computes query vector and returns MatchDenseExpr for hybrid search
-func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, topk int, similarity float64) (*types.MatchDenseExpr, error) {
+func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, knnTopK, numCandidates int, similarity float64) (*types.MatchDenseExpr, error) {
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
@@ -812,8 +791,8 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 		EmbeddingData:     vector,
 		EmbeddingDataType: "float",
 		DistanceType:      "cosine",
-		TopN:              topk,
-		ExtraOptions:      map[string]interface{}{"similarity": similarity},
+		TopN:              knnTopK,
+		ExtraOptions:      map[string]interface{}{"similarity": similarity, "num_candidates": numCandidates},
 	}, nil
 }
 

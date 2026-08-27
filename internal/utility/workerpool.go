@@ -68,6 +68,10 @@ type WorkerPool[T any, R any] struct {
 	handler  WorkerPoolHandler[T, R]
 	workChan chan workerPoolJob[T, R]
 
+	// state is guarded by mu: the only transition is Running→Stopped (in
+	// StopWait); SubmitTo and Resize read it to reject new work once the pool
+	// is stopped. It is never accessed atomically — every read/write happens
+	// under mu so the check and the channel send/close stay mutually exclusive.
 	state uint32
 
 	desiredWorkers int64
@@ -82,7 +86,17 @@ type WorkerPool[T any, R any] struct {
 	submitN  uint64
 	doneN    uint64
 
-	workerWg sync.WaitGroup
+	// activeSend counts submits that have passed the stopped-state check and
+	// are about to (or currently) send on workChan. It is guarded by mu.
+	// StopWait waits for it to reach zero before closing workChan, so a send
+	// can never race the close, while SubmitTo is free to release mu before a
+	// potentially blocking send (holding mu across a full-queue send would
+	// deadlock: a worker blocked in markDone on the same mu can never receive
+	// the next job to drain the queue).
+	activeSend uint64
+
+	senderDone sync.Cond
+	workerWg   sync.WaitGroup
 }
 
 // NewWorkerPool creates a worker pool with fixed queue capacity and starts workers immediately.
@@ -103,6 +117,7 @@ func NewWorkerPool[T any, R any](workers, queueSize int, handler WorkerPoolHandl
 		desiredWorkers: int64(workers),
 	}
 	p.taskDone.L = &p.mu
+	p.senderDone.L = &p.mu
 	p.start(workers)
 	return p
 }
@@ -157,9 +172,23 @@ func (p *WorkerPool[T, R]) worker() {
 
 // Resize adjusts the target worker count. When shrinking, extra workers retire
 // after completing their current task.
+//
+// Resize is a no-op on a stopped pool: it must never spawn workers after
+// StopWait has marked the pool stopped, because workerWg.Add racing
+// StopWait's workerWg.Wait is a WaitGroup misuse.
 func (p *WorkerPool[T, R]) Resize(workers int) {
 	if workers <= 0 {
 		panic("workerpool: workers must be greater than zero")
+	}
+
+	// Guard the read-modify-write of desiredWorkers and the workerWg.Add in
+	// start() with mu, the same lock StopWait holds while marking the pool
+	// stopped. The lock serializes Resize against StopWait: once the pool is
+	// stopped no Resize can add workers, so workerWg.Add never races Wait.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.state == workerPoolStateStopped {
+		return
 	}
 
 	current := int(atomic.LoadInt64(&p.desiredWorkers))
@@ -179,20 +208,48 @@ func (p *WorkerPool[T, R]) Submit(ctx context.Context, input T) (WorkerPoolFutur
 }
 
 // SubmitTo enqueues one task and routes its result into out.
+//
+// The stopped-state check and the activeSend increment are atomic with
+// respect to StopWait's close(workChan): both run while holding mu, and
+// StopWait marks the pool stopped and waits for activeSend to reach zero
+// before closing the channel. A submit that has passed the check therefore
+// either sends before the close, or (if its context is already done) returns
+// without sending — never a "send on closed channel" panic. submitN is
+// incremented before the send, so StopWait's drain counts a submit whose send
+// is still blocked on a full queue and never returns while that task is in
+// flight. mu is released before the send itself: a send that blocks on a full
+// queue must not hold mu, or a worker finishing its current job would deadlock
+// in markDone before it can receive the next job and drain the queue.
 func (p *WorkerPool[T, R]) SubmitTo(ctx context.Context, input T, out chan<- WorkerPoolResult[T, R]) error {
-	if atomic.LoadUint32(&p.state) == workerPoolStateStopped {
+	j := workerPoolJob[T, R]{ctx: ctx, input: input, out: out}
+
+	p.mu.Lock()
+	if p.state == workerPoolStateStopped {
+		p.mu.Unlock()
 		return ErrWorkerPoolStopped
 	}
+	p.submitN++
+	p.activeSend++
+	p.mu.Unlock()
 
-	j := workerPoolJob[T, R]{ctx: ctx, input: input, out: out}
 	select {
 	case <-ctx.Done():
+		p.mu.Lock()
+		p.submitN--
+		p.activeSend--
+		if p.activeSend == 0 {
+			p.senderDone.Broadcast()
+		}
+		p.mu.Unlock()
 		return ctx.Err()
 	case p.workChan <- j:
-		atomic.AddUint64(&p.submittedTotal, 1)
 		p.mu.Lock()
-		p.submitN++
+		p.activeSend--
+		if p.activeSend == 0 {
+			p.senderDone.Broadcast()
+		}
 		p.mu.Unlock()
+		atomic.AddUint64(&p.submittedTotal, 1)
 		return nil
 	}
 }
@@ -208,18 +265,30 @@ func (p *WorkerPool[T, R]) markDone() {
 
 // StopWait stops accepting new tasks, waits for queued/running tasks to finish,
 // then shuts down the worker pool.
+//
+// Safe to call concurrently with Submit, SubmitTo and Resize. The pool is
+// marked stopped and all counters are drained under mu. StopWait first waits
+// for activeSend to reach zero — no submit that has already passed the
+// stopped-state check is still sending — before closing workChan, so the close
+// can never race a send. Because SubmitTo releases mu before a potentially
+// blocking send, workers are free to drain the queue and unblock those senders
+// instead of deadlocking on markDone. No Resize can spawn workers after the
+// pool stops.
 func (p *WorkerPool[T, R]) StopWait() {
-	if !atomic.CompareAndSwapUint32(&p.state, workerPoolStateRunning, workerPoolStateStopped) {
+	p.mu.Lock()
+	if p.state == workerPoolStateStopped {
+		p.mu.Unlock()
 		return
 	}
-
-	p.mu.Lock()
+	p.state = workerPoolStateStopped
+	for p.activeSend != 0 {
+		p.senderDone.Wait()
+	}
 	for p.submitN != p.doneN {
 		p.taskDone.Wait()
 	}
-	p.mu.Unlock()
-
 	close(p.workChan)
+	p.mu.Unlock()
 	p.workerWg.Wait()
 }
 

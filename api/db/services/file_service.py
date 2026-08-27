@@ -215,7 +215,7 @@ class FileService(CommonService):
     def get_all_file_ids_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         files = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        files.order_by(cls.model.create_time.asc())
+        files = files.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
@@ -538,6 +538,43 @@ class FileService(CommonService):
             raise RuntimeError("Database error (File move)!")
 
     @classmethod
+    def _discard_orphaned_document(cls, doc) -> bool:
+        """Drop a document stranded by a deleted knowledge base, and its debris.
+
+        Connector syncs derive document ids from the external document, so a row
+        stranded this way keeps answering ``get_by_id`` and blocks that document
+        from ever being ingested again -- while being invisible to the user,
+        because the knowledge base it names is gone. Returns whether it was
+        removed.
+
+        Mirrors the teardown ``delete_docs`` performs, minus the chunk work:
+        the chunks went with the index dropped at dataset deletion, and the
+        document's tenant is no longer resolvable through its knowledge base,
+        so there is no index left to address. Storage and row cleanup are
+        best-effort -- the point is to unblock ingestion, so debris that cannot
+        be reached must not resurrect the collision.
+        """
+        if KnowledgebaseService.get_or_none(id=doc.kb_id) is not None:
+            return False
+
+        logger.warning("Discarding orphaned document %s: its kb_id=%s no longer exists.", doc.id, doc.kb_id)
+        try:
+            bucket, location = File2DocumentService.get_storage_address(doc_id=doc.id)
+            TaskService.filter_delete([Task.doc_id == doc.id])
+            f2d = File2DocumentService.get_by_document_id(doc.id)
+            deleted_file_count = 0
+            if f2d:
+                deleted_file_count = cls.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc.id)
+            if deleted_file_count > 0:
+                settings.STORAGE_IMPL.rm(bucket, location)
+        except Exception:
+            logger.exception("Failed to fully clean up orphaned document %s; removing the row anyway", doc.id)
+
+        DocumentService.delete_by_id(doc.id)
+        return True
+
+    @classmethod
     @DB.connection_context()
     def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None, parser_config_override: dict | None = None):
         root_folder = self.get_root_folder(user_id)
@@ -559,18 +596,21 @@ class FileService(CommonService):
         for file in file_objs:
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
+            if e and str(doc.kb_id) != str(kb.id):
+                if not self._discard_orphaned_document(doc):
+                    logger.warning(
+                        "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. Skipping update to avoid cross-KB overwrite.",
+                        doc_id,
+                        doc.kb_id,
+                        kb.id,
+                    )
+                    user_msg = f"Existing document id collision with knowledge base '{doc.kb_id}'; skipping update."
+                    err.append(file.filename + ": " + user_msg)
+                    continue
+                # The stranded row is gone; ingest as a fresh document.
+                e, doc = False, None
             if e:
                 try:
-                    if str(doc.kb_id) != str(kb.id):
-                        logger.warning(
-                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. Skipping update to avoid cross-KB overwrite.",
-                            doc_id,
-                            doc.kb_id,
-                            kb.id,
-                        )
-                        user_msg = "Existing document id collision with another knowledge base; skipping update."
-                        err.append(file.filename + ": " + user_msg)
-                        continue
                     blob = file.read()
                     # Connector-supplied fingerprint (e.g. xxhash128(S3 ETag))
                     # takes precedence: for connector-sourced docs the bypass

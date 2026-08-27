@@ -892,6 +892,9 @@ export default {
       created: 'Создано',
       action: 'Действие',
       embedModalTitle: 'Встроить на веб-страницу',
+      embedUserIdPlaceholder: 'например: user-001',
+      embedUserIdTooltip:
+        'Строка (до 255 символов), идентифицирующая конечного пользователя встроенной страницы. Она добавляется в URL встраивания как параметр userId.',
       published: 'Опубликовано',
       publishedTooltip:
         'Использовать опубликованную версию для встраивания. В URL будет release=true.',
@@ -1063,6 +1066,7 @@ export default {
         'Загрузите OAuth JSON, сгенерированный в Google Console. Если он содержит только учетные данные клиента, выполните одноразовое подтверждение в браузере, чтобы получить долгоживущие токены обновления.',
       dropboxDescription:
         'Подключите ваш Dropbox для синхронизации файлов и папок из выбранного аккаунта.',
+      azure_devopsDescription: "Подключите Azure DevOps для синхронизации файлов репозитория и pull request'ов.",
       bitbucketDescription:
         'Подключите Bitbucket для синхронизации содержимого PR.',
       bitbucketTopWorkspaceTip:
@@ -1609,6 +1613,9 @@ export default {
       maxRounds: 'Максимальное количество раундов рефлексии',
       delayAfterError: 'Задержка после ошибки',
       maxRetries: 'Максимальное количество попыток повтора',
+      toolTimeout: 'Таймаут вызова инструмента',
+      toolTimeoutTip:
+        'Таймаут в секундах для одного вызова инструмента (включая MCP). Увеличьте для длительно выполняющихся инструментов.',
       advancedSettings: 'Расширенные настройки',
       addTools: 'Добавить инструменты',
       sysPromptDefaultValue: `

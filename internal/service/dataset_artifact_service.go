@@ -23,8 +23,12 @@ import (
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 
+	"gorm.io/gorm"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
 )
 
@@ -171,7 +175,7 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 		filter["page_type_kwd"] = []string{pageType}
 	}
 	if topic != "" {
-		filter["topic_kwd"] = []string{topic}
+		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
 	}
 	offset := (page - 1) * pageSize
 	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
@@ -194,7 +198,7 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 			Slug:     bareSlug,
 			Title:    firstStringValue(c["title_kwd"]),
 			PageType: pageType,
-			Topic:    firstStringValue(c["topic_kwd"]),
+			Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 			Summary:  firstStringValue(c["summary_with_weight"]),
 		})
 	}
@@ -261,7 +265,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		Slug:           detailSlug,
 		Title:          firstStringValue(c["title_kwd"]),
 		PageType:       detailPageType,
-		Topic:          firstStringValue(c["topic_kwd"]),
+		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 		ContentMd:      content,
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
@@ -331,44 +335,29 @@ type WikiTopicItem struct {
 	PageCount int    `json:"page_count"`
 }
 
-// ListWikiTopics aggregates wiki topics for a dataset.
+// ListWikiTopics aggregates materialized Wiki topic paths for a dataset. Topic
+// is the complete path and Title is its leaf segment; the frontend may derive a
+// navigation tree by splitting Topic on '/'.
 func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID string) ([]WikiTopicItem, int64, error) {
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
-		"page_type_kwd": []string{"concept", "entity"},
+		"page_type_kwd": []string{"concept", "entity", "topic"},
 		"available_int": 1, // count only merged pages, not per-doc source rows
 	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"topic_kwd", "title_kwd", "slug_kwd", "page_type_kwd"}, 0, 1000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	counts := map[string]int{}
-	metas := map[string]WikiTopicItem{}
-	for _, c := range chunks {
-		t := firstStringValue(c["topic_kwd"])
-		if t == "" {
-			continue
+	const batchSize = 1000
+	fields := []string{"topic_kwd"}
+	chunks := make([]map[string]interface{}, 0, batchSize)
+	for offset := 0; ; offset += batchSize {
+		batch, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, fields, offset, batchSize, nil)
+		if err != nil {
+			return nil, 0, err
 		}
-		pageType := firstStringValue(c["page_type_kwd"])
-		bareSlug := firstStringValue(c["slug_kwd"])
-		if pageType != "" {
-			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
-		}
-		counts[t]++
-		if _, ok := metas[t]; !ok {
-			metas[t] = WikiTopicItem{
-				Topic: t,
-				Title: firstStringValue(c["title_kwd"]),
-				Slug:  bareSlug,
-			}
+		chunks = append(chunks, batch...)
+		if len(batch) == 0 || int64(len(chunks)) >= total {
+			break
 		}
 	}
-	items := make([]WikiTopicItem, 0, len(metas))
-	for t, it := range metas {
-		it.PageCount = counts[t]
-		items = append(items, it)
-	}
+	items := aggregateWikiTopicItems(chunks)
 	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
 	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
 	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
@@ -378,6 +367,37 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
 	})
 	return items, int64(len(items)), nil
+}
+
+func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
+	type aggregate struct {
+		topic string
+		count int
+	}
+	byKey := make(map[string]*aggregate)
+	for _, c := range chunks {
+		t := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		item := byKey[key]
+		if item == nil {
+			item = &aggregate{topic: t}
+			byKey[key] = item
+		}
+		item.count++
+	}
+	items := make([]WikiTopicItem, 0, len(byKey))
+	for _, aggregate := range byKey {
+		items = append(items, WikiTopicItem{
+			Topic:     aggregate.topic,
+			Title:     kccommon.WikiTopicLeaf(aggregate.topic),
+			Slug:      aggregate.topic,
+			PageCount: aggregate.count,
+		})
+	}
+	return items
 }
 
 // wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
@@ -430,11 +450,11 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// so the frontend can build artifact/<page_type>/<slug> links that
 		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
 		// "wiki_topic"); strip the prefix. slug_kwd stores the full
-		// "<page_type>/<slug>" form; expose the trailing bare slug.
+		// "<page_type>/<slug>" form; preserve nested slug segments.
 		fullSlug := firstStringValue(c["slug_kwd"])
 		bareSlug := fullSlug
 		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
-		if idx := strings.LastIndex(bareSlug, "/"); idx >= 0 {
+		if idx := strings.IndexByte(bareSlug, '/'); idx >= 0 {
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
 		}
@@ -480,31 +500,204 @@ type WikiAlteration struct {
 
 // GetWikiAlteration returns the wiki alteration summary for a dataset.
 func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID, datasetID string) (*WikiAlteration, error) {
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
-		[]string{"source_doc_ids"}, 0, 10000, nil)
-	if err != nil {
-		return nil, err
-	}
 	involved := map[string]struct{}{}
-	for _, c := range chunks {
-		for _, d := range toStringSlice(c["source_doc_ids"]) {
-			involved[d] = struct{}{}
+	for offset := 0; ; offset += 1000 {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
+			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
+			[]string{"source_doc_ids"}, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range chunks {
+			for _, d := range toStringSlice(c["source_doc_ids"]) {
+				if d != "" {
+					involved[d] = struct{}{}
+				}
+			}
+		}
+		if len(chunks) == 0 || int64(offset+len(chunks)) >= total {
+			break
 		}
 	}
-	ids := make([]string, 0, len(involved))
-	for d := range involved {
-		ids = append(ids, d)
+	// The database is the source of truth for the current document set. The
+	// previous implementation returned the source_doc_ids from the compiled
+	// pages as both sides of the comparison, which made deletion impossible to
+	// observe. In particular, a deleted document remains in source_doc_ids until
+	// the dataset-level consumer removes the old page.
+	var documents []entity.Document
+	if err := dao.DB.WithContext(ctx).Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
+		return nil, fmt.Errorf("list dataset documents for wiki alteration: %w", err)
+	}
+	eligible := make(map[string]struct{}, len(documents))
+	for i := range documents {
+		if documents[i].Status != nil && *documents[i].Status == "0" {
+			continue
+		}
+		pipelineID := ""
+		if documents[i].PipelineID != nil {
+			pipelineID = *documents[i].PipelineID
+		}
+		ok, err := s.documentHasWikiTemplate(ctx, tenantID, documents[i].ParserConfig, pipelineID)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			eligible[documents[i].ID] = struct{}{}
+		}
+	}
+
+	removedIDs := setDifference(involved, eligible)
+	newlyUploadedIDs := setDifference(eligible, involved)
+	return &WikiAlteration{
+		Removed:             len(removedIDs),
+		NewlyUploaded:       len(newlyUploadedIDs),
+		RemovedDocIDs:       removedIDs,
+		NewlyUploadedDocIDs: newlyUploadedIDs,
+		InvolvedDocIDs:      sortedSetKeys(involved),
+		EligibleDocIDs:      sortedSetKeys(eligible),
+	}, nil
+}
+
+// documentHasWikiTemplate reports whether a document's saved pipeline config
+// contains a valid wiki compiler template. A document is eligible only when it
+// is configured for wiki compilation; treating every document in the dataset
+// as eligible would hide both template removal and document deletion.
+func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string) (bool, error) {
+	ok, err := s.valueHasWikiTemplate(ctx, tenantID, config)
+	if err != nil || ok {
+		return ok, err
+	}
+	if pipelineID == "" {
+		return false, nil
+	}
+	var canvas entity.UserCanvas
+	if err := dao.DB.WithContext(ctx).Where("id = ?", pipelineID).First(&canvas).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load pipeline %q for wiki alteration: %w", pipelineID, err)
+	}
+	return s.valueHasWikiTemplate(ctx, tenantID, canvas.DSL)
+}
+
+// valueHasWikiTemplate recursively inspects persisted parser/pipeline JSON.
+// Pipeline DSLs and document parser configs use different nesting layouts, so
+// looking only at a single top-level Compiler key misses pipeline documents.
+func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenantID string, value interface{}) (bool, error) {
+	if items, ok := value.([]interface{}); ok {
+		for _, item := range items {
+			if found, err := s.valueHasWikiTemplate(ctx, tenantID, item); err != nil || found {
+				return found, err
+			}
+		}
+		return false, nil
+	}
+	params, isMap := value.(map[string]interface{})
+	if !isMap {
+		if typed, ok := value.(entity.JSONMap); ok {
+			params = map[string]interface{}(typed)
+			isMap = true
+		}
+	}
+	if !isMap {
+		return false, nil
+	}
+	if id, ok := params["compilation_template_id"].(string); ok && id != "" {
+		var template entity.CompilationTemplate
+		if err := dao.DB.WithContext(ctx).
+			Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND status = ?", id, tenantID, string(entity.StatusValid)).
+			First(&template).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return false, nil
+			}
+			return false, fmt.Errorf("load wiki compilation template %q: %w", id, err)
+		}
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	if groupID, ok := params["compilation_template_group_id"].(string); ok && groupID != "" {
+		if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+			return found, err
+		}
+	}
+	if rawGroupIDs, ok := params["compilation_template_group_ids"]; ok {
+		groupIDs := []string{}
+		switch values := rawGroupIDs.(type) {
+		case string:
+			groupIDs = append(groupIDs, values)
+		case []interface{}:
+			for _, value := range values {
+				if groupID, ok := value.(string); ok {
+					groupIDs = append(groupIDs, groupID)
+				}
+			}
+		case []string:
+			groupIDs = values
+		}
+		for _, groupID := range groupIDs {
+			if strings.TrimSpace(groupID) != "" {
+				if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+					return found, err
+				}
+			}
+		}
+	}
+	for _, child := range params {
+		if found, err := s.valueHasWikiTemplate(ctx, tenantID, child); err != nil || found {
+			return found, err
+		}
+	}
+	return false, nil
+}
+
+func (s *DatasetArtifactService) groupHasWikiTemplate(ctx context.Context, tenantID, groupID string) (bool, error) {
+	var group entity.CompilationTemplateGroup
+	if err := dao.DB.WithContext(ctx).
+		Where("id = ? AND (tenant_id = ? OR tenant_id = '') AND status = ?", groupID, tenantID, string(entity.StatusValid)).
+		First(&group).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	var templates []entity.CompilationTemplate
+	if err := dao.DB.WithContext(ctx).Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).Find(&templates).Error; err != nil {
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	for _, template := range templates {
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func templateKind(template entity.CompilationTemplate) string {
+	if kind, ok := template.Config["kind"].(string); ok && strings.TrimSpace(kind) != "" {
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
+	return strings.ToLower(strings.TrimSpace(template.Kind))
+}
+
+func setDifference(left, right map[string]struct{}) []string {
+	ids := make([]string, 0)
+	for id := range left {
+		if _, ok := right[id]; !ok {
+			ids = append(ids, id)
+		}
 	}
 	sort.Strings(ids)
-	return &WikiAlteration{
-		Removed:             0,
-		NewlyUploaded:       0,
-		RemovedDocIDs:       []string{},
-		NewlyUploadedDocIDs: []string{},
-		InvolvedDocIDs:      ids,
-		EligibleDocIDs:      ids,
-	}, nil
+	return ids
+}
+
+func sortedSetKeys(set map[string]struct{}) []string {
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // ClearWiki deletes all wiki artifacts for a dataset.
@@ -773,13 +966,12 @@ func firstStringValue(v interface{}) string {
 	return ""
 }
 
-// bareWikiSlug strips the "<page_type>/" prefix from a full wiki slug
-// ("topic/yellow-turban-rebellion" -> "yellow-turban-rebellion"), matching the
-// bare-slug form the graph UI keys nodes/relations on. Slugs with no prefix are
-// returned unchanged.
+// bareWikiSlug strips only the first path segment from a full wiki slug
+// ("entity/location/长社" -> "location/长社"). Nested type/name segments are
+// preserved so distinct typed entities remain distinguishable in graph links.
 func bareWikiSlug(slug string) string {
 	s := strings.TrimSpace(slug)
-	if idx := strings.LastIndex(s, "/"); idx >= 0 && idx < len(s)-1 {
+	if idx := strings.IndexByte(s, '/'); idx >= 0 && idx < len(s)-1 {
 		return s[idx+1:]
 	}
 	return s
@@ -791,6 +983,10 @@ func toStringSlice(v interface{}) []string {
 	case string:
 		if t == "" {
 			return []string{}
+		}
+		var decoded interface{}
+		if json.Unmarshal([]byte(t), &decoded) == nil {
+			return toStringSlice(decoded)
 		}
 		return []string{t}
 	case []interface{}:

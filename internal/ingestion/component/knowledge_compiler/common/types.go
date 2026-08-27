@@ -50,9 +50,9 @@ type Param struct {
 	MaxWorkers            int
 	EnableHistoricalDedup bool
 	// Plan selects the wiki compilation mode. nil means the DSL did not specify a
-	// mode, so template config may decide; the effective default is false (Mode A).
-	// true selects B-mode (LLM planning + reconcile), while false selects A-mode
-	// (one entity/concept = one deterministic flat page).
+	// mode, so template config may decide; the effective default is false
+	// (entity mode). true selects topic mode, which allows related identities to
+	// be merged during PLAN; both modes assign pages to MAP topics.
 	Plan *bool
 	// Extra carries arbitrary caller-provided overrides merged into the
 	// resolved template config.
@@ -138,6 +138,9 @@ type Product struct {
 type Outputs struct {
 	Products          []Product
 	DuplicatesDropped int
+	AffectedPageSlugs []string
+	RemovedPageSlugs  []string
+	WikiActiveStates  []WikiMapActiveState
 }
 
 // ParseParam builds a Param from the DSL params map. The variant is NOT taken
@@ -184,8 +187,8 @@ func ParseParam(m map[string]any) (Param, error) {
 	return p, nil
 }
 
-// PlanEnabled reports whether wiki B-mode is selected. An unset value defaults
-// to Mode A.
+// PlanEnabled reports whether wiki topic mode is selected. An unset value
+// defaults to entity mode.
 func (p Param) PlanEnabled() bool {
 	return p.Plan != nil && *p.Plan
 }

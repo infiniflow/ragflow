@@ -88,6 +88,29 @@ type ProgressEvent struct {
 // ProgressCallback receives progress notifications from TrackProgress.
 type ProgressCallback func(event ProgressEvent)
 
+// ProgressMessageCallback receives detailed messages emitted by a component
+// while it is running. Unlike ProgressCallback, these messages do not change
+// the component lifecycle counters; they are supplemental observability for
+// stages such as a compiler's MAP/REDUCE/PLAN/REFINE pipeline.
+type ProgressMessageCallback func(component, message string)
+
+type progressMessageCallbackKey struct{}
+
+// WithProgressMessageCallback attaches a detailed component-message sink to a
+// run context. A nil callback is valid and keeps components DB-independent.
+func WithProgressMessageCallback(ctx context.Context, cb ProgressMessageCallback) context.Context {
+	return context.WithValue(ctx, progressMessageCallbackKey{}, cb)
+}
+
+// ReportProgressMessage forwards a detailed component message when a sink is
+// attached. Components can call this without depending on the persistence
+// layer or changing the lifecycle progress contract.
+func ReportProgressMessage(ctx context.Context, component, message string) {
+	if cb, ok := ctx.Value(progressMessageCallbackKey{}).(ProgressMessageCallback); ok && cb != nil {
+		cb(component, message)
+	}
+}
+
 // TrackProgress wraps fn with progress notifications. The callback is
 // invoked at most twice per call (once at start, once at end):
 //
