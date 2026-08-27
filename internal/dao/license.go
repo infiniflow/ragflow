@@ -17,8 +17,11 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // LicenseDAO license data access object
@@ -30,19 +33,19 @@ func NewLicenseDAO() *LicenseDAO {
 }
 
 // Create creates a new license record
-func (dao *LicenseDAO) Create(licenseID, licenseStr string) error {
+func (dao *LicenseDAO) Create(ctx context.Context, db *gorm.DB, licenseID, licenseStr string) error {
 	license := entity.License{
 		ID:        licenseID,
 		License:   licenseStr,
 		CreatedAt: time.Now(),
 	}
-	return DB.Create(license).Error
+	return db.WithContext(ctx).Create(license).Error
 }
 
 // GetLatest gets the latest license record by creation time
-func (dao *LicenseDAO) GetLatest() (*entity.License, error) {
+func (dao *LicenseDAO) GetLatest(ctx context.Context, db *gorm.DB) (*entity.License, error) {
 	var license entity.License
-	err := DB.Order("created_at DESC").First(&license).Error
+	err := db.WithContext(ctx).Order("created_at DESC").First(&license).Error
 	if err != nil {
 		return nil, err
 	}

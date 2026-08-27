@@ -86,10 +86,16 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminLogout()
 	case TokenPing:
 		return p.parseAdminPingServer()
+	case TokenLive:
+		return p.parseAdminLiveServer()
+	case TokenHealth:
+		return p.parseAdminHealthServer()
 	case TokenList:
 		return p.parseAdminListCommands()
 	case TokenShow:
 		return p.parseAdminShowCommands()
+	case TokenStats:
+		return p.parseAdminStatsCommands()
 	case TokenCheck:
 		return p.parseAdminCheck()
 	case TokenCreate:

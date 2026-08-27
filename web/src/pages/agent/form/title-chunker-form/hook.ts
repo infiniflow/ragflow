@@ -122,12 +122,23 @@ function transformApiResponseToForm(
     }
   }
 
+  let chunk_token_cap = apiData.chunk_token_cap;
+  if (chunk_token_cap === undefined || chunk_token_cap === null || chunk_token_cap === '') {
+    chunk_token_cap = 512;
+  } else {
+    chunk_token_cap = Number(chunk_token_cap);
+    if (!Number.isFinite(chunk_token_cap)) {
+      chunk_token_cap = 512;
+    }
+  }
+
   return {
     method,
     hierarchyHierarchy,
     hierarchyGroup,
     include_heading_content: Boolean(apiData.include_heading_content),
     root_chunk_as_heading: Boolean(apiData.root_chunk_as_heading),
+    chunk_token_cap,
     hierarchyRules,
     groupRules,
   };

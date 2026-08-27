@@ -25,12 +25,13 @@ from api.apps import current_user, login_required
 from api.constants import DATASET_NAME_LIMIT
 from api.db.db_models import DB
 from api.db.services import duplicate_name
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 
 
 def _full_text_weight(vector_similarity_weight):
@@ -77,11 +78,16 @@ async def create():
 @login_required
 def list_searches():
     keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
+    page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+    items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", "true").lower() != "false"
     owner_ids = request.args.getlist("owner_ids")
+
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as e:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
 
     try:
         if not owner_ids:
@@ -135,7 +141,7 @@ async def update(search_id):
         return get_data_error_result(message="Authorized identity.")
 
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
@@ -180,7 +186,7 @@ async def update(search_id):
 @login_required
 def delete_search(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not SearchService.delete_by_id(search_id):
@@ -198,7 +204,7 @@ async def completion(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 
@@ -219,6 +225,11 @@ async def completion(search_id):
     kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
     if not kb_ids:
         return get_data_error_result(message="`kb_ids` is required.")
+
+    # check if the kb_ids is accessible for this user
+    for kb_id in kb_ids:
+        if not KnowledgebaseService.accessible(kb_id=kb_id, user_id=uid):
+            return get_data_error_result(message=f"You don't own the dataset {kb_id}")
 
     async def stream():
         nonlocal req, uid, kb_ids, search_config

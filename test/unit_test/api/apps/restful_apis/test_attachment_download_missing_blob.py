@@ -71,8 +71,11 @@ def _load_agent_api(monkeypatch, *, storage_get):
     _stub(
         monkeypatch,
         "api.apps",
+        AUTH_JWT="jwt",
+        AUTH_API="api",
+        AUTH_BETA="beta",
         current_user=SimpleNamespace(id="tenant-1"),
-        login_required=lambda func: func,
+        login_required=lambda func=None, **_kwargs: (lambda f: f) if func is None else func,
     )
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
@@ -201,7 +204,7 @@ class TestAttachmentDownloadMissingBlob:
     """Regression for #15502: missing-blob → structured 4xx, not HTTP 500."""
 
     def test_empty_blob_returns_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Storage returns None (orphaned metadata) → 'Document not found!' 4xx,
+        """Storage returns None (orphaned metadata) → 'document not found' 4xx,
         not a TypeError 500 from make_response(None)."""
         module = _load_agent_api(monkeypatch, storage_get=lambda *_a, **_k: None)
         result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="orphan"))

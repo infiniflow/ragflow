@@ -433,7 +433,7 @@ def user_register(user_id, user):
         "embd_id": settings.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "img2txt_id": settings.VISION_MDL,
         "rerank_id": settings.RERANK_MDL,
     }
     usr_tenant = {

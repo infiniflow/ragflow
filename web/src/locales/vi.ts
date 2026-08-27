@@ -40,7 +40,7 @@ export default {
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
       embedIntoSite: 'Nhúng vào trang web',
-      openInNewTab: 'Chat trong tab mới',
+      openInNewTab: 'Mở trong tab mới',
       nextPage: 'Tới',
       previousPage: 'Lùi',
       owner: 'Chủ sở hữu',
@@ -224,6 +224,12 @@ export default {
         'Để giúp bạn hiểu rõ hơn, chúng tôi đã cung cấp ảnh chụp màn hình liên quan để tham khảo.',
       dialogueExamplesTitle: 'Ví dụ hội thoại',
       methodEmpty: 'Mô tả bằng hình ảnh các danh mục cơ sở kiến thức',
+      audio: `<p>Các định dạng tệp được hỗ trợ là <b>WAV, MP3, AAC, FLAC, OGG</b> và các định dạng âm thanh phổ biến khác.</p>
+<p>Phương pháp này phiên âm các tệp âm thanh thành văn bản bằng mô hình chuyển giọng nói thành văn bản.</p>`,
+      email: `<p>Các định dạng tệp được hỗ trợ là <b>EML</b> và <b>MSG</b>.</p>
+<p>Phương pháp này phân tích các tệp email, trích xuất các trường tiêu đề (như Từ, Đến, CC, Chủ đề và Ngày), nội dung thân thư và tệp đính kèm.</p>`,
+      knowledgeCompiler: `<p>Pipeline này phân tích và chia nhỏ tệp thành các chunk, sau đó biên dịch các chunk thành các đơn vị tri thức có cấu trúc (đồ thị tri thức, wiki, RAPTOR, sơ đồ tư duy hoặc điều hướng tập dữ liệu) thông qua thành phần Knowledge Compiler.</p>
+<p>Các đơn vị tri thức đã biên dịch được xuất dưới dạng chunk hợp nhất vào luồng chunk, rất lý tưởng để xây dựng lớp tri thức có thể truy xuất trên các tài liệu đã chia nhỏ.</p>`,
       book: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Đối với mỗi sách trong PDF, vui lòng đặt <i>phạm vi trang</i> để loại bỏ thông tin không mong muốn và giảm thời gian phân tích.</p>`,
       laws: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -576,14 +582,14 @@ export default {
       addedModels: 'Các mô hình đã thêm',
       modelsToBeAdded: 'Các mô hình cần thêm',
       addTheModel: 'Thêm mô hình',
-      apiKey: 'API-Key',
+      apiKey: 'API Key',
       apiKeyMessage:
         'Vui lòng nhập khóa API (đối với mô hình được triển khai cục bộ, bỏ qua điều này).',
       apiKeyTip:
         'Khóa API có thể được lấy bằng cách đăng ký nhà cung cấp LLM tương ứng.',
       showMoreModels: 'Hiển thị thêm mô hình',
       hideModels: 'Ẩn mô hình',
-      baseUrl: 'Base-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
       siliconBaseUrlTip:
@@ -621,7 +627,7 @@ export default {
       modelType: 'Loại mô hình',
       modelTypeMessage: 'Vui lòng nhập loại mô hình của bạn!',
       addLlmBaseUrl: 'URL cơ sở',
-      baseUrlNameMessage: 'Vui lòng nhập URL cơ sở của bạn!',
+      baseUrlNameMessage: 'Vui lòng nhập URL cơ sở của bạn',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder: 'Ví dụ: https://paddleocr-server.com/layout-parsing',
@@ -647,7 +653,7 @@ export default {
       addBedrockSK: 'KHÓA BÍ MẬT',
       bedrockSKMessage: 'Vui lòng nhập KHÓA BÍ MẬT của bạn',
       bedrockRegion: 'Vùng AWS',
-      bedrockRegionMessage: 'Vui lòng chọn!',
+      bedrockRegionMessage: 'Vui lòng chọn',
       'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
       'us-west-1': 'US West (N. California)',
@@ -685,7 +691,7 @@ export default {
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Vui lòng nhập ID bí mật của bạn',
-      addTencentCloudSK: 'TencentCloud Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
       TencentCloudSKMessage: 'Vui lòng nhập Khóa bí mật của bạn',
       SparkModelNameMessage: 'Vui lòng chọn mô hình Spark',
       addSparkAPIPassword: 'Mật khẩu API Spark',
@@ -728,7 +734,7 @@ export default {
       refuse: 'Từ chối',
       teamMembers: 'Thành viên nhóm',
       joinedTeams: 'Nhóm đã tham gia',
-      bedrockModelNameMessage: `Vui lòng nhập tên model của bạn!`,
+      bedrockModelNameMessage: `Vui lòng nhập tên model của bạn`,
       sureDelete: `Bạn có chắc chắn muốn xóa thành viên này không?`,
       quit: `Rời khỏi`,
       sureQuit: `Bạn có chắc chắn muốn rời khỏi nhóm mà bạn đã tham gia không?`,
@@ -901,11 +907,11 @@ export default {
       relevance: 'Liên quan',
       google: 'Google',
       googleDescription:
-        'Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.google.com/. Thông thường, nó hoạt động như một phần bổ sung cho các cơ sở kiến thức. Top N và SerpApi API key xác định số lượng kết quả tìm kiếm bạn cần điều chỉnh.',
+        'Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.google.com/. Thông thường, nó hoạt động như một phần bổ sung cho các cơ sở kiến thức. Top N và SerpApi API Key xác định số lượng kết quả tìm kiếm bạn cần điều chỉnh.',
       bing: 'Bing',
       bingDescription:
         'Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.bing.com/. Thông thường, nó hoạt động như một phần bổ sung cho các cơ sở kiến thức. Top N và Bing Subscription-Key xác định số lượng kết quả tìm kiếm bạn cần điều chỉnh.',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       country: 'Quốc gia',
       language: 'Ngôn ngữ',
       googleScholar: 'Google Scholar',
@@ -984,7 +990,7 @@ export default {
         'Thành phần này được sử dụng để lấy thông tin thời tiết từ https://www.qweather.com/. Bạn có thể lấy thời tiết, chỉ số, chất lượng không khí.',
       lang: 'Ngôn ngữ',
       type: 'Loại',
-      webApiKey: 'Web API key',
+      webApiKey: 'Web API Key',
       userType: 'Loại người dùng',
       timePeriod: 'Kỳ hạn',
       qWeatherLangOptions: {

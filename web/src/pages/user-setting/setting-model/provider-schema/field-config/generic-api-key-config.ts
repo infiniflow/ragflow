@@ -32,14 +32,16 @@ export const GenericApiKeyConfig: ProviderConfig = {
       required: true,
       placeholder: 'instanceNameMessage',
       tooltip: 'instanceNameTip',
+      autoComplete: 'new-password',
       validation: { message: 'instanceNameMessage' },
     },
     {
       name: 'api_key',
       label: 'apiKey',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
       placeholder: 'apiKeyMessage',
+      autoComplete: 'new-password',
       validation: { message: 'apiKeyMessage' },
     },
     {
@@ -64,6 +66,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
         return 'openaiBaseUrlPlaceholder';
       },
       shouldRender: 'showBaseUrl',
+      autoComplete: 'new-password',
     },
     {
       name: 'group_id',
@@ -71,19 +74,23 @@ export const GenericApiKeyConfig: ProviderConfig = {
       type: FormFieldType.Text,
       required: false,
       shouldRender: 'showGroupId',
+      autoComplete: 'new-password',
     },
   ],
   verifyTransform: (values) => ({
     apiKey: values.api_key,
     baseUrl: values.base_url,
   }),
-  submitTransform: (values) => ({
-    instance_name: values.instance_name,
-    api_key: values.api_key,
-    api_base: values.base_url || '',
-    group_id: values.group_id,
-    max_tokens: 0,
-  }),
+  submitTransform: (values) => {
+    const apiKey = values.group_id
+      ? { api_key: values.api_key ?? '', group_id: values.group_id }
+      : (values.api_key ?? '');
+    return {
+      instance_name: values.instance_name,
+      api_key: apiKey,
+      base_url: values.base_url || '',
+    };
+  },
 };
 
 /**
@@ -95,4 +102,5 @@ export const FACTORIES_WITH_BASE_URL = [
   LLMFactory.TongYiQianWen,
   LLMFactory.MiniMax,
   LLMFactory.SILICONFLOW,
+  LLMFactory.TencentHunYuan,
 ];

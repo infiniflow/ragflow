@@ -18,8 +18,12 @@ package engine
 
 import (
 	"context"
+	"time"
+
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
+
+	"gorm.io/gorm"
 )
 
 // EngineType document engine type
@@ -28,6 +32,9 @@ type EngineType string
 const (
 	EngineElasticsearch EngineType = "elasticsearch"
 	EngineInfinity      EngineType = "infinity"
+	EngineOceanBase     EngineType = "oceanbase"
+	EngineSeekDB        EngineType = "seekdb"
+	EngineSereneDB      EngineType = "serenedb"
 )
 
 // DocEngine document storage engine interface
@@ -62,42 +69,69 @@ type DocEngine interface {
 	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
 
-	// Run SQL
+	// RunSQL runs a SQL query
 	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
 
 	GetChunkIDs(chunks []map[string]interface{}) []string
 	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
 	GetScores(searchResult map[string]interface{}) map[string]float64
 
-	// Health check
+	// Ping check the engine is alive
 	Ping(ctx context.Context) error
 	Close() error
 
 	// GetType returns the engine type
 	GetType() string
 
+	// SupportsPageRank reports whether the engine supports dataset-level pagerank.
+	SupportsPageRank() bool
+
 	// FilterDocIdsByMetaPushdown runs a metadata filter directly against
 	// the doc metadata index, returning matching doc IDs or nil if push-down
 	// is not supported (caller should fall back to in-memory filtering).
 	// conditions is a list of filter objects with keys: key, op, value
-	FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string
+	FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string
 }
 
 // Type returns the engine type (helper method for runtime type checking)
 // This is a workaround since we can't import elasticsearch or infinity packages directly
 func Type(docEngine DocEngine) EngineType {
-	// Type checking through interface methods is not straightforward
-	// This is a placeholder that should be implemented differently
-	// or rely on configuration to know the type
-	return EngineType("unknown")
+	if docEngine == nil {
+		return EngineType("unknown")
+	}
+	return EngineType(docEngine.GetType())
+}
+
+// IsOceanBaseFamily reports whether a configured engine uses the shared
+// OceanBase/SeekDB SQL implementation.
+func IsOceanBaseFamily(engineName string) bool {
+	return engineName == string(EngineOceanBase) || engineName == string(EngineSeekDB)
 }
 
 type MessageQueue interface {
 	Init() error
+	Type() string
 	InitConsumer(subject string) error
 	PublishTask(subject string, payload []byte) error
 	GetMessages(messageCount int) ([]common.TaskHandle, error)
 	ListMessages(messageType string, pending bool) ([]map[string]string, error)
 	ShowMessageQueue() (map[string]string, error)
 	CheckStatus() string
+
+	// dataset-level compile consumer (§11) surface.
+	InitKnowledgeCompileStream() error
+	InitKnowledgeCompileConsumer() error
+	PublishKnowledgeCompile(subject string, payload []byte) error
+	FetchKnowledgeCompileMessages(n int) ([]common.RawMessage, error)
+	InitKnowledgeCompileLeases() error
+	AcquireKnowledgeCompileLease(key, holder string, ttl time.Duration) (uint64, bool, error)
+	HeartbeatKnowledgeCompileLease(key, holder string, ttl time.Duration, revision uint64) (uint64, bool, error)
+	ReleaseKnowledgeCompileLease(key, holder string, revision uint64) error
+
+	// SubscribeNotify returns a channel of dataset ids pushed by
+	// PublishKnowledgeCompile on the notify.kc.workers subject (Option E
+	// §11.4: NATS as a wake-up, MySQL as the scheduling system of record).
+	// Implementations return (nil, nil) when push wake-up is unavailable;
+	// callers must fall back to periodic polling in that case.
+	SubscribeNotify(ctx context.Context) (<-chan string, error)
 }

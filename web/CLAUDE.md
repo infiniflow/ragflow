@@ -18,17 +18,42 @@ RAGFlow frontend is a React/TypeScript application built with UmiJS:
 npm install
 npm run dev        # Development server
 npm run build      # Production build
-npm run lint       # ESLint
+npm run lint       # oxlint
+npm run format     # oxfmt
 npm run test       # Jest tests
 ```
 
 ## Development Conventions
+
+### Dual-Backend Variant Conventions (Go / Python)
+
+The frontend serves two backends, Go and Python. The active one is detected at runtime by `src/utils/backend-runtime.ts` (`/api/v1/language`, fetched once; `src/main.tsx` gates first render on it, so below the gate the variant never changes for the session lifetime). In dev, `API_PROXY_SCHEME` in `.env.development` selects which backend the dev server proxies to.
+
+All divergence between the two backends is funneled through dispatch points. Business code never branches on backend identity.
+
+1. Never import `@/utils/backend-runtime` anywhere except its two sanctioned boundaries (enforced by oxlint `no-restricted-imports`):
+   - `src/utils/backend-variant.tsx` — the dispatch primitives;
+   - `src/main.tsx` — the bootstrap gate.
+2. Branch only through the primitives from `@/utils/backend-variant`:
+   - JSX: `<BackendVariant go={...} python={...} />` inside a dispatcher file (a page `index.tsx` or form dispatcher) — never inline in business components.
+   - Values (field names, defaults, payload transforms): `pickByBackend({ go, python })` inside an adapter file.
+   - Hook-level needs (e.g. a query `enabled` flag): `useIsGoBackend()`.
+3. Routes never fork per backend: one route, one dispatcher component, with the variant implementations under `go/` and `python/` subdirectories. Reference example: `src/pages/dataset/setting/`.
+4. Variant file naming: `Xxx.go.tsx` / `Xxx.python.ts(x)` siblings behind a same-named dispatcher, or `go/` + `python/` subdirectories for whole pages. No temporal names (`Next`, `Legacy`, `New`).
+5. Small differences (a field's visibility, a field name) belong in capability-style adapter/config files reached through `pickByBackend`, not scattered inline ternaries in shared components.
+6. Runtime detection (`/api/v1/language`) is the ONLY source of backend identity in app code. Never read `API_PROXY_SCHEME` / `__API_PROXY_SCHEME__` or declare that global in `src/`, and never create another backend-detection helper (a deleted `api-proxy-scheme.ts` did exactly this — do not recreate it). The env var only configures the dev-server proxy in `vite.config.ts`; it is build-time, dev-only, and defaults to `python`, so it cannot say which backend is actually serving (enforced by oxlint `no-restricted-globals` for bare reads; the Vite `define` that injected it into the client bundle is removed).
+
+Migration status: complete. All former `isGoBackend()` call sites go through the primitives — per-variant transforms are dispatched inside `src/pages/agent/utils.ts` and `src/utils/pipeline-operator.ts`, extractor initial values inside `src/pages/agent/constant/pipeline.tsx`, the parser-change dialog inside `src/pages/dataset/dataset/change-parser-dialog.tsx`, and the dataset configuration route is a single dispatcher (`src/pages/dataset/setting/`). `no-restricted-imports` is enforced at `error`.
 
 ### CSS and Layout Debugging
 
 When fixing CSS/layout issues (especially flex truncation, ellipsis, or element sizing), **always inspect the full parent hierarchy** for `flex-shrink`, `min-width`, and `overflow` constraints before applying fixes like `min-w-0`. Do not repeatedly apply the same fix without verifying the root cause.
 
 - Before editing, explain: (1) the full flex/container hierarchy from the target element up to the nearest non-flex ancestor, (2) what constraint is actually causing the bug, and (3) how the proposed fix addresses that root cause.
+
+### Color Tokens
+
+When writing or modifying styles, **use the project-defined color tokens from `src/tailwind.css`** (e.g., `bg-bg-base`, `text-text-primary`, `text-text-secondary`, `text-text-disabled`, `border-border-button`, `bg-bg-card`). Do not use arbitrary hex/RGB values or Tailwind's default palette colors (e.g., `emerald-500`, `blue-400`) directly in component class names. These tokens are defined for both light and dark modes and keep the UI consistent with the design system.
 
 ### Scope and Boundaries
 
@@ -77,6 +102,14 @@ For React Query / cache invalidation bugs, **carefully compare query keys across
 
 - Systematically: (1) list every component/hook that calls `useQuery` for this data, (2) compare their query keys character-for-character, (3) check every mutation's `onSuccess` for cache invalidation, and (4) verify no parent re-renders are remounting the observer.
 
+#### Colocate Queries with the Consuming View
+
+**Fire a query in the component that renders its data — not in a parent page.** When a page switches between mutually exclusive views (tabs, view modes), extract each view into its own component that issues its own requests on mount. Conditional rendering then provides lazy loading for free.
+
+- Do not hoist child-view queries into the page component — it fires requests the user may never need (e.g., fetching the skill tree on page entry while the default view is the LLM wiki).
+- Do not thread `enabled` flags or view-mode props through hooks to gate a hoisted query; that is a sign the query lives at the wrong level. Split the view instead.
+- Remember the trade-off: with `gcTime: 0`, unmounting a view drops its cache, so switching back refetches. That is usually desirable for always-fresh data — do not reintroduce eager hoisting just to avoid the refetch.
+
 ### Network Request Layering
 
 HTTP requests are organized in three layers. **Never import `@/utils/request`, `@/utils/next-request`, or `@/utils/api` directly inside a hook**:
@@ -103,10 +136,14 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 
 ### React Patterns and Conventions
 
+- **Avoid inline event handlers.** Do not define arrow functions directly on JSX event props like `onClick={() => ...}` or `onChange={(e) => ...}`. Instead, extract the handler and reference it by name (e.g., `onClick={handleClick}`). Inline handlers are recreated on every render, which can break `React.memo` optimizations and make stack traces harder to read.
 - **Prefer `requestAnimationFrame` or `useLayoutEffect`** over `setTimeout(..., 0)` for focus or DOM measurement operations.
 - **Prefer `useTranslation` from `react-i18next`** over project-wrapped utilities like `useTranslate`.
 - Extract complex logic into hooks or utils; keep components lean.
-- Use `PascalCase` for constants and component names.
+- Use **PascalCase** for constants and component names.
+  - Components: `EditableTextarea`, `RAGFlowFormItem`
+  - Constants: `InitialMockData`, `DefaultPlaceholder`
+- Avoid camelCase or SCREAMING_SNAKE_CASE for components and top-level constants.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 
 ### Utility Libraries and Reuse

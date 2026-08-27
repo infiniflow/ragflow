@@ -23,7 +23,6 @@
 // (value.type starts with "file") emit a stable "<file:key>" stub
 // so the run keeps flowing while the FileService integration
 // surfaces the actual bytes via the storage layer.
-//
 package component
 
 import (
@@ -34,6 +33,8 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameUserFillUp = "UserFillUp"
@@ -53,7 +54,6 @@ const fileStubPrefix = "<file:"
 var tipsPlaceholderPattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
 
 // userFillUpParam is the per-instance configuration for UserFillUp.
-//
 type userFillUpParam struct {
 	EnableTips      bool   `json:"enable_tips"`
 	Tips            string `json:"tips"`
@@ -117,7 +117,7 @@ func (u *UserFillUpComponent) Name() string { return u.name }
 // Invoke renders the tips template (when enable_tips) and emits one
 // output per form field. Inputs are expected under the top-level
 // "inputs" key.
-func (u *UserFillUpComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (u *UserFillUpComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// State is required for the canvas ref grammar, but UserFillUp's
 	// tips substitution uses simple {{key}} placeholders resolved
 	// against the form input map. We still extract state so a
@@ -143,8 +143,8 @@ func (u *UserFillUpComponent) Invoke(ctx context.Context, inputs map[string]any)
 // Stream is the synchronous facade over Invoke: a single payload, then
 // close. SSE streaming of the rendered tips is not meaningful for the
 // P3 port (form-fill is a one-shot interaction in the DSL).
-func (u *UserFillUpComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := u.Invoke(ctx, inputs)
+func (u *UserFillUpComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := u.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

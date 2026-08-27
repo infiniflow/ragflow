@@ -14,15 +14,15 @@
 //  limitations under the License.
 //
 
+// Package chunker implements the GroupTitleChunker variant: aggregates adjacent
 // SCOPE (honest) for group.go:
 //
 //   - Implements the GroupTitleChunker variant: aggregates adjacent
 //     text records into chunks that span multiple body records while
 //     staying inside one heading section.
 //
-//   - PARALLELISM: Parallelism() advertises a fan-out hint to outer
-//     executors. Heading detection stays sequential; grouping work is
-//     local to one invocation.
+//     Heading detection stays sequential; grouping work is local to
+//     one invocation.
 //
 //   - MIRRORS python `_build_section_ids` + `GroupTitleChunker.build_chunks`:
 //     consecutive records with the same (target_level-derived) sec_id
@@ -35,10 +35,19 @@ package chunker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"regexp"
+	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -98,39 +107,110 @@ func buildSectionIDs(levels []int, targetLevel int) []int {
 }
 
 // invokeGroup runs the GroupTitleChunker strategy against the
-// supplied inputs. Detected headings + adjacent merges happen in two
-// goroutines (heading detection sequential, then a fan-out over
-// record-buckets for the merge pass).
-func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
+// supplied inputs. It extracts the line records and defers to the
+// shared chunkFromRecords pipeline (which ManualChunker also uses,
+// after a physical-position resort).
+func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
 	records := extractLineRecords(inputs)
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("records", len(records)),
+	)
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	lines := make([]string, len(records))
-	for i, r := range records {
-		lines[i] = r.text
-	}
-	ctx := newLevelContext(lines, p)
-	levels := ctx.Levels()
+	return chunkFromRecords(parentCtx, db, inputs, p, records, p.ChunkTokenCap)
+}
 
-	targetLevel := resolveTargetLevel(levels, hierarchyOr(p, ctx.mostLevel))
+// chunkFromRecords runs the shared GroupTitle / Manual grouping pipeline over
+// an already-extracted record list: resolve heading levels, split into
+// sections, merge adjacent text records, build chunks, enforce the token cap
+// (title family only), and perform on-demand PDF cropping. GroupTitleChunker
+// feeds records in input order; ManualChunker feeds them after a (page, top,
+// left) resort. Sharing this body keeps both strategies byte-identical for
+// coordinate-free input as long as no built chunk exceeds the token cap
+// (TestManualChunker_NoPositionsEqualsGroupChunker); once one does, only
+// GroupTitleChunker re-splits it (ManualChunker is exempt).
+//
+// tokenCap is the title-family token ceiling (chunk_token_cap). ManualChunker
+// must stay exempt from #18455's cap, so it passes 0; GroupTitleChunker passes
+// p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
+// on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
+func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
+	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
+	levels := ctx.Levels()
+	// Count heading level distribution for debugging.
+	headingCounts := make(map[int]int)
+	for _, lvl := range levels {
+		if lvl < bodyLevel {
+			headingCounts[lvl]++
+		}
+	}
+	bodyCount := len(levels)
+	for _, c := range headingCounts {
+		bodyCount -= c
+	}
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("records", len(records)),
+		zap.Int("body_level", bodyCount),
+		zap.Any("heading_levels", headingCounts),
+	)
+
+	// Mirror python group_chunker._resolve_group_target_level: when
+	// `hierarchy` is unset the target level is `most_level` directly
+	// (NOT resolve_target_level — that would re-rank the distinct
+	// heading levels and pick the wrong depth when the heading levels
+	// are not contiguous from 1). When `hierarchy` is set, it defers to
+	// resolve_target_level.
+	targetLevel := resolveGroupTargetLevel(levels, p, ctx.mostLevel)
 	secIDs := buildSectionIDs(levels, targetLevel)
 
 	groups := groupRecords(records, secIDs, p)
-	if p.RootChunkAsHeading && len(groups) > 1 {
-		groups = applyRootAsHeading(groups)
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("groups", len(groups)),
+	)
+	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
+	// Enforce the title-family token ceiling (chunk_token_cap) right after
+	// build_chunks and BEFORE the on-demand crop, mirroring Python's
+	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
+	// tokenCap=0, so this is a no-op there.
+	if tokenCap > 0 {
+		chunks = enforceTitleTokenCap(chunks, tokenCap)
 	}
-	chunks := make([]map[string]any, 0, len(groups))
-	for _, g := range groups {
-		chunks = append(chunks, map[string]any{"text": joinGroupText(g)})
+	common.Debug("chunker stage",
+		zap.String("component", "Chunker"),
+		zap.String("variant", "group"),
+		zap.Int("chunks", len(chunks)),
+		zap.Bool("plain_text", isPlainTextFormat(inputs)),
+	)
+
+	// On-demand PDF preview cropping for image/table/text chunks,
+	// mirroring the TokenChunker JSON path (token.go:513). Best-effort:
+	// a missing or unreadable PDF simply skips cropping.
+	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
+		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
+		if eErr != nil {
+			slog.Warn("chunker: could not open PDF for on-demand cropping", "err", eErr)
+		}
+		if engine != nil {
+			defer engine.Close()
+			chunks = cropTitleChunks(parentCtx, engine, chunks)
+		}
 	}
+
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
-	return map[string]any{
+	out := map[string]any{
 		"output_format": "chunks",
 		"chunks":        chunks,
-	}, nil
+	}
+	return out, nil
 }
 
 // groupRecords mirrors `GroupTitleChunker.build_chunks`: merges
@@ -183,20 +263,9 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 	return recordGroups
 }
 
-// applyRootAsHeading mirrors the `root_chunk_as_heading` branch in
-// common.py:build_chunks_from_record_groups — prepending the root
-// text to every following chunk and dropping the root chunk itself.
-func applyRootAsHeading(groups [][]lineRecord) [][]lineRecord {
-	if len(groups) < 2 {
-		return groups
-	}
-	rootText := joinGroupText(groups[0])
-	for i := 1; i < len(groups); i++ {
-		groups[i] = prependJoin(groups[i], rootText)
-	}
-	return groups[1:]
-}
-
+// joinGroupText mirrors python's `"".join(record["text"] + "\n" for
+// record in records)` — every record's text followed by a newline
+// (including the last), matching the python text join exactly.
 func joinGroupText(g []lineRecord) string {
 	var sb strings.Builder
 	for _, r := range g {
@@ -206,17 +275,136 @@ func joinGroupText(g []lineRecord) string {
 	return sb.String()
 }
 
-func prependJoin(g []lineRecord, prefix string) []lineRecord {
-	if prefix == "" {
-		return g
+// isPlainTextFormat mirrors the `output_format in ["markdown", "text",
+// "html"]` branch of common.py:build_chunks_from_record_groups. Plain
+// payloads emit only "text"; structured payloads (chunks/json) also
+// carry doc_type_kwd and img_id.
+func isPlainTextFormat(inputs map[string]any) bool {
+	if f, ok := inputs["output_format"].(string); ok {
+		return f == "markdown" || f == "text" || f == "html"
 	}
-	extra := lineRecord{text: prefix, docType: "text"}
-	if len(g) == 0 {
-		return []lineRecord{extra}
+	return false
+}
+
+// buildChunksFromRecordGroups mirrors common.py:build_chunks_from_record_groups
+// (minus the deepdoc-only remove_tag / merge_pdf_positions steps):
+//   - plain payloads: {"text": joined}
+//   - structured payloads: text plus doc_type_kwd / img_id from the
+//     group's leading record.
+//
+// root_chunk_as_heading is applied here, exactly as python does (post
+// materialisation): the root chunk's text is prepended to every
+// following chunk and the root chunk is dropped.
+func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, plain bool) []map[string]any {
+	chunks := make([]map[string]any, 0, len(groups))
+	for _, g := range groups {
+		if len(g) == 0 {
+			continue
+		}
+		// Strip parser-emitted position tags (`@@...##`) from the
+		// joined text (diff 1.6 / 2.8). Mirrors common.py:255
+		// `RAGFlowPdfParser.remove_tag("".join(...))`.
+		chunk := map[string]any{"text": removeTag(joinGroupText(g))}
+		if !plain {
+			first := g[0]
+			if first.docType != "" {
+				chunk["doc_type_kwd"] = first.docType
+			}
+			if first.imgID != nil {
+				chunk["img_id"] = *first.imgID
+			}
+		}
+		// Merge PDF coordinate matrices across the merged records
+		// instead of keeping only the leading record's (diff 1.6).
+		// Mirrors pdf_chunk_metadata.py:127 merge_pdf_positions.
+		var pdfSrc, posSrc []json.RawMessage
+		for _, r := range g {
+			if len(r.pdfPositions) > 0 {
+				pdfSrc = append(pdfSrc, r.pdfPositions)
+			}
+			if len(r.positions) > 0 {
+				posSrc = append(posSrc, r.positions)
+			}
+		}
+		if m := mergePositionMatrix(pdfSrc...); m != nil {
+			chunk["_pdf_positions"] = m
+		}
+		if m := mergePositionMatrix(posSrc...); m != nil {
+			chunk["positions"] = m
+		}
+		chunks = append(chunks, chunk)
 	}
-	out := make([]lineRecord, 0, len(g)+1)
-	out = append(out, extra)
-	out = append(out, g...)
+	if p.RootChunkAsHeading && len(chunks) > 1 {
+		rootText := toString(chunks[0]["text"])
+		for i := 1; i < len(chunks); i++ {
+			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+		}
+		chunks = chunks[1:]
+	}
+	return chunks
+}
+
+// posTagRemove matches parser-emitted position tags of the form
+// `@@<page>\t<left>\t<right>\t<top>\t<bottom>##`. Mirrors Python
+// pdf_parser.py:1934 `re.sub(r"@@[\t0-9.-]+?##", "", txt)`.
+var posTagRemove = regexp.MustCompile(`@@[\t0-9.-]+?##`)
+
+// removeTag strips parser-emitted position tags from a chunk's text.
+// Mirrors deepdoc RAGFlowPdfParser.remove_tag.
+func removeTag(text string) string {
+	return posTagRemove.ReplaceAllString(text, "")
+}
+
+// pdfPosRowLess orders two PDF coordinate 5-tuples [page,left,right,top,bottom]
+// by (page, top, left) — i.e. by indices (0, 3, 1). It is the single shared
+// (page, top, left) comparator used both when re-sorting chunker records
+// (ManualChunker) and when de-duplicating/merging position matrices
+// (mergePositionMatrix). Both rows must have length >= 5.
+func pdfPosRowLess(a, b []float64) bool {
+	if a[0] != b[0] {
+		return a[0] < b[0]
+	}
+	if a[3] != b[3] {
+		return a[3] < b[3]
+	}
+	return a[1] < b[1]
+}
+
+// mergePositionMatrix aggregates multiple PDF coordinate matrices into a
+// single de-duplicated, sorted matrix. Mirrors Python
+// pdf_chunk_metadata.py:127 merge_pdf_positions: rows are 5-tuples
+// [page,left,right,top,bottom]; duplicates (by the first five columns)
+// are dropped and rows are sorted by (page, top, left). Returns nil when
+// no source carries any usable coordinates.
+func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
+	var out [][]float64
+	seen := make(map[string]bool)
+	for _, src := range sources {
+		if len(src) == 0 {
+			continue
+		}
+		var mat [][]float64
+		if err := json.Unmarshal(src, &mat); err != nil {
+			continue
+		}
+		for _, row := range mat {
+			if len(row) < 5 {
+				continue
+			}
+			key := fmt.Sprintf("%v|%v|%v|%v|%v", row[0], row[1], row[2], row[3], row[4])
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, row)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return pdfPosRowLess(out[i], out[j])
+	})
 	return out
 }
 
@@ -224,7 +412,7 @@ func prependJoin(g []lineRecord, prefix string) []lineRecord {
 // python BaseTitleChunker.extract_line_records uses:
 //
 //  1. If upstream emitted chunks (output_format == "chunks") OR
-//     upstream emitted JSON, normalise from the list payload.
+//     upstream emitted JSON, normalize from the list payload.
 //  2. Otherwise, treat text/markdown/html as a "one record per line"
 //     stream (preserving indentation for non-text formats, strip-only
 //     for the text format).
@@ -232,7 +420,7 @@ func extractLineRecords(inputs map[string]any) []lineRecord {
 	if docs := chunksFromInputs(inputs); docs != nil {
 		return recordsFromStructured(docs)
 	}
-	text, _ := stringFromInputs(inputs, "text", "content")
+	text, _ := stringFromInputs(inputs, "text", "content", "markdown", "html")
 	if text == "" {
 		return nil
 	}
@@ -255,21 +443,45 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 			img := it.ImgID
 			imgID = &img
 		}
+		meta := make(map[string]any)
+		if it.ContentLtks != "" {
+			meta["content_ltks"] = it.ContentLtks
+		}
+		if it.ContentSmLtks != "" {
+			meta["content_sm_ltks"] = it.ContentSmLtks
+		}
+		if it.ContentWithWeight != "" {
+			meta["content_with_weight"] = it.ContentWithWeight
+		}
+		if it.TitleTks != "" {
+			meta["title_tks"] = it.TitleTks
+		}
+		if it.TitleSmTks != "" {
+			meta["title_sm_tks"] = it.TitleSmTks
+		}
+		for k, v := range it.Extra {
+			meta[k] = json.RawMessage(v)
+		}
 		out = append(out, lineRecord{
-			text:    text,
-			docType: dt,
-			imgID:   imgID,
-			layout:  it.Layout,
+			text:         text,
+			docType:      dt,
+			imgID:        imgID,
+			layout:       it.Layout,
+			ckType:       it.CKType,
+			pdfPositions: it.PDFPositions,
+			positions:    it.Positions,
+			parentMeta:   meta,
 		})
 	}
 	return out
 }
 
-// hierarchyOr returns the param's hierarchy value (if set), falling
-// back to the `mostLevel` computed from the level-frequency pass.
-func hierarchyOr(p *titleChunkerParam, mostLevel int) int {
+// resolveGroupTargetLevel mirrors group_chunker._resolve_group_target_level:
+// when `hierarchy` is set (>0) the target depth is resolve_target_level,
+// otherwise it is the frequency-derived `most_level` directly.
+func resolveGroupTargetLevel(levels []int, p *titleChunkerParam, mostLevel int) int {
 	if p.Hierarchy != nil && *p.Hierarchy > 0 {
-		return *p.Hierarchy
+		return resolveTargetLevel(levels, *p.Hierarchy)
 	}
 	return mostLevel
 }
@@ -301,7 +513,6 @@ func NewGroupTitleChunker(params map[string]any) (runtime.Component, error) {
 	}, nil
 }
 
-func (c *GroupTitleChunkerComponent) Parallelism() int { return 2 }
 func (c *GroupTitleChunkerComponent) Inputs() map[string]string {
 	return ChunkerInputs
 }
@@ -309,20 +520,22 @@ func (c *GroupTitleChunkerComponent) Outputs() map[string]string {
 	return ChunkerOutputs
 }
 
-func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return runtime.TrackElapsed(ComponentNameGroupTitleChunker, func() (map[string]any, error) {
-		if inputs == nil {
-			return emptyOutputs(), nil
-		}
-		if _, ok := inputs["name"].(string); !ok {
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
-			}, nil
-		}
-		return invokeGroup(ctx, inputs, &c.param)
-	})
+func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// `name` is read from the workflow-wide Globals bag (seeded at
+	// pipeline start, published by the File component), not from the
+	// upstream output map.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	if name == "" {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
+		}, nil
+	}
+	return invokeGroup(ctx, db, withName(inputs, name), &c.param)
 }
 
 // init registers GroupTitleChunker under CategoryIngestion.

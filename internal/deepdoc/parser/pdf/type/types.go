@@ -10,7 +10,6 @@ import doctype "ragflow/internal/deepdoc/parser/type"
 type PipelineMetrics = doctype.PipelineMetrics
 type ParseResult = doctype.ParseResult
 type DLAPageRegions = doctype.DLAPageRegions
-type TSRRawCell = doctype.TSRRawCell
 type TextChar = doctype.TextChar
 type TextBox = doctype.TextBox
 type Position = doctype.Position
@@ -45,6 +44,8 @@ const (
 	LayoutTypeHeader      = doctype.LayoutTypeHeader
 	DLALabelFigureCaption = doctype.DLALabelFigureCaption
 	DLALabelTableCaption  = doctype.DLALabelTableCaption
+
+	GarbageLayoutScoreThreshold = doctype.GarbageLayoutScoreThreshold
 )
 
 // ── Re-export functions and variables ──────────────────────────────────────
@@ -53,4 +54,5 @@ var (
 	CollectFigures      = doctype.CollectFigures
 	DefaultParserConfig = doctype.DefaultParserConfig
 	IsCJK               = doctype.IsCJK
+	GarbageLayoutTypes  = doctype.GarbageLayoutTypes
 )

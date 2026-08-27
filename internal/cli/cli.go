@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"ragflow/internal/common"
+
 	//"os/signal"
 	"path/filepath"
 	"strconv"
@@ -79,6 +81,7 @@ type CommandLineConfig struct {
 	Verbose           bool
 	Interactive       bool
 	OutputFormat      OutputFormat
+	ShowVersion       bool
 	Command           *string
 }
 
@@ -108,6 +111,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		CLIMode:           APIMode,
 		AdminClientConfig: nil,
 		ShowHelp:          false,
+		ShowVersion:       false,
 		Verbose:           false,
 		Interactive:       true,
 		OutputFormat:      OutputFormatTable,
@@ -137,6 +141,8 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			commandLineConfig.CLIMode = AdminMode
 		case "--help", "-help":
 			commandLineConfig.ShowHelp = true
+		case "--version", "-V":
+			commandLineConfig.ShowVersion = true
 		default:
 			if !strings.HasPrefix(arg, "-") {
 				commandLineConfig.Interactive = false
@@ -168,7 +174,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					i++
 				}
 				continue
-			case "-v", "--verbose", "--help", "-help":
+			case "-v", "--verbose", "--help", "-help", "--version", "-V":
 				continue
 			case "--admin", "-admin":
 				return nil, fmt.Errorf("unexpected parameter: --admin")
@@ -186,7 +192,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					hostVal := args[i+1]
 					h, port, err := parseHostPort(hostVal)
 					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %v", err)
+						return nil, fmt.Errorf("invalid host format: %w", err)
 					}
 					defaultApiServerConfig.IP = h
 					defaultApiServerConfig.Port = port
@@ -237,14 +243,14 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		data, err := os.ReadFile(configFile)
 		if err == nil {
 			if err = yaml.Unmarshal(data, &config); err != nil {
-				return nil, fmt.Errorf("failed to parse rf.yml: %v", err)
+				return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
 			}
 			if config.Host != "" {
 				var h string
 				var port int
 				h, port, err = parseHostPort(config.Host)
 				if err != nil {
-					return nil, fmt.Errorf("invalid host in config file: %v", err)
+					return nil, fmt.Errorf("invalid host in config file: %w", err)
 				}
 				if defaultApiServerConfig.IP == "" {
 					defaultApiServerConfig.IP = h
@@ -271,7 +277,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		} else {
 			if configFile == "rf.yml" && os.IsNotExist(err) {
 			} else {
-				return nil, fmt.Errorf("failed to read %s: %v", configFile, err)
+				return nil, fmt.Errorf("failed to read %s: %w", configFile, err)
 			}
 		}
 
@@ -309,7 +315,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					i++
 				}
 				continue
-			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
+			case "-v", "--verbose", "--admin", "-admin", "--help", "-help", "--version", "-V":
 				continue
 			case "-t", "--token":
 				return nil, fmt.Errorf("token is invalid in admin mode")
@@ -329,7 +335,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					hostVal := args[i+1]
 					h, port, err := parseHostPort(hostVal)
 					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %v", err)
+						return nil, fmt.Errorf("invalid host format: %w", err)
 					}
 					AdminConfig.AdminHost = h
 					AdminConfig.AdminPort = port
@@ -388,7 +394,7 @@ func LoadDefaultConfigFile() (*ConfigFile, error) {
 
 	var config ConfigFile
 	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse rf.yml: %v", err)
+		return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
 	}
 
 	return &config, nil
@@ -398,12 +404,12 @@ func LoadDefaultConfigFile() (*ConfigFile, error) {
 func LoadConfigFileFromPath(path string) (*ConfigFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %v", path, err)
+		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	var config ConfigFile
 	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %v", path, err)
+		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
 	return &config, nil
@@ -446,6 +452,7 @@ Options:
   -v, --verbose          Enable verbose logging (shows debug info)
   --admin, -admin        Run in admin mode
   --help                 Show this help message
+  -V, --version          Show version information
 
 Mode:
   --admin, -admin        Run in admin mode (prompt: RAGFlow(admin)>)
@@ -482,7 +489,7 @@ Commands:
 
 // HistoryFile returns the path to the history file
 func HistoryFile() string {
-	return os.Getenv("HOME") + "/" + historyFileName
+	return common.GetEnv(common.EnvHome) + "/" + historyFileName
 }
 
 const historyFileName = ".ragflow_cli_history"
@@ -832,7 +839,7 @@ Commands (User Mode):
   USE MODEL 'provider/instance/model';                   - Set current model for chat
   CHAT 'message';                                        - Chat using current model
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
-  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat 
+  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat
                                                            (run openai_chat -h for detailed options)
   CHAT COMPLETIONS 'question' [options] ;                - Chat completions via /api/v1/chat/completions
                                                            (run chat completions -h for detailed options)

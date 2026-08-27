@@ -43,6 +43,11 @@ class DocumentService(CommonService):
     model = Document
 
     @classmethod
+    @DB.connection_context()
+    def get_disabled_doc_ids_by_kb_id(cls, kb_id) -> set[str]:
+        return {str(doc_id) for (doc_id,) in cls.model.select(cls.model.id).where((cls.model.kb_id == kb_id) & (cls.model.status == "0")).tuples()}
+
+    @classmethod
     def get_cls_model_fields(cls):
         return [
             cls.model.id,
@@ -357,7 +362,7 @@ class DocumentService(CommonService):
     def get_all_doc_ids_by_kb_ids(cls, kb_ids):
         fields = [cls.model.id, cls.model.kb_id]
         docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -431,7 +436,7 @@ class DocumentService(CommonService):
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -492,15 +497,9 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.warning(f"Failed to delete thumbnail for document {doc.id}: {e}")
 
-        # Delete chunks from doc store - this is critical, log errors
-        try:
-            settings.docStoreConn.delete({"doc_id": doc.id}, chunk_index_name, doc.kb_id)
-        except Exception as e:
-            logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
-
-        # Prune this doc's line from the KB's tree-kind navigation
-        # markdown (best-effort — the markdown is a downstream artifact,
-        # and failure here must not block the document delete).
+        # Prune this doc's line from the KB's tree-kind navigation before the
+        # broad doc_id delete below removes the nav_doc row needed to locate
+        # and update its parent cluster.
         try:
             from rag.advanced_rag.knowlege_compile.dataset_nav import (
                 remove_dataset_nav_doc_sync,
@@ -511,6 +510,35 @@ class DocumentService(CommonService):
             logging.warning(
                 f"Failed to prune dataset_nav for document {doc.id}: {e}",
             )
+
+        # Delete chunks from doc store - this is critical, log errors
+        try:
+            settings.docStoreConn.delete({"doc_id": doc.id}, chunk_index_name, doc.kb_id)
+        except Exception as e:
+            logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
+
+        # Record doc deletion for incremental structure-merge ghost cleanup.
+        # Runs after the doc_id sweep so the marker (stored under
+        # deleted_doc_id to avoid matching the same sweep) survives.
+        try:
+            from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                record_doc_deletion,
+            )
+
+            record_doc_deletion(tenant_id, doc.kb_id, doc.id)
+        except Exception as e:
+            logging.warning(
+                f"Failed to record doc deletion for structure merge: {e}",
+            )
+
+        # Ref-counted cleanup of wiki/artifact products this doc fed into
+        # (non-critical, log and continue). A product shared by other docs
+        # survives; one this doc solely owned is removed.
+        try:
+            if chunk_index_exists:
+                cls.remove_wiki_products(doc, tenant_id)
+        except Exception as e:
+            logging.warning(f"Failed to clean up artifact products for document {doc.id}: {e}")
 
         # Delete document metadata (non-critical, log and continue)
         try:
@@ -557,6 +585,129 @@ class DocumentService(CommonService):
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
                     settings.STORAGE_IMPL.rm(doc.kb_id, cid)
             page += 1
+
+    @classmethod
+    def remove_wiki_products(cls, doc, tenant_id):
+        """Reference-counted cleanup of KB-scoped wiki/artifact products
+        in the doc store when a document is deleted.
+
+        Every derived artifact row (pages, entities, relations, drafts,
+        topics, reduce/plan aggregates) carries a ``source_doc_ids`` list
+        of the documents that contributed to it. On delete we detach
+        ``doc.id`` from that list and drop the row only when this document
+        was its sole contributor — a product shared by other docs
+        survives. ``wiki_map_extract`` resume rows are 1:1 with a
+        document and are removed directly by ``doc_id``.
+
+        The compile_kwd set is pulled from the wiki generator so new
+        artifact row types are covered automatically (single source of
+        truth). Deletion is not a hot path, so the module import cost is
+        acceptable here.
+        """
+        from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+            WIKI_MAP_COMPILE_KWD,
+            WIKI_DERIVED_COMPILE_KWDS,
+        )
+
+        index = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index, doc.kb_id):
+            return
+
+        # 1. Per-doc MAP resume rows are keyed by the real doc_id.
+        settings.docStoreConn.delete(
+            {"compile_kwd": [WIKI_MAP_COMPILE_KWD], "doc_id": doc.id},
+            index,
+            doc.kb_id,
+        )
+
+        # 2. Derived KB-scoped rows: reference-counted via source_doc_ids.
+        # Read every row this doc contributed to, partitioning into rows it
+        # solely owned (delete by id) vs. rows shared with other docs
+        # (detach this doc). Reading first — rather than a blanket
+        # ``must_not exists`` sweep — avoids deleting rows that legitimately
+        # carry no source_doc_ids.
+        derived_kwds = list(WIKI_DERIVED_COMPILE_KWDS)
+        select_fields = ["id", "source_doc_ids"]
+        sole_owner_ids: list[str] = []
+        shared_seen = False
+        offset = 0
+        page_size = 1000
+        while True:
+            res = settings.docStoreConn.search(
+                select_fields,
+                [],
+                {"compile_kwd": derived_kwds, "source_doc_ids": [doc.id]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index,
+                [doc.kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
+            if not field_map:
+                break
+            for row_id, row in field_map.items():
+                raw = row.get("source_doc_ids")
+                if isinstance(raw, str):
+                    owners = [raw] if raw else []
+                elif isinstance(raw, list):
+                    owners = [d for d in raw if isinstance(d, str) and d]
+                else:
+                    owners = []
+                if any(d != doc.id for d in owners):
+                    shared_seen = True
+                else:
+                    sole_owner_ids.append(row_id)
+            if len(field_map) < page_size:
+                break
+            offset += page_size
+
+        # Drop rows this document solely owned (delete by id in batches).
+        for i in range(0, len(sole_owner_ids), page_size):
+            settings.docStoreConn.delete(
+                {"id": sole_owner_ids[i : i + page_size]},
+                index,
+                doc.kb_id,
+            )
+
+        # Detach this document from rows still owned by others. The filter
+        # guarantees source_doc_ids contains doc.id, so the store's
+        # list-remove is safe; any sole-owner rows already deleted above are
+        # simply not matched.
+        if shared_seen:
+            settings.docStoreConn.update(
+                {"compile_kwd": derived_kwds, "source_doc_ids": doc.id},
+                {"remove": {"source_doc_ids": doc.id}},
+                index,
+                doc.kb_id,
+            )
+
+        # 3. Clean up doc_page_source tracking rows (new incremental design).
+        try:
+            doc_page_kwd = "wiki_doc_page_source"
+            res = settings.docStoreConn.search(
+                ["id"],
+                [],
+                {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                [],
+                OrderByExpr(),
+                0,
+                10,
+                index,
+                doc.kb_id,
+            )
+            if settings.docStoreConn.get_fields(res, ["id"]):
+                settings.docStoreConn.delete(
+                    {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                    index,
+                    doc.kb_id,
+                )
+        except Exception:
+            logging.exception(
+                "DocumentService.remove_wiki_products: doc_page_source cleanup failed for doc %s",
+                doc.id,
+            )
 
     @classmethod
     @DB.connection_context()
@@ -917,7 +1068,7 @@ class DocumentService(CommonService):
             info["run"] = TaskStatus.RUNNING.value
             # keep the doc in DONE state when keep_progress=True for GraphRAG, RAPTOR and Mindmap tasks
 
-        cls.update_by_id(doc_id, info)
+        cls.model.update(info).where((cls.model.id == doc_id) & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))).execute()
 
     @classmethod
     @DB.connection_context()
@@ -1101,7 +1252,20 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     """
     if doc_ids is None:
         doc_ids = []
-    assert ty in ["graphrag", "raptor", "mindmap", "artifact", "skill"], "type should be graphrag, raptor, mindmap, artifact or skill"
+    assert ty in [
+        "graphrag",
+        "raptor",
+        "mindmap",
+        "wiki",
+        "skill",
+        # KB-wide structure-graph merge task types (rebuild dataset_graph rows).
+        "structure_graph",
+        "structure_mindmap",
+        "timeline",
+        "session_graph",
+        "session_essence",
+        "structure",
+    ], f"unsupported task type '{ty}'"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
     hasher = xxhash.xxh64()
@@ -1210,12 +1374,7 @@ def get_pending_task_count(priority=None):
         query = (
             Task.select(fn.COUNT(Task.id))
             .join(Document, on=(Task.doc_id == Document.id))
-            .where(
-                (Task.progress == 0)
-                & ((Document.run.is_null(True)) | (Document.run != TaskStatus.CANCEL.value))
-                & (Document.progress >= 0)
-                & (Document.status == StatusEnum.VALID.value)
-            )
+            .where((Task.progress == 0) & ((Document.run.is_null(True)) | (Document.run != TaskStatus.CANCEL.value)) & (Document.progress >= 0) & (Document.status == StatusEnum.VALID.value))
         )
         if priority is not None:
             query = query.where(Task.priority == priority)

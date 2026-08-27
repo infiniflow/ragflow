@@ -19,6 +19,7 @@ Covers the behaviour flagged in review: (1) session_id is preferred over
 user_id, (2) an explicit caller-supplied ``user`` overrides the context value,
 and (3) a caller-supplied empty ``user`` suppresses forwarding entirely.
 """
+
 import types
 
 import pytest

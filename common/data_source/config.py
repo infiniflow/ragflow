@@ -47,6 +47,7 @@ class DocumentSource(str, Enum):
     S3 = "s3"
     NOTION = "notion"
     REST_API = "rest_api"
+    XQUIK = "xquik"
     R2 = "r2"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     OCI_STORAGE = "oci_storage"
@@ -77,6 +78,7 @@ class DocumentSource(str, Enum):
     OUTLOOK = "outlook"
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
+    AZURE_DEVOPS = "azure_devops"
 
 
 class FileOrigin(str, Enum):
@@ -114,7 +116,10 @@ _PAGE_EXPANSION_FIELDS = [
 
 
 # Configuration constants
-BLOB_STORAGE_SIZE_THRESHOLD = 20 * 1024 * 1024  # 20MB
+try:
+    BLOB_STORAGE_SIZE_THRESHOLD = int(os.environ.get("BLOB_STORAGE_SIZE_THRESHOLD", 20 * 1024 * 1024))
+except ValueError as error:
+    raise ValueError("BLOB_STORAGE_SIZE_THRESHOLD must be an integer number of bytes") from error
 INDEX_BATCH_SIZE = 2
 SLACK_NUM_THREADS = 4
 ENABLE_EXPENSIVE_EXPERT_CALLS = False

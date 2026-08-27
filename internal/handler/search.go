@@ -51,7 +51,7 @@ func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProvid
 	h.askService = askService
 }
 
-func getSearchOwnerIDs(c *gin.Context) []string {
+func getOwnerIDs(c *gin.Context) []string {
 	values := c.QueryArray("owner_ids")
 	if len(values) == 0 {
 		values = c.QueryArray("owner_id")
@@ -85,7 +85,7 @@ func getSearchOwnerIDs(c *gin.Context) []string {
 func (h *SearchHandler) ListSearches(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -114,7 +114,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	ownerIDs := getSearchOwnerIDs(c)
+	ownerIDs := getOwnerIDs(c)
 
 	// Keep body parsing as a compatibility fallback for existing callers that
 	// send owner_ids in a GET body. Python reads owner_ids from the query.
@@ -128,7 +128,8 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	}
 
 	// List search apps with filtering
-	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, ownerIDs)
+	ctx := c.Request.Context()
+	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
@@ -148,15 +149,15 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 // @Router /api/v1/searches [post]
 
 type CreateSearchRequest struct {
-	Name        string  `json:"name" binding:"required"` // required field, max 255 bytes
-	Description *string `json:"description,omitempty"`   // optional description
+	Name        string  `json:"name"`                  // required, validated via common.ValidateName (max 255 bytes)
+	Description *string `json:"description,omitempty"` // optional description
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -169,12 +170,13 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	}
 
 	if err := common.ValidateName(req.Name); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	// Create search (same as Python SearchService.save within DB.atomic())
-	result, err := h.searchService.CreateSearch(userID, req.Name, req.Description)
+	ctx := c.Request.Context()
+	result, err := h.searchService.CreateSearch(ctx, userID, req.Name, req.Description)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
@@ -197,7 +199,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -210,7 +212,8 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	}
 
 	// Get search detail with permission check
-	search, err := h.searchService.GetSearchDetail(userID, searchID)
+	ctx := c.Request.Context()
+	search, err := h.searchService.GetSearchDetail(ctx, userID, searchID)
 	if err != nil {
 		// Check if it's a permission error
 		if err.Error() == "has no permission for this operation" {
@@ -218,7 +221,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 			return
 		}
 		// Not found error
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -255,7 +258,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -268,7 +271,8 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	}
 
 	// Delete search with permission check
-	err := h.searchService.DeleteSearch(userID, searchID)
+	ctx := c.Request.Context()
+	err := h.searchService.DeleteSearch(ctx, userID, searchID)
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "no authorization" {
@@ -276,7 +280,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 			return
 		}
 		// Delete failed error
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -298,7 +302,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -319,17 +323,18 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 
 	// Validate name (same as Python validation)
 	if err := common.ValidateName(req.Name); err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	// Update search
-	updatedSearch, err := h.searchService.UpdateSearch(userID, searchID, &req)
+	ctx := c.Request.Context()
+	updatedSearch, err := h.searchService.UpdateSearch(ctx, userID, searchID, &req)
 	if err != nil {
 		errMsg := err.Error()
 		switch errMsg {
 		case "no authorization":
-			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 		case "duplicated search name":
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:
@@ -367,7 +372,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 func (h *SearchHandler) Completion(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -382,8 +387,8 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	if searchSvc == nil {
 		searchSvc = service.NewSearchService()
 	}
-
-	plan, code, err := searchSvc.PrepareCompletion(user.ID, c.Param("search_id"), &req)
+	ctx := c.Request.Context()
+	plan, code, err := searchSvc.PrepareCompletion(ctx, user.ID, c.Param("search_id"), &req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())
@@ -393,7 +398,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 			jsonInternalError(c, err)
 			return
 		}
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	if plan == nil {
@@ -427,7 +432,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
-	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.KBIDs, plan.Options) {
+	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
 			writer.Write(c, sseAnswer(delta.Value, nil, false))

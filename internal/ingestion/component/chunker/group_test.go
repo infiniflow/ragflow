@@ -17,10 +17,11 @@
 package chunker
 
 import (
-	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestGroupTitleChunker_Registered(t *testing.T) {
@@ -39,22 +40,6 @@ func TestGroupTitleChunker_Registered(t *testing.T) {
 	}
 	if len(meta.Outputs) == 0 {
 		t.Errorf("outputs metadata is empty")
-	}
-}
-
-func TestGroupTitleChunker_Parallelism(t *testing.T) {
-	c, err := NewGroupTitleChunker(map[string]any{
-		"levels": [][]string{{`^# `}},
-	})
-	if err != nil {
-		t.Fatalf("NewGroupTitleChunker: %v", err)
-	}
-	gc, ok := c.(*GroupTitleChunkerComponent)
-	if !ok {
-		t.Fatalf("NewGroupTitleChunker returned %T", c)
-	}
-	if got := gc.Parallelism(); got != 2 {
-		t.Errorf("Parallelism() = %d, want 2", got)
 	}
 }
 
@@ -79,6 +64,48 @@ func TestGroupTitleChunker_NewRejectsHierarchyWithoutHierarchyParam(t *testing.T
 	}
 }
 
+// TestExtractLineRecords_MarkdownKey verifies extractLineRecords reads
+// the "markdown" payload key. Before this fix extractLineRecords only
+// looked at "text"/"content" and silently returned nil for parser
+// output that carried output_format="markdown".
+func TestExtractLineRecords_MarkdownKey(t *testing.T) {
+	records := extractLineRecords(map[string]any{
+		"output_format": "markdown",
+		"markdown":      "line1\nline2\nline3",
+	})
+	if len(records) != 3 {
+		t.Fatalf("got %d records, want 3", len(records))
+	}
+	for i, r := range records {
+		if r.textOrEmpty() == "" {
+			t.Errorf("record[%d]: empty text", i)
+		}
+	}
+}
+
+// TestExtractLineRecords_HTMLKey verifies extractLineRecords reads the
+// "html" payload key, same safety-net rationale as TestMarkdownKey.
+func TestExtractLineRecords_HTMLKey(t *testing.T) {
+	records := extractLineRecords(map[string]any{
+		"output_format": "html",
+		"html":          "<p>first</p>\n<p>second</p>",
+	})
+	if len(records) != 2 {
+		t.Fatalf("got %d records, want 2", len(records))
+	}
+}
+
+// TestExtractLineRecords_TextKeyStillWorks ensures the existing "text"
+// key path is not broken by the addition of "markdown"/"html".
+func TestExtractLineRecords_TextKeyStillWorks(t *testing.T) {
+	records := extractLineRecords(map[string]any{
+		"text": "hello\nworld",
+	})
+	if len(records) != 2 {
+		t.Fatalf("got %d records, want 2", len(records))
+	}
+}
+
 func TestGroupTitleChunker_InvokeEmptyInput(t *testing.T) {
 	c, err := NewGroupTitleChunker(map[string]any{
 		"levels": [][]string{{`^# `}},
@@ -86,7 +113,7 @@ func TestGroupTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -110,7 +137,7 @@ func TestGroupTitleChunker_Headings_ASCII(t *testing.T) {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
 	}
 	input := "# Heading One\nBody line under H1.\nAnother body line.\n# Heading Two\nBody under second H1."
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "doc.md",
 		"text": input,
 	})
@@ -133,7 +160,7 @@ func TestGroupTitleChunker_RootChunkAsHeading_StillSingleGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "doc.md",
 		"text": "Body without any heading here.\nMore body.",
 	})
@@ -144,6 +171,116 @@ func TestGroupTitleChunker_RootChunkAsHeading_StillSingleGroup(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
+}
+
+// TestResolveGroupTargetLevel_UsesMostLevelDirectly pins Gap F: when
+// `hierarchy` is unset the group target level is `most_level` DIRECTLY,
+// not resolve_target_level (which would re-rank the distinct heading
+// levels and pick the wrong depth when levels are not contiguous from
+// 1). With levels {2,2,3} most_level is 2, but resolve_target_level
+// would return 3.
+func TestResolveGroupTargetLevel_UsesMostLevelDirectly(t *testing.T) {
+	levels := []int{2, 2, 3, bodyLevel, bodyLevel}
+	pUnset := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{Method: "group"}}
+	if got := resolveGroupTargetLevel(levels, pUnset, 2); got != 2 {
+		t.Errorf("unset hierarchy: got %d, want 2 (most_level directly)", got)
+	}
+	h := 2
+	pSet := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{Method: "group", Hierarchy: &h}}
+	if got := resolveGroupTargetLevel(levels, pSet, 2); got != 3 {
+		t.Errorf("hierarchy=2: got %d, want 3 (resolve_target_level)", got)
+	}
+}
+
+// TestGroupChunker_StructuredMetadata pins Gap E: for a structured
+// (output_format=chunks) payload, non-text records keep their
+// doc_type_kwd and img_id on the emitted chunk.
+func TestGroupChunker_StructuredMetadata(t *testing.T) {
+	c, err := NewGroupTitleChunker(map[string]any{
+		"levels": [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "# Heading", "doc_type_kwd": "text"},
+		{"text": "body line", "doc_type_kwd": "text"},
+		{"text": "an image caption", "doc_type_kwd": "image", "img_id": "img-9"},
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc",
+		"output_format": "chunks",
+		"chunks":        items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	found := false
+	for _, ck := range chunks {
+		if dt, _ := ck["doc_type_kwd"].(string); dt == "image" {
+			found = true
+			if ck["img_id"] != "img-9" {
+				t.Errorf("image chunk img_id = %v, want img-9", ck["img_id"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no image chunk emitted")
+	}
+}
+
+// TestGroupChunker_MergesPDFPositionsAndRemovesTags is the TDD test for
+// migration diffs Chunker-1.6 / 2.8: when the group chunker merges
+// multiple adjacent text records into one chunk it must (a) strip the
+// parser-emitted `@@...##` position tags from the joined text, and
+// (b) MERGE (not drop) the `positions` coordinate matrices across the
+// merged records — mirroring common.py:255 remove_tag + merge.
+func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
+	c, err := NewGroupTitleChunker(map[string]any{
+		"levels": [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "# Heading", "doc_type_kwd": "text"},
+		{"text": "body one @@1\t10.0\t20.0\t30.0\t40.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{1, 10, 20, 30, 40}}},
+		{"text": "body two @@2\t15.0\t25.0\t35.0\t45.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{2, 15, 25, 35, 45}}},
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc",
+		"output_format": "chunks",
+		"chunks":        items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) == 0 {
+		t.Fatal("no chunks emitted")
+	}
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		// Only the merged body group carries both bodies.
+		if !strings.Contains(text, "body one") || !strings.Contains(text, "body two") {
+			continue
+		}
+		// (a) parser tags must be stripped from the text.
+		if strings.Contains(text, "@@") {
+			t.Errorf("parser position tags leaked into chunk text: %q", text)
+		}
+		// (b) positions must be merged across both records.
+		pos, ok := ck["positions"].([][]float64)
+		if !ok {
+			t.Fatalf("positions missing or wrong type %T on merged group chunk", ck["positions"])
+		}
+		if len(pos) != 2 {
+			t.Errorf("merged positions = %d groups, want 2 (both records)", len(pos))
+		}
+		return
+	}
+	t.Fatal("merged body group chunk not found in output")
 }
 
 func TestGroupTitleChunker_InvokeDeterministic(t *testing.T) {
@@ -163,7 +300,7 @@ func TestGroupTitleChunker_InvokeDeterministic(t *testing.T) {
 	var firstLen int
 	var firstTexts []string
 	for run := 0; run < 10; run++ {
-		out, err := c.Invoke(context.Background(), inputs)
+		out, err := c.Invoke(t.Context(), nil, inputs)
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}

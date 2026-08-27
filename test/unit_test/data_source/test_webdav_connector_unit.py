@@ -165,6 +165,27 @@ def _stub_files(files):
     return _list_files_recursive
 
 
+def _stub_list_raises(exc):
+    """Stub ``_list_files_recursive`` so the very first call raises.
+
+    Used by the ``#16636`` regression tests: pre-fix the top-level
+    ``except Exception`` swallowed the error and returned an empty
+    list, which then caused the prune path to delete every indexed
+    document because the snapshot looked "all gone". Post-fix the
+    exception propagates to the caller, where the prune snapshot
+    collector converts it to ``None`` and aborts the prune.
+    """
+    call_count = {"n": 0}
+
+    def _list_files_recursive(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise exc
+        return []
+
+    return _list_files_recursive
+
+
 @pytest.mark.p2
 def test_get_size_bytes_accepts_integer_strings():
     assert WebDAVConnector._get_size_bytes({"size": 128}) == 128
@@ -299,3 +320,84 @@ def test_retrieve_all_slim_docs_skips_missing_size_metadata(caplog):
         "webdav:https://webdav.example:/small.txt",
     ]
     assert ("missing.txt: size metadata missing from WebDAV server response, skipping to avoid processing potentially large files.") in caplog.text
+
+
+class _RaisingClient:
+    """Test client whose ``ls`` raises the given exception.
+
+    Used by the ``#16636`` regression tests to simulate a transient
+    WebDAV listing error (network blip / TLS error / momentary
+    server restart). The connector must propagate the error rather
+    than swallow it and return an empty file list.
+    """
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def ls(self, path, detail=True):
+        raise self._exc
+
+
+@pytest.mark.p1
+def test_list_files_recursive_propagates_transient_listing_error():
+    """Regression for #16636: a transient ``self.client.ls`` failure
+    must propagate to the caller (so the prune snapshot collector
+    can return ``None`` and abort the prune), not be swallowed
+    and returned as an empty file list (which would cause the prune
+    to delete every indexed document because the snapshot looks
+    "all gone")."""
+    connector = WebDAVConnector("https://webdav.example", batch_size=10)
+    connector.client = _RaisingClient(ConnectionError("server restart"))
+
+    with pytest.raises(ConnectionError, match="server restart"):
+        connector._list_files_recursive(
+            "/",
+            datetime(1970, 1, 1, tzinfo=timezone.utc),
+            datetime.now(timezone.utc),
+            filter_by_mtime=False,
+        )
+
+
+@pytest.mark.p1
+def test_retrieve_all_slim_docs_perm_sync_propagates_transient_listing_error():
+    """Regression for #16636: ``retrieve_all_slim_docs_perm_sync`` is
+    the prune-snapshot entry point. A transient listing error must
+    surface as a raised exception, not a silently-empty generator.
+
+    Pre-fix, ``_list_files_recursive`` returned ``[]`` on the same
+    input and the caller saw a successful empty snapshot.
+    """
+    connector = WebDAVConnector("https://webdav.example", batch_size=10)
+    connector.client = _RaisingClient(ConnectionError("server restart"))
+
+    with pytest.raises(ConnectionError, match="server restart"):
+        # Force the inner _list_files_recursive call (rather than the
+        # stub) so the exception path is exercised end-to-end.
+        for _ in connector._yield_webdav_documents(
+            datetime(1970, 1, 1, tzinfo=timezone.utc),
+            datetime.now(timezone.utc),
+        ):
+            pass
+
+
+@pytest.mark.p1
+def test_list_files_recursive_returns_empty_when_directory_truly_empty():
+    """Regression guard: an empty WebDAV directory (no exception,
+    just zero items) must still return ``[]`` — the empty list is
+    the correct signal for a directory with no files, not for a
+    failed listing. The fix should not change this case."""
+    connector = WebDAVConnector("https://webdav.example", batch_size=10)
+    connector.client = object()  # _list_files_recursive has its own for-loop; not used here
+
+    def _empty(*args, **kwargs):
+        return []
+
+    connector._list_files_recursive = _empty
+
+    result = connector._list_files_recursive(
+        "/",
+        datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime.now(timezone.utc),
+        filter_by_mtime=False,
+    )
+    assert result == []

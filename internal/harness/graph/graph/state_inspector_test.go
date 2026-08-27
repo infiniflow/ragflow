@@ -22,7 +22,7 @@ func TestGetState_NoCheckpointer(t *testing.T) {
 	}
 	insp := getInspector(t, cg)
 
-	_, err = insp.GetState(context.Background(), types.NewRunnableConfig())
+	_, err = insp.GetState(t.Context(), types.NewRunnableConfig())
 	if err == nil {
 		t.Fatal("expected error without checkpointer")
 	}
@@ -56,13 +56,13 @@ func TestGetState_WithCheckpointer(t *testing.T) {
 	}
 
 	// Execute the graph.
-	_, err = cg.Invoke(context.Background(), struct{ Messages []string }{}, cfg)
+	_, err = cg.Invoke(t.Context(), struct{ Messages []string }{}, cfg)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 
 	// Get state.
-	snap, err := insp.GetState(context.Background(), cfg)
+	snap, err := insp.GetState(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("GetState: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestGetStateHistory_Empty(t *testing.T) {
 		},
 	}
 
-	history, err := insp.GetStateHistory(context.Background(), cfg, 10, nil)
+	history, err := insp.GetStateHistory(t.Context(), cfg, 10, nil)
 	if err != nil {
 		t.Fatalf("GetStateHistory: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestGetStateHistory_WithData(t *testing.T) {
 		},
 	}
 
-	_, err = cg.Invoke(context.Background(), counterState{}, cfg)
+	_, err = cg.Invoke(t.Context(), counterState{}, cfg)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

@@ -130,12 +130,10 @@ func (s sentinelErr) Error() string { return string(s) }
 // tiny: 1 heading, 1 paragraph, 1 unordered list item, no nested
 // formatting.
 func TestMarkdownParser_ParseWithResult(t *testing.T) {
-	p, err := NewMarkdownParser(GoMarkdown)
-	if err != nil {
-		t.Fatalf("NewMarkdownParser: %v", err)
-	}
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
 	src := []byte("# Title\n\nFirst paragraph.\n\n- Item one\n")
-	res := p.ParseWithResult("doc.md", src)
+	res := p.ParseWithResult(ctx, "doc.md", src)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}

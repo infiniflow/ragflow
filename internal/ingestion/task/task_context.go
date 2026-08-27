@@ -19,99 +19,111 @@ package task
 import (
 	"context"
 	"fmt"
-	"time"
-
-	"golang.org/x/sync/semaphore"
+	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
-// TaskLog represents a task execution log entry.
-type TaskLog struct {
-	StartTime   time.Time              `json:"start_time"`
-	EndTime     time.Time              `json:"end_time"`
-	Description string                 `json:"description"`
-	Details     map[string]interface{} `json:"details"`
-}
+// TaskKind discriminates which execution path a queued TaskContext takes.
+type TaskKind int
 
-// TaskContext holds the full task context loaded from DB, equivalent to Python TaskService.get_task().
-// Entity types are embedded directly to avoid manual field mapping.
+const (
+	// TaskKindIngestion is an ingestion document task (IngestionTask set).
+	TaskKindIngestion TaskKind = iota
+	// TaskKindMemory is an async memory-extraction task (MemoryPayload set,
+	// IngestionTask nil). It shares the worker pool with ingestion tasks but
+	// runs through executeMemoryTask instead of the ingestion state machine.
+	TaskKindMemory
+)
+
+// TaskContext holds the execution inputs for an ingestion document task or a
+// memory-extraction task. Ingestion tasks populate IngestionTask and the
+// document/KB/tenant chain; memory tasks populate MemoryPayload and leave
+// IngestionTask nil.
 type TaskContext struct {
-	// Context and execution control (from service package)
-	Ctx        context.Context
-	TaskHandle common.TaskHandle
+	Ctx context.Context
 
-	// IngestionTask is the ingestion task entity (from service package)
+	// Kind selects the execution path: TaskKindIngestion or TaskKindMemory.
+	Kind TaskKind
+
 	IngestionTask *entity.IngestionTask
 
-	// Progress and status tracking (from service package)
-	Logs         []*TaskLog
-	Progress     int32
-	ErrorMessage string
-
-	// Task type for handling dispatch
-	TaskType string
-
-	// Business data (original task package fields)
 	Doc    entity.Document
 	KB     entity.Knowledgebase
 	Tenant entity.Tenant
 
-	// pipeline used to parse the document
 	PipelineID string
+	File       any
 
-	// File is an optional file object for dataflow pipeline debugging.
-	// Mirrors Python: task["file"] — passed through to Pipeline.run().
-	File any
+	// MemoryPayload carries the raw task_type="memory" message body for
+	// memory tasks (id/memory_id/source_id/message_dict). Only set for
+	// TaskKindMemory.
+	MemoryPayload map[string]any
 
-	// EmbedLimiter limits embedding API concurrency.
-	// If nil, no concurrency limit is applied.
-	// Mirrors Python: ctx.embed_limiter (asyncio.Semaphore)
-	EmbedLimiter *semaphore.Weighted
+	// Handle is the message-queue ack handle for the task message that scheduled
+	// this context. The scheduler sets it before queueing; the worker decides
+	// the terminal Ack/Nack:
+	//   - TaskKindIngestion: ack on a durably-persisted terminal status and
+	//     nack otherwise (e.g. shutdown mid-task) so the message is redelivered
+	//     and resumed after restart.
+	//   - TaskKindMemory: ack on success and on terminal failure (task absent,
+	//     already-failed, or progress=-1 persisted by HandleSaveToMemoryTask);
+	//     nack on transient failure (task-load DB error before any marker, or
+	//     LLM/network error that did not reach progress=-1) so the message is
+	//     redelivered. See executeMemoryTask.
+	Handle common.TaskHandle
+}
 
-	// ProgressFunc updates the task-level progress state.
-	// If nil, a no-op callback is used.
-	ProgressFunc ProgressFunc
+// NewMemoryTaskContextForScheduling creates a lightweight TaskContext for a
+// memory-extraction task. It only sets the scheduling-related fields, not the
+// full ingestion business data.
+func NewMemoryTaskContextForScheduling(ctx context.Context, payload map[string]any, handle common.TaskHandle) *TaskContext {
+	return &TaskContext{
+		Ctx:           ctx,
+		Kind:          TaskKindMemory,
+		MemoryPayload: payload,
+		Handle:        handle,
+	}
 }
 
 // NewTaskContextForScheduling creates a lightweight TaskContext for queue scheduling.
 // This only sets the scheduling-related fields, not the full business data.
-func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask, handle common.TaskHandle) *TaskContext {
+func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask) *TaskContext {
 	return &TaskContext{
 		Ctx:           ctx,
+		Kind:          TaskKindIngestion,
 		IngestionTask: task,
-		TaskHandle:    handle,
 	}
 }
 
 // LoadFromIngestionTask loads the full task context from an IngestionTask.
-// It follows the FK chain: ingestion task → document → knowledgebase → tenant.
-func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, error) {
-	doc, err := dao.NewDocumentDAO().GetByID(ingestionTask.DocumentID)
-	if err != nil || doc == nil {
-		return nil, fmt.Errorf("error when load document %s : %w", ingestionTask.DocumentID, err)
+// It follows the FK chain: ingestion task -> document -> knowledgebase -> tenant.
+func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionTask) (*TaskContext, error) {
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, ingestionTask.DocumentID)
+	if err != nil {
+		return nil, fmt.Errorf("load document %s: %w", ingestionTask.DocumentID, err)
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document %s not found", ingestionTask.DocumentID)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
 		return nil, fmt.Errorf("error when load knowledgebase %s: %w", doc.KbID, err)
 	}
 
-	tenant, err := dao.NewTenantDAO().GetByID(kb.TenantID)
+	tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 	if err != nil || tenant == nil {
 		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
 	}
 
-	pipelineID := ""
-	if doc.PipelineID != nil {
-		pipelineID = *doc.PipelineID
-	}
+	pipelineID := resolvePipelineID(doc)
 
 	return &TaskContext{
+		Ctx:           ctx,
 		IngestionTask: ingestionTask,
-		TaskType:      "dataflow",
 		PipelineID:    pipelineID,
 		Doc:           *doc,
 		KB:            *kb,
@@ -119,72 +131,10 @@ func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, e
 	}, nil
 }
 
-// Load loads the full task context following the FK chain: document → knowledgebase → tenant.
-// Kept for backward compatibility.
-func Load(docID string) (*TaskContext, error) {
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
-	if err != nil || doc == nil {
-		return nil, fmt.Errorf("error when load document %s : %w", docID, err)
+// resolvePipelineID resolves the pipeline selected for a document.
+func resolvePipelineID(doc *entity.Document) string {
+	if doc != nil && doc.PipelineID != nil {
+		return strings.TrimSpace(*doc.PipelineID)
 	}
-
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)
-	if err != nil || kb == nil {
-		return nil, fmt.Errorf("error when load knowledgebase %s: %w", doc.KbID, err)
-	}
-
-	tenant, err := dao.NewTenantDAO().GetByID(kb.TenantID)
-	if err != nil || tenant == nil {
-		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
-	}
-
-	pipelineID := ""
-	if doc.PipelineID != nil {
-		pipelineID = *doc.PipelineID
-	}
-
-	return &TaskContext{
-		TaskType:   "dataflow",
-		PipelineID: pipelineID,
-		Doc:        *doc,
-		KB:         *kb,
-		Tenant:     *tenant,
-	}, nil
-}
-
-// LoadTaskContext loads the full task context following the FK chain: task → document → knowledgebase → tenant.
-// Kept for backward compatibility.
-func LoadTaskContext(taskID string) (*TaskContext, error) {
-	task, err := dao.NewTaskDAO().GetByID(taskID)
-	if err != nil {
-		return nil, fmt.Errorf("task %s: %w", taskID, err)
-	}
-
-	doc, err := dao.NewDocumentDAO().GetByID(task.DocID)
-	if err != nil || doc == nil {
-		return nil, fmt.Errorf("document %s for task %s: %w", task.DocID, taskID, err)
-	}
-
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)
-	if err != nil || kb == nil {
-		return nil, fmt.Errorf("knowledgebase %s for doc %s: %w", doc.KbID, doc.ID, err)
-	}
-
-	tenant, err := dao.NewTenantDAO().GetByID(kb.TenantID)
-	if err != nil || tenant == nil {
-		return nil, fmt.Errorf("tenant %s for kb %s: %w", kb.TenantID, kb.ID, err)
-	}
-
-	pipelineID := ""
-	if doc.PipelineID != nil {
-		pipelineID = *doc.PipelineID
-	}
-
-	return &TaskContext{
-		TaskType:     task.TaskType,
-		PipelineID:   pipelineID,
-		Doc:          *doc,
-		KB:           *kb,
-		Tenant:       *tenant,
-		ProgressFunc: func(prog float64, msg string) {},
-	}, nil
+	return ""
 }

@@ -4,6 +4,7 @@ import {
 } from '@/components/model-tree-select';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import {
   FlattenMediaToTextFormField,
   RemoveHeaderFooterFormField,
@@ -14,6 +15,7 @@ import { buildFieldNameWithPrefix } from './utils';
 
 export function TextMarkdownFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
   const flattenMediaToText = useWatch({
     name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
@@ -28,6 +30,7 @@ export function TextMarkdownFormFields({ prefix }: CommonProps) {
           label={t('chat.model')}
           modelTypes={ModelTypeMap.img2txt_id}
           allowClear
+          ownerTenantId={ownerTenantId}
         />
       )}
     </>

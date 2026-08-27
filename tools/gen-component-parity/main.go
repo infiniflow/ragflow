@@ -9,7 +9,7 @@
 //
 
 // gen-component-parity is a small developer tool that walks the live Go
-// component and tool registries and emits a markdown parity matrix for
+// component and tool registries and emits a Markdown parity matrix for
 // docs/component-parity.md. It supersedes the manually-curated table
 // previously maintained in that file.
 //
@@ -21,7 +21,7 @@
 // The tool imports the production packages (which trigger init()
 // registration of every component / tool factory) and reflects on each
 // registered entry's Name() / Inputs() / Outputs() (for components) or
-// Info() (for tools). It then writes a markdown table to stdout.
+// Info() (for tools). It then writes a Markdown table to stdout.
 //
 // Limitations:
 //
@@ -31,7 +31,7 @@
 //     the structural inventory.
 //   - Component factories that require non-empty params to construct
 //     (e.g. Retrieval, ExeSQL) are skipped with a "⏭" annotation; their
-//     parity is captured in the hand-written matrix.
+//     parity is captured in the handwritten matrix.
 //   - The script does not import cmd/server_main.go to avoid pulling
 //     in the full boot path (Redis, MySQL, etc.).
 package main
@@ -159,7 +159,7 @@ func sortedToolNames() []string {
 	known := []string{
 		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
 		"email", "execute_sql", "exesql", "github", "google", "google_scholar",
-		"jin10", "pubmed", "qweather", "retrieval", "search_my_dataset",
+		"jin10", "pubmed", "qweather", "querit", "querit_search", "queritsearch", "retrieval", "search_my_dataset",
 		"search_my_dateset", "searxng", "tavily", "tushare", "wencai",
 		"web_crawler", "wikipedia", "yahoo_finance",
 	}

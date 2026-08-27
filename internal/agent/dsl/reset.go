@@ -20,7 +20,7 @@
 // Python's Canvas.reset() does two things:
 //
 //  1. Graph.reset(): clears the per-component state (path, in-memory
-//     caches) and removes the per-task Redis log/cancel keys.
+//     caches) and removes the per-session Redis log/cancel keys.
 //
 //  2. Per-run state wipe: empties self.history / retrieval / memory,
 //     then walks self.globals to zero out every "sys.*" key and to
@@ -30,8 +30,8 @@
 // In the Go port there is no per-canvas "Graph" runtime — the
 // executor is reconstructed from the DSL on every Run. So the
 // Python "Graph.reset()" side (step 1) is implicitly handled by the
-// per-run rebuild and the per-task Redis keys are still owned by the
-// Python task executor. The Go port is responsible for the
+// per-run rebuild and the Redis keys are still owned by the runtime. The Go
+// port is responsible for the
 // per-DSL-state wipe (step 2): it transforms the persisted DSL
 // saved in user_canvas.dsl, the same way the Python handler does
 // before writing it back via UserCanvasService.update_by_id.
@@ -43,6 +43,28 @@
 // to receive the new DSL.
 
 package dsl
+
+// ResetForNewSession returns a defensive copy of dsl with only
+// conversation-owned state cleared. A fresh session must not inherit the
+// runtime replica's conversation history or execution path, while reusable
+// state such as memory, retrieval results, environment variables, and graph
+// structure is preserved.
+func ResetForNewSession(dsl map[string]any) map[string]any {
+	if dsl == nil {
+		return map[string]any{}
+	}
+	out := deepCopyMap(dsl)
+	out["history"] = []any{}
+	out["path"] = []any{}
+
+	globals, _ := out["globals"].(map[string]any)
+	if globals == nil {
+		globals = map[string]any{}
+		out["globals"] = globals
+	}
+	globals["sys.history"] = []any{}
+	return out
+}
 
 // ResetForCanvas returns a defensive copy of dsl with all per-run
 // state cleared, ready to be persisted back into user_canvas.dsl.
