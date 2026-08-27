@@ -163,6 +163,36 @@ func TestApplyPDFPostProcess_RemoveTOCPrefixScanWithoutEntryPattern(t *testing.T
 	}
 }
 
+func TestApplyPDFPostProcess_RemoveTOCSingleFormattedEntryKeepsBody(t *testing.T) {
+	// Only the first entry after the TOC title is formatted. It must count
+	// as a consumed entry so the prefix scan never runs: that scan would
+	// otherwise delete every line up to the next "Cha"-prefixed heading
+	// ("Chapter Two"), dropping the body text between the TOC and it.
+	result := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "Contents"},
+			{Text: "Chapter One ..... 2"},
+			{Text: "Body A"},
+			{Text: "Body B"},
+			{Text: "Chapter Two"},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	var kept []string
+	for _, s := range result.Sections {
+		kept = append(kept, s.Text)
+	}
+	want := []string{"Body A", "Body B", "Chapter Two"}
+	if len(kept) != len(want) {
+		t.Fatalf("kept = %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept = %v, want %v", kept, want)
+		}
+	}
+}
+
 func TestApplyPDFPostProcess_RemoveRunningHeaderFooterWithoutDLA(t *testing.T) {
 	const pageHeight = 842.0
 	result := &deepdoctype.ParseResult{
@@ -299,6 +329,46 @@ func TestApplyPDFPostProcess_RunningHeaderFooterRequiresFullZone(t *testing.T) {
 	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
 	if len(result.Sections) != 6 {
 		t.Fatalf("len(Sections) = %d, want 6 (sections crossing the zone boundary must survive)", len(result.Sections))
+	}
+}
+
+func TestApplyPDFPostProcess_RunningHeaderFooterNeedsRepetitionNotPosition(t *testing.T) {
+	const pageHeight = 842.0
+	// Body blocks sitting fully inside the top 10% of every page but never
+	// repeating: position alone must not remove them — the guard requires
+	// the same normalized text on >= half of the rendered pages.
+	result := &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("Quarterly results summary", "", 0, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page zero.", "", 0, 72, 363, 124, 136),
+			makePDFSection("Annual meeting minutes", "", 1, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page one.", "", 1, 72, 363, 124, 136),
+			makePDFSection("Risk assessment overview", "", 2, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page two.", "", 2, 72, 363, 124, 136),
+			makePDFSection("Compliance audit findings", "", 3, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page three.", "", 3, 72, 363, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 8 {
+		t.Fatalf("len(Sections) = %d, want 8 (in-zone but non-repeating text must survive)", len(result.Sections))
+	}
+
+	// Repetition counts distinct pages, not occurrences: the same text
+	// twice on one page still covers a single page of the document.
+	result = &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("Repeated block", "", 0, 72, 300, 21, 40),
+			makePDFSection("Repeated block", "", 0, 72, 300, 45, 64),
+			makePDFSection("Body text page one.", "", 1, 72, 363, 124, 136),
+			makePDFSection("Body text page two.", "", 2, 72, 363, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 4 {
+		t.Fatalf("len(Sections) = %d, want 4 (two occurrences on one page count as one page)", len(result.Sections))
 	}
 }
 

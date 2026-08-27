@@ -313,6 +313,16 @@ func removePDFTOC(result *deepdoctype.ParseResult) {
 		if i >= len(sections) || prefix == "" {
 			break
 		}
+		// The first entry is formatted (leader run plus page number): the
+		// table is entry-shaped and the prefix scan below must not run —
+		// with a single formatted entry that scan would delete body text up
+		// to the next line sharing the entry's prefix. Drop the entry and
+		// resume the title scan; filterPDFTOCEntries removes the remaining
+		// entry lines.
+		if isPDFTOCEntrySection(sectionText(sections[i])) {
+			sections = append(sections[:i], sections[i+1:]...)
+			continue
+		}
 		sections = append(sections[:i], sections[i+1:]...)
 		if i >= len(sections) || prefix == "" {
 			break
