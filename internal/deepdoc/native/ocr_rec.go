@@ -67,31 +67,8 @@ func RunOCRRec(ctx context.Context, modelDir string, img *Image) (OCRRecResult, 
 // line (recMaxBatch=1). Prefer RunOCRRecBatchReal, which concatenates every
 // line's preprocessed blob into a single {N,3,48,imgW} tensor and performs ONE
 // ONNX Run — identical numerically (each line uses the same shared batch width)
-// but with the real throughput benefit of batched matmul. RunOCRRecBatch is
-// kept only as a reference path; it will be removed once all callers move to
-// RunOCRRecBatchReal.
-func RunOCRRecBatch(ctx context.Context, modelDir string, imgs []*Image) ([]OCRRecResult, error) {
-	chars, err := loadCharDict(filepath.Join(modelDir, "ocr.res"))
-	if err != nil {
-		return nil, err
-	}
-	maxWhRatio := float64(recW) / float64(recH)
-	for _, img := range imgs {
-		if r := float64(img.W) / float64(img.H); r > maxWhRatio {
-			maxWhRatio = r
-		}
-	}
-	out := make([]OCRRecResult, len(imgs))
-	for i, img := range imgs {
-		res, err := recognizeLine(ctx, modelDir, img, maxWhRatio, chars)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = res
-	}
-	return out, nil
-}
-
+// but with the real throughput benefit of batched matmul. RunOCRRecBatchReal is
+// the production path.
 // RunOCRRecBatchReal recognizes a batch of cropped text-line images with a
 // SINGLE ONNX Run, mirroring deepdoc's TextRecognizer.__call__ exactly: every
 // line is resized to the batch's shared width (imgW = 48*max_wh_ratio, floored

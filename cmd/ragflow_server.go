@@ -63,6 +63,7 @@ import (
 	"ragflow/internal/engine/redis"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
+	"ragflow/internal/servermode"
 	"ragflow/internal/utility"
 )
 
@@ -282,11 +283,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Register the in-process (Go) DeepDoc backend. This server is built with
-	// -tags cgo and links ONNX Runtime statically (libonnxruntime.a, resolved
-	// via dlopen(NULL)), so the in-process backend is the production backend
-	// with no external DeepDoc HTTP service. Fail fast if it cannot serve.
-	registerNativeDeepDoc()
+	// Register the in-process (Go) DeepDoc backend for the modes that run the
+	// document parsing pipeline. This server is built with -tags cgo and links
+	// ONNX Runtime statically (libonnxruntime.a, resolved via dlopen(NULL)),
+	// so the in-process backend is the production backend with no external
+	// DeepDoc HTTP service. Fail fast if it cannot serve — but only for modes
+	// that actually need it: "api" parses in-process (dataflow debug and other
+	// routes) and "ingestor" runs the ingestion pipeline. "admin"/"syncer"
+	// never instantiate the analyzer, so they must not fail-fast when ORT and
+	// models are absent on their node.
+	if servermode.NeedsDeepDoc(*args.mode) {
+		registerNativeDeepDoc()
+	}
 
 	globalConfig := server.GetConfig()
 
@@ -1077,10 +1085,9 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // if the backend is not serving, the server aborts.
 func registerNativeDeepDoc() {
 	modelDir := resolveDeepDocModelDir()
-	ortLib := resolveDeepDocORTLib()
 	dropScore := resolveDeepDocDropScore()
 
-	if err := infnative.Register(modelDir, ortLib, dropScore); err != nil {
+	if err := infnative.Register(modelDir, dropScore); err != nil {
 		common.Warn("in-process DeepDoc backend unavailable",
 			zap.String("reason", err.Error()))
 	}
@@ -1120,14 +1127,6 @@ func resolveDeepDocModelDir() string {
 	// None verified; return the canonical default so any error message points
 	// at the conventional location.
 	return filepath.Join(wd, "rag", "res", "deepdoc")
-}
-
-// resolveDeepDocORTLib always returns "" because the in-process DeepDoc
-// backend links ONNX Runtime statically (libonnxruntime.a, resolved at runtime
-// via dlopen(NULL) from the running binary). There is no dynamic .so deployment
-// and therefore no path to resolve; native.InitORT("") selects the static path.
-func resolveDeepDocORTLib() string {
-	return ""
 }
 
 // resolveDeepDocDropScore returns the explicit DEEPDOC_DROP_SCORE env, else the

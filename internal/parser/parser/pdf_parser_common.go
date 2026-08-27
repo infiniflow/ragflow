@@ -324,10 +324,9 @@ func deepDocAnalyzerFromEnv() (deepdoctype.DocAnalyzer, error) {
 //
 // The external Python HTTP service (formerly selected via DEEPDOC_URL) has
 // been removed entirely from both the production path and the test suite, so
-// baseURL is kept only in the signature for compatibility with callers and is
-// ignored: production is in-process only.
+// production is in-process only.
 //
-// It takes its inputs explicitly (baseURL + factory) rather than reading
+// It takes its inputs explicitly (the factory) rather than reading
 // globals, so the policy is unit-testable in isolation. It never returns a
 // mock: if no backend is available it returns an error (MockDocAnalyzer is
 // test-only infrastructure and must never sit in this production path).

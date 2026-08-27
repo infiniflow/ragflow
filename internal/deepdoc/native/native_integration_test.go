@@ -39,7 +39,7 @@ func deepdocNativeRequired() bool {
 
 // skipIfNoModels gates the integration tests behind MODEL_DIR (always
 // required) and a usable ONNX Runtime. ONNX Runtime is resolved statically via
-// dlopen(NULL); if the binary was not built with static ORT, InitORT("") fails
+// dlopen(NULL); if the binary was not built with static ORT, InitORT() fails
 // and we skip rather than fail, so the suite stays green in environments that
 // lack the static ORT archives. When DEEPDOC_NATIVE_REQUIRED=1, a missing
 // prerequisite is a hard failure instead of a skip.
@@ -50,7 +50,7 @@ func skipIfNoModels(t *testing.T) {
 		}
 		t.Skip("set MODEL_DIR to run integration tests")
 	}
-	if err := InitORT(""); err != nil {
+	if err := InitORT(); err != nil {
 		if deepdocNativeRequired() {
 			t.Fatalf("ONNX Runtime not statically linked but required (DEEPDOC_NATIVE_REQUIRED=1): %v", err)
 		}
@@ -319,9 +319,9 @@ func TestOCRRecBatchIntegration(t *testing.T) {
 		}
 		imgs[i] = img
 	}
-	res, err := RunOCRRecBatch(t.Context(), os.Getenv("MODEL_DIR"), imgs)
+	res, err := RunOCRRecBatchReal(t.Context(), os.Getenv("MODEL_DIR"), imgs)
 	if err != nil {
-		t.Fatalf("RunOCRRecBatch: %v", err)
+		t.Fatalf("RunOCRRecBatchReal: %v", err)
 	}
 
 	raw, err := os.ReadFile(filepath.Join("testdata", "batch_ocr_rec.golden.json"))

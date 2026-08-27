@@ -66,8 +66,7 @@ func NewAnalyzer(modelDir string, dropScore float64) (*NativeAnalyzer, error) {
 
 // Register wires this backend into the parser as the local in-process
 // backend. Call it once at process start (the server binary) after resolving
-// modelDir/ortLib/dropScore. ortLib is accepted for API compatibility with
-// the upstream binding but is otherwise ignored: this fork links ONNX Runtime
+// modelDir/dropScore. This fork links ONNX Runtime
 // statically (libonnxruntime.a), so native.InitORT always resolves ORT from
 // the running binary itself via dlopen(NULL) — no external libonnxruntime.so
 // is required. InitORT is a sync.Once, so re-entry (e.g. tests calling it
@@ -75,9 +74,9 @@ func NewAnalyzer(modelDir string, dropScore float64) (*NativeAnalyzer, error) {
 // OCRRecognize to blank low-confidence text, mirroring the Python service's
 // Recognizer.drop_score. The factory returns false when the backend cannot
 // serve, so the parser degrades to the empty analyzer rather than crashing.
-func Register(modelDir, ortLib string, dropScore float64) error {
+func Register(modelDir, dropScore float64) error {
 	registeredModelDir = modelDir
-	if err := native.InitORT(ortLib); err != nil {
+	if err := native.InitORT(); err != nil {
 		return fmt.Errorf("deepdoc native: init onnxruntime: %w", err)
 	}
 	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {

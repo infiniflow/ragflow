@@ -263,7 +263,7 @@ func labelKey(labels []string, label string) int {
 // analyzerWithModels builds a NativeAnalyzer after ensuring ONNX Runtime is
 // initialized. It mirrors skipIfNoModels in the native suite: MODEL_DIR is
 // always required, and ONNX Runtime is resolved statically via dlopen(NULL).
-// If the binary was not built with static ORT, InitORT("") fails and the test
+// If the binary was not built with static ORT, InitORT() fails and the test
 // skips rather than fails. InitORT is idempotent so it composes with the other
 // analyzer tests in this file.
 func analyzerWithModels(t *testing.T) *NativeAnalyzer {
@@ -275,7 +275,7 @@ func analyzerWithModels(t *testing.T) *NativeAnalyzer {
 		}
 		t.Skip("MODEL_DIR required (in-process backend integration)")
 	}
-	if err := native.InitORT(""); err != nil {
+	if err := native.InitORT(); err != nil {
 		if deepdocNativeRequired() {
 			t.Fatalf("ONNX Runtime not statically linked but required (DEEPDOC_NATIVE_REQUIRED=1): %v", err)
 		}

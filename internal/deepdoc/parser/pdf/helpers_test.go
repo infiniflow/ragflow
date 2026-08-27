@@ -25,7 +25,7 @@ func mustConnectInProcessAnalyzer(t *testing.T) deepdoctype.DocAnalyzer {
 	if modelDir == "" {
 		t.Skip("MODEL_DIR required (in-process backend integration)")
 	}
-	if err := native.InitORT(""); err != nil {
+	if err := native.InitORT(); err != nil {
 		t.Fatalf("InitORT: %v", err)
 	}
 	a, err := infnative.NewAnalyzer(modelDir, infnative.DefaultDropScore)

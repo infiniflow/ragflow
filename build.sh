@@ -442,6 +442,18 @@ setup_cgo_env() {
     export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}/libpdf_oxide.a"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
+    # macOS native builds of the in-process DeepDoc backend are not supported:
+    # ONNX Runtime is statically linked with GNU ld flags (--whole-archive /
+    # --export-dynamic) and resolved at runtime via dlopen(NULL); Apple's ld64
+    # does not understand these flags. Build on Linux or cross-compile there.
+    case "$(uname -s)" in
+        Darwin)
+            echo "Error: macOS native build of the in-process DeepDoc backend is not supported." >&2
+            echo "  ONNX Runtime is linked with GNU ld flags (--whole-archive / --export-dynamic)" >&2
+            echo "  and resolved via dlopen(NULL); Apple's ld64 does not support them. Build on Linux." >&2
+            return 1
+            ;;
+    esac
     # Statically link libonnxruntime*.a into the binary. The forked Go binding
     # (onnxruntime_go, github.com/xugangqiang/onnxruntime_go) resolves
     # OrtGetApiBase with dlopen(NULL), so the symbols must (a) be pulled in
