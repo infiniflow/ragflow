@@ -177,9 +177,10 @@ For GaussDB metadata, connection settings come from `GAUSSDB_METADATA_*`
 environment variables (not the `gaussdb:` DOC_ENGINE section in
 `service_conf.yaml`).
 
-In-place upgrades also invoke these stages from `migrate_db()` so postgres
-installs merge `tenant_model.model_type` into an integer bitmask and backfill
-`tenant_*_id` from `llm_id` / `embd_id`, instead of only retyping columns.
+Pre-startup `run_migrations.sh` is the primary path for both `model_type`
+merge and `tenant_*_id` conversion/backfill. `migrate_db()` only reruns the
+same stages (and a skip-if-already-varchar `tenant_*_id` type fallback) if
+that script did not run.
 
 Do not convert `tenant_model.model_type` to integer in `migrate_db()` first:
 `tenant_model_seeding` and `model_type_merge` skip when the column is already

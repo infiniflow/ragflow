@@ -2030,12 +2030,22 @@ def _get_column_data_type(table_name: str, column_name: str) -> str | None:
 
 
 def migrate_tenant_model_id_column_types(migrator):
-    """Convert legacy IntegerField tenant_*_id columns to VARCHAR(32).
+    """Fallback: convert leftover IntegerField tenant_*_id columns to VARCHAR(32).
 
-    v0.26.x stored tenant_llm row ids (integers) in these columns. v0.27.0
-    stores tenant_model.id hex strings instead. Upgraded databases that never
-    ran the MySQL-only tenant_model_id_migration stage can still have integer
-    columns, which breaks default-model and dataset embedding updates (#18756).
+    Primary conversion and backfill belong in the pre-startup script
+    (``mysql_migration.py`` / ``postgres_migration.py`` stage
+    ``tenant_model_id_migration``). ``migrate_db()`` runs after that script, so
+    this helper is a no-op when columns are already ``varchar`` — it only
+    converts if the script did not run or did not finish.
+
+    It does not backfill ``tenant_model.id`` values. Postgres/GaussDB still run
+    ``migrate_postgres_family_model_provider_tables()`` later for seeding,
+    ``model_type`` merge, and id backfill.
+
+    There is no matching in-place ALTER for ``tenant_model.model_type``:
+    converting that column before ``tenant_model_seeding`` / ``model_type_merge``
+    would skip those stages. Both column types rely on the script (or that
+    startup fallback) for the real work.
     """
     target_field = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
 
@@ -2123,13 +2133,15 @@ def _load_model_provider_migration_module():
 
 
 def migrate_postgres_family_model_provider_tables():
-    """Run table-init and data-backfill stages on postgres/gaussdb upgrades.
+    """Startup fallback: run provider stages if the pre-startup script did not.
 
-    Mirrors tools/scripts/mysql_migration.py, including TenantModelIdMigrationStage
-    (populate tenant_*_id from llm_id/embd_id) and ModelTypeMergeStage. MySQL
-    still uses the docker entrypoint script; postgres/gaussdb never ran that
-    path, so in-place upgrades left integer tenant_*_id values that match no
-    tenant_model.id.
+    Mirrors ``tools/scripts/postgres_migration.py`` / ``mysql_migration.py``
+    (``tenant_model_seeding`` → ``model_type_merge`` → ``tenant_model_id_migration``).
+    Docker ``run_migrations.sh`` is the primary path; this runs after schema
+    alters so in-place postgres/gaussdb upgrades still merge ``model_type`` and
+    backfill ``tenant_*_id`` when the script was skipped. Stages are idempotent.
+
+    Do not ALTER ``tenant_model.model_type`` to integer before these stages.
     """
     if settings.DATABASE_TYPE.upper() not in {"POSTGRES", "GAUSSDB"}:
         return
@@ -2628,6 +2640,9 @@ def migrate_db():
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_ocr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    # Fallback only: pre-startup mysql_migration.py / postgres_migration.py already
+    # convert tenant_*_id. This no-ops when columns are varchar. model_type is
+    # intentionally not converted here — merge stages must see varchar first.
     migrate_tenant_model_id_column_types(migrator)
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")

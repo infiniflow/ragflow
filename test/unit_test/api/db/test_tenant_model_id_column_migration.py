@@ -1,5 +1,9 @@
 """
-Tests for tenant_*_id column type migration on upgrade (#18756).
+Tests for tenant_*_id column type migration on upgrade (#18756 / #18777).
+
+migrate_tenant_model_id_column_types is a fallback for when the pre-startup
+script (tenant_model_id_migration) did not run. It only converts leftover
+integer columns; backfill still belongs in the script / postgres family stages.
 """
 
 import logging

@@ -198,7 +198,13 @@ def test_migrate_db_does_not_alter_model_type_in_place_before_merge():
     assert 'ALTER COLUMN "model_type" TYPE integer' not in source
     assert "migrate_postgres_family_model_provider_tables()" in source
 
+    helper = source.split("def migrate_tenant_model_id_column_types(", 1)[1].split("\ndef ", 1)[0]
+    helper_flat = " ".join(helper.split())
+    assert "Fallback:" in helper
+    assert "converts if the script did not run" in helper_flat
+
     migrate_db = source.split("def migrate_db(", 1)[1].split("\ndef ", 1)[0]
     assert "migrate_postgres_family_model_provider_tables()" in migrate_db
     assert "migrate_tenant_model_id_column_types(migrator)" in migrate_db
+    assert "Fallback only:" in migrate_db
     assert migrate_db.index("ensure_model_indexes(migrator)") < migrate_db.index("migrate_postgres_family_model_provider_tables()")

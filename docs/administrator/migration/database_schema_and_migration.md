@@ -47,9 +47,9 @@ The [postgres_migration.py](https://github.com/infiniflow/ragflow/blob/main/tool
 - Merging `tenant_model.model_type` into an integer bitmask (`model_type_merge`)
 - Converting integer `tenant_*_id` columns to `varchar(32)` **and** backfilling them from `llm_id` / `embd_id` by resolving `tenant_model.id` (`tenant_model_id_migration`)
 
-`tools/scripts/run_migrations.sh` selects this script automatically when `DB_TYPE` is `postgres` or `gaussdb`. `migrate_db()` also runs the same stages on those databases at startup so in-place upgrades do not depend on a manual extra command.
+`tools/scripts/run_migrations.sh` selects this script automatically when `DB_TYPE` is `postgres` or `gaussdb`. That pre-startup path is where column-type conversion and data stages run (`model_type_merge` and `tenant_model_id_migration`).
 
-Do not convert `tenant_model.model_type` to integer with a one-shot `ALTER` before these stages run. `tenant_model_seeding` and `model_type_merge` skip when that column is already an integer, which would leave unmerged duplicate rows.
+`migrate_db()` is only a fallback if the script did not run: it may retype leftover integer `tenant_*_id` columns, then invokes the same stages. It does **not** ALTER `tenant_model.model_type` to integer first — `tenant_model_seeding` and `model_type_merge` skip when that column is already an integer, which would leave unmerged duplicate rows.
 
 For GaussDB, connection parameters come from `GAUSSDB_METADATA_*` environment variables.
 
