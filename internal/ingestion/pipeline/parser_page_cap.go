@@ -3,6 +3,8 @@ package pipeline
 import (
 	"encoding/json"
 	"fmt"
+
+	"ragflow/internal/utility"
 )
 
 // UnwrapCanvasDSL decodes a raw pipeline DSL and strips the optional canvas
@@ -73,7 +75,11 @@ func parserComponentParams(dsl []byte, parserComponentName string) (string, map[
 //     override-wins merge and only the first capPages pages would parse.
 //
 // A "pages" value that is missing, null, or an empty list means "parse all
-// pages" and does not count as an explicit range — the cap still applies.
+// pages" and does not count as an explicit range — the cap still applies. The
+// all-pages sentinel carried by the shipped templates and the web UI defaults
+// ([[1, 100000]]) means the same, so a single gap-free [1, N] range with
+// N >= allPagesUpperBound does not count as explicit either; only a genuinely
+// narrowed range suppresses the cap.
 //
 // When no Parser component is found or the family is empty, the call is a
 // no-op and parserConfig is returned unchanged. When the cap IS injected, the
@@ -104,9 +110,12 @@ func BuildParserPageCapOverride(
 	}
 	dslFam, _ := parserParams[family].(map[string]any)
 	// Respect an explicit page range already present under cpnID + family.
+	// The same explicitness predicate as the DSL branch below: null/empty
+	// pages and the all-pages sentinel mean "parse all pages", so the cap
+	// remains a fallback for them.
 	if cpnEntry, ok := parserConfig[parserCpnID].(map[string]any); ok {
 		if famEntry, ok := cpnEntry[family].(map[string]any); ok {
-			if _, has := famEntry["pages"]; has {
+			if hasExplicitPages(famEntry["pages"]) {
 				return parserConfig
 			}
 		}
@@ -139,10 +148,27 @@ func BuildParserPageCapOverride(
 	return parserConfig
 }
 
-// hasExplicitPages reports whether a raw "pages" value carries at least one
-// configured range. Missing, null, and empty-list values mean "parse all
-// pages" and do not count as explicit — the cap remains a fallback for them.
+// allPagesUpperBound is the smallest upper bound of a "pages" range treated as
+// the all-pages sentinel. The general template and the web UI's page-range
+// fields default to [[1, 100000]] (template/ingestion_pipeline_general.json,
+// web chunk-method-dialog and agent parser-form), matching Python's
+// MAXIMUM_PAGE_NUMBER, and the parser clamps oversized upper bounds to the
+// document's actual page count — so a gap-free [1, N] with N >=
+// allPagesUpperBound does not actually restrict parsing.
+const allPagesUpperBound = 100000
+
+// hasExplicitPages reports whether a raw "pages" value carries a range that
+// actually restricts parsing. Missing, null, empty-list, and uninterpretable
+// values do not count (the parser degrades malformed values to "parse all
+// pages" at parse time, so the cap is not withheld for them here either), and
+// neither does the all-pages sentinel — a single gap-free [1, N] range with
+// N >= allPagesUpperBound, the shipped template/UI default. The cap remains a
+// fallback for all of them; only a genuinely narrowed range counts as
+// explicit.
 func hasExplicitPages(raw any) bool {
-	list, ok := raw.([]any)
-	return ok && len(list) > 0
+	ranges, err := utility.NormalizePDFPages(raw)
+	if err != nil || len(ranges) == 0 {
+		return false
+	}
+	return !(len(ranges) == 1 && ranges[0][0] == 1 && ranges[0][1] >= allPagesUpperBound)
 }

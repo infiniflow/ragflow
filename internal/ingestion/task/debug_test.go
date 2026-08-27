@@ -151,10 +151,11 @@ func TestInjectDebugPageCap(t *testing.T) {
 		t.Fatalf("unmarshal template envelope: %v", err)
 	}
 	dsl := string(envelope.DSL)
-	// The shipped general template carries an explicit pdf pages range
-	// ([[1, 100000]]), which the cap must respect. Strip it to exercise the
-	// fallback-injection path on a DSL without explicit pages.
-	noPagesDSL := dslWithoutPDFPages(t, envelope.DSL)
+	// The shipped general template carries the all-pages sentinel
+	// ([[1, 100000]]) in its pdf family, which the debug cap replaces (the
+	// parser clamps the bound to the actual page count). Strip it to exercise
+	// the missing-pages fallback-injection path.
+	noPagesDSL := dslWithPDFPages(t, envelope.DSL, "")
 
 	// Discover the Parser cpnID the same way the executor does.
 	schemas, err := pipeline.ExtractAllComponentParams(envelope.DSL)
@@ -177,13 +178,38 @@ func TestInjectDebugPageCap(t *testing.T) {
 			component.ComponentNameParser, component.ParserFileFamily)
 	}
 
-	t.Run("template pdf explicit pages are respected", func(t *testing.T) {
-		// The template ships pdf pages [[1, 100000]] — an explicit range, so
-		// the debug cap (a fallback only) must NOT be injected over it.
+	t.Run("template all-pages sentinel -> cap injected for the fast preview", func(t *testing.T) {
+		// The template ships pdf pages [[1, 100000]] — the all-pages sentinel
+		// (the parser clamps the bound to the document's actual page count),
+		// so the debug cap must still be injected: a dry-run's purpose is a
+		// fast leading-pages preview. The template's own family settings
+		// must survive the override merge.
 		parserConfig := map[string]any{}
 		apply(parserConfig, dsl, "pdf")
+		famEntry, ok := parserConfig[parserCpnID].(map[string]any)
+		if !ok {
+			t.Fatalf("parserConfig[%q] = %T, want map[string]any", parserCpnID, parserConfig[parserCpnID])
+		}
+		pdf, ok := famEntry["pdf"].(map[string]any)
+		if !ok {
+			t.Fatalf("parserConfig[%q][\"pdf\"] = %T, want map[string]any", parserCpnID, famEntry["pdf"])
+		}
+		if !reflect.DeepEqual(pdf["pages"], []any{[]any{1, debugPageCapPages}}) {
+			t.Errorf("parserConfig[%q][\"pdf\"][\"pages\"] = %v, want [[1, %d]]", parserCpnID, pdf["pages"], debugPageCapPages)
+		}
+		if pdf["parse_method"] != "DeepDOC" {
+			t.Errorf("parserConfig[%q][\"pdf\"][\"parse_method\"] = %v, want DeepDOC (template settings must survive the injection)", parserCpnID, pdf["parse_method"])
+		}
+	})
+
+	t.Run("genuine narrowed template pages are respected", func(t *testing.T) {
+		// A range the user actually narrowed (not the all-pages sentinel)
+		// must suppress the cap — the original bug this PR fixes.
+		narrowDSL := dslWithPDFPages(t, envelope.DSL, "[[5, 9]]")
+		parserConfig := map[string]any{}
+		apply(parserConfig, narrowDSL, "pdf")
 		if len(parserConfig) != 0 {
-			t.Fatalf("parserConfig = %v, want empty (the DSL's explicit pdf pages must be respected)", parserConfig)
+			t.Fatalf("parserConfig = %v, want empty (a genuinely narrowed DSL pages range must be respected)", parserConfig)
 		}
 	})
 
@@ -265,28 +291,47 @@ func TestInjectDebugPageCap(t *testing.T) {
 	})
 
 	t.Run("respects explicit caller-supplied cap", func(t *testing.T) {
-		// When the document already carries an explicit cpnID+family page cap,
-		// the debug default must NOT override it (so a wider/narrower cap wins).
+		// When the document already carries a genuinely narrowed explicit
+		// cpnID+family range (here a 3-page cap), the debug default must NOT
+		// override it (so a wider/narrower cap wins).
 		parserConfig := map[string]any{
 			parserCpnID: map[string]any{
-				"pdf": map[string]any{"pages": []any{[]any{1, 1000000}}},
+				"pdf": map[string]any{"pages": []any{[]any{1, 3}}},
 			},
 		}
 		apply(parserConfig, dsl, "pdf")
 		famEntry := parserConfig[parserCpnID].(map[string]any)
 		pdf := famEntry["pdf"].(map[string]any)
-		if !reflect.DeepEqual(pdf["pages"], []any{[]any{1, 1000000}}) {
-			t.Errorf("parserConfig[%q][\"pdf\"][\"pages\"] = %v, want [[1, 1000000]] (explicit cap must be respected, not overridden by debug default)", parserCpnID, pdf["pages"])
+		if !reflect.DeepEqual(pdf["pages"], []any{[]any{1, 3}}) {
+			t.Errorf("parserConfig[%q][\"pdf\"][\"pages\"] = %v, want [[1, 3]] (explicit cap must be respected, not overridden by debug default)", parserCpnID, pdf["pages"])
+		}
+	})
+
+	t.Run("caller-supplied all-pages sentinel is capped", func(t *testing.T) {
+		// [[1, 1000000]] is an all-pages bound (the parser clamps it to the
+		// document's actual page count), not a genuine restriction, so the
+		// debug cap replaces it — the same explicitness predicate applies to
+		// both config sources.
+		parserConfig := map[string]any{
+			parserCpnID: map[string]any{
+				"pdf": map[string]any{"pages": []any{[]any{1, 1000000}}},
+			},
+		}
+		apply(parserConfig, noPagesDSL, "pdf")
+		famEntry := parserConfig[parserCpnID].(map[string]any)
+		pdf := famEntry["pdf"].(map[string]any)
+		if !reflect.DeepEqual(pdf["pages"], []any{[]any{1, debugPageCapPages}}) {
+			t.Errorf("parserConfig[%q][\"pdf\"][\"pages\"] = %v, want [[1, %d]] (all-pages sentinel must not suppress the cap)", parserCpnID, pdf["pages"], debugPageCapPages)
 		}
 	})
 }
 
-// dslWithoutPDFPages returns a copy of the template inner DSL with the Parser
-// component's explicit pdf "pages" range removed. The shipped general template
-// carries pages [[1, 100000]], which the debug cap must respect; stripping it
-// lets tests exercise the fallback-injection path on a DSL without explicit
-// pages.
-func dslWithoutPDFPages(t *testing.T, inner json.RawMessage) string {
+// dslWithPDFPages returns a copy of the template inner DSL with the Parser
+// component's pdf "pages" value replaced by rawRanges (deleted when rawRanges
+// is empty). The shipped general template carries the all-pages sentinel
+// [[1, 100000]], which the debug cap replaces; tests pass "" for the
+// missing-pages path and a genuine narrowed range for the explicit-pages path.
+func dslWithPDFPages(t *testing.T, inner json.RawMessage, rawRanges string) string {
 	t.Helper()
 	var doc map[string]any
 	if err := json.Unmarshal(inner, &doc); err != nil {
@@ -300,7 +345,15 @@ func dslWithoutPDFPages(t *testing.T, inner json.RawMessage) string {
 		}
 		params, _ := obj["params"].(map[string]any)
 		if pdf, ok := params["pdf"].(map[string]any); ok {
-			delete(pdf, "pages")
+			if rawRanges == "" {
+				delete(pdf, "pages")
+				continue
+			}
+			var ranges any
+			if err := json.Unmarshal([]byte(rawRanges), &ranges); err != nil {
+				t.Fatalf("unmarshal pdf pages %q: %v", rawRanges, err)
+			}
+			pdf["pages"] = ranges
 		}
 	}
 	out, err := json.Marshal(doc)

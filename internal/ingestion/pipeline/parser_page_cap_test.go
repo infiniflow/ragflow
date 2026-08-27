@@ -105,13 +105,90 @@ func TestBuildParserPageCapOverrideRespectsDSLPages(t *testing.T) {
 	}
 	const docType = "pdf"
 
-	t.Run("explicit DSL pages -> cap not injected", func(t *testing.T) {
-		// The default canvas setup: pages [[1, 100000]] covers the whole
-		// document, so the debug cap must leave it untouched.
+	t.Run("all-pages sentinel DSL pages -> cap injected, family settings preserved", func(t *testing.T) {
+		// The default canvas setup: pages [[1, 100000]] is the shipped
+		// template/UI "every page" sentinel (the parser clamps the upper
+		// bound to the actual page count), so the debug fast-preview cap
+		// must still apply — but the DSL family settings must survive the
+		// override merge (it replaces the whole family entry).
 		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "DeepDOC", "pages": [[1, 100000]]}}}}}`)
 		out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
+		fam, ok := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+		if !ok {
+			t.Fatalf("missing cpnID/family entry: %#v", out)
+		}
+		if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+			t.Fatalf("pages cap shape wrong: %#v", fam["pages"])
+		}
+		if fam["parse_method"] != "DeepDOC" {
+			t.Fatalf("parse_method must survive the cap injection: %#v", fam)
+		}
+	})
+
+	t.Run("genuine narrowed DSL pages -> cap not injected", func(t *testing.T) {
+		for _, pages := range []string{"[[5, 10]]", "[[1, 10]]"} {
+			dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"pages": ` + pages + `}}}}}`)
+			out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
+			if len(out) != 0 {
+				t.Fatalf("genuine DSL pages %s must be respected, got override %#v", pages, out)
+			}
+		}
+	})
+
+	t.Run("multi-range with a gap -> cap not injected", func(t *testing.T) {
+		// [[1,10],[12,100000]] excludes page 11, so it is a real
+		// restriction even though its upper bound is the sentinel bound.
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"pages": [[1, 10], [12, 100000]]}}}}}`)
+		out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
 		if len(out) != 0 {
-			t.Fatalf("explicit DSL pages must be respected, got override %#v", out)
+			t.Fatalf("gapped DSL pages must be respected, got override %#v", out)
+		}
+	})
+
+	t.Run("malformed DSL pages -> cap injected", func(t *testing.T) {
+		// The parser degrades malformed ranges to "parse all pages" at
+		// parse time, so the cap is not withheld for them either.
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"pages": [[0, 5]]}}}}}`)
+		out := BuildParserPageCapOverride(map[string]any{}, dsl, docType, 2, testParserComponentName, familyOf)
+		fam, ok := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+		if !ok {
+			t.Fatalf("missing cpnID/family entry: %#v", out)
+		}
+		if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+			t.Fatalf("pages cap shape wrong: %#v", fam["pages"])
+		}
+	})
+
+	t.Run("run-level null and empty pages -> cap injected", func(t *testing.T) {
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "DeepDOC"}}}}}`)
+		for _, pages := range []any{nil, []any{}} {
+			pc := map[string]any{
+				"Parser:Abc": map[string]any{
+					"pdf": map[string]any{"pages": pages},
+				},
+			}
+			out := BuildParserPageCapOverride(pc, dsl, docType, 2, testParserComponentName, familyOf)
+			fam := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+			if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+				t.Fatalf("run-level pages %v must not suppress the cap, got %#v", pages, fam["pages"])
+			}
+		}
+	})
+
+	t.Run("run-level all-pages sentinel -> cap injected, settings preserved", func(t *testing.T) {
+		dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {"pdf": {"parse_method": "DeepDOC"}}}}}`)
+		pc := map[string]any{
+			"Parser:Abc": map[string]any{
+				"pdf": map[string]any{"parse_method": "Plain Text", "pages": []any{[]any{1, 100000}}},
+			},
+		}
+		out := BuildParserPageCapOverride(pc, dsl, docType, 2, testParserComponentName, familyOf)
+		fam := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
+		if !reflect.DeepEqual(fam["pages"], []any{[]any{1, 2}}) {
+			t.Fatalf("run-level sentinel must not suppress the cap, got %#v", fam["pages"])
+		}
+		if fam["parse_method"] != "Plain Text" {
+			t.Fatalf("existing parserConfig value must survive the cap injection: %#v", fam)
 		}
 	})
 

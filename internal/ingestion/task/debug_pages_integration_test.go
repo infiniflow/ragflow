@@ -44,11 +44,13 @@ import (
 // It parses a multi-page PDF twice through a real debug pipeline (real DSL,
 // real pdfium parser, in-memory sqlite + storage):
 //
-//   - Uncapped baseline: an explicit cpnID+family page cap of [[1, 1000000]]
-//     is supplied in ParserConfig. pipeline.BuildParserPageCapOverride must RESPECT it, so the
+//   - Uncapped baseline: an explicit cpnID+family page range of [[1, 20]]
+//     (a genuinely narrowed range that still covers every page of the 5-page
+//     fixture) is supplied in ParserConfig. pipeline.BuildParserPageCapOverride must RESPECT it, so the
 //     parser reads every page.
 //   - Capped: no page cap is supplied, so pipeline.BuildParserPageCapOverride injects the
-//     debug default [[1, debugPageCapPages]], and the parser reads only the
+//     debug default [[1, debugPageCapPages]] over the template's all-pages
+//     sentinel pages ([[1, 100000]]), and the parser reads only the
 //     leading pages.
 //
 // The capped run must therefore yield strictly fewer chunk characters than
@@ -131,13 +133,17 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error })
 
-	// Explicit "parse all pages" cap (JSON-decoded []any form, the shape the
-	// parser actually consumes). pipeline.BuildParserPageCapOverride must respect it and leave
+	// Explicit genuine range covering the whole fixture (JSON-decoded []any
+	// form, the shape the parser actually consumes). It is deliberately NOT
+	// the all-pages sentinel: [[1, 1000000]] would be capped like the
+	// template's own default, since the parser clamps such bounds to the
+	// document's actual page count anyway.
+	// pipeline.BuildParserPageCapOverride must respect this narrowed range and leave
 	// it untouched, so the parser reads every page of the PDF.
 	allPages := map[string]any{
 		parserCpnID: map[string]any{
 			"pdf": map[string]any{
-				"pages": []any{[]any{1, 1000000}},
+				"pages": []any{[]any{1, 20}},
 			},
 		},
 	}
