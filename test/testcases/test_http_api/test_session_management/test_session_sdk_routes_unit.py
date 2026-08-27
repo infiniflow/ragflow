@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import ast
 import asyncio
 import importlib.util
 import inspect
@@ -900,6 +901,23 @@ def test_create_and_update_guard_matrix(monkeypatch):
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
     res = _run(inspect.unwrap(module.create_agent_session)("tenant-1", "agent-1"))
     assert res["message"] == "You cannot access the agent."
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("release_value", "expected_release_mode"),
+    [(True, True), (False, False), ("true", True), ("TRUE", True), ("false", False), ("", False)],
+)
+def test_create_agent_session_parses_release_flag_without_string_coercion(release_value, expected_release_mode):
+    repo_root = Path(__file__).resolve().parents[4]
+    source = (repo_root / "api" / "apps" / "restful_apis" / "agent_api.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    parser_node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_parse_release_flag")
+    namespace = {}
+    exec(compile(ast.Module(body=[parser_node], type_ignores=[]), "agent_api.py", "exec"), namespace)
+
+    assert "release_mode = _parse_release_flag(" in source
+    assert namespace["_parse_release_flag"](release_value) is expected_release_mode
 
 
 @pytest.mark.p2
