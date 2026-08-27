@@ -72,6 +72,20 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	if !ok || len(chunks) == 0 {
 		return out, nil
 	}
+
+	// Canvas-debug (dry-run) chunk cap: when set (>=1), keep only the leading
+	// N chunks for preview. This is the single choke point every chunker
+	// variant flows through, so the cap applies regardless of variant, and it
+	// also limits downstream compiler/tokenizer work in the debug run — the
+	// intended cost saving. Truncation happens FIRST, before any per-chunk
+	// work below: dropped chunks get no id computation and no image upload /
+	// byte dropping, so a chunk can never be persisted to storage and then
+	// discarded by this cap. No chunker node (or cap == 0) → untouched.
+	if chunkCap := globals.DebugChunkCap(ctx); chunkCap > 0 && len(chunks) > chunkCap {
+		chunks = chunks[:chunkCap]
+		out["chunks"] = chunks
+	}
+
 	kbID, docID := resolveImageUploadContext(ctx, inputs)
 
 	// Compute and write the deterministic chunk id (component.ChunkID) for
@@ -96,16 +110,6 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		for _, ck := range chunks {
 			delete(ck, "image")
 		}
-	}
-
-	// Canvas-debug (dry-run) chunk cap: when set (>=1), keep only the leading
-	// N chunks for preview. This is the single choke point every chunker
-	// variant flows through, so the cap applies regardless of variant. It
-	// also limits downstream compiler/tokenizer work in the debug run, which
-	// is the intended cost saving. No chunker node (or cap == 0) → untouched.
-	if chunkCap := globals.DebugChunkCap(ctx); chunkCap > 0 && len(chunks) > chunkCap {
-		chunks = chunks[:chunkCap]
-		out["chunks"] = chunks
 	}
 	return out, nil
 }
