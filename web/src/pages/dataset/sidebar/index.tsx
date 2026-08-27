@@ -1,20 +1,17 @@
-import { isEmpty } from 'lodash';
-
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  LucideBookText,
   LucideFolderOpen,
   LucideLogs,
   LucideSettings,
   LucideTextSearch,
 } from 'lucide-react';
 
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
@@ -30,7 +27,6 @@ type PropType = {
 export function SideBar({ dataset: data }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
-  const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
@@ -55,18 +51,15 @@ export function SideBar({ dataset: data }: PropType) {
         label: t(`knowledgeDetails.configuration`),
         key: Routes.DataSetSetting,
       },
+      {
+        icon: <LucideBookText className="size-[1em]" />,
+        label: t(`knowledgeDetails.compilation`),
+        key: Routes.Compilation,
+      },
     ];
 
-    if (!isEmpty(routerData?.graph)) {
-      list.push({
-        icon: <IconFontFill name="knowledgegraph" className="size-[1em]" />,
-        label: t(`knowledgeDetails.knowledgeGraph`),
-        key: Routes.KnowledgeGraph,
-      });
-    }
-
     return list;
-  }, [t, routerData]);
+  }, [t]);
 
   return (
     <aside className="flex flex-col w-64 relative">

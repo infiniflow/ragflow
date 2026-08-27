@@ -72,11 +72,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		mapDSLError(c, componentID, err)
 		return
 	}
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    form,
-		"message": "success",
-	})
+	common.SuccessWithData(c, form, "success")
 }
 
 // componentInputForm returns the input-form schema for a single component.
@@ -227,11 +223,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		return
 	}
 
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    outputs,
-		"message": "success",
-	})
+	common.SuccessWithData(c, outputs, "success")
 }
 
 // mapDSLError translates a dsl extractor error into a 102 envelope.

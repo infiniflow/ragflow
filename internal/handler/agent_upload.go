@@ -122,11 +122,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 			return
 		}
-		c.JSON(200, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    uploaded,
-			"message": "success",
-		})
+		common.SuccessWithData(c, uploaded, "success")
 		return
 	}
 
@@ -149,9 +145,5 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	} else {
 		payload = results
 	}
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    payload,
-		"message": "success",
-	})
+	common.SuccessWithData(c, payload, "success")
 }

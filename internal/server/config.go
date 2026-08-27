@@ -18,10 +18,8 @@ package server
 
 import (
 	"fmt"
-	"net"
 	"net/mail"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -453,12 +451,12 @@ func Init(configPath string) error {
 
 func FromEnvironments() error {
 	// Secret key
-	if envVal := os.Getenv("RAGFLOW_SECRET_KEY"); envVal != "" {
+	if envVal := common.GetEnv(common.EnvRAGFlowSecretKey); envVal != "" {
 		globalConfig.Server.SecretKey = &envVal
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: true)
-	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
+	if envVal := common.GetEnv(common.EnvRegisterEnabled); envVal != "" {
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
 			globalConfig.Authentication.RegisterEnabled = true
@@ -468,7 +466,7 @@ func FromEnvironments() error {
 	}
 
 	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
-	if envVal := os.Getenv("DISABLE_PASSWORD_LOGIN"); envVal != "" {
+	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
 			globalConfig.Authentication.DisablePasswordLogin = true
@@ -478,7 +476,7 @@ func FromEnvironments() error {
 	}
 
 	// Doc engine
-	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
+	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	switch docEngine {
 	case "infinity":
 		globalConfig.DocEngine.Type = EngineInfinity
@@ -498,7 +496,7 @@ func FromEnvironments() error {
 
 	// Default super user email
 	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
-	superUserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	superUserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
 	if superUserEmail != "" {
 		_, err := mail.ParseAddress(superUserEmail)
 		if err != nil {
@@ -508,19 +506,19 @@ func FromEnvironments() error {
 	}
 
 	globalConfig.DefaultSuperUser.Password = "admin"
-	superUserPassword := os.Getenv("DEFAULT_SUPERUSER_PASSWORD")
+	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
 	if superUserPassword != "" {
 		globalConfig.DefaultSuperUser.Password = superUserPassword
 	}
 
 	globalConfig.DefaultSuperUser.Nickname = "admin"
-	superUserNickname := os.Getenv("DEFAULT_SUPERUSER_NICKNAME")
+	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
 	if superUserNickname != "" {
 		globalConfig.DefaultSuperUser.Nickname = superUserNickname
 	}
 
 	// Meta database
-	databaseType := strings.ToLower(os.Getenv("DB_TYPE"))
+	databaseType := common.GetEnvSmall(common.EnvDBType)
 	switch databaseType {
 	case "mysql":
 		globalConfig.Database.Driver = "mysql"
@@ -534,7 +532,7 @@ func FromEnvironments() error {
 	}
 
 	// Storage
-	storageType := strings.ToLower(os.Getenv("STORAGE_IMPL"))
+	storageType := common.GetEnvSmall(common.EnvStorageImpl)
 	switch storageType {
 	case "minio":
 		globalConfig.StorageEngine.Type = StorageMinio
@@ -554,32 +552,12 @@ func FromEnvironments() error {
 	}
 
 	// Minio
-	minioIP := strings.ToLower(os.Getenv("MINIO_IP"))
-	if minioIP != "" {
-		if globalConfig.StorageEngine.Minio == nil {
-			return fmt.Errorf("Minio config not found")
-		}
-		_, port, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
-		if err != nil {
-			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
-		}
-		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", minioIP, port)
+	minioHost := strings.ToLower(common.GetEnv(common.EnvMinioHost))
+	if minioHost != "" {
+		globalConfig.StorageEngine.Minio.Host = minioHost
 	}
 
-	//minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
-	//// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
-	//if minioPort != "" {
-	//	if globalConfig.StorageEngine.Minio == nil {
-	//		return fmt.Errorf("Minio config not found")
-	//	}
-	//	ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
-	//	if err != nil {
-	//		return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
-	//	}
-	//	globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
-	//}
-
-	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
+	minioRegion := strings.ToLower(common.GetEnv(common.EnvMinioRegion))
 	if minioRegion != "" {
 		if globalConfig.StorageEngine.Minio == nil {
 			return fmt.Errorf("Minio config not found")
@@ -986,9 +964,9 @@ func getInt(m map[string]interface{}, key string) int {
 }
 
 func GetLanguage() string {
-	lang := os.Getenv("LANG")
+	lang := common.GetEnv(common.EnvLang)
 	if lang == "" {
-		lang = os.Getenv("LANGUAGE")
+		lang = common.GetEnv(common.EnvLanguage)
 	}
 
 	lang = strings.ToLower(lang)

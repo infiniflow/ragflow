@@ -23,21 +23,21 @@ import (
 )
 
 type response struct {
-	Code    int         `json:"code"`
-	Message interface{} `json:"message"`
+	Code    ErrorCode   `json:"code"`
 	Data    interface{} `json:"data"`
+	Message interface{} `json:"message"`
 }
 
 // errorResponse error response
 type errorResponse struct {
-	Code    int         `json:"code"`
+	Code    ErrorCode   `json:"code"`
 	Message interface{} `json:"message"`
 }
 
 // SuccessWithData returns success response with data
 func SuccessWithData(c *gin.Context, data interface{}, message interface{}) {
 	c.JSON(http.StatusOK, response{
-		Code:    int(CodeSuccess),
+		Code:    CodeSuccess,
 		Data:    data,
 		Message: message,
 	})
@@ -46,7 +46,7 @@ func SuccessWithData(c *gin.Context, data interface{}, message interface{}) {
 // SuccessNoMessage returns success response without message
 func SuccessNoMessage(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, response{
-		Code: int(CodeSuccess),
+		Code: CodeSuccess,
 		Data: data,
 	})
 }
@@ -54,7 +54,7 @@ func SuccessNoMessage(c *gin.Context, data interface{}) {
 // SuccessNoData returns success response without data
 func SuccessNoData(c *gin.Context, message interface{}) {
 	c.JSON(http.StatusOK, response{
-		Code:    int(CodeSuccess),
+		Code:    CodeSuccess,
 		Data:    nil,
 		Message: message,
 	})
@@ -63,13 +63,13 @@ func SuccessNoData(c *gin.Context, message interface{}) {
 // SuccessWithMessage returns success response with message only
 func SuccessWithMessage(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, response{
-		Code:    int(CodeSuccess),
+		Code:    CodeSuccess,
 		Message: message,
 	})
 }
 
 // ErrorWithCode returns error response with code and message
-func ErrorWithCode(c *gin.Context, code int, message string) {
+func ErrorWithCode(c *gin.Context, code ErrorCode, message string) {
 	c.JSON(http.StatusOK, errorResponse{
 		Code:    code,
 		Message: message,
@@ -78,7 +78,7 @@ func ErrorWithCode(c *gin.Context, code int, message string) {
 
 func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, message string) {
 	c.JSON(http.StatusOK, response{
-		Code:    int(code),
+		Code:    code,
 		Data:    data,
 		Message: message,
 	})
@@ -86,7 +86,7 @@ func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, mess
 
 func ResponseWithHttpCodeData(c *gin.Context, httpCode int, code ErrorCode, data interface{}, message string) {
 	c.JSON(httpCode, response{
-		Code:    int(code),
+		Code:    code,
 		Data:    data,
 		Message: message,
 	})

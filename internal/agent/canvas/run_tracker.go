@@ -44,6 +44,10 @@ const (
 	runStatusCancelled = "3"
 )
 
+// runFieldInterruptID is the hash field that holds the eino interrupt id a
+// run is paused on (plan §4.4, M3). Reuses the run hash — no dedicated key.
+const runFieldInterruptID = "interrupt_id"
+
 func runKey(runID string) string { return runKeyPrefix + runID }
 
 // RunTracker manages canvas-run metadata (canvas_id, status, checkpoint
@@ -112,6 +116,49 @@ func (t *RunTracker) AttachCheckpoint(ctx context.Context, runID, checkpointID s
 		return errors.New("run tracker: redis client not initialized")
 	}
 	return t.client.HSet(ctx, runKey(runID), "checkpoint_id", checkpointID).Err()
+}
+
+// AttachInterrupt persists the eino interrupt id that paused this run
+// (plan §4.4, M3). The id is written to the SAME hash key as the other run
+// metadata — no new Redis key — so a process that crashes between "Invoke
+// returned an interrupt" and "the next loop iteration resumes" can recover:
+// the next process reads GetInterruptID at the top of its resume loop and
+// calls compose.ResumeWithData with it. The ONLY writer of "interrupt_id".
+func (t *RunTracker) AttachInterrupt(ctx context.Context, runID, interruptID string) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	return t.client.HSet(ctx, runKey(runID), runFieldInterruptID, interruptID).Err()
+}
+
+// GetInterruptID returns the persisted interrupt id for runID. The bool is
+// false when no interrupt is pending (field absent or empty). A nil error
+// with (id, false) means "no pending interrupt" — callers treat that as
+// "fresh run, do a normal Invoke".
+func (t *RunTracker) GetInterruptID(ctx context.Context, runID string) (string, bool, error) {
+	if t == nil || t.client == nil {
+		return "", false, errors.New("run tracker: redis client not initialized")
+	}
+	v, err := t.client.HGet(ctx, runKey(runID), runFieldInterruptID).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if v == "" {
+		return "", false, nil
+	}
+	return v, true, nil
+}
+
+// ClearInterruptID removes the persisted interrupt id. Called when a run
+// completes (no longer paused) or is cancelled (the checkpoint is wiped).
+func (t *RunTracker) ClearInterruptID(ctx context.Context, runID string) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	return t.client.HDel(ctx, runKey(runID), runFieldInterruptID).Err()
 }
 
 // MarkSucceeded transitions the run to status=1 and stamps finished_at.

@@ -22,10 +22,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkoukk/tiktoken-go"
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
+
+	"github.com/pkoukk/tiktoken-go"
 )
 
 var keywordsSplitRE = regexp.MustCompile(`[,，;；、\r\n]+`)
@@ -146,7 +147,10 @@ func ProcessChunksForDataflow(
 		ck["create_timestamp_flt"] = timestamp
 
 		if _, exists := ck["id"]; !exists {
-			text := MustGetChunkTextString(ck, "ProcessChunksForDataflow")
+			text, err := MustGetChunkTextString(ck)
+			if err != nil {
+				common.Error("unexpected error", err)
+			}
 			ck["id"] = ChunkID(text, docID)
 		}
 

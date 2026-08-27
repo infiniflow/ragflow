@@ -24,19 +24,10 @@ import (
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
-type DOCXParser struct {
-	libType string
-}
+type DOCXParser struct{}
 
-func NewDOCXParser(libType string) (*DOCXParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &DOCXParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported DOCX library type: %s", libType)
-	}
+func NewDOCXParser() *DOCXParser {
+	return &DOCXParser{}
 }
 
 // ParseWithResult captures the office_oxide ToMarkdown output

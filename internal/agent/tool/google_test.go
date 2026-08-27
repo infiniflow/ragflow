@@ -31,45 +31,33 @@ func TestGoogle_BuildURL(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		apiKey   string
-		cx       string
-		query    string
-		max      int
+		params   googleParams
 		wantNum  string
 		wantHost string
 	}{
 		{
-			name:     "default",
-			apiKey:   "KEY",
-			cx:       "CXID",
-			query:    "ragflow",
-			max:      0,
-			wantNum:  "5",
-			wantHost: "www.googleapis.com",
+			name:     "python defaults",
+			params:   googleParams{APIKey: "KEY", Q: "ragflow"},
+			wantNum:  "6",
+			wantHost: "serpapi.com",
 		},
 		{
-			name:     "clamped high",
-			apiKey:   "K",
-			cx:       "C",
-			query:    "x",
-			max:      50,
-			wantNum:  "10",
-			wantHost: "www.googleapis.com",
+			name:     "canvas num country language",
+			params:   googleParams{APIKey: "K", Q: "x y", Num: 12, Start: 10, Country: "cn", Language: "zh-cn"},
+			wantNum:  "12",
+			wantHost: "serpapi.com",
 		},
 		{
-			name:     "explicit low",
-			apiKey:   "K",
-			cx:       "C",
-			query:    "x y",
-			max:      3,
+			name:     "agent aliases",
+			params:   googleParams{APIKey: "K", Q: "x", Num: 3},
 			wantNum:  "3",
-			wantHost: "www.googleapis.com",
+			wantHost: "serpapi.com",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildGoogleURL(tc.apiKey, tc.cx, tc.query, tc.max)
+			got := buildGoogleURL(tc.params)
 			u, err := url.Parse(got)
 			if err != nil {
 				t.Fatalf("url.Parse(%q): %v", got, err)
@@ -77,18 +65,15 @@ func TestGoogle_BuildURL(t *testing.T) {
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
-			if u.Path != "/customsearch/v1" {
-				t.Errorf("path = %q, want /customsearch/v1", u.Path)
+			if u.Path != "/search.json" {
+				t.Errorf("path = %q, want /search.json", u.Path)
 			}
 			q := u.Query()
-			if q.Get("key") != tc.apiKey {
-				t.Errorf("key = %q, want %q", q.Get("key"), tc.apiKey)
+			if q.Get("api_key") != tc.params.APIKey {
+				t.Errorf("api_key = %q, want %q", q.Get("api_key"), tc.params.APIKey)
 			}
-			if q.Get("cx") != tc.cx {
-				t.Errorf("cx = %q, want %q", q.Get("cx"), tc.cx)
-			}
-			if q.Get("q") != tc.query {
-				t.Errorf("q = %q, want %q", q.Get("q"), tc.query)
+			if q.Get("engine") != "google" {
+				t.Errorf("engine = %q, want google", q.Get("engine"))
 			}
 			if q.Get("num") != tc.wantNum {
 				t.Errorf("num = %q, want %q", q.Get("num"), tc.wantNum)
@@ -103,7 +88,7 @@ func TestGoogle_ParseResults(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"items": [
+			"organic_results": [
 				{"title":"RAGFlow","link":"https://ragflow.io","snippet":"Open source RAG engine"},
 				{"title":"GitHub","link":"https://github.com/infiniflow/ragflow","snippet":"Source code"}
 			]
@@ -116,7 +101,7 @@ func TestGoogle_ParseResults(t *testing.T) {
 	})
 	tool := NewGoogleToolWith(helper)
 	out, err := tool.InvokableRun(context.Background(),
-		`{"query":"ragflow","api_key":"K","cx":"C","max_results":5}`)
+		`{"q":"ragflow","api_key":"K","num":5,"country":"us","language":"en"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -131,29 +116,28 @@ func TestGoogle_ParseResults(t *testing.T) {
 	if len(env.Results) != 2 {
 		t.Fatalf("Results len = %d, want 2", len(env.Results))
 	}
-	if env.Results[0].Title != "RAGFlow" {
-		t.Errorf("Results[0].Title = %q, want RAGFlow", env.Results[0].Title)
+	if env.Results[0]["title"] != "RAGFlow" {
+		t.Errorf("Results[0].title = %q, want RAGFlow", env.Results[0]["title"])
 	}
-	if env.Results[1].Link != "https://github.com/infiniflow/ragflow" {
-		t.Errorf("Results[1].Link = %q, want https://github.com/infiniflow/ragflow", env.Results[1].Link)
+	if env.Results[1]["link"] != "https://github.com/infiniflow/ragflow" {
+		t.Errorf("Results[1].link = %q, want https://github.com/infiniflow/ragflow", env.Results[1]["link"])
 	}
 }
 
-func TestGoogle_RequiresAPIKeyAndCX(t *testing.T) {
+func TestGoogle_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleTool()
-	_, err := tool.InvokableRun(context.Background(),
-		`{"query":"x","api_key":"","cx":""}`)
+	_, err := tool.InvokableRun(context.Background(), `{"q":"x","api_key":""}`)
 	if err == nil {
-		t.Fatal("expected error for missing api_key and cx")
+		t.Fatal("expected error for missing api_key")
 	}
-	if !strings.Contains(err.Error(), "api_key") || !strings.Contains(err.Error(), "cx") {
-		t.Errorf("err = %v, want to mention api_key and cx", err)
+	if !strings.Contains(err.Error(), "api_key") {
+		t.Errorf("err = %v, want to mention api_key", err)
 	}
 }
 
-func TestGoogle_Info(t *testing.T) {
+func TestGoogle_InfoAndInputForm(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleTool()
@@ -166,5 +150,87 @@ func TestGoogle_Info(t *testing.T) {
 	}
 	if !strings.Contains(info.Desc, "Google") {
 		t.Errorf("Desc = %q, want to mention Google", info.Desc)
+	}
+	form := tool.InputForm()
+	if _, ok := form["q"]; !ok {
+		t.Fatalf("InputForm missing q: %+v", form)
+	}
+	if _, ok := form["start"]; !ok {
+		t.Fatalf("InputForm missing start: %+v", form)
+	}
+	if _, ok := form["num"]; !ok {
+		t.Fatalf("InputForm missing num: %+v", form)
+	}
+}
+
+func TestGoogle_MergeDefaultsPrefersExplicitInputs(t *testing.T) {
+	t.Parallel()
+
+	got := mergeGoogleDefaults(
+		googleParams{
+			APIKey:  "DEFAULT_KEY",
+			Q:       "default query",
+			Num:     6,
+			Country: "us",
+		},
+		googleParams{
+			Q:   "agent query",
+			Num: 10,
+		},
+	)
+
+	if got.APIKey != "DEFAULT_KEY" {
+		t.Fatalf("APIKey = %q, want DEFAULT_KEY", got.APIKey)
+	}
+	if got.Q != "agent query" {
+		t.Fatalf("Q = %q, want agent query", got.Q)
+	}
+	if got.Num != 10 {
+		t.Fatalf("Num = %d, want 10", got.Num)
+	}
+	if got.Country != "us" {
+		t.Fatalf("Country = %q, want us", got.Country)
+	}
+}
+
+func TestGoogle_BuildByNameAcceptsNodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("google", map[string]any{
+		"api_key":  "KEY",
+		"country":  "cn",
+		"language": "zh-cn",
+		"num":      12,
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	tool, ok := built.(*GoogleTool)
+	if !ok {
+		t.Fatalf("built type = %T, want *GoogleTool", built)
+	}
+	if tool.defaults.APIKey != "KEY" {
+		t.Fatalf("defaults.APIKey = %q, want KEY", tool.defaults.APIKey)
+	}
+	if tool.defaults.Country != "cn" || tool.defaults.Language != "zh-cn" {
+		t.Fatalf("defaults locale = %q/%q, want cn/zh-cn", tool.defaults.Country, tool.defaults.Language)
+	}
+	if tool.defaults.Num != 12 {
+		t.Fatalf("defaults.Num = %d, want 12", tool.defaults.Num)
+	}
+}
+
+func TestGoogle_BuildByNameRejectsRemovedAliasNodeParams(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildByName("google", map[string]any{
+		"query":       "ragflow",
+		"max_results": 5,
+	})
+	if err == nil {
+		t.Fatal("expected error for removed google alias node params")
+	}
+	if !strings.Contains(err.Error(), "does not accept node-level param") {
+		t.Fatalf("err = %q, want unsupported node-level param error", err.Error())
 	}
 }

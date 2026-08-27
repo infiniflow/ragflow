@@ -9,12 +9,14 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
+import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -58,6 +60,25 @@ export const enum DocumentApiAction {
   FetchDocumentThumbnails = 'fetchDocumentThumbnails',
   ParseDocument = 'parseDocument',
 }
+
+export const enum DocumentStructureApiAction {
+  FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
+  DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
+}
+
+const DocumentKeys = {
+  byIds: (ids: string[]) =>
+    [DocumentApiAction.FetchDocumentList, 'byIds', ids] as const,
+};
+
+export const DocumentStructureKeys = {
+  graph: (datasetId: string, documentId: string) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+    ] as const,
+};
 
 export const useUploadDocument = () => {
   const queryClient = useQueryClient();
@@ -212,6 +233,37 @@ export const useFetchDocumentList = (loop = true) => {
     handleFilterSubmit,
     checkValue,
   };
+};
+
+export const useFetchDocumentsByIds = (ids: string[]) => {
+  const { id: datasetId } = useParams();
+
+  const { data, isFetching: loading } = useQuery<{
+    docs: IDocumentInfo[];
+    total: number;
+  }>({
+    queryKey: DocumentKeys.byIds(ids),
+    enabled: ids.length > 0 && !!datasetId,
+    initialData: { docs: [], total: 0 },
+    queryFn: async () => {
+      const ret = await listDocument(
+        {
+          id: datasetId,
+          page: 1,
+          page_size: ids.length,
+        },
+        {
+          ids,
+        },
+      );
+      if (ret.data.code === 0) {
+        return ret.data.data;
+      }
+      return { docs: [], total: 0 };
+    },
+  });
+
+  return { documents: data.docs, loading };
 };
 
 // get document filter
@@ -566,3 +618,56 @@ export const useFetchDocumentThumbnailsByIds = () => {
 
   return { data, setDocumentIds };
 };
+
+export function useFetchDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId;
+
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+      enabled,
+      initialData: null,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } =
+          await documentStructureService.getDocumentStructureGraph(
+            datasetId,
+            documentId,
+          );
+        return data?.data ?? null;
+      },
+    });
+
+  return { data, loading };
+}
+
+export function useDeleteDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentStructureApiAction.DeleteDocumentStructureGraph],
+    mutationFn: async (templateId: string) => {
+      const { data } =
+        await documentStructureService.deleteDocumentStructureGraph(
+          datasetId,
+          documentId,
+          templateId,
+        );
+      if (data.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { deleteDocumentStructureGraph: mutateAsync, loading, data };
+}

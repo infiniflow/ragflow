@@ -19,7 +19,7 @@ import (
 // with silhouette score selection, matching Python's _assign_column().
 //
 // Python: pdf_parser.py:739 _assign_column()
-func AssignColumn(boxes []pdf.TextBox, zoom float64) []pdf.TextBox {
+func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
@@ -162,7 +162,7 @@ func remapLabelsByCentroidOrder(centroids []float64) map[int]int {
 // TextMerge horizontally merges adjacent boxes at similar vertical positions.
 //
 // Python: pdf_parser.py:888 _text_merge()
-func TextMerge(boxes []pdf.TextBox, medianHeights map[int]float64, zoom float64) []pdf.TextBox {
+func TextMerge(boxes []pdf.TextBox, medianHeights map[int]float64) []pdf.TextBox {
 	if len(boxes) < 2 {
 		return boxes
 	}
@@ -207,7 +207,7 @@ func TextMerge(boxes []pdf.TextBox, medianHeights map[int]float64, zoom float64)
 // NaiveVerticalMerge vertically merges boxes on the same page/column.
 //
 // Python: pdf_parser.py:926 _naive_vertical_merge()
-func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medianWidths map[int]float64, isEnglish bool) []pdf.TextBox {
+func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medianWidths map[int]float64, pageEnglish map[int]bool) []pdf.TextBox {
 	if len(boxes) < 2 {
 		return boxes
 	}
@@ -234,7 +234,7 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 		}
 
 		// Process boxes for this page
-		processed := processPageBoxes(bxs, mh, mw, isEnglish)
+		processed := processPageBoxes(bxs, mh, mw, pageEnglish[pg])
 		result = append(result, processed...)
 	}
 	slog.Debug("vm result", "in", len(boxes), "out", len(result))
@@ -356,22 +356,56 @@ func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
 	return prev
 }
 
-// processPageBoxes processes all boxes for a single page
+// processPageBoxes vertically merges the boxes of a single page. Boxes are
+// bucketed by column (ColID) first so the merge never crosses columns; within
+// a column the merge runs top→bottom, and columns are emitted in ascending
+// ColID order (leftmost first). This preserves the column-major reading order
+// established by FinalReadingOrderMerge (page → ColID → top → x0).
 func processPageBoxes(boxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
 
-	// Sort by Top, X0
-	sortedBoxes := make([]pdf.TextBox, len(boxes))
-	copy(sortedBoxes, boxes)
-	sort.Slice(sortedBoxes, func(i, j int) bool {
-		if sortedBoxes[i].Top != sortedBoxes[j].Top {
-			return sortedBoxes[i].Top < sortedBoxes[j].Top
-		}
-		return sortedBoxes[i].X0 < sortedBoxes[j].X0
-	})
+	colGroups, sortedCols := groupBoxesByCol(boxes)
 
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for _, col := range sortedCols {
+		indices := colGroups[col]
+		bxs := make([]pdf.TextBox, len(indices))
+		for i, idx := range indices {
+			bxs[i] = boxes[idx]
+		}
+		// Sort within the column by Top, X0.
+		sort.Slice(bxs, func(i, j int) bool {
+			if bxs[i].Top != bxs[j].Top {
+				return bxs[i].Top < bxs[j].Top
+			}
+			return bxs[i].X0 < bxs[j].X0
+		})
+		out = append(out, mergeColumnBoxes(bxs, mh, mw, isEnglish)...)
+	}
+	return out
+}
+
+// groupBoxesByCol groups boxes by column id and returns the groups plus the
+// column ids in ascending order (leftmost column first).
+func groupBoxesByCol(boxes []pdf.TextBox) (map[int][]int, []int) {
+	colGroups := make(map[int][]int)
+	for i, b := range boxes {
+		colGroups[b.ColID] = append(colGroups[b.ColID], i)
+	}
+	colKeys := make([]int, 0, len(colGroups))
+	for c := range colGroups {
+		colKeys = append(colKeys, c)
+	}
+	sort.Ints(colKeys)
+	return colGroups, colKeys
+}
+
+// mergeColumnBoxes vertically merges boxes that already belong to one column
+// and are sorted top→bottom. It skips cross-page number suffixes and merges
+// vertically adjacent text.
+func mergeColumnBoxes(sortedBoxes []pdf.TextBox, mh, mw float64, isEnglish bool) []pdf.TextBox {
 	out := make([]pdf.TextBox, 0, len(sortedBoxes))
 	for i := 0; i < len(sortedBoxes); i++ {
 		curr := sortedBoxes[i]

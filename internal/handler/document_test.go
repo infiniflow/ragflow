@@ -38,42 +38,46 @@ import (
 
 // fakeDocumentService implements documentServiceIface for handler tests.
 type fakeDocumentService struct {
-	deleted         int
-	err             error
-	doc             *service.DocumentResponse
-	docErr          error
-	updateCalled    bool
-	updatedID       string
-	deleteCalled    bool
-	deletedID       string
-	stopResult      map[string]interface{}
-	stopErr         error
-	thumbnails      map[string]string
-	thumbnailErr    error
-	thumbnailUserID string
-	thumbnailDocIDs []string
-	metadataSummary map[string]interface{}
-	metadataErr     error
-	metadataKBID    string
-	metadataDocIDs  []string
-	setMetaCalled   bool
-	setMetaDocID    string
-	setMetaValue    map[string]interface{}
-	uploadLocalData []map[string]interface{}
-	uploadLocalErrs []string
-	uploadLocalKB   *entity.Knowledgebase
-	uploadLocalPath string
-	uploadOverride  map[string]interface{}
-	ingestCode      common.ErrorCode
-	ingestErr       error
-	ingestUserID    string
-	ingestReq       *service.IngestDocumentRequest
-	listOpts        dao.DocumentListOptions
-	filterOpts      dao.DocumentListOptions
-	filterResult    map[string]interface{}
-	filterTotal     int64
-	listIDs         []string
-	metadataByKBs   map[string]interface{}
+	deleted                int
+	err                    error
+	doc                    *service.DocumentResponse
+	docErr                 error
+	updateCalled           bool
+	updatedID              string
+	deleteCalled           bool
+	deletedID              string
+	stopResult             map[string]interface{}
+	stopErr                error
+	stopIngestionTasks     []*entity.IngestionTask
+	stopIngestionTaskErr   error
+	removeIngestionTasks   []map[string]string
+	removeIngestionTaskErr error
+	thumbnails             map[string]string
+	thumbnailErr           error
+	thumbnailUserID        string
+	thumbnailDocIDs        []string
+	metadataSummary        map[string]interface{}
+	metadataErr            error
+	metadataKBID           string
+	metadataDocIDs         []string
+	setMetaCalled          bool
+	setMetaDocID           string
+	setMetaValue           map[string]interface{}
+	uploadLocalData        []map[string]interface{}
+	uploadLocalErrs        []string
+	uploadLocalKB          *entity.Knowledgebase
+	uploadLocalPath        string
+	uploadOverride         map[string]interface{}
+	ingestCode             common.ErrorCode
+	ingestErr              error
+	ingestUserID           string
+	ingestReq              *service.IngestDocumentRequest
+	listOpts               dao.DocumentListOptions
+	filterOpts             dao.DocumentListOptions
+	filterResult           map[string]interface{}
+	filterTotal            int64
+	listIDs                []string
+	metadataByKBs          map[string]interface{}
 }
 
 func (f *fakeDocumentService) Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error) {
@@ -246,10 +250,10 @@ func (f *fakeDocumentService) IngestDocuments(datasetID, userID string, docIDs [
 	return nil, nil
 }
 func (f *fakeDocumentService) StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error) {
-	return nil, nil
+	return f.stopIngestionTasks, f.stopIngestionTaskErr
 }
 func (f *fakeDocumentService) RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error) {
-	return nil, nil
+	return f.removeIngestionTasks, f.removeIngestionTaskErr
 }
 
 func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -1244,6 +1248,78 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code == float64(common.CodeSuccess) {
 		t.Fatal("expected error for no authorization")
+	}
+}
+
+func TestStopIngestionTasksHandler_InvalidTransitionReturnsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		stopIngestionTaskErr: &service.InvalidTaskTransitionError{TaskID: "task-1", From: common.CREATED, To: common.COMPLETED},
+	}
+	h := &DocumentHandler{documentService: fake}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/datasets/ds-1/ingestion/tasks", `{"tasks":["task-1"]}`)
+	h.StopIngestionTasks(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeConflict) {
+		t.Fatalf("expected code %d, got %v", common.CodeConflict, resp["code"])
+	}
+	if !strings.Contains(resp["message"].(string), "task-1") {
+		t.Fatalf("expected task id in message, got %v", resp["message"])
+	}
+}
+
+func TestStopIngestionTasksHandler_TaskNotFoundReturnsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		stopIngestionTaskErr: common.ErrTaskNotFound,
+	}
+	h := &DocumentHandler{documentService: fake}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/datasets/ds-1/ingestion/tasks", `{"tasks":["task-1"]}`)
+	h.StopIngestionTasks(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected code %d, got %v", common.CodeNotFound, resp["code"])
+	}
+}
+
+func TestRemoveIngestionTasksHandler_TaskNotFoundReturnsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		removeIngestionTaskErr: common.ErrTaskNotFound,
+	}
+	h := &DocumentHandler{documentService: fake}
+
+	c, w := setupGinContextWithUser("DELETE", "/api/v1/datasets/ds-1/ingestion/tasks", `{"tasks":["task-1"]}`)
+	h.RemoveIngestionTasks(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected code %d, got %v", common.CodeNotFound, resp["code"])
 	}
 }
 

@@ -239,6 +239,7 @@ def _load_dify_retrieval_module(monkeypatch):
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
+    tenant_model_service_mod.resolve_model_config = _get_model_config_from_provider_instance
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     module_name = "test_dify_retrieval_routes_unit_module"

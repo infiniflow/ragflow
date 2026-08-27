@@ -24,23 +24,10 @@ import (
 	"golang.org/x/net/html"
 )
 
-const (
-	Official string = "official"
-)
+type HTMLParser struct{}
 
-type HTMLParser struct {
-	libType string
-}
-
-func NewHTMLParser(libType string) (*HTMLParser, error) {
-	switch libType {
-	case Official:
-		return &HTMLParser{
-			libType: Official,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported HTML library type: %s", libType)
-	}
+func NewHTMLParser() *HTMLParser {
+	return &HTMLParser{}
 }
 
 func (p *HTMLParser) String() string {
@@ -61,9 +48,6 @@ func (p *HTMLParser) String() string {
 // separate ck_type — the python HtmlParser collapses inline
 // formatting into the parent block's text.
 func (p *HTMLParser) ParseWithResult(filename string, data []byte) ParseResult {
-	if p.libType != Official {
-		return ParseResult{Err: fmt.Errorf("unsupported HTML library type: %s", p.libType)}
-	}
 	doc, err := html.Parse(bytes.NewReader(data))
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}

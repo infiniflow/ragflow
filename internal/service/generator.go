@@ -111,7 +111,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	var err error
 
 	if llmID != "" {
-		modelTypes, err := modelProviderSvc.GetModelTypeByName(tenantID, llmID)
+		modelTypes, err := modelProviderSvc.ResolveModelType(tenantID, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get model type: %w", err)
 		}
@@ -122,7 +122,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 				break
 			}
 		}
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantID, resolvedType, llmID)
+		driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(tenantID, resolvedType, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}

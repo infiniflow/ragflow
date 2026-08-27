@@ -12,7 +12,6 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -219,39 +218,6 @@ func (c *Client) OCRRecognize(ctx context.Context, cropped image.Image) ([]pdf.O
 		}
 	}
 	return texts, nil
-}
-
-// OCRRecognizeBatch recognizes text in multiple cropped image regions.
-// Returns a slice of results and a parallel slice of errors (nil on success).
-// A nil cropped image in the input produces nil results and a non-nil error.
-func (c *Client) OCRRecognizeBatch(ctx context.Context, cropped []image.Image) ([][]pdf.OCRText, []error) {
-	results := make([][]pdf.OCRText, len(cropped))
-	errs := make([]error, len(cropped))
-
-	// Process images concurrently with a bounded worker pool to avoid
-	// overwhelming the DeepDoc service.
-	const maxConcurrent = 4
-	sem := make(chan struct{}, maxConcurrent)
-	var wg sync.WaitGroup
-
-	for i, img := range cropped {
-		if img == nil {
-			errs[i] = fmt.Errorf("ocr rec batch: image[%d] is nil", i)
-			continue
-		}
-		wg.Add(1)
-		go func(idx int, im image.Image) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			texts, err := c.OCRRecognize(ctx, im)
-			results[idx] = texts
-			errs[idx] = err
-		}(i, img)
-	}
-	wg.Wait()
-	return results, errs
 }
 
 // Health checks whether the DeepDoc service is reachable.

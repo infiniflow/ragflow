@@ -1,11 +1,11 @@
 import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
+import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
 import {
   GenerateLogButton,
-  GenerateType,
   IGenerateLogButtonProps,
-} from '@/pages/dataset/dataset/generate-button/generate';
+} from '@/pages/dataset/dataset/generate-button/generate-log-button';
 import random from 'lodash/random';
 import { Shuffle } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';

@@ -129,6 +129,9 @@ func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
 	table := make([]map[string]interface{}, 0)
 	for key, value := range r.Data {
+		if _, ok := value.([]interface{}); ok {
+			continue
+		}
 		table = append(table, map[string]interface{}{
 			"Metric": key,
 			"Value":  value,

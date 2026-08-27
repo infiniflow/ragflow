@@ -25,19 +25,10 @@ import (
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
-type PPTXParser struct {
-	libType string
-}
+type PPTXParser struct{}
 
-func NewPPTXParser(libType string) (*PPTXParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &PPTXParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported PPTX library type: %s", libType)
-	}
+func NewPPTXParser() *PPTXParser {
+	return &PPTXParser{}
 }
 
 func (p *PPTXParser) String() string {

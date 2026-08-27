@@ -177,8 +177,8 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 
 	// Compact: remove popped boxes into a new backing array (Python
 	// bxs.pop).  Allocating a fresh slice is deliberate: annotations were
-	// set in-place on the input elements, and callers (enrichWithDeepDoc)
-	// rely on positional stability of the original slice for their
+	// set in-place on the input elements, and callers (enrichOnePageWithDeepDoc)
+	// rely on positional stability of the input slice for their
 	// write-back loop.  Reusing the input backing array would shift
 	// survivors forward and break that index mapping.
 	survivors := 0

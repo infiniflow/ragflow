@@ -351,7 +351,7 @@ func TestAnnotateBoxLayouts_MixedTypesLayoutNo(t *testing.T) {
 // ability to write annotations back to the correct global box indices.
 //
 // The bug: annotateBoxLayouts compacts boxes in place in the shared backing
-// array, shifting survivors forward.  enrichWithDeepDoc then iterates
+// array, shifting survivors forward.  enrichOnePageWithDeepDoc then iterates
 // len(indices) positions and writes pageBoxes[i] back to boxes[indices[i]],
 // but after compaction pageBoxes[1] holds what was originally pageBoxes[2],
 // so annotations land on the wrong global box.

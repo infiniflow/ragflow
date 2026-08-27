@@ -26,7 +26,6 @@ import {
   useFetchDefaultModelDictionary,
   useSetDefaultModel,
 } from '@/hooks/use-llm-request';
-import { parseModelValue } from '@/utils/llm-util';
 import { CircleQuestionMark } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
@@ -92,15 +91,13 @@ function SystemSetting() {
 
       if (!value) {
         await setDefaultModel({
-          model_provider: '',
-          model_instance: '',
-          model_name: '',
+          model_id: '',
           model_type: modelType,
         });
       } else {
-        const parsed = parseModelValue(value);
-        if (!parsed) return;
-        await setDefaultModel({ ...parsed, model_type: modelType });
+        // const parsed = parseModelValue(value);
+        // if (!parsed) return;
+        await setDefaultModel({ model_id: value, model_type: modelType });
       }
     },
     [setDefaultModel],

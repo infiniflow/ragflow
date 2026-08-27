@@ -11,6 +11,7 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -66,7 +67,7 @@ func writeGolden(t *testing.T, path string, v any) {
 }
 
 func updateGolden() bool {
-	return os.Getenv("UPDATE_GOLDEN") == "1"
+	return common.GetEnv(common.EnvUpdateGolden) == "1"
 }
 
 // sectionsToGolden converts []pdf.Section to the snapshot format.
@@ -592,25 +593,24 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 	t.Logf("Sections: %d", len(result.Sections))
 }
 
-// TestIntegration_MultiChunk verifies chunked processing for large documents.
+// TestIntegration_MultiChunk verifies parsing for large documents.
 func TestIntegration_MultiChunk(t *testing.T) {
 	client := mustConnectInferenceClient(t)
 	data := mustReadPDF(t, "19_multipage_chunk.pdf")
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.BatchSize = 10 // small batches to force multi-batch path
 	p := NewParser(cfg)
 	result, err := p.Parse(context.Background(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+	defer result.Close()
 
-	// 52 pages with 10-page batches → >= 6 batches.
 	if len(result.Sections) == 0 {
-		t.Error("multi-batch should produce sections")
+		t.Error("large document should produce sections")
 	}
 
-	t.Logf("52 pages × batchSize=10: %d sections, %d tables",
+	t.Logf("52 pages: %d sections, %d tables",
 		len(result.Sections), len(result.Tables))
 }
 

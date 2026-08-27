@@ -114,28 +114,28 @@ void RAGAnalyzer_SetEnablePosition(RAGAnalyzerHandle handle, bool enable_positio
 
 int RAGAnalyzer_Analyze(RAGAnalyzerHandle handle, const char* text, RAGTokenCallback callback) {
     if (!handle || !text || !callback) return -1;
-    
+
     fprintf(stderr, "[C_API] Analyze called with text length: %zu\n", strlen(text));
-    
+
     RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
-    
+
     Term input;
     input.text_ = std::string(text);
-    
+
     TermList output;
     int ret = analyzer->Analyze(input, output);
-    
+
     fprintf(stderr, "[C_API] Analyze returned: %d, tokens: %zu\n", ret, output.size());
-    
+
     if (ret != 0) {
         return ret;
     }
-    
+
     // Call callback for each token
     for (const auto& term : output) {
         callback(term.text_.c_str(), term.text_.length(), term.word_offset_, term.end_offset_);
     }
-    
+
     return 0;
 }
 
@@ -144,13 +144,13 @@ char* RAGAnalyzer_Tokenize(RAGAnalyzerHandle handle, const char* text) {
         fprintf(stderr, "[C_API] Tokenize called with null handle or text\n");
         return nullptr;
     }
-    
+
     fprintf(stderr, "[C_API] Tokenize called with text length: %zu\n", strlen(text));
-    
+
     RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
-    
+
     std::string result = analyzer->Tokenize(std::string(text));
-    
+
     // Allocate memory for C string
     char* c_result = static_cast<char*>(DEBUG_MALLOC(result.size() + 1));
     if (c_result) {

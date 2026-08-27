@@ -26,19 +26,10 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-type XLSXParser struct {
-	libType string
-}
+type XLSXParser struct{}
 
-func NewXLSXParser(libType string) (*XLSXParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &XLSXParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported XLSX library type: %s", libType)
-	}
+func NewXLSXParser() *XLSXParser {
+	return &XLSXParser{}
 }
 
 func (p *XLSXParser) String() string {

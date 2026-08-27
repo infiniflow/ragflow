@@ -27,7 +27,7 @@ from quart import request
 from api.apps import login_required
 from api.db.joint_services.tenant_model_service import (
     split_model_name,
-    get_model_config_from_provider_instance,
+    resolve_model_config,
     get_tenant_default_model_by_type,
 )
 from api.db.db_models import Document, Task
@@ -374,12 +374,12 @@ async def retrieval_test(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
         if req.get("rerank_id"):
-            rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
+            rerank_model_config = resolve_model_config(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if langs:
@@ -902,7 +902,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         d["doc_type_kwd"] = "image"
 
     embd_id = DocumentService.get_embd_id(document_id)
-    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
@@ -1048,7 +1048,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["doc_type_kwd"] = "image"
 
     embd_id = DocumentService.get_embd_id(document_id)
-    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]

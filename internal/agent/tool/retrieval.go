@@ -95,7 +95,7 @@ func NewRetrievalTool() *RetrievalTool {
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
-// the Python RetrievalParam ToolMeta (plan , 字段对齐).
+// the Python RetrievalParam ToolMeta (plan, field alignment).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: retrievalToolName,

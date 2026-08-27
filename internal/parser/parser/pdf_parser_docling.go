@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -42,14 +42,14 @@ func parsePDFWithDocling(filename string, data []byte, parser *PDFParser) ParseR
 	}
 	serverURL := strings.TrimSpace(parser.DoclingServerURL)
 	if serverURL == "" {
-		serverURL = strings.TrimSpace(os.Getenv("DOCLING_SERVER_URL"))
+		serverURL = strings.TrimSpace(common.GetEnv(common.EnvDoclingServerURL))
 	}
 	if serverURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: Docling requires docling_server_url or DOCLING_SERVER_URL")}
 	}
 	apiKey := strings.TrimSpace(parser.DoclingAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("DOCLING_API_KEY"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvDoclingApiKey))
 	}
 
 	baseURL := strings.TrimRight(serverURL, "/")

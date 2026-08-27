@@ -21,7 +21,15 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(
+		&entity.Chat{},
+		&entity.Tenant{},
+		&entity.Knowledgebase{},
+		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -41,6 +49,34 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-a",
+		TenantID:     "user-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("failed to create model provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-a",
+		ProviderID:   "provider-a",
+		InstanceName: "default",
+		APIKey:       "sk-test",
+		Status:       "active",
+		Extra:        "{}",
+	}).Error; err != nil {
+		t.Fatalf("failed to create model instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "model-a",
+		ProviderID: "provider-a",
+		InstanceID: "instance-a",
+		ModelName:  "gpt-test",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      "{}",
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant model: %v", err)
 	}
 
 	return db
@@ -138,7 +174,7 @@ func TestChatServiceCreateRejectsInvalidMetaDataFilter(t *testing.T) {
 		"name":             "created chat",
 		"meta_data_filter": []interface{}{"invalid"},
 	})
-	if err == nil || err.Error() != "`meta_data_filter` should be an object." {
+	if err == nil || err.Error() != "`meta_data_filter` should be an object" {
 		t.Fatalf("expected meta_data_filter error, got %v", err)
 	}
 	if code != common.CodeDataError {
@@ -191,7 +227,7 @@ func TestChatServiceUpdateChatRejectsTenantID(t *testing.T) {
 	_, err := svc.UpdateChat("user-1", "chat-1", map[string]interface{}{
 		"tenant_id": "tenant-2",
 	})
-	if err == nil || err.Error() != "`tenant_id` must not be provided." {
+	if err == nil || err.Error() != "`tenant_id` must not be provided" {
 		t.Fatalf("expected tenant_id error, got %v", err)
 	}
 }
@@ -204,7 +240,7 @@ func TestChatServiceUpdateChatRejectsInvalidLLMSetting(t *testing.T) {
 	_, err := svc.UpdateChat("user-1", "chat-1", map[string]interface{}{
 		"llm_setting": "invalid",
 	})
-	if err == nil || err.Error() != "`llm_setting` should be an object." {
+	if err == nil || err.Error() != "`llm_setting` should be an object" {
 		t.Fatalf("expected llm_setting error, got %v", err)
 	}
 

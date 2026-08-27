@@ -41,10 +41,11 @@ export const LargeModelFilterFormSchema = {
 
 type LargeModelFormFieldProps = Pick<
   NextInnerLLMSelectProps,
-  'showSpeech2TextModel'
+  'showSpeech2TextModel' | 'ownerTenantId'
 >;
 export function LargeModelFormField({
   showSpeech2TextModel: showTTSModel,
+  ownerTenantId,
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
@@ -96,6 +97,7 @@ export function LargeModelFormField({
                   {...field}
                   filter={filter}
                   showSpeech2TextModel={showTTSModel}
+                  ownerTenantId={ownerTenantId}
                 />
               </FormControl>
             </section>
@@ -110,12 +112,13 @@ export function LargeModelFormField({
 
 type LargeModelFormFieldWithoutFilterProps = Pick<
   NextInnerLLMSelectProps,
-  'triggerTestId' | 'optionTestIdPrefix'
+  'triggerTestId' | 'optionTestIdPrefix' | 'ownerTenantId'
 >;
 
 export function LargeModelFormFieldWithoutFilter({
   triggerTestId,
   optionTestIdPrefix,
+  ownerTenantId,
 }: LargeModelFormFieldWithoutFilterProps = {}) {
   const form = useFormContext();
 
@@ -130,6 +133,7 @@ export function LargeModelFormFieldWithoutFilter({
               {...field}
               triggerTestId={triggerTestId}
               optionTestIdPrefix={optionTestIdPrefix}
+              ownerTenantId={ownerTenantId}
             />
           </FormControl>
           <FormMessage />

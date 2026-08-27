@@ -18,6 +18,7 @@ import {
 import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
@@ -59,12 +60,13 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
 
   useWatchFormChange(node?.id, form);
 
+  const ownerTenantId = useOwnerTenantId();
   const isToc = form.getValues('field_name') === 'toc';
 
   return (
     <Form {...form}>
       <FormWrapper>
-        <LargeModelFormField></LargeModelFormField>
+        <LargeModelFormField ownerTenantId={ownerTenantId}></LargeModelFormField>
         <RAGFlowFormItem label={t('flow.fieldName')} name="field_name">
           {(field) => (
             <SelectWithSearch

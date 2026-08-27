@@ -30,7 +30,7 @@ import (
 func (h *SystemHandler) GetStats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -53,7 +53,7 @@ func (h *SystemHandler) GetStats(c *gin.Context) {
 		if errors.Is(err, service.ErrTenantNotFound) {
 			code = common.CodeDataError
 		}
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 

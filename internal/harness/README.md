@@ -725,7 +725,7 @@ idle ──beginPlanningTurn──▶ planning ──beginActiveTurn──▶ ac
 - **TurnContext** — per-turn Preempted/Stopped channels, StopCause
 - **Callbacks**: `GenInput`, `GenResume`, `PrepareAgent`, `OnAgentEvents`
 
-**Push options:** `WithPreempt`, `WithPreemptTimeout`, `WithPreemptDelay`  
+**Push options:** `WithPreempt`, `WithPreemptTimeout`, `WithPreemptDelay`
 **Stop options:** `WithGraceful`, `WithImmediate`, `WithGracefulTimeout`, `UntilIdleFor`, `WithSkipCheckpoint`, `WithStopCause`
 
 ---

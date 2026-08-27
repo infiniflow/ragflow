@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
@@ -344,23 +343,20 @@ type ListMemoryResponse struct {
 //	req := &CreateMemoryRequest{Name: "MyMemory", MemoryType: []string{"semantic"}, EmbdID: "embd1", LLMID: "llm1"}
 //	resp, err := service.CreateMemory("tenant123", req)
 func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) (*CreateMemoryResponse, error) {
-	// Ensure tenant model IDs are populated for LLM and embedding model parameters
-	// This automatically fills tenant_llm_id and tenant_embd_id based on llm_id and embd_id
-	tenantLLMService := NewTenantLLMService()
-	params := map[string]interface{}{
-		"llm_id":  req.LLMID,
-		"embd_id": req.EmbdID,
+	modelProvider := NewModelProviderService()
+	if req.LLMID != "" && req.TenantLLMID == nil {
+		tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID)
+		if err != nil {
+			return nil, err
+		}
+		req.TenantLLMID = &tenantLLMID
 	}
-	params = tenantLLMService.EnsureTenantModelIDForParams(tenantID, params)
-
-	// Update request with tenant model IDs from the processed params
-	if tenantLLMID, ok := params["tenant_llm_id"].(int64); ok {
-		tenantLLMIDStr := strconv.FormatInt(tenantLLMID, 10)
-		req.TenantLLMID = &tenantLLMIDStr
-	}
-	if tenantEmbdID, ok := params["tenant_embd_id"].(int64); ok {
-		tenantEmbdIDStr := strconv.FormatInt(tenantEmbdID, 10)
-		req.TenantEmbdID = &tenantEmbdIDStr
+	if req.EmbdID != "" && req.TenantEmbdID == nil {
+		tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID)
+		if err != nil {
+			return nil, err
+		}
+		req.TenantEmbdID = &tenantEmbdID
 	}
 
 	if err := common.ValidateName(req.Name); err != nil {
@@ -1209,7 +1205,7 @@ func memoryMessageSelectFields() []string {
 }
 
 func memoryIndexName(tenantID string) string {
-	prefix := strings.TrimSpace(os.Getenv("ES_INDEX_PREFIX"))
+	prefix := strings.TrimSpace(common.GetEnv(common.EnvESIndexPrefix))
 	if prefix == "" {
 		return fmt.Sprintf("memory_%s", tenantID)
 	}
@@ -1262,7 +1258,7 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}

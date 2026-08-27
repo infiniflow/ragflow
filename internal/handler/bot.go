@@ -78,17 +78,13 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
-	c.JSON(200, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"title":          title,
-			"avatar":         avatar,
-			"prologue":       prologue,
-			"has_tavily_key": hasTavily,
-			"llm_id":         llmID,
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"title":          title,
+		"avatar":         avatar,
+		"prologue":       prologue,
+		"has_tavily_key": hasTavily,
+		"llm_id":         llmID,
+	}, "success")
 }
 
 // AgentbotInputs GET /api/v1/agentbots/<agent_id>/inputs
@@ -112,17 +108,13 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
-	c.JSON(200, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"title":    title,
-			"avatar":   avatar,
-			"inputs":   inputs,
-			"prologue": prologue,
-			"mode":     mode,
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"title":    title,
+		"avatar":   avatar,
+		"inputs":   inputs,
+		"prologue": prologue,
+		"mode":     mode,
+	}, "success")
 }
 
 // AgentbotCompletion POST /api/v1/agentbots/<agent_id>/completions
@@ -315,9 +307,5 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 			return
 		}
 	}
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    data,
-		"message": "success",
-	})
+	common.SuccessWithData(c, data, "success")
 }

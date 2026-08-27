@@ -18,23 +18,10 @@
 
 package parser
 
-import (
-	"fmt"
-)
+type PPTParser struct{}
 
-type PPTParser struct {
-	libType string
-}
-
-func NewPPTParser(libType string) (*PPTParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &PPTParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported PPT library type: %s", libType)
-	}
+func NewPPTParser() *PPTParser {
+	return &PPTParser{}
 }
 
 func (p *PPTParser) String() string {
@@ -46,11 +33,7 @@ func (p *PPTParser) String() string {
 // in the binary container; the python parser.py:slides branch
 // treats them uniformly.
 func (p *PPTParser) ParseWithResult(filename string, data []byte) ParseResult {
-	delegate, err := NewPPTXParser(OfficeOxide)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("ppt delegate: %w", err)}
-	}
-	res := delegate.ParseWithResult(filename, data)
+	res := NewPPTXParser().ParseWithResult(filename, data)
 	if res.File != nil {
 		res.File["format"] = "ppt"
 	}

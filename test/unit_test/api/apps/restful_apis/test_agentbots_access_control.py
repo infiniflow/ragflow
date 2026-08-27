@@ -90,7 +90,13 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
         TenantService=SimpleNamespace(),
         UserTenantService=SimpleNamespace(),
     )
-    _stub(monkeypatch, "api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=lambda *_a, **_k: None, get_model_config_from_provider_instance=lambda *_a, **_k: None)
+    _stub(
+        monkeypatch,
+        "api.db.joint_services.tenant_model_service",
+        get_tenant_default_model_by_type=lambda *_a, **_k: None,
+        get_model_config_from_provider_instance=lambda *_a, **_k: None,
+        resolve_model_config=lambda *_a, **_k: None,
+    )
     _stub(monkeypatch, "common.misc_utils", get_uuid=lambda: "uuid", thread_pool_exec=_passthrough_thread_pool_exec)
     _stub(
         monkeypatch,

@@ -106,3 +106,34 @@ func TestBGPT_InvokeAdaptsCanvasInputsAndOutputs(t *testing.T) {
 		t.Fatalf("json output length = %d, want 1", len(results))
 	}
 }
+
+func TestBGPT_InvokeUsesStoredAPIKeyWhenInputOmitsIt(t *testing.T) {
+	fake := &fakeBGPTInvoker{}
+	c := newBGPTComponentWithInvoker(fake, "stored-key")
+
+	_, err := c.Invoke(context.Background(), map[string]any{
+		"query": "cancer therapy",
+	})
+	if err != nil {
+		t.Fatalf("Invoke errored: %v", err)
+	}
+	if got := fake.args["api_key"]; got != "stored-key" {
+		t.Fatalf("api_key arg = %v, want stored-key", got)
+	}
+}
+
+func TestBGPT_InvokeDoesNotOverrideCallerAPIKey(t *testing.T) {
+	fake := &fakeBGPTInvoker{}
+	c := newBGPTComponentWithInvoker(fake, "stored-key")
+
+	_, err := c.Invoke(context.Background(), map[string]any{
+		"query":   "cancer therapy",
+		"api_key": "call-key",
+	})
+	if err != nil {
+		t.Fatalf("Invoke errored: %v", err)
+	}
+	if got := fake.args["api_key"]; got != "call-key" {
+		t.Fatalf("api_key arg = %v, want call-key", got)
+	}
+}

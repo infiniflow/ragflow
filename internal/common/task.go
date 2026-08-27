@@ -17,9 +17,8 @@
 package common
 
 const (
-	TaskTypeIngestionTask    = "ingestion_task"
-	TaskTypeIngestionTasklet = "ingestion_tasklet"
-	TaskTypeIngestionTest    = "ingestion_test"
+	TaskTypeIngestionTask = "ingestion_task"
+	TaskTypeIngestionTest = "ingestion_test"
 )
 
 type TaskMessage struct {

@@ -59,7 +59,7 @@ type SetLangfuseRequest struct {
 func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 
 	row, code, err := h.langfuseService.SetAPIKey(user.ID, req.SecretKey, req.PublicKey, req.Host)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -104,7 +104,7 @@ func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 

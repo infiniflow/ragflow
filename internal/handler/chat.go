@@ -73,7 +73,7 @@ type ChatMindMapRequest struct {
 func (h *ChatHandler) ListChats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -124,7 +124,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 func (h *ChatHandler) Create(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 
 	result, code, err := h.chatService.Create(user.ID, req)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -160,7 +160,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 func (h *ChatHandler) MindMap(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -219,7 +219,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 func (h *ChatHandler) DeleteChat(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -235,7 +235,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
 			return
 		}
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -246,7 +246,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -282,7 +282,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 
 	result, err := h.chatService.BulkDeleteChats(userID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -312,7 +312,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -334,7 +334,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 			return
 		}
 		// Not found error
-		common.ErrorWithCode(c, int(common.CodeDataError), err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -386,7 +386,7 @@ func (h *ChatHandler) PatchChat(c *gin.Context) {
 func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 

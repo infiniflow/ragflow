@@ -17,32 +17,59 @@
 from api.utils import api_utils
 
 
-def test_get_data_openai_defaults_created_to_current_timestamp(monkeypatch):
+def test_get_data_openai_stream_chunk_matches_openai_shape(monkeypatch):
     monkeypatch.setattr(api_utils.time, "time", lambda: 1234567890.9)
 
-    data = api_utils.get_data_openai(content="answer")
-
-    assert data["created"] == 1234567890
-
-
-def test_get_data_openai_preserves_explicit_created_value():
-    data = api_utils.get_data_openai(created=0, content="answer")
-
-    assert data["created"] == 0
-
-
-def test_get_data_openai_stream_response_shape_is_unchanged():
-    data = api_utils.get_data_openai(id="chatcmpl-test", model="test-model", content="chunk", finish_reason=None, stream=True)
+    data = api_utils.get_data_openai(id="chatcmpl-test", model="test-model", content="chunk", stream=True)
 
     assert data == {
         "id": "chatcmpl-test",
         "object": "chat.completion.chunk",
+        "created": 1234567890,
         "model": "test-model",
+        "system_fingerprint": "",
+        "usage": None,
         "choices": [
             {
-                "delta": {"content": "chunk"},
+                "delta": {
+                    "content": "chunk",
+                    "role": "assistant",
+                    "function_call": None,
+                    "tool_calls": None,
+                },
                 "finish_reason": None,
                 "index": 0,
+                "logprobs": None,
             }
         ],
     }
+
+
+def test_get_data_openai_stream_preserves_explicit_created_value():
+    data = api_utils.get_data_openai(created=0, content="chunk", stream=True)
+
+    assert data["created"] == 0
+
+
+def test_get_data_openai_terminal_stream_chunk_includes_usage():
+    data = api_utils.get_data_openai(prompt_tokens=3, completion_tokens=5, content=None, finish_reason="stop", stream=True)
+
+    assert data["usage"] == {
+        "prompt_tokens": 3,
+        "completion_tokens": 5,
+        "total_tokens": 8,
+        "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0,
+        },
+    }
+    assert data["choices"][0]["finish_reason"] == "stop"
+
+
+def test_get_data_openai_stream_delta_allows_reference_payload():
+    data = api_utils.get_data_openai(content="chunk", stream=True)
+
+    data["choices"][0]["delta"]["reference"] = {"chunks": []}
+
+    assert data["choices"][0]["delta"]["reference"] == {"chunks": []}

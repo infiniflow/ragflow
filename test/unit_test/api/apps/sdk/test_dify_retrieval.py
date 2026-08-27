@@ -135,6 +135,7 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id
         "api.db.joint_services.tenant_model_service",
         get_tenant_default_model_by_type=lambda *_a, **_k: {},
         get_model_config_from_provider_instance=lambda *_a, **_k: {},
+        resolve_model_config=lambda *_a, **_k: {},
     )
 
     _stub(

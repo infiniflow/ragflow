@@ -65,7 +65,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
+	"ragflow/internal/common"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -176,7 +176,7 @@ func getDefaultStagehandInvoker() StagehandInvoker {
 // envDuration reads a Go-duration env var, falling back to def on
 // missing / parse failure.
 func envDuration(key string, def time.Duration) time.Duration {
-	v := os.Getenv(key)
+	v := common.GetEnv(key)
 	if v == "" {
 		return def
 	}
@@ -189,7 +189,7 @@ func envDuration(key string, def time.Duration) time.Duration {
 
 // envInt reads a non-negative int env var, falling back to def.
 func envInt(key string, def int) int {
-	v := os.Getenv(key)
+	v := common.GetEnv(key)
 	if v == "" {
 		return def
 	}

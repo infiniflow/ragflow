@@ -17,10 +17,9 @@ import {
 
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
+import DocumentViewSwitch from './components/document-view-switch';
 // import DocumentHeader from './components/document-preview/document-header';
 
-import DocumentPreview from '@/components/document-preview';
-import DocumentHeader from '@/components/document-preview/document-header';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -38,7 +37,8 @@ import {
 import { LucideArrowBigLeft } from 'lucide-react';
 import styles from './index.module.less';
 
-const Chunk = () => {
+function Chunk() {
+  const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const { removeChunk } = useDeleteChunkByIds();
   const {
@@ -50,7 +50,7 @@ const Chunk = () => {
     available,
     handleSetAvailable,
     dataUpdatedAt,
-  } = useFetchNextChunkList();
+  } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo?.type === 'pdf';
 
@@ -101,6 +101,16 @@ const Chunk = () => {
       });
     },
     [],
+  );
+
+  const handleChunkIdsChange = useCallback(
+    (chunkIds: string[]) => {
+      setFilterChunkIds(chunkIds);
+      if (chunkIds.length === 0) {
+        pagination.onChange?.(1, pagination.pageSize);
+      }
+    },
+    [pagination],
   );
 
   const showSelectedChunkWarning = useCallback(() => {
@@ -188,17 +198,14 @@ const Chunk = () => {
       <Card className="mx-5 mb-5 flex-1 h-0 p-0 bg-transparent shadow-none">
         <CardContent className="p-0 h-full flex flex-row divide-x-0.5 rtl:divide-x-reverse">
           <article className="w-2/5 flex flex-col">
-            <DocumentHeader className="flex-0 p-5 pb-0" {...documentInfo} />
-
-            <div className="flex-1 h-0 min-h-0 overflow-hidden p-5 pt-2.5 [&>section]:h-full [&>section]:min-h-0">
-              <DocumentPreview
-                className="h-full min-h-0 overflow-auto [&_img]:max-w-full [&_img]:h-auto"
-                fileType={fileType}
-                highlights={highlights}
-                setWidthAndHeight={setWidthAndHeight}
-                url={fileUrl}
-              />
-            </div>
+            <DocumentViewSwitch
+              documentInfo={documentInfo}
+              fileType={fileType}
+              highlights={highlights}
+              setWidthAndHeight={setWidthAndHeight}
+              url={fileUrl}
+              onChunkIdsChange={handleChunkIdsChange}
+            />
           </article>
 
           <article
@@ -293,6 +300,6 @@ const Chunk = () => {
       )}
     </main>
   );
-};
+}
 
 export default Chunk;

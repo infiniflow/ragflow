@@ -33,6 +33,7 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -84,6 +85,7 @@ export type AgentFormSchemaType = z.infer<typeof FormSchema>;
 
 function AgentForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
   const { edges, deleteEdgesBySourceAndSourceHandle } = useGraphStore(
     (state) => state,
   );
@@ -158,7 +160,7 @@ function AgentForm({ node }: INextOperatorForm) {
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
+          <LargeModelFormField showSpeech2TextModel ownerTenantId={ownerTenantId}></LargeModelFormField>
           {findLlmByUuid(llmId)?.model_type?.includes(
             LlmModelType.Image2text,
           ) && (

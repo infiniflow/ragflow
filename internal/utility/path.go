@@ -20,19 +20,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"runtime"
 )
 
 // GetProjectRoot returns the project root directory
 func GetProjectRoot() string {
 	// Try environment variable first
-	if confDir := os.Getenv("RAGFLOW_CONF_DIR"); confDir != "" {
+	if confDir := common.GetEnv(common.EnvRAGFlowConfDir); confDir != "" {
 		return confDir
 	}
-	if d := os.Getenv("RAG_PROJECT_BASE"); d != "" {
+	if d := common.GetEnv(common.EnvRAGProjectBaseURL); d != "" {
 		return d
 	}
-	if d := os.Getenv("RAG_DEPLOY_BASE"); d != "" {
+	if d := common.GetEnv(common.EnvRAGDeployBaseURL); d != "" {
 		return d
 	}
 
@@ -63,14 +64,14 @@ func GetProjectRoot() string {
 func FindConfFileInProject(fileName string) (*string, error) {
 
 	var filePath string
-	if projDir := os.Getenv("RAG_PROJECT_BASE"); projDir != "" {
+	if projDir := common.GetEnv(common.EnvRAGProjectBaseURL); projDir != "" {
 		filePath = filepath.Join(projDir, "conf", fileName)
 		if _, err := os.Stat(filePath); err == nil {
 			return &filePath, nil
 		}
 	}
 
-	if projDir := os.Getenv("RAG_DEPLOY_BASE"); projDir != "" {
+	if projDir := common.GetEnv(common.EnvRAGDeployBaseURL); projDir != "" {
 		filePath = filepath.Join(projDir, "conf", fileName)
 		if _, err := os.Stat(filePath); err == nil {
 			return &filePath, nil

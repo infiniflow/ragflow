@@ -2431,9 +2431,14 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 				d["questions"] = utility.ConvertToString(v)
 			}
 		case "kb_id":
-			if list, ok := v.([]interface{}); ok && len(list) > 0 {
+			// 1. First check if it's a string
+			if str, ok := v.(string); ok {
+				d["kb_id"] = str
+			} else if list := utility.ConvertToStringSlice(v); len(list) > 0 {
+				// 2. If it's a list, convert and take the first element
 				d["kb_id"] = list[0]
 			} else {
+				// 3. Otherwise assign v directly
 				d["kb_id"] = v
 			}
 		case "position_int":

@@ -112,7 +112,7 @@ func TestBuildNodeBody_PerClassTimeout_ExeSQL_3s(t *testing.T) {
 		}
 	})
 
-	body, err := buildNodeBody("cpn-exe", "ExeSQL", nil)
+	body, err := buildNodeBody(context.Background(), "cpn-exe", "ExeSQL", nil)
 	if err != nil {
 		t.Fatalf("buildNodeBody: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestBuildNodeBody_PerClassTimeout_TavilySearch_12s(t *testing.T) {
 		}
 	})
 
-	body, err := buildNodeBody("cpn-tav", "TavilySearch", nil)
+	body, err := buildNodeBody(context.Background(), "cpn-tav", "TavilySearch", nil)
 	if err != nil {
 		t.Fatalf("buildNodeBody: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestBuildNodeBody_PerClassTimeout_UnknownClass_UniformFallback(t *testing.T
 		}
 	})
 
-	body, err := buildNodeBody("cpn-cust", "CustomComponent", nil)
+	body, err := buildNodeBody(context.Background(), "cpn-cust", "CustomComponent", nil)
 	if err != nil {
 		t.Fatalf("buildNodeBody: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestBuildNodeBody_PerClassTimeout_PerClassEnvOverride(t *testing.T) {
 		}
 	})
 
-	body, err := buildNodeBody("cpn-exe-ovr", "ExeSQL", nil)
+	body, err := buildNodeBody(context.Background(), "cpn-exe-ovr", "ExeSQL", nil)
 	if err != nil {
 		t.Fatalf("buildNodeBody: %v", err)
 	}

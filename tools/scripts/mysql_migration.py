@@ -1777,7 +1777,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                     has_work = True
                     break
                 # Check if there are NULL values that should be populated
-                cursor = self.db.execute_sql(f"SELECT COUNT(*) FROM `{table_name}` WHERE `{tenant_id_col}` IS NULL OR `{tenant_id_col}` = ''")
+                cursor = self.db.execute_sql(f"SELECT COUNT(*) FROM `{table_name}` WHERE `{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32")
                 null_count = cursor.fetchone()[0]
                 if null_count > 0:
                     has_work = True
@@ -1837,17 +1837,12 @@ class TenantModelIdMigrationStage(MigrationStage):
                     logger.info(f"Column {table_name}.{legacy_col} does not exist, skipping")
                     continue
 
-                # Get rows where tenant_*_id is NULL or empty
-                cursor = self.db.execute_sql(
-                    f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
-                )
-
                 # Also need tenant_id for model lookup
                 # For tenant table, the PK is the tenant_id
                 # For knowledgebase, dialog, memory we also need tenant_id
                 if table_name == "tenant":
                     cursor = self.db.execute_sql(
-                        f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32) AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)
@@ -1872,7 +1867,7 @@ class TenantModelIdMigrationStage(MigrationStage):
                             tables_operated.add(table_name)
                 else:
                     cursor = self.db.execute_sql(
-                        f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '') AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
+                        f"SELECT id, tenant_id, `{legacy_col}` FROM `{table_name}` WHERE (`{tenant_id_col}` IS NULL OR `{tenant_id_col}` = '' OR LENGTH(`{tenant_id_col}`) <> 32) AND `{legacy_col}` IS NOT NULL AND `{legacy_col}` != ''"
                     )
                     while True:
                         rows = cursor.fetchmany(self.scan_batch_size)

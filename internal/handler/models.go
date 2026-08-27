@@ -66,17 +66,17 @@ func (h *ModelHandler) ListAllModels(c *gin.Context) {
 func (h *ModelHandler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		common.ErrorWithCode(c, 400, "Encoded model name is empty")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Encoded model name is empty")
 		return
 	}
 
 	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
 	if err != nil {
-		common.ErrorWithCode(c, 400, err.Error())
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if decodedModelName == "" {
-		common.ErrorWithCode(c, 400, "Decoded model name is empty")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Decoded model name is empty")
 		return
 	}
 

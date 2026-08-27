@@ -38,7 +38,11 @@ type DocumentStorageRef struct {
 // storage resolution. Production leaves this nil and uses DAO-backed lookup.
 var ResolveDocumentStorageOverride func(docID string) (*DocumentStorageRef, error)
 
-func fetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
+// FetchBinary downloads the raw object stored at (bucket, path). It is
+// exported so downstream components (e.g. the chunker, which re-acquires
+// the source PDF to crop section images on demand) can reuse the same
+// storage resolution the Parser uses.
+func FetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
 	stg := resolveStorage()
 	if stg == nil {
 		return nil, fmt.Errorf("no storage backend registered")
@@ -73,7 +77,11 @@ func resolveStorage() storage.Storage {
 	return storage.GetStorageFactory().GetStorage()
 }
 
-func resolveDocumentStorage(docID string) (*DocumentStorageRef, error) {
+// ResolveDocumentStorage maps a document ID to its backing storage
+// location. It is exported so downstream components can re-acquire the
+// source PDF without threading the raw bytes across the component
+// boundary.
+func ResolveDocumentStorage(docID string) (*DocumentStorageRef, error) {
 	if ResolveDocumentStorageOverride != nil {
 		return ResolveDocumentStorageOverride(docID)
 	}

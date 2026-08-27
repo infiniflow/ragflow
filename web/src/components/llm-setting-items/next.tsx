@@ -41,6 +41,7 @@ interface LlmSettingFieldItemsProps {
     | 'thinking'
   >;
   showCollapse?: boolean;
+  ownerTenantId?: string;
 }
 
 export const LLMIdFormField = {
@@ -86,6 +87,7 @@ export function LlmSettingFieldItems({
   ],
   llmId,
   showCollapse = false,
+  ownerTenantId,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
@@ -154,6 +156,7 @@ export function LlmSettingFieldItems({
         name={llmId ?? getFieldWithPrefix('llm_id')}
         testId={llmSelectTestId}
         optionTestIdPrefix={llmOptionTestIdPrefix}
+        ownerTenantId={ownerTenantId}
       ></LLMFormField>
       <CollapseComponent {...collapseProps}>
         <section className="space-y-5">

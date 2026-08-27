@@ -31,7 +31,7 @@ func TestPipelineParity(t *testing.T) {
 		t.Skipf("charspy/ not found: %v", err)
 	}
 
-	filter := os.Getenv("BATCH_PARITY_FILTER")
+	filter := common.GetEnv(common.EnvBatchParityFilter)
 
 	total, passed := 0, 0
 	for _, e := range entries {
@@ -261,7 +261,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 	// Verify production lyt.NaiveVerticalMerge matches vWithWS (Python behavior).
 	mhMap := map[int]float64{1: mh}
 	mwMap := map[int]float64{1: 5}
-	vmResult := lyt.NaiveVerticalMerge(boxes, mhMap, mwMap, false)
+	vmResult := lyt.NaiveVerticalMerge(boxes, mhMap, mwMap, nil)
 	t.Logf("lyt.NaiveVerticalMerge (production): %d sections", len(vmResult))
 	if len(vmResult) != nWS {
 		t.Errorf("lyt.NaiveVerticalMerge produced %d sections, want %d (Python-like with gap bridge)", len(vmResult), nWS)

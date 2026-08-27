@@ -36,6 +36,7 @@ export type SelectWithSearchFlagOptionType = {
   value?: string;
   disabled?: boolean;
   options?: RAGFlowSelectOptionType[];
+  keywords?: string[];
 };
 
 export type SelectWithSearchFlagProps = {
@@ -289,7 +290,8 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       keywords={
-                        typeof group.label === 'string' ? [group.label] : []
+                        group.keywords ??
+                        (typeof group.label === 'string' ? [group.label] : [])
                       }
                       onSelect={handleSelect}
                       data-testid={

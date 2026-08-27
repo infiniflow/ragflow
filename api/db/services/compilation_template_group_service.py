@@ -296,16 +296,84 @@ class CompilationTemplateGroupService(CommonService):
                 cls.model.update(**updates).where(cls.model.id == group_id).execute()
 
             if templates is not None:
-                # Soft-delete previous children (en-bloc replace). Simpler than
-                # diffing and acceptable given small N — child IDs are not
-                # referenced externally (parser_config keys the group, not its
-                # children).
-                CompilationTemplate.update(status=StatusEnum.INVALID.value).where(
-                    CompilationTemplate.group_id == group_id,
-                    CompilationTemplate.status == StatusEnum.VALID.value,
-                ).execute()
-                for i, child in enumerate(templates):
-                    cls._insert_child(group_id, tenant_id, child, index=i)
+                current_children = list(
+                    CompilationTemplate.select()
+                    .where(
+                        CompilationTemplate.group_id == group_id,
+                        CompilationTemplate.status == StatusEnum.VALID.value,
+                    )
+                    .order_by(CompilationTemplate.create_time.asc())
+                )
+                current_by_id = {child.id: child for child in current_children}
+                retained_ids: set[str] = set()
+                seen_names: set[str] = set()
+
+                for index, child in enumerate(templates):
+                    child_id = str((child or {}).get("id") or "").strip()
+                    target = current_by_id.get(child_id) if child_id else None
+                    if child_id and target is None:
+                        raise GroupValidationError(f"Template {child_id} does not belong to this group.")
+                    # Older clients did not send child ids. Preserve their
+                    # existing ids by matching the submitted order.
+                    if target is None and not child_id and index < len(current_children):
+                        target = current_children[index]
+
+                    kind = str((child or {}).get("kind") or "").strip()
+                    name = str((child or {}).get("name") or "").strip()
+                    config = (child or {}).get("config") or {}
+                    if not kind or not name or not isinstance(config, dict):
+                        raise GroupValidationError("Each template must include a name, kind, and config object.")
+                    if name in seen_names:
+                        raise GroupValidationError(f"Template name '{name}' is duplicated in this group.")
+                    seen_names.add(name)
+
+                    from api.db.services.compilation_template_service import CompilationTemplateService
+
+                    config = CompilationTemplateService.fill_config_default_llm(config, tenant_id)
+                    duplicate_query = CompilationTemplate.select().where(
+                        CompilationTemplate.tenant_id == tenant_id,
+                        CompilationTemplate.name == name,
+                        ~CompilationTemplate.is_builtin,
+                        CompilationTemplate.status == StatusEnum.VALID.value,
+                    )
+                    if target is not None:
+                        duplicate_query = duplicate_query.where(CompilationTemplate.id != target.id)
+                    if duplicate_query.exists():
+                        raise GroupValidationError(f"Template name '{name}' already exists. Please choose another name.")
+
+                    if target is None:
+                        new_id = cls._insert_child(
+                            group_id,
+                            tenant_id,
+                            {
+                                "name": name,
+                                "description": (child or {}).get("description") or "",
+                                "kind": kind,
+                                "config": config,
+                            },
+                            index=index,
+                        )
+                        retained_ids.add(new_id)
+                        continue
+
+                    CompilationTemplate.update(
+                        name=name,
+                        description=str((child or {}).get("description") or ""),
+                        kind=kind,
+                        config=config,
+                    ).where(CompilationTemplate.id == target.id).execute()
+                    retained_ids.add(target.id)
+
+                removed_children = [child for child in current_children if child.id not in retained_ids]
+                if removed_children:
+                    removed_names = [child.name for child in removed_children]
+                    removed_ids = [child.id for child in removed_children]
+                    cls._purge_stale_invalid_children(tenant_id, removed_names)
+                    CompilationTemplate.update(status=StatusEnum.INVALID.value).where(
+                        CompilationTemplate.group_id == group_id,
+                        CompilationTemplate.id.in_(removed_ids),
+                        CompilationTemplate.status == StatusEnum.VALID.value,
+                    ).execute()
 
         return cls.get_saved(group_id, tenant_id)
 
@@ -336,7 +404,7 @@ class CompilationTemplateGroupService(CommonService):
         child: dict,
         *,
         index: int,
-    ) -> None:
+    ) -> str:
         kind = str((child or {}).get("kind") or "").strip()
         name = str((child or {}).get("name") or "").strip()
         config = (child or {}).get("config") or {}
@@ -345,6 +413,15 @@ class CompilationTemplateGroupService(CommonService):
         from api.db.services.compilation_template_service import CompilationTemplateService
 
         config = CompilationTemplateService.fill_config_default_llm(config, tenant_id)
+        duplicate = CompilationTemplate.select().where(
+            CompilationTemplate.tenant_id == tenant_id,
+            CompilationTemplate.name == name,
+            ~CompilationTemplate.is_builtin,
+            CompilationTemplate.status == StatusEnum.VALID.value,
+        )
+        if duplicate.exists():
+            raise GroupValidationError(f"A compilation template named '{name}' already exists. Please choose a different name.")
+
         template_id = get_uuid()
         CompilationTemplate.create(
             id=template_id,
@@ -357,6 +434,19 @@ class CompilationTemplateGroupService(CommonService):
             is_builtin=False,
             status=StatusEnum.VALID.value,
         )
+        return template_id
+
+    @classmethod
+    def _purge_stale_invalid_children(cls, tenant_id: str, names: list[str]) -> None:
+        cleaned_names = [name for name in {str(name).strip() for name in names} if name]
+        if not cleaned_names:
+            return
+        CompilationTemplate.delete().where(
+            CompilationTemplate.tenant_id == tenant_id,
+            CompilationTemplate.name.in_(cleaned_names),
+            ~CompilationTemplate.is_builtin,
+            CompilationTemplate.status == StatusEnum.INVALID.value,
+        ).execute()
 
     # ------------------------------------------------------------------
     # Lookup helpers used by the orchestrator

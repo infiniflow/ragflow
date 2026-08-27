@@ -44,7 +44,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -100,13 +100,13 @@ func newAliyunProviderFromEnv() *AliyunCodeInterpreterProvider {
 // env vars, mirroring the admin-panel settings JSON shape.
 func aliyunConfigFromEnv() map[string]any {
 	return map[string]any{
-		"ACCESS_KEY_ID":     os.Getenv("AGENTRUN_ACCESS_KEY_ID"),
-		"ACCESS_KEY_SECRET": os.Getenv("AGENTRUN_ACCESS_KEY_SECRET"),
-		"ACCOUNT_ID":        os.Getenv("AGENTRUN_ACCOUNT_ID"),
-		"REGION":            os.Getenv("AGENTRUN_REGION"),
-		"TEMPLATE_NAME":     os.Getenv("AGENTRUN_TEMPLATE_NAME"),
-		"EXECUTE_HOST":      os.Getenv("AGENTRUN_EXECUTE_HOST"),
-		"TIMEOUT":           os.Getenv("AGENTRUN_TIMEOUT"),
+		"ACCESS_KEY_ID":     common.GetEnv(common.EnvAgentRunAccessKeyID),
+		"ACCESS_KEY_SECRET": common.GetEnv(common.EnvAgentRunAccessKeySecret),
+		"ACCOUNT_ID":        common.GetEnv(common.EnvAgentRunAccountID),
+		"REGION":            common.GetEnv(common.EnvAgentRunRegion),
+		"TEMPLATE_NAME":     common.GetEnv(common.EnvAgentRunTemplateName),
+		"EXECUTE_HOST":      common.GetEnv(common.EnvAgentRunExecuteHost),
+		"TIMEOUT":           common.GetEnv(common.EnvAgentRunTimeout),
 	}
 }
 

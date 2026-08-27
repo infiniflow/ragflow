@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +29,6 @@ func makeTaskCtx() *TaskContext {
 			ID:         "task-1",
 			DocumentID: "doc-1",
 		},
-		TaskType: "dataflow",
 		Doc: entity.Document{
 			ID:     "doc-1",
 			KbID:   "kb-1",
@@ -78,7 +76,8 @@ func TestDataflowService_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 	defer cleanup()
 
 	dslMap := entity.JSONMap{"dsl": map[string]any{"graph": map[string]any{"nodes": []any{}, "edges": []any{}}}}
-	if err := dao.NewUserCanvasDAO().Create(&entity.UserCanvas{ID: "canvas-1", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", DSL: dslMap}); err != nil {
+	title := "title 1"
+	if err := dao.NewUserCanvasDAO().Create(&entity.UserCanvas{Title: &title, ID: "canvas-1", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", DSL: dslMap}); err != nil {
 		t.Fatalf("create user canvas: %v", err)
 	}
 
@@ -90,48 +89,6 @@ func TestDataflowService_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 	}
 	if correctedID != "canvas-1" {
 		t.Fatalf("correctedID = %q, want canvas-1", correctedID)
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(gotDSL), &decoded); err != nil {
-		t.Fatalf("unmarshal dsl: %v", err)
-	}
-	if _, ok := decoded["dsl"].(map[string]any); !ok {
-		t.Fatalf("decoded dsl = %v, want top-level dsl map", decoded)
-	}
-}
-
-func TestDataflowService_DefaultLoadDSL_UsesPipelineOperationLog(t *testing.T) {
-	cleanup := setupDataflowServiceTestDB(t)
-	defer cleanup()
-
-	pipelineID := "canvas-2"
-	if err := dao.NewPipelineOperationLogDAO().Create(&entity.PipelineOperationLog{
-		ID:              "log-1",
-		DocumentID:      "doc-1",
-		TenantID:        "tenant-1",
-		KbID:            "kb-1",
-		PipelineID:      &pipelineID,
-		ParserID:        "naive",
-		DocumentName:    "sample.pdf",
-		DocumentSuffix:  ".pdf",
-		DocumentType:    "pdf",
-		SourceFrom:      "local",
-		TaskType:        "parse",
-		OperationStatus: "done",
-		DSL:             entity.JSONMap{"dsl": map[string]any{"graph": map[string]any{"nodes": []any{}, "edges": []any{}}}},
-	}); err != nil {
-		t.Fatalf("create pipeline log: %v", err)
-	}
-
-	ctx := makeTaskCtx()
-	ctx.TaskType = "replay" // Not starting with "dataflow" to use PipelineOperationLog
-	svc := mustNewDataflowService(t, ctx, "log-1", 0, 0)
-	gotDSL, correctedID, err := svc.loadDSLFunc(context.Background(), "log-1")
-	if err != nil {
-		t.Fatalf("loadDSLFunc: %v", err)
-	}
-	if correctedID != pipelineID {
-		t.Fatalf("correctedID = %q, want %q", correctedID, pipelineID)
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(gotDSL), &decoded); err != nil {
@@ -157,7 +114,7 @@ func TestNewDataflowService_Basic(t *testing.T) {
 	if svc.taskCtx == nil {
 		t.Error("taskCtx should not be nil")
 	}
-	if svc.docSvc == nil || svc.chunkCounter == nil || svc.insertChunksFunc == nil || svc.logCreateFunc == nil || svc.getEmbeddingModelFunc == nil || svc.loadDSLFunc == nil || svc.runPipelineFunc == nil {
+	if svc.docSvc == nil || svc.chunkCounter == nil || svc.insertChunksFunc == nil || svc.logCreateFunc == nil || svc.loadDSLFunc == nil || svc.runPipelineFunc == nil {
 		t.Fatal("expected production dependencies to be fully initialized")
 	}
 }
@@ -185,7 +142,6 @@ func TestNewDataflowService_RejectsIncompleteTaskContext(t *testing.T) {
 		{name: "missing kb id", mutate: func(ctx *TaskContext) { ctx.Doc.KbID = "" }},
 		{name: "missing doc name", mutate: func(ctx *TaskContext) { ctx.Doc.Name = nil }},
 		{name: "missing knowledgebase id", mutate: func(ctx *TaskContext) { ctx.KB.ID = "" }},
-		{name: "missing embedding model id", mutate: func(ctx *TaskContext) { ctx.KB.EmbdID = "" }},
 		{name: "missing tenant id", mutate: func(ctx *TaskContext) { ctx.Tenant.ID = "" }},
 	}
 
@@ -253,71 +209,6 @@ func TestDataflowService_ProcessChunks_WrapsProcessChunksForDataflow(t *testing.
 	}
 	if meta != nil {
 		// No need to verify the detailed content of meta as ProcessChunksForDataflow already has comprehensive tests
-	}
-}
-
-// =============================================================================
-// embedChunks — Python: _embed_chunks (line 247)
-// =============================================================================
-
-func TestEmbedChunks_Success(t *testing.T) {
-	stub := &stubDriver{}
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0).WithGetEmbeddingModelFunc(
-		func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return makeTestEmbeddingModel(stub, 100), nil
-		},
-	)
-	chunks := []map[string]any{
-		{"text": "hello"},
-		{"text": "world"},
-	}
-	result, tc, err := svc.embedChunks(context.Background(), chunks, 5)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result) != 2 {
-		t.Fatalf("len = %d, want 2", len(result))
-	}
-	// vectors should be attached (q_*_vec keys)
-	if result[0]["q_2_vec"] == nil {
-		t.Errorf("expected q_2_vec in chunk[0], got keys: %v", chunkKeys(result[0]))
-	}
-	// token consumption should include initial + new tokens
-	if tc < 5 {
-		t.Errorf("token consumption should be at least the initial 5, got %d", tc)
-	}
-}
-
-func TestEmbedChunks_EmptyChunks(t *testing.T) {
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
-	result, _, err := svc.embedChunks(context.Background(), nil, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != nil {
-		t.Errorf("expected nil for empty chunks, got %v", result)
-	}
-}
-
-func TestEmbedChunks_ModelError(t *testing.T) {
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0).WithGetEmbeddingModelFunc(
-		func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return nil, errors.New("model not found")
-		},
-	)
-	chunks := []map[string]any{{"text": "hello"}}
-	result, tc, err := svc.embedChunks(context.Background(), chunks, 10)
-	if err == nil {
-		t.Fatal("expected error on model error")
-	}
-	if !strings.Contains(err.Error(), "model not found") {
-		t.Errorf("expected error containing 'model not found', got %v", err)
-	}
-	if result != nil {
-		t.Errorf("expected nil result on model error, got %v", result)
-	}
-	if tc != 10 {
-		t.Errorf("token consumption should be preserved on error, got %d", tc)
 	}
 }
 
@@ -496,7 +387,7 @@ func TestIncrementChunkNum_ProcessDuration(t *testing.T) {
 
 func TestRunDataflow_NilOutput(t *testing.T) {
 	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0)
-	err := svc.RunDataflow(context.Background(), nil)
+	err := svc.processOutput(context.Background(), nil)
 	if err != nil {
 		t.Errorf("expected nil error for nil output, got %v", err)
 	}
@@ -506,7 +397,7 @@ func TestRunDataflow_EmptyOutput(t *testing.T) {
 	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0).WithLogCreateFunc(
 		func(log *entity.PipelineOperationLog) error { return nil },
 	)
-	err := svc.RunDataflow(context.Background(), map[string]any{})
+	err := svc.processOutput(context.Background(), map[string]any{})
 	if err != nil {
 		t.Errorf("expected nil error for empty output, got %v", err)
 	}
@@ -516,20 +407,16 @@ func TestRunDataflow_NormalizedEmpty(t *testing.T) {
 	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0).WithLogCreateFunc(
 		func(log *entity.PipelineOperationLog) error { return nil },
 	)
-	err := svc.RunDataflow(context.Background(), map[string]any{"markdown": ""})
+	err := svc.processOutput(context.Background(), map[string]any{"markdown": ""})
 	if err != nil {
 		t.Errorf("expected nil error for empty normalized output, got %v", err)
 	}
 }
 
 func TestRunDataflow_FullFlow(t *testing.T) {
-	stub := &stubDriver{}
 	var progressCalls []float64
 	var progressMsgs []string
 	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 0, 0).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return makeTestEmbeddingModel(stub, 100), nil
-		}).
 		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		}).
@@ -547,7 +434,7 @@ func TestRunDataflow_FullFlow(t *testing.T) {
 			{"text": "world"},
 		},
 	}
-	err := svc.RunDataflow(context.Background(), output)
+	err := svc.processOutput(context.Background(), output)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -578,7 +465,7 @@ func TestRunDataflow_AlreadyHasVectors(t *testing.T) {
 			{"text": "hello", "q_768_vec": []float64{0.1, 0.2}},
 		},
 	}
-	err := svc.RunDataflow(context.Background(), output)
+	err := svc.processOutput(context.Background(), output)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -589,7 +476,7 @@ func TestRunDataflow_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := svc.RunDataflow(ctx, map[string]any{
+	err := svc.processOutput(ctx, map[string]any{
 		"chunks": []map[string]any{{"text": "hello"}},
 	})
 	if err == nil {
@@ -638,7 +525,6 @@ func TestExtractDataflowPipelinePayload_ErrorsOnMultipleTerminals(t *testing.T) 
 }
 
 func TestDataflowService_Run_MainFlowWithStubs(t *testing.T) {
-	stub := &stubDriver{}
 	logged := false
 	inserted := false
 	var progressCalls []float64
@@ -654,9 +540,6 @@ func TestDataflowService_Run_MainFlowWithStubs(t *testing.T) {
 					{"text": "hello world"},
 				},
 			}, dsl, nil
-		}).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return makeTestEmbeddingModel(stub, 100), nil
 		}).
 		WithInsertChunksFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = true
@@ -676,7 +559,7 @@ func TestDataflowService_Run_MainFlowWithStubs(t *testing.T) {
 			return nil
 		})
 
-	err := svc.Run(context.Background())
+	err := svc.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -692,30 +575,6 @@ func TestDataflowService_Run_MainFlowWithStubs(t *testing.T) {
 	lastMsg := progressMsgs[len(progressMsgs)-1]
 	if !strings.Contains(lastMsg, "Indexing done (") || !strings.Contains(lastMsg, "Task done (") {
 		t.Fatalf("final progress msg = %q, want indexing/task timing message", lastMsg)
-	}
-}
-
-func TestEmbedChunks_ReportsIntermediateProgress(t *testing.T) {
-	stub := &stubDriver{}
-	var progressCalls []float64
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 1, 0).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return makeTestEmbeddingModel(stub, 100), nil
-		}).
-		WithProgressFunc(func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-		})
-
-	chunks := []map[string]any{
-		{"text": "hello"},
-		{"text": "world"},
-	}
-	_, _, err := svc.embedChunks(context.Background(), chunks, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(progressCalls) < 2 {
-		t.Fatalf("expected start and intermediate progress calls, got %v", progressCalls)
 	}
 }
 
@@ -739,26 +598,6 @@ func TestInsertChunks_ReportsBatchProgress(t *testing.T) {
 	}
 	if len(progressCalls) == 0 {
 		t.Fatal("expected indexing progress callbacks")
-	}
-}
-
-func TestEmbedChunks_ErrorReportsNegativeProgressAndReturnsError(t *testing.T) {
-	var progressCalls []float64
-	svc := mustNewDataflowService(t, makeTaskCtx(), "flow-1", 1, 0).
-		WithGetEmbeddingModelFunc(func(tenantID, embdID string) (*models.EmbeddingModel, error) {
-			return nil, errors.New("model unavailable")
-		}).
-		WithProgressFunc(func(prog float64, msg string) {
-			progressCalls = append(progressCalls, prog)
-		})
-
-	chunks := []map[string]any{{"text": "hello"}}
-	_, _, err := svc.embedChunks(context.Background(), chunks, 0)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if len(progressCalls) == 0 || progressCalls[len(progressCalls)-1] != -1 {
-		t.Fatalf("expected final error progress -1, got %v", progressCalls)
 	}
 }
 
@@ -824,3 +663,92 @@ var (
 	_ docService   = (*stubDocService)(nil)
 	_ chunkCounter = (*stubChunkCounter)(nil)
 )
+
+func makeEmbeddingModelForResolver() *models.EmbeddingModel {
+	return models.NewEmbeddingModel(&stubDriver{}, strPtr("embed"), &models.APIConfig{}, 128)
+}
+
+func TestEmbedderResolver_ExplicitEmbeddingModelWins(t *testing.T) {
+	var gotTenantID, gotEmbdID string
+	resolver := newEmbedderResolver(
+		func(tenantID, embdID string) (*models.EmbeddingModel, error) {
+			gotTenantID, gotEmbdID = tenantID, embdID
+			return makeEmbeddingModelForResolver(), nil
+		},
+		func(string) (*entity.Knowledgebase, error) {
+			t.Fatal("kb lookup should not run when embedding_model is set")
+			return nil, nil
+		},
+	)
+	emb, err := resolver("tenant-1", "kb-1", "explicit-embd")
+	if err != nil {
+		t.Fatalf("resolver: %v", err)
+	}
+	if emb == nil {
+		t.Fatal("expected embedder")
+	}
+	if gotTenantID != "tenant-1" || gotEmbdID != "explicit-embd" {
+		t.Fatalf("resolver args = (%q, %q), want (tenant-1, explicit-embd)", gotTenantID, gotEmbdID)
+	}
+}
+
+func TestEmbedderResolver_FallsBackToDatasetEmbedding(t *testing.T) {
+	var gotEmbdID string
+	resolver := newEmbedderResolver(
+		func(_ string, embdID string) (*models.EmbeddingModel, error) {
+			gotEmbdID = embdID
+			return makeEmbeddingModelForResolver(), nil
+		},
+		func(kbID string) (*entity.Knowledgebase, error) {
+			if kbID != "kb-1" {
+				t.Fatalf("kb lookup id = %q, want kb-1", kbID)
+			}
+			return &entity.Knowledgebase{ID: "kb-1", EmbdID: "lookup-embd"}, nil
+		},
+	)
+	if _, err := resolver("tenant-1", "kb-1", ""); err != nil {
+		t.Fatalf("resolver: %v", err)
+	}
+	if gotEmbdID != "lookup-embd" {
+		t.Fatalf("got embd id %q, want lookup-embd", gotEmbdID)
+	}
+}
+
+func TestEmbedderResolver_MissingDatasetEmbeddingReturnsError(t *testing.T) {
+	resolver := newEmbedderResolver(
+		func(string, string) (*models.EmbeddingModel, error) {
+			t.Fatal("model resolver should not be called")
+			return nil, nil
+		},
+		func(string) (*entity.Knowledgebase, error) {
+			return &entity.Knowledgebase{ID: "kb-1", EmbdID: ""}, nil
+		},
+	)
+	_, err := resolver("tenant-1", "kb-1", "")
+	if err == nil {
+		t.Fatal("expected error when dataset embd_id is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "dataset has no embd_id configured") {
+		t.Fatalf("err = %v, want dataset has no embd_id configured", err)
+	}
+}
+
+func TestEmbedderResolver_MissingEmbeddingModelAndKBReturnsError(t *testing.T) {
+	resolver := newEmbedderResolver(
+		func(string, string) (*models.EmbeddingModel, error) {
+			t.Fatal("model resolver should not be called")
+			return nil, nil
+		},
+		func(string) (*entity.Knowledgebase, error) {
+			t.Fatal("kb lookup should not be called without a kb_id")
+			return nil, nil
+		},
+	)
+	_, err := resolver("tenant-1", "", "")
+	if err == nil {
+		t.Fatal("expected error when neither embedding_model nor kb_id provided")
+	}
+	if !strings.Contains(err.Error(), "neither embedding_model nor kb_id") {
+		t.Fatalf("err = %v, want neither embedding_model nor kb_id", err)
+	}
+}

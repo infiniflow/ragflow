@@ -272,19 +272,25 @@ async def update_document(tenant_id, dataset_id, document_id):
         parser_config_template_group_changed = parser_config_template_group_touched and _compilation_template_group_id_changed(old_parser_config, req["parser_config"])
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
-    # pipeline_id provided - reset document for reparse
-    if update_doc_req.pipeline_id:
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id):
+    # A non-empty pipeline_id selects pipeline parsing; an explicitly empty
+    # value clears it and switches back to the direct parser path.
+    if "pipeline_id" in req:
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id or ""):
             return error
     # chunk method provided - the update method will check if it's different with existing one
     elif update_doc_req.chunk_method:
         if error := update_chunk_method(req, doc, tenant_id):
             return error
         if parser_config_template_group_changed and doc.parser_id.lower() == req["chunk_method"].lower():
-            if error := reset_document_for_reparse(doc, tenant_id):
+            if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
                 return error
     elif parser_config_template_group_changed:
-        if error := reset_document_for_reparse(doc, tenant_id):
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
+            return error
+    else:
+        # Direct-parser updates do not carry a pipeline_id. Clear any stale
+        # pipeline selection and its generated document-store data.
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
             return error
 
     if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present

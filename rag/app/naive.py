@@ -36,7 +36,7 @@ from api.db.joint_services.tenant_model_service import (
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
-    get_model_config_from_provider_instance,
+    resolve_model_config,
     get_tenant_default_model_by_type,
 )
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
@@ -150,7 +150,7 @@ def by_mineru(
 
         if mineru_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, mineru_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mineru_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
 
@@ -226,7 +226,7 @@ def by_opendataloader(
 
         if opendataloader_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, opendataloader_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, opendataloader_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 parse_options = {k: kwargs[k] for k in ("hybrid", "image_output", "sanitize") if k in kwargs}
@@ -280,7 +280,7 @@ def by_paddleocr(
 
         if paddleocr_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, paddleocr_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, paddleocr_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -326,14 +326,7 @@ def by_somark(
 
         if somark_llm_name:
             try:
-                try:
-                    ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, somark_llm_name)
-                except Exception:
-                    if "@" in somark_llm_name:
-                        raise
-                    from api.db.services.tenant_llm_service import TenantLLMService
-
-                    ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, somark_llm_name)
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, somark_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -363,7 +356,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
-        vision_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
+        vision_model_config = resolve_model_config(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
             model_config=vision_model_config,

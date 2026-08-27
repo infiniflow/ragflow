@@ -130,7 +130,7 @@ func NewAgentHandler(agentService *service.AgentService, fileService *service.Fi
 func (h *AgentHandler) ListAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -241,7 +241,7 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	var req service.CreateAgentRequest
@@ -252,7 +252,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	req.UserID = user.ID
 	row, code, err := h.agentService.CreateAgent(c.Request.Context(), &req)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, row, "success")
@@ -355,7 +355,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 // @Router /api/v1/agents/templates [get]
 func (h *AgentHandler) ListTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -712,7 +712,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		IncludeDSL: includeDSL,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, resp.Data, "success")
@@ -743,7 +743,7 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		DSL:     body.DSL,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, row, "success")
@@ -760,7 +760,7 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	sessionID := c.Param("session_id")
 	row, code, err := h.agentService.GetAgentSession(user.ID, canvasID, sessionID)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, row, "success")
@@ -782,7 +782,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	if sessionID != "" {
 		ok, code, err := h.agentService.DeleteAgentSessionItem(user.ID, canvasID, sessionID)
 		if err != nil {
-			common.ErrorWithCode(c, int(code), err.Error())
+			common.ErrorWithCode(c, code, err.Error())
 			return
 		}
 		common.SuccessWithData(c, ok, "success")
@@ -800,7 +800,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	}
 	result, code, err := h.agentService.DeleteAgentSessions(user.ID, canvasID, ids, deleteAll)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "success")
@@ -1242,7 +1242,7 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 	}
 	code, err := h.agentService.TestDBConnection(user.ID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, int(code), err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 	common.SuccessWithData(c, true, "success")

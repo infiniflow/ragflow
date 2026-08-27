@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"ragflow/internal/common"
+
 	//"os/signal"
 	"path/filepath"
 	"strconv"
@@ -482,7 +484,7 @@ Commands:
 
 // HistoryFile returns the path to the history file
 func HistoryFile() string {
-	return os.Getenv("HOME") + "/" + historyFileName
+	return common.GetEnv(common.EnvHome) + "/" + historyFileName
 }
 
 const historyFileName = ".ragflow_cli_history"

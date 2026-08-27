@@ -25,8 +25,8 @@ func TestBuildAll_KnownTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools[1].Info: %v", err)
 	}
-	if info1.Name != "wikipedia" {
-		t.Errorf("tools[1].Info().Name = %q, want wikipedia", info1.Name)
+	if info1.Name != "wikipedia_search" {
+		t.Errorf("tools[1].Info().Name = %q, want wikipedia_search", info1.Name)
 	}
 }
 
@@ -41,13 +41,13 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 }
 
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
-	// Every key in registry (27 entries, 23 unique canonical tools).
+	// Every key in registry.
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
-		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
-		"tavily", "tushare", "web_crawler", "wencai", "wikipedia",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
@@ -116,15 +116,13 @@ func TestBuildAll_KeenableRejectsEmptyNodeAPIKey(t *testing.T) {
 func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	t.Parallel()
 
-	// Every entry the registry advertises. 27 names, 23 unique
-	// canonical tools (execute_sql == exesql, retrieval ==
-	// search_my_dataset == search_my_dateset, crawler == web_crawler).
+	// Every entry the registry advertises.
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
-		"tavily", "tushare", "web_crawler", "wencai", "wikipedia",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
@@ -181,13 +179,17 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	// search_my_dateset and crawler/web_crawler. A bug here would mean
 	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
-		"execute_sql":       "execute_sql",
-		"exesql":            "execute_sql",
-		"retrieval":         "search_my_dateset",
-		"search_my_dataset": "search_my_dateset",
-		"search_my_dateset": "search_my_dateset",
-		"crawler":           "web_crawler",
-		"web_crawler":       "web_crawler",
+		"execute_sql":           "execute_sql",
+		"exesql":                "execute_sql",
+		"google_scholar":        "google_scholar",
+		"google_scholar_search": "google_scholar",
+		"retrieval":             "search_my_dateset",
+		"search_my_dataset":     "search_my_dateset",
+		"search_my_dateset":     "search_my_dateset",
+		"crawler":               "web_crawler",
+		"web_crawler":           "web_crawler",
+		"wikipedia":             "wikipedia_search",
+		"wikipedia_search":      "wikipedia_search",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]

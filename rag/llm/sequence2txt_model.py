@@ -27,6 +27,7 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
+from rag.utils.url_utils import ensure_v1
 
 
 class Base(ABC):
@@ -56,7 +57,8 @@ class GPTSeq2txt(Base):
     def __init__(self, key, model_name="whisper-1", base_url="https://api.openai.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
 
@@ -134,7 +136,8 @@ class AzureSeq2txt(Base):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
-        self.client = AzureOpenAI(api_key=key, azure_endpoint=kwargs["base_url"], api_version="2024-02-01")
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = AzureOpenAI(api_key=key, azure_endpoint=self.base_url, api_version="2024-02-01")
         self.model_name = model_name
         self.lang = lang
 
@@ -143,7 +146,7 @@ class XinferenceSeq2txt(Base):
     _FACTORY_NAME = "Xinference"
 
     def __init__(self, key, model_name="whisper-small", **kwargs):
-        self.base_url = kwargs.get("base_url", None)
+        self.base_url = ensure_v1(kwargs["base_url"]) if kwargs.get("base_url") else None
         self.model_name = model_name
         self.key = key
 
@@ -256,7 +259,8 @@ class GiteeSeq2txt(Base):
     def __init__(self, key, model_name="whisper-1", base_url="https://ai.gitee.com/v1/", **kwargs):
         if not base_url:
             base_url = "https://ai.gitee.com/v1/"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
 
@@ -266,8 +270,8 @@ class DeepInfraSeq2txt(Base):
     def __init__(self, key, model_name, base_url="https://api.deepinfra.com/v1/openai", **kwargs):
         if not base_url:
             base_url = "https://api.deepinfra.com/v1/openai"
-
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
 
@@ -277,7 +281,8 @@ class CometAPISeq2txt(Base):
     def __init__(self, key, model_name="whisper-1", base_url="https://api.cometapi.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.cometapi.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
 
@@ -287,7 +292,8 @@ class DeerAPISeq2txt(Base):
     def __init__(self, key, model_name="whisper-1", base_url="https://api.deerapi.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.deerapi.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
 
@@ -366,7 +372,7 @@ class RAGconSeq2txt(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.model_name = model_name
         self.key = key
         self.lang = lang

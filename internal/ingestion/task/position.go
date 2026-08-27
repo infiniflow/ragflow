@@ -21,10 +21,11 @@ package task
 // every 5 elements. pn is 0-indexed; output is 1-indexed.
 //
 // Mirrors Python: rag.nlp.add_positions()
-//   for pn, left, right, top, bottom in poss:
-//       page_num_int.append(int(pn + 1))
-//       top_int.append(int(top))
-//       position_int.append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
+//
+//	for pn, left, right, top, bottom in poss:
+//	    page_num_int.append(int(pn + 1))
+//	    top_int.append(int(top))
+//	    position_int.append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
 func AddPositions(chunk map[string]any, positions []float64) {
 	if len(positions) == 0 || len(positions)%5 != 0 {
 		return

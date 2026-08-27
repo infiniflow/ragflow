@@ -26,19 +26,10 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-type XLSParser struct {
-	libType string
-}
+type XLSParser struct{}
 
-func NewXLSParser(libType string) (*XLSParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &XLSParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported XLS library type: %s", libType)
-	}
+func NewXLSParser() *XLSParser {
+	return &XLSParser{}
 }
 
 func (p *XLSParser) String() string {

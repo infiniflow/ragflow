@@ -19,9 +19,13 @@ func RowsToHTML(rows [][]pdf.TSRCell, caption string, headerRows map[int]bool, s
 	for ri, row := range rows {
 		b.WriteString("<tr>")
 		for ci, cell := range row {
-			if covered[[2]int{ri, ci}] { continue }
+			if covered[[2]int{ri, ci}] {
+				continue
+			}
 			tag := "td"
-			if headerRows[ri] { tag = "th" }
+			if headerRows[ri] {
+				tag = "th"
+			}
 			b.WriteString("<")
 			b.WriteString(tag)
 			sp := ""
@@ -30,7 +34,9 @@ func RowsToHTML(rows [][]pdf.TSRCell, caption string, headerRows map[int]bool, s
 					sp = fmt.Sprintf("colspan=%d", s[0])
 				}
 				if s[1] > 1 {
-					if sp != "" { sp += " " }
+					if sp != "" {
+						sp += " "
+					}
 					sp += fmt.Sprintf("rowspan=%d", s[1])
 				}
 			}
@@ -59,17 +65,23 @@ func SimpleRowsToHTML(rows [][]string) string {
 	}
 	nCols := 0
 	for _, row := range rows {
-		if len(row) > nCols { nCols = len(row) }
+		if len(row) > nCols {
+			nCols = len(row)
+		}
 	}
 	var b strings.Builder
 	b.WriteString("<table>")
 	for ri, row := range rows {
 		b.WriteString("<tr>")
 		tag := "td"
-		if ri == 0 { tag = "th" }
+		if ri == 0 {
+			tag = "th"
+		}
 		for ci := 0; ci < nCols; ci++ {
 			text := ""
-			if ci < len(row) { text = row[ci] }
+			if ci < len(row) {
+				text = row[ci]
+			}
 			b.WriteString("<")
 			b.WriteString(tag)
 			b.WriteString(" >")
@@ -98,7 +110,9 @@ func RowsToStrings(rows [][]pdf.TSRCell) [][]string {
 func HasText(rows [][]pdf.TSRCell) bool {
 	for _, row := range rows {
 		for _, c := range row {
-			if strings.TrimSpace(c.Text) != "" { return true }
+			if strings.TrimSpace(c.Text) != "" {
+				return true
+			}
 		}
 	}
 	return false
@@ -106,7 +120,9 @@ func HasText(rows [][]pdf.TSRCell) bool {
 
 func HasAnyText(cells []pdf.TSRCell) bool {
 	for _, c := range cells {
-		if strings.TrimSpace(c.Text) != "" { return true }
+		if strings.TrimSpace(c.Text) != "" {
+			return true
+		}
 	}
 	return false
 }

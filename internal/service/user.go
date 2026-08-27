@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -605,7 +604,7 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 }
 
 func defaultUserLanguage() string {
-	if strings.Contains(os.Getenv("LANG"), "zh_CN") {
+	if strings.Contains(common.GetEnv(common.EnvLang), "zh_CN") {
 		return "Chinese"
 	}
 	return "English"
