@@ -14,3 +14,28 @@ converts them to RAGFlow section/table tuples. Markdown, images, and
 
 Unlike the MinerU adapter, no MinerU-specific environment variables or model
 provider are required; only the HTTP endpoint is configured.
+
+## Verification
+
+The integration was exercised against a live MonkeyOCRv2-Parsing service backed
+by the local vLLM instance (`127.0.0.1:8888`). The request contained these two
+files from `MonkeyOCRv2/images_test`:
+
+| file | response entries | result |
+| --- | ---: | --- |
+| `table.png` | 4 | parsed Markdown, JSON layout and content-list |
+| `exampaper.jpg` | 8 | parsed Markdown, JSON layout, content-list and 3 extracted images |
+
+The batch request returned HTTP 200 in 5.90 s and a 50,366-byte ZIP. The raw
+result metadata is saved as
+`output/ragflow_monkeyocrv2_images_test.json` in the MonkeyOCRv2-Parsing
+workspace. The parser unit test covers ZIP conversion and page-range handling:
+
+```bash
+python -m pytest -q test/unit_test/deepdoc/parser/test_monkeyocrv2_parser.py
+```
+
+For an isolated check, use a Python 3.11 virtual environment with `beartype`,
+`pytest`, `requests`, `pillow`, `python-docx`, `markdown`, `numpy`, and
+`pdfplumber` installed. The live test additionally requires the MonkeyOCRv2
+service and vLLM endpoint to be running.
