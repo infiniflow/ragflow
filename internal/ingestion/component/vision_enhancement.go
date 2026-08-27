@@ -74,7 +74,7 @@ type promptDirState struct {
 
 func (s *promptDirState) resolve(requestedRoot string) (string, error) {
 	s.once.Do(func() {
-		if _, statErr := os.Stat(filepath.Join(requestedRoot, "rag", "prompts")); statErr == nil {
+		if info, statErr := os.Stat(filepath.Join(requestedRoot, "rag", "prompts")); statErr == nil && info.IsDir() {
 			s.root = requestedRoot
 			return
 		}

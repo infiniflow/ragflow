@@ -82,8 +82,11 @@ func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 		if llmID, ok := vlm["llm_id"].(string); ok && llmID != "" {
 			p.VLMModelID = llmID
 		}
-	} else if llmID, ok := setup["llm_id"].(string); ok && llmID != "" {
-		p.VLMModelID = llmID
+	}
+	if p.VLMModelID == "" {
+		if llmID, ok := setup["llm_id"].(string); ok && llmID != "" {
+			p.VLMModelID = llmID
+		}
 	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
