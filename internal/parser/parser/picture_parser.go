@@ -76,10 +76,14 @@ func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if vlm, ok := setup["vlm"].(map[string]any); ok {
+	if pm, ok := setup["parse_method"].(string); ok && pm != "" && !strings.EqualFold(pm, "ocr") {
+		p.VLMModelID = pm
+	} else if vlm, ok := setup["vlm"].(map[string]any); ok {
 		if llmID, ok := vlm["llm_id"].(string); ok && llmID != "" {
 			p.VLMModelID = llmID
 		}
+	} else if llmID, ok := setup["llm_id"].(string); ok && llmID != "" {
+		p.VLMModelID = llmID
 	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v

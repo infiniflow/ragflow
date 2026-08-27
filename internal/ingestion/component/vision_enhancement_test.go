@@ -20,12 +20,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -707,5 +712,174 @@ func TestCleanMarkdownBlock_EdgeCases(t *testing.T) {
 				t.Errorf("cleanMarkdownBlock(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPromptDirState_FailureIsSticky(t *testing.T) {
+	dir := t.TempDir()
+	var state promptDirState
+	for i := 0; i < 2; i++ {
+		if _, err := state.resolve(dir); err == nil {
+			t.Fatalf("call %d: resolve() = nil error, want sticky init error", i+1)
+		}
+	}
+}
+
+func TestPromptDirState_SuccessIsCached(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "rag", "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var state promptDirState
+	for i := 0; i < 2; i++ {
+		got, err := state.resolve(dir)
+		if err != nil {
+			t.Fatalf("call %d: resolve() error: %v", i+1, err)
+		}
+		if got != dir {
+			t.Fatalf("call %d: resolve() = %q, want %q", i+1, got, dir)
+		}
+	}
+}
+
+// TestVisionEnhancement_PerCallModelPreferred verifies that setups vlm.llm_id
+// takes precedence over the tenant default IMAGE2TEXT model.
+func TestVisionEnhancement_PerCallModelPreferred(t *testing.T) {
+	origTenantResolver := resolveTenantModelByType
+	origModelResolver := resolveModelConfig
+	origInvoker := visionChatInvoker
+	origPrompt := figureVisionPromptBuilder
+	t.Cleanup(func() {
+		resolveTenantModelByType = origTenantResolver
+		resolveModelConfig = origModelResolver
+		visionChatInvoker = origInvoker
+		figureVisionPromptBuilder = origPrompt
+	})
+
+	tenantResolverCalled := false
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		tenantResolverCalled = true
+		return &visionEnhanceFakeDriver{}, "tenant-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	var gotRef string
+	var gotType entity.ModelType
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, modelType entity.ModelType, ref string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		gotRef = ref
+		gotType = modelType
+		return &visionEnhanceFakeDriver{}, "custom-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	invoker := &visionEnhanceCaptureInvoker{}
+	visionChatInvoker = invoker.invoke
+	figureVisionPromptBuilder = fakePrompt
+
+	setups := map[string]schema.ParserSetup{
+		"pdf": {"vlm": map[string]any{"llm_id": "custom-vlm@provider"}},
+	}
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		},
+	}
+
+	_, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	if gotRef != "custom-vlm@provider" {
+		t.Errorf("resolveModelConfig modelRef = %q, want %q", gotRef, "custom-vlm@provider")
+	}
+	if gotType != entity.ModelTypeImage2Text {
+		t.Errorf("resolveModelConfig modelType = %q, want %q", gotType, entity.ModelTypeImage2Text)
+	}
+	if tenantResolverCalled {
+		t.Error("tenant default resolver must not be called when setup vlm.llm_id is set")
+	}
+}
+
+func TestVisionEnhancement_InvalidImageDataSkipped(t *testing.T) {
+	invokerCalled := false
+	swapVisionGlobals(t,
+		fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			invokerCalled = true
+			return nil, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "keep", "image": "!!!not-base64!!!", "doc_type_kwd": "image"},
+		},
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when invalid image data is skipped")
+	}
+	if invokerCalled {
+		t.Error("invoker must not be called for invalid image data")
+	}
+	if got, _ := res.JSON[0]["text"].(string); got != "keep" {
+		t.Errorf("text = %q, want unchanged %q", got, "keep")
+	}
+}
+
+type deadlineCaptureDriver struct {
+	modelModule.ModelDriver
+	hasDeadline bool
+	remaining   time.Duration
+}
+
+func (d *deadlineCaptureDriver) ChatWithMessages(
+	ctx context.Context,
+	_ string,
+	_ []modelModule.Message,
+	_ *modelModule.APIConfig,
+	_ *modelModule.ChatConfig,
+	_ *common.ModelUsage,
+) (*modelModule.ChatResponse, error) {
+	deadline, ok := ctx.Deadline()
+	d.hasDeadline = ok
+	if ok {
+		d.remaining = time.Until(deadline)
+	}
+	ans := "ok"
+	return &modelModule.ChatResponse{Answer: &ans}, nil
+}
+
+func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
+	drv := &deadlineCaptureDriver{}
+	if _, err := defaultVisionChatInvoker(context.Background(), drv, "m", nil, nil); err != nil {
+		t.Fatalf("defaultVisionChatInvoker: %v", err)
+	}
+	if !drv.hasDeadline {
+		t.Fatal("vision chat context must have a deadline")
+	}
+	if drv.remaining <= 0 || drv.remaining > visionChatTimeout+time.Second {
+		t.Fatalf("deadline remaining = %v, want ~%v", drv.remaining, visionChatTimeout)
 	}
 }

@@ -165,7 +165,16 @@ func maybeDispatchImage(
 	}
 
 	// Short OCR text (or no text): supplement with VLM describe.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	modelRef := configuredMediaModelID(setup, "image")
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	}
 	if err != nil {
 		// If VLM is unavailable, but we have OCR text, return it.
 		if ocrText != "" {
@@ -260,7 +269,16 @@ func maybeDispatchAudio(
 			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+	modelRef := configuredMediaModelID(setup, "audio")
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeSpeech2Text, modelRef)
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+	}
 	if err != nil {
 		return parserDispatchResult{}, true,
 			fmt.Errorf("parser: audio speech2text model: %w", err)

@@ -411,3 +411,110 @@ func TestDefaultEmailOutputFormatIsJSON(t *testing.T) {
 		t.Fatalf("email default output_format = %q, want json", got)
 	}
 }
+
+func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
+	origTenantResolver := resolveTenantModelByType
+	origModelResolver := resolveModelConfig
+	t.Cleanup(func() {
+		resolveTenantModelByType = origTenantResolver
+		resolveModelConfig = origModelResolver
+	})
+
+	tenantResolverCalled := false
+	resolveTenantModelByType = func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		tenantResolverCalled = true
+		return nil, "", nil, 0, nil
+	}
+
+	var gotRef string
+	var gotType entity.ModelType
+	drv := &imagePromptCaptureDriver{}
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, modelType entity.ModelType, ref string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		gotRef = ref
+		gotType = modelType
+		return drv, "custom-vlm", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["image"]["parse_method"] = "custom-vlm@provider"
+
+	_, dispatched, err := maybeDispatchImage(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeVISUAL,
+		"test.png",
+		[]byte("not-a-real-image"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if !dispatched {
+		t.Fatal("expected dispatched=true for VISUAL file")
+	}
+	if gotRef != "custom-vlm@provider" {
+		t.Errorf("model ref = %q, want %q", gotRef, "custom-vlm@provider")
+	}
+	if gotType != entity.ModelTypeImage2Text {
+		t.Errorf("model type = %q, want %q", gotType, entity.ModelTypeImage2Text)
+	}
+	if tenantResolverCalled {
+		t.Error("tenant default resolver must not be called when image parse_method names a VLM model")
+	}
+}
+
+func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
+	origTenantResolver := resolveTenantModelByType
+	origModelResolver := resolveModelConfig
+	t.Cleanup(func() {
+		resolveTenantModelByType = origTenantResolver
+		resolveModelConfig = origModelResolver
+	})
+
+	tenantResolverCalled := false
+	resolveTenantModelByType = func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		tenantResolverCalled = true
+		return nil, "", nil, 0, nil
+	}
+
+	var gotRef string
+	var gotType entity.ModelType
+	drv := &audioTranscribeDriver{transcription: "transcribed"}
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, modelType entity.ModelType, ref string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		gotRef = ref
+		gotType = modelType
+		return drv, "custom-asr", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := map[string]schema.ParserSetup{
+		"audio": {"vlm": map[string]any{"llm_id": "custom-asr@provider"}},
+	}
+	res, dispatched, err := maybeDispatchAudio(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeAURAL,
+		"test.mp3",
+		[]byte("fake-audio"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchAudio: %v", err)
+	}
+	if !dispatched {
+		t.Fatal("expected dispatched=true for AURAL file")
+	}
+	if gotRef != "custom-asr@provider" {
+		t.Errorf("model ref = %q, want %q", gotRef, "custom-asr@provider")
+	}
+	if gotType != entity.ModelTypeSpeech2Text {
+		t.Errorf("model type = %q, want %q", gotType, entity.ModelTypeSpeech2Text)
+	}
+	if tenantResolverCalled {
+		t.Error("tenant default resolver must not be called when audio setup vlm.llm_id is set")
+	}
+	if len(res.JSON) != 1 || res.JSON[0]["text"] != "transcribed" {
+		t.Fatalf("unexpected audio result: %#v", res.JSON)
+	}
+}
