@@ -168,6 +168,12 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
 	input := buildAgentInputMessages(ctx, p)
+	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
+	// consists of a model decision, a tool node, and the following model
+	// decision that consumes the tool result. Reserve one additional step for
+	// the final model response, so max_rounds=1 can complete a tool call and
+	// produce its answer instead of failing with "exceeds max steps".
+	maxSteps := p.MaxRounds*2 + 1
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
@@ -185,7 +191,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			}
 			return msgs
 		},
-		MaxStep: p.MaxRounds,
+		MaxStep: maxSteps,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create react agent: %w", err)
