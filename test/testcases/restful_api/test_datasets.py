@@ -48,6 +48,13 @@ def _parser_id_fields(chunk_method):
     return fields
 
 
+def _expected_chunk_method(chunk_method):
+    """Return the API-visible parser ID for the active proxy."""
+    if IS_GO_PROXY and chunk_method == "naive":
+        return "general"
+    return chunk_method
+
+
 def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
     env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
     if env_engine:
@@ -227,7 +234,7 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
     assert update_res.status_code == 200
     update_payload = update_res.json()
     assert update_payload["code"] == 0, update_payload
-    assert update_payload["data"][PARSER_ID_FIELD] == chunk_method, update_payload
+    assert update_payload["data"][PARSER_ID_FIELD] == _expected_chunk_method(chunk_method), update_payload
 
 
 @pytest.mark.p1
@@ -1181,7 +1188,7 @@ def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name,
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
-    assert payload["data"][PARSER_ID_FIELD] == chunk_method, payload
+    assert payload["data"][PARSER_ID_FIELD] == _expected_chunk_method(chunk_method), payload
 
 
 @pytest.mark.p2
@@ -1696,7 +1703,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     assert chunk_method_unset_res.status_code == 200
     chunk_method_unset_payload = chunk_method_unset_res.json()
     assert chunk_method_unset_payload["code"] == 0, chunk_method_unset_payload
-    assert chunk_method_unset_payload["data"][PARSER_ID_FIELD] == "naive", chunk_method_unset_payload
+    assert chunk_method_unset_payload["data"][PARSER_ID_FIELD] == _expected_chunk_method("naive"), chunk_method_unset_payload
 
 
 @pytest.mark.p2

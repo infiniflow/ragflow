@@ -1093,7 +1093,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       embedModalTitle: 'Incorpora nella pagina web',
       embedUserIdPlaceholder: 'es. user-001',
       embedUserIdTooltip:
-        'Stringa di testo (massimo 255 caratteri) che identifica l\'utente finale della pagina incorporata. Viene aggiunta all\'URL di incorporamento come parametro userId.',
+        "Stringa di testo (massimo 255 caratteri) che identifica l'utente finale della pagina incorporata. Viene aggiunta all'URL di incorporamento come parametro userId.",
       published: 'Pubblicato',
       publishedTooltip:
         "Usa la versione pubblicata per questo embed. Quando abilitato, l'URL generato include release=true.",
@@ -1283,7 +1283,8 @@ Esempio: Virtual Hosted Style`,
         'Connetti un sito SharePoint tramite Microsoft Graph per sincronizzare le sue librerie documenti.',
       sharepointSiteUrlTip:
         "URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).",
-      azure_devopsDescription: 'Collega Azure DevOps per sincronizzare i file del repository e le pull request.',
+      azure_devopsDescription:
+        'Collega Azure DevOps per sincronizzare i file del repository e le pull request.',
       bitbucketDescription:
         'Connetti Bitbucket per sincronizzare il contenuto delle PR.',
       bitbucketTopWorkspaceTip:

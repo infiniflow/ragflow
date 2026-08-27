@@ -1,3 +1,4 @@
+import { Operator } from '@/constants/agent';
 import { ParseType } from '@/constants/knowledge';
 import {
   useFetchDatasetPipelineConfiguration,
@@ -130,14 +131,30 @@ export const useSaveDatasetSetting = () => {
       // Apply forward transforms to parser_config if in pipeline mode
       if (payload.parser_config) {
         const transformedConfig: Record<string, any> = {};
+        let extractorMetadataGroup: Record<string, any> | undefined;
         for (const [operatorId, config] of Object.entries(
           payload.parser_config,
         )) {
           const operatorType = getOperatorType(operatorId);
-          transformedConfig[operatorId] = transformFormConfigToApi(
+          const transformed = transformFormConfigToApi(
             operatorType,
             config as Record<string, any>,
           );
+          transformedConfig[operatorId] = transformed;
+          if (
+            operatorType === Operator.Extractor &&
+            extractorMetadataGroup === undefined
+          ) {
+            extractorMetadataGroup = transformed?.metadata;
+          }
+        }
+        // parser_config.metadata is the dataset-level object the backend
+        // preserves and re-scopes into every Extractor node. The extractor
+        // tab is the only place the user edits it, so lift its metadata
+        // group to the top level — otherwise the stale copy loaded with the
+        // form would silently revert the toggle the user just set.
+        if (extractorMetadataGroup) {
+          transformedConfig.metadata = extractorMetadataGroup;
         }
         payload.parser_config = transformedConfig;
       }
