@@ -55,13 +55,26 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
     ]);
   });
 
-  it('ignores a legacy flat metadata array at the top level', () => {
+  it('ignores a flat metadata array at the top level', () => {
     const node = buildOperatorNode(extractorNode, {
       'Extractor:AutoExtractDefault': {
         llm_id: 'llm-a',
         metadata: { enabled: false, metadata: [], built_in_metadata: [] },
       },
       metadata: [{ key: 'category', type: 'string' }],
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    expect(form.metadata.enabled).toBe(false);
+  });
+
+  it('ignores an object without the metadata group shape', () => {
+    const node = buildOperatorNode(extractorNode, {
+      'Extractor:AutoExtractDefault': {
+        llm_id: 'llm-a',
+        metadata: { enabled: false, metadata: [], built_in_metadata: [] },
+      },
+      metadata: { enabled: 'yes', metadata: [], built_in_metadata: [] },
     });
 
     const form = (node.data as Record<string, any>).form;

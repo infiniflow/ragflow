@@ -39,14 +39,16 @@ export function getOperatorType(operatorId: string): Operator {
   return (operatorId.split(':')[0] || operatorId) as Operator;
 }
 
-// The dataset-level modular metadata object stored at parser_config.metadata.
-// A flat legacy "metadata" field is an array of fields, which distinguishes
-// it from the group object {enabled, metadata, built_in_metadata}.
+// The dataset-level metadata group stored at parser_config.metadata. The group
+// is shaped {enabled, metadata, built_in_metadata}; the boolean enabled flag
+// and the built_in_metadata array identify it among other values.
 function isDatasetMetadataGroup(value: any): boolean {
   return (
     typeof value === 'object' &&
     value !== null &&
-    !Array.isArray(value)
+    !Array.isArray(value) &&
+    typeof value.enabled === 'boolean' &&
+    Array.isArray(value.built_in_metadata)
   );
 }
 
