@@ -888,7 +888,7 @@ class Parser(ProcessBase):
                         {
                             "text": txt,
                             "doc_type_kwd": "text",
-                            "positions": [[sheet + 1, r1, r2, c1, c2]],
+                            "positions": [[sheet, r1, r2, c1, c2]],
                         }
                         for txt, (sheet, r1, r2, c1, c2) in spreadsheet_parser(blob)
                         if txt

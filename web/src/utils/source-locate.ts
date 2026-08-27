@@ -15,13 +15,7 @@
  */
 
 /** File types that support in-app citation source location. */
-export const SourceLocateExtensions = [
-  'pdf',
-  'xlsx',
-  'xls',
-  'html',
-  'htm',
-] as const;
+export const SourceLocateExtensions = ['pdf', 'xlsx', 'xls'] as const;
 
 export const supportsSourceLocate = (ext?: string) =>
   !!ext &&

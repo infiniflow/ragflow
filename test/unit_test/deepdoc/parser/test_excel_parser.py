@@ -74,7 +74,7 @@ def test_exact_multiple_does_not_emit_header_only_chunk():
     chunks = RAGFlowExcelParser().html(_make_xlsx(12), chunk_rows=12)
     assert len(chunks) == 1
     assert all(not _chunk_has_no_data_cells(c[0]) for c in chunks)
-    assert chunks[0][1][0] == 0 and chunks[0][1][1] == 1
+    assert chunks[0][1][0] == 0 and chunks[0][1][1] == 2 and chunks[0][1][2] == 13
 
 
 @pytest.mark.p2
@@ -83,6 +83,8 @@ def test_multiple_of_chunk_rows_splits_without_spurious_chunk():
     chunks = RAGFlowExcelParser().html(_make_xlsx(24), chunk_rows=12)
     assert len(chunks) == 2
     assert all(not _chunk_has_no_data_cells(c[0]) for c in chunks)
+    assert chunks[0][1][1] == 2 and chunks[0][1][2] == 13
+    assert chunks[1][1][1] == 14 and chunks[1][1][2] == 25
 
 
 @pytest.mark.p2

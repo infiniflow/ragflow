@@ -20,7 +20,6 @@ import { Images } from '@/constants/common';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
-import { HtmlPreviewer } from './html-preview';
 import { ImagePreviewer } from './image-preview';
 import { Md } from './md';
 import PdfPreviewer, { IProps } from './pdf-preview';
@@ -33,7 +32,6 @@ type PreviewProps = {
   className?: string;
   url: string;
   positions?: number[][];
-  highlightText?: string;
 };
 const DocumentPreview = function ({
   fileType,
@@ -42,7 +40,6 @@ const DocumentPreview = function ({
   setWidthAndHeight,
   url,
   positions,
-  highlightText,
 }: PreviewProps & Partial<IProps>) {
   const isPdf = fileType === 'pdf';
 
@@ -107,16 +104,6 @@ const DocumentPreview = function ({
       {['csv'].indexOf(fileType) > -1 && (
         <section>
           <CSVFileViewer className={className} url={url} />
-        </section>
-      )}
-      {['html', 'htm'].indexOf(fileType) > -1 && (
-        <section className="h-full">
-          <HtmlPreviewer
-            className={className}
-            url={url}
-            positions={positions}
-            highlightText={highlightText}
-          />
         </section>
       )}
       {['md', 'mdx'].indexOf(fileType) > -1 && (

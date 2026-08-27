@@ -452,7 +452,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
 
 
 def tokenize_chunks_with_positions(chunks_with_pos, doc, eng, child_delimiters_pattern=None, language="English"):
-    """Tokenize chunks that already carry real positions (Excel sheet/row, HTML offsets).
+    """Tokenize chunks that already carry real positions (Excel sheet/row).
 
     chunks_with_pos: iterable of (text, position) where position is a 5-tuple
     suitable for add_positions (first component 0-based).

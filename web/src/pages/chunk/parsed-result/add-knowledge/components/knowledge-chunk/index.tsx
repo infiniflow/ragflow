@@ -172,12 +172,11 @@ function Chunk() {
   const positions = Array.isArray(selectedChunk?.positions)
     ? selectedChunk.positions
     : [];
-  const highlightText = selectedChunk?.content_with_weight || '';
 
   const fileType = useMemo(() => {
-    const ext = getExtension(documentInfo?.name || '');
-    if (ext) {
-      return ext;
+    const name = documentInfo?.name || '';
+    if (name.includes('.')) {
+      return getExtension(name);
     }
     switch (documentInfo?.type) {
       case 'doc':
@@ -219,9 +218,6 @@ function Chunk() {
                   setWidthAndHeight={setWidthAndHeight}
                   url={fileUrl}
                   positions={positions}
-                  highlightText={
-                    typeof highlightText === 'string' ? highlightText : ''
-                  }
                   onChunkIdsChange={handleChunkIdsChange}
                 />
               </article>

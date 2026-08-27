@@ -1329,23 +1329,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
-        raw_sections = [s for s in HtmlParser()(filename, binary, chunk_token_num) if s]
-        html_items = []
-        offset = 0
-        for sec in raw_sections:
-            text = normalize_arabic_presentation_forms(sec)
-            html_items.append((text, (0, offset, offset + len(text), 0, 0)))
-            offset += len(text)
-        res.extend(
-            tokenize_chunks_with_positions(
-                html_items,
-                doc,
-                is_english,
-                child_delimiters_pattern=child_deli,
-                language=lang,
-            )
-        )
-        sections = []
+        sections = HtmlParser()(filename, binary, chunk_token_num)
+        sections = [(_, "") for _ in sections if _]
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.epub$", filename, re.IGNORECASE):

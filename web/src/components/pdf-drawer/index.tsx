@@ -47,8 +47,6 @@ export const PdfSheet = ({
   const fileType = getExtension(
     get(chunk, 'document_name', '') || get(chunk, 'docnm_kwd', '') || 'pdf',
   );
-  const highlightText =
-    get(chunk, 'content_with_weight') || get(chunk, 'content', '') || '';
   const positions = Array.isArray(chunk?.positions) ? chunk.positions : [];
 
   return (
@@ -71,7 +69,6 @@ export const PdfSheet = ({
             setWidthAndHeight={setWidthAndHeight}
             url={url}
             positions={positions}
-            highlightText={typeof highlightText === 'string' ? highlightText : ''}
           />
         )}
       </SheetContent>

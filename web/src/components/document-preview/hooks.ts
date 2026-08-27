@@ -264,10 +264,6 @@ function applyExcelSourceLocate(
   let c2 = (pos[4] || pos[3] || 1) - 1;
   if (c1 < 0) c1 = 0;
   if (c2 < c1) c2 = c1;
-  // col span missing/zero → highlight a readable width across the row
-  if (c1 === 0 && c2 === 0 && !(pos[3] > 0)) {
-    c2 = 15;
-  }
 
   const data = xs.datas[sheetIdx];
   if (!data?.addStyle || !data.rows?.setCell) return;
@@ -322,6 +318,7 @@ export const useFetchExcel = (
   const positionsRef = useRef(positions);
   positionsRef.current = positions;
   const locateKey = positions?.[0]?.join(',') ?? '';
+  const locateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // @js-preview/excel reads the container's width/height at init time and
   // exposes no public resize method, so the only way to make the spreadsheet
@@ -329,6 +326,10 @@ export const useFetchExcel = (
   const renderPreview = useCallback(async () => {
     if (!containerEl || !dataRef.current) return;
 
+    if (locateTimerRef.current != null) {
+      clearTimeout(locateTimerRef.current);
+      locateTimerRef.current = null;
+    }
     if (previewerRef.current) {
       previewerRef.current.destroy();
       previewerRef.current = null;
@@ -342,10 +343,13 @@ export const useFetchExcel = (
       const pos = positionsRef.current?.[0];
       if (pos) {
         // bottombar tabs are created during loadData; apply after paint.
-        const run = () => applyExcelSourceLocate(previewer, pos);
+        const run = () => {
+          if (previewerRef.current !== previewer) return;
+          applyExcelSourceLocate(previewer, pos);
+        };
         requestAnimationFrame(() => {
           run();
-          setTimeout(run, 50);
+          locateTimerRef.current = setTimeout(run, 50);
         });
       }
       setStatus(true);
@@ -430,6 +434,10 @@ export const useFetchExcel = (
   // Tear down the previewer on unmount.
   useEffect(() => {
     return () => {
+      if (locateTimerRef.current != null) {
+        clearTimeout(locateTimerRef.current);
+        locateTimerRef.current = null;
+      }
       if (previewerRef.current) {
         previewerRef.current.destroy();
         previewerRef.current = null;

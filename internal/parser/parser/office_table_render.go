@@ -248,7 +248,7 @@ func recordsToHTMLTableChunkList(records [][]string, chunkRows int, caption stri
 
 		out = append(out, htmlTableChunk{
 			HTML:     b.String(),
-			RowStart: headerRowAbs,
+			RowStart: headerRowAbs + start + 1,
 			RowEnd:   headerRowAbs + end,
 			ColStart: 1,
 			ColEnd:   colEnd,
@@ -699,7 +699,7 @@ func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) []htm
 			end = len(absDataRows)
 		}
 		if start < end {
-			chunks[ci].RowStart = headerRow
+			chunks[ci].RowStart = absDataRows[start]
 			chunks[ci].RowEnd = absDataRows[end-1]
 		}
 	}

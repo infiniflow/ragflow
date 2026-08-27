@@ -236,6 +236,7 @@ class RAGFlowExcelParser:
             # a spurious header-only chunk.
             n_data_rows = len(rows) - 1
             for chunk_i in range((n_data_rows + chunk_rows - 1) // chunk_rows):
+                row_start = 2 + chunk_i * chunk_rows
                 row_end = min(1 + (chunk_i + 1) * chunk_rows, len(rows))
                 tb = ""
                 tb += f"<table><caption>{sheetname}</caption>"
@@ -251,7 +252,7 @@ class RAGFlowExcelParser:
                 tb += "</table>\n"
                 # position: (sheet_idx 0-based, row_start, row_end, col_start, col_end)
                 # for add_positions which increments the first component to 1-based.
-                tb_chunks.append((tb, (sheet_idx, 1, row_end, 1, col_max)))
+                tb_chunks.append((tb, (sheet_idx, row_start, row_end, 1, col_max)))
 
         return tb_chunks
 
