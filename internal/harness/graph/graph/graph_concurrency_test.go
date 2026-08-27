@@ -420,7 +420,7 @@ func TestGraph_ConcurrentInvoke_InterruptRace(t *testing.T) {
 			_, err := cg.Invoke(t.Context(), map[string]interface{}{"val": ""})
 			// Interrupt is expected — not a failure
 			if err != nil {
-				errs <- fmt.Errorf("interrupt (expected): %v", err)
+				errs <- fmt.Errorf("interrupt (expected): %w", err)
 			}
 		})
 	}
@@ -628,7 +628,7 @@ func TestGraph_ConcurrentInvoke_TimeoutRace(t *testing.T) {
 			defer cancel()
 			_, err := cg.Invoke(ctx, map[string]interface{}{"val": ""})
 			if err != nil {
-				errs <- fmt.Errorf("goroutine %d: %v", id, err)
+				errs <- fmt.Errorf("goroutine %d: %w", id, err)
 			}
 		}(i)
 	}
