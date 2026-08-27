@@ -45,7 +45,10 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
 
     if isinstance(layout_recognizer_raw, str):
         lowered = layout_recognizer_raw.lower()
-        if lowered.endswith("@mineru"):
+        if lowered.endswith("@monkeyocrv2") or lowered in {"monkeyocrv2", "monkeyocrv2-parsing"}:
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "MonkeyOCRv2"
+        elif lowered.endswith("@mineru"):
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "MinerU"
         elif lowered.endswith("@paddleocr"):
