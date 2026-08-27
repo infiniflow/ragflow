@@ -286,3 +286,52 @@ func TestDecodeHTMLToUTF8_NeverWorseThanBefore(t *testing.T) {
 		t.Errorf("hostile bytes decoded to replacement runes: %q", out)
 	}
 }
+
+// TestHTMLParser_DecodesDeclaredWindows1252 pins the declared-windows-1252
+// path: DetermineEncoding returns windows-1252 (certain=false) both for a
+// real declaration and as its "nothing declared" sentinel, so the declaration
+// must be confirmed explicitly. The 0x80-0x9F range (smart quotes, €, ™, —)
+// differs from the ISO-8859-1 terminal, which decodes those bytes as C1
+// control characters instead of punctuation.
+func TestHTMLParser_DecodesDeclaredWindows1252(t *testing.T) {
+	src := `<html><head><meta charset="windows-1252"></head><body>` +
+		"<h1>\u201cSmart\u201d pricing \u2014 20% off</h1>" +
+		"<p>Paste\u2122 caf\u00e9 \u20ac3.50</p></body></html>"
+	raw := htmlEncodedFixture(t, src, charmap.Windows1252)
+	res := NewHTMLParser().ParseWithResult(context.Background(), "win1252.html", raw)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "windows-1252" {
+		t.Errorf("File.encoding = %q, want windows-1252", enc)
+	}
+	got := itemsText(res)
+	if strings.ContainsRune(got, '\ufffd') {
+		t.Errorf("output contains U+FFFD replacement runes: %q", got)
+	}
+	for _, want := range []string{"\u201cSmart\u201d", "\u2014", "\u2122", "\u20ac"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("decoded text missing %q; got: %q", want, got)
+		}
+	}
+}
+
+// TestHTMLParser_DecodesDeclaredLatin1AliasAsWindows1252 covers the
+// http-equiv pragma form declaring iso-8859-1: WHATWG folds that label (and
+// us-ascii) onto windows-1252, so the page must decode with windows-1252
+// semantics — smart quotes survive instead of becoming C1 controls.
+func TestHTMLParser_DecodesDeclaredLatin1AliasAsWindows1252(t *testing.T) {
+	src := `<html><head><meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"></head><body>` +
+		"<p>He said \u201cna\u00efve\u201d \u2014 caf\u00e9 \u2122</p></body></html>"
+	raw := htmlEncodedFixture(t, src, charmap.Windows1252)
+	res := NewHTMLParser().ParseWithResult(context.Background(), "latin1.html", raw)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "windows-1252" {
+		t.Errorf("File.encoding = %q, want windows-1252", enc)
+	}
+	if got := itemsText(res); !strings.Contains(got, "\u201cna\u00efve\u201d") {
+		t.Errorf("decoded text lost windows-1252 punctuation; got: %q", got)
+	}
+}

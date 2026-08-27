@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/saintfish/chardet"
@@ -196,14 +197,42 @@ func htmlDetectedFallback(data []byte) *htmlCharsetFallback {
 	return nil
 }
 
+// htmlMetaCharsetRe captures the charset label of a <meta> tag, matching both
+// the <meta charset="..."> form and the http-equiv content-type form
+// (<meta ... content="text/html; charset=...">), over the same first-1024-byte
+// window x/net's prescan consumes.
+var htmlMetaCharsetRe = regexp.MustCompile(`(?i)<meta[^>]*charset\s*=\s*["']?\s*([a-z0-9._+\-]+)`)
+
+// htmlDeclaresWindows1252 reports whether data's <meta> tags declare
+// windows-1252, either directly or via a WHATWG alias such as iso-8859-1 /
+// us-ascii that charset.Lookup canonicalizes to windows-1252.
+// charset.DetermineEncoding cannot tell a declared windows-1252 from its own
+// "nothing declared" default: a meta prescan hit never sets certain (only
+// BOMs do), so both come back as (windows-1252, certain=false). The
+// declaration must therefore be confirmed explicitly, or a declared
+// windows-1252 page is mis-decoded by the fallback chain: windows-1252's
+// 0x80-0x9F range (smart quotes, €, ™) is C1 control characters in the
+// chain's ISO-8859-1 terminal.
+func htmlDeclaresWindows1252(data []byte) bool {
+	if len(data) > 1024 {
+		data = data[:1024]
+	}
+	for _, m := range htmlMetaCharsetRe.FindAllSubmatch(data, -1) {
+		if _, name := charset.Lookup(string(m[1])); name == "windows-1252" {
+			return true
+		}
+	}
+	return false
+}
+
 // decodeHTMLToUTF8 converts non-UTF-8 HTML bytes to UTF-8 and reports the
 // encoding label used. Valid UTF-8 passes through untouched. Otherwise the
-// document's own BOM or <meta charset> declaration wins: DetermineEncoding
-// reports certain=true only for BOMs, and an HTML5 meta prescan hit comes
-// back certain=false — as does its windows-1252 default when NOTHING is
-// declared — so the declaration is honored for every name except that
-// sentinel. Undeclared documents first honor a high-confidence statistical
-// pick (htmlDetectedFallback) and then walk the fallback chain, where each
+// document's own BOM or <meta charset> declaration wins — including a
+// declared windows-1252: DetermineEncoding returns that name both for a real
+// declaration and as its "nothing declared" default, with certain=false
+// either way, so htmlDeclaresWindows1252 disambiguates the two. Undeclared
+// documents first honor a high-confidence statistical pick
+// (htmlDetectedFallback) and then walk the fallback chain, where each
 // candidate must decode the whole blob without producing replacement runes.
 // If everything fails the original bytes are returned so behavior never
 // regresses below the previous UTF-8-only parse.
@@ -211,12 +240,12 @@ func decodeHTMLToUTF8(data []byte) ([]byte, string) {
 	if len(data) == 0 || utf8Valid(data) {
 		return data, "utf-8"
 	}
-	// windows-1252 is DetermineEncoding's "no declaration found" default,
-	// not a real detection: skipping it keeps undeclared pages on the
-	// detect-then-chain path. (A page that genuinely declares windows-1252
-	// lands on the chain's ISO-8859-1 terminal, which differs only in the
-	// 0x80-0x9F punctuation range.)
-	if enc, name, _ := charset.DetermineEncoding(data, ""); enc != nil && name != "windows-1252" {
+	// The prescan declaration wins for every name except the undeclared
+	// windows-1252 sentinel: skipping the sentinel keeps undeclared pages on
+	// the detect-then-chain path, while a declared windows-1252 (or its
+	// iso-8859-1 / us-ascii aliases) is honored.
+	if enc, name, _ := charset.DetermineEncoding(data, ""); enc != nil &&
+		(name != "windows-1252" || htmlDeclaresWindows1252(data)) {
 		if decoded, err := decodeTransform(data, enc.NewDecoder()); err == nil {
 			return []byte(decoded), name
 		}
