@@ -19,8 +19,20 @@ Unit tests for OceanBase connection utility functions.
 """
 
 import logging
+import sys
+from unittest.mock import MagicMock
+
+try:
+    import infinity.rag_tokenizer
+except ImportError:
+    mock_infinity = MagicMock()
+    mock_rag_tokenizer = MagicMock()
+    mock_infinity.rag_tokenizer = mock_rag_tokenizer
+    sys.modules["infinity"] = mock_infinity
+    sys.modules["infinity.rag_tokenizer"] = mock_rag_tokenizer
 
 from rag.utils.ob_conn import OBConnection, SearchResult, get_metadata_filter_expression, get_value_str
+
 
 
 def _ob_connection_class():
@@ -49,6 +61,32 @@ class TestOceanBaseVectorScoreExtraction:
         assert "get_scores skipped chunks" in caplog.text
         assert "missing_id=1" in caplog.text
         assert "missing_score=2" in caplog.text
+
+    def test_get_scores_empty_chunks(self):
+        """When SearchResult.chunks is empty, get_scores() returns an empty dict."""
+        connection = object.__new__(_ob_connection_class())
+        result = SearchResult(total=0, chunks=[])
+        scores = connection.get_scores(result)
+        assert scores == {}
+
+    def test_get_scores_stubbed_search(self):
+        """Stub OBConnection.search() to return SearchResult with chunks containing _score."""
+        connection = object.__new__(_ob_connection_class())
+        stub_result = SearchResult(
+            total=3,
+            chunks=[
+                {"id": "chunk-101", "_score": 0.95},
+                {"id": "chunk-102", "_score": 0.88},
+                {"id": "chunk-103", "_score": 0.72},
+            ],
+        )
+        scores = connection.get_scores(stub_result)
+        assert scores == {
+            "chunk-101": 0.95,
+            "chunk-102": 0.88,
+            "chunk-103": 0.72,
+        }
+
 
 
 class TestGetValueStr:
