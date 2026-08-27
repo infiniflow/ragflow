@@ -24,6 +24,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   useRevalidateStaleDatasetIds,
@@ -58,6 +59,7 @@ export const RetrievalPartialSchema = {
   dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
+  use_kg: z.boolean().default(false),
   cross_languages: z.array(z.string()),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
@@ -139,6 +141,30 @@ export function EmptyResponseField() {
   );
 }
 
+export function UseKnowledgeGraphFormField() {
+  const { t } = useTranslation();
+
+  return (
+    <RAGFlowFormItem
+      name="use_kg"
+      label={t('chat.useKnowledgeGraph')}
+      tooltip={t('chat.useKnowledgeGraphTip')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
@@ -203,6 +229,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <UseKnowledgeGraphFormField></UseKnowledgeGraphFormField>
               </>
             )}
           </section>

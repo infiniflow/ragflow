@@ -25,6 +25,7 @@ import {
   EmptyResponseField,
   MemoryDatasetForm,
   RetrievalPartialSchema,
+  UseKnowledgeGraphFormField,
   useHideKnowledgeGraphField,
 } from '../../retrieval-form/next';
 import { useValues } from '../use-values';
@@ -84,6 +85,7 @@ const RetrievalForm = () => {
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <UseKnowledgeGraphFormField></UseKnowledgeGraphFormField>
               </>
             )}
           </FormContainer>
