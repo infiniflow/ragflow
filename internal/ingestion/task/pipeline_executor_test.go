@@ -934,4 +934,19 @@ func TestRunPipelineWithDSL_LogDSLCarriesOutputs(t *testing.T) {
 	if _, ok := et["value"].(float64); !ok {
 		t.Errorf("c outputs._elapsed_time.value=%#v want float64", et["value"])
 	}
+	// _created_time is a perf_counter-style float on both backends
+	// (Python rag/flow/base.py:42), not a wall-clock string.
+	if cct, ok := cOutputs["_created_time"].(map[string]any); ok {
+		if _, ok := cct["value"].(float64); !ok {
+			t.Errorf("c outputs._created_time.value=%#v want float64", cct["value"])
+		}
+	} else {
+		t.Errorf("c outputs._created_time missing: %#v", cOutputs)
+	}
+	// Top-level parity: Python's Graph.__str__ carries every non-components
+	// key, and this fixture's DSL declares "path" — the round-tripped log
+	// must keep it for rerun-flow consumers.
+	if p, _ := doc["path"].([]any); len(p) != 3 || p[0] != "begin" || p[2] != "d" {
+		t.Errorf("log DSL path=%#v want [begin c d]", doc["path"])
+	}
 }

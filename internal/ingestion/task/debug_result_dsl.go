@@ -14,15 +14,17 @@
 //  limitations under the License.
 //
 //  This file is the Go analogue of Python's `Graph.__str__`
-//  (agent/canvas.py:119) used by the dataflow debug "View result" page.
+//  (agent/canvas.py:126) used by the dataflow debug "View result" page.
 //  Python attaches `dsl = json.loads(str(self))` to the END debug-log marker
-//  (rag/flow/pipeline.py:98); the front-end reads `dsl.components[<id>].obj`
+//  (rag/flow/pipeline.py:104); the front-end reads `dsl.components[<id>].obj`
 //  to render each component's parsed output. Go has no per-component `__str__`
 //  serialization, so BuildDebugResultDSL combines the STATIC DSL structure
 //  (component_name / downstream / params / graph.nodes) with the RUN output map
 //  (state.go:284 `out[<componentID>] = <outputs>`) to emit the identical JSON
-//  shape. Result is a strict subset (UI-relevant fields only) of Python's, so
-//  the front-end renders chunks with parity and a smaller payload.
+//  shape. Every non-`components` top-level key (graph / path / task_id / …) is
+//  carried verbatim like Python's, which deep-copies all sibling keys and only
+//  rebuilds `components`; each rebuilt obj keeps the UI-relevant fields, so the
+//  front-end renders chunks with parity and a smaller payload.
 
 package task
 
@@ -135,11 +137,15 @@ func BuildDebugResultDSL(dsl string, output map[string]any) (map[string]any, err
 		runOut, _ := lookupComponentOutput(output, id).(map[string]any)
 		outputsWrapper := map[string]any{}
 		if format, payload := detectFormat(runOut); format != "" {
+			value := deepCopy(payload, true)
 			outputsWrapper[format] = map[string]any{
-				"value": deepCopy(payload, true),
-				"type":  "",
+				"value": value,
+				"type":  pythonTypeName(value),
 			}
-			outputsWrapper["output_format"] = map[string]any{"value": format}
+			outputsWrapper["output_format"] = map[string]any{
+				"value": format,
+				"type":  pythonTypeName(format),
+			}
 		}
 		// TrackElapsed stamps the bookkeeping pair into every component's run
 		// output (internal/agent/canvas/node_body.go). Carry them into the
@@ -151,7 +157,7 @@ func BuildDebugResultDSL(dsl string, output map[string]any) (map[string]any, err
 		// (agent/component/base.py invoke).
 		for _, k := range bookkeepingKeys {
 			if v, ok := runOut[k]; ok && v != nil {
-				outputsWrapper[k] = map[string]any{"value": v, "type": ""}
+				outputsWrapper[k] = map[string]any{"value": v, "type": pythonTypeName(v)}
 			}
 		}
 		if len(outputsWrapper) > 0 {
@@ -168,10 +174,19 @@ func BuildDebugResultDSL(dsl string, output map[string]any) (map[string]any, err
 		}
 	}
 
-	result := map[string]any{
-		"components": built,
-		"graph":      deepCopy(root["graph"], false),
+	// Carry every non-components top-level key (graph, path, task_id,
+	// canvas_type, ...) verbatim like Python's Graph.__str__
+	// (agent/canvas.py:126), which deep-copies all sibling keys and only
+	// rebuilds components. The persisted log DSL round-trips through the
+	// front-end rerun flow, so a dropped key is lost to every consumer.
+	result := make(map[string]any, len(root)+1)
+	for k, v := range root {
+		if k == "components" {
+			continue
+		}
+		result[k] = deepCopy(v, false)
 	}
+	result["components"] = built
 	return result, nil
 }
 
@@ -225,6 +240,31 @@ func detectFormat(out any) (string, any) {
 		}
 	}
 	return "", nil
+}
+
+// pythonTypeName returns the "type" string Python's ComponentBase.set_output
+// records next to every output value — str(type(value))
+// (agent/component/base.py:467) — for the JSON-shaped values a Go run output
+// carries, so the persisted log payload keeps the same shape across backends.
+func pythonTypeName(v any) string {
+	switch v.(type) {
+	case nil:
+		return "<class 'NoneType'>"
+	case bool:
+		return "<class 'bool'>"
+	case string:
+		return "<class 'str'>"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "<class 'int'>"
+	case float32, float64:
+		return "<class 'float'>"
+	case []any, []map[string]any:
+		return "<class 'list'>"
+	case map[string]any:
+		return "<class 'dict'>"
+	default:
+		return fmt.Sprintf("<class '%T'>", v)
+	}
 }
 
 // deepCopy returns a JSON-compatible deep copy of v (maps/slices/primitives),

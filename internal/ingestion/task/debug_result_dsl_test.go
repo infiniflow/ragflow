@@ -45,7 +45,10 @@ func TestBuildDebugResultDSL(t *testing.T) {
 				{"id": "begin", "data": {"name": "开始"}},
 				{"id": "a", "data": {"name": "解析"}},
 				{"id": "b", "data": {"name": "分词"}}
-			]}
+			]},
+			"path": ["begin", "a", "b"],
+			"task_id": "task-42",
+			"canvas_type": "dataflow"
 		}
 	}`
 
@@ -76,6 +79,22 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	}
 	if len(components) != 3 {
 		t.Fatalf("want 3 components (begin,a,b), got %d: %#v", len(components), components)
+	}
+
+	// Top-level parity: Python's Graph.__str__ (agent/canvas.py:126) carries
+	// every non-components key, so the persisted log DSL round-tripped by the
+	// rerun flow must not drop path/task_id/canvas_type/graph.
+	if p, _ := result["path"].([]any); len(p) != 3 || p[0] != "begin" || p[2] != "b" {
+		t.Errorf("result.path=%#v want [begin a b]", result["path"])
+	}
+	if tid, _ := result["task_id"].(string); tid != "task-42" {
+		t.Errorf("result.task_id=%v want task-42", result["task_id"])
+	}
+	if ct, _ := result["canvas_type"].(string); ct != "dataflow" {
+		t.Errorf("result.canvas_type=%v want dataflow", result["canvas_type"])
+	}
+	if g := result["graph"]; g == nil {
+		t.Error("result.graph must be carried, got nil")
 	}
 
 	// --- component "a": must carry chunks under params.outputs ---
@@ -110,6 +129,11 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	if !ok || of["value"] != "chunks" {
 		t.Errorf("components.a output_format=%#v want {value:\"chunks\"}", aOutputs["output_format"])
 	}
+	// Python's set_output stores str(type(value)) (agent/component/base.py:467),
+	// so the outputs wrapper carries Python-style type strings, not "".
+	if of["type"] != "<class 'str'>" {
+		t.Errorf("components.a output_format.type=%#v want <class 'str'>", of["type"])
+	}
 	// TrackElapsed bookkeeping rides along as plain {value, type} entries so
 	// the front-end timeline renders per-node elapsed times.
 	if et, _ := aOutputs["_elapsed_time"].(map[string]any); et["value"] != 0.35 {
@@ -118,6 +142,9 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	if ct, _ := aOutputs["_created_time"].(map[string]any); ct["value"] != 100.0 {
 		t.Errorf("components.a outputs._created_time=%#v want {value:100}", aOutputs["_created_time"])
 	}
+	if et, _ := aOutputs["_elapsed_time"].(map[string]any); et["type"] != "<class 'float'>" {
+		t.Errorf("components.a outputs._elapsed_time.type=%#v want <class 'float'>", aOutputs["_elapsed_time"])
+	}
 	chunksOut, ok := aOutputs["chunks"].(map[string]any)
 	if !ok {
 		t.Fatalf("components.a outputs.chunks wrong type: %#v", aOutputs["chunks"])
@@ -125,6 +152,9 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	chunksVal, _ := chunksOut["value"].([]any)
 	if len(chunksVal) != 1 {
 		t.Fatalf("components.a outputs.chunks.value len=%d want 1", len(chunksVal))
+	}
+	if chunksOut["type"] != "<class 'list'>" {
+		t.Errorf("components.a outputs.chunks.type=%#v want <class 'list'>", chunksOut["type"])
 	}
 	chunk0, _ := chunksVal[0].(map[string]any)
 	if chunk0["text"] != "hello" {
@@ -146,6 +176,9 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	bOutputs, _ := bParams["outputs"].(map[string]any)
 	if bOutputs["output_format"].(map[string]any)["value"] != "text" {
 		t.Errorf("components.b output_format=%#v want {value:\"text\"}", bOutputs["output_format"])
+	}
+	if tt, _ := bOutputs["text"].(map[string]any)["type"]; tt != "<class 'str'>" {
+		t.Errorf("components.b outputs.text.type=%#v want <class 'str'>", tt)
 	}
 	// static params.field_name carried (used by front-end chunk text key).
 	if fn, _ := bParams["field_name"].(string); fn != "content" {

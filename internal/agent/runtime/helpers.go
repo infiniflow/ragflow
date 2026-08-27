@@ -186,11 +186,19 @@ func WithTimeout(ctx context.Context, d time.Duration, fn func(ctx context.Conte
 	return nil
 }
 
-// TrackElapsed records the wall-clock duration of fn and stamps the
+// monotonicEpoch is the fixed reference _created_time values are measured
+// against, mirroring Python time.perf_counter()'s arbitrary-but-constant
+// epoch. Captured once per process.
+var monotonicEpoch = time.Now()
+
+// TrackElapsed records the duration of fn and stamps the
 // output map with two synthetic keys mirroring Python `ProcessBase`
-// (base.py:42, 58):
+// (rag/flow/base.py:42,55), which stamps time.perf_counter() floats:
 //
-//	"_created_time"  RFC3339Nano-formatted timestamp taken BEFORE fn runs.
+//	"_created_time"  float64 seconds on the monotonic clock (relative to
+//	                 monotonicEpoch) captured BEFORE fn runs — Python's
+//	                 perf_counter analogue, so both bookkeeping keys share
+//	                 one numeric type across backends.
 //	"_elapsed_time"  float64 seconds (with sub-second precision) that
 //	                 fn took to complete, in [0, +∞).
 //
@@ -215,7 +223,7 @@ func TrackElapsed(name string, fn func() (map[string]any, error)) (map[string]an
 		out = make(map[string]any)
 	}
 	if _, ok := out["_created_time"]; !ok {
-		out["_created_time"] = start.UTC().Format(time.RFC3339Nano)
+		out["_created_time"] = start.Sub(monotonicEpoch).Seconds()
 	}
 	if _, ok := out["_elapsed_time"]; !ok {
 		out["_elapsed_time"] = elapsed.Seconds()
