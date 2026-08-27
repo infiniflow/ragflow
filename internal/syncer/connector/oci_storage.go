@@ -42,7 +42,7 @@ const (
 	ociStorageSource               = "oci_storage"
 )
 
-var ociStorageNamespacePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+var ociStorageHostLabelPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // OCIStorageConnector reads objects from Oracle Cloud Infrastructure Object
 // Storage through its S3-compatible API.
@@ -96,6 +96,9 @@ func (c *OCIStorageConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("OCI Storage credentials are required")
 	}
 	if err := validateOCIStorageNamespace(c.namespace); err != nil {
+		return err
+	}
+	if err := validateOCIStorageRegion(c.region); err != nil {
 		return err
 	}
 	if c.batchSize <= 0 {
@@ -159,6 +162,9 @@ func (c *OCIStorageConnector) Fetch(ctx context.Context, ref FetchReference) ([]
 
 func (c *OCIStorageConnector) ensureClient(ctx context.Context) (*s3.Client, error) {
 	if err := validateOCIStorageNamespace(c.namespace); err != nil {
+		return nil, err
+	}
+	if err := validateOCIStorageRegion(c.region); err != nil {
 		return nil, err
 	}
 	if c.client != nil {
@@ -484,8 +490,15 @@ func normalizeOCIStoragePrefix(prefix string) string {
 }
 
 func validateOCIStorageNamespace(namespace string) error {
-	if !ociStorageNamespacePattern.MatchString(namespace) {
+	if !ociStorageHostLabelPattern.MatchString(namespace) {
 		return fmt.Errorf("invalid OCI Storage namespace %q: must be a lowercase DNS label containing only letters, numbers, and hyphens", namespace)
+	}
+	return nil
+}
+
+func validateOCIStorageRegion(region string) error {
+	if !ociStorageHostLabelPattern.MatchString(region) {
+		return fmt.Errorf("invalid OCI Storage region %q: must be a lowercase DNS label containing only letters, numbers, and hyphens", region)
 	}
 	return nil
 }

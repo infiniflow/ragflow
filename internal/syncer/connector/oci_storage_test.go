@@ -301,6 +301,11 @@ func TestOCIStorageConnectorValidate(t *testing.T) {
 	if err := badBatch.Validate(ctx); err == nil {
 		t.Fatalf("expected batch size validation error")
 	}
+
+	badRegion := &OCIStorageConnector{bucketName: "bucket", namespace: "namespace", region: "evil.example#", accessKeyID: "access", secretKey: "secret", batchSize: 2}
+	if err := badRegion.Validate(ctx); err == nil {
+		t.Fatalf("expected region validation error")
+	}
 }
 
 func TestOCIStorageConnectorRejectsInvalidNamespaceBeforeClientCreation(t *testing.T) {
@@ -322,6 +327,29 @@ func TestOCIStorageConnectorRejectsInvalidNamespaceBeforeClientCreation(t *testi
 		}
 		if connector.client != nil {
 			t.Fatalf("client was created for invalid namespace %q", namespace)
+		}
+	}
+}
+
+func TestOCIStorageConnectorRejectsInvalidRegionBeforeClientCreation(t *testing.T) {
+	for _, region := range []string{
+		"evil.example#",
+		"evil.example.com",
+		"https://evil.example.org",
+		"region/tenant",
+		"region space",
+		"-region",
+		"region-",
+		"Region",
+	} {
+		connector := newTestOCIStorageConnector(t, nil)
+		connector.region = region
+		connector.client = nil
+		if _, err := connector.ensureClient(context.Background()); err == nil {
+			t.Fatalf("expected invalid region %q to be rejected", region)
+		}
+		if connector.client != nil {
+			t.Fatalf("client was created for invalid region %q", region)
 		}
 	}
 }
