@@ -201,8 +201,8 @@ func TestXquikOpenSyncUsesWindowAndResumesCursor(t *testing.T) {
 	mu.Lock()
 	gotRequests := append([]url.Values(nil), requests...)
 	mu.Unlock()
-	if len(gotRequests) != 2 {
-		t.Fatalf("request count = %d, want 2", len(gotRequests))
+	if len(gotRequests) != 3 {
+		t.Fatalf("request count = %d, want 3", len(gotRequests))
 	}
 	for _, query := range gotRequests {
 		if query.Get("q") != "ragflow lang:en" || query.Get("queryType") != "Top" || query.Get("limit") != "2" {
@@ -212,8 +212,8 @@ func TestXquikOpenSyncUsesWindowAndResumesCursor(t *testing.T) {
 			t.Fatalf("window query = %v", query)
 		}
 	}
-	if gotRequests[0].Get("cursor") != "" || gotRequests[1].Get("cursor") != "cursor-2" {
-		t.Fatalf("cursor sequence = [%q %q]", gotRequests[0].Get("cursor"), gotRequests[1].Get("cursor"))
+	if gotRequests[0].Get("cursor") != "" || gotRequests[1].Get("cursor") != "" || gotRequests[2].Get("cursor") != "cursor-2" {
+		t.Fatalf("cursor sequence = [%q %q %q]", gotRequests[0].Get("cursor"), gotRequests[1].Get("cursor"), gotRequests[2].Get("cursor"))
 	}
 }
 
@@ -285,7 +285,7 @@ func TestXquikContinuesAfterEmptyPageWhenResponseHasMore(t *testing.T) {
 	}
 }
 
-func TestXquikStopsAfterRepeatedCursor(t *testing.T) {
+func TestXquikRejectsRepeatedCursor(t *testing.T) {
 	config := validXquikConfig()
 	config["batch_size"] = 1
 	connector := newXquikTestConnector(t, config)
@@ -311,17 +311,14 @@ func TestXquikStopsAfterRepeatedCursor(t *testing.T) {
 		t.Fatalf("OpenSync: %v", err)
 	}
 	defer func() { _ = session.Close() }()
-	for {
-		_, err = session.NextBatch(context.Background())
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("NextBatch: %v", err)
-		}
+	if _, err = session.NextBatch(context.Background()); err != nil {
+		t.Fatalf("first NextBatch: %v", err)
+	}
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("second NextBatch err = %v, want ErrSyncResumeInvalid", err)
 	}
 	if requests != 2 {
-		t.Fatalf("requests = %d, want 2 before repeated cursor stops pagination", requests)
+		t.Fatalf("requests = %d, want 2 before repeated cursor aborts pagination", requests)
 	}
 }
 

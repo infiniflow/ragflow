@@ -136,7 +136,9 @@ func (c *OutlookConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		windowEnd:   request.WindowEnd,
 		deltaLinks:  map[string]string{},
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -451,7 +453,10 @@ func (s *outlookSyncSession) nextDocumentPage(ctx context.Context) ([]outlookBuf
 		})
 	}
 
-	documents := s.filterResumedDocuments(requestURL, candidates)
+	documents, err := s.filterResumedDocuments(requestURL, candidates)
+	if err != nil {
+		return nil, err
+	}
 	if page.NextLink != "" {
 		s.pageURL = page.NextLink
 		return documents, nil
@@ -481,19 +486,26 @@ func (s *outlookSyncSession) inWindow(updatedAt time.Time) bool {
 	return true
 }
 
-func (s *outlookSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *outlookSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("outlook sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor outlookSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("outlook sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("outlook sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	if len(cursor.DeltaLinks) > 0 {
 		s.deltaLinks = cursor.DeltaLinks
 	}
 	if cursor.UserID == "" {
-		return
+		return fmt.Errorf("outlook sync cursor has no user anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, userID := range s.users {
 		if userID != cursor.UserID {
@@ -503,38 +515,32 @@ func (s *outlookSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.pageURL = cursor.PageURL
 		s.resumePageURL = cursor.PageURL
 		s.resumeOffset = cursor.Offset
-		s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		return
+		s.resumeSourceID = sourceID
+		return nil
 	}
+	return fmt.Errorf("outlook resume user %q was not found in the current listing: %w", cursor.UserID, ErrSyncResumeInvalid)
 }
 
-func (s *outlookSyncSession) filterResumedDocuments(pageURL string, candidates []outlookBufferedDocument) []outlookBufferedDocument {
-	if s.resumeOffset <= 0 {
-		return candidates
+func (s *outlookSyncSession) filterResumedDocuments(pageURL string, candidates []outlookBufferedDocument) ([]outlookBufferedDocument, error) {
+	if s.resumeSourceID == "" {
+		return candidates, nil
 	}
 	if pageURL != s.resumePageURL {
-		s.clearResumeOffset()
-		return candidates
+		return nil, fmt.Errorf("outlook resume page no longer matches checkpoint page: %w", ErrSyncResumeInvalid)
 	}
-	if s.resumeOffset <= len(candidates) && candidates[s.resumeOffset-1].document.SourceID == s.resumeSourceID {
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.offset > s.resumeOffset {
-				filtered = append(filtered, candidate)
-			}
-		}
-		s.clearResumeOffset()
-		return filtered
-	}
-	filtered := candidates[:0]
 	for _, candidate := range candidates {
-		if candidate.offset >= s.resumeOffset {
-			filtered = append(filtered, candidate)
-			continue
+		if candidate.document.SourceID == s.resumeSourceID {
+			filtered := candidates[:0]
+			for _, remaining := range candidates {
+				if remaining.offset > candidate.offset {
+					filtered = append(filtered, remaining)
+				}
+			}
+			s.clearResumeOffset()
+			return filtered, nil
 		}
 	}
-	s.clearResumeOffset()
-	return filtered
+	return nil, fmt.Errorf("outlook resume anchor %q was not found on %s: %w", s.resumeSourceID, pageURL, ErrSyncResumeInvalid)
 }
 
 func (s *outlookSyncSession) checkpoint(cursor outlookSyncCursor, doc SourceDocument) *SyncCheckpoint {
