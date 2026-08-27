@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/saintfish/chardet"
+
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/text/encoding"
@@ -121,15 +123,20 @@ type htmlCharsetFallback struct {
 	enc   encoding.Encoding
 }
 
-// htmlCharsetFallbackChain mirrors the pragmatic core of Python's find_codec
+// htmlCharsetFallbackChain is the ordered brute-force decode loop for HTML
+// bytes that are neither valid UTF-8 nor carrying a BOM / <meta charset>
+// declaration, mirroring the pragmatic core of Python's find_codec
 // (rag/nlp/__init__.py): legacy pages that omit a charset declaration are
 // overwhelmingly GBK-family (saved-by-browser Chinese finance/gov pages), so
-// GB18030 (the GBK superset) leads. Big5 / Shift-JIS / EUC-KR pages virtually
-// always declare their charset and are caught by the meta prescan; they only
-// reach this chain when the declaration is missing. ISO8859-1 terminates the
-// chain the way latin1 terminates Python's codec loop: it decodes any byte
-// sequence, so Western pages without a declaration still yield readable text
-// instead of U+FFFD soup.
+// GB18030 (the GBK superset) leads. Big5 / Shift-JIS / EUC-KR pages
+// virtually always declare their charset and are caught by the meta prescan;
+// when the declaration is missing, the statistical detector
+// (htmlDetectedFallback) reorders the attempt so they are not silently
+// absorbed by GB18030. ISO-8859-1 is intentionally terminal, the way latin1
+// terminates Python's codec loop: it decodes ANY byte sequence without
+// replacement runes, so once the chain reaches it, it always succeeds —
+// Western pages without a declaration still yield readable text instead of
+// U+FFFD soup.
 var htmlCharsetFallbackChain = []htmlCharsetFallback{
 	{"gb18030", simplifiedchinese.GB18030},
 	{"big5", traditionalchinese.Big5},
@@ -138,20 +145,85 @@ var htmlCharsetFallbackChain = []htmlCharsetFallback{
 	{"iso-8859-1", charmap.ISO8859_1},
 }
 
+// htmlCharsetNormalizeLabel canonicalizes a charset label for comparison:
+// ASCII lower-casing with '-' / '_' stripped, so detector outputs such as
+// "GB-18030" or "Shift_JIS" match the chain's "gb18030" / "shift_jis".
+func htmlCharsetNormalizeLabel(label string) string {
+	return strings.NewReplacer("-", "", "_", "").Replace(strings.ToLower(label))
+}
+
+// htmlCharsetDetectConfidence is the minimum statistical-detection
+// confidence (on chardet's 0-100 scale) allowed to override the fallback
+// chain order. Calibrated empirically: genuine CJK text scores 100, while
+// the Go chardet port produces plausible-but-wrong guesses at low confidence
+// (a sparse GBK balance-sheet page scores Big5 at 40; a short Big5 page
+// scores ISO-8859-1 at 17). Only a confident pick may jump the queue;
+// anything weaker keeps the GB18030-first domain heuristic.
+const htmlCharsetDetectConfidence = 90
+
+// htmlDetectedFallback mirrors Python find_codec's chardet.detect step for
+// HTML bytes that are neither valid UTF-8 nor declared: a statistical
+// detector picks which fallback-chain candidate to try FIRST. This matters
+// because GB18030 maps nearly every byte sequence without replacement runes,
+// so the ordered chain alone cannot recognize an undeclared Big5 /
+// Shift-JIS / EUC-KR page — it would "decode" it as wrong Chinese text.
+// Detection runs over the first 1024 bytes, exactly like Python, but unlike
+// Python it is gated on htmlCharsetDetectConfidence: the Go port's
+// low-confidence guesses are demonstrably wrong often enough that they must
+// not override the chain. A detection that fails, scores below the gate, or
+// names an encoding the chain does not ship (e.g. windows-1252) returns nil
+// and the chain order stands.
+func htmlDetectedFallback(data []byte) *htmlCharsetFallback {
+	sample := data
+	if len(sample) > 1024 {
+		sample = sample[:1024]
+	}
+	res, err := chardet.NewTextDetector().DetectBest(sample)
+	if err != nil || res == nil || res.Charset == "" || res.Confidence < htmlCharsetDetectConfidence {
+		return nil
+	}
+	detected := htmlCharsetNormalizeLabel(res.Charset)
+	// The detector reports the GBK family as GB2312 / GBK; GB18030 is the
+	// superset we ship, so both map onto the gb18030 candidate.
+	if detected == "gb2312" || detected == "gbk" {
+		detected = "gb18030"
+	}
+	for i := range htmlCharsetFallbackChain {
+		if htmlCharsetNormalizeLabel(htmlCharsetFallbackChain[i].label) == detected {
+			return &htmlCharsetFallbackChain[i]
+		}
+	}
+	return nil
+}
+
 // decodeHTMLToUTF8 converts non-UTF-8 HTML bytes to UTF-8 and reports the
 // encoding label used. Valid UTF-8 passes through untouched. Otherwise the
-// document's own BOM or <meta charset> declaration (HTML5 prescan via
-// charset.DetermineEncoding) wins; documents without a declaration walk the
-// fallback chain, where each candidate must decode the whole blob without
-// producing replacement runes. If everything fails the original bytes are
-// returned so behavior never regresses below the previous UTF-8-only parse.
+// document's own BOM or <meta charset> declaration wins: DetermineEncoding
+// reports certain=true only for BOMs, and an HTML5 meta prescan hit comes
+// back certain=false — as does its windows-1252 default when NOTHING is
+// declared — so the declaration is honored for every name except that
+// sentinel. Undeclared documents first honor a high-confidence statistical
+// pick (htmlDetectedFallback) and then walk the fallback chain, where each
+// candidate must decode the whole blob without producing replacement runes.
+// If everything fails the original bytes are returned so behavior never
+// regresses below the previous UTF-8-only parse.
 func decodeHTMLToUTF8(data []byte) ([]byte, string) {
 	if len(data) == 0 || utf8Valid(data) {
 		return data, "utf-8"
 	}
-	if enc, name, certain := charset.DetermineEncoding(data, ""); certain && enc != nil {
+	// windows-1252 is DetermineEncoding's "no declaration found" default,
+	// not a real detection: skipping it keeps undeclared pages on the
+	// detect-then-chain path. (A page that genuinely declares windows-1252
+	// lands on the chain's ISO-8859-1 terminal, which differs only in the
+	// 0x80-0x9F punctuation range.)
+	if enc, name, _ := charset.DetermineEncoding(data, ""); enc != nil && name != "windows-1252" {
 		if decoded, err := decodeTransform(data, enc.NewDecoder()); err == nil {
 			return []byte(decoded), name
+		}
+	}
+	if pick := htmlDetectedFallback(data); pick != nil {
+		if decoded, err := decodeTransform(data, pick.enc.NewDecoder()); err == nil {
+			return []byte(decoded), pick.label
 		}
 	}
 	for _, cand := range htmlCharsetFallbackChain {
@@ -159,7 +231,12 @@ func decodeHTMLToUTF8(data []byte) ([]byte, string) {
 			return []byte(decoded), cand.label
 		}
 	}
-	return data, "utf-8"
+	// Unreachable for non-empty input: the terminal ISO-8859-1 candidate
+	// decodes every byte sequence without replacement runes, so the loop
+	// above always returns first (the label is therefore neutral rather
+	// than a bogus "utf-8" — the bytes are non-UTF-8 by construction).
+	// Kept as a never-worse-than-before safety net.
+	return data, ""
 }
 
 // walkHTMLBlocks emits one normalized item per block-level
