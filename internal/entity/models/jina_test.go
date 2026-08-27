@@ -91,6 +91,154 @@ func TestJinaChatHappyPath(t *testing.T) {
 	}
 }
 
+func TestJinaChatStreamSeparatesThinkingContent(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["stream"] != true {
+			t.Errorf("stream=%v, want true", body["stream"])
+		}
+		if _, ok := body["stream_options"]; ok {
+			t.Error("stream_options should not be sent to Jina")
+		}
+		_, _ = io.WriteString(w, "data: {\"model\":\"jina-vlm\",\"choices\":[{\"delta\":{\"content\":\"reasoning\",\"type\":\"think\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"</thi\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"nk>\",\"type\":\"think\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"answer\",\"type\":\"think\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	})
+	defer srv.Close()
+
+	var content, reasoning strings.Builder
+	apiKey := "test-key"
+	err := newJinaForTest(srv.URL).ChatStreamlyWithSender(
+		t.Context(), "jina-vlm", []Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		func(delta, reason *string) error {
+			if delta != nil && *delta != "[DONE]" {
+				content.WriteString(*delta)
+			}
+			if reason != nil {
+				reasoning.WriteString(*reason)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if got := reasoning.String(); got != "reasoning" {
+		t.Errorf("reasoning=%q, want %q", got, "reasoning")
+	}
+	if got := content.String(); got != "answer" {
+		t.Errorf("content=%q, want %q", got, "answer")
+	}
+}
+
+func TestJinaChatStreamAcceptsNDJSONAndCleanEOF(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_, _ = io.WriteString(w, "{\"model\":\"jina-vlm\",\"choices\":[{\"delta\":{\"content\":\"plan\",\"type\":\"think\"}}]}\n")
+		_, _ = io.WriteString(w, "{\"model\":\"jina-vlm\",\"choices\":[{\"delta\":{\"content\":\"</think>\"}}]}\n")
+		_, _ = io.WriteString(w, "{\"model\":\"jina-vlm\",\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n")
+	})
+	defer srv.Close()
+
+	var content, reasoning strings.Builder
+	apiKey := "test-key"
+	err := newJinaForTest(srv.URL).ChatStreamlyWithSender(
+		t.Context(), "jina-vlm", []Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		func(delta, reason *string) error {
+			if delta != nil && *delta != "[DONE]" {
+				content.WriteString(*delta)
+			}
+			if reason != nil {
+				reasoning.WriteString(*reason)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if got := reasoning.String(); got != "plan" {
+		t.Errorf("reasoning=%q, want %q", got, "plan")
+	}
+	if got := content.String(); got != "hello" {
+		t.Errorf("content=%q, want %q", got, "hello")
+	}
+}
+
+func TestJinaChatStreamForwardsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"detail":{"message":"roles must alternate"}}`)
+	})
+	defer srv.Close()
+
+	var chunks []string
+	apiKey := "test-key"
+	err := newJinaForTest(srv.URL).ChatStreamlyWithSender(
+		t.Context(), "jina-vlm", []Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		func(content, _ *string) error {
+			if content != nil {
+				chunks = append(chunks, *content)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunks=%q, want error and done chunks", chunks)
+	}
+	if !strings.Contains(chunks[0], `**ERROR**: API request failed with status 400`) || !strings.Contains(chunks[0], `roles must alternate`) {
+		t.Errorf("error chunk=%q", chunks[0])
+	}
+	if chunks[1] != "[DONE]" {
+		t.Errorf("terminal chunk=%q, want [DONE]", chunks[1])
+	}
+}
+
+func TestPrepareJinaMessagesMergesSystemOnlyForAPIEndpoint(t *testing.T) {
+	messages := []Message{
+		{Role: "system", Content: "be helpful"},
+		{Role: "user", Content: "hello"},
+	}
+
+	apiMessages := prepareJinaMessages("https://api.jina.ai/v1", messages)
+	if len(apiMessages) != 1 || apiMessages[0].Role != "user" || apiMessages[0].Content != "be helpful\n\nhello" {
+		t.Errorf("api.jina.ai messages=%#v", apiMessages)
+	}
+	deepSearchMessages := prepareJinaMessages("https://deepsearch.jina.ai/v1", messages)
+	if len(deepSearchMessages) != 2 || deepSearchMessages[0].Role != "system" || deepSearchMessages[1].Role != "user" {
+		t.Errorf("deepsearch.jina.ai messages=%#v", deepSearchMessages)
+	}
+}
+
+func TestPrepareJinaMessagesPreservesMultimodalUserContent(t *testing.T) {
+	image := map[string]interface{}{"type": "image_url", "image_url": map[string]interface{}{"url": "data:image/png;base64,x"}}
+	messages := prepareJinaMessages("https://api.jina.ai/v1", []Message{
+		{Role: "system", Content: "describe the image"},
+		{Role: "user", Content: []interface{}{image}},
+	})
+	parts, ok := messages[0].Content.([]interface{})
+	if !ok || len(parts) != 2 {
+		t.Fatalf("content=%#v, want text and image parts", messages[0].Content)
+	}
+	textPart, ok := parts[0].(map[string]interface{})
+	if !ok || textPart["type"] != "text" || textPart["text"] != "describe the image" {
+		t.Errorf("text part=%#v", parts[0])
+	}
+	if parts[1].(map[string]interface{})["type"] != "image_url" {
+		t.Errorf("image part=%#v", parts[1])
+	}
+}
+
 func TestJinaChatPreservesReasoningContent(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
