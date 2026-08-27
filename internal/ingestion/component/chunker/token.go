@@ -646,7 +646,13 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 		}
 		return out
 	}
-	runCount := totalRunes(kept)
+	// Visible-text ratio: parser tags (@@...##) carry no visual height
+	// and must not shift crop boundaries. Mirrors the overlap logic
+	// which already counts on removeTag'd text.
+	runCount := 0
+	for _, p := range kept {
+		runCount += utf8.RuneCountInString(removeTag(p))
+	}
 	if runCount == 0 {
 		out := make([]schema.ChunkDoc, 0, len(kept))
 		for _, p := range kept {
@@ -657,7 +663,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	out := make([]schema.ChunkDoc, 0, len(kept))
 	cumRunes := 0
 	for _, p := range kept {
-		pcRunes := utf8.RuneCountInString(p)
+		pcRunes := utf8.RuneCountInString(removeTag(p))
 		startRatio := float64(cumRunes) / float64(runCount)
 		endRatio := float64(cumRunes+pcRunes) / float64(runCount)
 		ck := buildChunkDoc(it, "text", p, "", "")
@@ -1186,11 +1192,12 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	// Ratio basis: rune counts of the real source content. The synthetic
 	// leading "\n" glue (text-path units are built as "\n"+paragraph) carries
 	// no visual height, so it is excluded from the first piece's count to keep
-	// the slice proportions aligned with the original text.
+	// the slice proportions aligned with the original text. Parser tags
+	// (@@...##) also carry no visual height and are stripped before counting.
 	counts := make([]int, len(pieces))
 	runCount := 0
 	for i, p := range pieces {
-		n := utf8.RuneCountInString(p.Text)
+		n := utf8.RuneCountInString(removeTag(p.Text))
 		if i == 0 && lead != "" {
 			n -= utf8.RuneCountInString(lead)
 			if n < 0 {

@@ -118,11 +118,19 @@ func TestSlicePositionsByTextRatio_PreservesPageNumbersAndLeftRight(t *testing.T
 	}
 }
 
-func TestSlicePositionsByTextRatio_MalformedRowsSkipped(t *testing.T) {
-	// Row with fewer than 5 entries and a row with bottom <= top are excluded
-	// from the height budget; only the valid row participates.
-	raw := json.RawMessage(`[[1,10,20],[1,10,20,30,30],[1,10,20,0,10]]`)
-	assertMatrixNear(t, slicePositionsByTextRatio(raw, 0, 0.5), [][]float64{{1, 10, 20, 0, 5}})
+func TestSlicePositionsByTextRatio_MalformedRowsReturnNil(t *testing.T) {
+	// Any malformed row (short, zero-height) invalidates the whole matrix
+	// so callers fall back to the original bbox rather than silently losing
+	// a page region.
+	for name, raw := range map[string]json.RawMessage{
+		"short row":   json.RawMessage(`[[1,10,20],[1,10,20,0,10]]`),
+		"zero height": json.RawMessage(`[[1,10,20,30,30],[1,10,20,0,10]]`),
+		"mixed":       json.RawMessage(`[[1,10,20],[1,10,20,30,30],[1,10,20,0,10]]`),
+	} {
+		if got := slicePositionsByTextRatio(raw, 0, 0.5); got != nil {
+			t.Errorf("%s: expected nil for malformed matrix, got %s", name, got)
+		}
+	}
 }
 
 func TestSlicePositionsByTextRatio_ZeroTotalReturnsNil(t *testing.T) {

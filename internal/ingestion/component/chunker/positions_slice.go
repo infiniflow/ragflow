@@ -74,17 +74,20 @@ func slicePositionsByTextRatio(raw json.RawMessage, startRatio, endRatio float64
 	if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
 		return nil
 	}
-	// Compute height per row.
+	// Compute height per row. Any malformed row (short, non-numeric,
+	// or non-positive height) invalidates the whole matrix so callers
+	// can fall back to the original bbox rather than silently losing a
+	// page region.
 	heights := make([]float64, len(matrix))
 	total := 0.0
 	for i, row := range matrix {
 		if len(row) < 5 {
-			continue
+			return nil
 		}
 		top, ok1 := toFloat(row[3])
 		bottom, ok2 := toFloat(row[4])
 		if !ok1 || !ok2 || bottom <= top {
-			continue
+			return nil
 		}
 		h := bottom - top
 		heights[i] = h
