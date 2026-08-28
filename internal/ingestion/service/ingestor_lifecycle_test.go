@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
@@ -33,7 +34,7 @@ import (
 // pool and activeWorkers would exceed concurrency after the second call.
 func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 	const concurrency int32 = 3
-	ingestor := NewIngestor("test-idempotent", concurrency, nil)
+	ingestor := newUnitIngestor("test-idempotent", concurrency, nil)
 
 	ingestor.startWorkerPool()
 	// Wait for all workers to enter their loop (they block on the select
@@ -65,7 +66,7 @@ func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 // for all worker goroutines to exit without hanging.
 func TestStop_GracefulShutdown(t *testing.T) {
 	const concurrency int32 = 2
-	ingestor := NewIngestor("test-shutdown", concurrency, nil)
+	ingestor := newUnitIngestor("test-shutdown", concurrency, nil)
 
 	// Start workers; they will block on the task channel since nothing is pushed.
 	ingestor.startWorkerPool()
@@ -90,7 +91,7 @@ func TestStop_GracefulShutdown(t *testing.T) {
 // Stop. Without this, the admin graceful-shutdown path is dead (cmd blocks
 // forever on the receive).
 func TestStop_ClosesShutdownCh(t *testing.T) {
-	ingestor := NewIngestor("test-shutdown-ch", 1, nil)
+	ingestor := newUnitIngestor("test-shutdown-ch", 1, nil)
 	ingestor.Stop(context.Background())
 	select {
 	case <-ingestor.ShutdownCh:
@@ -111,7 +112,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	const concurrency int32 = 1
-	ingestor := NewIngestor("test-stuck", concurrency, []string{"pdf"})
+	ingestor := newUnitIngestor("test-stuck", concurrency, []string{"pdf"})
 	ingestor.startWorkerPool()
 
 	// runDocumentTask blocks on release and ignores ctx, simulating a
@@ -167,12 +168,12 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 // long DB query). Without BP3, the initial cancelCheck call runs
 // synchronously and pollCancel cannot observe done until it returns.
 func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 
 	// Block cancelCheck until released — simulate a stuck DB call.
 	blocking := make(chan struct{})
 	released := make(chan struct{})
-	ingestor.cancelCheck = func(taskID string) bool {
+	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool {
 		close(blocking)
 		<-released
 		return false
@@ -199,4 +200,50 @@ func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
 	}
 
 	close(released) // cleanup
+}
+
+// TestStart_FullPathReturnsAndStartsWorkers is a regression test for the
+// sync.Once re-entrancy deadlock. Before the fix, Start() wrapped the whole
+// startup (start()) in e.startOnce.Do, but start() also called startWorkerPool()
+// which nested the SAME startOnce. sync.Once.Do blocks forever when re-entered
+// from inside its own callback, so Start() hung after InitConsumer succeeded:
+// no worker pool, no consumeLoop, and ingestion tasks were never consumed.
+//
+// The test drives the real Start() path (start -> startWorkerPool -> consumeLoop)
+// against an embedded NATS server and asserts Start() returns within a deadline
+// and that workers are actually up.
+func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
+	// SetMessageQueueEngine mutates process-global state; restore the previous
+	// engine so later tests don't inherit a closed embedded NATS server.
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(testutil.SetupNatsEngine(t))
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
+	const concurrency int32 = 2
+	ing := newUnitIngestor("test-start-fullpath", concurrency, nil)
+	t.Cleanup(func() { ing.Stop(context.Background()) })
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ing.Start()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start() returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start() did not return within 10s; sync.Once re-entrancy deadlock likely")
+	}
+
+	// Start() launches workers asynchronously and returns immediately; poll
+	// briefly so we don't observe zero before a worker enters workerLoop.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && ing.activeWorkers.Load() <= 0 {
+		time.Sleep(time.Millisecond)
+	}
+	if got := ing.activeWorkers.Load(); got <= 0 {
+		t.Fatalf("expected activeWorkers > 0 after Start(), got %d", got)
+	}
 }

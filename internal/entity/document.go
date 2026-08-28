@@ -39,7 +39,6 @@ type Document struct {
 	ProcessBeginAt  *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `gorm:"column:process_duration;default:0" json:"process_duration"`
 	ContentHash     *string    `gorm:"column:content_hash;size:32;index;default:''" json:"content_hash,omitempty"`
-	MetaFields      *JSONMap   `gorm:"column:meta_fields;type:longtext" json:"meta_fields,omitempty"`
 	Suffix          string     `gorm:"column:suffix;size:32;not null;index" json:"suffix"`
 	Run             *string    `gorm:"column:run;size:1;index;default:'0'" json:"run,omitempty"`
 	Status          *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
@@ -69,7 +68,6 @@ type DocumentListItem struct {
 	ProcessBeginAt  *time.Time `gorm:"column:process_begin_at" json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `gorm:"column:process_duration" json:"process_duration"`
 	ContentHash     *string    `gorm:"column:content_hash" json:"content_hash,omitempty"`
-	MetaFields      *string    `gorm:"column:meta_fields" json:"meta_fields,omitempty"`
 	Suffix          string     `gorm:"column:suffix" json:"suffix"`
 	Run             *string    `gorm:"column:run" json:"run,omitempty"`
 	Status          *string    `gorm:"column:status" json:"status,omitempty"`

@@ -24,6 +24,7 @@ import {
   TypesWithArray,
 } from './constant';
 import { useObjectFields } from './hooks/use-object-fields';
+import { useTranslation } from 'react-i18next';
 
 export type IGlobalParamModalProps = {
   data: any;
@@ -32,8 +33,9 @@ export type IGlobalParamModalProps = {
 export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
   const { hideModal } = props;
   const { data, refetch } = useFetchAgent();
+  const { t } = useTranslation();
   const { visible, showModal, hideModal: hideAddModal } = useSetModalState();
-  const [fields, setFields] = useState<FormFieldConfig[]>(GlobalFormFields);
+  const [fields, setFields] = useState<FormFieldConfig[]>(GlobalFormFields(t));
   const [defaultValues, setDefaultValues] = useState<FieldValues>(
     GlobalVariableFormDefaultValues,
   );
@@ -91,7 +93,7 @@ export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
           <div className="px-5 pb-5">
             <BlockButton
               onClick={() => {
-                setFields(GlobalFormFields);
+                setFields(GlobalFormFields(t));
                 setDefaultValues(GlobalVariableFormDefaultValues);
                 showModal();
               }}

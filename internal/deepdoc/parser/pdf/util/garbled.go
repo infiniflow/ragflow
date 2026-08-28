@@ -1,11 +1,15 @@
 package util
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/utility"
 )
 
 // CIDPattern matches pdfminer's CID placeholder like "(cid:123)".
@@ -201,6 +205,66 @@ func IsGarbledByFontEncoding(chars []pdf.TextChar, minChars int) bool {
 	return cjkRatio < 0.05 && punctRatio > 0.4
 }
 
+// ocrCoverageThreshold is the minimum fraction of a text's characters that the
+// OCR recogniser's alphabet must cover for an OCR fallback to be worthwhile.
+const ocrCoverageThreshold = 0.8
+
+var (
+	ocrAlphabetOnce sync.Once
+	ocrAlphabet     map[rune]struct{}
+)
+
+// loadOCRAlphabet reads the recogniser's character dictionary once
+// (rag/res/deepdoc/ocr.res, provisioned next to the OCR model). On any error it
+// returns an empty set, which OcrCanRepresent treats as "unknown alphabet" and
+// so allows the existing fallback behaviour.
+func loadOCRAlphabet() map[rune]struct{} {
+	ocrAlphabetOnce.Do(func() {
+		ocrAlphabet = map[rune]struct{}{}
+		data, err := os.ReadFile(filepath.Join(utility.GetProjectRoot(), "rag", "res", "deepdoc", "ocr.res"))
+		if err != nil {
+			return
+		}
+		for _, r := range string(data) {
+			ocrAlphabet[r] = struct{}{}
+		}
+	})
+	return ocrAlphabet
+}
+
+// OcrCanRepresent reports whether the OCR recogniser's alphabet covers text
+// well enough that an OCR pass could improve on it. ocr.res is CJK+Latin
+// (~6300 CJK / 52 Latin / 6 Cyrillic), so it covers ~100% of an English page but
+// only ~6% of a Cyrillic one. Discarding a usable text layer in favour of a
+// recogniser that cannot spell the script only produces garbage, so the
+// garbled-text fallbacks are skipped when this returns false.
+func OcrCanRepresent(text string) bool {
+	return ocrCanRepresent(text, loadOCRAlphabet(), ocrCoverageThreshold)
+}
+
+func ocrCanRepresent(text string, alphabet map[rune]struct{}, minCoverage float64) bool {
+	if strings.TrimSpace(text) == "" {
+		return true
+	}
+	if len(alphabet) == 0 { // unknown alphabet: preserve existing behaviour
+		return true
+	}
+	letters, covered := 0, 0
+	for _, r := range text {
+		if unicode.IsSpace(r) {
+			continue
+		}
+		letters++
+		if _, ok := alphabet[r]; ok {
+			covered++
+		}
+	}
+	if letters == 0 {
+		return true
+	}
+	return float64(covered)/float64(letters) >= minCoverage
+}
+
 // catOf returns "Cs" for surrogates, "Cn" for unassigned code points
 // (not in any Unicode category), and "" for everything else.
 // Python unicodedata.category() returns "Cc" for control chars, "Cn" only
@@ -239,11 +303,17 @@ func IsGarbledPage(chars []pdf.TextChar) bool {
 		fullText.WriteString(c.Text)
 	}
 	text := fullText.String()
+	// PUA / unmapped-glyph garbage: genuine noise, re-OCR regardless of script.
 	if IsGarbledText(text, 0.3) {
 		return true
 	}
 	if PdfOxideUnmappedGarbled(text) && IsScanNoise(text) {
 		return true
+	}
+	// Beyond genuine garbage, keep a clean text layer the recogniser cannot spell:
+	// OCR of a script absent from ocr.res only produces garbage.
+	if !OcrCanRepresent(text) {
+		return false
 	}
 	if IsGarbledByFontEncoding(chars, 20) {
 		return true

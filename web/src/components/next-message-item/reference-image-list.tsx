@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { useDocumentImageUrl } from '@/components/image';
 import {
   Carousel,
@@ -10,6 +26,7 @@ import { IReferenceChunk } from '@/interfaces/database/chat';
 import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import { extractNumbersFromMessageContent } from './utils';
 
@@ -36,13 +53,14 @@ const getButtonVisibilityClass = (imageCount: number) => {
 
 function ImagePhotoView({ id, index }: ImageItem) {
   const src = useDocumentImageUrl(id);
+  const { t } = useTranslation();
 
   return (
     <PhotoView src={src}>
       <Image
         id={id}
         className="h-40 w-full"
-        label={`Fig. ${(index + 1).toString()}`}
+        label={`${t('common.figure')} ${(index + 1).toString()}`}
       />
     </PhotoView>
   );

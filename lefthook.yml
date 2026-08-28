@@ -70,43 +70,43 @@ pre-commit:
         else
           gofmt -w {staged_files}
         fi
-    - name: web-deps
-      glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-      run: |
-        # Ensure web/node_modules is populated. CI runners don't run `npm install`
-        # before lefthook, and `npx` without local node_modules fetches the
-        # latest packages from the registry - which breaks because the pinned
-        # prettier plugins (prettier-plugin-organize-imports,
-        # prettier-plugin-packagejson) aren't auto-resolved and ESLint 10
-        # requires eslint.config.js.
-        # Serialized via lefthook 'deps' from web-prettier/web-eslint instead of
-        # a mkdir mutex, which left stale locks on interrupted commits and
-        # caused subsequent commits to hang forever in 'while ! mkdir'.
-        if [ ! -f web/node_modules/.package-lock.json ]; then
-          echo '==> web/node_modules missing or incomplete; running npm ci --prefix web'
-          rm -rf web/node_modules
-          npm ci --prefix web --no-audit --no-fund
-        fi
-    - name: web-prettier
-      glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-      stage_fixed: true
-      deps: [web-deps]
-      run: |
-        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --check --ignore-unknown
-        else
-          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx prettier --write --ignore-unknown
-        fi
-    - name: web-eslint
-      glob: "web/**/*.{js,jsx,ts,tsx}"
-      stage_fixed: true
-      deps: [web-deps]
-      run: |
-        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint
-        else
-          cd web && printf '%s\n' {staged_files} | sed 's|^web/||' | xargs npx eslint --fix
-        fi
+    - name: web-checks
+      group:
+        piped: true
+        jobs:
+          - name: web-deps
+            glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+            run: |
+              TOOL=web/node_modules/.hookbin/node_modules/.bin
+              if [ ! -x "$TOOL/oxfmt" ] || [ ! -x "$TOOL/oxlint" ]; then
+                exit 0
+              fi
+          - name: web-oxfmt
+            glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+            exclude: ["web/**/*.min.js", "web/**/*.min.css", "web/node_modules/**", "web/.next/**", "web/dist/**"]
+            root: "web/"
+            stage_fixed: true
+            run: |
+              OXFMT=node_modules/.hookbin/node_modules/.bin/oxfmt
+              if ! [ -x "$OXFMT" ]; then exit 0; fi
+              if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+                "$OXFMT" --check {staged_files}
+              else
+                "$OXFMT" {staged_files}
+              fi
+          - name: web-oxlint
+            glob: "web/**/*.{js,jsx,ts,tsx}"
+            exclude: ["web/**/*.min.js", "web/node_modules/**", "web/.next/**", "web/dist/**"]
+            root: "web/"
+            stage_fixed: true
+            run: |
+              OXLINT=node_modules/.hookbin/node_modules/.bin/oxlint
+              if ! [ -x "$OXLINT" ]; then exit 0; fi
+              if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+                "$OXLINT" {staged_files}
+              else
+                "$OXLINT" --fix {staged_files}
+              fi
     - name: check-yaml
       run: python3 tools/hooks/check_files.py yaml
     - name: check-json

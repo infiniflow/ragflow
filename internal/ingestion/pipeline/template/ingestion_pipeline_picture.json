@@ -49,31 +49,42 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "image": {
-                                "output_format": "text",
-                                "parse_method": "ocr",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "jpg",
-                                    "jpeg",
-                                    "png",
-                                    "gif"
-                                ]
-                            },
-                            "video": {
-                                "output_format": "text",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "mp4",
-                                    "avi",
-                                    "mkv"
-                                ]
-                            }
+                        "image": {
+                            "output_format": "json",
+                            "parse_method": "ocr",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "bmp",
+                                "gif",
+                                "jpeg",
+                                "jpg",
+                                "png",
+                                "svg",
+                                "tif",
+                                "tiff",
+                                "webp"
+                            ]
+                        },
+                        "video": {
+                            "output_format": "text",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "3gp",
+                                "3gpp",
+                                "avi",
+                                "flv",
+                                "mkv",
+                                "mov",
+                                "mp4",
+                                "mpeg",
+                                "mpg",
+                                "webm",
+                                "wmv"
+                            ]
                         }
                     }
                 },
@@ -83,7 +94,7 @@
             },
             "TokenChunker:BrightColorsGlow": {
                 "downstream": [
-                    "Tokenizer:SharpLensFocus"
+                    "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
                     "component_name": "OneChunker",
@@ -115,8 +126,40 @@
                     }
                 },
                 "upstream": [
-                    "TokenChunker:BrightColorsGlow"
+                    "Extractor:AutoExtractDefault"
                 ]
+            },
+            "Extractor:AutoExtractDefault": {
+                "upstream": [
+                    "TokenChunker:BrightColorsGlow"
+                ],
+                "downstream": [
+                    "Tokenizer:SharpLensFocus"
+                ],
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "llm_id": "",
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
+                    }
+                }
             }
         },
         "globals": {
@@ -139,11 +182,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__TokenChunker:BrightColorsGlowstart-Tokenizer:SharpLensFocusend",
+                    "id": "xy-edge__TokenChunker:BrightColorsGlowstart-Extractor:AutoExtractDefaultend",
                     "source": "TokenChunker:BrightColorsGlow",
+                    "sourceHandle": "start",
+                    "target": "Extractor:AutoExtractDefault",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Extractor:AutoExtractDefaultstart-Tokenizer:SharpLensFocusend",
+                    "source": "Extractor:AutoExtractDefault",
                     "sourceHandle": "start",
                     "target": "Tokenizer:SharpLensFocus",
                     "targetHandle": "end"
@@ -192,7 +239,7 @@
                             "setups": [
                                 {
                                     "fileFormat": "image",
-                                    "output_format": "text",
+                                    "output_format": "json",
                                     "parse_method": "ocr",
                                     "preprocess": [
                                         "main_content"
@@ -278,6 +325,18 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "tokenizerNode"
+                },
+                {
+                    "id": "Extractor:AutoExtractDefault",
+                    "type": "contextNode",
+                    "position": {
+                        "x": 796.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "data": {
+                        "label": "Extractor",
+                        "name": "Extractor_0"
+                    }
                 }
             ]
         },

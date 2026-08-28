@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from enum import IntFlag, auto
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import Mock
 
 import pytest
 
@@ -149,6 +150,70 @@ webdav_connector = _load_webdav_connector_module()
 WebDAVConnector = webdav_connector.WebDAVConnector
 
 
+@pytest.mark.p2
+def test_load_credentials_preserves_default_ssl_verification(monkeypatch):
+    """Preserve the WebDAV client's default SSL verification without a custom CA."""
+    webdav_client = Mock(return_value=object())
+    monkeypatch.setattr(webdav_connector, "WebDAVClient", webdav_client)
+
+    connector = WebDAVConnector("https://webdav.example")
+    connector.load_credentials({"username": "user", "password": "password"})
+
+    webdav_client.assert_called_once_with(
+        base_url="https://webdav.example",
+        auth=("user", "password"),
+    )
+
+
+@pytest.mark.p2
+def test_build_connector_passes_custom_ca_certificate_path(monkeypatch):
+    """Pass a configured custom CA certificate path through the factory."""
+    webdav_client = Mock(return_value=object())
+    monkeypatch.setattr(webdav_connector, "WebDAVClient", webdav_client)
+
+    connector = WebDAVConnector.build_connector(
+        {
+            "base_url": "https://webdav.example",
+            "ca_cert_path": "/etc/ssl/certs/webdav-ca.pem",
+            "credentials": {"username": "user", "password": "password"},
+        }
+    )
+
+    assert connector.ca_cert_path == "/etc/ssl/certs/webdav-ca.pem"
+    webdav_client.assert_called_once_with(
+        base_url="https://webdav.example",
+        auth=("user", "password"),
+        verify="/etc/ssl/certs/webdav-ca.pem",
+    )
+
+
+@pytest.mark.p2
+def test_build_connector_rejects_non_string_ca_certificate_path():
+    """Reject dynamically typed custom CA values before path normalization."""
+    with pytest.raises(webdav_connector.ConnectorValidationError, match="CA certificate path must be a string"):
+        WebDAVConnector.build_connector(
+            {
+                "base_url": "https://webdav.example",
+                "ca_cert_path": 123,
+            }
+        )
+
+
+@pytest.mark.p2
+def test_load_credentials_reports_invalid_ca_as_validation_error(monkeypatch):
+    """Report custom CA loading failures as configuration errors."""
+    webdav_client = Mock(side_effect=OSError("invalid CA certificate"))
+    monkeypatch.setattr(webdav_connector, "WebDAVClient", webdav_client)
+
+    connector = WebDAVConnector(
+        "https://webdav.example",
+        ca_cert_path="/etc/ssl/certs/invalid.pem",
+    )
+
+    with pytest.raises(webdav_connector.ConnectorValidationError, match="Failed to configure WebDAV TLS verification"):
+        connector.load_credentials({"username": "user", "password": "password"})
+
+
 class _FakeClient:
     def __init__(self):
         self.downloaded_paths = []
@@ -161,6 +226,27 @@ class _FakeClient:
 def _stub_files(files):
     def _list_files_recursive(*args, **kwargs):
         return files
+
+    return _list_files_recursive
+
+
+def _stub_list_raises(exc):
+    """Stub ``_list_files_recursive`` so the very first call raises.
+
+    Used by the ``#16636`` regression tests: pre-fix the top-level
+    ``except Exception`` swallowed the error and returned an empty
+    list, which then caused the prune path to delete every indexed
+    document because the snapshot looked "all gone". Post-fix the
+    exception propagates to the caller, where the prune snapshot
+    collector converts it to ``None`` and aborts the prune.
+    """
+    call_count = {"n": 0}
+
+    def _list_files_recursive(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise exc
+        return []
 
     return _list_files_recursive
 
@@ -299,3 +385,84 @@ def test_retrieve_all_slim_docs_skips_missing_size_metadata(caplog):
         "webdav:https://webdav.example:/small.txt",
     ]
     assert ("missing.txt: size metadata missing from WebDAV server response, skipping to avoid processing potentially large files.") in caplog.text
+
+
+class _RaisingClient:
+    """Test client whose ``ls`` raises the given exception.
+
+    Used by the ``#16636`` regression tests to simulate a transient
+    WebDAV listing error (network blip / TLS error / momentary
+    server restart). The connector must propagate the error rather
+    than swallow it and return an empty file list.
+    """
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def ls(self, path, detail=True):
+        raise self._exc
+
+
+@pytest.mark.p1
+def test_list_files_recursive_propagates_transient_listing_error():
+    """Regression for #16636: a transient ``self.client.ls`` failure
+    must propagate to the caller (so the prune snapshot collector
+    can return ``None`` and abort the prune), not be swallowed
+    and returned as an empty file list (which would cause the prune
+    to delete every indexed document because the snapshot looks
+    "all gone")."""
+    connector = WebDAVConnector("https://webdav.example", batch_size=10)
+    connector.client = _RaisingClient(ConnectionError("server restart"))
+
+    with pytest.raises(ConnectionError, match="server restart"):
+        connector._list_files_recursive(
+            "/",
+            datetime(1970, 1, 1, tzinfo=timezone.utc),
+            datetime.now(timezone.utc),
+            filter_by_mtime=False,
+        )
+
+
+@pytest.mark.p1
+def test_retrieve_all_slim_docs_perm_sync_propagates_transient_listing_error():
+    """Regression for #16636: ``retrieve_all_slim_docs_perm_sync`` is
+    the prune-snapshot entry point. A transient listing error must
+    surface as a raised exception, not a silently-empty generator.
+
+    Pre-fix, ``_list_files_recursive`` returned ``[]`` on the same
+    input and the caller saw a successful empty snapshot.
+    """
+    connector = WebDAVConnector("https://webdav.example", batch_size=10)
+    connector.client = _RaisingClient(ConnectionError("server restart"))
+
+    with pytest.raises(ConnectionError, match="server restart"):
+        # Force the inner _list_files_recursive call (rather than the
+        # stub) so the exception path is exercised end-to-end.
+        for _ in connector._yield_webdav_documents(
+            datetime(1970, 1, 1, tzinfo=timezone.utc),
+            datetime.now(timezone.utc),
+        ):
+            pass
+
+
+@pytest.mark.p1
+def test_list_files_recursive_returns_empty_when_directory_truly_empty():
+    """Regression guard: an empty WebDAV directory (no exception,
+    just zero items) must still return ``[]`` — the empty list is
+    the correct signal for a directory with no files, not for a
+    failed listing. The fix should not change this case."""
+    connector = WebDAVConnector("https://webdav.example", batch_size=10)
+    connector.client = object()  # _list_files_recursive has its own for-loop; not used here
+
+    def _empty(*args, **kwargs):
+        return []
+
+    connector._list_files_recursive = _empty
+
+    result = connector._list_files_recursive(
+        "/",
+        datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime.now(timezone.utc),
+        filter_by_mtime=False,
+    )
+    assert result == []

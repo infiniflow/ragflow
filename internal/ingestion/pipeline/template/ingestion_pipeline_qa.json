@@ -49,79 +49,64 @@
                                 "value": ""
                             }
                         },
-                        "setups": {
-                            "docx": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "docx"
-                                ],
-                                "vlm": {}
-                            },
-                            "markdown": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "md",
-                                    "markdown",
-                                    "mdx"
-                                ],
-                                "vlm": {}
-                            },
-                            "pdf": {
-                                "flatten_media_to_text": false,
-                                "output_format": "json",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "pdf"
-                                ],
-                                "vlm": {}
-                            },
-                            "spreadsheet": {
-                                "flatten_media_to_text": false,
-                                "output_format": "html",
-                                "parse_method": "DeepDOC",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "xls",
-                                    "xlsx",
-                                    "csv"
-                                ],
-                                "vlm": {}
-                            },
-                            "text&code": {
-                                "output_format": "json",
-                                "preprocess": [
-                                    "main_content"
-                                ],
-                                "suffix": [
-                                    "txt",
-                                    "py",
-                                    "js",
-                                    "java",
-                                    "c",
-                                    "cpp",
-                                    "h",
-                                    "php",
-                                    "go",
-                                    "ts",
-                                    "sh",
-                                    "cs",
-                                    "kt",
-                                    "sql"
-                                ]
-                            }
+                        "docx": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "docx"
+                            ],
+                            "vlm": {}
+                        },
+                        "markdown": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "md",
+                                "markdown",
+                                "mdx"
+                            ],
+                            "vlm": {}
+                        },
+                        "pdf": {
+                            "flatten_media_to_text": false,
+                            "output_format": "json",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "pdf"
+                            ],
+                            "vlm": {}
+                        },
+                        "spreadsheet": {
+                            "flatten_media_to_text": false,
+                            "output_format": "html",
+                            "parse_method": "DeepDOC",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "xls",
+                                "xlsx",
+                                "csv"
+                            ],
+                            "vlm": {}
+                        },
+                        "text&code": {
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "txt"
+                            ]
                         }
                     }
                 },
@@ -180,17 +165,14 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:BraveBirdsSingend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-QAChunker:TidyCloudsThinkend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
                     "target": "QAChunker:TidyCloudsThink",
                     "targetHandle": "end"
                 },
                 {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__TokenChunker:BraveBirdsSingstart-Tokenizer:ColdCloudsDreamend",
+                    "id": "xy-edge__QAChunker:TidyCloudsThinkstart-Tokenizer:ColdCloudsDreamend",
                     "source": "QAChunker:TidyCloudsThink",
                     "sourceHandle": "start",
                     "target": "Tokenizer:ColdCloudsDream",

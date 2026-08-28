@@ -31,7 +31,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"log/slog"
+	"ragflow/internal/common"
+
 	// Import image decoders for common formats.
+	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -40,18 +44,21 @@ import (
 	"sort"
 	"strings"
 
-	"ragflow/internal/common"
-	inference "ragflow/internal/deepdoc/parser/pdf/inference"
+	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // Video dispatch: IMAGE2TEXT vision chat ---
 
 func maybeDispatchVideo(
+	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -61,58 +68,21 @@ func maybeDispatchVideo(
 	if fileType != utility.FileTypeVIDEO {
 		return parserDispatchResult{}, false, nil
 	}
-	setup, ok := setups["video"]
-	if !ok {
+	if _, ok := setups["video"]; !ok {
 		return parserDispatchResult{}, false, nil
 	}
-	tenantID := getStringOr(inputs, "tenant_id", "")
-	if tenantID == "" {
-		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: video requires tenant_id")
-	}
 
-	// Resolve the tenant's IMAGE2TEXT model.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
-	if err != nil {
-		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: video image2text model: %w", err)
-	}
-
-	videoPrompt, _ := setup["prompt"].(string)
-	videoB64 := base64.StdEncoding.EncodeToString(binary)
-
-	// Build a multimodal message with the video payload.
-	// Python uses cv_mdl.async_chat(video_bytes=blob, ...);
-	// Go ChatWithMessages is synchronous and uses a data URI.
-	mimeType := videoMIME(filename)
-	dataURI := "data:" + mimeType + ";base64," + videoB64
-	messages := []modelModule.Message{{
-		Role: "user",
-		Content: []interface{}{
-			map[string]any{"type": "text", "text": videoPrompt},
-			map[string]any{"type": "video_url", "video_url": map[string]any{"url": dataURI}},
-		},
-	}}
-	vision := true
-	resp, err := driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision})
-	if err != nil {
-		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: video describe: %w", err)
-	}
-	txt := ""
-	if resp != nil && resp.Answer != nil {
-		txt = strings.TrimSpace(*resp.Answer)
-	}
-
-	outputFormat, _ := setup["output_format"].(string)
-	if outputFormat == "" {
-		outputFormat = "text"
-	}
-	return parserDispatchResult{
-		OutputFormat: outputFormat,
-		DocType:      "video",
-		Text:         txt,
-	}, true, nil
+	// Video parsing is intentionally not implemented yet: the underlying
+	// video-analysis capability is pending. The previously-shipped path sent a
+	// video_url data URI, but no model driver honors it — OpenAI-compatible
+	// drivers only accept image_url (the block is ignored), and Gemini's
+	// googleMessageParts only accepts text/image_url and silently drops
+	// video_url. Returning an explicit error is safer than silently producing
+	// a description from the prompt text alone. The real implementation must
+	// be provider-specific (OpenAI-compatible: frame extraction -> image_url;
+	// Gemini: raw-bytes inline_data; Qwen: file://)
+	return parserDispatchResult{}, true,
+		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
 // Image dispatch: OCR + IMAGE2TEXT vision describe ---
@@ -124,6 +94,8 @@ func maybeDispatchVideo(
 //   4. Returns combined text
 
 func maybeDispatchImage(
+	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -140,7 +112,7 @@ func maybeDispatchImage(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: image requires tenant_id")
+			fmt.Errorf("parser: image requires tenant_id")
 	}
 
 	// --- Phase 1: OCR ---
@@ -166,51 +138,63 @@ func maybeDispatchImage(
 		}
 	}
 
-	outputFormat, _ := setup["output_format"].(string)
-	if outputFormat == "" {
-		outputFormat = "text"
-	}
+	// The image family always emits a structured JSON item carrying the
+	// image attachment (data URI) and doc_type_kwd, mirroring Python
+	// rag/app/picture.py:71-72 (doc["image"]=img, doc["doc_type_kwd"]=
+	// "image"). picture.py has no "text" output mode — it always returns
+	// a structured doc — so output_format is hardcoded to "json" and any
+	// setup override is ignored. The former behavior returned a bare Text
+	// string, which dropped the image attachment, set doc_type to "text",
+	// and on the default json path produced JSON=nil so downstream
+	// Chunkers rejected the payload with errRequiredField{"json"}.
+	imageB64 := base64.StdEncoding.EncodeToString(binary)
+	dataURI := "data:" + imageMIME(filename) + ";base64," + imageB64
 
 	// --- Phase 2: VLM description (when OCR text is short) ---
 	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
 	// then use OCR text only; otherwise call cv_mdl.describe().
-	lang := getStringOr(setup, "lang", "")
+	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 	eng := strings.EqualFold(lang, "english")
 
 	if ocrText != "" {
 		wordCount := len(strings.Fields(ocrText))
-		charCount := len(ocrText)
+		charCount := len([]rune(ocrText))
 		if (eng && wordCount > 32) || charCount > 32 {
 			// OCR returned substantial text — skip VLM.
-			return parserDispatchResult{
-				OutputFormat: outputFormat,
-				DocType:      "image",
-				Text:         ocrText,
-			}, true, nil
+			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 	}
 
 	// Short OCR text (or no text): supplement with VLM describe.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
+	modelRef := configuredMediaModelID(setup, "image")
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if err != nil {
+			slog.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	}
 	if err != nil {
-		// If VLM is unavailable but we have OCR text, return it.
+		// If VLM is unavailable, but we have OCR text, return it.
 		if ocrText != "" {
-			return parserDispatchResult{
-				OutputFormat: outputFormat,
-				DocType:      "image",
-				Text:         ocrText,
-			}, true, nil
+			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: picture image2text model: %w", err)
+			fmt.Errorf("parser: picture image2text model: %w", err)
 	}
 
-	imageB64 := base64.StdEncoding.EncodeToString(binary)
-	mimeType := imageMIME(filename)
-	dataURI := "data:" + mimeType + ";base64," + imageB64
-
-	prompt := "Describe this image in detail."
-	if v, ok := setup["prompt"].(string); ok && v != "" {
+	prompt := defaultImageVisionPrompt(lang)
+	// image family's contract key is system_prompt (parser.go:295),
+	// mirroring Python parser.py:1119. Do NOT read setup["prompt"]
+	// here — that key is for the video family, not image.
+	if v, ok := setup["system_prompt"].(string); ok && v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{
@@ -221,17 +205,13 @@ func maybeDispatchImage(
 		},
 	}}
 	vision := true
-	resp, err := driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision})
+	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
 		if ocrText != "" {
-			return parserDispatchResult{
-				OutputFormat: outputFormat,
-				DocType:      "image",
-				Text:         ocrText,
-			}, true, nil
+			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: picture describe: %w", err)
+			fmt.Errorf("parser: picture describe: %w", err)
 	}
 	vlmText := ""
 	if resp != nil && resp.Answer != nil {
@@ -248,11 +228,23 @@ func maybeDispatchImage(
 			combined = vlmText
 		}
 	}
+	return imageDispatchResult(combined, dataURI), true, nil
+}
+
+// imageDispatchResult builds the structured JSON payload for the image
+// family: a single item carrying the combined text, the image attachment
+// (data URI), and doc_type_kwd "image". Mirrors Python
+// rag/app/picture.py:71-72.
+func imageDispatchResult(text, dataURI string) parserDispatchResult {
 	return parserDispatchResult{
-		OutputFormat: outputFormat,
+		OutputFormat: "json",
 		DocType:      "image",
-		Text:         combined,
-	}, true, nil
+		JSON: []map[string]any{{
+			"text":         text,
+			"image":        dataURI,
+			"doc_type_kwd": "image",
+		}},
+	}
 }
 
 // Audio dispatch: SPEECH2TEXT transcription ---
@@ -262,6 +254,8 @@ func maybeDispatchImage(
 //   - Returns the transcription as text
 
 func maybeDispatchAudio(
+	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -278,23 +272,37 @@ func maybeDispatchAudio(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: audio requires tenant_id")
+			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeSpeech2Text)
+	modelRef := configuredMediaModelID(setup, "audio")
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeSpeech2Text, modelRef)
+		if err != nil {
+			slog.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+		}
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+	}
 	if err != nil {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: audio speech2text model: %w", err)
+			fmt.Errorf("parser: audio speech2text model: %w", err)
 	}
 
 	tmpFile, err := writeTempAudioFile(filename, binary)
 	if err != nil {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: audio temp file: %w", err)
+			fmt.Errorf("parser: audio temp file: %w", err)
 	}
 	defer os.Remove(tmpFile)
 
-	resp, err := driver.TranscribeAudio(&modelName, &tmpFile, apiConfig, nil)
+	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpFile, apiConfig, nil, nil)
 	if err != nil {
 		return parserDispatchResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)
@@ -307,7 +315,22 @@ func maybeDispatchAudio(
 
 	outputFormat, _ := setup["output_format"].(string)
 	if outputFormat == "" {
-		outputFormat = "text"
+		outputFormat = "json"
+	}
+	// Diff 2.11: when output_format is "json" the transcription must be
+	// carried as a JSON item. Returning it only in Text made the Invoke
+	// switch silently drop it (the switch has no "json" branch and the
+	// JSON slice was empty). Mirror the JSON-item shape used by the
+	// other parser branches.
+	if outputFormat == "json" {
+		return parserDispatchResult{
+			OutputFormat: "json",
+			DocType:      "audio",
+			JSON: []map[string]any{{
+				"text":         transcription,
+				"doc_type_kwd": "audio",
+			}},
+		}, true, nil
 	}
 	return parserDispatchResult{
 		OutputFormat: outputFormat,
@@ -386,7 +409,10 @@ func imageMIME(filename string) string {
 }
 
 // videoMIME maps common video filename extensions to MIME types
-// for constructing base64 data URIs.
+// for constructing base64 data URIs. Retained as a reference for the
+// future real video-parsing implementation (provider-specific frame
+// extraction / inline_data / file://); not currently used because
+// maybeDispatchVideo returns an explicit unsupported error.
 func videoMIME(filename string) string {
 	dot := strings.LastIndex(filename, ".")
 	if dot == -1 {

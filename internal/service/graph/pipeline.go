@@ -23,11 +23,12 @@ import (
 	"strings"
 	"sync"
 
-	"go.uber.org/zap"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	modelModule "ragflow/internal/entity/models"
+
+	"go.uber.org/zap"
 )
 
 // Pipeline encapsulates the knowledge graph retrieval pipeline.
@@ -131,7 +132,7 @@ func (p *Pipeline) Retrieval(ctx context.Context) (map[string]interface{}, error
 		data, _ := json.Marshal(typeSamples)
 		ty2entsJSON = string(data)
 	}
-	typeKeywords, entities := queryRewrite(p.chatModel, p.question, ty2entsJSON)
+	typeKeywords, entities := queryRewrite(ctx, p.chatModel, p.question, ty2entsJSON)
 
 	// 2-4. Search entities, types, and relations in parallel (mutually independent)
 	var (
@@ -201,7 +202,7 @@ func (p *Pipeline) searchEntities(ctx context.Context, entities []string) (map[s
 		Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
 	}
 	if len(entities) > 0 {
-		entsReq.MatchExprs = buildSearchExprs(p.embModel, &types.MatchTextExpr{
+		entsReq.MatchExprs = buildSearchExprs(ctx, p.embModel, &types.MatchTextExpr{
 			Fields:       []string{"entity_kwd^10", "content_ltks^2"},
 			MatchingText: strings.Join(entities, " "),
 			TopN:         50,
@@ -263,7 +264,7 @@ func (p *Pipeline) searchRelations(ctx context.Context, entities []string) map[E
 		Filter:       map[string]interface{}{"knowledge_graph_kwd": "relation"},
 	}
 	if len(entities) > 0 {
-		relsReq.MatchExprs = buildSearchExprs(p.embModel, &types.MatchTextExpr{
+		relsReq.MatchExprs = buildSearchExprs(ctx, p.embModel, &types.MatchTextExpr{
 			Fields:       []string{"content_ltks", "from_entity_kwd", "to_entity_kwd"},
 			MatchingText: strings.Join(entities, " "),
 			TopN:         50,

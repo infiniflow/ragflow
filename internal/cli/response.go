@@ -19,6 +19,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/entity/models"
 	"strings"
 )
 
@@ -204,6 +205,42 @@ func (r *ListDocumentsResponse) PrintOut() {
 		table := make([]map[string]interface{}, 0)
 		for _, doc := range docs {
 			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type ListSyncLogsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListSyncLogsResponse) Type() string {
+	return "list_sync_logs"
+}
+
+func (r *ListSyncLogsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListSyncLogsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListSyncLogsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		logs := r.Data["logs"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, log := range logs {
+			table = append(table, log.(map[string]interface{}))
 		}
 		PrintTableSimpleByFormat(table, r.OutputFormat)
 	} else {
@@ -529,10 +566,11 @@ func (r *MessageResponse) PrintOut() {
 }
 
 type NonStreamResponse struct {
-	Code             int    `json:"code"`
-	ReasoningContent string `json:"reasoning_content"`
-	Answer           string `json:"answer"`
-	Message          string `json:"message"`
+	Code             int                `json:"code"`
+	ReasoningContent string             `json:"reasoning_content"`
+	Answer           string             `json:"answer"`
+	Message          string             `json:"message"`
+	Usage            *models.TokenUsage `json:"usage"`
 	Duration         float64
 	OutputFormat     OutputFormat
 }
@@ -555,6 +593,10 @@ func (r *NonStreamResponse) PrintOut() {
 			fmt.Printf("Thinking: %s\n", r.ReasoningContent)
 		}
 		fmt.Printf("Answer: %s\n", r.Answer)
+		if r.Usage != nil {
+			fmt.Printf("Input tokens: %v\n", r.Usage.PromptTokens)
+			fmt.Printf("Output tokens: %v\n", r.Usage.CompletionTokens)
+		}
 		fmt.Printf("Time: %f\n", r.Duration)
 	} else {
 		fmt.Println("ERROR")

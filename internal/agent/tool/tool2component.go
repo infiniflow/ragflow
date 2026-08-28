@@ -34,6 +34,9 @@ type ComponentSpec struct {
 	Inputs    map[string]string
 	Outputs   map[string]string
 	InputForm map[string]any
+	// PreserveJSONNumbers keeps numeric response tokens as json.Number when
+	// Canvas must expose the upstream JSON without float64 precision loss.
+	PreserveJSONNumbers bool
 }
 
 // ToolComponent is the required Canvas adaptation contract implemented by a

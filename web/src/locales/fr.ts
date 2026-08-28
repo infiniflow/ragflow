@@ -60,7 +60,7 @@ export default {
       submit: 'Soumettre',
       clear: 'Effacer',
       embedIntoSite: 'Intégrer dans la page web',
-      openInNewTab: 'Chat dans un nouvel onglet',
+      openInNewTab: 'Ouvrir dans un nouvel onglet',
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       previous: 'Précédent',
@@ -738,9 +738,6 @@ export default {
       dataSource: 'Source de données',
       linkSourceSetTip: 'Gérer la liaison de source de données avec cette base',
       linkDataSource: 'Lier une source de données',
-      tocExtraction: 'IndexPage',
-      tocExtractionTip:
-        "Pour les segments existants, génère une table des matières hiérarchique (un répertoire par fichier). Lors des requêtes, avec la Mise en valeur des répertoires activée, le système utilise un grand modèle pour déterminer quels éléments du répertoire sont pertinents à la question de l'utilisateur.",
       deleteGenerateModalContent: `
   <p>La suppression des résultats générés <strong class='text-text-primary'>{{type}}</strong>
   supprimera toutes les entités et relations dérivées de cette base de connaissances.
@@ -800,6 +797,12 @@ export default {
         email: 'E-mail',
         tag: 'Étiquette',
       },
+      audio: `<p>Les formats de fichiers pris en charge sont <b>WAV, MP3, AAC, FLAC, OGG</b> et d'autres formats audio courants.</p>
+<p>Cette méthode transcrit les fichiers audio en texte à l'aide d'un modèle de reconnaissance vocale.</p>`,
+      email: `<p>Les formats de fichiers pris en charge sont <b>EML</b> et <b>MSG</b>.</p>
+<p>Cette méthode analyse les fichiers e-mail et extrait les champs d'en-tête (tels que De, À, CC, Objet et Date), le corps du message et les pièces jointes.</p>`,
+      knowledgeCompiler: `<p>Ce pipeline analyse et découpe les fichiers en chunks, puis compile ces chunks en unités de connaissances structurées (graphe de connaissances, wiki, RAPTOR, carte mentale ou navigation du jeu de données) via le composant Knowledge Compiler.</p>
+<p>Les unités de connaissances compilées sont émises sous forme de chunks fusionnés dans le flux de chunks, ce qui est idéal pour construire une couche de connaissances interrogeable au-dessus des documents découpés.</p>`,
       book: `<p>Les formats de fichiers pris en charge sont <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
 Pour chaque livre au format PDF, veuillez définir les <i>plages de pages</i> afin de supprimer les informations non souhaitées et de réduire le temps d'analyse.</p>`,
       laws: `<p>Les formats de fichiers pris en charge sont <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -1026,6 +1029,9 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       created: 'Créé',
       action: 'Action',
       embedModalTitle: 'Intégrer dans une page web',
+      embedUserIdPlaceholder: 'ex. user-001',
+      embedUserIdTooltip:
+        "Chaîne de texte (255 caractères maximum) identifiant l'utilisateur final de la page intégrée. Elle est ajoutée à l'URL d'intégration comme paramètre userId.",
       comingSoon: 'Bientôt disponible',
       fullScreenTitle: 'Intégration complète',
       fullScreenDescription:
@@ -1289,7 +1295,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       modelType: 'Type de modèle',
       modelTypeMessage: 'Veuillez saisir le type de votre modèle !',
       addLlmBaseUrl: 'URL de base',
-      baseUrlNameMessage: 'Veuillez saisir votre URL de base !',
+      baseUrlNameMessage: 'Veuillez saisir votre URL de base',
       paddleocr: {
         apiUrl: "URL de l'API PaddleOCR",
         apiUrlPlaceholder:
@@ -1311,13 +1317,13 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       endpointIDMessage: 'Veuillez saisir le Model ID du modèle',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Veuillez saisir votre ARK_API_KEY',
-      bedrockModelNameMessage: 'Veuillez saisir le nom de votre modèle !',
+      bedrockModelNameMessage: 'Veuillez saisir le nom de votre modèle',
       addBedrockEngineAK: "CLÉ D'ACCÈS",
       bedrockAKMessage: "Veuillez saisir votre CLÉ D'ACCÈS",
       addBedrockSK: 'CLÉ SECRÈTE',
       bedrockSKMessage: 'Veuillez saisir votre CLÉ SECRÈTE',
       bedrockRegion: 'Région AWS',
-      bedrockRegionMessage: 'Veuillez sélectionner !',
+      bedrockRegionMessage: 'Veuillez sélectionner',
       'us-east-1': 'US Est (Virginie du Nord)',
       'us-west-2': 'US Ouest (Oregon)',
       'ap-southeast-1': 'Asie Pacifique (Singapour)',
@@ -1325,8 +1331,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       'eu-central-1': 'Europe (Francfort)',
       'us-gov-west-1': 'AWS GovCloud (US-Ouest)',
       'ap-southeast-2': 'Asie Pacifique (Sydney)',
-      addTencentCloudSID: 'ID secret TencentCloud',
-      TencentCloudSIDMessage: 'Veuillez saisir votre ID secret',
+      addTencentCloudSID: 'ID SECRET TencentCloud',
+      TencentCloudSIDMessage: 'Veuillez saisir votre ID SECRET',
       addTencentCloudSK: 'Clé secrète TencentCloud',
       TencentCloudSKMessage: 'Veuillez saisir votre clé secrète',
       SparkModelNameMessage: 'Veuillez sélectionner un modèle Spark',
@@ -1334,8 +1340,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       SparkAPIPasswordMessage: 'Veuillez saisir votre mot de passe API',
       addSparkAPPID: 'ID application Spark',
       SparkAPPIDMessage: 'Veuillez saisir votre ID application',
-      addSparkAPISecret: 'Secret API Spark',
-      SparkAPISecretMessage: 'Veuillez saisir votre secret API',
+      addSparkAPISecret: 'SECRET API Spark',
+      SparkAPISecretMessage: 'Veuillez saisir votre SECRET API',
       addSparkAPIKey: 'Clé API Spark',
       SparkAPIKeyMessage: 'Veuillez saisir votre clé API',
       yiyanModelNameMessage: 'Veuillez saisir le nom du modèle',
@@ -1498,6 +1504,8 @@ Exemple : Virtual Hosted Style`,
         'Connectez un site SharePoint via Microsoft Graph pour synchroniser ses bibliothèques de documents.',
       sharepointSiteUrlTip:
         'URL complète du site SharePoint à indexer, ex. : https://contoso.sharepoint.com/sites/MonSite. Nécessite une application Azure AD avec les permissions applicatives Sites.Read.All et Files.Read.All (consentement administrateur).',
+      azure_devopsDescription:
+        'Connectez Azure DevOps pour synchroniser les fichiers du dépôt et les pull requests.',
       bitbucketDescription:
         'Connectez Bitbucket pour synchroniser le contenu des PR.',
       bitbucketTopWorkspaceTip:
@@ -1798,7 +1806,7 @@ Exemple : Virtual Hosted Style`,
         chat: 'Chat',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -1812,6 +1820,8 @@ Exemple : Virtual Hosted Style`,
       listModelsLoading: 'Chargement des modèles…',
       selectModelBeforeVerify:
         'Veuillez sélectionner au moins un modèle avant la vérification.',
+      selectModelBeforeSave:
+        'Veuillez découvrir et sélectionner au moins un modèle avant l’enregistrement.',
       addCustomModel: 'Ajouter un modèle personnalisé',
       addCustomModelTitle: 'Ajouter un modèle personnalisé',
       editCustomModelTitle: 'Modifier le modèle',
@@ -2797,7 +2807,7 @@ Les informations structurées importantes peuvent inclure : noms, dates, lieux, 
         username: "Nom d'utilisateur",
         password: 'Mot de passe',
         algorithm: 'Algorithme',
-        secret: 'Secret',
+        secret: 'SECRET',
         issuer: 'Émetteur',
         audience: 'Audience',
         requiredClaims: 'Claims requis',

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
@@ -149,7 +165,6 @@ export const useTestChunkRetrieval = (
     mutateAsync,
   } = useMutation({
     mutationKey: ['testChunk'], // This method is invalid
-    gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,
@@ -200,7 +215,6 @@ export const useTestChunkAllRetrieval = (
     mutateAsync,
   } = useMutation({
     mutationKey: ['testChunkAll'], // This method is invalid
-    gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,
@@ -335,6 +349,7 @@ export const useSendQuestion = (
       if (isEmpty(q)) return;
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
+      setSelectedDocumentIds([]);
       if (enableAI) {
         if (!sharedId && !searchId) {
           message.error('Search ID is required.');

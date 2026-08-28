@@ -17,9 +17,10 @@ import asyncio
 import logging
 from functools import partial
 from api.db.services.llm_service import LLMBundle
+from common.misc_utils import hashable_key
 from rag.prompts import kb_prompt
 from rag.prompts.generator import sufficiency_check, multi_queries_gen
-from rag.utils.tavily_conn import Tavily
+from rag.utils.web_search_conn import create_web_search_provider
 from timeit import default_timer as timer
 
 
@@ -49,13 +50,13 @@ class TreeStructuredQueryDecompositionRetrieval:
         except Exception as e:
             logging.error(f"Knowledge base retrieval error: {e}")
 
-        # 2. Web retrieval (if Tavily API is configured)
+        # 2. Web retrieval (if a web search provider is configured)
         try:
-            if self.internet_enabled and self.prompt_config.get("tavily_api_key"):
-                tav = Tavily(self.prompt_config["tavily_api_key"])
-                tav_res = tav.retrieve_chunks(search_query)
-                kbinfos["chunks"].extend(tav_res["chunks"])
-                kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+            web_search = create_web_search_provider(self.prompt_config) if self.internet_enabled else None
+            if web_search:
+                web_res = web_search.retrieve_chunks(search_query)
+                kbinfos["chunks"].extend(web_res["chunks"])
+                kbinfos["doc_aggs"].extend(web_res["doc_aggs"])
         except Exception as e:
             logging.error(f"Web retrieval error: {e}")
 
@@ -79,15 +80,19 @@ class TreeStructuredQueryDecompositionRetrieval:
                     chunk_info[k] = kbinfos[k]
             else:
                 # Merge newly retrieved information, avoiding duplicates
-                cids = [c["chunk_id"] for c in chunk_info["chunks"]]
+                cids = {hashable_key(c["chunk_id"]) for c in chunk_info["chunks"]}
                 for c in kbinfos["chunks"]:
-                    if c["chunk_id"] not in cids:
+                    key = hashable_key(c["chunk_id"])
+                    if key not in cids:
                         chunk_info["chunks"].append(c)
+                        cids.add(key)
 
-                dids = [d["doc_id"] for d in chunk_info["doc_aggs"]]
+                dids = {hashable_key(d["doc_id"]) for d in chunk_info["doc_aggs"]}
                 for d in kbinfos["doc_aggs"]:
-                    if d["doc_id"] not in dids:
+                    key = hashable_key(d["doc_id"])
+                    if key not in dids:
                         chunk_info["doc_aggs"].append(d)
+                        dids.add(key)
 
                 chunk_info["total"] = chunk_info.get("total", 0) + kbinfos.get("total", 0)
 

@@ -34,6 +34,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameOneChunker = "OneChunker"
@@ -66,7 +68,7 @@ func (c *OneChunkerComponent) Inputs() map[string]string { return ChunkerInputs 
 
 func (c *OneChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *OneChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *OneChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 
@@ -110,7 +112,12 @@ func emitOne(text, docType string) map[string]any {
 		return emptyOutputs()
 	}
 	return chunkOutputs([]schema.ChunkDoc{{
-		Text:    text,
+		// Strip parser coordinate tags so they never reach embedding/index,
+		// matching the Python flow chunker's tag-free "one" output
+		// (rag/flow/chunker/token_chunker.py delimiter_mode one). The legacy
+		// rag/app/one.py predates tag stripping and is intentionally out of
+		// scope here.
+		Text:    removeTag(text),
 		DocType: docType,
 		CKType:  docType,
 	}})
@@ -139,10 +146,13 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			return emptyOutputs()
 		}
 		out := schema.ChunkDoc{
-			Text:    text,
-			DocType: docType,
-			CKType:  docType,
-			Image:   it.Image,
+			// Strip parser coordinate tags (see emitOne).
+			Text:         removeTag(text),
+			DocType:      docType,
+			CKType:       docType,
+			Image:        it.Image,
+			Positions:    it.Positions,
+			PDFPositions: it.PDFPositions,
 		}
 		return chunkOutputs([]schema.ChunkDoc{out})
 	}
@@ -151,7 +161,8 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 	var img string
 	for _, it := range src {
 		if t := itemTextOrFallback(it); t != "" {
-			parts = append(parts, t)
+			// Strip parser coordinate tags before joining (see emitOne).
+			parts = append(parts, removeTag(t))
 		}
 		if img == "" && it.Image != "" {
 			img = it.Image
@@ -162,6 +173,11 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		return emptyOutputs()
 	}
 	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
+	// Multi-item merge produces a single text-only chunk mirroring Python
+	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
+	// not carried — merging coordinates from different source items would
+	// produce meaningless composite geometry, and the downstream
+	// processChunkPositions would map them to incorrect pages.
 	if img != "" {
 		out.Image = img
 	}

@@ -34,13 +34,39 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from rag.advanced_rag.harness.stats import in_phase
 from rag.prompts.generator import form_message, kb_prompt, message_fit_in
 
 _LOG = logging.getLogger(__name__)
+
+_ANSWER_TARGET_SYSTEM = """You are an answer-target verifier for a multi-hop RAG system.
+Resolve what entity, value, or fact the user's question is asking for.
+Do not choose bridge entities that merely explain a clue. In inverse-relation
+questions, a later clue may identify the target's partner, relative, employer,
+team, or source; keep tracing until the requested answer role is satisfied.
+Return JSON only."""
+
+_ANSWER_TARGET_USER = """Question:
+{question}
+
+Research summary:
+{pre_summary}
+
+Evidence:
+{evidence}
+
+Return JSON:
+{{
+  "target_role": "the role the final answer must satisfy",
+  "must_satisfy": ["short evidence-backed condition the answer must meet"],
+  "bridge_entities": ["entities that are useful clues but should not be the answer unless they also satisfy target_role"],
+  "reason": "one short explanation of the answer shape"
+}}"""
 
 
 def _snip(value: Any, limit: int = 240) -> str:
@@ -52,6 +78,79 @@ def _snip(value: Any, limit: int = 240) -> str:
     if len(s) > limit:
         s = s[:limit] + f"...(+{len(s) - limit} chars)"
     return s
+
+
+def _extract_json(text: str) -> dict:
+    text = re.sub(r"^.*</think>", "", text or "", flags=re.DOTALL).strip()
+    text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+    try:
+        import json_repair
+
+        return json_repair.loads(text)
+    except Exception:
+        try:
+            return json.loads(text)
+        except Exception:
+            return {}
+
+
+def _compact_text(text: str, limit: int) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n...(+{len(text) - limit} chars)"
+
+
+def _string_items(value) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _format_answer_target_contract(contract: dict) -> str:
+    target_role = str(contract.get("target_role") or "").strip()
+    reason = str(contract.get("reason") or "").strip()
+    lines = []
+    if target_role:
+        lines.append(f"Final answer must satisfy: {target_role}")
+    must = _string_items(contract.get("must_satisfy"))
+    if must:
+        lines.append("Must meet these conditions:")
+        lines.extend(f"- {item}" for item in must)
+    bridges = _string_items(contract.get("bridge_entities"))
+    if bridges:
+        lines.append("Bridge entities to verify but not answer with:")
+        lines.extend(f"- {item}" for item in bridges)
+    if reason:
+        lines.append(f"Reasoning guard: {reason}")
+    lines.append("Do not answer with an intermediate clue entity unless it also satisfies the final answer role.")
+    return "\n".join(lines)
+
+
+async def _answer_target_contract(tools, question: str, kbinfos: dict, evidence: str) -> str:
+    """Build a compact guardrail that tells final synthesis what to answer."""
+    fallback = "Final answer must directly satisfy the user's top-level who/what request. Use bridge entities only as clues, and verify any proposed answer against the evidence."
+    pre_summary = kbinfos.get("pre_summary") or ""
+    if not question or not pre_summary:
+        return fallback
+    try:
+        user = _ANSWER_TARGET_USER.format(
+            question=question,
+            pre_summary=_compact_text(pre_summary, 2400),
+            evidence=_compact_text(evidence, 6000),
+        )
+        msg = await tools._fit_messages(_ANSWER_TARGET_SYSTEM, user)
+        ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.0})
+        if isinstance(ans, tuple):
+            ans = ans[0]
+        parsed = _extract_json(ans)
+        formatted = _format_answer_target_contract(parsed) if parsed else ""
+        return formatted or fallback
+    except Exception:
+        _LOG.exception("[Composing the answer] Failed to build answer-target contract")
+        return fallback
 
 
 class AgenticState(TypedDict, total=False):
@@ -69,6 +168,7 @@ class AgenticState(TypedDict, total=False):
     empty_result: bool
     final_answer: str
     loop: int
+    max_loops: int
     feedback: str  # replanning feedback
 
 
@@ -85,45 +185,65 @@ def _partial_tag_tail(s: str, tag: str) -> int:
     return 0
 
 
-async def _strip_think_stream(stream):
-    """Strip <think>...</think> spans from a token stream."""
+async def _split_think_stream(stream):
+    """Split model deltas into ``think`` and ``answer`` text.
+
+    Besides ordinary ``<think>...</think>`` streams, some providers emit the
+    opening tag only on the first reasoning delta and append ``</think>`` to
+    every subsequent delta. An unmatched closing tag therefore still marks
+    the text before it as reasoning.
+    """
     buf = ""
     in_think = False
+
     async for token in stream:
         if not isinstance(token, str):
-            yield token
+            _LOG.warning("Ignoring non-string agentic RAG stream item of type %s", type(token).__name__)
             continue
         buf += token
-        out = []
+
         while buf:
-            if not in_think:
-                idx = buf.find(_THINK_OPEN)
-                if idx == -1:
-                    hold = _partial_tag_tail(buf, _THINK_OPEN)
-                    if hold:
-                        out.append(buf[: len(buf) - hold])
-                        buf = buf[len(buf) - hold :]
-                    else:
-                        out.append(buf)
-                        buf = ""
-                    break
-                out.append(buf[:idx])
-                buf = buf[idx + len(_THINK_OPEN) :]
-                in_think = True
-            else:
-                idx = buf.find(_THINK_CLOSE)
-                if idx != -1:
-                    buf = buf[idx + len(_THINK_CLOSE) :]
+            if in_think:
+                close_idx = buf.find(_THINK_CLOSE)
+                if close_idx >= 0:
+                    if close_idx:
+                        yield "think", buf[:close_idx]
+                    buf = buf[close_idx + len(_THINK_CLOSE) :]
                     in_think = False
                     continue
+
                 hold = _partial_tag_tail(buf, _THINK_CLOSE)
+                safe = buf[: len(buf) - hold] if hold else buf
+                if safe:
+                    yield "think", safe
                 buf = buf[len(buf) - hold :] if hold else ""
                 break
-        piece = "".join(out)
-        if piece:
-            yield piece
-    if buf and not in_think:
-        yield buf
+
+            open_idx = buf.find(_THINK_OPEN)
+            close_idx = buf.find(_THINK_CLOSE)
+
+            if close_idx >= 0 and (open_idx < 0 or close_idx < open_idx):
+                if close_idx:
+                    yield "think", buf[:close_idx]
+                buf = buf[close_idx + len(_THINK_CLOSE) :]
+                continue
+
+            if open_idx >= 0:
+                if open_idx:
+                    yield "answer", buf[:open_idx]
+                buf = buf[open_idx + len(_THINK_OPEN) :]
+                in_think = True
+                continue
+
+            hold = max(_partial_tag_tail(buf, _THINK_OPEN), _partial_tag_tail(buf, _THINK_CLOSE))
+            safe = buf[: len(buf) - hold] if hold else buf
+            if safe:
+                yield "answer", safe
+            buf = buf[len(buf) - hold :] if hold else ""
+            break
+
+    if buf:
+        yield ("think" if in_think else "answer"), re.sub(r"</?think>", "", buf)
 
 
 # ── Graph construction ──
@@ -158,13 +278,14 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     answer_conf = dict(gen_conf) if gen_conf else {"temperature": 0.3}
 
     # ── Node: formalize_question ──
+    @in_phase("formalize")
     async def formalize_question(state: AgenticState) -> dict:
         msgs = state.get("messages") or []
-        _LOG.info("[formalize_question] IN | %d msg(s)", len(msgs))
+        _LOG.info("[Formalizing the question] Reading the conversation (%d message(s)) to work out the standalone question...", len(msgs))
         q, kw = await tools.formalize(msgs)
         q = (q or "").strip()
         kw = (kw or "").strip()
-        _LOG.info("[formalize_question] OUT | question=%s | keywords=%s", _snip(q), _snip(kw))
+        _LOG.info('[Formalizing the question] Understood the question as: "%s" — searching with keywords: %s', _snip(q), _snip(kw))
         return {
             "question": q,
             "keywords": kw,
@@ -175,6 +296,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         }
 
     # ── Node: route ──
+    @in_phase("route")
     async def route(state: AgenticState) -> dict:
         from rag.advanced_rag.harness.route import route_node
 
@@ -191,38 +313,41 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         """
         route = state.get("route")
         if not route or not getattr(route, "requires_decomposition", False):
-            _LOG.info("[pre_search] SKIP | direct/low mode (no decomposition)")
+            _LOG.info("[Preliminary search] Skipping the first look — this question goes straight to a single search.")
             return {"seed_chunks": []}
 
         from rag.advanced_rag.harness.tools.search import hybrid_search
 
         q = state.get("question", "")
         kw = state.get("keywords", "")
-        _LOG.info("[pre_search] IN | question=%s | keywords=%s", _snip(q), _snip(kw))
+        _LOG.info('[Preliminary search] Taking a first look in the knowledge base for: "%s" (keywords: %s)', _snip(q), _snip(kw))
         try:
             result = await hybrid_search(tools, query=q, keywords=kw)
         except Exception:
-            _LOG.exception("[pre_search] hybrid_search failed")
+            _LOG.exception("[Preliminary search] hybrid_search failed")
             return {"seed_chunks": []}
 
         chunks = result.get("chunks", []) or []
         _merge_result_into_kbinfos(tools, result)
-        _LOG.info("[pre_search] OUT | %d seed chunk(s), kbinfos now %d", len(chunks), len(tools.kbinfos.get("chunks", [])))
+        _LOG.info("[Preliminary search] First look found %d passage(s); %d gathered so far.", len(chunks), len(tools.kbinfos.get("chunks", [])))
         return {"seed_chunks": chunks}
 
     # ── Node: planner ──
+    @in_phase("planner")
     async def planner(state: AgenticState) -> dict:
         from rag.advanced_rag.harness.planner import planner_node
 
         return await planner_node(state, tools)
 
     # ── Node: orchestrator_loop ──
+    @in_phase("orchestrator")
     async def orchestrator_loop(state: AgenticState) -> dict:
         from rag.advanced_rag.harness.orchestrator import orchestrator_loop as _run
 
         return await _run(state, tools)
 
     # ── Node: formalize_answer ──
+    @in_phase("finalize")
     async def formalize_answer(state: AgenticState) -> dict:
         kbinfos = state.get("kbinfos") or {"chunks": [], "doc_aggs": []}
         question = state.get("question") or ""
@@ -230,25 +355,69 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         abstain = state.get("abstain", False)
         empty_result = state.get("empty_result", False)
 
-        _LOG.info("[formalize_answer] IN | question=%s | chunks=%d | partial=%s | abstain=%s", _snip(question), len(kbinfos["chunks"]), partial, abstain)
+        _note = " — partial answer, some gaps remain" if partial else (" — not enough evidence to answer" if abstain else "")
+        _LOG.info('[Composing the answer] Writing the final answer to "%s" from %d gathered passage(s)%s.', _snip(question), len(kbinfos["chunks"]), _note)
 
         tools.kbinfos = kbinfos
 
-        # Abstain
-        if abstain:
-            msg = "I cannot answer this question based on the available information."
-            token_queue.put_nowait(msg)
-            return {"final_answer": msg}
+        no_evidence = abstain or empty_result or not kbinfos["chunks"]
+        if no_evidence and tools.empty_response:
+            _LOG.info("[Composing the answer] No supporting evidence was found; returning the configured empty response without calling the answer model.")
+            token_queue.put_nowait(tools.empty_response)
+            return {"final_answer": tools.empty_response}
 
-        # Empty result
-        if empty_result or not kbinfos["chunks"]:
-            msg = "I don't have enough information based on the available sources."
-            token_queue.put_nowait(msg)
-            return {"final_answer": msg}
+        # Build evidence — narrow the gathered chunks to keyword-bearing
+        # snippets BEFORE feeding the answer model, instead of dumping every
+        # full chunk into the prompt. The retriever already narrows per-query,
+        # but multi-search accumulation and the "keep-all-on-no-match" fallback
+        # can still leave many full passages here (one run produced a 46-passage
+        # / 70K-token call). Re-narrowing on the final question keeps each
+        # passage a snippet and bounds the prompt, while preserving originals if
+        # nothing matches (so we never answer with empty evidence).
+        #
+        # IMPORTANT: narrowing runs on a COPY of the chunk list — we never mutate
+        # ``kbinfos["chunks"]`` because that pool is also the main-agent citation
+        # reference; in-place narrowing there would shrink what the agent can cite
+        # and make it re-ask (more sub-questions). Also, a chunk whose original
+        # carried a number but whose narrowed snippet lost every digit is kept
+        # whole (a numeric answer sentence often lacks the keyword itself).
+        kw = state.get("keywords") or ""
+        from rag.advanced_rag.harness.orchestrator.sufficiency_llm import _narrow_snippet_safe
 
-        # Build evidence
-        evidence = kb_prompt(kbinfos, tools.chat_mdl.max_length)
+        kw_list = [k for k in re.split(r"[,\s]+", kw or "") if k]
+        evidence_chunks = []
+        for c in kbinfos.get("chunks") or []:
+            if not kw_list:
+                evidence_chunks.append(c)
+                continue
+            raw = c.get("content_with_weight") or c.get("text") or ""
+            # General informative-sentence guard (same policy as `_evidence_md`):
+            # keep the narrowed snippet, but fall back to the whole chunk when
+            # narrowing would drop every fact-bearing sentence (numbers / proper
+            # nouns / quotes) — the answer may be far from any keyword. Bounds
+            # the prompt while never losing critical evidence.
+            narrowed = _narrow_snippet_safe(raw, kw_list)
+            if narrowed:
+                evidence_chunks.append({**c, "content_with_weight": narrowed})
+            else:
+                evidence_chunks.append(c)
+        evidence_kbinfos = dict(kbinfos, chunks=evidence_chunks)
+        # Bounded evidence budget: the raw model context (``max_length``) is far
+        # too large — with a big pool it lets evidence fill the whole window
+        # (observed 141K tokens in one call). Use a fixed, modest budget so the
+        # answer model sees only a compact evidence set.
+        from rag.advanced_rag.agentic_rag import _EVIDENCE_BUDGET_TOKENS
+
+        evidence_blocks = kb_prompt(evidence_kbinfos, min(tools.chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS))
+        evidence = "\n".join(evidence_blocks) if isinstance(evidence_blocks, list) else str(evidence_blocks)
         parts = [f"Question:\n{question}\n"]
+
+        answer_target = await _answer_target_contract(tools, question, kbinfos, evidence)
+        if answer_target:
+            parts.append(f"Answer Target Contract:\n{answer_target}\n")
+
+        if no_evidence:
+            parts.append("No supporting evidence was retrieved. State clearly that the available sources are insufficient, and do not answer from general knowledge.\n")
 
         # Include pre_summary from agent results if available
         pre_summary = kbinfos.get("pre_summary")
@@ -265,11 +434,17 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         rules = cp(tools.user_defined_prompts).strip()
         system = FINAL_ANSWER_SYSTEM.format(cite_rules=rules)
+        # Honor the dialog-level system prompt in the reasoning path the same
+        # way async_chat does when reasoning is disabled.
+        if tools.system_prompt.strip():
+            system = f"{tools.system_prompt.strip()}\n\n{system}"
 
         parts.append(f"Evidence:\n{evidence}")
         user_content = "\n".join(parts)
 
-        _, msg = message_fit_in(form_message(system, user_content), tools.chat_mdl.max_length)
+        # Same bounded budget for the final message fit — never fill the whole
+        # model context with evidence.
+        _, msg = message_fit_in(form_message(system, user_content), min(tools.chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS))
         try:
             async for tok in tools.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], answer_conf):
                 token_queue.put_nowait(tok)
@@ -299,12 +474,14 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     return g.compile()
 
 
-# ── Runner ──
-
-
 async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: dict | None = None):
     """Drive the agentic-search graph, yielding answer-token strings."""
-    _LOG.info("[agentic-rag] RUN START | %d message(s), max_loops=%d", len(messages or []), max_loops)
+    _LOG.info(
+        "[Agentic RAG] Starting research — %d message(s), last role=%s, content_len=%d",
+        len(messages),
+        messages[-1].get("role", "") if messages else "?",
+        len(messages[-1].get("content", "")) if messages else 0,
+    )
 
     token_queue: asyncio.Queue = asyncio.Queue()
     graph = build_agentic_graph(tools, token_queue, gen_conf=gen_conf)
@@ -314,7 +491,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     async def _drive():
         try:
             holder["state"] = await graph.ainvoke(
-                {"messages": messages},
+                {"messages": messages, "max_loops": max_loops},
                 {"recursion_limit": max(25, max_loops * 8)},
             )
         except Exception:
@@ -340,7 +517,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     if isinstance(final_kb, dict) and final_kb.get("chunks"):
         tools.kbinfos = final_kb
 
-    _LOG.info("[agentic-rag] RUN END | streamed=%s, loops=%d, chunks=%d", produced, state.get("loop", 0), len((state.get("kbinfos") or {}).get("chunks", [])))
+    _LOG.info("[Agentic RAG] Research complete — %d passage(s) gathered after %d round(s).", len((state.get("kbinfos") or {}).get("chunks", [])), state.get("loop", 0))
 
     if not produced and holder.get("error"):
         yield "I couldn't complete the search due to an internal error."

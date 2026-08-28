@@ -279,7 +279,7 @@ func (e *TOCEnhancer) Enhance(ctx context.Context, kbinfos map[string]interface{
 	}
 	indexNames := make([]string, 0, len(e.tenantIDs))
 	for _, tid := range e.tenantIDs {
-		indexNames = append(indexNames, indexName(tid))
+		indexNames = append(indexNames, getIndexName(tid))
 	}
 	tocResp, err := e.docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   indexNames,
@@ -461,10 +461,11 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 
 	var scores []tocRelevanceScore
 	maxRetry := 2
-	var lastAns, lastErr string
+	var lastAns string
+	var lastErr error
 	for attempt := 0; attempt < maxRetry; attempt++ {
 		currentUser := userPrompt
-		if attempt > 0 && lastAns != "" && lastErr != "" {
+		if attempt > 0 && lastAns != "" && lastErr != nil {
 			currentUser += fmt.Sprintf(
 				"\nGenerated JSON is as following:\n%s\nBut exception while loading:\n%s\nPlease reconsider and correct it.",
 				lastAns, lastErr,
@@ -479,7 +480,7 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 			modelName = *e.chatModel.ModelName
 		}
 		resp, err := e.chatModel.ModelDriver.ChatWithMessages(
-			modelName, msgs, e.chatModel.APIConfig, cfg,
+			ctx, modelName, msgs, e.chatModel.APIConfig, cfg, nil,
 		)
 		if err != nil {
 			return nil, err
@@ -495,16 +496,16 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 		if rerr != nil {
 			repaired = raw
 		}
-		if err := json.Unmarshal([]byte(repaired), &scores); err != nil {
-			lastErr = err.Error()
+		if err = json.Unmarshal([]byte(repaired), &scores); err != nil {
+			lastErr = err
 			common.Warn("TOC enhancer: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))
 			continue
 		}
 		break
 	}
-	if len(scores) == 0 && lastErr != "" {
-		return nil, fmt.Errorf("toc scoring: parse failed after retries: %s", lastErr)
+	if len(scores) == 0 && lastErr != nil {
+		return nil, fmt.Errorf("toc scoring: parse failed after retries: %w", lastErr)
 	}
 
 	id2score := make(map[string][]float64)
@@ -547,7 +548,7 @@ func (e *TOCEnhancer) fetchChunk(ctx context.Context, chunkID, docID, kbID strin
 	}
 	indexNames := make([]string, 0, len(e.tenantIDs))
 	for _, tid := range e.tenantIDs {
-		indexNames = append(indexNames, indexName(tid))
+		indexNames = append(indexNames, getIndexName(tid))
 	}
 	resp, err := e.docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   indexNames,
@@ -563,8 +564,8 @@ func (e *TOCEnhancer) fetchChunk(ctx context.Context, chunkID, docID, kbID strin
 	return resp.Chunks[0], nil
 }
 
-// indexName returns the search index name for a tenant.
-func indexName(tenantID string) string {
+// getIndexName returns the search index name for a tenant.
+func getIndexName(tenantID string) string {
 	return "ragflow_" + tenantID
 }
 

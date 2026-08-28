@@ -7,6 +7,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -36,7 +37,7 @@ func TestFaultInjection_NodePanic(t *testing.T) {
 	g.AddEdge("panic_node", constants.End)
 
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "test"})
 	if err == nil {
@@ -271,7 +272,7 @@ func TestFaultInjection_ContextCancel(t *testing.T) {
 	for range outputCh {
 	}
 	err := <-errCh
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled or nil, got: %v", err)
 	}
 }

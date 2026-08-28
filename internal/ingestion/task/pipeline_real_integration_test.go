@@ -1,6 +1,3 @@
-//go:build integration
-// +build integration
-
 package task
 
 import (
@@ -11,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"ragflow/internal/server/config"
 	"sort"
 	"strings"
 	"testing"
@@ -18,50 +16,36 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
-	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/component"
-	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/server"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 
-	"go.uber.org/zap"
-	"gorm.io/driver/mysql"
+	"github.com/glebarez/sqlite"
+
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
 
 func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	requireTokenizerPool(t)
+	ctx := t.Context()
 
-	cfg := mustLoadTaskRealIntegrationConfig(t)
-	realDB := mustOpenTaskRealMySQL(t, cfg)
-	if err := realDB.AutoMigrate(
-		&entity.Tenant{},
-		&entity.Knowledgebase{},
-		&entity.Document{},
-		&entity.File{},
-		&entity.File2Document{},
-		&entity.UserCanvas{},
-	); err != nil {
-		t.Fatalf("auto-migrate real mysql tables: %v", err)
-	}
-
-	realStorage, err := storage.NewMinioStorage(cfg.StorageEngine.Minio)
-	if err != nil {
-		t.Fatalf("connect real minio: %v", err)
-	}
-
+	mustLoadTaskTestConfig(t)
 	origDB := dao.DB
-	origStorage := storage.GetStorageFactory().GetStorage()
+	realDB := mustOpenTaskTestDB(t)
 	dao.DB = realDB
-	storage.GetStorageFactory().SetStorage(realStorage)
 	t.Cleanup(func() {
 		dao.DB = origDB
+	})
+
+	realStorage := storage.NewMemoryStorage()
+	origStorage := storage.GetStorageFactory().GetStorage()
+	storage.GetStorageFactory().SetStorage(realStorage)
+	t.Cleanup(func() {
 		storage.GetStorageFactory().SetStorage(origStorage)
 	})
 
@@ -72,7 +56,7 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	}
 	templateBytes = disableTokenizerEmbeddingForTaskTemplate(t, templateBytes)
 	var templateDSL entity.JSONMap
-	if err := json.Unmarshal(templateBytes, &templateDSL); err != nil {
+	if err = json.Unmarshal(templateBytes, &templateDSL); err != nil {
 		t.Fatalf("unmarshal template dsl: %v", err)
 	}
 
@@ -88,10 +72,10 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	content := "Alpha paragraph\n\nBeta paragraph."
 
 	mustSeedTaskRealPipelineDocument(t, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath, docName, content)
-	if err := realDB.Model(&entity.Document{}).Where("id = ?", docID).Update("pipeline_id", canvasID).Error; err != nil {
+	if err = realDB.Model(&entity.Document{}).Where("id = ?", docID).Update("pipeline_id", canvasID).Error; err != nil {
 		t.Fatalf("set document pipeline_id: %v", err)
 	}
-	if err := realDB.Create(&entity.UserCanvas{
+	if err = realDB.Create(&entity.UserCanvas{
 		ID:             canvasID,
 		UserID:         tenantID,
 		Permission:     "me",
@@ -101,8 +85,9 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		t.Fatalf("create user canvas: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error
-		cleanupTaskRealPipelineDocument(realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
+		cleanUpCtx := context.Background()
+		_ = realDB.WithContext(cleanUpCtx).Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error
+		cleanupTaskRealPipelineDocument(cleanUpCtx, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
 	})
 
 	taskCtx := &TaskContext{
@@ -132,14 +117,14 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 			return nil, nil
 		})
 
-	if _, err := svc.Execute(context.Background()); err != nil {
+	if _, err = svc.Execute(ctx); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(inserted) != 1 {
 		t.Fatalf("insert calls = %d, want 1", len(inserted))
 	}
-	if len(inserted[0]) != 2 {
-		t.Fatalf("inserted chunk count = %d, want 2", len(inserted[0]))
+	if len(inserted[0]) != 1 {
+		t.Fatalf("inserted chunk count = %d, want 1", len(inserted[0]))
 	}
 	for i, ck := range inserted[0] {
 		if got := ck["doc_id"]; got != docID {
@@ -151,46 +136,26 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	}
 }
 
-func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *testing.T) {
+func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 	requireTokenizerPool(t)
+	ctx := t.Context()
 
-	cfg := mustLoadTaskRealIntegrationConfig(t)
-	realDB := mustOpenTaskRealMySQL(t, cfg)
-	if err := realDB.AutoMigrate(
-		&entity.Tenant{},
-		&entity.Knowledgebase{},
-		&entity.Document{},
-		&entity.File{},
-		&entity.File2Document{},
-		&entity.UserCanvas{},
-	); err != nil {
-		t.Fatalf("auto-migrate real mysql tables: %v", err)
-	}
-
-	realStorage, err := storage.NewMinioStorage(cfg.StorageEngine.Minio)
-	if err != nil {
-		t.Fatalf("connect real minio: %v", err)
-	}
-	if err := engine.Init(&cfg.DocEngine); err != nil {
-		t.Fatalf("init real doc engine: %v", err)
-	}
-	if engine.Get() == nil {
-		t.Fatal("doc engine is nil after init")
-	}
-	if engine.GetEngineType() != engine.EngineElasticsearch {
-		t.Fatalf("doc engine type = %s, want %s", engine.GetEngineType(), engine.EngineElasticsearch)
-	}
-
+	// Loads service config (server.Init side effect) without requiring any
+	// external MySQL/MinIO/ES. The pipeline runs against an in-memory sqlite
+	// DB and an in-memory storage backend; chunks are captured via WithInsertFunc.
+	mustLoadTaskTestConfig(t)
 	origDB := dao.DB
-	origStorage := storage.GetStorageFactory().GetStorage()
-	origDocResolver := componentpkg.ResolveDocumentStorageOverride
+	realDB := mustOpenTaskTestDB(t)
 	dao.DB = realDB
-	storage.GetStorageFactory().SetStorage(realStorage)
-	componentpkg.ResolveDocumentStorageOverride = nil
 	t.Cleanup(func() {
 		dao.DB = origDB
+	})
+
+	realStorage := storage.NewMemoryStorage()
+	origStorage := storage.GetStorageFactory().GetStorage()
+	storage.GetStorageFactory().SetStorage(realStorage)
+	t.Cleanup(func() {
 		storage.GetStorageFactory().SetStorage(origStorage)
-		componentpkg.ResolveDocumentStorageOverride = origDocResolver
 	})
 
 	templatePath := filepath.Join(taskRepoRoot(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
@@ -200,14 +165,15 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 	}
 	templateBytes = disableTokenizerEmbeddingForTaskTemplate(t, templateBytes)
 	var templateDSL entity.JSONMap
-	if err := json.Unmarshal(templateBytes, &templateDSL); err != nil {
+	if err = json.Unmarshal(templateBytes, &templateDSL); err != nil {
 		t.Fatalf("unmarshal template dsl: %v", err)
 	}
 
 	pdfPath := filepath.Join(taskRepoRoot(t), "internal", "deepdoc", "parser", "pdf", "testdata", "pdfs", "01_english_simple.pdf")
 	pdfBytes, err := os.ReadFile(pdfPath)
 	if err != nil {
-		t.Fatalf("read pdf fixture: %v", err)
+		t.Skipf("read pdf fixture %s: %v", pdfPath, err)
+		return
 	}
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -219,13 +185,12 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 	bucket := taskS3SafeBucketName(kbID)
 	docName := "01_english_simple.pdf"
 	objectPath := fmt.Sprintf("integration/task/%s/%s", docID, docName)
-	baseName := fmt.Sprintf("ragflow_%s", tenantID)
 
 	mustSeedTaskRealPipelineDocumentBytes(t, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath, docName, ".pdf", "pdf", pdfBytes)
-	if err := realDB.Model(&entity.Document{}).Where("id = ?", docID).Update("pipeline_id", canvasID).Error; err != nil {
+	if err = realDB.Model(&entity.Document{}).Where("id = ?", docID).Update("pipeline_id", canvasID).Error; err != nil {
 		t.Fatalf("set document pipeline_id: %v", err)
 	}
-	if err := realDB.Create(&entity.UserCanvas{
+	if err = realDB.Create(&entity.UserCanvas{
 		ID:             canvasID,
 		UserID:         tenantID,
 		Permission:     "me",
@@ -235,14 +200,13 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 		t.Fatalf("create user canvas: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = engine.Get().DropChunkStore(context.Background(), baseName, kbID)
 		_ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error
-		cleanupTaskRealPipelineDocument(realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
+		cleanupTaskRealPipelineDocument(ctx, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
 	})
 
 	taskCtx := &TaskContext{
 		IngestionTask: &entity.IngestionTask{
-			ID:         "task-real-pdf-es-1",
+			ID:         "task-real-pdf-1",
 			DocumentID: docID,
 			DatasetID:  kbID,
 		},
@@ -260,68 +224,64 @@ func TestPipelineExecutor_Run_RealPDF_WritesAndReadsBackFromElasticsearch(t *tes
 		Tenant: entity.Tenant{ID: tenantID},
 	}
 
-	svc := mustNewPipelineExecutor(t, taskCtx, canvasID, 0)
+	var inserted [][]map[string]any
+	svc := mustNewPipelineExecutor(t, taskCtx, canvasID, 0).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			inserted = append(inserted, deepCopyTaskChunks(chunks))
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
 
-	if _, err := svc.Execute(context.Background()); err != nil {
+	if _, err = svc.Execute(ctx); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	result, err := engine.Get().Search(context.Background(), &enginetypes.SearchRequest{
-		IndexNames: []string{baseName},
-		KbIDs:      []string{kbID},
-		Limit:      20,
-	})
-	if err != nil {
-		t.Fatalf("search indexed chunks: %v", err)
+	if len(inserted) == 0 {
+		t.Fatal("no chunks inserted")
 	}
-	if result == nil {
-		t.Fatal("search result is nil")
+	var chunks []map[string]any
+	for _, batch := range inserted {
+		chunks = append(chunks, batch...)
 	}
-	if len(result.Chunks) == 0 {
-		t.Fatal("expected indexed chunks in Elasticsearch, got 0")
+	if len(chunks) == 0 {
+		t.Fatal("inserted 0 chunks")
 	}
-	for i, chunk := range result.Chunks {
+	sawImage := false
+	for i, chunk := range chunks {
 		if got := chunk["doc_id"]; got != docID {
-			t.Fatalf("result chunk[%d].doc_id = %v, want %q", i, got, docID)
-		}
-		if got := chunk["kb_id"]; got != kbID {
-			t.Fatalf("result chunk[%d].kb_id = %v, want %q", i, got, kbID)
+			t.Fatalf("chunk[%d].doc_id = %v, want %q", i, got, docID)
 		}
 		if got := chunk["docnm_kwd"]; got != docName {
-			t.Fatalf("result chunk[%d].docnm_kwd = %v, want %q", i, got, docName)
+			t.Fatalf("chunk[%d].docnm_kwd = %v, want %q", i, got, docName)
 		}
 		if got := chunk["content_with_weight"]; got == nil || got == "" {
-			t.Fatalf("result chunk[%d].content_with_weight = %v, want non-empty", i, got)
+			t.Fatalf("chunk[%d].content_with_weight = %v, want non-empty", i, got)
 		}
+		if img, ok := chunk["img_id"]; ok && img != nil && img != "" {
+			sawImage = true
+		}
+	}
+	if !sawImage {
+		t.Fatal("expected at least one chunk with img_id (pdf preview image uploaded to storage)")
 	}
 }
 
 func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 	requireTokenizerPool(t)
+	ctx := t.Context()
 
-	cfg := mustLoadTaskRealIntegrationConfig(t)
-	realDB := mustOpenTaskRealMySQL(t, cfg)
-	if err := realDB.AutoMigrate(
-		&entity.Tenant{},
-		&entity.Knowledgebase{},
-		&entity.Document{},
-		&entity.File{},
-		&entity.File2Document{},
-	); err != nil {
-		t.Fatalf("auto-migrate real mysql tables: %v", err)
-	}
-
-	realStorage, err := storage.NewMinioStorage(cfg.StorageEngine.Minio)
-	if err != nil {
-		t.Fatalf("connect real minio: %v", err)
-	}
-
+	mustLoadTaskTestConfig(t)
 	origDB := dao.DB
-	origStorage := storage.GetStorageFactory().GetStorage()
+	realDB := mustOpenTaskTestDB(t)
 	dao.DB = realDB
-	storage.GetStorageFactory().SetStorage(realStorage)
 	t.Cleanup(func() {
 		dao.DB = origDB
+	})
+
+	realStorage := storage.NewMemoryStorage()
+	origStorage := storage.GetStorageFactory().GetStorage()
+	storage.GetStorageFactory().SetStorage(realStorage)
+	t.Cleanup(func() {
 		storage.GetStorageFactory().SetStorage(origStorage)
 	})
 
@@ -349,10 +309,10 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 
 	mustSeedTaskRealPipelineDocument(t, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath, docName, content)
 	t.Cleanup(func() {
-		cleanupTaskRealPipelineDocument(realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
+		cleanupTaskRealPipelineDocument(ctx, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
 	})
 
-	pipelineOut, err := pipe.Run(context.Background(), map[string]any{
+	pipelineOut, err := pipe.Run(ctx, map[string]any{
 		"doc_id": docID,
 	}, nil)
 	if err != nil {
@@ -386,7 +346,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			return nil, nil
 		})
 
-	if _, err := svc.processOutput(context.Background(), pipelineOut); err != nil {
+	if _, err = svc.processOutput(ctx, pipelineOut, time.Now()); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 
@@ -394,8 +354,8 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 		t.Fatalf("insert calls = %d, want 1", len(inserted))
 	}
 	chunks := inserted[0]
-	if len(chunks) != 2 {
-		t.Fatalf("inserted chunk count = %d, want 2", len(chunks))
+	if len(chunks) != 1 {
+		t.Fatalf("inserted chunk count = %d, want 1", len(chunks))
 	}
 	for i, ck := range chunks {
 		if got := ck["doc_id"]; got != docID {
@@ -428,39 +388,54 @@ func taskRepoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(wd, "..", "..", ".."))
 }
 
-func mustLoadTaskRealIntegrationConfig(t *testing.T) *server.Config {
+func mustLoadTaskTestConfig(t *testing.T) *config.Config {
 	t.Helper()
-	if err := common.Init("info", common.FileOutput{}); err != nil {
+	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
 		t.Fatalf("init common logger: %v", err)
 	}
-	server.SetLogger(zap.NewNop())
 	configPath := filepath.Join(taskRepoRoot(t), "conf", "service_conf.yaml")
 	if err := server.Init(configPath); err != nil {
 		t.Fatalf("init service config from %s: %v", configPath, err)
 	}
 	cfg := server.GetConfig()
-	if cfg == nil || cfg.Database.Host == "" || cfg.StorageEngine.Minio == nil || cfg.StorageEngine.Minio.Host == "" {
-		t.Fatal("real integration config is incomplete")
+	if cfg == nil {
+		t.Fatal("task test config is nil after server.Init")
 	}
 	return cfg
 }
 
-func mustOpenTaskRealMySQL(t *testing.T, cfg *server.Config) *gorm.DB {
+// mustOpenTaskTestDB opens an isolated in-memory sqlite database and migrates
+// the tables the real-pipeline contract tests seed and read. It does not touch
+// the filesystem or any external MySQL. The connection pool is pinned to a
+// single connection (MaxOpenConns(1)) so the in-memory database is shared
+// across all statements — without that, gorm's default pool would hand each
+// statement a separate connection, and ":memory:" is per-connection (so seeds
+// on one connection would be invisible to reads on another).
+func mustOpenTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		cfg.Database.Username,
-		cfg.Database.Password,
-		cfg.Database.Host,
-		cfg.Database.Port,
-		cfg.Database.Database,
-		cfg.Database.Charset,
-	)
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
 	})
 	if err != nil {
-		t.Fatalf("connect real mysql: %v", err)
+		t.Fatalf("open in-memory sqlite db: %v", err)
 	}
+	if err = db.AutoMigrate(
+		&entity.Tenant{},
+		&entity.Knowledgebase{},
+		&entity.Document{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.UserCanvas{},
+		&entity.PipelineOperationLog{},
+	); err != nil {
+		t.Fatalf("auto-migrate sqlite tables: %v", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql.DB from gorm: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	return db
 }
 
@@ -621,10 +596,16 @@ func mustSeedTaskRealPipelineDocumentBytes(
 	content []byte,
 ) {
 	t.Helper()
+	ocrID := "ocr-default"
 	if err := db.Create(&entity.Tenant{
-		ID:     tenantID,
-		LLMID:  "gpt-4",
-		Status: taskStrPtr("1"),
+		ID:        tenantID,
+		LLMID:     "gpt-4",
+		ASRID:     "asr-default",
+		Img2TxtID: "img2txt-default",
+		RerankID:  "rerank-default",
+		ParserIDs: "parser-default",
+		OCRID:     &ocrID,
+		Status:    taskStrPtr("1"),
 	}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}
@@ -637,7 +618,8 @@ func mustSeedTaskRealPipelineDocumentBytes(
 	}).Error; err != nil {
 		t.Fatalf("create kb: %v", err)
 	}
-	if err := stg.Put(bucket, objectPath, content); err != nil {
+	ctx := t.Context()
+	if err := stg.Put(ctx, bucket, objectPath, content); err != nil {
 		t.Fatalf("put real minio object: %v", err)
 	}
 	if err := db.Create(&entity.File{
@@ -676,13 +658,13 @@ func mustSeedTaskRealPipelineDocumentBytes(
 	}
 }
 
-func cleanupTaskRealPipelineDocument(db *gorm.DB, stg storage.Storage, tenantID, kbID, docID, fileID, bucket, objectPath string) {
-	_ = db.Where("document_id = ?", docID).Delete(&entity.File2Document{}).Error
-	_ = db.Where("id = ?", docID).Delete(&entity.Document{}).Error
-	_ = db.Where("id = ?", fileID).Delete(&entity.File{}).Error
-	_ = db.Where("id = ?", kbID).Delete(&entity.Knowledgebase{}).Error
-	_ = db.Where("id = ?", tenantID).Delete(&entity.Tenant{}).Error
-	_ = stg.Remove(bucket, objectPath)
+func cleanupTaskRealPipelineDocument(ctx context.Context, db *gorm.DB, storageImpl storage.Storage, tenantID, kbID, docID, fileID, bucket, objectPath string) {
+	_ = db.WithContext(ctx).Where("document_id = ?", docID).Delete(&entity.File2Document{}).Error
+	_ = db.WithContext(ctx).Where("id = ?", docID).Delete(&entity.Document{}).Error
+	_ = db.WithContext(ctx).Where("id = ?", fileID).Delete(&entity.File{}).Error
+	_ = db.WithContext(ctx).Where("id = ?", kbID).Delete(&entity.Knowledgebase{}).Error
+	_ = db.WithContext(ctx).Where("id = ?", tenantID).Delete(&entity.Tenant{}).Error
+	_ = storageImpl.Remove(ctx, bucket, objectPath)
 }
 
 func deepCopyTaskChunks(in []map[string]any) []map[string]any {

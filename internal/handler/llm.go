@@ -67,8 +67,9 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 	tenantID := user.ID
 	includeDetailsStr := c.DefaultQuery("include_details", "false")
 	includeDetails := includeDetailsStr == "true"
+	ctx := c.Request.Context()
 
-	llms, err := h.llmService.GetMyLLMs(tenantID, includeDetails)
+	llms, err := h.llmService.GetMyLLMs(ctx, tenantID, includeDetails)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -100,8 +101,10 @@ func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	tenantID := user.ID
-	result, err := h.llmService.SetAPIKey(tenantID, &req)
+	result, err := h.llmService.SetAPIKey(ctx, tenantID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 		return
@@ -133,10 +136,11 @@ func (h *LLMHandler) ListApp(c *gin.Context) {
 	}
 
 	tenantID := user.ID
+	ctx := c.Request.Context()
 
 	modelType := c.Query("model_type")
 
-	llms, err := h.llmService.ListLLMs(tenantID, modelType)
+	llms, err := h.llmService.ListLLMs(ctx, tenantID, modelType)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return

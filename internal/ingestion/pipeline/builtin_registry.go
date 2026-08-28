@@ -15,18 +15,44 @@ import (
 
 const builtinTemplatePrefix = "ingestion_pipeline_"
 
+// builtinParserOrder matches Python's settings.PARSERS order, projected onto
+// the canonical builtin templates shipped by Go. Templates not in this list
+// are appended deterministically after the shared parser methods.
+var builtinParserOrder = map[string]int{
+	"general":      0,
+	"qa":           1,
+	"manual":       2,
+	"table":        3,
+	"paper":        4,
+	"book":         5,
+	"laws":         6,
+	"presentation": 7,
+	"picture":      8,
+	"one":          9,
+	"audio":        10,
+	"email":        11,
+}
+
 //go:embed template/ingestion_pipeline_*.json
 var builtinTemplateFS embed.FS
 
 // BuiltinPipelineMeta is the API-facing metadata for one built-in ingestion
 // pipeline template. The ParserID field is the value stored in the dataset's
 // parser_id column for built-in pipelines.
+// JSON tag "id" aligns with AgentItem.id for format consistency with
+// GET /api/v1/agents?canvas_category=dataflow_canvas.
 type BuiltinPipelineMeta struct {
-	ParserID    string         `json:"parser_id"`
-	Title       string         `json:"title"`
-	Description string         `json:"description,omitempty"`
-	Filename    string         `json:"filename"`
-	DSL         map[string]any `json:"dsl"`
+	ParserID    string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Filename    string `json:"filename"`
+}
+
+// BuiltinPipelineListResponse wraps the builtin pipeline list for
+// format consistency with ListAgentsResponse.
+type BuiltinPipelineListResponse struct {
+	BuiltinPipelines []*BuiltinPipelineMeta `json:"canvas"`
+	Total            int64                  `json:"total"`
 }
 
 type BuiltinPipeline struct {
@@ -92,7 +118,17 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 		meta := tpl.BuiltinPipelineMeta
 		list = append(list, &meta)
 	}
-	sort.Slice(list, func(i, j int) bool { return list[i].ParserID < list[j].ParserID })
+	sort.SliceStable(list, func(i, j int) bool {
+		iOrder, iKnown := builtinParserOrder[list[i].ParserID]
+		jOrder, jKnown := builtinParserOrder[list[j].ParserID]
+		if iKnown && jKnown {
+			return iOrder < jOrder
+		}
+		if iKnown != jKnown {
+			return iKnown
+		}
+		return list[i].ParserID < list[j].ParserID
+	})
 	return &Registry{templates: templates, aliases: builtinAliases(), list: list}, nil
 }
 
@@ -119,7 +155,7 @@ func (r *Registry) canonicalRef(ref string) string {
 	return ref
 }
 
-func (r *Registry) List() []*BuiltinPipelineMeta {
+func (r *Registry) List() *BuiltinPipelineListResponse {
 	if r == nil {
 		return nil
 	}
@@ -131,7 +167,10 @@ func (r *Registry) List() []*BuiltinPipelineMeta {
 		cp := *item
 		out = append(out, &cp)
 	}
-	return out
+	return &BuiltinPipelineListResponse{
+		BuiltinPipelines: out,
+		Total:            int64(len(out)),
+	}
 }
 
 func (r *Registry) Refs() []string {
@@ -197,7 +236,6 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 			Title:       englishText(data["title"], ref),
 			Description: englishText(data["description"], ""),
 			Filename:    filename,
-			DSL:         dsl,
 		},
 		DSL: dsl,
 	}

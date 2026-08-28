@@ -75,6 +75,7 @@ def _load_memory_routes_module(monkeypatch):
 
     apps_mod = ModuleType("api.apps")
     apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    apps_mod.AUTH_API = "API"
     apps_mod.current_user = SimpleNamespace(id="user-1")
     apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
@@ -97,7 +98,7 @@ def _set_request_json(monkeypatch, module, payload):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(deepcopy(payload)))
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_add_message_partial_failure_branch(monkeypatch):
     module = _load_memory_routes_module(monkeypatch)
 
