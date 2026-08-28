@@ -188,6 +188,18 @@ def test_build_connector_passes_custom_ca_certificate_path(monkeypatch):
 
 
 @pytest.mark.p2
+def test_build_connector_rejects_non_string_ca_certificate_path():
+    """Reject dynamically typed custom CA values before path normalization."""
+    with pytest.raises(webdav_connector.ConnectorValidationError, match="CA certificate path must be a string"):
+        WebDAVConnector.build_connector(
+            {
+                "base_url": "https://webdav.example",
+                "ca_cert_path": 123,
+            }
+        )
+
+
+@pytest.mark.p2
 def test_load_credentials_reports_invalid_ca_as_validation_error(monkeypatch):
     """Report custom CA loading failures as configuration errors."""
     webdav_client = Mock(side_effect=OSError("invalid CA certificate"))

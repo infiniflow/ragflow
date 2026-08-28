@@ -45,6 +45,8 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             remote_path = remote_path.rstrip("/")
         self.remote_path = remote_path
         self.batch_size = batch_size
+        if ca_cert_path is not None and not isinstance(ca_cert_path, str):
+            raise ConnectorValidationError("WebDAV CA certificate path must be a string.")
         self.ca_cert_path = ca_cert_path.strip() if ca_cert_path else None
         self.client: Optional[WebDAVClient] = None
         self._allow_images: bool | None = None
@@ -147,6 +149,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             client_options: dict[str, Any] = {}
             if self.ca_cert_path:
                 client_options["verify"] = self.ca_cert_path
+                logging.debug(f"Enabled custom TLS verification for WebDAV server {self.base_url}")
 
             self.client = WebDAVClient(
                 base_url=self.base_url,

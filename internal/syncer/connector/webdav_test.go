@@ -202,7 +202,13 @@ func TestNewWebDAVConnectorUsesCustomCACertificate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWebDAVConnector failed: %v", err)
 	}
-	resp, err := connector.client.httpClient.Get(server.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), webdavRequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	resp, err := connector.client.httpClient.Do(req)
 	if err != nil {
 		t.Fatalf("request with custom CA failed: %v", err)
 	}
