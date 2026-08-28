@@ -1023,6 +1023,7 @@ class SearchDatasetsReq(BaseModel):
     use_kg: Annotated[bool, Field(default=False)]
     cross_languages: Annotated[list[str], Field(default=[])]
     keyword: Annotated[bool, Field(default=False)]
+    highlight: Annotated[bool, Field(default=False)]
     search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
