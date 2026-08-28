@@ -21,7 +21,7 @@ import {
 } from '@/hooks/use-pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { FieldErrors, useForm, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import ChunkMethodLearnMore from '../python/chunk-method-learn-more';
@@ -143,6 +143,22 @@ export default function DatasetSetting() {
     [handleSave],
   );
 
+  const onInvalid = useCallback(
+    (errors: FieldErrors) => {
+      // Surface the first failing operator tab so its field errors are visible.
+      const firstOperatorId = Object.keys(errors?.parser_config ?? {})[0];
+      if (firstOperatorId) {
+        setActiveTab(firstOperatorId);
+      }
+    },
+    [setActiveTab],
+  );
+
+  const { errors } = useFormState({
+    control: form.control,
+    name: 'parser_config',
+  });
+
   const { handleLinkOrEditSubmit, unbindFunc, handleAutoParse } =
     useConnectorHandlers(form, sourceDataState, setSourceDataState);
 
@@ -181,7 +197,7 @@ export default function DatasetSetting() {
         <CardContent className="p-0 flex-1 h-0 flex divide-x-0.5">
           <Form {...form}>
             <form
-              onSubmit={form.handleSubmit(handleSubmit)}
+              onSubmit={form.handleSubmit(handleSubmit, onInvalid)}
               className="flex flex-col"
             >
               <div className="flex-1 h-0 w-[768px] px-5 pt-5 overflow-y-auto scrollbar-auto">
@@ -213,6 +229,11 @@ export default function DatasetSetting() {
                       value={activeTab}
                       onValueChange={setActiveTab}
                       onOperatorValuesChange={handleOperatorValuesChange}
+                      operatorFormErrors={
+                        errors.parser_config as
+                          | Record<string, FieldErrors | undefined>
+                          | undefined
+                      }
                     />
                   )}
 

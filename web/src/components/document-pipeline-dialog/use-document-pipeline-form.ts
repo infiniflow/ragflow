@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { addParserConfigIssues } from '../pipeline-operator-tabs/parser-config-validation';
 
 export interface IDocumentPipelineDialogProps {
   parserId: string;
@@ -102,6 +103,7 @@ export function useDocumentPipelineForm({
               code: 'custom',
             });
           }
+          addParserConfigIssues(data.parser_config, ctx, t);
         }),
     [t],
   );
