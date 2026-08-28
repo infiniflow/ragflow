@@ -12,19 +12,53 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
 # Build directories
-CPP_DIR="$PROJECT_ROOT/internal/cpp"
+CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
 RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
-ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
-INGESTOR_BINARY="$PROJECT_ROOT/bin/ingestor"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
-# office_oxide native library settings
-OFFICE_OXIDE_PREFIX="${HOME}/.office_oxide"
-OFFICE_OXIDE_VERSION="0.1.2"
+# Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
+# If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
+# and skips the network (download_deps.py) fallback.
+SYSTEM_DEPS="/opt/ragflow-native-libs"
+
+# office_oxide native library settings — static linking
+OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
+OFFICE_OXIDE_VERSION="0.1.8"
+
+# pdfium native library settings — static linking (kognitos/pdfium-static)
+PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
+PDFIUM_STATIC_VERSION="7809"
+
+# pdf_oxide native library settings — static linking (go-ffi tarball)
+PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
+PDF_OXIDE_VERSION="0.3.67"
+
+# Copy a dependency from the system pre-seed directory to the user cache.
+# Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
+_seed_from_system() {
+    local dep_name="$1"  # e.g. "pdfium-static", "pdf_oxide", "office_oxide"
+    local dep_dir="${HOME}/ragflow-native-libs/${dep_name}"
+    local sys_dir="${SYSTEM_DEPS}/${dep_name}"
+
+    echo "check if dep ${dep_name} exists in ${dep_dir} or ${sys_dir}"
+
+    if [ -d "$dep_dir" ]; then
+        echo "  ${dep_name} → ${dep_dir} (user cache)"
+        return 0  # already cached
+    fi
+    if [ -d "$sys_dir" ]; then
+        echo "  ${dep_name} → ${sys_dir} (system)"
+        mkdir -p "$(dirname "$dep_dir")"
+        cp -r "$sys_dir" "$dep_dir"
+        return 0
+    fi
+    echo "  ${dep_name} not found in system or user cache"
+    return 1
+}
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
@@ -84,7 +118,7 @@ check_cpp_deps() {
     print_section "Checking c++ dependencies"
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
-    command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
+    command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
 
     if check_pcre2; then
         echo "✓ pcre2 library found"
@@ -103,103 +137,122 @@ check_cpp_deps() {
 
 check_go_deps() {
     print_section "Checking go dependencies"
-    
+
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
 }
 
-# Download and extract a tar.gz from a URL to a target directory
-_download_and_extract() {
-    local url="$1" target_dir="$2"
-    echo "Downloading ${url} ..."
-    local tmpfile
-    tmpfile="$(mktemp)"
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" -o "$tmpfile"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q "$url" -O "$tmpfile"
-    else
-        echo -e "${RED}Error: need curl or wget to download office_oxide${NC}"
-        exit 1
-    fi
-    tar xzf "$tmpfile" -C "$target_dir"
-    rm -f "$tmpfile"
-}
-
-# Check / install office_oxide native library (Rust → C FFI library)
+# Check office_oxide native library
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
+    _seed_from_system "office_oxide" || true
 
-    local lib_file header_path
-    case "$(uname -s)" in
-        Linux)  lib_file="liboffice_oxide.so" ;;
-        Darwin) lib_file="liboffice_oxide.dylib" ;;
-        *)      echo -e "${RED}Unsupported OS for office_oxide${NC}"; exit 1 ;;
-    esac
-
+    local lib_file="liboffice_oxide.a"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
     local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
 
-    if [ -f "$lib_path" ] && [ -f "$header_path" ]; then
-        echo "✓ office_oxide native library found at ${OFFICE_OXIDE_PREFIX}"
+    if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
+        echo -e "${RED}Error: office_oxide native library not found${NC}"
+        echo "  Expected: ${lib_path}"
+        echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+        echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
+        exit 1
+    fi
+
+    # Verify the on-disk lib matches the pinned version. A stale older lib
+    # (e.g. v0.1.7) silently reintroduces the PPT97 content-loss bug
+    # (github.com/yfedoseev/office_oxide#85, fixed in v0.1.8): PlainText()
+    # on a legacy .ppt returns stale metadata instead of slide text.
+    if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
+        local found_version
+        found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
+        echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
+        echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+        echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
+        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+        echo "    uv run python3 ragflow_deps/download_go_deps.py"
+        exit 1
+    fi
+
+    echo "✓ office_oxide v${OFFICE_OXIDE_VERSION} native library found at ${OFFICE_OXIDE_PREFIX}"
+    return 0
+}
+
+# Check pdfium static library.
+check_pdfium_deps() {
+    _seed_from_system "pdfium-static" || true
+    local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
+
+    if [ -f "$lib_path" ]; then
+        echo "  pdfium (static) → ${PDFIUM_STATIC_PREFIX}"
         return 0
     fi
 
-    echo "office_oxide native library not found. Installing..."
+    echo "  pdfium (static) not found"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+    echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
+    return 1
+}
 
-    # Map platform to the release asset name. Note: the GitHub release archives
-    # omit the version number from the native-* asset filenames.
-    local asset_name
+# Check pdf_oxide static library.
+check_pdf_oxide_deps() {
+    _seed_from_system "pdf_oxide" || true
+    # Map platform to tarball-internal subdirectory.
+    local platform_subdir
     case "$(uname -s)" in
         Linux)
             case "$(uname -m)" in
-                x86_64)  asset_name="native-linux-x86_64" ;;
-                aarch64|arm64) asset_name="native-linux-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+                x86_64)  platform_subdir="linux_amd64" ;;
+                aarch64|arm64) platform_subdir="linux_arm64" ;;
+                *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
             esac
             ;;
         Darwin)
             case "$(uname -m)" in
-                x86_64)  asset_name="native-macos-x86_64" ;;
-                aarch64|arm64) asset_name="native-macos-aarch64" ;;
-                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+                x86_64)  platform_subdir="darwin_amd64" ;;
+                arm64)   platform_subdir="darwin_arm64" ;;
+                *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
             esac
             ;;
+        *) echo "  pdf_oxide (static) → unsupported OS"; return 1 ;;
     esac
 
-    local release_url="https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/${asset_name}.tar.gz"
+    local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
 
-    mkdir -p "${OFFICE_OXIDE_PREFIX}"
-    _download_and_extract "$release_url" "${OFFICE_OXIDE_PREFIX}"
-
-    if [ ! -f "$lib_path" ]; then
-        echo -e "${RED}Error: Failed to install office_oxide native library (missing ${lib_path})${NC}"
-        echo "  Try: curl -fsSL ${release_url} | tar xzf - -C ${OFFICE_OXIDE_PREFIX}"
-        exit 1
+    if [ -f "$lib_path" ]; then
+        echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
+        return 0
     fi
 
-    echo -e "${GREEN}✓ office_oxide native library installed${NC}"
+    echo "  pdf_oxide (static) not found"
+    echo "  Expected: ${lib_path}"
+    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+    echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
+    return 1
 }
 
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
-    
+
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
-    
+
     echo "Running cmake..."
     cmake .. -DCMAKE_BUILD_TYPE=Release
-    
+
     echo "Building librag_tokenizer_c_api.a..."
-    make rag_tokenizer_c_api -j$(nproc)
-    
+    local jobs
+    jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    make rag_tokenizer_c_api -j"$jobs"
+
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
         exit 1
     fi
-    
+
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
 }
 
@@ -217,7 +270,9 @@ build_cpp_test() {
     fi
 
     echo "Building rag_analyzer_c_test..."
-    make rag_analyzer_c_test -j$(nproc)
+    local jobs
+    jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    make rag_analyzer_c_test -j"$jobs"
 
     if [ ! -f "$BUILD_DIR/rag_analyzer_c_test" ]; then
         echo -e "${RED}Error: Failed to build rag_analyzer_c_test${NC}"
@@ -261,56 +316,108 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, and $RAGFLOW_CLI_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$INGESTOR_BINARY" cmd/ingestor.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
         go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/ragflow_server.go
+
+
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
+        echo -e "${RED}Error: Failed to build RAGFlow main binary${NC}"
         exit 1
     fi
 
-    if [ ! -f "$ADMIN_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build Admin server binary${NC}"
-        exit 1
-    fi
-
-    if [ ! -f "$INGESTOR_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build Ingestor binary${NC}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
-    echo -e "${GREEN}✓ Go admin_server built successfully: $ADMIN_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go ragflow-cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
-    echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
 }
 
-# Configure CGO flags for the office_oxide native library and the runtime
-# rpath used by test binaries. Call before any `go build` / `go test` step
-# that links against office_oxide.
+# Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
+# All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
+    # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
+
+    # Go's build cache keys CGO_LDFLAGS as a string — it does NOT hash the
+    # file content of referenced .a archives. So swapping the .a in-place
+    # (same path) does NOT invalidate the cache, and `go build` silently
+    # reuses a stale binary linked against the old .a.
+    #
+    # Create a version-stamped symlink directory so the flag string
+    # includes the actual linked version. When the .a is upgraded, the
+    # path changes → Go cache key changes → automatic relink.
+    local office_oxide_lib_dir="${OFFICE_OXIDE_PREFIX}/lib"
+    local versioned_lib_dir="${office_oxide_lib_dir}/v${OFFICE_OXIDE_VERSION}"
+    mkdir -p "$versioned_lib_dir"
+    ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
+        "${versioned_lib_dir}/liboffice_oxide.a"
+
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
-    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
-    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
-    # Make the .so discoverable to test binaries spawned without rpath.
-    export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
+
+    # ── pdfium ────────────────────────────────────────────────────────
+    check_pdfium_deps || return 1
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
+    # Linux: Chromium-built objects use Clang's .eh_frame format which GNU ld
+    # cannot merge. Use lld (LLVM linker) which handles them correctly.
+    # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
+    # staticlibs that embed the Rust runtime; linking them together produces
+    # duplicate rust_eh_personality symbols.
+    if [ "$(uname -s)" = "Linux" ]; then
+        if ! command -v ld.lld >/dev/null 2>&1; then
+            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
+            echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
+            return 1
+        fi
+        export CGO_LDFLAGS="$CGO_LDFLAGS \
+            ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
+            ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
+            -fuse-ld=lld -Wl,--allow-multiple-definition"
+    fi
+
+    # ── pdf_oxide ─────────────────────────────────────────────────────
+    check_pdf_oxide_deps || return 1
+    # The go-ffi tarball places the .a under lib/<platform_subdir>/.
+    local pdf_oxide_subdir
+    case "$(uname -s)" in
+        Linux)
+            case "$(uname -m)" in
+                x86_64)  pdf_oxide_subdir="linux_amd64" ;;
+                aarch64|arm64) pdf_oxide_subdir="linux_arm64" ;;
+                *) echo "pdf_oxide: unsupported arch"; return 1 ;;
+            esac
+            ;;
+        Darwin)
+            case "$(uname -m)" in
+                x86_64)  pdf_oxide_subdir="darwin_amd64" ;;
+                arm64)   pdf_oxide_subdir="darwin_arm64" ;;
+                *) echo "pdf_oxide: unsupported arch"; return 1 ;;
+            esac
+            ;;
+    esac
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}/libpdf_oxide.a"
+
+    # ── platform-specific system libraries ────────────────────────────
+    case "$(uname -s)" in
+        Linux)
+            export CGO_LDFLAGS="$CGO_LDFLAGS -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+            ;;
+        Darwin)
+            export CGO_LDFLAGS="$CGO_LDFLAGS \
+                -framework CoreGraphics -framework CoreFoundation \
+                -framework Security -framework SystemConfiguration \
+                -liconv -lresolv -lc++"
+            ;;
+    esac
+
+    echo "CGO_CFLAGS:   $CGO_CFLAGS"
+    echo "CGO_LDFLAGS:  $CGO_LDFLAGS"
 }
 
-# Run Go unit tests with the same CGO env as `build_go`. Pass any extra args
-# to `go test`, e.g. `./build.sh --test -run TestFoo ./internal/admin/...`.
+# Run Go unit tests with the same CGO env as `build_go`. Any extra args are
+# forwarded to `go test`, e.g. `./build.sh --test -run TestFoo ./internal/admin/...`.
 run_go_tests() {
     print_section "Running Go tests"
 
@@ -325,14 +432,30 @@ run_go_tests() {
         go test -count=1 "$@"
 }
 
+# Run Go tests gated behind a build tag (or space-separated tag list), e.g.
+# `./build.sh --test-integration -run TestFoo ./internal/engine/...`.
+# See "Go Test Tiers" in AGENTS.md for the tier definitions.
+run_go_tests_tagged() {
+    local tags="$1"; shift
+    print_section "Running Go tests (tags: ${tags})"
+
+    cd "$PROJECT_ROOT"
+    setup_cgo_env
+
+    if [ "$#" -eq 0 ]; then
+        set -- ./...
+    fi
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go test -tags "${tags}" -count=1 "$@"
+}
+
 # Clean build artifacts
 clean() {
     print_section "Cleaning build artifacts"
-    
+
     rm -rf "$BUILD_DIR"
     rm -f "$RAGFLOW_SERVER_BINARY"
-    rm -f "$ADMIN_SERVER_BINARY"
-    rm -f "$INGESTOR_BINARY"
     rm -f "$RAGFLOW_CLI_BINARY"
 
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
@@ -340,16 +463,8 @@ clean() {
 
 # Run the server
 run() {
-    if [ ! -f "$ADMIN_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: $ADMIN_SERVER_BINARY not found. Build first with --all or --go${NC}"
-        exit 1
-    fi
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: $RAGFLOW_SERVER_BINARY not found. Build first with --all or --go${NC}"
-        exit 1
-    fi
-    if [ ! -f "$INGESTOR_BINARY" ]; then
-        echo -e "${RED}Error: $INGESTOR_BINARY not found. Build first with --all or --go${NC}"
         exit 1
     fi
 
@@ -358,22 +473,27 @@ run() {
     # admin_server must be running before ragflow_server, otherwise ragflow_server's
     # heartbeats to admin will error out (see internal/development.md).
     print_section "Starting admin server (background)"
-    "$ADMIN_SERVER_BINARY" &
+    "$RAGFLOW_SERVER_BINARY" --admin &
     ADMIN_PID=$!
-    trap 'kill "$ADMIN_PID" 2>/dev/null || true' EXIT INT TERM
+    # One trap for both background services: a second `trap ... EXIT INT TERM`
+    # would replace this one rather than add to it, leaving admin_server holding
+    # port 9383 after the foreground server exits. INGESTOR_PID is cleared first
+    # so a value inherited from the environment cannot be signalled during the
+    # window before the ingestor starts.
+    INGESTOR_PID=""
+    trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
 
     # Give admin_server a moment to bind its listening port (9383) before
     # ragflow_server starts sending heartbeats to it.
     sleep 1
 
     print_section "Starting ingestor (background)"
-    "$INGESTOR_BINARY" &
+    "$RAGFLOW_SERVER_BINARY" --ingestor &
     INGESTOR_PID=$!
-    trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_SERVER_BINARY"
+    "$RAGFLOW_SERVER_BINARY" --api
 }
 
 # Show help
@@ -388,11 +508,20 @@ Build script for RAGFlow Go server with C++ bindings.
 OPTIONS:
     --all, -a       Build everything (C++ library + Go server) [default]
     --cpp, -c       Build only C++ static library
-    --cpp-test      Build C++ test executable (requires --cpp first)
+    --cpp-test      Build C++ test executable (builds the C++ library if needed)
     --go, -g        Build only Go server (requires C++ library to be built)
-    --test, -t      Run Go unit tests (sets up CGO env for office_oxide).
-                    Pass extra args after `--` to forward to `go test`, e.g.
-                    `$0 --test -- -run TestFoo ./internal/admin/...`
+    --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
+                    native static libs (office_oxide/pdfium/pdf_oxide) needed to
+                    build (same contract as the Go tier table in AGENTS.md).
+                    Extra args are forwarded to `go test`, e.g.
+                    `$0 --test -run TestFoo ./internal/admin/...`
+    --test-integration   Run Go tests tagged 'integration' (need real services,
+                    e.g. MySQL/MinIO/ES/Infinity/LLM). e.g.
+                    `$0 --test-integration ./internal/engine/...`
+    --test-e2e           Run Go tests tagged 'e2e' (full-pipeline, heavy).
+    --test-manual        Run Go tests tagged 'manual' (very slow; local opt-in
+                    ONLY, never run in CI).
+    --test-all           Run 'integration' + 'e2e' tests (excludes 'manual').
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
@@ -404,16 +533,21 @@ EXAMPLES:
     $0 --cpp        # Build only C++ library
     $0 --go         # Build only Go server
     $0 --cpp-test   # Build C++ test executable
-    $0 --test       # Run all Go tests
-    $0 --test -- -run TestFoo ./internal/admin/...   # Targeted Go tests
+    $0 --test       # Run all Go tests (unit tier, no build tag)
+    $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
+    $0 --test-integration ./internal/engine/...      # integration tier
+    $0 --test-e2e                                 # e2e tier
+    $0 --test-manual                             # manual tier (very slow)
+    $0 --test-all                                # integration + e2e (no manual)
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
 DEPENDENCIES:
     - cmake >= 4.0
-    - go >= 1.24
-    - g++ with C++17/23 support
-    - office_oxide native library (auto-downloaded on first build)
+    - go >= 1.26.4
+    - clang++ with C++20 support
+    - office_oxide native library (download with: uv run python3 ragflow_deps/download_go_deps.py)
+    - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
         - openSUSE/RHEL/Fedora: pcre2-devel
@@ -447,12 +581,42 @@ main() {
             ;;
         --test|-t)
             check_go_deps
-            # Forward any args after `--` to `go test`.
-            if [ "${2:-}" = "--" ]; then
-                shift 2
-                run_go_tests "$@"
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests "${args[@]:2}"
             else
-                run_go_tests
+                run_go_tests "${args[@]:1}"
+            fi
+            ;;
+        --test-integration)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged integration "${args[@]:2}"
+            else
+                run_go_tests_tagged integration "${args[@]:1}"
+            fi
+            ;;
+        --test-e2e)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged e2e "${args[@]:2}"
+            else
+                run_go_tests_tagged e2e "${args[@]:1}"
+            fi
+            ;;
+        --test-manual)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged manual "${args[@]:2}"
+            else
+                run_go_tests_tagged manual "${args[@]:1}"
+            fi
+            ;;
+        --test-all)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged "integration e2e" "${args[@]:2}"
+            else
+                run_go_tests_tagged "integration e2e" "${args[@]:1}"
             fi
             ;;
         --clean|-C)
@@ -474,10 +638,10 @@ main() {
             build_cpp
             build_go
             echo -e "\n${GREEN}=== Build completed successfully! ===${NC}"
-            echo "Binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, $RAGFLOW_CLI_BINARY"
+            echo "Binary: $RAGFLOW_SERVER_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
-            echo -e "${RED}Unknown option: $1${NC}"
+            echo -e "${RED}Unknown option: ${args[0]}${NC}"
             show_help
             exit 1
             ;;

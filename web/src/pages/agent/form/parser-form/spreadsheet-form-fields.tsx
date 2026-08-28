@@ -12,12 +12,14 @@ import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
+import { FileType } from '../../constant/pipeline';
 import {
   FlattenMediaToTextFormField,
   ParserMethodFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
-import { buildFieldNameWithPrefix } from './utils';
+import { buildFieldNameWithPrefix, isForeignParseMethod } from './utils';
 
 const tableResultTypeOptions: SelectWithSearchFlagOptionType[] = [
   { label: 'Markdown', value: '0' },
@@ -32,6 +34,7 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
 export function SpreadsheetFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
+  const ownerTenantId = useOwnerTenantId();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
 
@@ -58,7 +61,11 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
   }, [parseMethod]);
 
   useEffect(() => {
-    if (isEmpty(form.getValues(parseMethodName))) {
+    const current = form.getValues(parseMethodName);
+    // On a file-type switch the field remounts and react-hook-form re-seeds it
+    // from the node's saved form data, so it can hold another file type's
+    // static parse method (e.g. ocr) — reset it to DeepDOC in that case too.
+    if (isEmpty(current) || isForeignParseMethod(FileType.Spreadsheet, current)) {
       form.setValue(parseMethodName, ParseDocumentType.DeepDOC, {
         shouldValidate: true,
         shouldDirty: true,
@@ -106,6 +113,7 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
           label={t('chat.model')}
           modelTypes={ModelTypeMap.img2txt_id}
           allowClear
+          ownerTenantId={ownerTenantId}
         />
       )}
       {tcadpOptionsShown && (

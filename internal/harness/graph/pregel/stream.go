@@ -276,6 +276,8 @@ func (sm *StreamManager) EmitDebug(step int, message string, data any) {
 }
 
 // EmitFinal emits final event with complete state.
+// Uses blocking channel send to guarantee delivery — dropping the final event
+// would cause RunSync to return nil state (silent data loss).
 func (sm *StreamManager) EmitFinal(step int, state any) {
 	if !sm.shouldEmit(EventTypeFinal) {
 		return
@@ -285,8 +287,7 @@ func (sm *StreamManager) EmitFinal(step int, state any) {
 	event.Data = map[string]any{
 		"state": state,
 	}
-
-	sm.emit(event)
+	sm.eventCh <- event
 }
 
 // emit sends an event to the channel.

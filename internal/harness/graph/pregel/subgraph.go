@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/constants"
-	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -55,7 +54,7 @@ func (m *SubgraphManager) CreateSubgraph(config *SubgraphConfig) (*Engine, error
 	// Try to create an independent engine from the graph if provided.
 	var subgraphEngine *Engine
 	if config.Graph != nil {
-		if sg, ok := config.Graph.(*graph.StateGraph); ok {
+		if sg, ok := config.Graph.(types.StateGraph); ok {
 			var opts []EngineOption
 			if m.parentEngine.checkpointer != nil {
 				opts = append(opts, WithCheckpointer(m.parentEngine.checkpointer))

@@ -13,13 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from itertools import permutations
 from typing import Optional, List
 
 from common.constants import MemoryType
 from common.time_utils import current_timestamp
 
-class PromptAssembler:
 
+class PromptAssembler:
     SYSTEM_BASE_TEMPLATE = """**Memory Extraction Specialist**
 You are an expert at analyzing conversations to extract structured memory.
 
@@ -47,7 +48,6 @@ You are an expert at analyzing conversations to extract structured memory.
         - invalid_at: When it becomes false (e.g., repeal, disproven) or empty if still true
         - Default: valid_at = conversation time, invalid_at = "" for timeless facts
         """,
-
         MemoryType.EPISODIC.name.lower(): """
         **EXTRACT EPISODIC KNOWLEDGE:**
         - Specific experiences, events, personal stories
@@ -59,7 +59,6 @@ You are an expert at analyzing conversations to extract structured memory.
         - invalid_at: Event end time or empty if instantaneous
         - Extract explicit times: "at 3 PM", "last Monday", "from X to Y"
         """,
-
         MemoryType.PROCEDURAL.name.lower(): """
         **EXTRACT PROCEDURAL KNOWLEDGE:**
         - Processes, methods, step-by-step instructions
@@ -71,7 +70,7 @@ You are an expert at analyzing conversations to extract structured memory.
         - invalid_at: When it expires/becomes obsolete or empty if current
         - For version-specific: use release dates
         - For best practices: invalid_at = ""
-        """
+        """,
     }
 
     OUTPUT_TEMPLATES = {
@@ -79,12 +78,11 @@ You are an expert at analyzing conversations to extract structured memory.
         "semantic": [
             {
                 "content": "Clear factual statement",
-                "valid_at": "timestamp or empty",
+                "valid_at": "timestamp — use the conversation time when the fact has no date of its own",
                 "invalid_at": "timestamp or empty"
             }
         ]
         """,
-
         MemoryType.EPISODIC.name.lower(): """
         "episodic": [
             {
@@ -94,7 +92,6 @@ You are an expert at analyzing conversations to extract structured memory.
             }
         ]
         """,
-
         MemoryType.PROCEDURAL.name.lower(): """
         "procedural": [
             {
@@ -103,7 +100,7 @@ You are an expert at analyzing conversations to extract structured memory.
                 "invalid_at": "procedure expiration timestamp or empty"
             }
         ]
-        """
+        """,
     }
 
     BASE_USER_PROMPT = """
@@ -111,21 +108,28 @@ You are an expert at analyzing conversations to extract structured memory.
 {conversation}
 
 **CONVERSATION TIME:** {conversation_time}
-**CURRENT TIME:** {current_time}    
+**CURRENT TIME:** {current_time}
 """
 
     @classmethod
     def assemble_system_prompt(cls, config: dict) -> str:
         types_to_extract = cls._get_types_to_extract(config["memory_type"])
+        return cls._assemble_system_prompt(config, types_to_extract)
 
+    @classmethod
+    def is_default_system_prompt(cls, system_prompt: str, config: dict) -> bool:
+        """Recognize generated defaults without depending on type section order."""
+        types_to_extract = cls._get_types_to_extract(config["memory_type"])
+        return any(system_prompt == cls._assemble_system_prompt(config, list(type_order)) for type_order in permutations(types_to_extract))
+
+    @classmethod
+    def _assemble_system_prompt(cls, config: dict, types_to_extract: List[str]) -> str:
         type_instructions = cls._generate_type_instructions(types_to_extract)
 
         output_format = cls._generate_output_format(types_to_extract)
 
         full_prompt = cls.SYSTEM_BASE_TEMPLATE.format(
-            type_specific_instructions=type_instructions,
-            timestamp_format=config.get("timestamp_format", "ISO 8601"),
-            max_items=config.get("max_items_per_type", 5)
+            type_specific_instructions=type_instructions, timestamp_format=config.get("timestamp_format", "ISO 8601"), max_items=config.get("max_items_per_type", 5)
         )
 
         full_prompt += f"\n**REQUIRED OUTPUT FORMAT (JSON):**\n```json\n{{\n{output_format}\n}}\n```\n"
@@ -138,22 +142,16 @@ You are an expert at analyzing conversations to extract structured memory.
 
     @staticmethod
     def _get_types_to_extract(requested_types: List[str]) -> List[str]:
-        types = set()
-        for rt in requested_types:
-            if rt in [e.name.lower()  for e in MemoryType] and rt != MemoryType.RAW.name.lower():
-                types.add(rt)
-        return list(types)
+        return [memory_type.name.lower() for memory_type in MemoryType if memory_type is not MemoryType.RAW and memory_type.name.lower() in requested_types]
 
     @classmethod
     def _generate_type_instructions(cls, types_to_extract: List[str]) -> str:
-        target_types = set(types_to_extract)
-        instructions = [cls.TYPE_INSTRUCTIONS[mt] for mt in target_types]
+        instructions = [cls.TYPE_INSTRUCTIONS[mt] for mt in types_to_extract]
         return "\n".join(instructions)
 
     @classmethod
     def _generate_output_format(cls, types_to_extract: List[str]) -> str:
-        target_types = set(types_to_extract)
-        output_parts = [cls.OUTPUT_TEMPLATES[mt] for mt in target_types]
+        output_parts = [cls.OUTPUT_TEMPLATES[mt] for mt in types_to_extract]
         return ",\n".join(output_parts)
 
     @staticmethod
@@ -184,12 +182,7 @@ You are an expert at analyzing conversations to extract structured memory.
         return "\n".join(examples)
 
     @classmethod
-    def assemble_user_prompt(
-            cls,
-            conversation: str,
-            conversation_time: Optional[str] = None,
-            current_time: Optional[str] = None
-    ) -> str:
+    def assemble_user_prompt(cls, conversation: str, conversation_time: Optional[str] = None, current_time: Optional[str] = None) -> str:
         return cls.BASE_USER_PROMPT.format(
             conversation=conversation,
             conversation_time=conversation_time or "Not specified",

@@ -162,9 +162,7 @@ func TestInterrupt_NoCheckpointer(t *testing.T) {
 func TestInterrupt_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			engine := NewEngine(newSimpleGraph(t),
 				WithRecursionLimit(10),
 				WithInterrupts("node_a"),
@@ -173,7 +171,7 @@ func TestInterrupt_Concurrent(t *testing.T) {
 			if err == nil {
 				t.Errorf("expected interrupt")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

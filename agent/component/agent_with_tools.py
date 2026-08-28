@@ -27,7 +27,7 @@ import json_repair
 
 from agent.component.llm import LLM, LLMParam
 from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
 from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
 from common.connection_utils import timeout
@@ -69,6 +69,7 @@ class AgentParam(LLMParam, ToolParamBase):
         self.max_rounds = 5
         self.description = ""
         self.custom_header = {}
+        self.tool_timeout = 10
 
 
 class Agent(LLM, ToolBase):
@@ -82,9 +83,9 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
-        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
-        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(
             self._canvas.get_tenant_id(),
             chat_model_config,
@@ -111,16 +112,16 @@ class Agent(LLM, ToolBase):
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
                 self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
         self.callback = partial(self._canvas.tool_use_callback, id)
-        self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
+        self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback, default_timeout=self._param.tool_timeout)
         if self.tool_meta:
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 
-    def _fit_messages(self, prompt: str, msg: list[dict]) -> list[dict]:
-        _, fitted_messages = message_fit_in(
-            [{"role": "system", "content": prompt}, *msg],
-            int(self.chat_mdl.max_length * 0.97),
-        )
-        return fitted_messages
+    def _fit_messages(self, prompt: str, msg: list[dict]) -> tuple[list[dict] | None, str | None]:
+        msg_fit, fit_error = LLM.fit_messages(prompt, msg, self.chat_mdl.max_length)
+        if fit_error:
+            logging.error("Agent prompt fit error: %s", fit_error)
+            return None, fit_error
+        return msg_fit, None
 
     @staticmethod
     def _append_system_prompt(msg: list[dict], extra_prompt: str) -> None:
@@ -185,7 +186,7 @@ class Agent(LLM, ToolBase):
             {"role": "system", "content": schema_prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text."},
             {"role": "user", "content": text},
         ]
-        _, fmt_msgs = message_fit_in(fmt_msgs, int(self.chat_mdl.max_length * 0.97))
+        _, fmt_msgs = message_fit_in(fmt_msgs, LLM.context_fit_budget(self.chat_mdl.max_length))
         return await self._generate_async(fmt_msgs)
 
     def _invoke(self, **kwargs):
@@ -196,11 +197,14 @@ class Agent(LLM, ToolBase):
         if self.check_if_canceled("Agent processing"):
             return
 
+        user_prompt = kwargs.get("user_prompt")
+        user_prompt_text = "" if user_prompt is None else str(user_prompt)
         _logger.debug(
-            "[Agent] _invoke_async called. Component: %s, Keys in kwargs: %s, user_prompt: %s, tools count: %d",
+            "[Agent] _invoke_async called. Component: %s, Keys in kwargs: %s, user_prompt_present: %s, user_prompt_length: %d, tools count: %d",
             self._id,
             list(kwargs.keys()),
-            json.dumps(kwargs.get("user_prompt", ""), ensure_ascii=False, default=str)[:300],
+            bool(user_prompt_text.strip()),
+            len(user_prompt_text),
             len(self.tools) if self.tools else 0,
         )
 
@@ -215,8 +219,7 @@ class Agent(LLM, ToolBase):
             else:
                 usr_pmt = str(kwargs["user_prompt"])
             self._param.prompts = [{"role": "user", "content": usr_pmt}]
-            _logger.debug("[Agent] Built user prompt with length=%d, reasoning=%s, context=%s",
-                          len(usr_pmt), bool(kwargs.get("reasoning")), bool(kwargs.get("context")))
+            _logger.debug("[Agent] Built user prompt with length=%d, reasoning=%s, context=%s", len(usr_pmt), bool(kwargs.get("reasoning")), bool(kwargs.get("context")))
 
         if not self.tools:
             if self.check_if_canceled("Agent processing"):
@@ -240,7 +243,14 @@ class Agent(LLM, ToolBase):
             self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
             return
 
-        msg = self._fit_messages(prompt, msg)
+        msg, fit_error = self._fit_messages(prompt, msg)
+        if fit_error:
+            if self.get_exception_default_value():
+                self.set_output("content", self.get_exception_default_value())
+            else:
+                self.set_output("_ERROR", fit_error)
+            return
+
         self._append_system_prompt(msg, schema_prompt)
         _logger.debug("[Agent] Calling LLM with %d messages, has_schema=%s", len(msg), bool(schema_prompt))
         ans = await self._generate_async(msg)
@@ -283,7 +293,17 @@ class Agent(LLM, ToolBase):
             self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer() - st)
             msg = [*msg[:-1], {"role": "user", "content": user_request}]
 
-        msg = self._fit_messages(prompt, msg)
+        msg, fit_error = self._fit_messages(prompt, msg)
+        if fit_error:
+            if self.get_exception_default_value():
+                fallback = self.get_exception_default_value()
+                self.set_output("content", fallback)
+                yield fallback
+            else:
+                self.set_output("_ERROR", fit_error)
+                self.set_output("content", fit_error)
+                yield fit_error
+            return
 
         need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
         cited = False

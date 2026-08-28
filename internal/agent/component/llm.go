@@ -18,14 +18,17 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/component/messagefit"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
@@ -62,9 +65,9 @@ type LLMParam struct {
 	// same line verbatim.
 	FrequencyPenalty *float64
 
-	// Driver is the provider driver to use (e.g. "openai", "dummy"). When
-	// empty, the default ChatInvoker will look up a driver from ModelID
-	// (e.g. by attempting NewDummyModel for unknown providers).
+	// Driver is the configured provider driver to use (e.g. "openai"). When
+	// empty, the default ChatInvoker derives it from ModelID or uses the explicit
+	// test/development-only dummy driver.
 	Driver string
 
 	// APIKey overrides the default empty key. Tests may set this; prod
@@ -86,6 +89,15 @@ type LLMParam struct {
 	// Doubles on each retry, capped at 1 minute. Zero = default
 	// (2 seconds). Matches Python's `delay_after_error` param.
 	DelayAfterError time.Duration
+
+	// Thinking mirrors the python `thinking` Agent LLM setting
+	// (PR #15446). When set to "enabled" or "disabled", the LLM
+	// driver is told to turn its reasoning mode on/off
+	// (provider-specific; see chat_model.py for Qwen/Kimi/GLM
+	// policy). Empty string means "system default" — the LLM
+	// driver decides, which today means Qwen3 is sent
+	// `enable_thinking=false` unless overridden.
+	Thinking string
 }
 
 // LLMInput is the resolved input map the factory / Invoke expects.
@@ -103,6 +115,7 @@ type LLMInput struct {
 	OutputStructure          map[string]any
 	Driver                   string
 	APIKey                   string
+	Thinking                 string // "enabled" | "disabled" | ""
 }
 
 // LLMOutput mirrors the outputs map (per plan §2.11.3 row 5):
@@ -118,75 +131,68 @@ type LLMOutput struct {
 	Tokens  int
 }
 
-// ChatInvoker is the abstraction the LLM component uses to talk to a
-// chat model. The default implementation lives in this file; tests can
-// override the package-level defaultChatInvoker to inject a stub.
-type ChatInvoker interface {
-	Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error)
-}
+// ChatInvoker is an alias for the shared chat.Invoker seam. The production
+// eino-based implementation lives in this file; the package-level singleton is
+// owned by internal/agent/chat so agent tools and the harness can also call the
+// LLM without an import cycle.
+type ChatInvoker = chat.Invoker
 
-// ChatInvokeRequest is the minimal surface the LLM component needs to
-// dispatch a chat call. Driver / APIKey / ModelName are kept here so the
-// invoker can wire the right provider without the component caring.
-type ChatInvokeRequest struct {
-	Driver           string
-	ModelName        string
-	APIKey           string
-	BaseURL          string
-	Messages         []schema.Message
-	Temperature      *float64
-	TopP             *float64
-	PresencePenalty  *float64
-	FrequencyPenalty *float64
-	MaxTokens        *int
-}
+// ChatInvokeRequest is an alias for chat.Request.
+type ChatInvokeRequest = chat.Request
 
-// ChatInvokeResponse mirrors what the LLM component writes to its outputs.
-type ChatInvokeResponse struct {
-	Content string
-	Model   string
-	Stopped bool
-	Tokens  int
-}
+// ChatInvokeResponse is an alias for chat.Response.
+type ChatInvokeResponse = chat.Response
 
-// defaultChatInvokerMu guards defaultChatInvoker swaps during tests.
-var defaultChatInvokerMu sync.RWMutex
-
-// defaultChatInvoker is the production ChatInvoker. Replaced in tests.
-var defaultChatInvoker ChatInvoker = &einoChatInvoker{}
-
-// SetDefaultChatInvoker swaps the package-level ChatInvoker (test helper).
-// Pass nil to restore the default. Concurrent-safe.
+// SetDefaultChatInvoker delegates to the shared chat package singleton (test
+// helper). Pass nil to restore the "not configured" state. The production
+// einoChatInvoker is registered at boot in cmd/server_main.go.
 func SetDefaultChatInvoker(inv ChatInvoker) {
-	defaultChatInvokerMu.Lock()
-	defer defaultChatInvokerMu.Unlock()
-	defaultChatInvoker = inv
-}
-
-// getDefaultChatInvoker returns the current default ChatInvoker.
-func getDefaultChatInvoker() ChatInvoker {
-	defaultChatInvokerMu.RLock()
-	defer defaultChatInvokerMu.RUnlock()
-	if defaultChatInvoker == nil {
-		return &einoChatInvoker{}
+	if inv == nil {
+		chat.SetDefaultInvoker(nil)
+		return
 	}
-	return defaultChatInvoker
+	chat.SetDefaultInvoker(inv)
 }
 
-// GetDefaultChatInvokerForTest exposes the current package-level invoker so
+// GetDefaultChatInvokerForTest exposes the current shared chat invoker so
 // cross-package tests can swap it and restore it safely.
 func GetDefaultChatInvokerForTest() ChatInvoker {
-	return getDefaultChatInvoker()
+	return chat.GetDefaultInvoker()
+}
+
+// getDefaultChatInvoker returns the shared chat invoker, falling back to the
+// production eino invoker when none has been installed.
+func getDefaultChatInvoker() ChatInvoker {
+	if inv := chat.GetDefaultInvoker(); inv != nil {
+		return inv
+	}
+	return &einoChatInvoker{}
+}
+
+// InstallDefaultChatInvoker registers the production eino-based invoker as the
+// shared chat default. Called at server bootstrap so harness/agentic-search LLM
+// calls work in production; without it, chat.GetDefaultInvoker() stays nil and
+// harness falls back gracefully.
+func InstallDefaultChatInvoker() {
+	chat.SetDefaultInvoker(&einoChatInvoker{})
 }
 
 // einoChatInvoker is the production ChatInvoker — it constructs a fresh
-// models.EinoChatModel per call from the request and dispatches.
+// models.EinoChatModel per call from the request and dispatches. It is NOT
+// registered as the shared chat default at init (so chat.GetDefaultInvoker()
+// stays nil until bootstrap); cmd registers it via SetDefaultChatInvoker.
 type einoChatInvoker struct{}
 
 // Invoke satisfies ChatInvoker.
-func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if req.ModelName == "" {
-		return nil, fmt.Errorf("component: LLM: model_id is required")
+		// Harness/agentic-search nodes may omit the model; fall back to the
+		// bootstrap-registered tenant default so those calls work in production.
+		if def := chat.GetDefaultModelName(); def != "" {
+			req.ModelName = def
+		} else {
+			return nil, fmt.Errorf("component: LLM: model_id is required and no default model is configured")
+		}
 	}
 	driver := req.Driver
 	modelName := req.ModelName
@@ -199,29 +205,9 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 	if driver == "" {
 		driver = "dummy"
 	}
-	// baseURL: drivers consult map["default"] as the canonical endpoint
-	// (see internal/entity/models/base_model.go:GetBaseURL). When the
-	// caller did not override, leave the driver default in place by
-	// passing nil — every driver seeds its own map at construction time.
-	var baseURL map[string]string
-	if req.BaseURL != "" {
-		baseURL = map[string]string{"default": req.BaseURL}
-	}
-	// urlSuffix: each driver appends URLSuffix.Chat to baseURL to form
-	// the chat-completions endpoint (e.g. "chat/completions" for
-	// openai-compatible drivers, "v1/messages" for anthropic). The
-	// factory's NewModelDriver accepts a zero URLSuffix and stores it
-	// as-is; the openai driver then builds `<base>/` (with no path),
-	// which is the wrong endpoint for a v1-root base URL. We seed
-	// the right suffix per driver here so the factory and the
-	// openai driver's URL construction agree.
-	urlSuffix := chatURLSuffixFor(driver)
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, urlSuffix)
+	d, err := newChatModelDriver(driver, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM: resolve driver %q: %w", driver, err)
-	}
-	if d == nil {
-		return nil, fmt.Errorf("component: LLM: no driver for %q", driver)
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
@@ -232,16 +218,29 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
+	// Propagate the agent-level Thinking setting to the driver so
+	// providers like DeepSeek can send thinking: {type: "disabled"}
+	// and prevent chain-of-thought from leaking into the answer.
+	// Mirrors the Python agent/component/llm.py behaviour.
+	switch req.Thinking {
+	case "enabled":
+		t := true
+		chatCfg.Thinking = &t
+	case "disabled":
+		f := false
+		chatCfg.Thinking = &f
+	}
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
 	if err != nil {
 		return nil, err
 	}
 	return &ChatInvokeResponse{
-		Content: out.Content,
-		Model:   modelName,
-		Stopped: true,
-		Tokens:  0,
+		Content:  out.Content,
+		Thinking: out.ReasoningContent,
+		Model:    modelName,
+		Stopped:  true,
+		Tokens:   0,
 	}, nil
 }
 
@@ -283,21 +282,11 @@ func toEinoMessages(msgs []schema.Message) []*schema.Message {
 	return out
 }
 
-// chatURLSuffixFor returns the URLSuffix the factory should pass to
-// the driver for the chat endpoint. Each driver's ChatWithMessages
-// builds `baseURL/URLSuffix.Chat`, so the suffix has to match the
-// provider's actual chat path. We seed the common ones here; for any
-// driver the factory has no entry for, we fall through to a default
-// "chat/completions" path (the openai-compatible default), which
-// matches the dummy driver and any third-party openai-compatible
-// gateway.
-func chatURLSuffixFor(driver string) models.URLSuffix {
-	switch strings.ToLower(driver) {
-	case "anthropic":
-		return models.URLSuffix{Chat: "v1/messages"}
-	default:
-		return models.URLSuffix{Chat: "chat/completions"}
-	}
+// newChatModelDriver returns the provider-configured driver used by regular
+// chat. Provider-specific endpoint suffixes remain owned by conf/models/*.json;
+// a tenant base_url override replaces only the endpoint root.
+func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
+	return models.GetPreconfiguredDriver(driver, override)
 }
 
 // NewLLMComponent builds an LLMComponent from raw params.
@@ -309,8 +298,40 @@ func NewLLMComponent(p LLMParam) *LLMComponent {
 func (c *LLMComponent) Name() string { return "LLM" }
 
 // Invoke runs the LLM and returns the output map.
-func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+
+	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
+	// before invoking. Without this, a tenant_model.id or a composite model
+	// reference selected in the agent canvas is passed verbatim to the LLM
+	// driver, causing 400s for custom-added models.
+	var err error
+	originalModelID := p.ModelID
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+	}
+	// Resolve the model's context window (content_length) for message
+	// fitting. 0 means the model is unknown → fitMessages falls back to
+	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
+	// tenantID scopes composite-reference resolution to the tenant's own rows
+	// so a per-model "max_tokens" override in tenant_model.extra is honored.
+	tenantID := ""
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if tid, ok := state.Sys["tenant_id"].(string); ok {
+			tenantID = tid
+		}
+	}
+	contentLength := dao.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
+	if contentLength <= 0 {
+		// A 0 makes fitMessages fall back to the 8192 default budget, which can
+		// silently discard most of a large-context prompt, so surface the
+		// resolution failure for diagnosis.
+		common.Warn("llm: content_length not resolved, falling back to 8192",
+			zap.String("model_ref", originalModelID),
+			zap.String("driver", p.Driver),
+			zap.String("model_name", p.ModelID))
+	}
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -353,8 +374,63 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	if p.UserPrompt == "" {
 		p.UserPrompt = p.SystemPrompt
 	}
+	// Collect sys.files from canvas globals and inject their
+	// content into prompts and the image list. Mirrors Python's
+	// _collect_sys_files and the injection path in
+	// _prepare_prompt_variables (llm.py:225-281).
+	var sysFileTexts []string
+	var sysFileImgs []string
+	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		sysFileTexts, sysFileImgs = collectSysFiles(state)
+		if len(sysFileImgs) > 0 {
+			p.VisualFiles = dedupStrings(append(p.VisualFiles, sysFileImgs...))
+		}
+	}
+	// When the prompt contains an explicit {sys.files} placeholder,
+	// replace it with the collected file text and clear sysFileTexts
+	// so it is not injected again below.
+	if hasSysFilesPlaceholder {
+		joined := strings.Join(sysFileTexts, "\n\n")
+		p.SystemPrompt = strings.ReplaceAll(p.SystemPrompt, "{sys.files}", joined)
+		p.UserPrompt = strings.ReplaceAll(p.UserPrompt, "{sys.files}", joined)
+		sysFileTexts = nil
+	}
 
 	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite)
+	// Inject sys.files text content into the last user message.
+	if len(sysFileTexts) > 0 {
+		joined := strings.Join(sysFileTexts, "\n\n")
+		if len(msgs) > 0 && msgs[len(msgs)-1].Role == schema.User {
+			last := &msgs[len(msgs)-1]
+			if len(last.UserInputMultiContent) > 0 {
+				inserted := false
+				for i := range last.UserInputMultiContent {
+					if last.UserInputMultiContent[i].Type == schema.ChatMessagePartTypeText {
+						if last.UserInputMultiContent[i].Text != "" {
+							last.UserInputMultiContent[i].Text += "\n\n" + joined
+						} else {
+							last.UserInputMultiContent[i].Text = joined
+						}
+						inserted = true
+						break
+					}
+				}
+				if !inserted {
+					last.UserInputMultiContent = append([]schema.MessageInputPart{{
+						Type: schema.ChatMessagePartTypeText,
+						Text: joined,
+					}}, last.UserInputMultiContent...)
+				}
+			} else if last.Content != "" {
+				last.Content += "\n\n" + joined
+			} else {
+				last.Content = joined
+			}
+		} else {
+			msgs = append(msgs, schema.Message{Role: schema.User, Content: joined})
+		}
+	}
 	// Prepend the last N turns of conversation history from the
 	// canvas state. Mirrors Python's `_get_chat_template_kwargs` /
 	// `_fit_messages` path. When window size is 0 or history is
@@ -362,8 +438,24 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			msgs = prependHistory(msgs, state.History, p.MessageHistoryWindowSize)
+			msgs = prependHistory(msgs, state.SnapshotPriorHistory(), p.MessageHistoryWindowSize)
 		}
+	}
+	// Apply message fitting (trim to context window) after all
+	// prompt/history/sys.files augmentation and before invoking the
+	// LLM. Mirrors Python's message_fit_in in PR #16413. The budget is
+	// the model's context window (content_length), resolved from the
+	// model config above — NOT the canvas max_tokens, which caps
+	// generation length only.
+	{
+		// The system prompt is already embedded as the first message
+		// in msgs by buildMessagesWithImages; pass "" so fitMessages
+		// does not duplicate it.
+		fitted, fitErr := fitMessages("", msgs, contentLength)
+		if fitErr != "" {
+			return map[string]any{"content": fitErr}, nil
+		}
+		msgs = fitted
 	}
 	inv := getDefaultChatInvoker()
 	// Param-level retry override. When MaxRetries OR
@@ -407,7 +499,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		// MaxRetries is an absolute count, not a stacked one.
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:           p.Driver,
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
@@ -418,16 +510,28 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		PresencePenalty:  p.PresencePenalty,
 		FrequencyPenalty: p.FrequencyPenalty,
 		MaxTokens:        p.MaxTokens,
+		Thinking:         p.Thinking,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
 
+	// Strip think blocks + JSON fences from the response.
+	// Mirrors Python's clean_formated_answer() exactly
+	// (re.sub(r"^.*</think>", "", ...) + ^.*```json + trailing ```).
+	// Python only cleans for structured output — keep raw content for
+	// regular responses (llm.py:483: self.set_output("content", ans)).
+	cleaned := resp.Content
+	if p.OutputStructure != nil || p.JSONOutput {
+		cleaned = cleanFormattedAnswer(resp.Content)
+	}
+
 	out := map[string]any{
-		"content": resp.Content,
-		"model":   resp.Model,
-		"stopped": resp.Stopped,
-		"tokens":  resp.Tokens,
+		"content":  cleaned,
+		"thinking": resp.Thinking,
+		"model":    resp.Model,
+		"stopped":  resp.Stopped,
+		"tokens":   resp.Tokens,
 	}
 	if p.JSONOutput {
 		var parsed map[string]any
@@ -446,7 +550,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		// deferred to a future phase.
 		parsed, ok := matchOutputStructure(resp.Content, p.OutputStructure)
 		if !ok {
-			retryResp, err := inv.Invoke(ctx, ChatInvokeRequest{
+			retryResp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 				Driver:           p.Driver,
 				ModelName:        p.ModelID,
 				APIKey:           p.APIKey,
@@ -457,6 +561,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 				PresencePenalty:  p.PresencePenalty,
 				FrequencyPenalty: p.FrequencyPenalty,
 				MaxTokens:        p.MaxTokens,
+				Thinking:         p.Thinking,
 			})
 			if err == nil {
 				parsed, ok = matchOutputStructure(retryResp.Content, p.OutputStructure)
@@ -469,11 +574,12 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			out["structured"] = parsed
 			// Also update content to the validated response so
 			// downstream consumers reading "content" get the JSON text.
-			out["content"] = resp.Content
+			out["content"] = cleanFormattedAnswer(resp.Content)
 		} else {
 			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
 	}
+	out["thinking"] = resp.Thinking
 	return out, nil
 }
 
@@ -499,7 +605,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 // is deferred — the public surface here is correct, only the data
 // source needs to be swapped to a real StreamReader consumer in a
 // follow-up.
-func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
+func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	out := make(chan map[string]any, 16)
 	go func() {
 		defer close(out)
@@ -510,7 +616,7 @@ func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-cha
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		result, err := c.Invoke(ctx, inputs)
+		result, err := c.Invoke(ctx, db, inputs)
 		if err != nil {
 			select {
 			case out <- map[string]any{"error": err.Error()}:
@@ -522,7 +628,7 @@ func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-cha
 		// A real streaming integration would loop over a channel
 		// here and emit multiple chunks with partial content.
 		chunk := map[string]any{
-			"thinking": "",
+			"thinking": result["thinking"],
 			"content":  result["content"],
 		}
 		select {
@@ -677,6 +783,50 @@ func extractDataImages(values []string) []string {
 	return out
 }
 
+// collectSysFiles splits sys.files from canvas state into text parts
+// and image data URIs. The caller is responsible for handling any
+// {sys.files} placeholder replacement in the prompts.
+func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string) {
+	files, ok := state.Sys["files"]
+	if !ok {
+		return nil, nil
+	}
+	var fileList []string
+	switch values := files.(type) {
+	case []string:
+		fileList = values
+	case []any:
+		fileList = make([]string, 0, len(values))
+		for _, value := range values {
+			if s, ok := value.(string); ok {
+				fileList = append(fileList, s)
+			}
+		}
+	}
+	for _, s := range fileList {
+		if strings.HasPrefix(s, "data:image/") {
+			imageURIs = append(imageURIs, s)
+		} else {
+			textParts = append(textParts, s)
+		}
+	}
+	return textParts, imageURIs
+}
+
+// dedupStrings returns the deduplicated slice in first-seen order.
+func dedupStrings(vals []string) []string {
+	seen := make(map[string]struct{}, len(vals))
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
 // prependHistory inserts up to `window` prior turns from the canvas
 // history before the current system+user messages. Each history entry
 // is a {role, content} map; only the last `window` are kept, with
@@ -737,6 +887,15 @@ func buildMessagesWithImages(system, user string, images []string, cite bool) []
 		return out
 	}
 
+	out = append(out, userMessageWithImages(user, images))
+	return out
+}
+
+// userMessageWithImages builds a user message carrying the text plus the
+// given data-image URIs as eino multi-modal content parts. Shared by the
+// LLM component (buildMessagesWithImages) and the Agent component
+// (buildAgentInputMessages) so both produce the exact same part shape.
+func userMessageWithImages(user string, images []string) schema.Message {
 	parts := make([]schema.MessageInputPart, 0, 1+len(images))
 	if user != "" {
 		parts = append(parts, schema.MessageInputPart{
@@ -753,11 +912,10 @@ func buildMessagesWithImages(system, user string, images []string, cite bool) []
 			},
 		})
 	}
-	out = append(out, schema.Message{
+	return schema.Message{
 		Role:                  schema.User,
 		UserInputMultiContent: parts,
-	})
-	return out
+	}
 }
 
 // mergeLLMParam layers raw inputs over the receiver's default param set.
@@ -839,7 +997,163 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		i := v
 		p.MaxTokens = &i
 	}
+	if v, ok := stringFrom(inputs, "thinking"); ok {
+		// Forward any non-empty, non-"default" value to match the
+		// lenient Python gate: hasattr(self,"thinking") and
+		// self.thinking and self.thinking != "default".
+		// Downstream (einoChatInvoker) only acts on "enabled" /
+		// "disabled" and silently ignores unknown values, so
+		// this is safe.
+		if v != "" && v != "default" {
+			p.Thinking = v
+		}
+	}
 	return p
+}
+
+// effectiveContextLength returns maxLength if positive, otherwise 8192.
+// Mirrors Python's LLM.effective_context_length in PR #16413 — prevents
+// zero/negative context windows from silently trimming all prompt content.
+func effectiveContextLength(maxLength int) int {
+	if maxLength > 0 {
+		return maxLength
+	}
+	return 8192
+}
+
+// contextFitBudget returns 97% of the effective context length as the
+// token budget for message_fit_in. Mirrors Python's LLM.context_fit_budget
+// in PR #16413.
+func contextFitBudget(maxLength int) int {
+	return int(float64(effectiveContextLength(maxLength)) * 0.97)
+}
+
+// validateFittedMessages checks that the fitted message list is non-empty
+// and the last message is a non-empty user turn (content or multi-modal
+// parts). Returns an error string on failure, empty string on success.
+// Python requires len >= 2 because the system prompt is always injected
+// upstream; Go allows len >= 1 because the system message may be embedded
+// inside msgs (from buildMessagesWithImages) or absent entirely.
+func validateFittedMessages(msgFit []schema.Message) string {
+	if len(msgFit) == 0 {
+		return "**ERROR**: message_fit_in produced insufficient messages for LLM"
+	}
+	last := msgFit[len(msgFit)-1]
+	if last.Role != schema.User {
+		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model content_length context setting"
+	}
+	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
+		return "**ERROR**: LLM user message is empty after prompt fitting; check model content_length context setting"
+	}
+	return ""
+}
+
+// fitMessages calls message_fit_in semantics on the given messages and
+// validates that the result ends with a non-empty user turn. Returns the
+// fitted messages and an error string (empty on success).
+// Mirrors Python's LLM.fit_messages in PR #16413.
+func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
+	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
+	copied := make([]schema.Message, len(msgs))
+	for i, m := range msgs {
+		cloned := slices.Clone(m.UserInputMultiContent)
+		for j, p := range cloned {
+			if p.Image != nil {
+				imgCopy := *p.Image
+				if p.Image.URL != nil {
+					u := *p.Image.URL
+					imgCopy.URL = &u
+				}
+				cloned[j].Image = &imgCopy
+			}
+		}
+		copied[i] = schema.Message{
+			Role:                  m.Role,
+			Content:               m.Content,
+			UserInputMultiContent: cloned,
+		}
+	}
+
+	// Convert to messagefit.Message. Track where each entry's text lives
+	// (plain Content or a multi-modal text part) so the fitted text can be
+	// written back to the right field. Entries with no text at all
+	// (image-only turns) carry an empty Content in messagefit and survive
+	// fitting when kept.
+	type fitSource struct {
+		copiedIdx     int  // index into copied; -1 for the synthetic system prompt
+		multiIdx      int  // -1 means the text lives in Content
+		textInContent bool // the original message carried text in Content
+	}
+	all := make([]messagefit.Message, 0, 1+len(copied))
+	sources := make([]fitSource, 0, 1+len(copied))
+
+	if systemPrompt != "" {
+		all = append(all, messagefit.Message{Role: "system", Content: systemPrompt})
+		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0})
+	}
+
+	for i := range copied {
+		text := copied[i].Content
+		multiIdx := -1
+		hadText := text != ""
+		if !hadText {
+			// Fold every non-empty text part into the token budget: only the
+			// first text part is written back, so leaving later parts out
+			// would let text exceed the fitted budget after reconstruction.
+			var textParts []string
+			for j, p := range copied[i].UserInputMultiContent {
+				if p.Type == schema.ChatMessagePartTypeText && p.Text != "" {
+					textParts = append(textParts, p.Text)
+					if multiIdx < 0 {
+						multiIdx = j
+					}
+				}
+			}
+			if len(textParts) > 0 {
+				text = strings.Join(textParts, "\n\n")
+				hadText = true
+			}
+		}
+		all = append(all, messagefit.Message{Role: string(copied[i].Role), Content: text})
+		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, textInContent: copied[i].Content != ""})
+	}
+
+	// Use 97% of effective context as the token budget.
+	budget := contextFitBudget(maxLength)
+	kept, keptIdx, _ := messagefit.Fit(all, budget)
+
+	// Convert back to []schema.Message. messagefit.Fit reports exactly which
+	// entries are kept (keptIdx); dropped entries are simply absent, so no
+	// empty-content sentinel is needed and image-only turns are preserved.
+	result := make([]schema.Message, 0, len(kept))
+	for j, i := range keptIdx {
+		src := sources[i]
+		if src.copiedIdx < 0 {
+			result = append(result, schema.Message{Role: schema.System, Content: kept[j].Content})
+			continue
+		}
+		m := copied[src.copiedIdx]
+		if src.multiIdx >= 0 && src.multiIdx < len(m.UserInputMultiContent) {
+			m.UserInputMultiContent[src.multiIdx].Text = kept[j].Content
+			// Drop any additional text parts: their content was folded into
+			// the first part before fitting, so keeping them would re-introduce
+			// text outside the token budget.
+			keptParts := m.UserInputMultiContent[:0]
+			for k, part := range m.UserInputMultiContent {
+				if part.Type == schema.ChatMessagePartTypeText && k != src.multiIdx {
+					continue
+				}
+				keptParts = append(keptParts, part)
+			}
+			m.UserInputMultiContent = keptParts
+		} else if src.textInContent {
+			// Always write the fitted text back (even when trimmed to empty):
+			// leaving the original would send untrimmed content past the budget.
+			m.Content = kept[j].Content
+		}
+		result = append(result, m)
+	}
+	return result, validateFittedMessages(result)
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and
@@ -983,4 +1297,24 @@ func init() {
 		}
 		return NewLLMComponent(p), nil
 	})
+}
+
+// cleanFormattedAnswer mirrors Python's clean_formated_answer():
+//
+//  1. Strip everything up to and including </think> (dotall).
+//  2. Strip everything up to and including ```json (dotall).
+//  3. Strip trailing ``` and optional newlines.
+//
+// This removes DeepSeek-R1-style thinking blocks and JSON-fence
+// prefixes/suffixes from the raw model response.
+var (
+	reJSONFencePrefix = regexp.MustCompile(`(?s)^.*` + "```json")
+	reJSONFenceSuffix = regexp.MustCompile("```\n*$")
+)
+
+func cleanFormattedAnswer(ans string) string {
+	ans = common.StripThinkTrailing(ans)
+	ans = reJSONFencePrefix.ReplaceAllString(ans, "")
+	ans = reJSONFenceSuffix.ReplaceAllString(ans, "")
+	return ans
 }

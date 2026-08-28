@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,22 +66,22 @@ type LLMFactoriesFile struct {
 }
 
 // InitDB initialize database connection
-func InitDB() error {
-	cfg := server.GetConfig()
-	dbCfg := cfg.Database
+func InitDB(ctx context.Context, migrateDB bool) error {
+	globalConfig := server.GetConfig()
+	databaseConfig := globalConfig.GetMySQLConfig()
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		dbCfg.Username,
-		dbCfg.Password,
-		dbCfg.Host,
-		dbCfg.Port,
-		dbCfg.Database,
-		dbCfg.Charset,
+		databaseConfig.User,
+		databaseConfig.Password,
+		databaseConfig.Host,
+		databaseConfig.Port,
+		databaseConfig.DatabaseName,
+		databaseConfig.Charset,
 	)
 
 	// Set log level
 	var gormLogLevel gormLogger.LogLevel
-	if cfg.Server.Mode == "debug" {
+	if globalConfig.GetMode() == "debug" {
 		gormLogLevel = gormLogger.Info
 	} else {
 		gormLogLevel = gormLogger.Silent
@@ -119,6 +120,7 @@ func InitDB() error {
 		&entity.File2Document{},
 		&entity.TenantLLM{},
 		&entity.Chat{},
+		&entity.ChatChannel{},
 		&entity.ChatSession{},
 		&entity.Task{},
 		&entity.APIToken{},
@@ -154,21 +156,41 @@ func InitDB() error {
 		&entity.TenantModelGroup{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
-		&entity.IngestionTasklet{},
-		&entity.IngestionTaskletLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
+		&entity.KnowledgeCompileDataset{},
+		&entity.WikiDocumentDirty{},
+		// Knowledge-compile compilation templates and their groups. The Go
+		// KnowledgeCompilerComponent resolves a compilation_template (or group)
+		// from these tables at runtime, so the Go side must guarantee they exist.
+		&entity.CompilationTemplate{},
+		&entity.CompilationTemplateGroup{},
 	}
 
-	for _, m := range dataModels {
-		if err = autoMigrateSafely(DB, m); err != nil {
-			return fmt.Errorf("failed to migrate model %T: %w", m, err)
+	if migrateDB {
+		common.Info("Migrating database schema...")
+		for _, m := range dataModels {
+			if err = autoMigrateSafely(ctx, DB, m); err != nil {
+				return fmt.Errorf("failed to migrate model %T: %w", m, err)
+			}
 		}
-	}
 
-	// Run manual migrations for complex schema changes
-	if err = RunMigrations(DB); err != nil {
-		return fmt.Errorf("failed to run manual migrations: %w", err)
+		// Run manual migrations for complex schema changes
+		if err = RunMigrations(ctx, DB); err != nil {
+			return fmt.Errorf("failed to run manual migrations: %w", err)
+		}
+		common.Info("Database schema migrated successfully")
+	}
+	// Seed built-in agent templates so the Go backend can serve the
+	// "create agent from template" catalogue without relying on Python-side
+	// initialization.
+	if err = SeedCanvasTemplates(ctx, DB); err != nil {
+		common.Warn("Failed to seed canvas templates", zap.Error(err))
+	}
+	// Seed the built-in compilation template group (c3aa748c...) for every
+	// tenant so compiler.json's default group resolves out of the box.
+	if err = SeedBuiltinCompilationTemplates(ctx, DB); err != nil {
+		common.Warn("Failed to seed built-in compilation templates", zap.Error(err))
 	}
 
 	common.Info("Database connected and migrated successfully")
@@ -208,7 +230,7 @@ func GetModelProviderManager() *models.ProviderManager {
 	if err != nil {
 		common.Fatal("Failed to locate model providers", zap.Error(err))
 	}
-	if err := models.InitProviderManager(modelConfigDir); err != nil {
+	if err = models.InitProviderManager(modelConfigDir); err != nil {
 		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 	modelProviderManager = models.GetProviderManager()
@@ -231,9 +253,9 @@ func findModelConfigDir() (string, error) {
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
-func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) error {
 	//err := db.Debug().AutoMigrate(model) // to print debug info
-	err := db.AutoMigrate(model)
+	err := db.WithContext(ctx).AutoMigrate(model)
 	if err == nil {
 		return nil
 	}

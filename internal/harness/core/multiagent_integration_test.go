@@ -128,7 +128,7 @@ func TestMultiAgent_PlanExecute(t *testing.T) {
 	reviser := &reviserModel{successOnCall: 2} // needs 2 passes
 
 	sg := graph.NewStateGraph(&planExecState{})
-	sg.NodeTriggerMode = types.NodeTriggerAnyPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAnyPredecessor)
 
 	// Planner node.
 	sg.AddNode("planner", func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -243,7 +243,7 @@ func TestMultiAgent_PlanExecute(t *testing.T) {
 		LoopCount: 0,
 	}
 
-	stateIf, err := compiled.Invoke(context.Background(), initialState)
+	stateIf, err := compiled.Invoke(t.Context(), initialState)
 	if err != nil {
 		t.Fatalf("Plan-Execute multi-agent failed: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestMultiAgent_ErrorRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stateIf, err := compiled.Invoke(context.Background(), &planExecState{Messages: make([]string, 0)})
+	stateIf, err := compiled.Invoke(t.Context(), &planExecState{Messages: make([]string, 0)})
 	if err != nil {
 		// Agent B fails — error propagation is the correct behavior.
 		// Previously this error was silently swallowed and the graph was
@@ -426,7 +426,7 @@ func TestMultiAgent_ConcurrentExecution(t *testing.T) {
 			}()
 
 			sg := graph.NewStateGraph(&planExecState{})
-			sg.NodeTriggerMode = types.NodeTriggerAnyPredecessor
+			sg.SetNodeTriggerMode(types.NodeTriggerAnyPredecessor)
 
 			// Simple linear chain: A → B → C for each agent ID.
 			prefix := fmt.Sprintf("id%d", id)
@@ -457,7 +457,7 @@ func TestMultiAgent_ConcurrentExecution(t *testing.T) {
 				return
 			}
 
-			_, invokeErr := compiled.Invoke(context.Background(), &planExecState{Messages: make([]string, 0)})
+			_, invokeErr := compiled.Invoke(t.Context(), &planExecState{Messages: make([]string, 0)})
 			if invokeErr != nil {
 				errCh <- fmt.Errorf("agent %d invoke: %w", id, invokeErr)
 				return

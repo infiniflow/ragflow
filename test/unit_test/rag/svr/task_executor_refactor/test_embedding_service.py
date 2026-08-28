@@ -147,7 +147,6 @@ class TestEmbeddingServiceEmbedChunks:
         assert vector_size == 2
         assert "q_2_vec" in docs[0]
 
-
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.embedding_service.thread_pool_exec", new_callable=AsyncMock)
     async def test_embed_chunks_empty_docs(self, mock_thread_pool):
@@ -196,8 +195,7 @@ class TestEmbeddingServiceEmbedChunks:
         model.max_length = 100
 
         docs = [{"docnm_kwd": "Title1", "content_with_weight": "Content1"}]
-        _, vector_size = await service.embed_chunks(docs, model,
-                                                     parser_config={"filename_embd_weight": 0.0})
+        _, vector_size = await service.embed_chunks(docs, model, parser_config={"filename_embd_weight": 0.0})
 
         assert vector_size == 2
 
@@ -214,8 +212,7 @@ class TestEmbeddingServiceEmbedChunks:
         model.max_length = 100
 
         docs = [{"docnm_kwd": "Title1", "content_with_weight": "Content1"}]
-        _, vector_size = await service.embed_chunks(docs, model,
-                                                     parser_config={"filename_embd_weight": 1.0})
+        _, vector_size = await service.embed_chunks(docs, model, parser_config={"filename_embd_weight": 1.0})
 
         assert vector_size == 2
 
@@ -239,6 +236,7 @@ class TestEmbeddingServiceEmbedChunks:
     @patch("rag.svr.task_executor_refactor.embedding_service.thread_pool_exec", new_callable=AsyncMock)
     async def test_embed_chunks_multiple_batches(self, mock_thread_pool):
         """Test embedding with more chunks than batch size — multiple encode calls."""
+
         # Each call returns vectors matching input count
         def side_effect(func, texts, *args, **kw):
             n = len(texts) if isinstance(texts, list) else 1

@@ -28,6 +28,8 @@ from common import settings
 from common.constants import FileSource
 from common.misc_utils import get_uuid, thread_pool_exec
 
+logger = logging.getLogger(__name__)
+
 
 async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
     """
@@ -48,15 +50,15 @@ async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
 
     file_res = []
     for file_obj in file_objs:
-        MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+        MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", "0"))
         if 0 < MAX_FILE_NUM_PER_USER <= await thread_pool_exec(DocumentService.get_doc_count, tenant_id):
             return False, "Exceed the maximum file number of a free user!"
 
         if not file_obj.filename:
             file_obj_names = [pf_folder.name, file_obj.filename]
         else:
-            full_path = '/' + file_obj.filename
-            file_obj_names = full_path.split('/')
+            full_path = "/" + file_obj.filename
+            file_obj_names = full_path.split("/")
         file_len = len(file_obj_names)
 
         file_id_list = await thread_pool_exec(FileService.get_id_list_by_id, pf_id, file_obj_names, 1, [pf_id])
@@ -66,25 +68,19 @@ async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
             e, file = await thread_pool_exec(FileService.get_by_id, file_id_list[len_id_list - 1])
             if not e:
                 return False, "Folder not found!"
-            last_folder = await thread_pool_exec(
-                FileService.create_folder, file, file_id_list[len_id_list - 1], file_obj_names, len_id_list, tenant_id, tenant_id
-            )
+            last_folder = await thread_pool_exec(FileService.create_folder, file, file_id_list[len_id_list - 1], file_obj_names, len_id_list, tenant_id, tenant_id)
         else:
             e, file = await thread_pool_exec(FileService.get_by_id, file_id_list[len_id_list - 2])
             if not e:
                 return False, "Folder not found!"
-            last_folder = await thread_pool_exec(
-                FileService.create_folder, file, file_id_list[len_id_list - 2], file_obj_names, len_id_list, tenant_id, tenant_id
-            )
+            last_folder = await thread_pool_exec(FileService.create_folder, file, file_id_list[len_id_list - 2], file_obj_names, len_id_list, tenant_id, tenant_id)
 
         filetype = filename_type(file_obj_names[file_len - 1])
         location = file_obj_names[file_len - 1]
         while await thread_pool_exec(settings.STORAGE_IMPL.obj_exist, last_folder.id, location):
             location += "_"
         blob = await thread_pool_exec(file_obj.read)
-        filename = await thread_pool_exec(
-            duplicate_name, FileService.query, name=file_obj_names[file_len - 1], parent_id=last_folder.id
-        )
+        filename = await thread_pool_exec(duplicate_name, FileService.query, name=file_obj_names[file_len - 1], parent_id=last_folder.id)
         await thread_pool_exec(settings.STORAGE_IMPL.put, last_folder.id, location, blob)
         file_data = {
             "id": get_uuid(),
@@ -102,7 +98,7 @@ async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
     return True, file_res
 
 
-async def create_folder(tenant_id: str, name: str, pf_id: str = None, file_type: str = None):
+async def create_folder(tenant_id: str, name: str, pf_id: str | None = None, file_type: str | None = None):
     """
     Create a new folder or virtual file.
 
@@ -112,6 +108,12 @@ async def create_folder(tenant_id: str, name: str, pf_id: str = None, file_type:
     :param file_type: file type (folder or virtual)
     :return: (success, result) or (success, error_message)
     """
+    # "/" is the root folder name and the path separator used by recursive
+    # folder creation, so names containing it collide with the root folder
+    # and break path-based lookups.
+    if "/" in name:
+        return False, 'Folder name cannot contain "/"'
+
     if not pf_id:
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
@@ -126,16 +128,18 @@ async def create_folder(tenant_id: str, name: str, pf_id: str = None, file_type:
     else:
         ft = FileType.VIRTUAL.value
 
-    file = FileService.insert({
-        "id": get_uuid(),
-        "parent_id": pf_id,
-        "tenant_id": tenant_id,
-        "created_by": tenant_id,
-        "name": name,
-        "location": "",
-        "size": 0,
-        "type": ft,
-    })
+    file = FileService.insert(
+        {
+            "id": get_uuid(),
+            "parent_id": pf_id,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "name": name,
+            "location": "",
+            "size": 0,
+            "type": ft,
+        }
+    )
     return True, file.to_json()
 
 
@@ -160,11 +164,12 @@ def list_files(tenant_id: str, args: dict):
         FileService.init_knowledgebase_docs(pf_id, tenant_id)
         FileService.init_skills_folder(pf_id, tenant_id)
 
-    e, file = FileService.get_by_id(pf_id)
+    e, folder = FileService.get_by_id(pf_id)
     if not e:
         return False, "Folder not found!"
 
-    files, total = FileService.get_by_pf_id(tenant_id, pf_id, page_number, items_per_page, orderby, desc, keywords)
+    exclude_skills = folder.id == folder.parent_id
+    files, total = FileService.get_by_pf_id(tenant_id, pf_id, page_number, items_per_page, orderby, desc, keywords, exclude_skills)
 
     parent_folder = FileService.get_parent_folder(pf_id)
     if not parent_folder:
@@ -173,8 +178,7 @@ def list_files(tenant_id: str, args: dict):
     return True, {"total": total, "files": files, "parent_folder": parent_folder.to_json()}
 
 
-
-def get_parent_folder(file_id: str, user_id: str = None):
+def get_parent_folder(file_id: str, user_id: str | None = None):
     """
     Get parent folder of a file with permission check.
 
@@ -190,13 +194,13 @@ def get_parent_folder(file_id: str, user_id: str = None):
 
     # Permission check
     if user_id and not check_file_team_permission(file, user_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     parent_folder = FileService.get_parent_folder(file_id)
     return True, {"parent_folder": parent_folder.to_json()}
 
 
-def get_all_parent_folders(file_id: str, user_id: str = None):
+def get_all_parent_folders(file_id: str, user_id: str | None = None):
     """
     Get all ancestor folders of a file with permission check.
 
@@ -212,7 +216,7 @@ def get_all_parent_folders(file_id: str, user_id: str = None):
 
     # Permission check
     if user_id and not check_file_team_permission(file, user_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     parent_folders = FileService.get_all_parent_folders(file_id)
     return True, {"parent_folders": [pf.to_json() for pf in parent_folders]}
@@ -235,9 +239,9 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         try:
             import requests
 
-            host = getattr(settings, 'HOST_IP', '127.0.0.1')
+            host = getattr(settings, "HOST_IP", "127.0.0.1")
             # Go service runs on port+4 (9384 by default)
-            port = getattr(settings, 'HOST_PORT', 9380) + 4
+            port = getattr(settings, "HOST_PORT", 9380) + 4
             service_url = f"http://{host}:{port}"
 
             # List all spaces and find the one matching the name
@@ -255,8 +259,8 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                     for space in spaces:
                         if space.get("name") == space_name:
                             return space.get("id")
-        except Exception as e:
-            logging.warning(f"Error getting space UUID: {e}")
+        except Exception as e:  # noqa: BLE001 - best-effort lookup; any failure falls back to the raw space name
+            logger.warning(f"Error getting space UUID: {e}")
         return None
 
     def _delete_skill_index(tenant_id, space_name, skill_name, authorization):
@@ -266,13 +270,14 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             bool: True if deletion succeeded (HTTP 200), False otherwise.
         """
         try:
-            import requests
             from urllib.parse import quote
 
+            import requests
+
             # Construct service URL from settings
-            host = getattr(settings, 'HOST_IP', '127.0.0.1')
+            host = getattr(settings, "HOST_IP", "127.0.0.1")
             # Go service runs on port+4 (9384 by default)
-            port = getattr(settings, 'HOST_PORT', 9380) + 4
+            port = getattr(settings, "HOST_PORT", 9380) + 4
             service_url = f"http://{host}:{port}"
 
             # Get space UUID from space name
@@ -289,37 +294,24 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
                 try:
                     data = response.json()
                     if data.get("code") == 0:
-                        logging.info(
-                            f"Successfully deleted skill index: space={space_name}, skill={skill_name}, "
-                            f"status={response.status_code}, code=0"
-                        )
+                        logger.info(f"Successfully deleted skill index: space={space_name}, skill={skill_name}, status={response.status_code}, code=0")
                         return True
                     else:
                         app_code = data.get("code", "unknown")
                         app_msg = data.get("message", "no message")
-                        logging.error(
-                            f"Failed to delete skill index: space={space_name}, skill={skill_name}, "
-                            f"status={response.status_code}, app_code={app_code}, app_msg={app_msg}, "
-                            f"response={response.text}"
+                        logger.error(
+                            f"Failed to delete skill index: space={space_name}, skill={skill_name}, status={response.status_code}, app_code={app_code}, app_msg={app_msg}, response={response.text}"
                         )
                         return False
                 except ValueError as json_err:
                     # JSON decode error - treat as failure
-                    logging.error(
-                        f"Failed to parse delete response JSON: space={space_name}, skill={skill_name}, "
-                        f"error={json_err}, raw_response={response.text}"
-                    )
+                    logger.error(f"Failed to parse delete response JSON: space={space_name}, skill={skill_name}, error={json_err}, raw_response={response.text}")
                     return False
             else:
-                logging.error(
-                    f"Failed to delete skill index: space={space_name}, skill={skill_name}, "
-                    f"status={response.status_code}, response={response.text}"
-                )
+                logger.error(f"Failed to delete skill index: space={space_name}, skill={skill_name}, status={response.status_code}, response={response.text}")
                 return False
-        except Exception as e:
-            logging.error(
-                f"Exception deleting skill index: space={space_name}, skill={skill_name}, error={e}"
-            )
+        except Exception as e:  # noqa: BLE001 - deletion is best-effort; any failure is reported as False
+            logger.error(f"Exception deleting skill index: space={space_name}, skill={skill_name}, error={e}")
             return False
 
     def _delete_single_file(file) -> int:
@@ -327,7 +319,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             if file.location:
                 settings.STORAGE_IMPL.rm(file.parent_id, file.location)
         except Exception as e:
-            logging.exception(f"Fail to remove object: {file.parent_id}/{file.location}, error: {e}")
+            logger.exception(f"Fail to remove object: {file.parent_id}/{file.location}")
             errors.append(f"Failed to remove object {file.parent_id}/{file.location}: {e}")
 
         informs = File2DocumentService.get_by_file_id(file.id)
@@ -349,13 +341,13 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         try:
             File2DocumentService.delete_by_file_id(file.id)
         except Exception as e:
-            logging.exception(f"Fail to remove file-document relations for file {file.id}, error: {e}")
+            logger.exception(f"Fail to remove file-document relations for file {file.id}")
             errors.append(f"Failed to remove file-document relations for file {file.id}: {e}")
 
         try:
             FileService.delete(file)
         except Exception as e:
-            logging.exception(f"Fail to delete file record {file.id}, error: {e}")
+            logger.exception(f"Fail to delete file record {file.id}")
             errors.append(f"Failed to delete file record {file.id}: {e}")
         else:
             return 1
@@ -392,34 +384,28 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             if parent_success and parent_folder and parent_folder.source_type == "skill_space":
                 is_skill_folder = True
                 current_space_name = parent_folder.name
-                logging.info(f"Identified skill folder '{folder.name}' (parent space: {current_space_name})")
+                logger.info(f"Identified skill folder '{folder.name}' (parent space: {current_space_name})")
             else:
                 ancestor_success, ancestor_folder = _find_ancestor_skill_space(folder.parent_id, tenant_id)
                 if ancestor_success and ancestor_folder:
                     is_skill_folder = True
                     current_space_name = ancestor_folder.name
-                    logging.info(f"Identified skill folder '{folder.name}' (ancestor space: {current_space_name})")
+                    logger.info(f"Identified skill folder '{folder.name}' (ancestor space: {current_space_name})")
 
         if is_space_folder:
             current_space_name = folder.name
-            logging.info(f"Processing space folder '{folder.name}' - will delete all skill indexes within")
+            logger.info(f"Processing space folder '{folder.name}' - will delete all skill indexes within")
 
         if is_skill_folder and current_space_name and not is_space_folder:
-            logging.info(f"Deleting skill index for skill '{folder.name}' in space '{current_space_name}'")
+            logger.info(f"Deleting skill index for skill '{folder.name}' in space '{current_space_name}'")
             index_deleted = _delete_skill_index(tenant_id, current_space_name, folder.name, auth_header)
             if not index_deleted:
-                logging.error(
-                    f"Aborting folder deletion due to index deletion failure: "
-                    f"folder={folder.name}, space={current_space_name}"
-                )
-                errors.append(
-                    f"Failed to delete skill index for folder '{folder.name}' in space '{current_space_name}'. "
-                    f"Folder deletion aborted to prevent orphaned indexes."
-                )
+                logger.error(f"Aborting folder deletion due to index deletion failure: folder={folder.name}, space={current_space_name}")
+                errors.append(f"Failed to delete skill index for folder '{folder.name}' in space '{current_space_name}'. Folder deletion aborted to prevent orphaned indexes.")
                 return deleted
         sub_files = FileService.list_all_files_by_parent_id(folder.id)
-        logging.info(f"Folder '{folder.name}': found {len(sub_files)} children to delete")
-        
+        logger.info(f"Folder '{folder.name}': found {len(sub_files)} children to delete")
+
         for sub_file in sub_files:
             if sub_file.type == FileType.FOLDER.value:
                 deleted += _delete_folder_recursive(sub_file, tenant_id)
@@ -428,20 +414,20 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
         try:
             FileService.delete(folder)
         except Exception as e:
-            logging.exception(f"Fail to delete folder record {folder.id}, error: {e}")
+            logger.exception(f"Fail to delete folder record {folder.id}")
             errors.append(f"Failed to delete folder record {folder.id}: {e}")
         else:
             deleted += 1
-        
+
         try:
-            if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
-                logging.info(f"Removing storage bucket for folder '{folder.name}' (id={folder.id})")
+            if hasattr(settings.STORAGE_IMPL, "remove_bucket"):
+                logger.info(f"Removing storage bucket for folder '{folder.name}' (id={folder.id})")
                 settings.STORAGE_IMPL.remove_bucket(folder.id)
             else:
-                logging.debug(f"Storage implementation does not support remove_bucket, skipping for folder '{folder.name}'")
-        except Exception as e:
-            logging.warning(f"Failed to remove storage bucket for folder '{folder.name}' (id={folder.id}): {e}")
-        
+                logger.debug(f"Storage implementation does not support remove_bucket, skipping for folder '{folder.name}'")
+        except Exception as e:  # noqa: BLE001 - bucket removal is best-effort; storage backends raise SDK-specific errors
+            logger.warning(f"Failed to remove storage bucket for folder '{folder.name}' (id={folder.id}): {e}")
+
         return deleted
 
     def _rm_sync():
@@ -477,7 +463,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
     return await thread_pool_exec(_rm_sync)
 
 
-async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new_name: str = None):
+async def move_files(uid: str, src_file_ids: list, dest_file_id: str | None = None, new_name: str | None = None):
     """
     Move and/or rename files. Follows Linux mv semantics:
     - new_name only: rename in place (no storage operation)
@@ -503,7 +489,7 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
         if not file.tenant_id:
             return False, "Tenant not found!"
         if not check_file_team_permission(file, uid):
-            return False, "No authorization."
+            return False, "no authorization"
 
     dest_folder = None
     if dest_file_id:
@@ -513,8 +499,9 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
 
     if new_name:
         file = files_dict[src_file_ids[0]]
-        if file.type != FileType.FOLDER.value and \
-                pathlib.Path(new_name.lower()).suffix != pathlib.Path(file.name.lower()).suffix:
+        if "/" in new_name:
+            return False, 'Name cannot contain "/"'
+        if file.type != FileType.FOLDER.value and pathlib.Path(new_name.lower()).suffix != pathlib.Path(file.name.lower()).suffix:
             return False, "The extension of file can't be changed"
         target_parent_id = dest_folder.id if dest_folder else file.parent_id
         for f in FileService.query(name=new_name, parent_id=target_parent_id):
@@ -534,23 +521,29 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
                 return False, "Cannot move a folder into its own subfolder."
 
     def _move_entry_recursive(source_file_entry, dest_folder_entry, override_name=None):
+        if source_file_entry.id == dest_folder_entry.id:
+            raise RuntimeError("The folder is already in the target location. There is no need to move it.")
         effective_name = override_name or source_file_entry.name
 
         if source_file_entry.type == FileType.FOLDER.value:
             existing_folder = FileService.query(name=effective_name, parent_id=dest_folder_entry.id)
             if existing_folder:
+                if existing_folder[0].id == source_file_entry.id:
+                    raise RuntimeError("The folder is already in the target location. There is no need to move it.")
                 new_folder = existing_folder[0]
             else:
-                new_folder = FileService.insert({
-                    "id": get_uuid(),
-                    "parent_id": dest_folder_entry.id,
-                    "tenant_id": source_file_entry.tenant_id,
-                    "created_by": source_file_entry.tenant_id,
-                    "name": effective_name,
-                    "location": "",
-                    "size": 0,
-                    "type": FileType.FOLDER.value,
-                })
+                new_folder = FileService.insert(
+                    {
+                        "id": get_uuid(),
+                        "parent_id": dest_folder_entry.id,
+                        "tenant_id": source_file_entry.tenant_id,
+                        "created_by": source_file_entry.tenant_id,
+                        "name": effective_name,
+                        "location": "",
+                        "size": 0,
+                        "type": FileType.FOLDER.value,
+                    }
+                )
 
             sub_files = FileService.list_all_files_by_parent_id(source_file_entry.id)
             for sub_file in sub_files:
@@ -569,11 +562,13 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
                 new_location += "_"
             try:
                 moved = settings.STORAGE_IMPL.move(
-                    source_file_entry.parent_id, source_file_entry.location,
-                    dest_folder_entry.id, new_location,
+                    source_file_entry.parent_id,
+                    source_file_entry.location,
+                    dest_folder_entry.id,
+                    new_location,
                 )
-            except Exception as storage_err:
-                raise RuntimeError(f"Move file failed at storage layer: {str(storage_err)}")
+            except Exception as storage_err:  # noqa: BLE001 - re-raised as RuntimeError with context; storage backends raise SDK-specific errors
+                raise RuntimeError(f"Move file failed at storage layer: {storage_err!s}")
             if moved is False:
                 raise RuntimeError("Move file failed at storage layer")
             updates["parent_id"] = dest_folder_entry.id
@@ -586,10 +581,13 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
             FileService.update_by_id(source_file_entry.id, updates)
 
         if override_name:
-            informs = File2DocumentService.get_by_file_id(source_file_entry.id)
-            if informs:
-                if not DocumentService.update_by_id(informs[0].document_id, {"name": override_name}):
-                    raise RuntimeError("Database error (Document rename)!")
+            _rename_linked_documents(source_file_entry.id, override_name)
+
+    def _rename_linked_documents(file_id, name):
+        informs = File2DocumentService.get_by_file_id(file_id)
+        for inform in informs:
+            if not DocumentService.update_by_id(inform.document_id, {"name": name}):
+                raise RuntimeError("Database error (Document rename)!")
 
     def _move_or_rename_sync():
         if dest_folder:
@@ -600,13 +598,16 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
             file = files[0]
             if not FileService.update_by_id(file.id, {"name": new_name}):
                 return False, "Database error (File rename)!"
-            informs = File2DocumentService.get_by_file_id(file.id)
-            if informs:
-                if not DocumentService.update_by_id(informs[0].document_id, {"name": new_name}):
-                    return False, "Database error (Document rename)!"
+            try:
+                _rename_linked_documents(file.id, new_name)
+            except RuntimeError as e:
+                return False, str(e)
         return True, True
 
-    return await thread_pool_exec(_move_or_rename_sync)
+    try:
+        return await thread_pool_exec(_move_or_rename_sync)
+    except RuntimeError as e:
+        return False, str(e)
 
 
 def get_file_content(uid: str, file_id: str):
@@ -619,7 +620,7 @@ def get_file_content(uid: str, file_id: str):
     """
     e, file = FileService.get_by_id(file_id)
     if not e:
-        return False, "Document not found!"
+        return False, "document not found"
     if not check_file_team_permission(file, uid):
-        return False, "No authorization."
+        return False, "no authorization"
     return True, file

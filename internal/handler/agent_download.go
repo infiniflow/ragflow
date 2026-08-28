@@ -44,15 +44,17 @@ import (
 func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 	fileID := c.Query("id")
 	if fileID == "" {
-		jsonError(c, common.CodeArgumentError, "`id` is required.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+			"`id` is required.")
 		return
 	}
 
+	ctx := c.Request.Context()
 	// IDOR note (security review H1): the Go User struct has no
 	// TenantID field — the project collapses user and tenant in a
 	// single-tenant session model. Python's @add_tenant_id_to_kwargs
@@ -61,9 +63,9 @@ func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	// per-object ownership check, so this port preserves the python
 	// shape. A future per-object ownership check should be added in
 	// both the python and Go code paths.
-	blob, err := h.fileService.DownloadAgentFile(user.ID, fileID)
+	blob, err := h.fileService.DownloadAgentFile(ctx, user.ID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -75,7 +77,8 @@ func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	// value.
 	safe := filepath.Base(fileID)
 	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
-		jsonError(c, common.CodeArgumentError, "invalid file id.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+			"invalid file id.")
 		return
 	}
 	c.Header("Content-Disposition", fmt.Sprintf(

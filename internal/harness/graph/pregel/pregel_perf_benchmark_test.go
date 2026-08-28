@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	graphPkg "ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // ============================================================
@@ -22,7 +23,7 @@ import (
 
 // benchmarkSimpleGraph creates a simple 3-node graph for benchmarking.
 // mirrors newSimpleGraph in engine_test.go
-func benchmarkSimpleGraph() *graphPkg.StateGraph {
+func benchmarkSimpleGraph() types.StateGraph {
 	sg := graphPkg.NewStateGraph(map[string]any{"value": ""})
 	sg.AddChannel("value", channels.NewLastValue(""))
 

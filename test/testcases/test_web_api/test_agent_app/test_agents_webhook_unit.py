@@ -439,6 +439,7 @@ def _load_agents_app(monkeypatch, *, target="rest"):
         @classmethod
         def normalize_dsl(cls, dsl):
             import json
+
             if isinstance(dsl, str):
                 return json.loads(dsl)
             return dsl
@@ -520,7 +521,7 @@ def test_agents_crud_unit_branches(monkeypatch):
 
     captured = {}
 
-    def fake_get_by_tenant_ids(owner_ids, tenant_id, page, page_size, orderby, desc, keywords, canvas_category, tags):
+    def fake_get_by_tenant_ids(owner_ids, tenant_id, page, page_size, orderby, desc, keywords, canvas_category_list, tags, canvas_type=None):
         captured["owner_ids"] = owner_ids
         captured["tenant_id"] = tenant_id
         captured["page"] = page
@@ -528,7 +529,7 @@ def test_agents_crud_unit_branches(monkeypatch):
         captured["orderby"] = orderby
         captured["desc"] = desc
         captured["keywords"] = keywords
-        captured["canvas_category"] = canvas_category
+        captured["canvas_category_list"] = canvas_category_list
         captured["tags"] = tags
         return [{"id": "agent-1"}], 1
 
@@ -589,7 +590,7 @@ def test_agents_crud_unit_branches(monkeypatch):
     monkeypatch.setattr(
         module.UserCanvasService,
         "get_by_id",
-        lambda _id: (True, SimpleNamespace(title="agent-1", canvas_category=module.CanvasCategory.Agent)),
+        lambda _id: (True, SimpleNamespace(title="agent-1", canvas_category=module.CanvasCategory.Agent, update_time=1234567890)),
     )
     monkeypatch.setattr(
         module.UserCanvasService,
@@ -1516,11 +1517,15 @@ def test_webhook_trace_encoded_id_generation(monkeypatch):
     res = _run(module.webhook_trace("agent-1"))
     assert res["code"] == module.RetCode.SUCCESS
 
-    expected = base64.urlsafe_b64encode(
-        hmac.new(
-            b"webhook_id_secret",
-            b"101.0",
-            hashlib.sha256,
-        ).digest()
-    ).decode("utf-8").rstrip("=")
+    expected = (
+        base64.urlsafe_b64encode(
+            hmac.new(
+                b"webhook_id_secret",
+                b"101.0",
+                hashlib.sha256,
+            ).digest()
+        )
+        .decode("utf-8")
+        .rstrip("=")
+    )
     assert res["data"]["webhook_id"] == expected

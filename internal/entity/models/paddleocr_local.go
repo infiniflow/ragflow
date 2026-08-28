@@ -25,6 +25,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 type PaddleOCRLocalModel struct {
@@ -36,7 +40,7 @@ func NewPaddleOCRLocalModel(baseURL map[string]string, urlSuffix URLSuffix) *Pad
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(true),
 		},
 	}
 }
@@ -46,38 +50,38 @@ func (p *PaddleOCRLocalModel) NewInstance(baseURL map[string]string) ModelDriver
 }
 
 func (p *PaddleOCRLocalModel) Name() string {
-	return "paddleocr"
+	return "paddleocr.local"
 }
 
-func (p *PaddleOCRLocalModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (p *PaddleOCRLocalModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (p *PaddleOCRLocalModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (p *PaddleOCRLocalModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (p *PaddleOCRLocalModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (p *PaddleOCRLocalModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (p *PaddleOCRLocalModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (p *PaddleOCRLocalModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (p *PaddleOCRLocalModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", p.Name())
 }
 
@@ -97,7 +101,7 @@ type paddleLocalOCRResponse struct {
 	} `json:"result"`
 }
 
-func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if len(content) == 0 {
 		return nil, fmt.Errorf("local PaddleOCR requires file content, but content is empty")
 	}
@@ -123,13 +127,16 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 		"file":     base64Str,
 		"fileType": fileType,
 	}
+	if ocrConfig != nil && strings.TrimSpace(ocrConfig.Algorithm) != "" {
+		reqData["algorithm"] = ocrConfig.Algorithm
+	}
 
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal local PaddleOCR request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -138,30 +145,72 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	algorithm := ""
+	if ocrConfig != nil {
+		algorithm = ocrConfig.Algorithm
+	}
+	common.Info("paddleocr local submit: sending",
+		zap.String("driver", p.Name()),
+		zap.String("url", url),
+		zap.String("model", *modelName),
+		zap.String("algorithm", algorithm),
+		zap.Int("content_bytes", len(content)))
 
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
+		common.Error("paddleocr local submit: request failed",
+			err,
+			zap.String("driver", p.Name()),
+			zap.String("url", url))
 		return nil, fmt.Errorf("failed to send request to local PaddleOCR: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		errBody := readErrorBody(resp.Body)
+		common.Error("paddleocr local submit: non-200",
+			fmt.Errorf("status %d", resp.StatusCode),
+			zap.String("driver", p.Name()),
+			zap.String("url", url),
+			zap.Int("status", resp.StatusCode),
+			zap.String("body", errBody))
+		return nil, fmt.Errorf("local PaddleOCR failed with status %d: %s", resp.StatusCode, errBody)
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("local PaddleOCR failed with status %d: %s", resp.StatusCode, string(respBody))
-	}
-
 	var ocrResp paddleLocalOCRResponse
 	if err := json.Unmarshal(respBody, &ocrResp); err != nil {
-		return nil, fmt.Errorf("failed to parse local PaddleOCR response: %w, raw: %s", err, string(respBody))
+		common.Error("paddleocr local submit: parse failed",
+			err,
+			zap.String("driver", p.Name()),
+			zap.String("url", url),
+			zap.String("body", logBody(respBody)))
+		return nil, fmt.Errorf("failed to parse local PaddleOCR response: %w, raw: %s", err, logBody(respBody))
 	}
 
 	if ocrResp.ErrorCode != 0 {
+		common.Error("paddleocr local submit: task failed",
+			fmt.Errorf("errorCode %d", ocrResp.ErrorCode),
+			zap.String("driver", p.Name()),
+			zap.String("url", url),
+			zap.Int("error_code", ocrResp.ErrorCode),
+			zap.String("error_msg", ocrResp.ErrorMsg))
 		return nil, fmt.Errorf("local PaddleOCR task failed: %s (errorCode: %d)", ocrResp.ErrorMsg, ocrResp.ErrorCode)
 	}
+
+	common.Info("paddleocr local submit: ok",
+		zap.String("driver", p.Name()),
+		zap.String("url", url),
+		zap.Int("status", resp.StatusCode),
+		zap.String("log_id", ocrResp.LogId))
 
 	var fullMarkdown strings.Builder
 	for _, layoutRes := range ocrResp.Result.LayoutParsingResults {
@@ -178,26 +227,49 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 	}, nil
 }
 
-func (p *PaddleOCRLocalModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (p *PaddleOCRLocalModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (p *PaddleOCRLocalModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	provider := GetProviderManager().FindProvider(p.Name())
+	if provider == nil {
+		return nil, fmt.Errorf("provider '%s' not found", p.Name())
+	}
+
+	var modelList []ListModelResponse
+	for _, model := range provider.Models {
+		modelList = append(modelList, ListModelResponse{
+			Name:          model.Name,
+			ContentLength: model.ContentLength,
+			MaxOutput:     model.MaxOutput,
+			ModelTypes:    model.ModelTypes,
+			Thinking:      model.Thinking,
+			MaxDimension:  model.MaxDimension,
+			MaxBatchSize:  model.MaxBatchSize,
+			Dimensions:    model.Dimensions,
+		})
+	}
+
+	if len(modelList) == 0 {
+		return nil, fmt.Errorf("no models found for provider '%s'", p.Name())
+	}
+
+	return modelList, nil
+}
+
+func (p *PaddleOCRLocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
-}
-
-func (p *PaddleOCRLocalModel) CheckConnection(apiConfig *APIConfig) error {
+func (p *PaddleOCRLocalModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	return fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (p *PaddleOCRLocalModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (p *PaddleOCRLocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }

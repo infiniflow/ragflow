@@ -26,12 +26,15 @@ import numpy as np
 import requests
 from ollama import Client
 from openai import OpenAI
-from zhipuai import ZhipuAI
+from zai import ZhipuAiClient
 
 from common import settings
+from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mws_utils import mws_api_url, require_mws_token
+from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
 import base64
 
@@ -259,11 +262,17 @@ class OpenAIEmbed(Base):
     def __init__(self, key, model_name="text-embedding-ada-002", base_url="https://api.openai.com/v1"):
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        # extra_body is forwarded verbatim to the provider. \`drop_params\` is
+        # an OpenRouter-specific convention; Together AI (and any strict
+        # OpenAI-compatible provider) rejects it with HTTP 400
+        # "Unrecognized request arguments supplied: drop_params". Send only
+        # fields that every OpenAI-compatible provider accepts.
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float")
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
@@ -281,7 +290,7 @@ class LocalAIEmbed(Base):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local embedding model url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -307,12 +316,16 @@ def _resolve_azure_credentials(key):
         key_obj = json.loads(key)
         if isinstance(key_obj, dict):
             return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
-        logging.warning(
-            "Azure credential payload parsed as JSON but is not an object; using raw api_key string"
-        )
+        logging.warning("Azure credential payload parsed as JSON but is not an object; using raw api_key string")
     except (json.JSONDecodeError, TypeError):
         logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
     return key, "2024-02-01"
+
+
+def _normalize_azure_endpoint(base_url):
+    if not base_url:
+        return base_url
+    return base_url.strip().rstrip("/")
 
 
 class AzureEmbed(OpenAIEmbed):
@@ -322,7 +335,9 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
 
         api_key, api_version = _resolve_azure_credentials(key)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.base_url = _normalize_azure_endpoint(kwargs["base_url"])
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
+
         self.model_name = model_name
 
 
@@ -352,6 +367,16 @@ class FuturMixEmbed(OpenAIEmbed):
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name, base_url)
         logging.info("[FuturMix] Embedding initialized with model %s", model_name)
+
+
+class AIMLAPIEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name="text-embedding-3-small", base_url=""):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, base_url)
+        self.client = self.client.with_options(default_headers=attribution_headers())
+        logging.info("[aimlapi.com] Embedding initialized with model %s", model_name)
 
 
 class BaiChuanEmbed(OpenAIEmbed):
@@ -434,7 +459,8 @@ class ZhipuEmbed(Base):
     _FACTORY_NAME = "ZHIPU-AI"
 
     def __init__(self, key, model_name="embedding-2", **kwargs):
-        self.client = ZhipuAI(api_key=key)
+        self.client = ZhipuAiClient(api_key=key)
+        logger.info("ZhipuEmbed initialized: provider=%s, model=%s", self._FACTORY_NAME, model_name)
         self.model_name = model_name
 
     def _max_len(self):
@@ -467,7 +493,11 @@ class OllamaEmbed(Base):
     _special_tokens = ["<|endoftext|>"]
 
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
+        # Native ollama.Client builds paths like "/api/embed" directly off this
+        # host; unlike the OpenAI-compatible providers below, it must NOT go
+        # through ensure_v1 (which appends "/v1") or every request 404s.
+        self.base_url = kwargs["base_url"].rstrip("/")
+        self.client = Client(host=self.base_url) if not key or key == "x" else Client(host=self.base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
@@ -504,7 +534,7 @@ class XinferenceEmbed(Base):
     _FACTORY_NAME = "Xinference"
 
     def __init__(self, key, model_name="", base_url=""):
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
@@ -593,9 +623,9 @@ class MistralEmbed(Base):
     _FACTORY_NAME = "Mistral"
 
     def __init__(self, key, model_name="mistral-embed", base_url=None):
-        from mistralai.client import MistralClient
+        from mistralai.client import Mistral
 
-        self.client = MistralClient(api_key=key)
+        self.client = Mistral(api_key=key)
         self.model_name = model_name
 
     def encode(self, texts: list):
@@ -610,7 +640,7 @@ class MistralEmbed(Base):
             retry_max = 5
             while retry_max > 0:
                 try:
-                    res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
+                    res = self.client.embeddings.create(inputs=texts[i : i + batch_size], model=self.model_name)
                     ress.extend([d.embedding for d in res.data])
                     token_count += total_token_count_from_response(res)
                     break
@@ -630,7 +660,7 @@ class MistralEmbed(Base):
         retry_max = 5
         while retry_max > 0:
             try:
-                res = self.client.embeddings(input=[truncate(text, DEFAULT_MAX_TOKENS)], model=self.model_name)
+                res = self.client.embeddings.create(inputs=[truncate(text, DEFAULT_MAX_TOKENS)], model=self.model_name)
                 return np.array(res.data[0].embedding), total_token_count_from_response(res)
             except Exception as _e:
                 if retry_max == 1:
@@ -646,6 +676,10 @@ class BedrockEmbed(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+        from botocore import UNSIGNED
+        from botocore.awsrequest import AWSRequest
+        from botocore.config import Config
+        from botocore.utils import validate_region_name
 
         # `key` protocol (backend stores as JSON string in `api_key`):
         # - Must decode into a dict.
@@ -653,7 +687,8 @@ class BedrockEmbed(Base):
         # - Supported auth modes:
         #   - "access_key_secret": requires `bedrock_ak` + `bedrock_sk`.
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
-        #   - else: treated as "assume_role" (default AWS credential chain).
+        #   - "assume_role": uses the default AWS credential chain.
+        #   - "bedrock_api_key": uses a request-scoped Bearer token.
         key = json.loads(key)
         mode = key.get("auth_mode")
         if not mode:
@@ -661,12 +696,29 @@ class BedrockEmbed(Base):
             raise ValueError("Bedrock auth_mode must be provided in the key")
 
         self.bedrock_region = key.get("bedrock_region")
+        if not self.bedrock_region:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_region_name(self.bedrock_region)
 
         self.model_name = model_name
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
-        if mode == "access_key_secret":
+        if mode == "bedrock_api_key":
+            api_key = key.get("bedrock_api_key")
+            if not api_key:
+                raise ValueError("Bedrock API key must be provided")
+            self.client = boto3.client(
+                service_name="bedrock-runtime",
+                region_name=self.bedrock_region,
+                config=Config(signature_version=UNSIGNED),
+            )
+
+            def add_bearer_token(request: AWSRequest, **_kwargs: object) -> None:
+                request.headers["Authorization"] = f"Bearer {api_key}"
+
+            self.client.meta.events.register("before-sign.bedrock-runtime.*", add_bearer_token)
+        elif mode == "access_key_secret":
             self.bedrock_ak = key.get("bedrock_ak")
             self.bedrock_sk = key.get("bedrock_sk")
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
@@ -682,8 +734,10 @@ class BedrockEmbed(Base):
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
-        else:  # assume_role
+        elif mode == "assume_role":
             self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
+        else:
+            raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
     def _extract_vector(self, model_response):
         # Titan returns {"embedding": [...]}; Cohere returns {"embeddings": [[...]]}.
@@ -803,11 +857,11 @@ class GeminiEmbed(Base):
 class NvidiaEmbed(Base):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"):
+    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1"):
         if not base_url:
-            base_url = "https://integrate.api.nvidia.com/v1/embeddings"
+            base_url = "https://integrate.api.nvidia.com/v1"
         self.api_key = key
-        self.base_url = base_url
+        self.base_url = append_api_path(ensure_v1(base_url), "embeddings")
         self.headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -846,7 +900,7 @@ class LmStudioEmbed(LocalAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
 
@@ -857,9 +911,53 @@ class OpenAI_APIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class MWSEmbed(OpenAIEmbed):
+    """MWS embedding adapter with the exact documented request body."""
+
+    _FACTORY_NAME = "MWS"
+
+    def __init__(self, key, model_name, base_url):
+        """Initialize embedding access for an MWS project and deployment."""
+        self.api_key = require_mws_token(key)
+        self.base_url = mws_api_url(base_url, "openai/v1/embeddings")
+        self.model_name = model_name.split("___")[0]
+
+    def _call(self, batch):
+        """Embed a batch and restore vectors to their original input order."""
+        response = requests.post(
+            self.base_url,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"},
+            json={"model": self.model_name, "input": batch},
+            timeout=30,
+        )
+        _raise_model_exception_if_failed(response)
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list) or len(data) != len(batch):
+            count = len(data) if isinstance(data, list) else 0
+            raise ValueError(f"MWS returned {count} embeddings for {len(batch)} inputs")
+
+        embeddings = [None] * len(batch)
+        for item in data:
+            index = item.get("index") if isinstance(item, dict) else None
+            if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(batch) or embeddings[index] is not None:
+                raise ValueError(f"unexpected MWS embedding index: {index}")
+            embeddings[index] = item["embedding"]
+        return embeddings, total_token_count_from_response(payload)
+
+
+class GreenPTEmbed(OpenAIEmbed):
+    """GreenPT OpenAI-compatible embedding adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name="green-embedding", base_url="https://api.greenpt.ai/v1"):
+        super().__init__(key, model_name=model_name, base_url=base_url or "https://api.greenpt.ai/v1")
 
 
 class CoHereEmbed(Base):
@@ -946,7 +1044,41 @@ class SILICONFLOWEmbed(Base):
     def _clean_batch(self, batch):
         if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
             # limit 512, 340 is almost safe
-            return [" " if not text.strip() else truncate(text, 256) for text in batch]
+            limit = 256
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
+        if self.model_name in ["BAAI/bge-m3", "Pro/BAAI/bge-m3"]:
+            limit = 4096
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
         return [" " if not text.strip() else text for text in batch]
 
     def _call(self, batch):
@@ -995,10 +1127,17 @@ class BaiduYiyanEmbed(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
 
-        key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = qianfan.Embedding(ak=ak, sk=sk)
+        try:
+            key_obj = json.loads(key)
+        except (json.JSONDecodeError, TypeError):
+            key_obj = key
+        if isinstance(key_obj, dict):
+            ak = key_obj.get("yiyan_ak", "")
+            sk = key_obj.get("yiyan_sk", "")
+            self.client = qianfan.Embedding(ak=ak, sk=sk)
+        else:
+            # adapt to one-line api_key
+            self.client = qianfan.Embedding(access_token=key_obj)
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=16):
@@ -1149,7 +1288,7 @@ class GPUStackEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
 
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
@@ -1316,3 +1455,42 @@ class NewAPIEmbed(OpenAIEmbed):
             raise ValueError("url cannot be None")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class OpenRouterEmbed(Base):
+    _FACTORY_NAME = "OpenRouter"
+
+    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1", **kwargs):
+        if not base_url:
+            base_url = "https://openrouter.ai/api/v1"
+        self.base_url = ensure_v1(base_url)
+        try:
+            payload = json.loads(key)
+        except (JSONDecodeError, TypeError):
+            api_key = key
+            provider_order = ""
+        else:
+            if isinstance(payload, dict):
+                api_key = payload.get("api_key", "")
+                provider_order = payload.get("provider_order", "")
+            else:
+                api_key = key
+                provider_order = ""
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        self.model_name = model_name
+        self.provider_order = provider_order
+
+    def _call(self, batch):
+        extra_body = {"drop_params": True}
+        if self.provider_order:
+            order = [s.strip() for s in self.provider_order.split(",") if s.strip()]
+            extra_body["provider"] = {"order": order, "allow_fallbacks": False}
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body=extra_body)
+        return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
+
+    def encode(self, texts: list):
+        return self._batched_encode(texts, self._call, batch_size=16, truncate_to=8191)
+
+    def encode_queries(self, text):
+        vectors, token_count = self._batched_encode([text], self._call, batch_size=16, truncate_to=8191)
+        return vectors[0], token_count

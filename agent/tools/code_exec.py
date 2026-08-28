@@ -21,17 +21,15 @@ import os
 import uuid
 from abc import ABC
 from collections.abc import Mapping
-from typing import Optional
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
-from enum import StrEnum
 
 from agent.tools.base import ToolBase, ToolMeta, ToolParamBase
 from api.db.services.file_service import FileService
 from common import settings
 from common.connection_utils import timeout
 from common.constants import SANDBOX_ARTIFACT_BUCKET, SANDBOX_ARTIFACT_EXPIRE_DAYS
-
 
 SYSTEM_OUTPUT_KEYS = frozenset(
     {
@@ -69,9 +67,7 @@ def select_business_output(outputs: Mapping[str, object]) -> tuple[str, object]:
 
     business_outputs = [(name, meta) for name, meta in outputs.items() if name not in SYSTEM_OUTPUT_KEYS]
     if len(business_outputs) != 1:
-        raise ContractError(
-            f"CodeExec contract must contain exactly one business output, got {len(business_outputs)}"
-        )
+        raise ContractError(f"CodeExec contract must contain exactly one business output, got {len(business_outputs)}")
     _validate_business_output_name(business_outputs[0][0])
     return business_outputs[0]
 
@@ -124,10 +120,7 @@ def _is_number(value) -> bool:
 def _validate_top_level_value_domain(value) -> None:
     allowed = value is None or isinstance(value, (bool, str, dict, list)) or _is_number(value)
     if not allowed:
-        raise ContractError(
-            f"CodeExec unsupported top-level result type: {type(value).__name__}. "
-            "Allowed top-level values are String, Number, Boolean, Object, Array, or Null."
-        )
+        raise ContractError(f"CodeExec unsupported top-level result type: {type(value).__name__}. Allowed top-level values are String, Number, Boolean, Object, Array, or Null.")
 
 
 def _normalize_expected_type(expected_type: str) -> str:
@@ -161,9 +154,7 @@ def _validate_expected_type(expected_type: str, value, path: str = "") -> None:
     if etype.startswith("Array<") and etype.endswith(">"):
         inner_type = etype[6:-1].strip()
         if not isinstance(value, list):
-            raise ContractError(
-                f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {infer_actual_type(value)}"
-            )
+            raise ContractError(f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {infer_actual_type(value)}")
         for index, item in enumerate(value):
             child_path = f"{path}[{index}]" if path else f"[{index}]"
             _validate_expected_type(inner_type, item, child_path)
@@ -184,9 +175,7 @@ def _validate_expected_type(expected_type: str, value, path: str = "") -> None:
         raise ContractError(f"Unsupported expected type: {expected_type}")
 
     if not valid:
-        raise ContractError(
-            f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {actual_type}"
-        )
+        raise ContractError(f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {actual_type}")
 
 
 def build_code_exec_contract(outputs: Mapping[str, object], raw_result) -> dict[str, object]:
@@ -219,7 +208,7 @@ class Language(StrEnum):
 class CodeExecutionRequest(BaseModel):
     code_b64: str = Field(..., description="Base64 encoded code string")
     language: str = Field(default=Language.PYTHON.value, description="Programming language")
-    arguments: Optional[dict] = Field(default={}, description="Arguments")
+    arguments: dict | None = Field(default={}, description="Arguments")
 
     @field_validator("code_b64")
     @classmethod
@@ -228,7 +217,7 @@ class CodeExecutionRequest(BaseModel):
             base64.b64decode(v, validate=True)
             return v
         except Exception as e:
-            raise ValueError(f"Invalid base64 encoding: {str(e)}")
+            raise ValueError(f"Invalid base64 encoding: {e!s}")
 
     @field_validator("language", mode="before")
     @classmethod
@@ -288,16 +277,17 @@ Supported artifact file types: .png, .jpg, .jpeg, .svg, .pdf, .csv, .json, .html
 Collected artifacts are also parsed automatically and appended to the stable text output `content`. The content includes sections like `attachment1 (image): ...`, `attachment2 (pdf): ...`, so downstream nodes can consume a single text output without depending on unstable attachment-specific variables.
 
 Here's a code example for Javascript(`main` function MUST be included and exported):
-const axios = require('axios');
-async function main(args) {
-  try {
-    const response = await axios.get('https://github.com/infiniflow/ragflow');
-    console.log('Body:', response.data);
-  } catch (error) {
-    console.error('Error:', error.message);
-  }
+const fs = require('fs');
+function main(args) {
+  const numbers = args && args.numbers ? args.numbers : [1, 2, 3];
+  const total = numbers.reduce((sum, value) => sum + value, 0);
+  fs.writeFileSync('artifacts/summary.json', JSON.stringify({ count: numbers.length, total: total }));
+  console.log('Sum:', total);
+  return { count: numbers.length, total: total };
 }
 module.exports = { main };
+
+Note: the sandbox has NO outbound network access by default (SANDBOX_CONTAINER_NETWORK=none), so code making HTTP requests (axios, fetch, or any external URL) fails with a connection error unless the deployment explicitly sets SANDBOX_CONTAINER_NETWORK=bridge. Prefer offline computation, or have the caller fetch remote data and pass it in via arguments.
             """,
             "parameters": {
                 "lang": {
@@ -361,8 +351,7 @@ class CodeExec(ToolBase, ABC):
             # Try using the new sandbox provider system first
             try:
                 from agent.sandbox.client import execute_code as sandbox_execute_code
-                from agent.sandbox.client import get_provider_info
-                from agent.sandbox.client import reload_provider
+                from agent.sandbox.client import get_provider_info, reload_provider
                 from agent.sandbox.providers.base import SandboxProviderConfigError
 
                 if self.check_if_canceled("CodeExec execution"):
@@ -371,10 +360,7 @@ class CodeExec(ToolBase, ABC):
                 reload_provider()
                 provider_info = get_provider_info()
                 provider_type = provider_info.get("provider_type") or "unknown"
-                logging.info(
-                    f"[CodeExec]: dispatching execution to sandbox provider '{provider_type}' "
-                    f"(language={language}, timeout={timeout_seconds}s)"
-                )
+                logging.info(f"[CodeExec]: dispatching execution to sandbox provider '{provider_type}' (language={language}, timeout={timeout_seconds}s)")
 
                 # Execute code using the provider system
                 result = sandbox_execute_code(code=code, language=language, timeout=timeout_seconds, arguments=arguments)
@@ -416,7 +402,14 @@ class CodeExec(ToolBase, ABC):
                 self.set_output("_ERROR", "Task has been canceled")
                 return self.output()
 
-            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=timeout_seconds)
+            # Shared-secret authentication towards the executor manager;
+            # no header when no token is configured (backwards compatibility).
+            headers = {"Content-Type": "application/json"}
+            api_token = (os.getenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN") or "").strip()
+            if api_token:
+                headers["Authorization"] = f"Bearer {api_token}"
+
+            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, headers=headers, timeout=timeout_seconds)
             logging.info(f"http://{settings.SANDBOX_HOST}:9385/run,  code_req: {code_req}, resp.status_code {resp.status_code}:")
 
             if self.check_if_canceled("CodeExec execution"):
@@ -556,7 +549,7 @@ class CodeExec(ToolBase, ABC):
 
                 settings.STORAGE_IMPL.put(SANDBOX_ARTIFACT_BUCKET, storage_name, binary)
 
-                url = f"/api/v1/documents/artifact/{storage_name}"
+                url = f"/api/v1/documents/artifact/{storage_name}?session_id={self._canvas.task_id}"
                 uploaded.append(
                     {
                         "name": name,

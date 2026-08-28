@@ -92,6 +92,21 @@ def parser(naive_module):
 
 
 @pytest.mark.p1
+def test_parses_empty_binary_without_opening_filename(parser):
+    with patch("builtins.open") as open_file:
+        sections, tables, section_images = parser(
+            "empty-document.md",
+            binary=b"",
+            return_section_images=True,
+        )
+
+    open_file.assert_not_called()
+    assert sections == []
+    assert tables == []
+    assert section_images == []
+
+
+@pytest.mark.p1
 def test_blocks_internal_url_without_fetching(parser):
     """A markdown image pointing at an internal host must never be requested."""
     with (

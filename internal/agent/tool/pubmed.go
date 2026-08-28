@@ -18,79 +18,97 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
-	"io"
+	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/tokenizer"
 )
 
-const pubmedToolName = "pubmed"
+const (
+	pubmedToolName        = "pubmed_search"
+	pubmedToolDescription = "Search PubMed for life sciences and biomedical references."
+	defaultPubMedTopN     = 12
+	defaultPubMedEmail    = "A.N.Other@example.com"
+	pubmedPromptMaxTokens = 200000
+)
 
-const pubmedToolDescription = "Search PubMed via NCBI E-utilities. Returns {pmid, title, authors, journal, year}."
+var pubmedDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
 
-// pubmedParams is the JSON shape the model sends into InvokableRun.
+var pubmedNewlinePattern = regexp.MustCompile(`\n+`)
+
+// pubmedParams mirrors Python PubMedParam. Info() still only exposes query to
+// the LLM; top_n and email are canvas-side params merged with constructor
+// defaults at runtime.
 type pubmedParams struct {
-	Query      string `json:"query"`
-	MaxResults int    `json:"max_results"`
+	Query string `json:"query"`
+	TopN  int    `json:"top_n"`
+	Email string `json:"email"`
 }
 
-// pubmedResult is one row in the returned record list.
+// pubmedResult is one PubMed reference rendered with the same fields and
+// fallbacks as Python PubMed._format_pubmed_content.
 type pubmedResult struct {
-	PMID    string `json:"pmid"`
 	Title   string `json:"title"`
-	Authors string `json:"authors"`
-	Journal string `json:"journal"`
-	Year    string `json:"year"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
 }
 
-// pubmedEnvelope is what the model sees.
 type pubmedEnvelope struct {
 	Results []pubmedResult `json:"results"`
 	Error   string         `json:"_ERROR,omitempty"`
 }
 
-// pubmedUserAgent is the User-Agent that NCBI requires for all
-// E-utilities requests. Without it, requests are silently dropped
-// or rate-limited to a single IP.
 const pubmedUserAgent = "ragflow/1.0"
 
-// pubmedESearchEndpoint is the E-utilities esearch URL. Exposed as a
-// package var so tests can substitute a httptest.Server URL.
 var pubmedESearchEndpoint = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 
-// pubmedESummaryEndpoint is the E-utilities esummary URL. Exposed
-// as a package var so tests can substitute a httptest.Server URL.
-var pubmedESummaryEndpoint = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+var pubmedEFetchEndpoint = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 
-// PubMedTool is the PubMed
-// search tool. It uses NCBI
-// E-utilities: esearch returns a list of PMIDs, then esummary fetches
-// the full records for those PMIDs.
+// PubMedTool queries NCBI E-utilities with esearch followed by efetch XML,
+// which is the same retrieval path as the Python PubMed component.
 type PubMedTool struct {
-	helper *HTTPHelper
+	helper   *HTTPHelper
+	defaults pubmedParams
 }
 
-// NewPubMedTool returns a PubMedTool using the default HTTPHelper.
+var _ ToolComponent = (*PubMedTool)(nil)
+var _ ReferenceBuilder = (*PubMedTool)(nil)
+
 func NewPubMedTool() *PubMedTool {
 	return NewPubMedToolWith(NewHTTPHelper())
 }
 
-// NewPubMedToolWith returns a PubMedTool that uses the provided
-// HTTPHelper. Useful for tests.
 func NewPubMedToolWith(h *HTTPHelper) *PubMedTool {
+	return NewPubMedToolWithDefaults(h, pubmedParams{})
+}
+
+func NewPubMedToolWithDefaults(h *HTTPHelper, defaults pubmedParams) *PubMedTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
-	return &PubMedTool{helper: h}
+	if defaults.TopN == 0 {
+		defaults.TopN = defaultPubMedTopN
+	}
+	if strings.TrimSpace(defaults.Email) == "" {
+		defaults.Email = defaultPubMedEmail
+	}
+	return &PubMedTool{helper: h, defaults: defaults}
 }
 
-// Info returns the tool's metadata for the chat model.
+// Info exposes only query to the LLM. Node parameters belong to canvas setup,
+// not model-emitted runtime arguments.
 func (p *PubMedTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: pubmedToolName,
@@ -98,208 +116,298 @@ func (p *PubMedTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
-				Desc:     "PubMed search query (full PubMed query syntax supported).",
+				Desc:     "The search keywords to execute with PubMed. The keywords should be the most important words or terms, including synonyms, from the original request.",
 				Required: true,
-			},
-			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of records to return. Defaults to 5 (max 100 per request).",
-				Required: false,
 			},
 		}),
 	}, nil
 }
 
-// buildPubMedESearchURL composes the esearch URL. Centralized for
-// testability.
-func buildPubMedESearchURL(query string, maxResults int) string {
-	if maxResults <= 0 {
-		maxResults = 5
+func (p *PubMedTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{"query": "PubMed search query."},
+		Outputs: map[string]string{
+			"formalized_content": "Rendered PubMed references for downstream prompts.",
+			"json":               "PubMed result list.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{"name": "Query", "type": "line"},
+		},
 	}
-	if maxResults > 100 {
-		maxResults = 100
-	}
+}
+
+func buildPubMedESearchURL(query string, topN int, email string) string {
 	q := url.Values{}
 	q.Set("db", "pubmed")
 	q.Set("term", query)
-	q.Set("retmax", strconv.Itoa(maxResults))
+	q.Set("retmax", strconv.Itoa(topN))
 	q.Set("retmode", "json")
+	q.Set("email", email)
 	return pubmedESearchEndpoint + "?" + q.Encode()
 }
 
-// buildPubMedESummaryURL composes the esummary URL for a list of
-// PMIDs. Centralized for testability.
-func buildPubMedESummaryURL(pmids []string) string {
+func buildPubMedEFetchURL(pmids []string, email string) string {
 	q := url.Values{}
 	q.Set("db", "pubmed")
 	q.Set("id", strings.Join(pmids, ","))
-	q.Set("retmode", "json")
-	return pubmedESummaryEndpoint + "?" + q.Encode()
+	q.Set("retmode", "xml")
+	q.Set("email", email)
+	return pubmedEFetchEndpoint + "?" + q.Encode()
 }
 
-// pubmedESearchResponse is the upstream esearch envelope.
 type pubmedESearchResponse struct {
 	ESearchResult struct {
 		IDList []string `json:"idlist"`
 	} `json:"esearchresult"`
 }
 
-// pubmedESummaryAuthor is one author in the esummary author list.
-type pubmedESummaryAuthor struct {
-	Name string `json:"name"`
+type pubmedXMLAuthor struct {
+	LastName string `xml:"LastName"`
+	ForeName string `xml:"ForeName"`
 }
 
-// pubmedESummaryArticle is one article in the esummary result map.
-type pubmedESummaryArticle struct {
-	Title           string                 `json:"title"`
-	Authors         []pubmedESummaryAuthor `json:"authors"`
-	FullJournalName string                 `json:"fulljournalname"`
-	PubDate         string                 `json:"pubdate"`
+type pubmedXMLArticleID struct {
+	Type  string `xml:"IdType,attr"`
+	Value string `xml:",chardata"`
 }
 
-// pubmedESummaryResponse is the upstream esummary envelope. The
-// `result` value mixes per-PMID article objects with a string-list
-// `uids` key, so we decode it as a map of RawMessage and then walk
-// the entries to extract the article objects (skipping the `uids`
-// array). See decodePubMedESummary.
-type pubmedESummaryResponse struct {
-	Result map[string]json.RawMessage `json:"result"`
+type pubmedXMLArticle struct {
+	PMID    string `xml:"MedlineCitation>PMID"`
+	Article struct {
+		Title    string `xml:"ArticleTitle"`
+		Abstract struct {
+			Text []string `xml:"AbstractText"`
+		} `xml:"Abstract"`
+		Journal struct {
+			Title string `xml:"Title"`
+			Issue struct {
+				Volume string `xml:"Volume"`
+				Number string `xml:"Issue"`
+			} `xml:"JournalIssue"`
+		} `xml:"Journal"`
+		Pages struct {
+			MedlinePgn string `xml:"MedlinePgn"`
+		} `xml:"Pagination"`
+		Authors []pubmedXMLAuthor `xml:"AuthorList>Author"`
+	} `xml:"MedlineCitation>Article"`
+	ArticleIDs []pubmedXMLArticleID `xml:"PubmedData>ArticleIdList>ArticleId"`
 }
 
-// mustReadAll is a tiny helper to read the entire response body. We
-// keep it private because pubmed.go owns the only two-step HTTP dance.
-func mustReadAll(r io.Reader) []byte {
-	b, err := io.ReadAll(r)
-	if err != nil {
-		return nil
-	}
-	return b
+type pubmedXMLResponse struct {
+	Articles []pubmedXMLArticle `xml:"PubmedArticle"`
 }
 
-// decodePubMedESummary parses the raw esummary response and returns
-// a PMID → article map. The upstream response is a flat object whose
-// keys are PMIDs (article values) plus a `uids` key (string list).
-// A single JSON decode into map[string]Article would fail on `uids`
-// because Go's encoding/json cannot store arrays in a struct-typed
-// map; the RawMessage indirection sidesteps that.
-func decodePubMedESummary(body []byte) (map[string]pubmedESummaryArticle, error) {
-	var raw pubmedESummaryResponse
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, err
-	}
-	out := make(map[string]pubmedESummaryArticle, len(raw.Result))
-	for k, v := range raw.Result {
-		// The `uids` key is a JSON array of strings; skip it.
-		if len(v) > 0 && v[0] == '[' {
-			continue
-		}
-		var article pubmedESummaryArticle
-		if err := json.Unmarshal(v, &article); err != nil {
-			continue
-		}
-		out[k] = article
-	}
-	return out, nil
-}
-
-// InvokableRun performs the two-step PubMed lookup.
 func (p *PubMedTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	var params pubmedParams
 	if err := json.Unmarshal([]byte(argsJSON), &params); err != nil {
-		return pubmedErrJSON(fmt.Errorf("pubmed: parse arguments: %w", err)),
-			fmt.Errorf("pubmed: parse arguments: %w", err)
+		err = fmt.Errorf("pubmed: parse arguments: %w", err)
+		return pubmedErrJSON(err), err
 	}
-	if strings.TrimSpace(params.Query) == "" {
-		return pubmedErrJSON(fmt.Errorf("query is required")),
-			fmt.Errorf("pubmed: query is required")
-	}
-	if params.MaxResults <= 0 {
-		params.MaxResults = 5
+	params = mergePubMedDefaults(p.defaults, params)
+	params.Query = strings.TrimSpace(params.Query)
+	if params.Query == "" {
+		return pubmedJSON(pubmedEnvelope{Results: []pubmedResult{}}), nil
 	}
 
 	headers := map[string]string{
 		"User-Agent": pubmedUserAgent,
 		"Accept":     "application/json",
 	}
-
-	// Step 1: esearch → list of PMIDs
-	searchURL := buildPubMedESearchURL(params.Query, params.MaxResults)
-	searchResp, err := p.helper.Do(ctx, http.MethodGet, searchURL, "", "", headers)
+	searchResp, err := p.helper.Do(ctx, http.MethodGet, buildPubMedESearchURL(params.Query, params.TopN, params.Email), "", "", headers)
 	if err != nil {
 		return pubmedErrJSON(err), err
 	}
-	var searchBody pubmedESearchResponse
-	if decErr := json.NewDecoder(searchResp.Body).Decode(&searchBody); decErr != nil {
-		_ = searchResp.Body.Close()
-		return pubmedErrJSON(fmt.Errorf("pubmed: decode esearch: %w", decErr)),
-			fmt.Errorf("pubmed: decode esearch: %w", decErr)
-	}
-	_ = searchResp.Body.Close()
-	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return pubmedErrJSON(fmt.Errorf("pubmed: esearch returned %d", searchResp.StatusCode)),
-			fmt.Errorf("pubmed: esearch returned %d", searchResp.StatusCode)
+	defer searchResp.Body.Close()
+	if searchResp.StatusCode < http.StatusOK || searchResp.StatusCode >= http.StatusMultipleChoices {
+		err := fmt.Errorf("pubmed: esearch returned %d", searchResp.StatusCode)
+		return pubmedErrJSON(err), err
 	}
 
-	pmids := searchBody.ESearchResult.IDList
-	if len(pmids) == 0 {
+	var searchBody pubmedESearchResponse
+	if err := json.NewDecoder(searchResp.Body).Decode(&searchBody); err != nil {
+		err = fmt.Errorf("pubmed: decode esearch: %w", err)
+		return pubmedErrJSON(err), err
+	}
+	if len(searchBody.ESearchResult.IDList) == 0 {
 		return pubmedJSON(pubmedEnvelope{Results: []pubmedResult{}}), nil
 	}
 
-	// Step 2: esummary → full records
-	summaryURL := buildPubMedESummaryURL(pmids)
-	summaryResp, err := p.helper.Do(ctx, http.MethodGet, summaryURL, "", "", headers)
+	headers["Accept"] = "application/xml"
+	fetchResp, err := p.helper.Do(ctx, http.MethodGet, buildPubMedEFetchURL(searchBody.ESearchResult.IDList, params.Email), "", "", headers)
 	if err != nil {
 		return pubmedErrJSON(err), err
 	}
-	defer summaryResp.Body.Close()
-	if summaryResp.StatusCode < 200 || summaryResp.StatusCode >= 300 {
-		return pubmedErrJSON(fmt.Errorf("pubmed: esummary returned %d", summaryResp.StatusCode)),
-			fmt.Errorf("pubmed: esummary returned %d", summaryResp.StatusCode)
+	defer fetchResp.Body.Close()
+	if fetchResp.StatusCode < http.StatusOK || fetchResp.StatusCode >= http.StatusMultipleChoices {
+		err := fmt.Errorf("pubmed: efetch returned %d", fetchResp.StatusCode)
+		return pubmedErrJSON(err), err
 	}
 
-	articles, err := decodePubMedESummary(mustReadAll(summaryResp.Body))
-	if err != nil {
-		return pubmedErrJSON(fmt.Errorf("pubmed: parse esummary: %w", err)),
-			fmt.Errorf("pubmed: parse esummary: %w", err)
+	var fetched pubmedXMLResponse
+	if err := xml.NewDecoder(fetchResp.Body).Decode(&fetched); err != nil {
+		err = fmt.Errorf("pubmed: decode efetch: %w", err)
+		return pubmedErrJSON(err), err
 	}
-
-	results := make([]pubmedResult, 0, len(pmids))
-	for _, pmid := range pmids {
-		article, ok := articles[pmid]
-		if !ok {
-			continue
-		}
-		results = append(results, pubmedResult{
-			PMID:    pmid,
-			Title:   strings.TrimSpace(article.Title),
-			Authors: joinAuthorNames(article.Authors),
-			Journal: article.FullJournalName,
-			Year:    firstFourDigitYear(article.PubDate),
-		})
+	results := make([]pubmedResult, 0, len(fetched.Articles))
+	for _, article := range fetched.Articles {
+		results = append(results, formatPubMedResult(article))
 	}
 	return pubmedJSON(pubmedEnvelope{Results: results}), nil
 }
 
-// joinAuthorNames joins the first N authors with ", " and adds
-// "et al." for any beyond N. We use N=3 to mirror the convention
-// common in academic citation styles.
-func joinAuthorNames(authors []pubmedESummaryAuthor) string {
-	const cap = 3
-	if len(authors) == 0 {
+func (p *PubMedTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildPubMedReferences(envelope)
+}
+
+func (p *PubMedTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildPubMedReferences(envelope)
+	return map[string]any{
+		"formalized_content": renderPubMedReferences(chunks, pubmedPromptMaxTokens),
+		"json":               results,
+	}
+}
+
+func buildPubMedReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		item, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := pubmedDataImagePattern.ReplaceAllString(pubmedText(item["content"]), "")
+		content = truncatePubMedRunes(content, 10000)
+		if content == "" {
+			continue
+		}
+		documentID := strconv.FormatInt(pubmedHashInt(content, 100000000), 10)
+		displayID := strconv.FormatInt(pubmedHashInt(documentID, 500), 10)
+		title := pubmedText(item["title"])
+		resultURL := pubmedText(item["url"])
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{"doc_name": title, "doc_id": documentID, "count": 1, "url": resultURL})
+	}
+	return chunks, docAggs
+}
+
+func renderPubMedReferences(chunks []map[string]any, maxTokens int) string {
+	usedTokens := 0
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		content := pubmedText(chunk["content"])
+		usedTokens += tokenizer.NumTokensFromString(content)
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + pubmedText(chunk["id"]),
+			"├── Title: " + pubmedNewlinePattern.ReplaceAllString(pubmedText(chunk["document_name"]), " "),
+			"├── URL: " + pubmedNewlinePattern.ReplaceAllString(pubmedText(chunk["url"]), " "),
+			"└── Content:\n" + content,
+		}, "\n"))
+		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
+			break
+		}
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func pubmedText(value any) string {
+	if value == nil {
 		return ""
 	}
-	if len(authors) <= cap {
-		names := make([]string, len(authors))
-		for i, a := range authors {
-			names[i] = a.Name
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
+func pubmedHashInt(value string, modulus int64) int64 {
+	digest := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(digest[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncatePubMedRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
+}
+
+func formatPubMedResult(article pubmedXMLArticle) pubmedResult {
+	title := fallbackPubMedField(article.Article.Title, "No title")
+	abstract := fallbackPubMedField(strings.Join(article.Article.Abstract.Text, " "), "No abstract available")
+	journal := fallbackPubMedField(article.Article.Journal.Title, "Unknown Journal")
+	volume := fallbackPubMedField(article.Article.Journal.Issue.Volume, "-")
+	issue := fallbackPubMedField(article.Article.Journal.Issue.Number, "-")
+	pages := fallbackPubMedField(article.Article.Pages.MedlinePgn, "-")
+	authors := formatPubMedAuthors(article.Article.Authors)
+	doi := "-"
+	for _, id := range article.ArticleIDs {
+		if id.Type == "doi" && strings.TrimSpace(id.Value) != "" {
+			doi = strings.TrimSpace(id.Value)
+			break
 		}
-		return strings.Join(names, ", ")
 	}
-	names := make([]string, 0, cap+1)
-	for i := range cap {
-		names = append(names, authors[i].Name)
+	content := strings.Join([]string{
+		"Title: " + title,
+		"Authors: " + authors,
+		"Journal: " + journal,
+		"Volume: " + volume,
+		"Issue: " + issue,
+		"Pages: " + pages,
+		"DOI: " + doi,
+		"Abstract: " + abstract,
+	}, "\n")
+	return pubmedResult{
+		Title:   title,
+		URL:     "https://pubmed.ncbi.nlm.nih.gov/" + strings.TrimSpace(article.PMID),
+		Content: content,
 	}
-	names = append(names, "et al.")
+}
+
+func mergePubMedDefaults(defaults, params pubmedParams) pubmedParams {
+	if params.Query == "" {
+		params.Query = defaults.Query
+	}
+	if params.TopN == 0 {
+		params.TopN = defaults.TopN
+	}
+	if strings.TrimSpace(params.Email) == "" {
+		params.Email = defaults.Email
+	}
+	return params
+}
+
+func fallbackPubMedField(value, fallback string) string {
+	if value = strings.TrimSpace(value); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func formatPubMedAuthors(authors []pubmedXMLAuthor) string {
+	names := make([]string, 0, len(authors))
+	for _, author := range authors {
+		name := strings.TrimSpace(strings.TrimSpace(author.ForeName) + " " + strings.TrimSpace(author.LastName))
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return "Unknown Authors"
+	}
 	return strings.Join(names, ", ")
 }
 

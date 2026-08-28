@@ -1,20 +1,21 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
 )
 
 // TestDumpTextOutput runs Parse on real PDFs and saves per-PDF text
-// to testdata/output/go/noocr/text/{pdf}.txt. Set DUMP_COUNT env to limit first N PDFs.
+// to testdata/output/go/ocr/text/{pdf}.txt. Set DUMP_COUNT env to limit first N PDFs.
 func TestDumpTextOutput(t *testing.T) {
 	pdfDir := filepath.Join("testdata", "real_pdfs")
-	outDir := filepath.Join("testdata", "output", "go", "noocr", "text")
+	outDir := filepath.Join("testdata", "output", "go", "ocr", "text")
 	os.MkdirAll(outDir, 0755)
 
 	entries, err := os.ReadDir(pdfDir)
@@ -23,7 +24,7 @@ func TestDumpTextOutput(t *testing.T) {
 	}
 
 	count := len(entries)
-	if n := os.Getenv("DUMP_COUNT"); n != "" {
+	if n := common.GetEnv(common.EnvDumpCount); n != "" {
 		c := 0
 		for _, ch := range n {
 			c = c*10 + int(ch-'0')
@@ -43,7 +44,7 @@ func TestDumpTextOutput(t *testing.T) {
 		}
 		name := e.Name()
 		outPath := filepath.Join(outDir, name+".txt")
-		if _, err := os.Stat(outPath); err == nil {
+		if _, err = os.Stat(outPath); err == nil {
 			data, _ := os.ReadFile(outPath)
 			n := len(data)
 			totalChars += n
@@ -64,9 +65,9 @@ func TestDumpTextOutput(t *testing.T) {
 			continue
 		}
 
-		cfg := DefaultParserConfig()
-		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
-		result, err := p.Parse(context.Background(), eng)
+		cfg := pdf.DefaultParserConfig()
+		p := NewParser(cfg)
+		result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 		eng.Close()
 		if err != nil {
 			t.Logf("[%d/%d] %s — parse error: %v", i+1, count, name, err)

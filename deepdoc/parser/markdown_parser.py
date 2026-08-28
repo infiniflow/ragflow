@@ -20,6 +20,14 @@ import re
 
 from markdown import markdown
 
+from rag.nlp.delim import (
+    compile_delimiter_pattern,
+    normalize_text_newlines,
+    parse_delimiter_field,
+)
+
+logger = logging.getLogger(__name__)
+
 
 class RAGFlowMarkdownParser:
     def __init__(self, chunk_token_num=128):
@@ -29,19 +37,35 @@ class RAGFlowMarkdownParser:
         tables = []
         working_text = markdown_text
 
+        # a fenced code block can legitimately contain a pipe table, e.g. docs that show
+        # markdown syntax. extracting it would strip the example out of the fence and
+        # re-emit it as a bogus table, leaving a hollow fence behind.
+        # MarkdownElementExtractor already shields fences (see _fenced_code_ranges), so
+        # keep table extraction consistent with it.
+        fence_pattern = re.compile(
+            r"^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]{0,3}\1[ \t]*$|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+
         def replace_tables_with_rendered_html(pattern, table_list, render=True):
             new_text = ""
             last_end = 0
+            fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
             for match in pattern.finditer(working_text):
+                if any(start <= match.start() < end for start, end in fenced_spans):
+                    # inside a code fence: leave it in place. last_end is untouched, so
+                    # the block is copied through verbatim.
+                    logger.debug("markdown table pass: skipping match inside a code fence at %d", match.start())
+                    continue
                 raw_table = match.group()
                 table_list.append(raw_table)
                 if separate_tables:
                     # Skip this match (i.e., remove it)
-                    new_text += working_text[last_end : match.start()] + "\n\n"
+                    new_text += working_text[last_end : match.start()] + "\n"
                 else:
                     # Replace with rendered HTML
                     html_table = markdown(raw_table, extensions=["markdown.extensions.tables"]) if render else raw_table
-                    new_text += working_text[last_end : match.start()] + html_table + "\n\n"
+                    new_text += working_text[last_end : match.start()] + html_table + "\n"
                 last_end = match.end()
             new_text += working_text[last_end:]
             return new_text
@@ -57,7 +81,7 @@ class RAGFlowMarkdownParser:
             """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(border_table_pattern, tables)
 
             # Borderless Markdown table
             no_border_table_pattern = re.compile(
@@ -69,13 +93,19 @@ class RAGFlowMarkdownParser:
                 """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
 
         # Replace any TAGS e.g. <table ...> to <table>
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
         table_with_attributes_pattern = re.compile(rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE)
 
+        tag_fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
+
         def replace_tag(m):
+            if any(start <= m.start() < end for start, end in tag_fenced_spans):
+                # an html example inside a fence keeps its attributes verbatim.
+                logger.debug("html tag pass: preserving tag inside a code fence at %d", m.start())
+                return m.group()
             tag_name = re.match(r"<(\w+)", m.group()).group(1)
             return "<{}>".format(tag_name)
 
@@ -107,13 +137,17 @@ class RAGFlowMarkdownParser:
                 nonlocal working_text
                 new_text = ""
                 last_end = 0
+                fenced_spans = [(m.start(), m.end()) for m in fence_pattern.finditer(working_text)]
                 for match in html_table_pattern.finditer(working_text):
+                    if any(start <= match.start() < end for start, end in fenced_spans):
+                        logger.debug("html table pass: skipping match inside a code fence at %d", match.start())
+                        continue
                     raw_table = match.group()
                     tables.append(raw_table)
                     if separate_tables:
-                        new_text += working_text[last_end : match.start()] + "\n\n"
+                        new_text += working_text[last_end : match.start()] + "\n"
                     else:
-                        new_text += working_text[last_end : match.start()] + raw_table + "\n\n"
+                        new_text += working_text[last_end : match.start()] + raw_table + "\n"
                     last_end = match.end()
                 new_text += working_text[last_end:]
                 working_text = new_text
@@ -125,13 +159,19 @@ class RAGFlowMarkdownParser:
 
 class MarkdownElementExtractor:
     def __init__(self, markdown_content):
-        self.markdown_content = markdown_content
-        self.lines = markdown_content.split("\n")
+        # Normalize CRLF/CR so compiled delimiter patterns (which use LF)
+        # match Windows-line-ending source the same as Unix source.
+        self.markdown_content = normalize_text_newlines(markdown_content)
+        self.lines = self.markdown_content.split("\n")
 
     def get_delimiters(self, delimiters):
-        toks = re.findall(r"`([^`]+)`", delimiters)
-        toks = sorted(set(toks), key=lambda x: -len(x))
-        return "|".join(re.escape(t) for t in toks if t)
+        # Delegate to the canonical parser (#17383). The previous
+        # implementation matched only backtick-wrapped tokens and dropped
+        # bare characters, which silently made the shipped default
+        # delimiter field a no-op for the markdown path. The helper honors
+        # both bare chars and wrapped tokens, so the same field produces
+        # the same splits in every file type.
+        return compile_delimiter_pattern(parse_delimiter_field(delimiters))
 
     def _get_fence_marker(self, line):
         match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?:.*)$", line)
@@ -245,11 +285,7 @@ class MarkdownElementExtractor:
         return merged
 
     def _protected_ranges(self, text):
-        return self._merge_ranges(
-            self._fenced_code_ranges(text)
-            + self._markdown_table_ranges(text)
-            + self._html_table_ranges(text)
-        )
+        return self._merge_ranges(self._fenced_code_ranges(text) + self._markdown_table_ranges(text) + self._html_table_ranges(text))
 
     def _append_delimited_section(self, sections, text, start, end, include_meta):
         part = text[start:end]
@@ -307,6 +343,7 @@ class MarkdownElementExtractor:
         if len(dels) > 0:
             text = "\n".join(self.lines)
             sections = self._extract_delimited_elements(text, dels, include_meta)
+
             # Attach lone header lines to the section that follows them so that
             # "## Title\n" never becomes an isolated chunk when the delimiter
             # splits at every newline.  A header is "lone" when it occupies a
@@ -354,11 +391,13 @@ class MarkdownElementExtractor:
                         if _is_attachable_body(body_content):
                             combined = "\n".join(header_parts) + "\n" + body_content
                             if include_meta:
-                                merged.append({
-                                    **sections[i],
-                                    "content": combined,
-                                    "end_line": sections[j]["end_line"],
-                                })
+                                merged.append(
+                                    {
+                                        **sections[i],
+                                        "content": combined,
+                                        "end_line": sections[j]["end_line"],
+                                    }
+                                )
                             else:
                                 merged.append(combined)
                             merged_header_count += len(header_parts)

@@ -1,5 +1,22 @@
-import Image from '@/components/image';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import DOMPurify from 'dompurify';
@@ -8,7 +25,7 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -17,11 +34,13 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -35,7 +54,7 @@ import {
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import classNames from 'classnames';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import reactStringReplace from 'react-string-replace';
 
 // Defining Tailwind CSS class name constants
@@ -66,7 +85,11 @@ const MarkdownContent = ({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
       ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
@@ -75,7 +98,13 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
+    return unescapeAngleBrackets(
+      pipe(
+        replaceThinkToSection,
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+      )(nextText),
+    );
   }, [content, t]);
 
   useEffect(() => {
@@ -181,7 +210,7 @@ const MarkdownContent = ({
             {documentId && (
               <div className="flex gap-2">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt=""
                     className={styles.fileThumbnail}
@@ -225,7 +254,7 @@ const MarkdownContent = ({
           <Popover>
             <PopoverTrigger>
               <span className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap">
-                Fig. {chunkIndex + 1}
+                {t('common.figure')} {chunkIndex + 1}
               </span>
             </PopoverTrigger>
             <PopoverContent className="!w-fit">
@@ -237,7 +266,7 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent],
+    [getPopoverContent, t],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
@@ -248,7 +277,12 @@ const MarkdownContent = ({
       className="[&>section.think]:pl-[10px] [&>section.think]:text-[#8b8b8b] [&>section.think]:border-l-2 [&>section.think]:border-l-[#d5d3d3] [&>section.think]:mb-[10px] [&>section.think]:text-xs [&>blockquote]:pl-[10px] [&>blockquote]:border-l-4 [&>blockquote]:border-l-[#ccc] text-sm"
     >
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         components={
           {

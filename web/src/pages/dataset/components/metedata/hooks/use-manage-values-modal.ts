@@ -6,6 +6,7 @@ import {
   metadataValueTypeEnum,
 } from '../constant';
 import { IManageValuesProps, IMetaDataTableData } from '../interface';
+import message from '@/components/ui/message';
 
 export const useManageValues = (props: IManageValuesProps) => {
   const {
@@ -115,12 +116,13 @@ export const useManageValues = (props: IManageValuesProps) => {
 
   const handleSave = useCallback(() => {
     if (type === MetadataType.Setting && valueError.field) {
+      message.error(valueError.field);
       return;
     }
     if (isAddValueMode) {
       // tempValues, not metaData.values: the latter only syncs on input blur,
       // so a Confirm click that races the blur would queue the pre-blur [''].
-      addUpdateValue(metaData.field, undefined, tempValues, metaData.valueType);
+      addUpdateValue(metaData.field, '', tempValues, metaData.valueType);
     }
     setShouldSave(true);
   }, [metaData, tempValues, type, valueError, isAddValueMode, addUpdateValue]);

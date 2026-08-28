@@ -72,22 +72,15 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/system/config [get]
+// @Router /api/v1/system/config [get]
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := h.systemService.GetConfig()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "Failed to get system configuration",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to get system configuration")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    config,
-	})
+	common.SuccessWithData(c, config, "success")
 }
 
 // GetConfigs get all system configurations
@@ -101,39 +94,29 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 func (h *SystemHandler) GetConfigs(c *gin.Context) {
 	cfg := server.GetConfig()
 	if cfg == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "Configuration not initialized",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Configuration not initialized")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    cfg,
-	})
+	common.SuccessWithData(c, cfg, "success")
 }
 
 // GetStatus get RAGFlow status
 func (h *SystemHandler) GetStatus(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
-	status, err := h.systemService.GetStatus()
+	ctx := c.Request.Context()
+	status, err := h.systemService.GetStatus(ctx)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    status,
-		"message": "success",
-	})
+	common.SuccessWithData(c, status, "success")
 }
 
 // GetVersion get RAGFlow version
@@ -148,18 +131,11 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 func (h *SystemHandler) GetVersion(c *gin.Context) {
 	version, err := h.systemService.GetVersion()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "Failed to get version",
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to get version")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    version.Version,
-	})
+	common.SuccessWithData(c, version.Version, "success")
 }
 
 // GetLogLevel returns the current log level. The response uses the
@@ -169,11 +145,7 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 // table carried (e.g. "peewee", "pdfminer") were inert for the Go
 // side and are no longer returned.
 func (h *SystemHandler) GetLogLevel(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    gin.H{"level": common.GetLevel()},
-	})
+	common.SuccessWithData(c, gin.H{"level": common.GetLogLevel()}, "success")
 }
 
 // SetLogLevelRequest set log level request. PkgName is accepted for
@@ -197,48 +169,33 @@ type SetLogLevelRequest struct {
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "pkg_name and level are required",
-		})
+		common.ErrorWithCode(c, common.CodeDataError, "pkg_name and level are required")
 		return
 	}
 
-	if err := common.SetLevel(req.Level); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "Invalid log level: " + req.Level,
-		})
+	if err := common.SetLogLevel(req.Level); err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, "Invalid log level: "+req.Level)
 		return
 	}
 
 	if config := server.GetConfig(); config != nil {
-		config.Log.Level = common.GetLevel()
+		config.SetLogLevel(req.Level)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    gin.H{"level": req.Level},
-	})
+	common.SuccessWithData(c, gin.H{"level": req.Level}, "SUCCESS")
 }
 
 // ListVariables handle list variables
 func (h *SystemHandler) ListVariables(c *gin.Context) {
-	variables, err := h.systemService.ListAllVariables()
+	ctx := c.Request.Context()
+
+	variables, err := h.systemService.ListAllVariables(ctx)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    variables,
-	})
+	common.SuccessWithData(c, variables, "SUCCESS")
 }
 
 // SetVariableHTTPRequest set variable request
@@ -252,41 +209,28 @@ type SetVariableHTTPRequest struct {
 func (h *SystemHandler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var name is required",
-		})
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarName == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var name is required",
-		})
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
 	if req.VarValue == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var value is required",
-		})
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var value is required")
 		return
 	}
 
-	if err := h.systemService.SetVariable(req.VarName, req.VarValue); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+	ctx := c.Request.Context()
+
+	if err := h.systemService.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "SUCCESS",
-	})
+	common.SuccessNoData(c, "SUCCESS")
 }
 
 func (h *SystemHandler) ShowVariable(c *gin.Context) {
@@ -294,50 +238,38 @@ func (h *SystemHandler) ShowVariable(c *gin.Context) {
 
 	varName, err := common.DecodeFromBase64(encodedVarName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if varName == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": "Var name is required",
-		})
+		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
 		return
 	}
 
-	variable, err := h.systemService.ShowVariable(varName)
+	ctx := c.Request.Context()
+
+	variable, err := h.systemService.ShowVariable(ctx, varName)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "SUCCESS",
-		"data":    variable,
-	})
+	common.SuccessWithData(c, variable, "SUCCESS")
 }
 
 // ListEnvironments handle list environments
 func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 	environments, err := h.systemService.ListEnvironments()
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    environments,
-	})
+	common.SuccessWithData(c, environments, "SUCCESS")
+}
+
+// Language returns the backend runtime language so the front end can
+// choose the appropriate code path (Go vs Python).
+func (h *SystemHandler) Language(c *gin.Context) {
+	common.SuccessWithData(c, map[string]string{"language": "go"}, "success")
 }

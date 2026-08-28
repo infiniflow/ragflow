@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
+	"ragflow/internal/harness/graph/types"
 )
 
 // ============================================================
@@ -37,7 +38,7 @@ func TestTopology_MultiJoinStar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	_, err = cg.Invoke(context.Background(), map[string]any{})
+	_, err = cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -82,7 +83,7 @@ func TestTopology_Diamond(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestTopology_SequentialChains(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestBinaryOp_MapMerge(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -180,7 +181,7 @@ func TestBinaryOp_MapMerge(t *testing.T) {
 // TestCheckpoint_ManyPendingWrites creates a checkpoint with many writes.
 func TestCheckpoint_ManyPendingWrites(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "cp-many-pending"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -205,7 +206,7 @@ func TestCheckpoint_ManyPendingWrites(t *testing.T) {
 // TestCheckpoint_DeeplyNestedData verifies deeply nested checkpoint data.
 func TestCheckpoint_DeeplyNestedData(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Build deeply nested data.
 	nested := map[string]interface{}{"level0": "root"}
@@ -255,7 +256,7 @@ func TestTopology_ConcurrentGraphs_Timeout(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			ctx := context.Background()
+			ctx := t.Context()
 			input := map[string]any{"idx": idx}
 			_, err := cg.Invoke(ctx, input)
 			if err != nil {
@@ -291,7 +292,7 @@ func TestChannel_SimpleWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	_, err = cg.Invoke(context.Background(), map[string]any{})
+	_, err = cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -321,7 +322,7 @@ func TestChannel_Topic(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]any{})
+	_, err = cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -352,7 +353,7 @@ func TestChannel_LastValueBasic(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]any{})
+	_, err = cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -366,7 +367,7 @@ func TestChannel_LastValueBasic(t *testing.T) {
 // from the same MemorySaver concurrently.
 func TestCheckpoint_100ConcurrentReaders(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "cp-100-readers"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -376,14 +377,12 @@ func TestCheckpoint_100ConcurrentReaders(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := ms.Get(ctx, cfg)
 			if err != nil {
 				t.Errorf("Get: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -395,7 +394,7 @@ func TestCheckpoint_100ConcurrentReaders(t *testing.T) {
 // TestTopology_MultipleIndependentGraphs compiles and invokes
 // 10 different graph topologies.
 func TestTopology_MultipleIndependentGraphs(t *testing.T) {
-	graphs := make([]*CompiledGraph, 10)
+	graphs := make([]types.CompiledGraph, 10)
 	for i := 0; i < 10; i++ {
 		name := fmt.Sprintf("g_%d", i)
 		b := NewStateGraph(map[string]any{})
@@ -416,9 +415,9 @@ func TestTopology_MultipleIndependentGraphs(t *testing.T) {
 	var wg sync.WaitGroup
 	for i, cg := range graphs {
 		wg.Add(1)
-		go func(idx int, compiled *CompiledGraph) {
+		go func(idx int, compiled types.CompiledGraph) {
 			defer wg.Done()
-			_, err := compiled.Invoke(context.Background(), map[string]any{})
+			_, err := compiled.Invoke(t.Context(), map[string]any{})
 			if err != nil {
 				t.Errorf("graph %d: %v", idx, err)
 			}
@@ -434,7 +433,7 @@ func TestTopology_MultipleIndependentGraphs(t *testing.T) {
 // TestCheckpoint_NestedEmptyMap verifies nested empty maps round-trip.
 func TestCheckpoint_NestedEmptyMap(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	data := map[string]interface{}{
 		"empty_map": map[string]interface{}{},

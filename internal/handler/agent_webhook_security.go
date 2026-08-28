@@ -36,14 +36,17 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 
 	rediscli "ragflow/internal/engine/redis"
 )
@@ -75,8 +78,26 @@ const (
 	jwtReservedClaims = "exp,sub,aud,iss,nbf,iat"
 )
 
-// validateWebhookSecurity is the orchestrator. Empty/nil cfg → no-op
-// (matches agent_api.py:1607 "No security config → allowed by default").
+// errWebhookFailClosed is the sentinel returned from BOTH the
+// "missing security block" branch and the "auth_type=none without
+// allow_anonymous opt-in" branch of validateWebhookSecurity.
+// Sharing one error prevents a probe from distinguishing the two
+// states (and therefore from learning whether a canvas has any
+// security config at all) — the whole point of PR #14890's
+// fail-closed default. PR review round 5 (#2) — the previous
+// form leaked that distinction via two different messages.
+var errWebhookFailClosed = errors.New(
+	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks",
+)
+
+// validateWebhookSecurity is the orchestrator.
+//
+// PR #14890 changed the python default: empty/nil security cfg
+// is no longer "allowed by default" — it must be a non-empty
+// dict, and `auth_type == "none"` requires an explicit
+// `allow_anonymous: true` opt-in. The previous "fail open" default
+// let unauthenticated callers hit any webhook by simply omitting
+// the security block.
 //
 // Sub-validators run in the python-defined order:
 //  1. validateMaxBodySize
@@ -88,8 +109,9 @@ func validateWebhookSecurity(
 	c *gin.Context,
 	canvasID string,
 ) error {
+	ctx := c.Request.Context()
 	if len(securityCfg) == 0 {
-		return nil
+		return errWebhookFailClosed
 	}
 	if err := validateMaxBodySize(c, securityCfg); err != nil {
 		return err
@@ -97,7 +119,7 @@ func validateWebhookSecurity(
 	if err := validateIPWhitelist(c, securityCfg); err != nil {
 		return err
 	}
-	if err := validateRateLimit(canvasID, securityCfg); err != nil {
+	if err := validateRateLimit(ctx, canvasID, securityCfg); err != nil {
 		return err
 	}
 	return validateAuth(c, securityCfg)
@@ -223,7 +245,7 @@ func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 //
 // Strict fail-closed: any Redis error → error. The webhook handler
 // surfaces this as 102 so an operator notices a misconfiguration.
-func validateRateLimit(canvasID string, cfg map[string]any) error {
+func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any) error {
 	rawRL, ok := cfg["rate_limit"].(map[string]any)
 	if !ok || len(rawRL) == 0 {
 		return nil
@@ -258,16 +280,21 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	}
 
 	key := fmt.Sprintf("rl:tb:%s", canvasID)
-	ctx, cancel := context.WithTimeout(context.Background(), webhookRateLimitTimeout)
+	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
 	rdb := rediscli.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}
-	allowed, err := rdb.EvalTokenBucketStrict(ctx, key, limitF, limitF/window)
+	allowed, err := rdb.EvalTokenBucketStrict(newCtx, key, limitF, limitF/window)
 	if err != nil {
-		return fmt.Errorf("rate limit error: %s", err.Error())
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			common.Warn("rate limit check ambiguous (timeout/cancel), allowing",
+				zap.String("canvas_id", canvasID), zap.Error(err))
+			return nil
+		}
+		return fmt.Errorf("rate limit error: %w", err)
 	}
 	if !allowed {
 		return fmt.Errorf("too many requests (rate limit exceeded)")
@@ -275,11 +302,20 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	return nil
 }
 
-// validateAuth dispatches on auth_type. Empty cfg or auth_type=="none"
-// → allow (matches agent_api.py:1621).
+// validateAuth dispatches on auth_type. `auth_type == "none"`
+// (or unset) used to allow every request by default — a fail-open
+// security posture. PR #14890 closed that gap: anonymous
+// webhook access is now allowed only when the operator sets
+// `allow_anonymous: true` on the security block (mirrors
+// python agent_api.py:1659-1664).
 func validateAuth(c *gin.Context, cfg map[string]any) error {
 	authType, _ := cfg["auth_type"].(string)
 	if authType == "" || authType == "none" {
+		if !isTruthyAllowAnonymous(cfg) {
+			// Same sentinel as the missing-security-block branch
+			// above; see errWebhookFailClosed. PR review round 5 (#2).
+			return errWebhookFailClosed
+		}
 		return nil
 	}
 	switch authType {
@@ -293,6 +329,38 @@ func validateAuth(c *gin.Context, cfg map[string]any) error {
 	return fmt.Errorf("unsupported auth_type: %s", authType)
 }
 
+// isTruthyAllowAnonymous mirrors python agent_api.py:_is_truthy
+// applied to cfg["allow_anonymous"]. Returns true only when the
+// value is an explicit boolean true, a non-zero int, or one of
+// {"1","true","yes","on"} (case-insensitive, trimmed). Anything
+// else (including the key being absent) is falsy — closing the
+// implicit-anonymous gap.
+func isTruthyAllowAnonymous(cfg map[string]any) bool {
+	if cfg == nil {
+		return false
+	}
+	v, ok := cfg["allow_anonymous"]
+	if !ok {
+		return false
+	}
+	switch x := v.(type) {
+	case bool:
+		return x
+	case int:
+		return x != 0
+	case int64:
+		return x != 0
+	case float64:
+		return x != 0
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return false
+}
+
 // validateTokenAuth mirrors python agent_api.py:1725-1733.
 //
 // An empty configured `token_value` previously meant "accept any
@@ -302,15 +370,15 @@ func validateAuth(c *gin.Context, cfg map[string]any) error {
 func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 	rawToken, _ := cfg["token"].(map[string]any)
 	if rawToken == nil {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	header, _ := rawToken["token_header"].(string)
 	want, _ := rawToken["token_value"].(string)
 	if header == "" || want == "" {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	if c.GetHeader(header) != want {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	return nil
 }
@@ -322,16 +390,16 @@ func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 func validateBasicAuth(c *gin.Context, cfg map[string]any) error {
 	rawBasic, _ := cfg["basic_auth"].(map[string]any)
 	if rawBasic == nil {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	username, _ := rawBasic["username"].(string)
 	password, _ := rawBasic["password"].(string)
 	if username == "" || password == "" {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	u, p, ok := c.Request.BasicAuth()
 	if !ok || u != username || p != password {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	return nil
 }
@@ -395,7 +463,7 @@ func validateJWTAuth(c *gin.Context, cfg map[string]any) error {
 
 	token, err := jwt.Parse(tokenStr, keyFunc, parserOpts...)
 	if err != nil {
-		return fmt.Errorf("invalid jwt: %s", err.Error())
+		return fmt.Errorf("invalid jwt: %w", err)
 	}
 	if !token.Valid {
 		return fmt.Errorf("invalid jwt")
@@ -431,13 +499,13 @@ func jwtKeyFunc(alg, secret string) (jwt.Keyfunc, error) {
 	case "RS256", "RS384", "RS512":
 		pub, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt rsa public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt rsa public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	case "ES256", "ES384", "ES512":
 		pub, err := jwt.ParseECPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt ec public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt ec public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	}

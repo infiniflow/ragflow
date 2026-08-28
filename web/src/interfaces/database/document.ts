@@ -41,7 +41,6 @@ export interface IParserConfig {
   chunk_token_num?: number;
   auto_keywords?: number;
   auto_questions?: number;
-  toc_extraction?: boolean;
   task_page_size?: number;
   raptor?: Raptor;
   graphrag?: GraphRag;
@@ -60,6 +59,7 @@ export interface IParserConfig {
     enum?: string[];
   }>;
   enable_metadata?: boolean;
+  compilation_template_group_id?: string[];
 }
 
 interface Raptor {

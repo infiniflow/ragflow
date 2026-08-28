@@ -27,7 +27,7 @@ func TestMultiTurn_StateAccumulation(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
 	for turn := 1; turn <= 3; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 		var found bool
 		for {
@@ -69,7 +69,7 @@ func TestMultiTurn_ToolCallAcrossTurns(t *testing.T) {
 
 		runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 		var outputs int
 		for {
@@ -136,7 +136,7 @@ func TestMultiTurn_MiddlewareHooksAcrossTurns(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
 	for turn := 1; turn <= 2; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("q%d", turn))})
 		for {
 			ev, ok := iter.Next()
@@ -188,7 +188,7 @@ func TestMultiTurn_SequentialWorkflow(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("seq_a").WithDescription("first")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("seq_b").WithDescription("second")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	seq, err := NewSequential(ctx, &SequentialConfig{
 		Name: "seq_multi", Description: "multi-turn sequential",
 		SubAgents: []Agent{a1, a2},
@@ -200,7 +200,7 @@ func TestMultiTurn_SequentialWorkflow(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: seq})
 
 	for turn := 1; turn <= 2; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 		var outputs int
 		for {
@@ -234,7 +234,7 @@ func TestMultiTurn_LoopWorkflow(t *testing.T) {
 
 	body := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("loop_body").WithDescription("body")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	loop, err := NewLoop(ctx, &LoopConfig{
 		Name: "loop_multi", Description: "multi-turn loop",
 		SubAgents:     []Agent{body},
@@ -247,7 +247,7 @@ func TestMultiTurn_LoopWorkflow(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: loop})
 
 	for turn := 1; turn <= 2; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 		var outputs int
 		for {
@@ -281,7 +281,7 @@ func TestMultiTurn_ParallelWorkflow(t *testing.T) {
 	pa := NewReActAgent(&ReActConfig[*schema.Message]{Model: ma}).WithName("par_a")
 	pb := NewReActAgent(&ReActConfig[*schema.Message]{Model: mb}).WithName("par_b")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	par, err := NewParallel(ctx, &ParallelConfig{
 		Name: "par_multi", Description: "multi-turn parallel",
 		SubAgents: []Agent{pa, pb},
@@ -293,7 +293,7 @@ func TestMultiTurn_ParallelWorkflow(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: par})
 
 	for turn := 1; turn <= 2; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 		var outputs int
 		for {
@@ -330,7 +330,7 @@ func TestMultiTurn_CancelAndResume(t *testing.T) {
 	cancelOpt, cancelFunc := WithCancel()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 
-	ctx1 := context.Background()
+	ctx1 := t.Context()
 	iter1 := runner.Run(ctx1, []*schema.Message{schema.UserMessage("run me")},
 		WithCheckPointID(cid), cancelOpt)
 
@@ -344,7 +344,7 @@ func TestMultiTurn_CancelAndResume(t *testing.T) {
 		}
 	}
 
-	ctx2 := context.Background()
+	ctx2 := t.Context()
 	resumedIter, err := runner.Resume(ctx2, cid)
 	if err != nil {
 		t.Logf("Resume failed (known P0 gap?): %v", err)
@@ -441,7 +441,7 @@ func TestMultiTurn_ModelErrorAcrossTurns(t *testing.T) {
 	agent.name = "err_recover"
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
-	ctx1 := context.Background()
+	ctx1 := t.Context()
 	iter1 := runner.Run(ctx1, []*schema.Message{schema.UserMessage("first")})
 	var turn1Ok bool
 	for {
@@ -468,7 +468,7 @@ func TestMultiTurn_ModelErrorAcrossTurns(t *testing.T) {
 	agent2.name = "err_recover2"
 	runner2 := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent2})
 
-	ctx2 := context.Background()
+	ctx2 := t.Context()
 	iter2 := runner2.Run(ctx2, []*schema.Message{schema.UserMessage("second")})
 	var turn2Ok bool
 	for {
@@ -498,7 +498,7 @@ func TestMultiTurn_SupervisorTransfer(t *testing.T) {
 	supM.addResp("sup turn 2")
 
 	sub := NewReActAgent(&ReActConfig[*schema.Message]{Model: subM}).WithName("worker").WithDescription("worker")
-	ctx := context.Background()
+	ctx := t.Context()
 	wrappedSub := AgentWithOptions(ctx, sub, WithDisallowTransferToParent())
 
 	sup := NewReActAgent(&ReActConfig[*schema.Message]{
@@ -514,7 +514,7 @@ func TestMultiTurn_SupervisorTransfer(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: flow})
 
 	for turn := 1; turn <= 2; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 		var outputs int
 		for {
@@ -560,7 +560,7 @@ func TestMultiTurn_WrapModelAcrossTurns(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
 	for turn := 1; turn <= 2; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("q%d", turn))})
 		for {
 			ev, ok := iter.Next()
@@ -597,7 +597,7 @@ func TestMultiTurn_ConcurrentSameRunner(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			ctx := context.Background()
+			ctx := t.Context()
 			iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("concurrent %d", id))})
 			for {
 				ev, ok := iter.Next()
@@ -605,7 +605,7 @@ func TestMultiTurn_ConcurrentSameRunner(t *testing.T) {
 					break
 				}
 				if ev.Err != nil {
-					errCh <- fmt.Errorf("run %d err: %v", id, ev.Err)
+					errCh <- fmt.Errorf("run %d err: %w", id, ev.Err)
 				}
 			}
 		}(i)
@@ -633,7 +633,7 @@ func TestMultiTurn_PlanExecute(t *testing.T) {
 		replannerM := &mockModel{}
 		replannerM.addResp(fmt.Sprintf("replan turn %d", turn))
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		planner := NewReActAgent(&ReActConfig[*schema.Message]{Model: plannerM}).WithName("planner")
 		executor := NewReActAgent(&ReActConfig[*schema.Message]{Model: execM}).WithName("executor")
@@ -687,7 +687,7 @@ func TestMultiTurn_AgentToolNested(t *testing.T) {
 		innerM.addResp(fmt.Sprintf("inner result turn %d", turn))
 		innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner").WithDescription("inner")
 
-		ctx := context.Background()
+		ctx := t.Context()
 		agentTool := NewAgentTool(ctx, innerAgent)
 
 		parentM := &forcedToolModel{
@@ -738,7 +738,7 @@ func TestMultiTurn_StreamingMode(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store, EnableStreaming: true})
 
 	for turn := 1; turn <= 2; turn++ {
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("turn %d", turn))})
 		var outputEvents int
 		for {
@@ -772,7 +772,7 @@ func TestMultiTurn_CheckpointStateConsistency(t *testing.T) {
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 	cid := "cp-multi-1"
-	ctx1 := context.Background()
+	ctx1 := t.Context()
 	iter1 := runner.Run(ctx1, []*schema.Message{schema.UserMessage("first")}, WithCheckPointID(cid))
 	for {
 		ev, ok := iter1.Next()
@@ -785,7 +785,7 @@ func TestMultiTurn_CheckpointStateConsistency(t *testing.T) {
 	}
 
 	cid2 := "cp-multi-2"
-	ctx2 := context.Background()
+	ctx2 := t.Context()
 	iter2 := runner.Run(ctx2, []*schema.Message{schema.UserMessage("second")}, WithCheckPointID(cid2))
 	var outputs int
 	for {
@@ -818,7 +818,7 @@ func TestMultiTurn_ContextTimeout(t *testing.T) {
 	slowAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: slowM}).WithName("slow")
 	slowAgent.name = "slow"
 	runner1 := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: slowAgent})
-	ctx1, cancel1 := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	ctx1, cancel1 := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel1()
 	iter1 := runner1.Run(ctx1, []*schema.Message{schema.UserMessage("slow query")})
 	var timeoutSeen bool
@@ -840,7 +840,7 @@ func TestMultiTurn_ContextTimeout(t *testing.T) {
 	fastAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: fastM}).WithName("fast")
 	fastAgent.name = "fast"
 	runner2 := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: fastAgent})
-	ctx2 := context.Background()
+	ctx2 := t.Context()
 	iter2 := runner2.Run(ctx2, []*schema.Message{schema.UserMessage("fast query")})
 	var turn2Ok bool
 	for {

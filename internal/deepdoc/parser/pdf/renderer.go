@@ -1,7 +1,8 @@
-package parser
+package pdf
 
 import (
 	"image"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"reflect"
 )
 
@@ -12,19 +13,22 @@ import (
 var renderFn = fallbackRender
 
 // renderPageToImage renders a page at 216 DPI for downstream DLA/TSR/OCR.
-func renderPageToImage(engine PDFEngine, pageNum int) (image.Image, error) {
+func RenderPageToImage(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
 	return renderFn(engine, pageNum)
 }
 
 // fallbackRender uses the engine's own RenderPageImage (no C dependency).
-func fallbackRender(engine PDFEngine, pageNum int) (image.Image, error) {
-	img, err := engine.RenderPageImage(pageNum, dlaDPI)
+func fallbackRender(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
+	img, err := engine.RenderPageImage(pageNum, pdf.DlaDPI)
 	if err != nil {
 		return nil, err
 	}
 	// Guard against typed-nil (e.g. (*image.RGBA)(nil) returned as non-nil
 	// interface).  The plain img==nil check misses that case.
-	if img == nil || reflect.ValueOf(img).IsNil() {
+	if img == nil {
+		return nil, ErrNoPDFData
+	}
+	if rv := reflect.ValueOf(img); rv.Kind() == reflect.Ptr && rv.IsNil() {
 		return nil, ErrNoPDFData
 	}
 	return img, nil

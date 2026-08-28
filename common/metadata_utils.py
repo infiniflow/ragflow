@@ -23,21 +23,8 @@ import json_repair
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
-    op_mapping = {
-        "is": "=",
-        "not is": "≠",
-        ">=": "≥",
-        "<=": "≤",
-        "!=": "≠"
-    }
-    return [
-        {
-            "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
-            "key": cond["name"],
-            "value": cond["value"]
-        }
-        for cond in metadata_condition.get("conditions", [])
-    ]
+    op_mapping = {"is": "=", "not is": "≠", ">=": "≥", "<=": "≤", "!=": "≠"}
+    return [{"op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]), "key": cond["name"], "value": cond["value"]} for cond in metadata_condition.get("conditions", [])]
 
 
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
@@ -52,31 +39,22 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
     def filter_out(v2docs, operator, value):
         ids = []
+        original_value = value
         for input, docids in v2docs.items():
-
+            # Reset to the pristine filter value each iteration -- the comparison branch
+            # below reassigns `value` in place (date normalization, literal_eval coercion),
+            # and reusing that mutated value on the next dict entry compares it against
+            # the wrong (already-coerced) type/content instead of the original filter value.
+            value = original_value
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
                 # Check if input is in YYYY-MM-DD date format
                 input_str = str(input).strip()
                 value_str = str(value).strip()
 
                 # Strict date format detection: YYYY-MM-DD (must be 10 chars with correct format)
-                is_input_date = (
-                        len(input_str) == 10 and
-                        input_str[4] == '-' and
-                        input_str[7] == '-' and
-                        input_str[:4].isdigit() and
-                        input_str[5:7].isdigit() and
-                        input_str[8:10].isdigit()
-                )
+                is_input_date = len(input_str) == 10 and input_str[4] == "-" and input_str[7] == "-" and input_str[:4].isdigit() and input_str[5:7].isdigit() and input_str[8:10].isdigit()
 
-                is_value_date = (
-                        len(value_str) == 10 and
-                        value_str[4] == '-' and
-                        value_str[7] == '-' and
-                        value_str[:4].isdigit() and
-                        value_str[5:7].isdigit() and
-                        value_str[8:10].isdigit()
-                )
+                is_value_date = len(value_str) == 10 and value_str[4] == "-" and value_str[7] == "-" and value_str[:4].isdigit() and value_str[5:7].isdigit() and value_str[8:10].isdigit()
 
                 if is_value_date:
                     # Query value is in date format
@@ -92,8 +70,14 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                     try:
                         if isinstance(input, list):
                             input = input[0]
-                        input = ast.literal_eval(input)
-                        value = ast.literal_eval(value)
+                    except Exception:
+                        pass
+                    # Commit both literal_eval results together, or neither -- assigning
+                    # just one side (e.g. "None" parses but "none" doesn't) would compare
+                    # mismatched types after lowercasing and silently break the
+                    # case-insensitive match below.
+                    try:
+                        input, value = ast.literal_eval(input), ast.literal_eval(value)
                     except Exception:
                         pass
 
@@ -110,23 +94,17 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             matched = False
             try:
                 if operator == "contains":
-                    matched = str(input).find(value) >= 0 if not isinstance(input, list) else any(
-                        str(i).find(value) >= 0 for i in input)
+                    matched = str(input).find(value) >= 0 if not isinstance(input, list) else any(str(i).find(value) >= 0 for i in input)
                 elif operator == "not contains":
-                    matched = str(input).find(value) == -1 if not isinstance(input, list) else all(
-                        str(i).find(value) == -1 for i in input)
+                    matched = str(input).find(value) == -1 if not isinstance(input, list) else all(str(i).find(value) == -1 for i in input)
                 elif operator == "in":
                     matched = input in value if not isinstance(input, list) else all(i in value for i in input)
                 elif operator == "not in":
                     matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
                 elif operator == "start with":
-                    matched = str(input).lower().startswith(str(value).lower()) if not isinstance(input,
-                                                                                                  list) else "".join(
-                        [str(i).lower() for i in input]).startswith(str(value).lower())
+                    matched = str(input).lower().startswith(str(value).lower()) if not isinstance(input, list) else "".join([str(i).lower() for i in input]).startswith(str(value).lower())
                 elif operator == "end with":
-                    matched = str(input).lower().endswith(str(value).lower()) if not isinstance(input,
-                                                                                                list) else "".join(
-                        [str(i).lower() for i in input]).endswith(str(value).lower())
+                    matched = str(input).lower().endswith(str(value).lower()) if not isinstance(input, list) else "".join([str(i).lower() for i in input]).endswith(str(value).lower())
                 elif operator == "empty":
                     matched = not input
                 elif operator == "not empty":
@@ -173,14 +151,14 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
 
 async def apply_meta_data_filter(
-        meta_data_filter: dict | None,
-        metas: dict | None = None,
-        question: str = "",
-        chat_mdl: Any = None,
-        base_doc_ids: list[str] | None = None,
-        manual_value_resolver: Callable[[dict], dict] | None = None,
-        kb_ids: list[str] | None = None,
-        metas_loader: Callable[[], dict] | None = None,
+    meta_data_filter: dict | None,
+    metas: dict | None = None,
+    question: str = "",
+    chat_mdl: Any = None,
+    base_doc_ids: list[str] | None = None,
+    manual_value_resolver: Callable[[dict], dict] | None = None,
+    kb_ids: list[str] | None = None,
+    metas_loader: Callable[[], dict] | None = None,
 ) -> list[str] | None:
     """
     Apply metadata filtering rules and return the filtered doc_ids.
@@ -229,19 +207,7 @@ async def apply_meta_data_filter(
 
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
-        if conditions and kb_ids:
-            try:
-                from api.db.services.doc_metadata_service import DocMetadataService
-                doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
-                logging.debug(f"Doc ids filtered by metadata: {doc_ids}")
-                if doc_ids is not None:
-                    return doc_ids
-            except Exception as e:
-                logging.error(f"Metadata filter push down errored: {e}")
-
-        # In-memory fallback
-        logging.debug("Metadata filter falls back to in-memory filter")
-        return meta_filter(_get_metas(), conditions, logic)
+        return filter_doc_ids_by_metadata(kb_ids or [], conditions, logic, _get_metas)
 
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
@@ -285,11 +251,11 @@ async def apply_meta_data_filter(
 
 
 def _try_meta_pushdown(
-        kb_ids: list[str],
-        conditions: list[dict],
-        logic: str,
+    kb_ids: list[str],
+    conditions: list[dict],
+    logic: str,
 ) -> list[str] | None:
-    """Attempt the ES push-down path; return ``None`` to fall back in-memory.
+    """Attempt metadata-index push-down; return ``None`` to fall back in memory.
 
     Lazy-imports ``DocMetadataService`` so this module stays usable in
     environments where the API/db layer hasn't been wired up (e.g. unit tests
@@ -297,14 +263,34 @@ def _try_meta_pushdown(
     """
     try:
         from api.db.services.doc_metadata_service import DocMetadataService
-    except Exception as e:
-        logging.debug(f"[apply_meta_data_filter] push-down disabled, import failed: {e}")
+    except ImportError as e:
+        logging.debug(f"Metadata filter push-down disabled because the service import failed: {e}")
         return None
-    try:
-        return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
-    except Exception as e:
-        logging.warning(f"[apply_meta_data_filter] push-down errored, falling back: {e}")
-        return None
+    return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
+
+
+def filter_doc_ids_by_metadata(
+    kb_ids: list[str],
+    conditions: list[dict],
+    logic: str,
+    metas_loader: Callable[[], dict],
+) -> list[str]:
+    """Filter document IDs through the metadata index with a lazy exact fallback."""
+    doc_ids = _try_meta_pushdown(kb_ids, conditions, logic) if conditions and kb_ids else None
+    if doc_ids is not None:
+        logging.debug(
+            "Metadata filter used push-down: kb_count=%d condition_count=%d matched_doc_count=%d",
+            len(kb_ids),
+            len(conditions),
+            len(doc_ids),
+        )
+        return doc_ids
+    logging.debug(
+        "Metadata filter uses in-memory fallback: kb_count=%d condition_count=%d",
+        len(kb_ids),
+        len(conditions),
+    )
+    return meta_filter(metas_loader(), conditions, logic)
 
 
 def dedupe_list(values: list) -> list:
@@ -320,6 +306,14 @@ def dedupe_list(values: list) -> list:
 
 
 def update_metadata_to(metadata, meta):
+    """Merge ``meta`` into ``metadata``.
+
+    String / list[str] values keep the previous multi-value merge + dedupe
+    behavior (used by LLM-extracted metadata). Scalars (bool / int / float /
+    None) and structured values (list[dict], dict, ...) are preserved so that
+    document system fields such as ``_isCurrent`` / ``_version`` and PDF
+    ``outline`` survive merges that later fully replace ``meta_fields``.
+    """
     if not meta:
         return metadata
     if isinstance(meta, str):
@@ -333,22 +327,78 @@ def update_metadata_to(metadata, meta):
 
     for k, v in meta.items():
         if isinstance(v, list):
-            v = [vv for vv in v if isinstance(vv, str)]
-            if not v:
+            if all(isinstance(vv, str) for vv in v):
+                if not v:
+                    continue
+                v = dedupe_list(v)
+            else:
+                # Structured list (e.g. outline [{title, depth}, ...]).
+                if k not in metadata:
+                    logging.debug(
+                        "update_metadata_to preserve structured list key=%s src=%s",
+                        k,
+                        type(v).__name__,
+                    )
+                    metadata[k] = v
+                else:
+                    logging.debug(
+                        "update_metadata_to skip structured list key=%s src=%s dst=%s",
+                        k,
+                        type(v).__name__,
+                        type(metadata[k]).__name__,
+                    )
                 continue
-            v = dedupe_list(v)
-        if not isinstance(v, list) and not isinstance(v, str):
+        elif isinstance(v, (str, bool, int, float)) or v is None:
+            pass
+        else:
+            # dict / other structured values: keep if absent.
+            if k not in metadata:
+                logging.debug(
+                    "update_metadata_to preserve structured value key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
+                metadata[k] = v
+            else:
+                logging.debug(
+                    "update_metadata_to skip structured value key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             continue
+
         if k not in metadata:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to preserve scalar key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
             metadata[k] = v
             continue
-        if isinstance(metadata[k], list):
+        if isinstance(metadata[k], list) and isinstance(v, (list, str)):
+            if not all(isinstance(x, str) for x in metadata[k]):
+                logging.debug(
+                    "update_metadata_to skip merge into structured list key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
+                continue
             if isinstance(v, list):
                 metadata[k].extend(v)
             else:
                 metadata[k].append(v)
             metadata[k] = dedupe_list(metadata[k])
         else:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to replace scalar key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             metadata[k] = v
 
     return metadata
@@ -364,9 +414,7 @@ def metadata_schema(metadata: dict | list | None) -> Dict[str, Any]:
         if not key:
             continue
 
-        prop_schema = {
-            "description": item.get("description", "")
-        }
+        prop_schema = {"description": item.get("description", "")}
         if "enum" in item and item["enum"]:
             prop_schema["enum"] = item["enum"]
             prop_schema["type"] = "string"

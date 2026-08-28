@@ -151,6 +151,15 @@ def assert_url_is_safe(
         logger.warning("SSRF guard blocked URL with missing host: url=%r", url)
         raise ValueError("URL is missing a host.")
 
+    allow_any_host = _allow_any_host()
+    if allow_any_host:
+        logger.warning(
+            "SSRF guard bypass enabled via %s; allowing URL host without validation: hostname=%r url=%r",
+            _ALLOW_ANY_HOST_ENV,
+            hostname,
+            url,
+        )
+
     try:
         addr_infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
@@ -161,7 +170,7 @@ def assert_url_is_safe(
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         raw_ip = ipaddress.ip_address(sockaddr[0])
         eff_ip = _effective_ip(raw_ip)
-        if not eff_ip.is_global:
+        if not allow_any_host and not eff_ip.is_global:
             logger.warning(
                 "SSRF guard blocked URL: hostname=%r resolved to non-public address=%s",
                 hostname,

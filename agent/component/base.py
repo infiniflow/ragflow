@@ -15,18 +15,19 @@
 #
 
 import asyncio
+import builtins
+import json
+import logging
+import os
 import re
 import time
 from abc import ABC
-import builtins
-import json
-import os
-import logging
 from typing import Any, List, Union
+
 import pandas as pd
+
 from agent import settings
 from common.connection_utils import timeout
-
 
 
 from common.misc_utils import thread_pool_exec
@@ -37,6 +38,19 @@ _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
 _USER_FEEDED_PARAMS = "_user_feeded_params"
 _IS_RAW_CONF = "_is_raw_conf"
+
+
+def _build_template_ref_pattern(reference_pattern: str) -> str:
+    """Match a plain reference or one balanced outer brace pair.
+
+    Group 1 remains the reference for existing callers. The named ``outer``
+    group records whether the match used the wrapped form.
+    """
+    return (
+        rf"(?=(?:\{{ *)?\{{({reference_pattern})\}})"
+        rf"(?:(?P<outer>\{{) *)?\{{(?:{reference_pattern})\}}"
+        r"(?(outer) *\}|(?! *\}))"
+    )
 
 
 class ComponentParamBase(ABC):
@@ -96,7 +110,13 @@ class ComponentParamBase(ABC):
         return {name: True for name in self.get_feeded_deprecated_params()}
 
     def __str__(self):
-        return json.dumps(self.as_dict(), ensure_ascii=False)
+        def _serialize_default(obj):
+            if callable(obj):
+                return None
+            logging.warning("ComponentParamBase.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
+            return str(obj)
+
+        return json.dumps(self.as_dict(), ensure_ascii=False, default=_serialize_default)
 
     def as_dict(self):
         def _recursive_convert_obj_to_dict(obj):
@@ -130,15 +150,11 @@ class ComponentParamBase(ABC):
         update_from_raw_conf = conf.get(_IS_RAW_CONF, True)
         if update_from_raw_conf:
             deprecated_params_set = self._get_or_init_deprecated_params_set()
-            feeded_deprecated_params_set = (
-                self._get_or_init_feeded_deprecated_params_set()
-            )
+            feeded_deprecated_params_set = self._get_or_init_feeded_deprecated_params_set()
             user_feeded_params_set = self._get_or_init_user_feeded_params_set()
             setattr(self, _IS_RAW_CONF, False)
         else:
-            feeded_deprecated_params_set = (
-                self._get_or_init_feeded_deprecated_params_set(conf)
-            )
+            feeded_deprecated_params_set = self._get_or_init_feeded_deprecated_params_set(conf)
             user_feeded_params_set = self._get_or_init_user_feeded_params_set(conf)
 
         def _recursive_update_param(param, config, depth, prefix):
@@ -174,15 +190,11 @@ class ComponentParamBase(ABC):
 
                 else:
                     # recursive set obj attr
-                    sub_params = _recursive_update_param(
-                        attr, config_value, depth + 1, prefix=f"{prefix}{config_key}."
-                    )
+                    sub_params = _recursive_update_param(attr, config_value, depth + 1, prefix=f"{prefix}{config_key}.")
                     setattr(param, config_key, sub_params)
 
             if not allow_redundant and redundant_attrs:
-                raise ValueError(
-                    f"cpn `{getattr(self, '_name', type(self))}` has redundant parameters: `{[redundant_attrs]}`"
-                )
+                raise ValueError(f"cpn `{getattr(self, '_name', type(self))}` has redundant parameters: `{[redundant_attrs]}`")
 
             return param
 
@@ -213,9 +225,7 @@ class ComponentParamBase(ABC):
         param_validation_path_prefix = home_dir + "/param_validation/"
 
         param_name = type(self).__name__
-        param_validation_path = "/".join(
-            [param_validation_path_prefix, param_name + ".json"]
-        )
+        param_validation_path = "/".join([param_validation_path_prefix, param_name + ".json"])
 
         validation_json = None
 
@@ -248,11 +258,7 @@ class ComponentParamBase(ABC):
                         break
 
                 if not value_legal:
-                    raise ValueError(
-                        "Please check runtime conf, {} = {} does not match user-parameter restriction".format(
-                            variable, value
-                        )
-                    )
+                    raise ValueError("Please check runtime conf, {} = {} does not match user-parameter restriction".format(variable, value))
 
             elif variable in validation_json:
                 self._validate_param(attr, validation_json)
@@ -266,6 +272,11 @@ class ComponentParamBase(ABC):
     def check_empty(param, description):
         if not param:
             raise ValueError(description + " does not support empty value.")
+
+    @staticmethod
+    def check_nonnegative_integer(param, description):
+        if type(param).__name__ not in ["int", "long"] or param < 0:
+            raise ValueError(description + " {} not supported, should be 0 or positive integer".format(param))
 
     @staticmethod
     def check_positive_integer(param, description):
@@ -330,11 +341,7 @@ class ComponentParamBase(ABC):
     def _range(value, ranges):
         in_range = False
         for left_limit, right_limit in ranges:
-            if (
-                    left_limit - settings.FLOAT_ZERO
-                    <= value
-                    <= right_limit + settings.FLOAT_ZERO
-            ):
+            if left_limit - settings.FLOAT_ZERO <= value <= right_limit + settings.FLOAT_ZERO:
                 in_range = True
                 break
 
@@ -350,16 +357,11 @@ class ComponentParamBase(ABC):
 
     def _warn_deprecated_param(self, param_name, description):
         if self._deprecated_params_set.get(param_name):
-            logging.warning(
-                f"{description} {param_name} is deprecated and ignored in this version."
-            )
+            logging.warning(f"{description} {param_name} is deprecated and ignored in this version.")
 
     def _warn_to_deprecate_param(self, param_name, description, new_param):
         if self._deprecated_params_set.get(param_name):
-            logging.warning(
-                f"{description} {param_name} will be deprecated in future release; "
-                f"please use {new_param} instead."
-            )
+            logging.warning(f"{description} {param_name} will be deprecated in future release; please use {new_param} instead.")
             return True
         return False
 
@@ -367,8 +369,14 @@ class ComponentParamBase(ABC):
 class ComponentBase(ABC):
     component_name: str
     thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
-    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
-    iteration_alias_patt = r"\{* *\{(item|index|result)\} *\}*"
+    # Match `cpn_id@var_nm` / `sys.var_nm` / `env.var_nm` style template refs.
+    # `cpn_id` allows underscores (frontend ids like `userfillup_abc`,
+    # `retrieval_xyz`) and colons (legacy DSL ids like `UserFillUp:CateInput`,
+    # `Retrieval:KBSearch`).
+    variable_ref_patt = _build_template_ref_pattern(r"[a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+")
+    variable_ref_patt_re = re.compile(variable_ref_patt, flags=re.IGNORECASE | re.DOTALL)
+    iteration_alias_patt = _build_template_ref_pattern(r"item|index|result")
+    iteration_alias_patt_re = re.compile(iteration_alias_patt, flags=re.IGNORECASE | re.DOTALL)
 
     def __str__(self):
         """
@@ -380,9 +388,7 @@ class ComponentBase(ABC):
         return """{{
             "component_name": "{}",
             "params": {}
-        }}""".format(self.component_name,
-                     self._param
-                     )
+        }}""".format(self.component_name, self._param)
 
     def __init__(self, canvas, id, param: ComponentParamBase):
         from agent.canvas import Graph  # Local import to avoid cyclic dependency
@@ -398,7 +404,7 @@ class ComponentBase(ABC):
 
     def check_if_canceled(self, message: str = "") -> bool:
         if self.is_canceled():
-            task_id = getattr(self._canvas, 'task_id', 'unknown')
+            task_id = getattr(self._canvas, "task_id", "unknown")
             log_message = f"Task {task_id} has been canceled"
             if message:
                 log_message += f" during {message}"
@@ -486,7 +492,9 @@ class ComponentBase(ABC):
         input_elements = self.get_input_elements()
         _logger.debug(
             "[Base] Component '%s' (%s) resolving inputs. Input element keys: %s",
-            self._id, self.component_name, list(input_elements.keys()),
+            self._id,
+            self.component_name,
+            list(input_elements.keys()),
         )
         for var, o in input_elements.items():
             v = self.get_param(var)
@@ -497,9 +505,9 @@ class ComponentBase(ABC):
                 resolved = self._canvas.get_variable_value(v)
                 self.set_input_value(var, resolved)
                 _logger.debug("[Base]   var '%s': resolved ref '%s' -> %s", var, v, json.dumps(resolved, ensure_ascii=False, default=str)[:200])
-            elif isinstance(v, str) and re.search(self.variable_ref_patt, v):
+            elif isinstance(v, str) and self.variable_ref_patt_re.search(v):
                 elements = self.get_input_elements_from_text(v)
-                kv = {k: e.get('value', '') for k, e in elements.items()}
+                kv = {k: e.get("value", "") for k, e in elements.items()}
                 self.set_input_value(var, self.string_format(v, kv))
                 _logger.debug("[Base]   var '%s': resolved text refs '%s' -> %s", var, v, json.dumps(kv, ensure_ascii=False, default=str)[:200])
             else:
@@ -533,16 +541,21 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE | re.DOTALL):
+        for r in self._iter_template_matches(self.variable_ref_patt_re, txt):
             exp = r.group(1)
-            cpn_id, var_nm = exp.split("@") if exp.find("@") > 0 else ("", exp)
+            # Use maxsplit=1 to be defensive: although `exp` here comes
+            # from `variable_ref_patt` (which constrains `var_nm` to
+            # `[A-Za-z0-9_.-]+`), a future regex relaxation or a non-
+            # pattern caller should not raise `ValueError: too many values
+            # to unpack` if the trailing part happens to contain '@'.
+            cpn_id, var_nm = exp.split("@", 1) if exp.find("@") > 0 else ("", exp)
             res[exp] = {
                 "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}") if cpn_id else exp,
                 "value": self._canvas.get_variable_value(exp),
                 "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
-                "_cpn_id": cpn_id
+                "_cpn_id": cpn_id,
             }
-        for r in re.finditer(self.iteration_alias_patt, txt, flags=re.IGNORECASE | re.DOTALL):
+        for r in self._iter_template_matches(self.iteration_alias_patt_re, txt):
             exp = r.group(1)
             if exp in res:
                 continue
@@ -554,7 +567,7 @@ class ComponentBase(ABC):
                 "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}"),
                 "value": self._canvas.get_variable_value(ref),
                 "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references"),
-                "_cpn_id": cpn_id
+                "_cpn_id": cpn_id,
             }
         return res
 
@@ -596,33 +609,62 @@ class ComponentBase(ABC):
         return self._canvas.get_component(pid)["obj"]
 
     def get_upstream(self) -> List[str]:
-        cpn_nms = self._canvas.get_component(self._id)['upstream']
+        cpn_nms = self._canvas.get_component(self._id)["upstream"]
         return cpn_nms
 
     def get_downstream(self) -> List[str]:
-        cpn_nms = self._canvas.get_component(self._id)['downstream']
+        cpn_nms = self._canvas.get_component(self._id)["downstream"]
         return cpn_nms
 
     @staticmethod
-    def string_format(content: str, kv: dict[str, str]) -> str:
-        for n, v in kv.items():
-            def repl(_match, val=v):
-                return str(val) if val is not None else ""
+    def _is_complete_template_match(content: str, match: re.Match) -> bool:
+        if match.groupdict().get("outer") is not None:
+            return True
 
-            content = re.sub(
-                r"\{%s\}" % re.escape(n),
-                repl,
-                content
-            )
+        # A failed wrapped match can otherwise be rediscovered as its inner
+        # plain reference (for example, ``{ {A@x}``). Keep such malformed
+        # input literal instead of consuming only half of the brace pair.
+        before = content[: match.start()].rstrip(" ")
+        after = content[match.end() :].lstrip(" ")
+        return not before.endswith("{") and not after.startswith("}")
+
+    @classmethod
+    def _iter_template_matches(cls, pattern: re.Pattern, content: str):
+        for match in pattern.finditer(content):
+            if cls._is_complete_template_match(content, match):
+                yield match
+            else:
+                _logger.debug("Ignored incomplete template reference candidate at offset %d", match.start())
+
+    @classmethod
+    def _replace_template_matches(cls, pattern: re.Pattern, content: str, replacement) -> str:
+        out = []
+        last = 0
+        for match in cls._iter_template_matches(pattern, content):
+            out.append(content[last : match.start()])
+            out.append(replacement(match))
+            last = match.end()
+        out.append(content[last:])
+        return "".join(out)
+
+    @classmethod
+    def string_format(cls, content: str, kv: dict[str, str]) -> str:
+        for pattern in (cls.variable_ref_patt_re, cls.iteration_alias_patt_re):
+
+            def replace(match):
+                key = match.group(1)
+                if key in kv:
+                    value = kv[key]
+                    return str(value) if value is not None else ""
+                return match.group(0)
+
+            content = cls._replace_template_matches(pattern, content, replace)
         return content
 
     def exception_handler(self):
         if not self._param.exception_method:
             return None
-        return {
-            "goto": self._param.exception_goto,
-            "default_value": self._param.exception_default_value
-        }
+        return {"goto": self._param.exception_goto, "default_value": self._param.exception_default_value}
 
     def get_exception_default_value(self):
         if self._param.exception_method != "comment":

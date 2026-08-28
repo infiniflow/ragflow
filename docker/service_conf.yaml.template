@@ -1,3 +1,5 @@
+general:
+  heartbeat_interval: 3s
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
@@ -39,6 +41,12 @@ infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
   db_name: 'default_db'
+serenedb:
+  host: '${SERENEDB_HOST:-serenedb}'
+  port: 7890
+  user: '${SERENEDB_USER:-postgres}'
+  password: '${SERENEDB_PASSWORD:-infini_rag_flow}'
+  db_name: '${SERENEDB_DBNAME:-postgres}'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
   config:
@@ -47,6 +55,13 @@ oceanbase:
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
     port: ${OCEANBASE_PORT:-2881}
+gaussdb:
+  host: '${GAUSSDB_HOST}'
+  port: ${GAUSSDB_PORT}
+  database: '${GAUSSDB_DATABASE:-postgres}'
+  user: '${GAUSSDB_USER}'
+  password: '${GAUSSDB_PASSWORD}'
+  schema: '${GAUSSDB_SCHEMA:-public}'
 seekdb:
   scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
   config:
@@ -63,6 +78,25 @@ redis:
 nats:
   host: ${NATS_HOST:-0.0.0.0}
   port: ${NATS_PORT:-4222}
+clickhouse:
+  host: '${CLICKHOUSE_HOST:-clickhouse}'
+  port: ${CLICKHOUSE_TCP_PORT:-9000}
+  user: '${CLICKHOUSE_USER:-ragflow}'
+  password: '${CLICKHOUSE_PASSWORD:-infini_rag_flow}'
+  database: '${CLICKHOUSE_DATABASE:-ragflow}'
+otel:
+  host: ${OTEL_HOST:-0.0.0.0}
+  port: ${OTEL_PORT:-4318}
+  secure: false
+  sample_ratio: 1.0
+  stdout: false
+  enable: false
+ingestor:
+  mq_type: 'nats'
+  max_concurrent_workers: 1
+  compiler_pool_size: 0
+file_syncer:
+  max_concurrent_syncs: 5
 user_default_llm:
   default_models:
     embedding_model:
@@ -76,6 +110,8 @@ user_default_llm:
 #   port: 5432
 #   max_connections: 100
 #   stale_timeout: 30
+# GaussDB metadata DB is configured through GAUSSDB_METADATA_* environment
+# variables and is intentionally not rendered into service_conf.yaml.
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
@@ -106,6 +142,10 @@ user_default_llm:
 #   tenant_id: 'tenant_id'
 #   container_name: 'container_name'
 #   cloud: 'public'  # Azure cloud: 'public', 'china', 'government', or 'germany'
+# gcs:
+#   bucket: '${GCS_BUCKET:-ragflow}'
+#   prefix_path: '${GCS_PREFIX_PATH:-}'
+#   endpoint_url: '${GCS_ENDPOINT:-}'
 # The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
 # opendal:
 #   scheme: 'mysql'  # Storage type, such as s3, oss, azure, etc.

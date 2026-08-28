@@ -89,7 +89,7 @@ func TestAssertURLSafe(t *testing.T) {
 			name: "disallowed scheme ftp",
 			url:  "ftp://example.com/",
 			ips:  []string{"93.184.216.34"},
-			want: want{errSubstr: "Disallowed URL scheme"},
+			want: want{errSubstr: "disallowed URL scheme"},
 		},
 		{
 			name: "missing host",
@@ -100,7 +100,7 @@ func TestAssertURLSafe(t *testing.T) {
 			name: "resolution fails",
 			url:  "http://nosuchhost.test/x",
 			err:  "no such host",
-			want: want{errSubstr: "Could not resolve"},
+			want: want{errSubstr: "could not resolve"},
 		},
 		{
 			name: "all addresses must be public",

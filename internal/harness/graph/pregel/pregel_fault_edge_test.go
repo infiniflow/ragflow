@@ -3,6 +3,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -272,7 +273,7 @@ func TestFault_ContextCancelledBeforeRun(t *testing.T) {
 	cancel() // cancel immediately
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "x"})
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Logf("expected cancellation: %v", err)
 	}
 }
@@ -285,14 +286,12 @@ func TestFault_ContextCancelledBeforeRun(t *testing.T) {
 func TestFault_RapidCreateCancel(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(5))
 			ctx, cancel := context.WithTimeout(context.Background(), time.Microsecond)
 			defer cancel()
 			_, _ = engine.RunSync(ctx, map[string]any{"value": "x"})
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -440,7 +439,7 @@ func BenchmarkFault_EngineReuseManyTimes(b *testing.B) {
 }
 
 // newBenchGraph creates a simple graph for benchmarks without *testing.T.
-func newBenchGraph() *graphPkg.StateGraph {
+func newBenchGraph() types.StateGraph {
 	sg := graphPkg.NewStateGraph(map[string]any{"value": ""})
 	sg.AddChannel("value", channels.NewLastValue(""))
 	sg.AddNode("n1", func(ctx context.Context, state any) (any, error) {

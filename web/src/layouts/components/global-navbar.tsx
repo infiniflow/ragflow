@@ -2,22 +2,14 @@ import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 
-import {
-  LucideBrain,
-  LucideCpu,
-  LucideDatabase,
-  LucideFolderOpen,
-  LucideHouse,
-  LucideMenu,
-  LucideMessageSquareText,
-  LucideSearch,
-} from 'lucide-react';
+import { LucideHouse, LucideMenu } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { supportsCssAnchor } from '@/utils/css-support';
+import { HomeIcon } from '@/components/svg-icon';
 
 const PathMap = {
   [Routes.Datasets]: [Routes.Datasets, Routes.DatasetBase],
@@ -33,29 +25,57 @@ const PathMap = {
 const matchesPath = (pathname: string, candidate: string) =>
   pathname === candidate || pathname.startsWith(`${candidate}/`);
 
+// Wrapper so dataset icon shares the same ComponentType<{ className? }>
+// shape as Lucide icons in menuItems (avoids Element-vs-component union).
+const MenuItemsIcon = ({
+  className,
+  name,
+}: {
+  className?: string;
+  name?: string;
+}) => <HomeIcon imgClass={className} name={name || 'datasets'} width={20} />;
+
 const menuItems = [
   { path: Routes.Root, name: 'header.home', icon: LucideHouse },
-  { path: Routes.Datasets, name: 'header.dataset', icon: LucideDatabase },
+  {
+    path: Routes.Datasets,
+    name: 'header.dataset',
+    icon: MenuItemsIcon,
+    icon_name: 'datasets',
+  },
   {
     path: Routes.Chats,
     name: 'header.chat',
-    icon: LucideMessageSquareText,
+    icon: MenuItemsIcon,
+    icon_name: 'chats',
     'data-testid': 'nav-chat',
   },
   {
     path: Routes.Searches,
     name: 'header.search',
-    icon: LucideSearch,
+    icon: MenuItemsIcon,
+    icon_name: 'searches',
     'data-testid': 'nav-search',
   },
   {
     path: Routes.Agents,
     name: 'header.flow',
-    icon: LucideCpu,
+    icon: MenuItemsIcon,
+    icon_name: 'agents',
     'data-testid': 'nav-agent',
   },
-  { path: Routes.Memories, name: 'header.memories', icon: LucideBrain },
-  { path: Routes.Files, name: 'header.fileManager', icon: LucideFolderOpen },
+  {
+    path: Routes.Memories,
+    name: 'header.memories',
+    icon: MenuItemsIcon,
+    icon_name: 'memory',
+  },
+  {
+    path: Routes.Files,
+    name: 'header.fileManager',
+    icon: MenuItemsIcon,
+    icon_name: 'file',
+  },
 ];
 
 function useActivePath() {
@@ -185,12 +205,14 @@ export function DesktopNavbar() {
 function MobileNavItem({
   label,
   icon: Icon,
+  icon_name,
   isActive,
   onClick,
   ...linkProps
 }: {
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; name?: string }>;
+  icon_name?: string;
   isActive?: boolean;
   onClick?: () => void;
   to: string;
@@ -209,7 +231,7 @@ function MobileNavItem({
       )}
       aria-current={isActive ? 'page' : undefined}
     >
-      <Icon className="size-5 shrink-0 stroke-[1.5]" />
+      <Icon className="size-5 shrink-0 stroke-[1.5]" name={icon_name} />
       <span className="truncate">{label}</span>
     </Link>
   );
@@ -250,13 +272,14 @@ export function MobileNavbar({ renderFooter }: MobileNavbarProps) {
 
         <nav className="min-h-0 flex-1 overflow-y-auto py-3">
           <ul className="space-y-1">
-            {menuItems.map(({ path, name, icon, ...props }) => (
+            {menuItems.map(({ path, name, icon_name, icon, ...props }) => (
               <li key={path}>
                 <MobileNavItem
                   {...props}
                   to={path}
                   label={t(name)}
                   icon={icon}
+                  icon_name={icon_name}
                   isActive={path === activePath}
                   onClick={close}
                 />

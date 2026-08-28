@@ -73,6 +73,7 @@ def _load_openai_api(monkeypatch):
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
         get_model_config_from_provider_instance=lambda *_a, **_k: {},
+        resolve_model_config=lambda *_a, **_k: {},
         get_api_key=lambda *_a, **_k: "key",
     )
     _stub(
@@ -80,7 +81,7 @@ def _load_openai_api(monkeypatch):
         "api.utils.api_utils",
         get_error_data_result=lambda *a, **k: {"code": 102},
         get_request_json=lambda: {},
-        validate_request=lambda *_a, **_k: (lambda func: func),
+        validate_request=lambda *_a, **_k: lambda func: func,
     )
     _stub(monkeypatch, "common.constants", RetCode=SimpleNamespace(ARGUMENT_ERROR=102), StatusEnum=SimpleNamespace(VALID=SimpleNamespace(value="1")))
     _stub(monkeypatch, "common.metadata_utils", convert_conditions=lambda *_a, **_k: None, meta_filter=lambda *_a, **_k: [])
@@ -107,6 +108,7 @@ async def _aiter(events):
 def _collect_sse(module, events, **kwargs):
     """Run the SSE generator over `events` and return parsed JSON chunks
     (the trailing `[DONE]` sentinel excluded)."""
+
     async def run():
         out = []
         async for raw in module._stream_chat_completion_sse(_aiter(events), **kwargs):
@@ -205,11 +207,7 @@ def test_reasoning_content_streamed_separately(monkeypatch):
     ]
     chunks = _collect_sse(module, events, need_reference=False, **_BASE_KWARGS)
 
-    reasoning = "".join(
-        c["choices"][0]["delta"].get("reasoning_content")
-        for c in chunks
-        if c != "[DONE]" and isinstance(c["choices"][0]["delta"].get("reasoning_content"), str)
-    )
+    reasoning = "".join(c["choices"][0]["delta"].get("reasoning_content") for c in chunks if c != "[DONE]" and isinstance(c["choices"][0]["delta"].get("reasoning_content"), str))
     content = "".join(p for p in _content_pieces(chunks) if isinstance(p, str))
     assert reasoning == "thinking"
     assert content == "answer"

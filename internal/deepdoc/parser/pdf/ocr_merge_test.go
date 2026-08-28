@@ -1,11 +1,14 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
-	"context"
 	"image/png"
 	"os"
+	"ragflow/internal/common"
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	pdftype "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"strings"
 	"testing"
 )
@@ -15,11 +18,11 @@ import (
 // instead of real text. This validates that detect+merge+recognize
 // produces readable English from the scan.
 func TestOCR_mergeChars_RealScanned(t *testing.T) {
-	url := os.Getenv("DEEPDOC_URL")
+	url := common.GetEnv(common.EnvDeepDocURL)
 	if url == "" {
 		t.Skip("DEEPDOC_URL not set")
 	}
-	dd, err := NewDeepDocClient(url)
+	dd, err := inf.NewClient(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +44,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("pdf_oxide chars: %d", len(chars))
+	t.Logf("pdf_oxide Chars: %d", len(chars))
 
 	var sample strings.Builder
 	for i, c := range chars {
@@ -51,15 +54,17 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 		sample.WriteString(c.Text)
 	}
 	t.Logf("pdf_oxide sample: %q", sample.String())
-	t.Logf("isScanNoise: %v", isScanNoise(sample.String()))
-	t.Logf("isGarbledPage: %v", isGarbledPage(chars))
+	t.Logf("isScanNoise: %v", util.IsScanNoise(sample.String()))
+	t.Logf("isGarbledPage: %v", util.IsGarbledPage(chars))
 
 	img, err := eng.RenderPageImage(0, 72*3)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	boxes := ocrMergeChars(context.Background(), img, chars, dd, 0)
+	p := NewParser(pdftype.ParserConfig{})
+	ctx := t.Context()
+	boxes := p.ocrMergeChars(ctx, img, chars, dd, 0)
 	t.Logf("ocrMergeChars boxes: %d", len(boxes))
 	for i, b := range boxes {
 		// Save go render for comparison
@@ -72,7 +77,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 			i, b.X0, b.Top, b.X1, b.Bottom, b.Text[:end])
 	}
 
-	scanBoxes := ocrDetectAndRecognize(context.Background(), img, dd, 0, "scan page")
+	scanBoxes := p.ocrDetectAndRecognize(ctx, img, dd, 0, "scan page")
 	t.Logf("ocrScanPage boxes (no chars): %d", len(scanBoxes))
 	for i, b := range scanBoxes {
 		end := min(120, len(b.Text))

@@ -135,9 +135,7 @@ class SSHProvider(SandboxProvider):
                 timeout=min(self.timeout, 10),
             )
             if exit_code != 0:
-                raise RuntimeError(
-                    f"Failed to create remote artifacts directory: {stderr or stdout or 'unknown error'}"
-                )
+                raise RuntimeError(f"Failed to create remote artifacts directory: {stderr or stdout or 'unknown error'}")
         except Exception:
             sftp.close()
             client.close()
@@ -211,9 +209,7 @@ class SSHProvider(SandboxProvider):
                 "status": "ok" if exit_code == 0 else "error",
                 "timeout": exec_timeout,
                 "command": command,
-                "artifacts": self._collect_artifacts(
-                    sftp, posixpath.join(remote_work_dir, "artifacts")
-                ),
+                "artifacts": self._collect_artifacts(sftp, posixpath.join(remote_work_dir, "artifacts")),
                 "result_present": structured_result.get("present", False),
                 "result_value": structured_result.get("value"),
                 "result_type": structured_result.get("type"),
@@ -269,18 +265,13 @@ class SSHProvider(SandboxProvider):
                     timeout=min(self.timeout, 10),
                 )
                 if exit_code != 0:
-                    raise SandboxProviderConfigError(
-                        f"SSH connectivity check failed on {self.username}@{self.host}:{self.port}: "
-                        f"{stderr or 'remote command returned non-zero exit status'}"
-                    )
+                    raise SandboxProviderConfigError(f"SSH connectivity check failed on {self.username}@{self.host}:{self.port}: {stderr or 'remote command returned non-zero exit status'}")
             finally:
                 client.close()
         except SandboxProviderConfigError:
             raise
         except Exception as exc:
-            raise SandboxProviderConfigError(
-                f"Failed to connect to SSH host {self.username}@{self.host}:{self.port}: {exc}"
-            ) from exc
+            raise SandboxProviderConfigError(f"Failed to connect to SSH host {self.username}@{self.host}:{self.port}: {exc}") from exc
 
     def get_supported_languages(self) -> List[str]:
         return ["python", "javascript", "nodejs"]
@@ -470,9 +461,7 @@ class SSHProvider(SandboxProvider):
                 # Match the Go provider's fail-closed posture (see
                 # internal/agent/sandbox/ssh.go::hostKeyCallback).
                 logging.warning("SSH: failed to load configured known_hosts file; refusing connection")
-                raise SandboxProviderConfigError(
-                    "Failed to load configured SSH known_hosts file."
-                ) from exc
+                raise SandboxProviderConfigError("Failed to load configured SSH known_hosts file.") from exc
         # Reject unknown hosts: this is the default fail-closed posture
         # to prevent silent MITM. Operators must either ship a populated
         # known_hosts file or accept the warning (paramiko will fail the
@@ -522,9 +511,7 @@ class SSHProvider(SandboxProvider):
                 except Exception as exc:
                     errors.append(str(exc))
 
-        raise SandboxProviderConfigError(
-            "Failed to load SSH private key. " + "; ".join(error for error in errors if error)
-        )
+        raise SandboxProviderConfigError("Failed to load SSH private key. " + "; ".join(error for error in errors if error))
 
     def _create_remote_workspace(self, client: paramiko.SSHClient) -> str:
         base_dir = self.work_dir.rstrip("/") or "/tmp"
@@ -535,9 +522,7 @@ class SSHProvider(SandboxProvider):
             timeout=min(self.timeout, 10),
         )
         if exit_code != 0:
-            raise RuntimeError(
-                f"Failed to create remote workspace on {self.host}: {stderr or stdout or 'unknown error'}"
-            )
+            raise RuntimeError(f"Failed to create remote workspace on {self.host}: {stderr or stdout or 'unknown error'}")
 
         remote_work_dir = stdout.strip().splitlines()[-1] if stdout.strip() else ""
         if not remote_work_dir:
@@ -577,10 +562,7 @@ class SSHProvider(SandboxProvider):
         else:
             raise RuntimeError(f"Unsupported language for SSH provider: {language}")
 
-        return (
-            f"cd {shlex.quote(remote_work_dir)} && "
-            f"{shlex.quote(executable)} {shlex.quote(remote_script_path)}"
-        )
+        return f"cd {shlex.quote(remote_work_dir)} && {shlex.quote(executable)} {shlex.quote(remote_script_path)}"
 
     def _run_remote_command(
         self,
@@ -700,7 +682,5 @@ def _get_paramiko_module():
     try:
         import paramiko
     except ImportError as exc:
-        raise SandboxProviderConfigError(
-            "paramiko is required for the SSH sandbox provider. Install the project dependencies to enable it."
-        ) from exc
+        raise SandboxProviderConfigError("paramiko is required for the SSH sandbox provider. Install the project dependencies to enable it.") from exc
     return paramiko

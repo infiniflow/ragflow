@@ -19,6 +19,8 @@ import uuid
 
 import pytest
 
+from test.testcases.configs import IS_GO_PROXY
+
 
 @pytest.fixture
 def memory_cleanup(rest_client):
@@ -46,8 +48,8 @@ def create_memory_resource(rest_client, memory_cleanup):
         payload = {
             "name": f"{name_prefix}_{uuid.uuid4().hex[:8]}",
             "memory_type": ["raw"],
-            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI",
+            "embd_id": "BAAI/bge-small-en-v1.5@Local@Builtin",
+            "llm_id": "glm-4-flash@CI@ZHIPU-AI",
         }
         res = rest_client.post("/memories", json=payload)
         assert res.status_code == 200
@@ -128,7 +130,7 @@ def test_memory_create_missing_required_fields(rest_client):
     res = rest_client.post("/memories", json={"name": "missing_models", "memory_type": ["raw"]})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 101, payload
+    assert payload["code"] == (400 if IS_GO_PROXY else 101), payload
 
 
 @pytest.mark.p1
@@ -166,6 +168,32 @@ def test_messages_add_list_recent_content_update_forget(rest_client, create_memo
     assert forget_res.status_code == 200
     forget_payload = forget_res.json()
     assert forget_payload["code"] == 0, forget_payload
+
+
+@pytest.mark.p2
+def test_message_keeps_the_caller_supplied_user_id(rest_client, create_memory_resource):
+    """An API key belongs to an agent backend talking on behalf of its own end
+    users, so the `user_id` it sends is the subject the memory is written
+    against rather than the key owner's tenant id."""
+    memory_id = create_memory_resource("restful_message_user_id")
+    external_user_id = f"external-{uuid.uuid4().hex}"
+
+    add_res = rest_client.post(
+        "/messages",
+        json={
+            "memory_id": [memory_id],
+            "agent_id": uuid.uuid4().hex,
+            "session_id": uuid.uuid4().hex,
+            "user_id": external_user_id,
+            "user_input": "who am I?",
+            "agent_response": "you are the one asking",
+        },
+    )
+    assert add_res.status_code == 200
+    assert add_res.json()["code"] == 0, add_res.json()
+
+    message_list = _wait_for_memory_messages(rest_client, memory_id)
+    assert {message["user_id"] for message in message_list} == {external_user_id}, message_list
 
 
 @pytest.mark.p2

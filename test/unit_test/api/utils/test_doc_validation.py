@@ -46,17 +46,21 @@ def test_rest_api_page_size_rejects_values_above_100():
         ListFileReq(page_size=REST_API_MAX_PAGE_SIZE + 1)
 
 
-def test_update_document_req_accepts_resume_chunk_method():
-    """Verify document updates can keep the resume parser method."""
-    update_doc_req = UpdateDocumentReq(chunk_method="resume")
+@pytest.mark.parametrize("chunk_method", ["audio", "resume"])
+def test_update_document_req_accepts_supported_chunk_methods(chunk_method):
+    update_doc_req = UpdateDocumentReq(chunk_method=chunk_method)
 
-    assert update_doc_req.chunk_method == "resume"
+    assert update_doc_req.chunk_method == chunk_method
 
 
-def test_update_document_req_rejects_audio_chunk_method():
-    """Verify unsupported document parser methods still fail validation."""
-    with pytest.raises(ValidationError, match="`chunk_method` audio doesn't exist"):
-        UpdateDocumentReq(chunk_method="audio")
+def test_update_document_req_rejects_invalid_chunk_method():
+    with pytest.raises(ValidationError) as exc_info:
+        UpdateDocumentReq(chunk_method="invalid_chunk_method")
+
+    error = exc_info.value.errors()[0]
+    assert error["type"] == "format_invalid"
+    assert error["msg"] == "`chunk_method` invalid_chunk_method doesn't exist"
+    assert error["ctx"] == {"chunk_method": "invalid_chunk_method"}
 
 
 def test_validate_immutable_fields_no_changes():
@@ -66,7 +70,7 @@ def test_validate_immutable_fields_no_changes():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -79,7 +83,7 @@ def test_validate_immutable_fields_chunk_count_matches():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -92,7 +96,7 @@ def test_validate_immutable_fields_token_count_matches():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -105,7 +109,7 @@ def test_validate_immutable_fields_progress_matches():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -118,9 +122,9 @@ def test_validate_immutable_fields_chunk_count_mismatch():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `chunk_count`."
+    assert error_msg == "can't change `chunk_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -131,9 +135,9 @@ def test_validate_immutable_fields_token_count_mismatch():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_count`."
+    assert error_msg == "can't change `token_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -144,9 +148,9 @@ def test_validate_immutable_fields_progress_mismatch():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `progress`."
+    assert error_msg == "can't change `progress`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -158,18 +162,18 @@ def test_validate_immutable_fields_progress_boundary_values():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.0
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
-    
+
     # Test with 1.0
     update_doc_req = UpdateDocumentReq(progress=1.0)
     doc = Mock()
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 1.0
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -182,7 +186,7 @@ def test_validate_immutable_fields_none_values():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -198,7 +202,7 @@ def test_validate_immutable_fields_zero_values_must_match():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `chunk_count`."
+    assert error_msg == "can't change `chunk_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -211,7 +215,7 @@ def test_validate_immutable_fields_zero_token_count_mismatch_when_chunk_count_ma
     doc.progress = 0.0
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_count`."
+    assert error_msg == "can't change `token_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -224,7 +228,7 @@ def test_validate_immutable_fields_zero_progress_mismatch_when_counts_match():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `progress`."
+    assert error_msg == "can't change `progress`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -252,6 +256,7 @@ def test_validate_document_name_valid():
     error_msg, error_code = validate_document_name(req_doc_name, doc, docs_from_name)
     assert error_msg is None
     assert error_code is None
+
 
 def test_validate_document_name_attr_error():
     """Test valid document name update."""
@@ -325,7 +330,7 @@ def test_validate_chunk_method_valid():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "document.pdf"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
     assert error_msg is None
     assert error_code is None
@@ -336,9 +341,9 @@ def test_validate_chunk_method_visual_not_supported():
     doc = Mock()
     doc.type = FileType.VISUAL
     doc.name = "image.jpg"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -347,9 +352,9 @@ def test_validate_chunk_method_ppt_not_supported():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "presentation.ppt"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -358,9 +363,9 @@ def test_validate_chunk_method_pptx_not_supported():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "presentation.pptx"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -369,9 +374,9 @@ def test_validate_chunk_method_pages_not_supported():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "document.pages"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -380,7 +385,7 @@ def test_validate_chunk_method_other_extensions_still_valid():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "document.docx"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
     assert error_msg is None
     assert error_code is None
