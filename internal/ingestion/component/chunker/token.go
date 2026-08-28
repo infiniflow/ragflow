@@ -1491,14 +1491,16 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 			// Preserve any incoming Mom so that a chunk flowing into this
 			// path with an explicit parent-context (e.g. from a prior
 			// delimiter branch) keeps that lineage. Fall back to the
-			// current chunk's text only when no Mom was set.
+			// current chunk's text (with the leading "\n" stripped, the
+			// historical default the function used before this PR) only
+			// when no Mom was set.
 			// Mirrors `applyChildrenDelim`, which takes the parent as an
 			// explicit `seg` argument. Regression for #17876.
 			mom := d.Mom
 			if mom == "" {
-				mom = t
+				mom = strings.TrimPrefix(t, "\n")
 			}
-			out = append(out, schema.ChunkDoc{Text: child, Mom: mom}) (fix(chunker): preserve incoming Mom in applyChildrenDelimText)
+			out = append(out, schema.ChunkDoc{Text: child, Mom: mom})
 		}
 	}
 	return out

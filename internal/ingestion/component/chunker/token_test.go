@@ -784,3 +784,62 @@ func TestApplyChildrenDelimText_NilPatternIsNoop(t *testing.T) {
 		t.Errorf("input mutated under nil pattern: %+v", out[0])
 	}
 }
+
+// TestApplyChildrenDelimText_FallbackStripsLeadingNewline verifies that
+// when no incoming Mom is set, the fallback Mom uses
+// strings.TrimPrefix(t, "\n") — i.e. it strips a single leading newline
+// from the current chunk's text. The historical default this PR
+// preserves; if a child path forgets to strip, JSON-keyed SQL
+// downstream could see an extra leading "\n" in the Mom value.
+func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "\nalpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Each child Mom must be the text-path parent segment with
+		// the leading "\n" stripped, NOT the raw text-with-newline.
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (leading newline must be stripped)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelim_SymmetryWithTextPath verifies that the JSON
+// branch (applyChildrenDelim, which takes an explicit seg argument) and
+// the text branch (applyChildrenDelimText, which falls back to the
+// current chunk's text) produce equivalent Mom values for equivalent
+// input. Regression for #17876.
+func TestApplyChildrenDelim_SymmetryWithTextPath(t *testing.T) {
+	pattern := regexp.MustCompile(`\. `)
+
+	// JSON path: caller supplies the explicit parent segment via the
+	// seg argument. Mirrors how upstream delimiter branches call
+	// applyChildrenDelim.
+	jsonOut := applyChildrenDelim(
+		[]schema.ChunkDoc{{Text: "alpha. beta. gamma"}},
+		pattern,
+		"\nalpha. beta. gamma", // seg = TrimPrefix(d.Text, "\n")
+	)
+	// Text path: no explicit seg; falls back to TrimPrefix(d.Text, "\n").
+	textOut := applyChildrenDelimText(
+		[]schema.ChunkDoc{{Text: "\nalpha. beta. gamma"}},
+		pattern,
+	)
+
+	if len(jsonOut) != 3 || len(textOut) != 3 {
+		t.Fatalf("expected 3 children each; json=%d text=%d", len(jsonOut), len(textOut))
+	}
+	for i := range jsonOut {
+		if jsonOut[i].Mom != textOut[i].Mom {
+			t.Errorf("child %d: json Mom=%q != text Mom=%q (branches must agree)",
+				i, jsonOut[i].Mom, textOut[i].Mom)
+		}
+	}
+}
