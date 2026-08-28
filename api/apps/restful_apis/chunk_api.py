@@ -1247,9 +1247,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d["img_id"] = f"{dataset_id}-{chunk_id}"
             d["doc_type_kwd"] = "image"
         else:
-            return get_error_data_result(
-                message="`image_base64` is required when `image_update_mode` is `append` or `replace`"
-            )
+            return get_error_data_result(message="`image_base64` is required when `image_update_mode` is `append` or `replace`")
 
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
