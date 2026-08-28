@@ -246,6 +246,7 @@ export const MultiSelect = React.forwardRef<
       React.useState<string[]>(defaultValue);
     const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
     const [isAnimating, setIsAnimating] = React.useState(false);
+    const triggerId = React.useId();
 
     React.useEffect(() => {
       if (isEmpty(selectedValues) && !isEmpty(props.value)) {
@@ -379,6 +380,12 @@ export const MultiSelect = React.forwardRef<
           <Button
             ref={ref}
             {...props}
+            // Own the trigger id, like `SelectWithSearch` does. Radix's Slot
+            // lets child props win, so this keeps shadcn's `FormControl` from
+            // putting the form item id here — otherwise a `FormLabel`
+            // (`<label htmlFor>`) would forward its clicks to this button and
+            // clicking the field label would open the popover.
+            id={triggerId}
             onClick={handleTogglePopover}
             className={cn(
               'flex w-full p-1 rounded-md border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input focus-visible:bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
