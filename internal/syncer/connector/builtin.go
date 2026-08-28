@@ -40,6 +40,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "google_drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_cloud_storage", NewGoogleCloudStorageConnector)
 	registerBuiltIn(registry, "oci_storage", NewOCIStorageConnector)
+	registerBuiltIn(registry, "zendesk", NewZendeskConnector)
 	registerBuiltIn(registry, "azure_blob", NewAzureBlobStorageConnector)
 	registerBuiltIn(registry, "r2", NewR2Connector)
 	registerBuiltIn(registry, "s3", NewS3Connector)
