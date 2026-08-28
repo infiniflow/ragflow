@@ -298,7 +298,7 @@ def by_monkeyocrv2(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMB
     if not server_url:
         raise RuntimeError("MONKEYOCRV2_SERVER_URL is not configured")
     parser = MonkeyOCRv2Parser(server_url)
-    sections, tables = parser.parse_pdf(filename, binary=binary, callback=callback, page_from=from_page, page_to=to_page)
+    sections, tables = parser.parse_pdf(filename, binary=binary, callback=callback, page_from=from_page, page_to=min(to_page, MAXIMUM_PAGE_NUMBER))
     return sections, tables, parser
 
 
@@ -550,7 +550,6 @@ PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
     "monkeyocrv2": by_monkeyocrv2,
-    "monkeyocrv2-parsing": by_monkeyocrv2,
     "docling": by_docling,
     "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,

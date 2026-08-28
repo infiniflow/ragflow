@@ -74,7 +74,38 @@ def test_converts_table_layout_with_position(monkeypatch):
     monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response())
     sections, tables = MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf")
     assert sections == []
-    assert tables == [((None, "a | b"), [(1, 1, 2, 30, 40)])]
+    assert tables == [((None, "a | b"), [(1, 1, 30, 2, 40)])]
+
+
+def test_skips_malformed_layout_records(monkeypatch):
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("doc/jsons/doc.json", json.dumps({"layouts": [None, {"content": "bad", "page_num": None, "bbox": [1]}, {"content": "ok", "page_num": 1, "bbox": [1, 2, 3, 4]}]}))
+
+    class Response:
+        headers = {"content-type": "application/zip"}
+        content = out.getvalue()
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response())
+    sections, tables = MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf")
+    assert sections == [("ok", "@@1\t1\t3\t2\t4##")]
+    assert tables == []
+
+
+def test_applies_requested_page_offset(monkeypatch):
+    class Response:
+        headers = {"content-type": "application/zip"}
+        content = make_zip("doc", "page", include_markdown=False)
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response())
+    sections, _ = MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf", page_from=4)
+    assert sections == [("page", "@@6\t1\t30\t2\t40##")]
 
 
 def test_sends_page_range_and_accepts_binary(monkeypatch):
