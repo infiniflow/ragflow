@@ -789,20 +789,23 @@ class InfinityConnectionBase(DocStoreConnection):
         else:
             df = res
 
-        if df.empty or field_name not in df.columns:
+        if df.empty:
             return {}
 
-        ans = {}
-        num_rows = len(res)
-        column_id = res["id"]
-        if field_name not in res:
-            if field_name == "content_with_weight" and "content" in res:
+        if field_name not in df.columns:
+            if field_name == "content_with_weight" and "content" in df.columns:
                 field_name = "content"
             else:
                 return {}
+        if "id" not in df.columns:
+            return {}
+
+        ans = {}
+        num_rows = len(df)
+        column_id = df["id"]
         for i in range(num_rows):
             id = column_id[i]
-            txt = res[field_name][i]
+            txt = df[field_name][i]
             if re.search(r"<em>[^<>]+</em>", txt, flags=re.IGNORECASE | re.MULTILINE):
                 ans[id] = txt
                 continue
