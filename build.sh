@@ -317,7 +317,7 @@ build_go() {
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
     echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
         go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
