@@ -43,7 +43,15 @@ import (
 	"github.com/cenkalti/backoff/v5"
 )
 
-const defaultHeartbeatInterval = 10 * time.Second
+// defaultHeartbeatInterval paces the InProgress() working pulse that keeps an
+// in-flight message's ack deadline renewed while a worker parses. It MUST stay
+// comfortably below the consumer's ack deadline, which the server normalizes
+// to BackOff[0] = 5s (see NatsEngine.InitConsumer): a pulse slower than the
+// deadline lets the broker redeliver mid-run, and the redelivered copy is
+// ack-skipped by the claim guard — acking the only in-flight copy, so a worker
+// crash afterwards would lose the delivery (downgraded to the 15min
+// reconciliation backstop instead of automatic redelivery).
+const defaultHeartbeatInterval = 2 * time.Second
 
 type Ingestor struct {
 	id     string
@@ -172,6 +180,9 @@ func (e *Ingestor) Start() error {
 // error is retained and returned to every later caller.
 func (e *Ingestor) start() error {
 	msgQueueEngine := engine.GetMessageQueueEngine()
+	if msgQueueEngine == nil {
+		return fmt.Errorf("message queue engine not initialized; run engine.InitMessageQueue first")
+	}
 	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
 		return err
 	}
@@ -187,7 +198,39 @@ func (e *Ingestor) start() error {
 	// Start returns promptly; it is joined by Stop via workerWg.
 	e.workerWg.Add(1)
 	go e.consumeLoop()
+
+	// Startup reconciliation heals tasks orphaned by a previous process
+	// crash (RUNNING stuck mid-run, CREATED never delivered). It runs off
+	// the caller's goroutine so Start is not blocked by the DB scan; it is
+	// joined by Stop via workerWg. It runs concurrently with consumeLoop:
+	// the CAS in StartRunning (CREATED→RUNNING) and markFailed
+	// (RUNNING→FAILED) handles the race where a stale row is both
+	// reconciled and redelivered, and pagination handles >500 orphans
+	// without stranding tasks. Keeping it async avoids delaying consumer
+	// liveness; a synchronous scan before consumeLoop would add startup
+	// latency with no stronger correctness.
+	e.workerWg.Add(1)
+	go func() {
+		defer e.workerWg.Done()
+		e.reconcileStartupTasks()
+	}()
 	return nil
+}
+
+// fetchBudget caps each Fetch batch by the worker channel's free capacity (and
+// the worker width) so the consumer never pulls more messages than it can
+// enqueue immediately: messages beyond the budget would sit claimed in
+// taskChan's senders' hands or force blocking sends that stall the consume
+// loop while their AckWait runs out.
+func (e *Ingestor) fetchBudget() int {
+	budget := cap(e.taskChan) - len(e.taskChan)
+	if budget > int(e.maxConcurrency) {
+		budget = int(e.maxConcurrency)
+	}
+	if budget < 1 {
+		budget = 1
+	}
+	return budget
 }
 
 // consumeLoop is the main tasks.RAGFLOW consume loop. It runs until e.ctx is
@@ -206,7 +249,7 @@ func (e *Ingestor) consumeLoop() {
 		if err := e.ctx.Err(); err != nil {
 			return
 		}
-		taskHandles, err := msgQueueEngine.GetMessages(4)
+		taskHandles, err := msgQueueEngine.GetMessages(e.fetchBudget())
 		if err != nil {
 			common.Error("error consuming message", err)
 			select {
@@ -251,6 +294,84 @@ func (e *Ingestor) SetKnowledgeCompileModelConfig(llmID, embedding string) {
 // runtime.NumCPU() at start time.
 func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 	e.kcConcurrency = n
+}
+
+// Startup reconciliation thresholds: how long a CREATED task must sit
+// without being picked up before the startup scan treats it as an orphan
+// of a previous process (judged by create_time, never updated after creation).
+const (
+	reconcileCreatedStaleAfter = 5 * time.Minute
+	reconcileBatchLimit        = 500
+	reconcileOverallTimeout    = 5 * time.Minute
+)
+
+// reconcileStartupTasks heals CREATED tasks orphaned by a previous process
+// crash (never consumed for 5min) by re-publishing via EnqueueByID.
+// Republishes are safe without broker-side dedup: the CREATED→RUNNING
+// transition in StartRunning is a CAS, and the in-process claim guard
+// ack-skips a second copy while a worker holds the task. (JetStream MsgID
+// dedup is intentionally NOT used - see NatsEngine.PublishTask: it would
+// swallow the retry republish of a task_id reused across runs, stranding
+// the row in CREATED.)
+//
+// RUNNING orphans are intentionally NOT touched here; recovery relies on
+// NATS redelivery (BackOff/InProgress) and the knowledge-compile style
+// lease would be the proper fix for long tasks, not a startup 15m→FAILED.
+// Errors are logged and skipped per task; the next restart re-runs the scan.
+// reconcileStartupTasks scans and heals orphaned rows. It carries no
+// WaitGroup bookkeeping of its own: start() wraps it with workerWg Add/Done,
+// and tests invoke it synchronously.
+func (e *Ingestor) reconcileStartupTasks() {
+	// Bounded by the ingestor's own lifetime: Stop cancels e.ctx, which
+	// aborts an in-flight scan instead of letting workerWg.Wait() linger.
+	ctx, cancel := context.WithTimeout(e.ctx, reconcileOverallTimeout)
+	defer cancel()
+
+	if dao.DB == nil {
+		common.Warn("startup reconciliation skipped: DB not initialized")
+		return
+	}
+
+	// CREATED orphans are re-published without a status change, so a
+	// drain-style loop (as used for RUNNING) would revisit the same head
+	// batch forever. Use offset pagination to walk the stale snapshot.
+	// The CREATED→RUNNING CAS in StartRunning and the in-process claim
+	// guard make concurrent races with consumeLoop safe: duplicate
+	// deliveries are ack-skipped while a worker holds the claim.
+	createdThreshold := time.Now().Add(-reconcileCreatedStaleAfter)
+	for offset := 0; ; offset += reconcileBatchLimit {
+		if ctx.Err() != nil {
+			return
+		}
+		// ListStaleByStatus does not support offset; query with offset
+		// directly to paginate the immutable CREATED snapshot.
+		var created []*entity.IngestionTask
+		q := dao.DB.WithContext(ctx).
+			Where("status IN ?", []string{common.CREATED}).
+			Where("create_time < ?", createdThreshold.UnixMilli()).
+			Order("create_time ASC").
+			Offset(offset).Limit(reconcileBatchLimit)
+		if err := q.Find(&created).Error; err != nil {
+			common.Warn(fmt.Sprintf("startup reconciliation: list CREATED orphans: %v", err))
+			return
+		}
+		if len(created) == 0 {
+			break
+		}
+		for _, task := range created {
+			if ctx.Err() != nil {
+				return
+			}
+			if err := e.ingestionTaskSvc.EnqueueByID(task.ID); err != nil {
+				common.Warn(fmt.Sprintf("startup reconciliation: re-enqueue CREATED task %s: %v", task.ID, err))
+				continue
+			}
+			common.Info(fmt.Sprintf("startup reconciliation: orphaned CREATED task %s re-enqueued", task.ID))
+		}
+		if len(created) < reconcileBatchLimit {
+			break
+		}
+	}
 }
 
 // startDatasetKnowledgeCompile provisions the dataset-level compile scheduling
@@ -445,10 +566,21 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
 	case <-e.ctx.Done():
-		// Shutdown won the race: release the claim and return without
-		// settling so the broker redelivers the message after restart
-		// rather than blocking the consume loop forever.
-		common.Info(fmt.Sprintf("Ingestor shutting down; releasing slot for task %s without ack", task.ID))
+		// Shutdown won the race after StartRunning already flipped the task
+		// to RUNNING: finalize it as STOPPED so the row cannot linger in
+		// non-terminal RUNNING with no in-flight worker (the user can
+		// retry). If the DB write itself fails, the startup reconciliation
+		// scan is the backstop. The message is left unsettled - on
+		// redelivery the terminal STOPPED status ack-skips it. Both paths
+		// run with a detached 2s timeout so shutdown is not slowed by a
+		// stalled DB.
+		stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if e.markStopped(stopCtx, task.ID) {
+			common.Info(fmt.Sprintf("Ingestor shutting down; task %s finalized as STOPPED", task.ID))
+		} else {
+			common.Warn(fmt.Sprintf("Ingestor shutting down; task %s left RUNNING (startup reconciliation will finalize it)", task.ID))
+		}
 		return
 	}
 }
@@ -604,7 +736,13 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 // RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
 // STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
 // so that a future retry of the same task does not immediately re-cancel.
+// The caller's context is detached before touching the DB: markStopped runs
+// on failure/cancel/shutdown paths whose context is typically already
+// cancelled, and a contaminated context would make the terminal write fail
+// exactly when it matters most.
 func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	if _, err := e.ingestionTaskSvc.RequestStop(ctx, taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
 		return false
@@ -624,7 +762,12 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 
 // markFailed persists FAILED status for the task and reports whether the
 // terminal status was durably written, so the caller can decide Ack vs Nack.
+// The caller's context is detached before touching the DB (see markStopped):
+// failure paths usually carry an already-cancelled context, and losing the
+// FAILED write would turn a settled task into a redelivery loop.
 func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID); uErr != nil {
 		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
 		return false
@@ -648,7 +791,13 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	default:
 	}
 
-	if err := e.ingestionTaskSvc.IncrementRunCount(ctx, task.ID); err != nil {
+	// The three DB/Redis lookups below must survive a context cancelled
+	// between the pre-check and the call (cancel poll races the pipeline
+	// start): detach the caller's ctx with a short timeout so a cancelled
+	// run fails through markFailed with a real error, not a context error.
+	dbCtx, dbCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer dbCancel()
+	if err := e.ingestionTaskSvc.IncrementRunCount(dbCtx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
 		ok := e.markFailed(ctx, task.ID)
 		if ok {
@@ -660,7 +809,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	if checkpointExists == nil {
 		checkpointExists = canvas.RedisCheckpointExists
 	}
-	resumeCheckpoint, checkpointErr := checkpointExists(ctx, task.ID)
+	resumeCheckpoint, checkpointErr := checkpointExists(dbCtx, task.ID)
 	if checkpointErr != nil {
 		common.Error(fmt.Sprintf("Failed to check checkpoint for task %s", task.ID), checkpointErr)
 		ok := e.markFailed(ctx, task.ID)
@@ -670,7 +819,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return ok
 	}
 	if !resumeCheckpoint {
-		if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
+		if err := e.ingestionTaskSvc.ClearComponentProgress(dbCtx, task.ID); err != nil {
 			common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
 			ok := e.markFailed(ctx, task.ID)
 			if ok {
