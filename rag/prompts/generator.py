@@ -338,16 +338,19 @@ async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
-    try:
-        obj = json_repair.loads(kwd)
-    except json_repair.JSONDecodeError:
-        try:
-            result = kwd.replace(rendered_prompt[:-1], "").replace("user", "").replace("model", "").strip()
-            result = "{" + result.split("{")[1].split("}")[0] + "}"
-            obj = json_repair.loads(result)
-        except Exception as e:
-            logging.exception(f"JSON parsing error: {result} -> {e}")
-            raise e
+    obj = json_repair.loads(kwd)
+    if isinstance(obj, list):
+        # A model that wraps the object in an array, or emits several objects in a row,
+        # parses to a list. The tags are still there, so merge the objects it holds.
+        merged = {}
+        for item in obj:
+            if isinstance(item, dict):
+                merged.update(item)
+        obj = merged
+    if not isinstance(obj, dict):
+        # A reply holding no JSON object parses to "", which used to reach .items() below.
+        logging.warning(f"content_tagging: expected a JSON object of tags, got {type(obj).__name__}. Response: {kwd[:500]}")
+        return {}
     res = {}
     for k, v in obj.items():
         try:
