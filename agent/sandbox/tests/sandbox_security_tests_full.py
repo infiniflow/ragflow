@@ -364,6 +364,20 @@ def main():
             "arguments": {},
             "language": "python",
         },
+        "18 Normal test: matplotlib CJK font configuration should be loaded": {
+            "code": """
+import matplotlib
+
+def main():
+    assert matplotlib.get_backend().lower() == "agg"
+    assert matplotlib.matplotlib_fname() == "/usr/local/etc/matplotlibrc"
+    assert "Noto Sans CJK SC" in matplotlib.rcParams["font.sans-serif"]
+    assert matplotlib.rcParams["axes.unicode_minus"] is False
+            """,
+            "should_fail": False,
+            "arguments": {},
+            "language": "python",
+        },
     }
 
 
