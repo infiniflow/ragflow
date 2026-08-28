@@ -440,6 +440,13 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
         assert res["data"][0]["chunk_method"] == chunk_method, res
 
+    @pytest.mark.p1
+    @pytest.mark.skipif((os.getenv("DOC_ENGINE") or "elasticsearch").lower() == "elasticsearch", reason="requires a non-Elasticsearch doc engine")
+    def test_resume_chunk_method_rejected_by_non_elasticsearch(self, HttpApiAuth, add_dataset_func):
+        res = update_dataset(HttpApiAuth, add_dataset_func, {"chunk_method": "resume"})
+        assert res["code"] == 102, res
+        assert res["message"] == "'resume' can only be used when doc_engine is elasticsearch", res
+
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method",

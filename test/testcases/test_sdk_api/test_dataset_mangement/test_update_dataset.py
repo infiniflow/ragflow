@@ -319,6 +319,14 @@ class TestDatasetUpdate:
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.chunk_method == chunk_method, str(retrieved_dataset)
 
+    @pytest.mark.p1
+    @pytest.mark.skipif((os.getenv("DOC_ENGINE") or "elasticsearch").lower() == "elasticsearch", reason="requires a non-Elasticsearch doc engine")
+    def test_resume_chunk_method_rejected_by_non_elasticsearch(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as exception_info:
+            dataset.update({"chunk_method": "resume"})
+        assert "'resume' can only be used when doc_engine is elasticsearch" in str(exception_info.value)
+
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method",

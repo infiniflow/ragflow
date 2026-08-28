@@ -86,6 +86,13 @@ _INDEX_TYPE_TO_DISPLAY_NAME = {
 }
 
 
+def _validate_parser_for_doc_engine(parser_id: str | None) -> str | None:
+    """Return an actionable error for parser choices unsupported by the doc engine."""
+    if parser_id == "resume" and settings.DOC_ENGINE.lower() != "elasticsearch":
+        return "'resume' can only be used when doc_engine is elasticsearch"
+    return None
+
+
 async def create_dataset(tenant_id: str, req: dict):
     """
     Create a new dataset.
@@ -116,6 +123,9 @@ async def create_dataset(tenant_id: str, req: dict):
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
     req.update(ext_fields)
+
+    if error := _validate_parser_for_doc_engine(req.get("parser_id")):
+        return False, error
 
     e, create_dict = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
 
@@ -343,6 +353,9 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
 
     # Merge ext fields with req
     req.update(ext_fields)
+
+    if error := _validate_parser_for_doc_engine(req.get("parser_id")):
+        return False, error
 
     # Extract connectors from request
     connectors = []
