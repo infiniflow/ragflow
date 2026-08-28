@@ -9,6 +9,7 @@
 - 内部工作名：**Netstars-KB**
 - 用户可见的产品名称为 **Netstars-KB**，UI 品牌名统一为 Netstars-KB（浏览器标题、页面头部、登录页）。
 - 该名称同时用于内部文档、覆盖层配置与部署脚本；品牌化调整记录在 `overlay/` 下的说明中。
+- 前端品牌例外（升级时必须保留）：`web/index.html` 的 `<title>`、`web/src/conf.json` 的 `appName`、`web/src/pages/login-next/index.tsx` 与 `web/src/pages/admin/login.tsx` 的标题字、以及 `web/src/locales/en.ts` / `zh.ts` 中登录与 admin 的 title。
 
 ## 2. 上游跟踪策略
 
@@ -22,7 +23,7 @@
 
 - 核心解析器（`deepdoc/`、`rag/`、`internal/parser/` 等）
 - API 服务端（`api/`、`internal/handler/` 等）
-- 前端（`web/`）的源码与 UI 文案
+- 前端（`web/`）的源码与 UI 文案（上列 Netstars-KB 品牌例外除外）
 - Docker 镜像内部结构（不重打镜像、不改 `entrypoint.sh`）
 
 允许的扩展方式：
