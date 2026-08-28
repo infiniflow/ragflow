@@ -30,7 +30,11 @@ import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { buildMessageUuid } from '@/utils/chat';
+import {
+  buildMessageUuid,
+  dropPrologueFromMessages,
+  mergePrologueIntoMessages,
+} from '@/utils/chat';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { has, isEmpty, omit } from 'lodash';
@@ -654,27 +658,11 @@ export const useSelectDerivedMessages = () => {
   }, []);
 
   const addPrologue = useCallback((prologue: string) => {
-    setDerivedMessages((pre) => {
-      if (pre.length > 0) {
-        return [
-          {
-            ...pre[0],
-            content: prologue,
-          },
-          ...pre.slice(1),
-        ];
-      }
+    setDerivedMessages((pre) => mergePrologueIntoMessages(pre, prologue));
+  }, []);
 
-      return [
-        {
-          role: MessageType.Assistant,
-          content: prologue,
-          id: buildMessageUuid({
-            role: MessageType.Assistant,
-          }),
-        },
-      ];
-    });
+  const removePrologue = useCallback(() => {
+    setDerivedMessages((pre) => dropPrologueFromMessages(pre));
   }, []);
 
   const removeLatestMessage = useCallback(() => {
@@ -749,6 +737,7 @@ export const useSelectDerivedMessages = () => {
     scrollToBottom,
     removeAllMessagesExceptFirst,
     addPrologue,
+    removePrologue,
   };
 };
 

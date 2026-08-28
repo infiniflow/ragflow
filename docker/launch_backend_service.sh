@@ -49,7 +49,14 @@ export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PRO
 export PYTHONPATH=$(pwd)
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
-JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
+# jemalloc is an optional LD_PRELOAD allocator; tolerate environments without
+# it instead of letting the failed pkg-config lookup abort the launcher
+# (this script runs under set -e).
+JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc 2>/dev/null || true)/libjemalloc.so"
+if [ ! -f "$JEMALLOC_PATH" ]; then
+    echo "Warning: jemalloc not found; continuing without LD_PRELOAD."
+    JEMALLOC_PATH=""
+fi
 
 PY=python3
 

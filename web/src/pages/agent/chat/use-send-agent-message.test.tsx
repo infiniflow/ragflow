@@ -54,6 +54,7 @@ jest.mock('@/hooks/logic-hooks', () => ({
     removeAllMessagesExceptFirst: jest.fn(),
     scrollToBottom: jest.fn(),
     addPrologue: jest.fn(),
+    removePrologue: jest.fn(),
   }),
 }));
 

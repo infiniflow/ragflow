@@ -299,6 +299,7 @@ export const useSendAgentMessage = ({
     removeAllMessagesExceptFirst,
     scrollToBottom,
     addPrologue,
+    removePrologue,
     setDerivedMessages,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
@@ -549,10 +550,15 @@ export const useSendAgentMessage = ({
     }
     if (prologue) {
       addPrologue(prologue);
+    } else {
+      // The prologue is a frontend-only message: when the switch is turned
+      // off, drop it instead of leaving a stale bubble behind.
+      removePrologue();
     }
   }, [
     addNewestOneAnswer,
     addPrologue,
+    removePrologue,
     agentId,
     isTaskMode,
     prologue,

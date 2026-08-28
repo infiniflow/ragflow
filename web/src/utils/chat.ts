@@ -17,6 +17,7 @@
 import {
   ChatVariableEnabledField,
   EmptyConversationId,
+  MessageType,
 } from '@/constants/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
 import { omit } from 'lodash';
@@ -57,6 +58,45 @@ export const buildMessageUuidWithRole = (
 ) => {
   return `${message.role}_${message.id}`;
 };
+
+// Stable id for the agent prologue. The prologue is a frontend-only assistant
+// message, so a fixed id tells it apart from real conversation messages
+// (whose ids come from the backend or from uuid()).
+export const PROLOGUE_MESSAGE_ID = 'prologue-message';
+
+export const buildPrologueMessage = (prologue: string): IMessage => ({
+  role: MessageType.Assistant,
+  content: prologue,
+  id: PROLOGUE_MESSAGE_ID,
+});
+
+/**
+ * Place the prologue as the opening message without destroying existing
+ * conversation content:
+ * - no messages yet -> the prologue becomes the opening message;
+ * - the prologue is already rendered -> keep it in sync with the current text;
+ * - the conversation started without a prologue (typically with the user's
+ *   question) -> insert the prologue above the first message instead of
+ *   overwriting it.
+ */
+export const mergePrologueIntoMessages = (
+  messages: IMessage[] = [],
+  prologue: string,
+): IMessage[] => {
+  const first = messages[0];
+  if (first?.id === PROLOGUE_MESSAGE_ID) {
+    return first.content === prologue
+      ? messages
+      : [{ ...first, content: prologue }, ...messages.slice(1)];
+  }
+  return [buildPrologueMessage(prologue), ...messages];
+};
+
+// Drop the frontend-only prologue message; never touch anything else.
+export const dropPrologueFromMessages = (
+  messages: IMessage[] = [],
+): IMessage[] =>
+  messages[0]?.id === PROLOGUE_MESSAGE_ID ? messages.slice(1) : messages;
 
 // Preprocess LaTeX equations to be rendered by KaTeX
 // ref: https://github.com/remarkjs/react-markdown/issues/785
