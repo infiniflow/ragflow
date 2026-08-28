@@ -19,7 +19,9 @@ import (
 func init() {
 	if err := fetchTestdata(); err != nil {
 		fmt.Fprintf(os.Stderr, "fetch_deepdoc_testdata: not fetched (%v)\n", err)
+		return
 	}
+	testdataFetchAttempted = true
 }
 
 // fetchTestdata resolves the repo root, then invokes scripts/fetch_deepdoc_testdata.sh
