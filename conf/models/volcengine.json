@@ -31,7 +31,6 @@
       "name": "doubao-seed-evolving",
       "content_length": 1024000,
       "max_output": 256000,
-      "max_completion_tokens": 262144,
       "model_types": [
         "chat",
         "vision"
@@ -51,7 +50,6 @@
       ],
       "content_length": 256000,
       "max_output": 256000,
-      "max_completion_tokens": 262144,
       "model_types": [
         "chat",
         "vision"
@@ -71,7 +69,6 @@
       ],
       "content_length": 256000,
       "max_output": 256000,
-      "max_completion_tokens": 262144,
       "model_types": [
         "chat",
         "vision"
@@ -91,7 +88,6 @@
       ],
       "content_length": 256000,
       "max_output": 128000,
-      "max_completion_tokens": 131072,
       "model_types": [
         "chat",
         "vision"
@@ -111,7 +107,6 @@
       ],
       "content_length": 256000,
       "max_output": 128000,
-      "max_completion_tokens": 131072,
       "model_types": [
         "chat",
         "vision"
@@ -131,7 +126,6 @@
       ],
       "content_length": 128000,
       "max_output": 32000,
-      "max_completion_tokens": 32768,
       "model_types": [
         "chat",
         "vision"
@@ -149,9 +143,8 @@
       "alias": [
         "doubao-seed-1-8"
       ],
-      "content_length": 256000,
-      "max_output": 32000,
-      "max_completion_tokens": 32768,
+      "content_length": 262144,
+      "max_output": 262144,
       "model_types": [
         "chat",
         "vision"
@@ -171,7 +164,6 @@
       ],
       "content_length": 256000,
       "max_output": 32000,
-      "max_completion_tokens": 32768,
       "model_types": [
         "chat",
         "vision"
@@ -191,7 +183,6 @@
       ],
       "content_length": 256000,
       "max_output": 32000,
-      "max_completion_tokens": 32768,
       "model_types": [
         "chat",
         "vision"
@@ -211,7 +202,6 @@
       ],
       "content_length": 256000,
       "max_output": 32000,
-      "max_completion_tokens": 32768,
       "model_types": [
         "chat",
         "vision"
