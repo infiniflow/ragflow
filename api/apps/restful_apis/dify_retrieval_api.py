@@ -280,11 +280,11 @@ async def retrieval(tenant_id):
             doc_ids=doc_ids,
             rank_feature=label_question(question, [kb]),
         )
-        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [tenant_id])
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [kb.tenant_id])
 
         if use_kg:
             model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(question, [tenant_id], [kb_id], embd_mdl, LLMBundle(kb.tenant_id, model_config))
+            ck = await settings.kg_retriever.retrieval(question, [kb.tenant_id], [kb_id], embd_mdl, LLMBundle(kb.tenant_id, model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
