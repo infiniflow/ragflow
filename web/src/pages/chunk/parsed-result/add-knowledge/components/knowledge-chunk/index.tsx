@@ -34,6 +34,7 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { Spin } from '@/components/ui/spin';
+import { getKnowledgeFileParserId } from '@/utils/knowledge-file';
 import {
   QueryStringMap,
   useNavigatePage,
@@ -303,7 +304,7 @@ function Chunk() {
           visible={chunkUpdatingVisible}
           loading={chunkUpdatingLoading}
           onOk={onChunkUpdatingOk}
-          parserId={documentInfo.parser_id}
+          parserId={getKnowledgeFileParserId(documentInfo)}
         />
       )}
     </main>

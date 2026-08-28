@@ -5,6 +5,7 @@ import {
   RAGFlowPaginationType,
 } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
+import { getKnowledgeFileParserId } from '@/utils/knowledge-file';
 import {
   useFetchNextChunkList,
   useSwitchChunk,
@@ -224,7 +225,7 @@ const ChunkerContainer = (props: IProps) => {
           onOk={(e) => {
             handleChunkEditSave(e);
           }}
-          parserId={documentInfo.parser_id}
+          parserId={getKnowledgeFileParserId(documentInfo)}
         />
       )}
     </div>

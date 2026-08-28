@@ -121,15 +121,18 @@ export interface IKnowledgeFileParserConfig {
 }
 
 export interface IKnowledgeFile {
-  chunk_num: number;
+  chunk_num?: number;
+  chunk_count: number;
   create_date: string;
   create_time: number;
   created_by: string;
   id: string;
-  kb_id: string;
+  kb_id?: string;
+  dataset_id: string;
   location: string;
   name: string;
-  parser_id: string;
+  parser_id?: string;
+  chunk_method: string;
   process_begin_at?: any;
   process_duration: number;
   progress: number; // parsing process
