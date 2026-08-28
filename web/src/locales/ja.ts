@@ -584,7 +584,7 @@ export default {
       datasetDescription: 'データセットの説明を入力してください',
       overlappedPercentTip: '隣接する2つのチャンク間の重複率です。',
       globalIndexModelTip:
-        'ナレッジグラフ、RAPTOR、自動メタデータ、自動キーワード、自動質問の生成に使用されます。モデルの性能が生成品質に影響します。',
+        '自動メタデータ、自動キーワード、自動質問の生成に使用されます。モデルの性能が生成品質に影響します。',
       globalIndexModel: 'インデックスモデル',
       settings: '設定',
       autoMetadataTip:

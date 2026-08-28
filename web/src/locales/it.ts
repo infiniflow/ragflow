@@ -622,7 +622,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       overlappedPercentTip:
         'La percentuale di sovrapposizione tra due chunk adiacenti',
       globalIndexModelTip:
-        'Usato per generare grafi della conoscenza, RAPTOR, metadati automatici, parole chiave automatiche e domande automatiche. Le prestazioni del modello influenzeranno la qualità della generazione.',
+        'Usato per generare metadati automatici, parole chiave automatiche e domande automatiche. Le prestazioni del modello influenzeranno la qualità della generazione.',
       globalIndexModel: 'Modello di indicizzazione',
       settings: 'Impostazioni',
       autoMetadataTip: `Genera automaticamente i metadati. Si applica ai nuovi file durante l'analisi. I file esistenti richiedono una nuova analisi per essere aggiornati (i chunk rimangono preservati). Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'.`,

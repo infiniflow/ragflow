@@ -431,7 +431,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
     },
     knowledgeConfiguration: {
       globalIndexModelTip:
-        'Wird verwendet, um Wissensgraphen, RAPTOR, Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
+        'Wird verwendet, um Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
       globalIndexModel: 'Indizierungsmodell',
       settings: 'Einstellungen',
       autoMetadataTip:
