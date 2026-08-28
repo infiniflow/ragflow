@@ -1,14 +1,11 @@
-"""Client for the MonkeyOCRv2-Parsing ZIP API."""
+"""Client for the MonkeyOCRv2 ZIP API."""
 
 import io
 import json
-import logging
 import zipfile
 from pathlib import Path
 
 import requests
-
-LOGGER = logging.getLogger(__name__)
 
 
 class MonkeyOCRv2Parser:
@@ -26,7 +23,6 @@ class MonkeyOCRv2Parser:
     def parse_pdf(self, filepath, binary=None, callback=None, page_from=0, page_to=99999, **_kwargs):
         """Upload one document and convert the service's ZIP response."""
         payload = binary if binary is not None else Path(filepath).read_bytes()
-        LOGGER.info("MonkeyOCRv2 parse request: file=%s pages=%s:%s", Path(filepath).name, page_from, page_to)
         response = requests.post(
             f"{self.server_url}/parse",
             files={"files": (Path(filepath).name, payload, "application/pdf")},
@@ -39,9 +35,7 @@ class MonkeyOCRv2Parser:
         try:
             result = self._convert_zip(response.content, page_from=page_from)
         except (zipfile.BadZipFile, OSError, ValueError, TypeError, KeyError, IndexError) as exc:
-            LOGGER.exception("MonkeyOCRv2 ZIP conversion failed")
             raise RuntimeError("Invalid MonkeyOCRv2 parse response") from exc
-        LOGGER.info("MonkeyOCRv2 parse completed: sections=%d tables=%d", len(result[0]), len(result[1]))
         return result
 
     def _convert_zip(self, archive_bytes, page_from=0):

@@ -38,7 +38,7 @@ export const enum ParseDocumentType {
   Docling = 'Docling',
   OpenDataLoader = 'OpenDataLoader',
   TCADPParser = 'TCADP Parser',
-  MonkeyOCRv2 = 'MonkeyOCRv2-Parsing',
+  MonkeyOCRv2 = 'MonkeyOCRv2',
 }
 
 export function LayoutRecognizeFormField({

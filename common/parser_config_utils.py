@@ -14,12 +14,7 @@
 #  limitations under the License.
 #
 
-import logging
 from typing import Any
-
-
-LOGGER = logging.getLogger(__name__)
-
 
 # Parser-specific option keys. ``_has_mineru_options`` uses these to detect
 # whether the operator clearly intended the MinerU parser (issue #17114).
@@ -52,10 +47,6 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
         if lowered.endswith("@monkeyocrv2"):
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "MonkeyOCRv2"
-            LOGGER.info("Normalized layout recognizer to MonkeyOCRv2")
-        elif lowered in {"monkeyocrv2", "monkeyocrv2-parsing"}:
-            layout_recognizer = "MonkeyOCRv2"
-            LOGGER.info("Normalized layout recognizer to MonkeyOCRv2")
         elif lowered.endswith("@mineru"):
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "MinerU"
