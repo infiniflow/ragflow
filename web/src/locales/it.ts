@@ -1032,7 +1032,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       topN: 'Top N',
       topNTip: `Non tutti i chunk con punteggio di similarità sopra la 'soglia di similarità' saranno inviati all'LLM. Questo seleziona 'Top N' chunk da quelli recuperati.`,
       variable: 'Variabile',
-      variableTip: `Usate insieme alle API di gestione dell'assistente chat di RAGFlow, le variabili possono aiutare a sviluppare strategie di prompt di sistema più flessibili. Le variabili definite saranno usate dal 'Prompt di sistema' come parte dei prompt per l'LLM. {knowledge} è una variabile speciale riservata che rappresenta i chunk recuperati dal/i dataset specificato/i, e tutte le variabili devono essere racchiuse tra parentesi graffe {} nel 'Prompt di sistema'. Vedi https://ragflow.io/docs/dev/set_chat_variables per i dettagli.`,
+      variableTip: `Usate insieme alle API di gestione dell'assistente chat di RAGFlow, le variabili possono aiutare a sviluppare strategie di prompt di sistema più flessibili. Le variabili definite saranno usate dal 'Prompt di sistema' come parte dei prompt per l'LLM. {knowledge} è una variabile speciale riservata che rappresenta i chunk recuperati dal/i dataset specificato/i, e tutte le variabili devono essere racchiuse tra parentesi graffe {} nel 'Prompt di sistema'. Vedi https://ragflow.io/docs/chat_configuration#system-prompt per i dettagli.`,
       add: 'Aggiungi',
       key: 'Chiave',
       optional: 'Opzionale',

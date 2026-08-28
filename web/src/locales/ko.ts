@@ -1010,7 +1010,7 @@ export default {
       topN: 'Top N',
       topNTip: `'유사도 임계값' 이상의 유사도 점수를 가진 모든 chunk가 LLM에 전송되는 것은 아닙니다. 검색된 chunk에서 'Top N'개를 선택합니다.`,
       variable: '변수',
-      variableTip: `RAGFlow의 채팅 어시스턴트 관리 API와 함께 사용하면 변수를 통해 더 유연한 시스템 프롬프트 전략을 개발할 수 있습니다. 정의된 변수는 '시스템 프롬프트'에서 LLM의 프롬프트 일부로 사용됩니다. {knowledge}는 지정된 데이터셋에서 검색된 chunk를 나타내는 예약 특수 변수이며, 모든 변수는 '시스템 프롬프트'에서 중괄호 {}로 묶어야 합니다. 자세한 내용은 https://ragflow.io/docs/dev/set_chat_variables 를 참조하세요.`,
+      variableTip: `RAGFlow의 채팅 어시스턴트 관리 API와 함께 사용하면 변수를 통해 더 유연한 시스템 프롬프트 전략을 개발할 수 있습니다. 정의된 변수는 '시스템 프롬프트'에서 LLM의 프롬프트 일부로 사용됩니다. {knowledge}는 지정된 데이터셋에서 검색된 chunk를 나타내는 예약 특수 변수이며, 모든 변수는 '시스템 프롬프트'에서 중괄호 {}로 묶어야 합니다. 자세한 내용은 https://ragflow.io/docs/chat_configuration#system-prompt 를 참조하세요.`,
       add: '추가',
       key: '키',
       optional: '선택 사항',
