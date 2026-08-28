@@ -208,6 +208,9 @@ func (dao *IngestionTaskDAO) ListStaleByStatus(ctx context.Context, db *gorm.DB,
 	default:
 		return nil, fmt.Errorf("unsupported staleness column %q", timeColumn)
 	}
+	if len(statuses) == 0 {
+		return []*entity.IngestionTask{}, nil
+	}
 	query := db.WithContext(ctx).
 		Where("status IN ?", statuses).
 		Where(timeColumn+" < ?", olderThan.UnixMilli()).

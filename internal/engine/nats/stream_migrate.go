@@ -47,11 +47,17 @@ func ensureStreamConfig(ctx context.Context, js jetstream.JetStream, want jetstr
 		return nil, err
 	}
 	cur := st.CachedInfo().Config
-	if cur.MaxBytes != want.MaxBytes || cur.MaxMsgs != want.MaxMsgs || cur.Duplicates != want.Duplicates {
-		merged := cur // server-side config as base; overwrite only the migrated fields
+	needUpdate := cur.MaxBytes != want.MaxBytes || cur.MaxMsgs != want.MaxMsgs
+	if want.Duplicates != 0 && cur.Duplicates != want.Duplicates {
+		needUpdate = true
+	}
+	if needUpdate {
+		merged := cur
 		merged.MaxBytes = want.MaxBytes
 		merged.MaxMsgs = want.MaxMsgs
-		merged.Duplicates = want.Duplicates
+		if want.Duplicates != 0 {
+			merged.Duplicates = want.Duplicates
+		}
 		st, err = js.UpdateStream(ctx, merged)
 		if err != nil {
 			return nil, err

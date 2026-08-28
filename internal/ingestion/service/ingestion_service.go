@@ -202,7 +202,13 @@ func (e *Ingestor) start() error {
 	// Startup reconciliation heals tasks orphaned by a previous process
 	// crash (RUNNING stuck mid-run, CREATED never delivered). It runs off
 	// the caller's goroutine so Start is not blocked by the DB scan; it is
-	// joined by Stop via workerWg.
+	// joined by Stop via workerWg. It runs concurrently with consumeLoop:
+	// the CAS in StartRunning (CREATED→RUNNING) and markFailed
+	// (RUNNING→FAILED) handles the race where a stale row is both
+	// reconciled and redelivered, and pagination handles >500 orphans
+	// without stranding tasks. Keeping it async avoids delaying consumer
+	// liveness; a synchronous scan before consumeLoop would add startup
+	// latency with no stronger correctness.
 	e.workerWg.Add(1)
 	go func() {
 		defer e.workerWg.Done()
@@ -332,35 +338,83 @@ func (e *Ingestor) reconcileStartupTasks() {
 
 	taskDAO := dao.NewIngestionTaskDAO()
 
-	running, err := taskDAO.ListStaleByStatus(ctx, dao.DB, []string{common.RUNNING}, "update_time", time.Now().Add(-reconcileRunningStaleAfter), reconcileBatchLimit)
-	if err != nil {
-		common.Warn(fmt.Sprintf("startup reconciliation: list RUNNING orphans: %v", err))
-	}
-	for _, task := range running {
+	// Paginated scan for RUNNING orphans: each full batch (== limit) may
+	// hide more stale rows. Marking FAILED removes the row from the stale
+	// set (status no longer RUNNING), so a simple Limit loop drains the
+	// entire orphan set without offset. CAS on the status transition and
+	// pagination both handle the race with consumeLoop's concurrent claim:
+	// whichever wins, the task ends in a terminal or RUNNING state, and
+	// the loser is idempotent. Context cancellation is checked both
+	// between batches and per-task to respect reconcileOverallTimeout and
+	// Stop.
+	for {
+		running, err := taskDAO.ListStaleByStatus(ctx, dao.DB, []string{common.RUNNING}, "update_time", time.Now().Add(-reconcileRunningStaleAfter), reconcileBatchLimit)
+		if err != nil {
+			common.Warn(fmt.Sprintf("startup reconciliation: list RUNNING orphans: %v", err))
+			break
+		}
+		if len(running) == 0 {
+			break
+		}
+		for _, task := range running {
+			if ctx.Err() != nil {
+				return
+			}
+			// markFailed logs its own failures; a persistently failing row is
+			// retried by the next startup scan.
+			if e.markFailed(ctx, task.ID) {
+				common.Info(fmt.Sprintf("startup reconciliation: orphaned RUNNING task %s marked FAILED", task.ID))
+				e.markReconcileFailedProgress(ctx, task)
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			}
+		}
+		if len(running) < reconcileBatchLimit {
+			break
+		}
 		if ctx.Err() != nil {
 			return
-		}
-		// markFailed logs its own failures; a persistently failing row is
-		// retried by the next startup scan.
-		if e.markFailed(ctx, task.ID) {
-			common.Info(fmt.Sprintf("startup reconciliation: orphaned RUNNING task %s marked FAILED", task.ID))
 		}
 	}
 
-	created, err := taskDAO.ListStaleByStatus(ctx, dao.DB, []string{common.CREATED}, "create_time", time.Now().Add(-reconcileCreatedStaleAfter), reconcileBatchLimit)
-	if err != nil {
-		common.Warn(fmt.Sprintf("startup reconciliation: list CREATED orphans: %v", err))
-		return
-	}
-	for _, task := range created {
+	// CREATED orphans are re-published without a status change, so a
+	// drain-style loop (as used for RUNNING) would revisit the same head
+	// batch forever. Use offset pagination to walk the stale snapshot.
+	// The CREATED→RUNNING CAS in StartRunning and the in-process claim
+	// guard make concurrent races with consumeLoop safe: duplicate
+	// deliveries are ack-skipped while a worker holds the claim.
+	createdThreshold := time.Now().Add(-reconcileCreatedStaleAfter)
+	for offset := 0; ; offset += reconcileBatchLimit {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := e.ingestionTaskSvc.EnqueueByID(task.ID); err != nil {
-			common.Warn(fmt.Sprintf("startup reconciliation: re-enqueue CREATED task %s: %v", task.ID, err))
-			continue
+		// ListStaleByStatus does not support offset; query with offset
+		// directly to paginate the immutable CREATED snapshot.
+		var created []*entity.IngestionTask
+		q := dao.DB.WithContext(ctx).
+			Where("status IN ?", []string{common.CREATED}).
+			Where("create_time < ?", createdThreshold.UnixMilli()).
+			Order("create_time ASC").
+			Offset(offset).Limit(reconcileBatchLimit)
+		if err := q.Find(&created).Error; err != nil {
+			common.Warn(fmt.Sprintf("startup reconciliation: list CREATED orphans: %v", err))
+			return
 		}
-		common.Info(fmt.Sprintf("startup reconciliation: orphaned CREATED task %s re-enqueued", task.ID))
+		if len(created) == 0 {
+			break
+		}
+		for _, task := range created {
+			if ctx.Err() != nil {
+				return
+			}
+			if err := e.ingestionTaskSvc.EnqueueByID(task.ID); err != nil {
+				common.Warn(fmt.Sprintf("startup reconciliation: re-enqueue CREATED task %s: %v", task.ID, err))
+				continue
+			}
+			common.Info(fmt.Sprintf("startup reconciliation: orphaned CREATED task %s re-enqueued", task.ID))
+		}
+		if len(created) < reconcileBatchLimit {
+			break
+		}
 	}
 }
 
@@ -1100,6 +1154,40 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 		existingMsg = *doc.ProgressMsg
 	}
 	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
+}
+
+// markReconcileFailedProgress writes the reconciliation-failure markers to
+// the document row so the frontend does not stay stuck in RUNNING. It mirrors
+// markTimeoutProgress/markCancelProgress: progress=-1, run=FAIL, and an
+// appended timestamped message. Failures are logged and ignored — the task
+// row is already FAILED, so the next restart will not re-heal it, and a
+// document update failure is best-effort.
+func (e *Ingestor) markReconcileFailedProgress(ctx context.Context, task *entity.IngestionTask) {
+	if task == nil {
+		return
+	}
+	svc := documentpkg.NewDocumentService()
+	// Use the reconciliation ctx (5m timeout) when available; fall back to
+	// the ingestor's lifetime ctx if the caller passed a cancelled one.
+	if ctx == nil || ctx.Err() != nil {
+		ctx = e.ctx
+	}
+	doc, err := svc.GetDocumentByID(ctx, task.DocumentID)
+	if err != nil {
+		common.Warn(fmt.Sprintf("startup reconciliation: load document %s for task %s: %v", task.DocumentID, task.ID, err))
+		return
+	}
+	if doc == nil {
+		return
+	}
+	reconcileMsg := fmt.Sprintf("\n%s Task failed: orphaned RUNNING task reclaimed during startup reconciliation.", time.Now().Format("15:04:05"))
+	existingMsg := ""
+	if doc.ProgressMsg != nil {
+		existingMsg = *doc.ProgressMsg
+	}
+	if err := svc.UpdateRunProgress(ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+reconcileMsg); err != nil {
+		common.Warn(fmt.Sprintf("startup reconciliation: update document %s progress for task %s: %v", task.DocumentID, task.ID, err))
+	}
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another
