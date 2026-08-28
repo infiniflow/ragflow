@@ -1,4 +1,4 @@
-# kb 二次开发约定（Secondary Development Conventions）
+# Netstars-KB 二次开发约定（Secondary Development Conventions）
 
 > 作者：张彦龙
 
@@ -6,8 +6,10 @@
 
 ## 1. 产品工作名
 
-- 内部工作名：**kb**
-- 该名称仅用于内部文档、覆盖层配置与部署脚本，本 PR 及覆盖层不修改任何 UI 文案、品牌资源或应用源码。品牌化调整（如有）记录在 `overlay/` 下的说明中，通过部署期覆盖实现，而非改源码。
+- 内部工作名：**Netstars-KB**
+- 用户可见的产品名称为 **Netstars-KB**，UI 品牌名统一为 Netstars-KB（浏览器标题、页面头部、登录页）。
+- 该名称同时用于内部文档、覆盖层配置与部署脚本；品牌化调整记录在 `overlay/` 下的说明中。
+- 前端品牌例外（升级时必须保留）：`web/index.html` 的 `<title>`、`web/src/conf.json` 的 `appName`、`web/src/pages/login-next/index.tsx` 与 `web/src/pages/admin/login.tsx` 的标题字、以及 `web/src/locales/en.ts` / `zh.ts` 中登录与 admin 的 title。
 
 ## 2. 上游跟踪策略
 
@@ -21,7 +23,7 @@
 
 - 核心解析器（`deepdoc/`、`rag/`、`internal/parser/` 等）
 - API 服务端（`api/`、`internal/handler/` 等）
-- 前端（`web/`）的源码与 UI 文案
+- 前端（`web/`）的源码与 UI 文案（上列 Netstars-KB 品牌例外除外）
 - Docker 镜像内部结构（不重打镜像、不改 `entrypoint.sh`）
 
 允许的扩展方式：
@@ -42,9 +44,9 @@
 
 `overlay/` 中的文件是**样例**，实际部署时复制到 `docker/` 目录旁使用，真实密钥与私有配置一律不入库。
 
-## 5. 外部集成方式
+## 5. 外部系统与 Netstars-KB 集成
 
-外部系统与 kb 集成只走以下三条官方通道，不直连内部服务：
+外部系统与 Netstars-KB 集成只走以下三条官方通道，不直连内部服务：
 
 1. **HTTP API**：端口 `9380`（`.env` 中的 `SVR_HTTP_PORT`），RESTful 接口，使用 API Key 鉴权。
 2. **Python SDK**：[`ragflow_sdk`](https://pypi.org/project/ragflow-sdk/)，`pip install ragflow-sdk`，底层同样走 9380 HTTP API。
