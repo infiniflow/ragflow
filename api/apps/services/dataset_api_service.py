@@ -1054,7 +1054,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     )
 
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
@@ -1439,7 +1439,7 @@ async def search_datasets(tenant_id: str, req: dict):
 
     kb_ids = req.get("dataset_ids", [])
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
