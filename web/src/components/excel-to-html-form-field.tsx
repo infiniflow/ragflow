@@ -41,14 +41,14 @@ export function ExcelToHtmlFormField() {
 
         return (
           <FormItem defaultChecked={false} className=" items-center space-y-0 ">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between  gap-1">
               <FormLabel
                 tooltip={t('html4excelTip')}
                 className="text-sm text-text-secondary whitespace-break-spaces w-1/4"
               >
                 {t('html4excel')}
               </FormLabel>
-              <div className="w-3/4">
+              <div className="flex-none">
                 <FormControl>
                   <Switch
                     checked={field.value}

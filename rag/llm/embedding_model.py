@@ -267,7 +267,12 @@ class OpenAIEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        # extra_body is forwarded verbatim to the provider. \`drop_params\` is
+        # an OpenRouter-specific convention; Together AI (and any strict
+        # OpenAI-compatible provider) rejects it with HTTP 400
+        # "Unrecognized request arguments supplied: drop_params". Send only
+        # fields that every OpenAI-compatible provider accepts.
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float")
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
@@ -317,6 +322,12 @@ def _resolve_azure_credentials(key):
     return key, "2024-02-01"
 
 
+def _normalize_azure_endpoint(base_url):
+    if not base_url:
+        return base_url
+    return base_url.strip().rstrip("/")
+
+
 class AzureEmbed(OpenAIEmbed):
     _FACTORY_NAME = "Azure-OpenAI"
 
@@ -324,7 +335,7 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
 
         api_key, api_version = _resolve_azure_credentials(key)
-        self.base_url = ensure_v1(kwargs["base_url"])
+        self.base_url = _normalize_azure_endpoint(kwargs["base_url"])
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
 
         self.model_name = model_name

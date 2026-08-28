@@ -322,7 +322,7 @@ class RAGTools:
             if self.has_unstructured()
             else ""
         )
-        return (
+        router_prompt = (
             "You are a smart agent. For any question that needs "
             "evidence from the knowledge bases or the web, call the `rag` tool "
             "with a self-contained question — it runs the full search-and-answer "
@@ -333,6 +333,9 @@ class RAGTools:
             f"{summarize_line}"
             "Do not invent facts and do not fabricate document IDs."
         )
+        if self.system_prompt:
+            return f"{self.system_prompt}\n\n{router_prompt}"
+        return router_prompt
 
     # ------------------------------------------------------------------ #
     # Graph node helpers (plain async methods — never exposed as tools)
