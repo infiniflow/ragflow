@@ -95,5 +95,6 @@ class TestLazyEncoder:
         """The module __getattr__ must not mask genuine typos."""
         module = _reimport_token_utils(monkeypatch, lambda name: None)
 
+        missing_name = "no_such_name"
         with pytest.raises(AttributeError):
-            getattr(module, "no_such_name")
+            getattr(module, missing_name)

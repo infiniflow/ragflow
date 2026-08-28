@@ -19,11 +19,12 @@ because of the ``""`` passed at token_chunker.py:326; forwarding
 ``"\\n。；！？"``) makes it pass and aligns Python with the Go side.
 
 Note: the test needs a live tiktoken encoder. ``common.token_utils`` builds it on
-first use and lets an unavailable BPE table raise, while a failure to encode a
-valid string is reported as 0. Either one would make every token budget "never
-exceeded" and hide the bug behind a single-chunk baseline, so we treat both as a
-dead tokenizer and skip rather than pass, mirroring
-``capture_golden.py::_assert_tokenizer_alive``.
+first use, so an unavailable BPE table raises out of ``num_tokens_from_string``,
+while a failure to encode a valid string is reported as 0. Only the zero produces
+the false "budget never exceeded" baseline that would hide the bug behind a single
+chunk; the raise just makes the test unable to run at all. Neither leaves a usable
+token budget, so we treat both as a dead tokenizer and skip rather than pass,
+mirroring ``capture_golden.py::_assert_tokenizer_alive``.
 """
 
 import asyncio
