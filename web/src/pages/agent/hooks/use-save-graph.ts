@@ -13,25 +13,9 @@ import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { Operator } from '../constant';
-import { FormSchema as ParserFormSchema } from '../form/parser-form';
 import useGraphStore from '../store';
 import { useBuildDslData } from './use-build-dsl';
-
-/**
- * A node's form only validates while its panel is mounted, so bad values can
- * sit in the store long after the user has moved on. Re-check them against the
- * same schema before persisting, but only for nodes the user actually edited —
- * a node still carrying stale DSL from an older version must not wedge saving.
- */
-function findInvalidNode(nodes: RAGFlowNodeType[], editedNodeIds: string[]) {
-  return nodes.find(
-    (node) =>
-      editedNodeIds.includes(node.id) &&
-      node.data?.label === Operator.Parser &&
-      !ParserFormSchema.safeParse(node.data?.form).success,
-  );
-}
+import { findInvalidNode } from './find-invalid-node';
 
 export const useValidateNodeForms = () => {
   const { t } = useTranslation();
@@ -51,7 +35,11 @@ export const useValidateNodeForms = () => {
       const invalidNode = getInvalidNode(currentNodes);
       if (invalidNode) {
         message.warning(
-          t('flow.nodeFormInvalid', { name: invalidNode.data?.name }),
+          invalidNode.reason === 'missingModel'
+            ? t('flow.agentModelRequired', {
+                name: invalidNode.node.data?.name,
+              })
+            : t('flow.nodeFormInvalid', { name: invalidNode.node.data?.name }),
         );
         return false;
       }

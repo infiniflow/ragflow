@@ -21,6 +21,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import NumberInputStepper from '@/components/originui/number-input';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import i18n from '@/locales/config';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
 import { memo, useEffect, useMemo } from 'react';
@@ -69,6 +70,9 @@ const FormSchema = z.object({
   //   .optional(),
   message_history_window_size: z.coerce.number(),
   ...LlmSettingSchema,
+  // The Agent component cannot run without a model (the backend rejects it
+  // with `invalid param "model_id": required`), so require one up front.
+  llm_id: z.string().min(1, i18n.t('flow.modelRequired')),
   max_retries: z.coerce.number(),
   delay_after_error: z.coerce.number().optional(),
   visual_files_var: z.string().optional(),

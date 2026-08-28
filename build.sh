@@ -623,10 +623,14 @@ main() {
             clean
             ;;
         --run|-r)
-            check_cpp_deps
-            check_go_deps
-            build_cpp
-            build_go
+            # TEMP-LOCAL (revert before delivery): reuse the prebuilt binary
+            # when it exists so running does not require the C++ toolchain.
+            if [ ! -x "$RAGFLOW_SERVER_BINARY" ]; then
+                check_cpp_deps
+                check_go_deps
+                build_cpp
+                build_go
+            fi
             run
             ;;
         --help|-h)

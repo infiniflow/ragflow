@@ -49,7 +49,12 @@ export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PRO
 export PYTHONPATH=$(pwd)
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
-JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
+# TEMP-LOCAL (revert before delivery): this slot image has no jemalloc pkg-config
+# entry; keep the script alive so the API can start without the LD_PRELOAD.
+JEMALLOC_PATH=""
+if pkg-config --exists jemalloc 2>/dev/null; then
+    JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
+fi
 
 PY=python3
 
