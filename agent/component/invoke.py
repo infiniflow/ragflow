@@ -144,7 +144,14 @@ class Invoke(ComponentBase, ABC):
 
     def _resolve_arg_value(self, para: dict, kwargs: dict) -> object:
         ref = (para.get("ref") or "").strip()
-        if ref and (ref in kwargs or self._canvas.get_variable_value(ref) is not None):
+        canvas_value = None
+        if ref:
+            try:
+                canvas_value = self._canvas.get_variable_value(ref)
+            except Exception:
+                logging.debug("Invoke ref could not be resolved; falling back to value. ref=%s", ref, exc_info=True)
+
+        if ref and (ref in kwargs or canvas_value is not None):
             return self._resolve_variable_value(ref, kwargs)
 
         if para.get("value") is not None:
