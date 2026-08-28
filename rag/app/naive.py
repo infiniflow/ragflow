@@ -615,7 +615,7 @@ class Docx(DocxParser):
 
         return ""
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, extract_automatic_numbering=True):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, extract_automatic_numbering=False):
         self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         numbering = DOCXNumberingResolver(self.doc, enabled=extract_automatic_numbering)
         pn = 0
@@ -732,7 +732,7 @@ class Docx(DocxParser):
 
         return new_line
 
-    def to_markdown(self, filename=None, binary=None, inline_images: bool = True, extract_automatic_numbering=True):
+    def to_markdown(self, filename=None, binary=None, inline_images: bool = True, extract_automatic_numbering=False):
         """
         This function uses mammoth, licensed under the BSD 2-Clause License.
         """
@@ -1084,7 +1084,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         _SerializedRelationships.load_from_xml = load_from_xml_v2
 
         # sections = (text, image, tables)
-        extract_automatic_numbering = parser_config.get("extract_automatic_numbering", True)
+        extract_automatic_numbering = parser_config.get("extract_automatic_numbering", False)
         logging.debug("DOCX automatic numbering extraction: %s", extract_automatic_numbering)
         sections = Docx()(filename, binary, extract_automatic_numbering=extract_automatic_numbering)
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)

@@ -68,6 +68,7 @@ type docxXMLNumberingLevel struct {
 	Format         *docxXMLValue `xml:"numFmt"`
 	Text           *docxXMLValue `xml:"lvlText"`
 	ParagraphStyle *docxXMLValue `xml:"pStyle"`
+	RestartLevel   *docxXMLValue `xml:"lvlRestart"`
 }
 
 type docxXMLAbstractNumbering struct {
@@ -97,6 +98,7 @@ type docxNumberingLevel struct {
 	Format         string
 	Text           string
 	ParagraphStyle string
+	RestartLevel   *int
 }
 
 type docxNumberingInstance struct {
@@ -131,9 +133,10 @@ func extractDOCXNumberedHeadingsIfEnabled(data []byte, enabled bool) []docxNumbe
 	return extractDOCXNumberedHeadings(data)
 }
 
-// extractDOCXNumberedHeadings materializes Word's display-only heading
-// numbers. Word stores paragraph text in document.xml and the visible marker
-// separately in numbering.xml, so office_oxide's text runs cannot contain it.
+// extractDOCXNumberedHeadings performs best-effort materialization of Word's
+// display-only heading numbers. Word stores paragraph text in document.xml and
+// the visible marker separately in numbering.xml, so office_oxide's text runs
+// cannot contain it.
 func extractDOCXNumberedHeadings(data []byte) []docxNumberedHeading {
 	parts := readDOCXXMLParts(data, "word/document.xml", "word/styles.xml", "word/numbering.xml")
 	if len(parts["word/document.xml"]) == 0 || len(parts["word/numbering.xml"]) == 0 {
@@ -159,6 +162,11 @@ func extractDOCXNumberedHeadings(data []byte) []docxNumberedHeading {
 		if !ok {
 			style = resolveDOCXStyle(styleID, styles, nil)
 			resolvedStyles[styleID] = style
+		}
+		text := paragraphText(paragraph)
+		headingLevel, isHeading := docxHeadingLevel(styleID, style, paragraph.Properties)
+		if !isHeading || strings.TrimSpace(text) == "" {
+			continue
 		}
 		ref := paragraphNumberingRef(paragraph.Properties)
 		numberingDisabled := isParagraphNumberingDisabled(paragraph.Properties)
@@ -186,16 +194,9 @@ func extractDOCXNumberedHeadings(data []byte) []docxNumberedHeading {
 		} else {
 			values[ref.Level]++
 		}
-		for i := ref.Level + 1; i < len(values); i++ {
-			values[i] = 0
-		}
+		resetDOCXLowerLevelCounters(values, ref.Level, ref.ID, numbering)
 		counters[ref.ID] = values
 
-		text := paragraphText(paragraph)
-		headingLevel, isHeading := docxHeadingLevel(styleID, style, paragraph.Properties)
-		if !isHeading || strings.TrimSpace(text) == "" {
-			continue
-		}
 		marker := renderDOCXNumberingMarker(level.Text, ref.ID, values, numbering)
 		marker = strings.TrimSpace(marker)
 		if marker == "" {
@@ -299,7 +300,10 @@ func parseDOCXNumbering(data []byte) docxNumberingDefinitions {
 		for _, override := range instance.Overrides {
 			level, exists := definitions.Abstracts[abstractID][override.Level]
 			if override.LevelDef != nil {
-				level = convertDOCXNumberingLevel(*override.LevelDef)
+				overriddenLevel := convertDOCXNumberingLevel(*override.LevelDef)
+				// Word ignores lvlRestart inside a level override.
+				overriddenLevel.RestartLevel = level.RestartLevel
+				level = overriddenLevel
 				exists = true
 			}
 			if !exists {
@@ -330,6 +334,9 @@ func convertDOCXNumberingLevel(level docxXMLNumberingLevel) docxNumberingLevel {
 	}
 	if level.ParagraphStyle != nil {
 		result.ParagraphStyle = level.ParagraphStyle.Value
+	}
+	if restartLevel, ok := parseDOCXXMLInt(level.RestartLevel); ok && restartLevel >= 0 {
+		result.RestartLevel = &restartLevel
 	}
 	return result
 }
@@ -422,6 +429,10 @@ func numberingRefForParagraphStyle(styleID string, definitions docxNumberingDefi
 }
 
 func docxHeadingLevel(styleID string, style docxResolvedStyle, properties *docxXMLParagraphProperties) (int, bool) {
+	headingLevel, isHeading := docxHeadingStyleLevel(styleID, style.Name)
+	if !isHeading {
+		return 0, false
+	}
 	if properties != nil {
 		if level, ok := parseDOCXXMLInt(properties.OutlineLevel); ok && level >= 0 && level < 9 {
 			return level + 1, true
@@ -430,7 +441,11 @@ func docxHeadingLevel(styleID string, style docxResolvedStyle, properties *docxX
 	if style.OutlineLevel != nil && *style.OutlineLevel >= 0 && *style.OutlineLevel < 9 {
 		return *style.OutlineLevel + 1, true
 	}
-	for _, name := range []string{styleID, style.Name} {
+	return headingLevel, true
+}
+
+func docxHeadingStyleLevel(names ...string) (int, bool) {
+	for _, name := range names {
 		lower := strings.ToLower(strings.ReplaceAll(name, " ", ""))
 		for _, prefix := range []string{"heading", "заголовок"} {
 			if !strings.HasPrefix(lower, prefix) {
@@ -443,6 +458,22 @@ func docxHeadingLevel(styleID string, style docxResolvedStyle, properties *docxX
 		}
 	}
 	return 0, false
+}
+
+func resetDOCXLowerLevelCounters(counters []int, currentLevel, id int, definitions docxNumberingDefinitions) {
+	for levelIndex := currentLevel + 1; levelIndex < len(counters); levelIndex++ {
+		level, ok := definitions.resolveLevel(id, levelIndex)
+		restartLevel := levelIndex
+		if ok && level.RestartLevel != nil {
+			if *level.RestartLevel == 0 {
+				continue
+			}
+			restartLevel = *level.RestartLevel
+		}
+		if currentLevel < restartLevel {
+			counters[levelIndex] = 0
+		}
+	}
 }
 
 func paragraphText(paragraph docxXMLParagraph) string {
@@ -564,44 +595,26 @@ func applyDOCXNumberedHeadingsToSections(items []map[string]any, headings []docx
 			result = append(result, item)
 			continue
 		}
-		lines := strings.Split(text, "\n")
-		matches := make([]int, len(lines))
-		matched := false
-		searchFrom := headingIndex
-		for i, line := range lines {
-			matches[i] = -1
-			for j := searchFrom; j < len(headings); j++ {
-				if strings.TrimSpace(line) == headings[j].Text {
-					matches[i] = j
-					searchFrom = j + 1
-					matched = true
-					break
-				}
+		matchedIndex := -1
+		for index := headingIndex; index < len(headings); index++ {
+			if strings.TrimSpace(text) == headings[index].Text {
+				matchedIndex = index
+				break
 			}
 		}
-		if !matched {
+		if matchedIndex < 0 {
 			result = append(result, item)
 			continue
 		}
-		for i, line := range lines {
-			if strings.TrimSpace(line) == "" {
-				continue
-			}
-			copyItem := make(map[string]any, len(item)+1)
-			for key, value := range item {
-				copyItem[key] = value
-			}
-			if matches[i] >= 0 {
-				heading := headings[matches[i]]
-				copyItem["text"] = heading.NumberedText
-				copyItem["ck_type"] = "heading"
-				headingIndex = matches[i] + 1
-			} else {
-				copyItem["text"] = line
-				delete(copyItem, "ck_type")
-			}
-			result = append(result, copyItem)
+		copyItem := make(map[string]any, len(item)+1)
+		for key, value := range item {
+			copyItem[key] = value
 		}
+		heading := headings[matchedIndex]
+		copyItem["text"] = heading.NumberedText
+		copyItem["ck_type"] = "heading"
+		headingIndex = matchedIndex + 1
+		result = append(result, copyItem)
 	}
 	return result
 }
@@ -614,6 +627,11 @@ func applyDOCXNumberedHeadingsToMarkdown(markdown string, headings []docxNumbere
 	headingIndex := 0
 	for i, line := range lines {
 		content, ok := docxMarkdownListOrHeadingText(line)
+		isSetext := false
+		if !ok {
+			content, ok = docxSetextHeadingText(lines, i)
+			isSetext = ok
+		}
 		if !ok {
 			continue
 		}
@@ -629,7 +647,11 @@ func applyDOCXNumberedHeadingsToMarkdown(markdown string, headings []docxNumbere
 			if level > 6 {
 				level = 6
 			}
-			lines[i] = strings.Repeat("#", level) + " " + heading.NumberedText
+			if isSetext {
+				lines[i] = heading.NumberedText
+			} else {
+				lines[i] = strings.Repeat("#", level) + " " + heading.NumberedText
+			}
 			headingIndex = j + 1
 			break
 		}
@@ -661,6 +683,29 @@ func docxMarkdownListOrHeadingText(line string) (string, bool) {
 	content := strings.TrimSpace(line[markerEnd:])
 	content = strings.Trim(content, "*_~`")
 	return content, true
+}
+
+func docxSetextHeadingText(lines []string, index int) (string, bool) {
+	if index < 0 || index+1 >= len(lines) {
+		return "", false
+	}
+	content := strings.TrimSpace(lines[index])
+	if content == "" || strings.Contains(content, "|") {
+		return "", false
+	}
+	if _, isListOrATX := docxMarkdownListOrHeadingText(content); isListOrATX {
+		return "", false
+	}
+	underline := strings.TrimSpace(lines[index+1])
+	if underline == "" || (underline[0] != '=' && underline[0] != '-') {
+		return "", false
+	}
+	for markerIndex := 1; markerIndex < len(underline); markerIndex++ {
+		if underline[markerIndex] != underline[0] {
+			return "", false
+		}
+	}
+	return strings.Trim(content, "*_~`"), true
 }
 
 func appendDOCXNumberedHeadingOutlines(outlines []docxOutline, headings []docxNumberedHeading) []docxOutline {

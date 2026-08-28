@@ -248,7 +248,7 @@ export const initialParserValues = {
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
-      extract_automatic_numbering: true,
+      extract_automatic_numbering: false,
       remove_header_footer: false,
     },
     {

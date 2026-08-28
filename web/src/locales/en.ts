@@ -2541,7 +2541,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       removeHeaderFooter: 'Remove header and footer',
       extractAutomaticNumbering: 'Extract automatic numbering',
       extractAutomaticNumberingTip:
-        'Extract numbers from automatically numbered headings.',
+        'Best-effort reconstruction of automatically numbered DOCX headings. Advanced restart and suppression rules may not be reproduced exactly.',
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',

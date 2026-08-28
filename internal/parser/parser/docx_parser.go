@@ -46,7 +46,7 @@ type DOCXParser struct {
 }
 
 func NewDOCXParser() *DOCXParser {
-	return &DOCXParser{extractAutomaticNumbering: true}
+	return &DOCXParser{}
 }
 
 // ConfigureFromSetup implements parserSetupConfigurer, receiving the

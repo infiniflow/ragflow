@@ -20,7 +20,6 @@ from dataclasses import dataclass
 
 from docx.oxml.ns import qn
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -37,6 +36,7 @@ class _NumberingLevel:
     number_format: str = "decimal"
     level_text: str = ""
     paragraph_style: str = ""
+    restart_level: int | None = None
 
 
 @dataclass(frozen=True)
@@ -46,9 +46,9 @@ class _NumberingInstance:
 
 
 class DOCXNumberingResolver:
-    """Materialize display-only Word numbering while paragraphs are visited."""
+    """Best-effort materialization of display-only Word heading numbering."""
 
-    def __init__(self, document, enabled=True):
+    def __init__(self, document, enabled=False):
         self._enabled = enabled
         self._abstracts: dict[int, dict[int, _NumberingLevel]] = {}
         self._instances: dict[int, _NumberingInstance] = {}
@@ -61,6 +61,11 @@ class DOCXNumberingResolver:
         """Advance numbering state and return a materialized heading, if any."""
         if not self._enabled:
             return None
+        heading_level = self._heading_level(paragraph)
+        text = paragraph.text.strip()
+        if heading_level is None or not text:
+            return None
+
         reference = self._paragraph_numbering_reference(paragraph)
         if reference is None:
             return None
@@ -72,13 +77,7 @@ class DOCXNumberingResolver:
 
         values = self._counters.setdefault(number_id, [0] * 9)
         values[list_level] = definition.start if values[list_level] == 0 else values[list_level] + 1
-        for index in range(list_level + 1, len(values)):
-            values[index] = 0
-
-        heading_level = self._heading_level(paragraph)
-        text = paragraph.text.strip()
-        if heading_level is None or not text:
-            return None
+        self._restart_lower_levels(number_id, list_level, values)
 
         marker = self._render_marker(definition.level_text, number_id, values).strip()
         if not marker:
@@ -121,7 +120,15 @@ class DOCXNumberingResolver:
                 definition = self._abstracts.get(abstract_id, {}).get(list_level)
                 level_element = override.find(qn("w:lvl"))
                 if level_element is not None:
-                    definition = _parse_level(level_element)
+                    overridden_definition = _parse_level(level_element)
+                    definition = _NumberingLevel(
+                        start=overridden_definition.start,
+                        number_format=overridden_definition.number_format,
+                        level_text=overridden_definition.level_text,
+                        paragraph_style=overridden_definition.paragraph_style,
+                        # Word ignores lvlRestart inside a level override.
+                        restart_level=definition.restart_level if definition is not None else None,
+                    )
                 if definition is None:
                     continue
                 start_override = _child_int(override, "w:startOverride")
@@ -131,6 +138,7 @@ class DOCXNumberingResolver:
                         number_format=definition.number_format,
                         level_text=definition.level_text,
                         paragraph_style=definition.paragraph_style,
+                        restart_level=definition.restart_level,
                     )
                 overrides[list_level] = definition
             self._instances[number_id] = _NumberingInstance(abstract_id=abstract_id, overrides=overrides)
@@ -187,23 +195,35 @@ class DOCXNumberingResolver:
         return instance.overrides.get(list_level) or self._abstracts.get(instance.abstract_id, {}).get(list_level)
 
     def _heading_level(self, paragraph):
+        style = paragraph.style
+        if style is None:
+            return None
+        heading_level = _heading_style_level(style)
+        if heading_level is None:
+            return None
+
         properties = paragraph._p.pPr
         outline_level = _child_int(properties, "w:outlineLvl")
         if outline_level is not None and 0 <= outline_level < 9:
             return outline_level + 1
 
-        style = paragraph.style
         seen = set()
         while style is not None and style.style_id not in seen:
             seen.add(style.style_id)
             outline_level = _child_int(style.element.pPr, "w:outlineLvl")
             if outline_level is not None and 0 <= outline_level < 9:
                 return outline_level + 1
-            match = re.match(r"(?:heading|заголовок)\s*(\d+)$", style.name or "", re.IGNORECASE)
-            if match:
-                return int(match.group(1))
             style = style.base_style
-        return None
+        return heading_level
+
+    def _restart_lower_levels(self, number_id, list_level, values):
+        for index in range(list_level + 1, len(values)):
+            definition = self._resolve_level(number_id, index)
+            restart_level = definition.restart_level if definition is not None else None
+            if restart_level == 0:
+                continue
+            if list_level < (restart_level if restart_level is not None else index):
+                values[index] = 0
 
     def _render_marker(self, template, number_id, values):
         marker = template
@@ -218,7 +238,7 @@ class DOCXNumberingResolver:
         return marker
 
 
-def extract_numbered_headings(document, enabled=True):
+def extract_numbered_headings(document, enabled=False):
     resolver = DOCXNumberingResolver(document, enabled=enabled)
     headings = []
     for paragraph in document.paragraphs:
@@ -281,7 +301,17 @@ def _parse_level(element):
         number_format=_child_value(element, "w:numFmt") or "decimal",
         level_text=_child_value(element, "w:lvlText") or "",
         paragraph_style=_child_value(element, "w:pStyle") or "",
+        restart_level=_child_int(element, "w:lvlRestart"),
     )
+
+
+def _heading_style_level(style):
+    for name in (style.style_id, style.name):
+        match = re.fullmatch(r"(?:heading|заголовок)\s*(\d+)", name or "", re.IGNORECASE)
+        if match:
+            level = int(match.group(1))
+            return level if 1 <= level <= 9 else None
+    return None
 
 
 def _child_value(parent, tag):

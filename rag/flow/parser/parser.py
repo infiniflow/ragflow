@@ -153,7 +153,7 @@ class ParserParam(ProcessParamBase):
             },
             "docx": {
                 "flatten_media_to_text": False,
-                "extract_automatic_numbering": True,
+                "extract_automatic_numbering": False,
                 "remove_toc": False,
                 "remove_header_footer": False,
                 "suffix": [
@@ -946,7 +946,7 @@ class Parser(ProcessBase):
             return
 
         docx_parser = Docx()
-        extract_automatic_numbering = conf.get("extract_automatic_numbering", True)
+        extract_automatic_numbering = conf.get("extract_automatic_numbering", False)
 
         # Extract heading-based outlines for metadata and TOC removal.
         outlines = extract_word_outlines(name, blob, extract_automatic_numbering=extract_automatic_numbering)

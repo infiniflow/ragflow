@@ -41,7 +41,7 @@ export function WordFormFields({
         >
           {(field) => (
             <Switch
-              checked={field.value ?? true}
+              checked={field.value ?? false}
               onCheckedChange={field.onChange}
             />
           )}

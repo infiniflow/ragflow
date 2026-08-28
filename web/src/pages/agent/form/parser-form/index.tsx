@@ -269,7 +269,7 @@ const ParserForm = ({
       table_result_type: '',
       markdown_image_response_type: '',
       remove_header_footer: false,
-      extract_automatic_numbering: true,
+      extract_automatic_numbering: false,
       // preprocess: [],
     });
   }, [append]);

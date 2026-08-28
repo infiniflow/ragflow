@@ -263,7 +263,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 		},
 		"docx": {
 			"flatten_media_to_text":       false,
-			"extract_automatic_numbering": true,
+			"extract_automatic_numbering": false,
 			"remove_toc":                  false,
 			"remove_header_footer":        false,
 			"suffix":                      []string{"docx"},

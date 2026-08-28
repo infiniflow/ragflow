@@ -75,20 +75,17 @@ def remove_header_footer_html_blob(blob):
     return str(soup).encode("utf-8")
 
 
-def extract_word_outlines(filename, binary=None, extract_automatic_numbering=True):
+def extract_word_outlines(filename, binary=None, extract_automatic_numbering=False):
     doc = Document(filename) if binary is None else Document(BytesIO(binary))
     numbering = DOCXNumberingResolver(doc, enabled=extract_automatic_numbering)
     outlines = []
     for paragraph in doc.paragraphs:
-        numbered_heading = numbering.numbered_heading(paragraph)
-        style_name = paragraph.style.name if paragraph.style else ""
-        if not re.search(r"Heading\s*(\d+)", style_name, re.I):
+        level = numbering.heading_level(paragraph)
+        if level is None:
             continue
+        numbered_heading = numbering.numbered_heading(paragraph)
         text = numbered_heading.numbered_text if numbered_heading is not None else paragraph.text.strip()
         if not text:
-            continue
-        level = numbered_heading.level if numbered_heading is not None else numbering.heading_level(paragraph)
-        if level is None:
             continue
         outlines.append((text, level - 1, None))
     return outlines
