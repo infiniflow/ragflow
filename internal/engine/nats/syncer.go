@@ -62,7 +62,7 @@ func (n *NatsEngine) initSyncerStreamLocked() error {
 	defer cancel()
 
 	// create  jetStream
-	stream, err := n.jetStream.CreateStream(ctx, jetstream.StreamConfig{
+	stream, err := ensureStreamConfig(ctx, n.jetStream, jetstream.StreamConfig{
 		Name:       syncerStreamName,
 		Subjects:   []string{syncerSubjectPattern},
 		Retention:  jetstream.WorkQueuePolicy,
@@ -72,13 +72,7 @@ func (n *NatsEngine) initSyncerStreamLocked() error {
 		Duplicates: 10 * time.Minute,
 	})
 	if err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("syncer: create stream: %w", err)
-		}
-		stream, err = n.jetStream.Stream(ctx, syncerStreamName)
-		if err != nil {
-			return fmt.Errorf("syncer: get existing stream: %w", err)
-		}
+		return fmt.Errorf("syncer: create stream: %w", err)
 	}
 	n.syncerStream = stream
 	return nil

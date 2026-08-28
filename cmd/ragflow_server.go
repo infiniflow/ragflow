@@ -376,7 +376,7 @@ func main() {
 	defer storage.CloseStorage()
 
 	if err = engine.InitMessageQueue(); err != nil {
-		common.Error("Failed to initialize message queue engine", err)
+		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -583,10 +583,12 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 
 	// Start returns immediately (it launches the owned consume/compile
-	// goroutines and joins them via Stop); a provisioning failure here is
-	// logged and the server keeps running without the ingestor.
+	// goroutines and joins them via Stop); a provisioning failure here must
+	// fail the server (main's os.Exit(1) path) instead of reporting a
+	// healthy ingestor that can never consume.
 	if err := ingestor.Start(); err != nil {
 		common.Error("Failed to initialize ingestor", err)
+		return err
 	}
 
 	common.Info("\n    ____                      __  _\n" +
