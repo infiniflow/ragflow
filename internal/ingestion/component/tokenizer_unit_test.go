@@ -24,6 +24,8 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -58,6 +60,11 @@ func (s *stubEmbedder) MaxTokens() int {
 }
 
 func (s *stubEmbedder) BatchSize() int {
+	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
 	return 16
 }
 
@@ -261,6 +268,15 @@ func TestTokenizerComponent_InputsOutputs_NonEmpty(t *testing.T) {
 		if _, ok := ins[key]; !ok {
 			t.Errorf("Inputs() missing %q", key)
 		}
+	}
+}
+
+func TestCopyPipelineControlValuesPreservesWikiActiveState(t *testing.T) {
+	states := []map[string]any{{"key": "state-1", "payload": `{"plan":[]}`}}
+	output := map[string]any{"chunks": []any{}}
+	copyPipelineControlValues(output, map[string]any{"wiki_active_map_states": states})
+	if !reflect.DeepEqual(output["wiki_active_map_states"], states) {
+		t.Fatalf("wiki active states = %#v, want %#v", output["wiki_active_map_states"], states)
 	}
 }
 
@@ -768,6 +784,103 @@ func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
 	}
 	if kwd, exists := gotEmpty[0]["important_kwd"]; exists && kwd != nil {
 		t.Errorf("empty keywords should leave important_kwd unset, got %v", kwd)
+	}
+}
+
+// TestSanitizeKeywordTerm verifies the ES keyword-field guard used by the Go
+// tokenizer path. It mirrors the Python regression tests in
+// tests/test_main.py::TestSanitizeKeywordTerm.
+func TestSanitizeKeywordTerm(t *testing.T) {
+	tests := []struct {
+		name     string
+		term     string
+		want     string
+		wantByte int
+	}{
+		{
+			name: "small term unchanged",
+			term: "hello",
+			want: "hello",
+		},
+		{
+			name: "trims whitespace",
+			term: "  world  ",
+			want: "world",
+		},
+		{
+			name: "empty string",
+			term: "",
+			want: "",
+		},
+		{
+			name:     "oversized single word truncated to byte limit",
+			term:     strings.Repeat("x", 40000),
+			want:     strings.Repeat("x", esKeywordMaxTermBytes),
+			wantByte: esKeywordMaxTermBytes,
+		},
+		{
+			name:     "multi-byte characters truncated at rune boundary",
+			term:     strings.Repeat("中", 20000),
+			want:     strings.Repeat("中", esKeywordMaxTermBytes/3),
+			wantByte: esKeywordMaxTermBytes,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeKeywordTerm(tt.term)
+			if got != tt.want {
+				t.Errorf("sanitizeKeywordTerm(%q) = %q, want %q", tt.term, got, tt.want)
+			}
+			if tt.wantByte > 0 && len(got) != tt.wantByte {
+				t.Errorf("len(sanitizeKeywordTerm(%q)) = %d, want %d", tt.term, len(got), tt.wantByte)
+			}
+		})
+	}
+}
+
+// TestTokenizerComponent_ImportantKwd_Bounded verifies that oversized keywords
+// are truncated to the ES keyword-field limit at the component level, while
+// normal comma-splitting behavior is preserved.
+func TestTokenizerComponent_ImportantKwd_Bounded(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	c, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+
+	oversized := strings.Repeat("x", 40000)
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": "normal," + oversized + ",中文字"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := out["chunks"].([]map[string]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
+	}
+	kwd, ok := got[0]["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", got[0]["important_kwd"])
+	}
+	if len(kwd) != 3 {
+		t.Fatalf("important_kwd = %v, want 3 entries", kwd)
+	}
+	if kwd[0] != "normal" {
+		t.Errorf("important_kwd[0] = %q, want \"normal\"", kwd[0])
+	}
+	if len(kwd[1]) != esKeywordMaxTermBytes {
+		t.Errorf("important_kwd[1] byte length = %d, want %d", len(kwd[1]), esKeywordMaxTermBytes)
+	}
+	if kwd[2] != "中文字" {
+		t.Errorf("important_kwd[2] = %q, want \"中文字\"", kwd[2])
 	}
 }
 

@@ -112,11 +112,9 @@ func (x *llmDeduper) Decide(ctx context.Context, existing, incoming kccommon.Pro
 }
 
 // DecideBatch folds every group into its dataset-level merged row. Wiki groups
-// use a REPLACE-ONLY strategy (wikiDecideBatch) that never invokes the LLM JSON
-// merge — Markdown wiki pages must not be concatenated/merged by the generic
-// structure decider. Structure (and other non-wiki) groups are judged by the LLM
-// merge decider as before.
-// splitWikiGroups partitions the batch into wiki groups (replace-only, no LLM)
+// use the page-specific Markdown evidence merge, while structure groups are
+// judged by the generic LLM merge decider.
+// splitWikiGroups partitions the batch into wiki groups (page merge)
 // and structure groups (LLM-merged). structIdx[i] is the ORIGINAL position in
 // `groups` of structGroups[i]; it is what the fold uses to write results back to
 // the right slice element. Recording the position inside structGroups (i.e.
@@ -135,11 +133,16 @@ func splitWikiGroups(groups []MergeGroup) (wikiIdx, structIdx []int, structGroup
 }
 
 func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]MergeGroup, error) {
-	// Split into wiki (replace-only, no LLM) and structure (LLM-merged) groups.
+	// Split wiki and structure groups because Markdown needs a page-specific
+	// merge and must not be parsed as generic JSON.
 	wikiIdx, structIdx, structGroups := splitWikiGroups(groups)
-	// Wiki groups: replace-only, in place.
-	for _, gi := range wikiIdx {
-		groups[gi] = wikiDecideBatch(ctx, []MergeGroup{groups[gi]})[0]
+	// Wiki groups: evidence-preserving page merge, in place.
+	wikiGroups := make([]MergeGroup, len(wikiIdx))
+	for i, gi := range wikiIdx {
+		wikiGroups[i] = groups[gi]
+	}
+	for i, group := range wikiMergeBatch(ctx, wikiGroups) {
+		groups[wikiIdx[i]] = group
 	}
 	if len(structGroups) == 0 {
 		return groups, nil

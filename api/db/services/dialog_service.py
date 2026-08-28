@@ -35,7 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.llm_service import LLMBundle
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -54,6 +54,7 @@ from rag.utils.web_search_conn import create_web_search_provider, has_web_search
 from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
+from rag.utils import gaussdb_text_to_sql
 
 
 def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
@@ -221,6 +222,7 @@ class DialogService(CommonService):
             cls.model.similarity_threshold,
             cls.model.vector_similarity_weight,
             cls.model.top_n,
+            cls.model.rerank_candidates_count,
             cls.model.top_k,
             cls.model.do_refer,
             cls.model.rerank_id,
@@ -262,7 +264,7 @@ class DialogService(CommonService):
     def get_all_dialogs_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         dialogs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        dialogs.order_by(cls.model.create_time.asc())
+        dialogs = dialogs.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
@@ -521,6 +523,11 @@ def convert_last_user_msg_to_multimodal(msg: list[dict], image_data_uris: list[s
         return
 
 
+# Keys the chat-completions message schema defines. Stored messages also carry
+# RAGFlow bookkeeping such as id, created_at and doc_ids, plus the conversationId
+# the web client stamps on every turn, and strict providers reject those.
+LLM_MESSAGE_FIELDS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"})
+
 BAD_CITATION_PATTERNS = [
     re.compile(r"\(\s*ID\s*[: ]*\s*(\d+)\s*\)"),  # (ID: 12)
     re.compile(r"\[\s*ID\s*[: ]*\s*(\d+)\s*\]"),  # [ID: 12]
@@ -663,6 +670,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], llm_model_config["model_type"])
 
     prompt_config = dialog.prompt_config
+    rerank_candidates_count = getattr(dialog, "rerank_candidates_count", 64)
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
@@ -736,6 +744,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     similarity_threshold=0.2,
                     vector_similarity_weight=0.3,
                     doc_ids=scoped_doc_ids,
+                    rerank_candidates_count=rerank_candidates_count,
                 ),
                 internet_enabled=use_web_search,
             )
@@ -771,10 +780,11 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     dialog.similarity_threshold,
                     dialog.vector_similarity_weight,
                     doc_ids=scoped_doc_ids,
-                    top=dialog.top_k,
+                    knn_top_k=dialog.top_k,
                     aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
+                    rerank_candidates_count=rerank_candidates_count,
                 )
                 if prompt_config.get("toc_enhance"):
                     cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -1019,6 +1029,8 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         doc_engine = "infinity"
     elif settings.DOC_ENGINE_OCEANBASE:
         doc_engine = "oceanbase"
+    elif settings.DOC_ENGINE_GAUSSDB:
+        doc_engine = "gaussdb"
     else:
         doc_engine = "es"
 
@@ -1051,6 +1063,12 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
 
     expected_doc_name_column = "docnm" if doc_engine == "infinity" else "docnm_kwd"
+    if doc_engine == "gaussdb":
+        if not kb_ids:
+            raise ValueError("GaussDB Text-to-SQL requires kb_ids")
+        for kid in kb_ids:
+            _assert_valid_uuid(kid, "kb_id")
+        gaussdb_validator = gaussdb_text_to_sql.build_validator(table_name, kb_ids, field_map)
 
     def has_source_columns(columns):
         """Return True if the result set contains the columns needed to build source citations."""
@@ -1059,6 +1077,8 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
 
     def is_aggregate_sql(sql_text):
         """Return True if *sql_text* contains an aggregate function (COUNT, SUM, AVG, MAX, MIN, DISTINCT)."""
+        if doc_engine == "gaussdb":
+            return gaussdb_text_to_sql.is_aggregate_sql(sql_text)
         return bool(re.search(r"(count|sum|avg|max|min|distinct)\s*\(", (sql_text or "").lower()))
 
     def normalize_sql(sql):
@@ -1080,12 +1100,13 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     def add_kb_filter(sql):
         """Inject validated scope filters into *sql*.
 
-        Infinity encodes single-KB scope in the table name, so only document
-        scope is injected there. All ids are validated before interpolation.
+        Infinity encodes single-KB scope in the table name and the GaussDB
+        validator injects its KB boundary, so only document scope is injected
+        for those engines. All ids are validated before interpolation.
         """
         scope_filters = []
         sql_lower = sql.lower()
-        if doc_engine != "infinity" and kb_ids and "kb_id =" not in sql_lower and "kb_id=" not in sql_lower:
+        if doc_engine not in ("infinity", "gaussdb") and kb_ids and "kb_id =" not in sql_lower and "kb_id=" not in sql_lower:
             for kid in kb_ids:
                 _assert_valid_uuid(kid, "kb_id")
             if len(kb_ids) == 1:
@@ -1180,6 +1201,10 @@ Question: {}
 Write SQL using json_extract_string() with exact field names. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(
             table_name, ", ".join(json_field_names), "\n".join([f"  - {field}" for field in json_field_names]), question
         )
+    elif doc_engine == "gaussdb":
+        row_count_override = f"SELECT COUNT(*) AS rows FROM {table_name}" if is_row_count_question(question) else None
+        sys_prompt = gaussdb_text_to_sql.build_sql_prompt(table_name, field_map, question)
+        user_prompt = gaussdb_text_to_sql.build_user_prompt(table_name, field_map, question)
     else:
         # Build ES/OS prompts with direct field access
         row_count_override = None
@@ -1209,6 +1234,8 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
             sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": prompt}], {"temperature": 0.06})
         sql = normalize_sql(sql)
         sql = add_kb_filter(sql)
+        if doc_engine == "gaussdb":
+            sql = gaussdb_validator.validate_and_patch(sql).sql
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
@@ -1216,6 +1243,8 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
         tbl = settings.retriever.sql_retrieval(sql, format="json")
         if tbl is None:
             logging.debug("use_sql: SQL retrieval failed (returned None)")
+            if doc_engine == "gaussdb":
+                raise RuntimeError("SQL execution returned no result")
             return None, sql
         row_count = len(tbl.get("rows", []))
         if row_count == 0:
@@ -1225,6 +1254,15 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
         return tbl, sql
 
     async def repair_table_for_missing_source_columns(previous_sql):
+        if doc_engine == "gaussdb":
+            return await get_table(
+                custom_user_prompt=gaussdb_text_to_sql.build_repair_prompt(
+                    table_name,
+                    field_map,
+                    question,
+                    previous_sql,
+                )
+            )
         if doc_engine in ("infinity", "oceanbase"):
             json_field_names = list(field_map.keys())
             repair_prompt = """Table name: {};
@@ -1260,7 +1298,9 @@ Return ONLY SQL.""".format(table_name, "\n".join([f"  - {k} ({v})" for k, v in f
     except Exception as e:
         logging.warning(f"use_sql: Initial SQL execution FAILED with error: {e}")
         # Build retry prompt with error information
-        if doc_engine in ("infinity", "oceanbase"):
+        if doc_engine == "gaussdb":
+            user_prompt = gaussdb_text_to_sql.build_retry_prompt(table_name, field_map, question, e)
+        elif doc_engine in ("infinity", "oceanbase"):
             # Build Infinity error retry prompt
             json_field_names = list(field_map.keys())
             user_prompt = """
@@ -1414,6 +1454,23 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
             # Keep original table format as answer
             answer = "\n".join([columns, line, rows])
 
+            if doc_engine == "gaussdb":
+                try:
+                    chunks_sql = gaussdb_text_to_sql.build_aggregate_source_sql(
+                        sql,
+                        expected_doc_name_column,
+                        include_kb_id=not (kb_ids and len(kb_ids) == 1),
+                    )
+                    chunks_sql = gaussdb_validator.validate_and_patch(chunks_sql).sql
+                    logging.debug(f"use_sql: Fetching chunks with SQL: {chunks_sql}")
+                    chunks_tbl = settings.retriever.sql_retrieval(chunks_sql, format="json")
+                    reference = gaussdb_text_to_sql.build_source_reference(chunks_tbl, kb_ids)
+                    if reference:
+                        return {"answer": answer, "reference": reference, "prompt": sys_prompt}
+                except Exception as e:
+                    logging.warning(f"use_sql: Failed to fetch chunks: {e}")
+                return {"answer": answer, "reference": {"chunks": [], "doc_aggs": []}, "prompt": sys_prompt}
+
             # Now fetch doc_id, docnm_kwd to provide source chunks
             # Extract WHERE clause from the original SQL
             where_match = re.search(r"\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)", sql, re.IGNORECASE)
@@ -1495,6 +1552,14 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         },
         "prompt": sys_prompt,
     }
+    if doc_engine == "gaussdb":
+        gaussdb_text_to_sql.complete_reference_kb_ids(
+            result,
+            table_name,
+            kb_ids,
+            gaussdb_validator,
+            settings.retriever.sql_retrieval,
+        )
     logging.debug(f"use_sql: Returning answer with {len(result['reference']['chunks'])} chunks from {len(doc_aggs)} documents")
     return result
 
@@ -1762,12 +1827,13 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.1),
         vector_similarity_weight=vector_similarity_weight,
-        top=search_config.get("top_k", 1024),
+        knn_top_k=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=True,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     if include_reference_metadata:
         logging.debug(
@@ -1803,7 +1869,10 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         refs["chunks"] = chunks_format(refs)
         return {"answer": answer, "reference": refs}
 
-    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, {"temperature": 0.1})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
+    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, gen_conf)
     last_state = None
     async for kind, value, state in _stream_with_think_delta(stream_iter):
         last_state = state
@@ -1861,11 +1930,12 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.2),
         vector_similarity_weight=search_config.get("vector_similarity_weight", 0.3),
-        top=search_config.get("top_k", 1024),
+        knn_top_k=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=False,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
@@ -1875,7 +1945,8 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
 async def rag_agent(dialog, messages, stream=True, **kwargs):
     prompt_config = dialog.prompt_config or {}
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    if not prompt_config.get("reasoning", 0) and not kwargs.get("reasoning"):
+    reasoning = kwargs["reasoning"] if "reasoning" in kwargs else prompt_config.get("reasoning", 0)
+    if not reasoning or str(reasoning).strip() == "0":
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
@@ -1883,7 +1954,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     model_type = chat_mdl.model_config["model_type"]
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
-    agent_messages = deepcopy(messages)
+    agent_messages = [{k: deepcopy(v) for k, v in m.items() if k in LLM_MESSAGE_FIELDS} for m in messages]
     if text_attachments_content and agent_messages:
         agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:

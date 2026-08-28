@@ -473,9 +473,6 @@ export default {
       linkSourceSetTip:
         'Управлявайте свързването на източник на данни с този набор',
       linkDataSource: 'Свържи източник на данни',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        'За съществуващи фрагменти генерира йерархично съдържание (една директория на файл). По време на заявки, когато е активирано подобряване на директория, системата ще използва голям модел, за да определи кои елементи от директорията са релевантни на въпроса на потребителя, като по този начин идентифицира съответните фрагменти.',
       deleteGenerateModalContent: `
         <p>Изтриването на генерираните резултати от <strong class='text-text-primary'>{{type}}</strong>
         ще премахне всички извлечени обекти и връзки от този набор от данни.
@@ -543,6 +540,12 @@ export default {
       dialogueExamplesTitle: 'преглед',
       methodEmpty:
         'Тук ще се покаже визуално обяснение на категориите на базата от знания',
+      audio: `<p>Поддържани файлови формати: <b>WAV, MP3, AAC, FLAC, OGG</b> и други често срещани аудио формати.</p>
+<p>Този метод транскрибира аудио файловете в текст с помощта на модел за преобразуване на реч в текст.</p>`,
+      email: `<p>Поддържани файлови формати: <b>EML</b> и <b>MSG</b>.</p>
+<p>Този метод анализира имейл файлове, извличайки полетата от заглавката (като От, До, CC, Тема и Дата), съдържанието на писмото и прикачените файлове.</p>`,
+      knowledgeCompiler: `<p>Този конвейер анализира и разделя файловете на части, след което компилира частите в структурирани единици знания (граф на знанията, уики, RAPTOR, мисловна карта или навигация в набора от данни) чрез компонента Knowledge Compiler.</p>
+<p>Компилираните единици знания се издават като части, обединени в потока от части, което е идеално за изграждане на извличаем слой знания върху разделените документи.</p>`,
       book: `<p>Поддържани файлови формати: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       За всяка книга в PDF, моля задайте <i>диапазон на страници</i>, за да премахнете нежелана информация и да намалите времето за анализ.</p>`,
       laws: `<p>Поддържани файлови формати: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -997,6 +1000,7 @@ The above is the content you need to summarize.`,
       gmailTokenTip: 'Качете OAuth JSON, генериран от Google Console.',
       dropboxDescription:
         'Свържете вашия Dropbox за синхронизиране на файлове и папки от избран акаунт.',
+      azure_devopsDescription: 'Свържете Azure DevOps, за да синхронизирате файловете на хранилището и заявките за изтегляне (pull requests).',
       bitbucketDescription:
         'Свържете Bitbucket за синхронизиране на PR съдържание.',
       bitbucketTopWorkspaceTip:
@@ -2183,7 +2187,7 @@ Task
 Extract the most important keywords/phrases of a given piece of text content.
 
 Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`,
@@ -2191,10 +2195,10 @@ Requirements
 You are a text analyzer.
 
 Task
-Propose 3 questions about a given piece of text content.
+Propose {{ topn }} questions about a given piece of text content.
 
 Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.

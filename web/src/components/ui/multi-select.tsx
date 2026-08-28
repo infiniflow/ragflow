@@ -5,6 +5,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import {
   CheckIcon,
   ChevronDown,
+  TriangleAlert,
   WandSparkles,
   XCircle,
   XIcon,
@@ -44,6 +45,16 @@ export type MultiSelectGroupOptionType = {
   label: React.ReactNode;
   options: MultiSelectOptionType[];
 };
+
+/**
+ * cmdk's default filter scores matches fuzzily and re-sorts the list by
+ * score, which shuffles options out of their declared order as the user
+ * types. A plain substring match scores every hit equally, so cmdk's
+ * stable sort leaves the original order intact.
+ */
+function filterBySubstring(value: string, search: string) {
+  return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
+}
 
 function MultiCommandItem({
   option,
@@ -193,6 +204,13 @@ interface MultiSelectProps
   isSearching?: boolean;
   shouldFilter?: boolean;
   onListScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  /**
+   * Optional label resolver for a selected value that is not present in
+   * `options` (e.g. while options are narrowed by a search keyword). When it
+   * returns a label, the badge shows that label instead of falling back to
+   * the raw value with a warning marker.
+   */
+  getOptionLabel?: (value: string) => string | undefined;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -219,6 +237,7 @@ export const MultiSelect = React.forwardRef<
       isSearching = false,
       shouldFilter,
       onListScroll,
+      getOptionLabel,
       ...props
     },
     ref,
@@ -249,6 +268,16 @@ export const MultiSelect = React.forwardRef<
         'options' in option ? option.options : [option],
       );
     }, [options]);
+
+    // Remember the label of every option the component has seen, so a badge
+    // keeps its label when the option later disappears from `options` (e.g.
+    // the list is narrowed by a server-side search).
+    const rememberedLabels = React.useRef(new Map<string, React.ReactNode>());
+    React.useEffect(() => {
+      flatOptions.forEach((option) => {
+        rememberedLabels.current.set(option.value, option.label);
+      });
+    }, [flatOptions]);
 
     const disabledValueSet = React.useMemo(() => {
       return new Set(
@@ -361,6 +390,15 @@ export const MultiSelect = React.forwardRef<
                 <div className="flex flex-wrap items-center">
                   {selectedValues?.slice(0, maxCount)?.map((value) => {
                     const option = flatOptions.find((o) => o.value === value);
+                    // A selected value may be absent from `options` while the
+                    // list is narrowed (e.g. by a search keyword); fall back
+                    // to the explicit `getOptionLabel` resolver and then to
+                    // the remembered label of a previously seen option so the
+                    // badge stays readable.
+                    const label =
+                      option?.label ??
+                      getOptionLabel?.(value) ??
+                      rememberedLabels.current.get(value);
                     const IconComponent = option?.icon;
                     return (
                       <Badge
@@ -377,8 +415,20 @@ export const MultiSelect = React.forwardRef<
                           {IconComponent && (
                             <IconComponent className="h-4 w-4" />
                           )}
-                          <div className="max-w-28 text-ellipsis overflow-hidden">
-                            {option?.label}
+                          {/* A selected value with no known label (e.g. the
+                              entity no longer exists) gets a warning marker and
+                              falls back to the raw value so the badge stays
+                              readable and removable. */}
+                          {label == null && (
+                            <TriangleAlert className="h-4 w-4 flex-shrink-0 text-text-disabled" />
+                          )}
+                          <div
+                            className={cn(
+                              'max-w-28 text-ellipsis overflow-hidden',
+                              { 'text-text-disabled': label == null },
+                            )}
+                          >
+                            {label ?? value}
                           </div>
                           {canRemoveValue(value) && (
                             <XCircle
@@ -445,7 +495,11 @@ export const MultiSelect = React.forwardRef<
           onFocusOutside={(event) => event.preventDefault()}
           data-testid={popoverTestId}
         >
-          <Command className="p-5 pb-8" shouldFilter={shouldFilter}>
+          <Command
+            className="p-5 pb-8"
+            shouldFilter={shouldFilter}
+            filter={filterBySubstring}
+          >
             {((options && options.length > 0) || onSearchChange) && (
               <CommandInput
                 placeholder={t('common.search') + '...'}

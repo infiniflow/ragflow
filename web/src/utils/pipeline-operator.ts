@@ -17,7 +17,8 @@
 import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
-  initialExtractorValues,
+  getInitialExtractorValues,
+  initialGoExtractorValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
@@ -29,6 +30,7 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
+import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -81,12 +83,9 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-/**
- * Converts Extractor config from API/DSL format to form format.
- * DSL:  { prompts: [{ content: "text", role: "user" }] }
- * Form: { prompts: "text" }
- */
-function transformExtractorConfigToForm(
+// Python form: flatten the DSL prompts array into the form's single field;
+// the Python extractor form consumes the legacy flat fields as-is.
+function transformExtractorConfigToFormPython(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   if (!config) return {};
@@ -95,7 +94,95 @@ function transformExtractorConfigToForm(
   if (Array.isArray(config.prompts) && config.prompts.length > 0) {
     result.prompts = config.prompts[0]?.content ?? '';
   }
+
   return result;
+}
+
+// Go form: additionally normalize the nested per-feature groups the Go
+// extractor schema reads (schema.ExtractorParam).
+function transformExtractorConfigToFormGo(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  const result = transformExtractorConfigToFormPython(config);
+  if (!config) return result;
+
+  const isSummaryEnabled =
+    config.summary?.enabled !== undefined
+      ? Boolean(config.summary?.enabled)
+      : config.enable_summary === 1 || config.enable_summary === true;
+
+  // The metadata group is stored under "metadata" — the shape the Go
+  // Extractor reads (schema.ExtractorParam). Accept two historical shapes:
+  // the transitional "metadata_config" key, and legacy flat nodes carrying
+  // enable_metadata + metadata[] + built_in_metadata[] (flat "metadata" is
+  // an array there, which distinguishes it from the group object).
+  const metadataGroup =
+    config.metadata !== undefined && !Array.isArray(config.metadata)
+      ? config.metadata
+      : config.metadata_config;
+
+  const isMetadataEnabled =
+    metadataGroup?.enabled !== undefined
+      ? Boolean(metadataGroup.enabled)
+      : config.enable_metadata === 1 || config.enable_metadata === true;
+
+  result.keywords = {
+    top_n:
+      config.keywords?.top_n ??
+      config.auto_keywords ??
+      initialGoExtractorValues.keywords.top_n,
+    system_prompt:
+      config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
+  };
+  result.questions = {
+    top_n:
+      config.questions?.top_n ??
+      config.auto_questions ??
+      initialGoExtractorValues.questions.top_n,
+    system_prompt:
+      config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
+  };
+  result.tags = {
+    top_n:
+      config.tags?.top_n ??
+      config.auto_tags ??
+      initialGoExtractorValues.tags.top_n,
+    tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
+  };
+  result.summary = {
+    enabled: isSummaryEnabled,
+    system_prompt: config.summary?.system_prompt ?? config.sys_prompt ?? '',
+  };
+
+  result.metadata = {
+    enabled: isMetadataEnabled,
+    metadata:
+      metadataGroup?.metadata ??
+      (Array.isArray(config.metadata) ? config.metadata : []),
+    built_in_metadata:
+      metadataGroup?.built_in_metadata ?? config.built_in_metadata ?? [],
+  };
+  // Drop the historical keys so they don't linger in form state and get
+  // re-emitted into the DSL on save — the Go extractor only reads the group.
+  delete result.metadata_config;
+  delete result.enable_metadata;
+  delete result.built_in_metadata;
+
+  return result;
+}
+
+/**
+ * Converts Extractor config from API/DSL format to form format.
+ * DSL:  { prompts: [{ content: "text", role: "user" }] }
+ * Form: { prompts: "text" }
+ */
+export function transformExtractorConfigToForm(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  return pickByBackend({
+    go: transformExtractorConfigToFormGo,
+    python: transformExtractorConfigToFormPython,
+  })(config);
 }
 
 /**
@@ -282,7 +369,7 @@ function normalizeOperatorForm(
       };
     case Operator.Extractor:
       return {
-        ...cloneDeep(initialExtractorValues),
+        ...cloneDeep(getInitialExtractorValues()),
         ...rawForm,
       };
     case Operator.Tokenizer:

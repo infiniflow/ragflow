@@ -42,7 +42,6 @@ import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
 import pipe from 'lodash/fp/pipe';
-import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
@@ -54,6 +53,7 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 import styles from './floating-chat-widget-markdown.module.less';
 import { useIsDarkTheme } from './theme-provider';
@@ -68,6 +68,7 @@ const FloatingChatWidgetMarkdown = ({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -268,9 +269,11 @@ const FloatingChatWidgetMarkdown = ({
           return (
             <Tooltip key={`err-tooltip-${i}`}>
               <TooltipTrigger asChild>
-                <Info className={styles.referenceIcon} />
+                <InfoCircleOutlined className={styles.referenceIcon} />
               </TooltipTrigger>
-              <TooltipContent>Reference unavailable</TooltipContent>
+              <TooltipContent>
+                {loading ? t('chat.searching') : 'Reference unavailable'}
+              </TooltipContent>
             </Tooltip>
           );
         }
@@ -311,15 +314,26 @@ const FloatingChatWidgetMarkdown = ({
         );
       });
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      t,
+    ],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
 
   return (
-    <div className="floating-chat-widget" dir={dir}>
+    <div className={styles['floating-chat-widget']} dir={dir}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={

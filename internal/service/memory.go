@@ -154,7 +154,7 @@ var TYPE_INSTRUCTIONS = map[string]string{
 
 // OUTPUT_TEMPLATES defines the output format for each memory type
 var OUTPUT_TEMPLATES = map[string]string{
-	"semantic":   `"semantic": [{"content": "Clear factual statement", "valid_at": "timestamp or empty", "invalid_at": "timestamp or empty"}]`,
+	"semantic":   `"semantic": [{"content": "Clear factual statement", "valid_at": "timestamp — use the conversation time when the fact has no date of its own", "invalid_at": "timestamp or empty"}]`,
 	"episodic":   `"episodic": [{"content": "Narrative event description", "valid_at": "event start timestamp", "invalid_at": "event end timestamp or empty"}]`,
 	"procedural": `"procedural": [{"content": "Actionable instructions", "valid_at": "procedure effective timestamp", "invalid_at": "procedure expiration timestamp or empty"}]`,
 }
@@ -847,7 +847,9 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 		return errors.New("message store is not initialized")
 	}
 
-	now := time.Now().UTC()
+	// forget_at is stamped as server-local wall clock, not UTC. forget_at_flt
+	// below is a Unix millisecond value and therefore zone-independent.
+	now := memoryNow()
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{

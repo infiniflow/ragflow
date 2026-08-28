@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"strings"
-
-	models "ragflow/internal/entity/models"
 )
 
 func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
@@ -23,8 +21,8 @@ func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, pa
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR requires paddleocr_base_url or PADDLEOCR_BASE_URL")}
 	}
-	apiKey := parser.PaddleOCRAPIKey
-	if strings.TrimSpace(apiKey) == "" {
+	apiKey := strings.TrimSpace(parser.PaddleOCRAPIKey)
+	if apiKey == "" {
 		apiKey = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAccessToken))
 	}
 	algorithm := strings.TrimSpace(parser.PaddleOCRAlgorithm)
@@ -35,29 +33,17 @@ func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, pa
 		algorithm = "PaddleOCR-VL"
 	}
 
-	driver := models.NewPaddleOCRLocalModel(
-		map[string]string{"default": baseURL},
-		models.URLSuffix{OCR: "layout-parsing"},
-	)
-	apiConfig := &models.APIConfig{
-		BaseURL: &baseURL,
-	}
-	if apiKey != "" {
-		apiConfig.ApiKey = &apiKey
-	}
-
-	resp, err := driver.OCRFile(ctx, &algorithm, data, &filename, apiConfig, &models.OCRConfig{
-		Algorithm: algorithm,
-	}, nil)
+	// The async Job API, exactly like Python's PaddleOCRParser.parse_pdf():
+	// submit {base}/api/v2/ocr/jobs, poll until done, download the JSONL
+	// results. No synchronous local driver is involved here.
+	client := newPaddleOCRClient(baseURL, apiKey, algorithm)
+	text, err := client.ParsePDF(data, filename)
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)}
-	}
-	if resp == nil || resp.Text == nil {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned empty text")}
+		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR ParsePDF: %w", err)}
 	}
 	pageCount := 1
-	if resp.Text != nil && strings.TrimSpace(*resp.Text) == "" {
+	if strings.TrimSpace(text) == "" {
 		pageCount = 0
 	}
-	return parseMinerUMarkdownResult(ctx, filename, *resp.Text, parser.OutputFormat, pageCount)
+	return parseMinerUMarkdownResult(ctx, filename, text, parser.OutputFormat, pageCount)
 }

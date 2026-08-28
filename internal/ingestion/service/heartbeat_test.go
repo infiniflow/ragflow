@@ -25,7 +25,7 @@ func (h *controllableHandle) InProgress() error              { return h.inProgre
 // TestStartHeartbeat_TicksInProgressUntilStop: with a short interval the
 // heartbeat goroutine calls InProgress repeatedly; stop() halts it.
 func TestStartHeartbeat_TicksInProgressUntilStop(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.heartbeatInterval = 2 * time.Millisecond
 
 	handle := &fakeTaskHandle{}
@@ -45,7 +45,7 @@ func TestStartHeartbeat_TicksInProgressUntilStop(t *testing.T) {
 // concurrent InProgress on the same message. Regression guard for the
 // close-without-wait heartbeat shutdown (problem 1).
 func TestStartHeartbeat_StopWaitsForInFlightInProgress(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.heartbeatInterval = time.Millisecond
 
 	started := make(chan struct{})
@@ -89,7 +89,7 @@ func TestStartHeartbeat_StopWaitsForInFlightInProgress(t *testing.T) {
 // TestStartHeartbeat_NoOpWhenNoHandle: with no MQ handle (standalone/test path)
 // startHeartbeat returns a no-op stop and starts no goroutine.
 func TestStartHeartbeat_NoOpWhenNoHandle(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.heartbeatInterval = time.Millisecond
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(

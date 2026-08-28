@@ -133,6 +133,24 @@ type engineWriter struct {
 	eng engine.DocEngine
 }
 
+func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil {
+		return nil
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
+		"id": ids, "kb_id": kb, "available_int": 1, "scope_kwd": "dataset", "compile_kwd": compileKwdWikiPage,
+	}, baseName, kb)
+	return err
+}
+
 // datasetStructureSupported reports whether the running doc engine can filter
 // the dataset-structure fields (knowledge_graph_kwd + scope_kwd + raw
 // compile_kwd) this feature writes/deletes. Only infinity and elasticsearch
@@ -646,7 +664,7 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		m["kc_kind"] = kind
 	}
 	// wiki_incremental port: preserve the original creation timestamp across a
-	// replace-only merge. If the incoming merged product already carries
+	// page merge. If the incoming merged product already carries
 	// created_at_unix (restored by the Reader from create_timestamp_flt), reuse
 	// it; otherwise stamp a fresh now() (first creation). This is what stops every
 	// rebuild from re-stamping the creation time.
@@ -681,8 +699,14 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	if pageType != "" {
 		m["page_type_kwd"] = pageType
 	}
-	if v := metaString(p.Meta, "topic"); v != "" {
+	if v := kccommon.NormalizeWikiTopicPath(metaString(p.Meta, "topic")); v != "" {
 		m["topic_kwd"] = v
+	}
+	if v := metaString(p.Meta, "plan_group"); v != "" {
+		m["plan_group_kwd"] = v
+	}
+	if v := metaString(p.Meta, "generation"); v != "" {
+		m["generation_kwd"] = v
 	}
 	if v := metaString(p.Meta, "summary"); v != "" {
 		m["summary_with_weight"] = v
@@ -930,7 +954,7 @@ func metaInt(m map[string]any, key string) (int64, bool) {
 // metaFloat extracts a float64 from a map value that may be boxed as float64,
 // int64, int, or string — the engine/JSON round-trip does not guarantee a
 // single numeric type. Used to recover create_timestamp_flt so the reader can
-// preserve the original creation time across a replace-only merge.
+// preserve the original creation time across a page merge.
 func metaFloat(m map[string]any, key string) (float64, bool) {
 	switch v := m[key].(type) {
 	case float64:
@@ -1065,14 +1089,10 @@ type wikiPageProjection struct {
 // re-materializes the page graph. See the Writer interface doc for the
 // delete-then-insert (non-atomic) contract.
 func (w engineWriter) ProjectWikiGraph(ctx context.Context, tenant, kb string) error {
-	pages, err := w.loadMergedWikiPages(ctx, tenant, kb)
+	pages, err := w.loadActiveDocumentWikiPages(ctx, tenant, kb)
 	if err != nil {
 		return err
 	}
-	// Telemetry: confirm how many merged wiki_page rows survived WriteMerged.
-	// If this is 0 while WriteMerged reported wiki_page:N, the merged rows are
-	// not queryable under (compile_kwd=wiki_page AND available_int=1) — point at the
-	// stored field values, not a downstream delete.
 	common.Info("knowledge_compile: ProjectWikiGraph load",
 		zap.String("kb_id", kb),
 		zap.Int("merged_wiki_pages_loaded", len(pages)))
@@ -1090,6 +1110,76 @@ func (w engineWriter) ProjectWikiGraph(ctx context.Context, tenant, kb string) e
 		return err
 	}
 	return w.insertWikiGraphChunks(ctx, tenant, kb, rows)
+}
+
+// loadActiveDocumentWikiPages loads the immutable document-level page
+// contributions that are currently enabled and folds equal slugs without
+// touching their content. Graph projection must use these rows instead of the
+// LLM-composed dataset page, otherwise disabling one of several contributors
+// would leave that contributor's entities and edges in the graph.
+func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, kb string) ([]wikiPageProjection, error) {
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil {
+		return nil, nil
+	}
+	const batchSize = 2000
+	bySlug := make(map[string]wikiPageProjection)
+	for offset := 0; ; offset += batchSize {
+		result, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)},
+			KbIDs:      []string{kb},
+			Filter: map[string]interface{}{
+				"compile_kwd": compileKwdWikiPage, "available_int": 0,
+				"scope_kwd": "doc", "kb_id": kb,
+			},
+			SelectFields: []string{
+				"slug_kwd", "page_type_kwd", "title_kwd", "entity_names_kwd",
+				"summary_with_weight", "outlinks_kwd", "source_doc_ids", "source_chunk_ids",
+			},
+			Limit: batchSize, Offset: offset,
+			OrderBy: (&types.OrderByExpr{}).Asc("slug_kwd").Asc("doc_id"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if result == nil || len(result.Chunks) == 0 {
+			break
+		}
+		for _, row := range result.Chunks {
+			slug := metaString(row, "slug_kwd")
+			if slug == "" {
+				continue
+			}
+			page := bySlug[slug]
+			if page.Slug == "" {
+				page.Slug = slug
+				page.PageType = metaString(row, "page_type_kwd")
+				page.Title = metaString(row, "title_kwd")
+				page.Summary = metaString(row, "summary_with_weight")
+			}
+			page.Aliases = unionStrs(page.Aliases, metaStringSlice(row, "entity_names_kwd"))
+			page.Outlinks = unionStrs(page.Outlinks, metaStringSlice(row, "outlinks_kwd"))
+			page.SourceDocIDs = unionStrs(page.SourceDocIDs, metaStringSlice(row, "source_doc_ids"))
+			page.SourceChunkIDs = unionStrs(page.SourceChunkIDs, metaStringSlice(row, "source_chunk_ids"))
+			bySlug[slug] = page
+		}
+		if len(result.Chunks) < batchSize {
+			break
+		}
+	}
+	slugs := make([]string, 0, len(bySlug))
+	for slug := range bySlug {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	pages := make([]wikiPageProjection, 0, len(slugs))
+	for _, slug := range slugs {
+		pages = append(pages, bySlug[slug])
+	}
+	return pages, nil
 }
 
 // DropWikiGraph deletes every wiki_entity / wiki_relation row for the dataset.

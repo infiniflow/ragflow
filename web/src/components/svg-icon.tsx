@@ -88,7 +88,7 @@ const svgIcons = [
   LLMFactory.MinerU,
   LLMFactory.MinerUNet,
   LLMFactory.PaddleOCR,
-  LLMFactory.PaddleOCRNet,
+  LLMFactory.PaddleOCRLocal,
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
   LLMFactory.Avian,
@@ -112,6 +112,7 @@ const svgIcons = [
   LLMFactory.FunASR,
   LLMFactory.AIMLAPI,
   LLMFactory.GreenPT,
+  LLMFactory.Synthorai,
   LLMFactory.MWS,
 ];
 

@@ -2,6 +2,8 @@ package wiki
 
 import (
 	"context"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,11 +26,64 @@ func TestReduceExtracts_MergesProvenance(t *testing.T) {
 	if len(reduced.Entities) != 1 {
 		t.Fatalf("entities=%d, want 1", len(reduced.Entities))
 	}
-	if ids := reduced.Entities[0].SourceChunkIDs; len(ids) != 2 {
-		t.Fatalf("entity provenance = %#v, want 2 chunk ids", ids)
+	if ids := reduced.Entities[0].SourceChunkIDs; !slices.Equal(ids, []string{"c1", "c2"}) {
+		t.Fatalf("entity provenance = %#v, want [c1 c2]", ids)
 	}
 	if len(reduced.Claims) != 2 {
 		t.Fatalf("claims=%d, want 2", len(reduced.Claims))
+	}
+}
+
+func TestParseWikiExtractNormalizesTopicPathAndProvenance(t *testing.T) {
+	extract := parseWikiExtract(map[string]any{
+		"topics": []any{map[string]any{
+			"path": " 三国演义 / 人物 / 蜀汉人物 ", "description": "蜀汉人物", "source_chunk_id": "c1",
+		}},
+	})
+	if len(extract.Topics) != 1 {
+		t.Fatalf("topics = %#v, want one", extract.Topics)
+	}
+	topic := extract.Topics[0]
+	if topic.Path != "三国演义/人物/蜀汉人物" || !slices.Equal(topic.SourceChunkIDs, []string{"c1"}) {
+		t.Fatalf("topic = %#v", topic)
+	}
+}
+
+func TestParseWikiExtractAcceptsLegacyStringTopics(t *testing.T) {
+	extract := parseWikiExtract(map[string]any{
+		"topics": []any{"人物/汉末/曹魏", "桃园结义"},
+	})
+	if len(extract.Topics) != 2 {
+		t.Fatalf("topics = %#v, want two", extract.Topics)
+	}
+	if extract.Topics[0].Path != "人物/汉末/曹魏" || extract.Topics[1].Path != "桃园结义" {
+		t.Fatalf("topics = %#v", extract.Topics)
+	}
+}
+
+func TestWikiTemplateCustomRulesPrefersGlobalRules(t *testing.T) {
+	got := wikiTemplateCustomRules(map[string]any{
+		"global_rules": "  Use configured topics.  ",
+		"guideline": map[string]any{
+			"rules_for_entities":  "entity fallback",
+			"rules_for_relations": "relation fallback",
+		},
+	}, "English")
+	if got != "Use configured topics." {
+		t.Fatalf("custom rules = %q, want global rules", got)
+	}
+}
+
+func TestWikiTemplateCustomRulesFallsBackToGuideline(t *testing.T) {
+	got := wikiTemplateCustomRules(map[string]any{
+		"global_rules": " ",
+		"guideline": map[string]any{
+			"rules_for_entities":  "extract configured entities",
+			"rules_for_relations": "extract configured relations",
+		},
+	}, "English")
+	if !strings.Contains(got, "extract configured entities") || !strings.Contains(got, "extract configured relations") {
+		t.Fatalf("custom rules = %q, want guideline fallback", got)
 	}
 }
 
@@ -102,7 +157,7 @@ func TestRunMapBatches_PreservesBatchOrderWithSubmitter(t *testing.T) {
 		if batch[0].ID == "slow" {
 			time.Sleep(25 * time.Millisecond)
 		}
-		return wikiExtract{Topics: []string{batch[0].ID}}, nil
+		return wikiExtract{Topics: []wikiTopic{{Path: batch[0].ID}}}, nil
 	})
 	if err != nil {
 		t.Fatalf("runMapBatches err = %v", err)
@@ -111,7 +166,7 @@ func TestRunMapBatches_PreservesBatchOrderWithSubmitter(t *testing.T) {
 		t.Fatalf("runMapBatches len = %d, want %d", len(got), len(batches))
 	}
 	for i, want := range []string{"slow", "fast-1", "fast-2"} {
-		if len(got[i].Topics) != 1 || got[i].Topics[0] != want {
+		if len(got[i].Topics) != 1 || got[i].Topics[0].Path != want {
 			t.Fatalf("runMapBatches[%d] = %#v, want topic %q", i, got[i], want)
 		}
 	}
@@ -141,6 +196,86 @@ func TestNormalizeWikiPlanPages_FallbacksToEntitiesAndConcepts(t *testing.T) {
 	}
 	if plan.Pages[0].Slug == "" || plan.Pages[1].Slug == "" {
 		t.Fatalf("fallback pages missing slugs: %#v", plan.Pages)
+	}
+}
+
+func TestNormalizeWikiPlanPagesExpandsUniqueMAPTopicLeaf(t *testing.T) {
+	pages := normalizeWikiPlanPages([]wikiPlanPage{{
+		Slug: "entity/刘备", Title: "刘备", PageType: "entity", Topic: "蜀汉人物",
+	}}, wikiExtract{Topics: []wikiTopic{{Path: "三国演义 / 人物 / 蜀汉人物"}}})
+	if len(pages) != 1 {
+		t.Fatalf("pages = %#v, want one page", pages)
+	}
+	if got := pages[0].Topic; got != "三国演义/人物/蜀汉人物" {
+		t.Fatalf("topic = %q, want complete MAP topic path", got)
+	}
+}
+
+func TestNormalizeWikiPlanPagesFallsBackForUnknownTopic(t *testing.T) {
+	pages := normalizeWikiPlanPages([]wikiPlanPage{{
+		Slug: "entity/刘备", Title: "刘备", PageType: "entity", Topic: "历史 / 人物 / 蜀汉人物",
+	}}, wikiExtract{Topics: []wikiTopic{{Path: "文学/人物"}}})
+	if got := pages[0].Topic; got != common.GeneralWikiTopic {
+		t.Fatalf("topic = %q, want %q", got, common.GeneralWikiTopic)
+	}
+}
+
+func TestNormalizeWikiPlanPagesDoesNotUseEntityTitleAsTopic(t *testing.T) {
+	pages := normalizeWikiPlanPages([]wikiPlanPage{{
+		Slug: "entity/person/曹操", Title: "曹操", PageType: "entity", Topic: "人物/曹操",
+	}}, wikiExtract{Topics: []wikiTopic{{Path: "人物/曹操"}, {Path: "人物/汉末/曹魏"}}})
+	if got := pages[0].Topic; got != common.GeneralWikiTopic {
+		t.Fatalf("topic = %q, want %q", got, common.GeneralWikiTopic)
+	}
+}
+
+type topicPathEmbedStub struct{}
+
+func (topicPathEmbedStub) Encode(_ context.Context, texts []string) ([][]float32, error) {
+	out := make([][]float32, len(texts))
+	for i, text := range texts {
+		switch {
+		case strings.Contains(text, "刘备"), strings.Contains(text, "蜀汉"):
+			out[i] = []float32{1, 0}
+		case strings.Contains(text, "曹操"), strings.Contains(text, "曹魏"):
+			out[i] = []float32{0, 1}
+		default:
+			out[i] = []float32{0.5, 0.5}
+		}
+	}
+	return out, nil
+}
+
+func (topicPathEmbedStub) Dimensions() int { return 2 }
+
+func TestBuildTopicCandidateCommunitiesAssignsMAPTopicPaths(t *testing.T) {
+	p := &wikiPipeline{
+		ctx:  context.Background(),
+		deps: common.Deps{Embed: topicPathEmbedStub{}},
+		reduced: wikiExtract{
+			Entities: []wikiEntity{{Name: "刘备"}, {Name: "曹操"}},
+			Topics: []wikiTopic{
+				{Path: "三国演义/人物/蜀汉人物"},
+				{Path: "三国演义/人物/曹魏人物"},
+			},
+		},
+	}
+	communities := p.buildTopicCandidateCommunities()
+	if len(communities) != 2 {
+		t.Fatalf("communities = %#v, want two", communities)
+	}
+	for _, community := range communities {
+		if len(community.Entities) != 1 || len(community.Topics) != 1 {
+			t.Fatalf("community = %#v, want one entity and one topic", community)
+		}
+		entity := community.Entities[0].Name
+		topic := community.Topics[0].Path
+		if entity == "刘备" && topic != "三国演义/人物/蜀汉人物" {
+			t.Fatalf("刘备 topic = %q", topic)
+		}
+		if entity == "曹操" && topic != "三国演义/人物/曹魏人物" {
+			t.Fatalf("曹操 topic = %q", topic)
+		}
 	}
 }
 
@@ -209,6 +344,20 @@ func TestNormalizeWikiPlanPages_DoesNotMergeAcrossTypes(t *testing.T) {
 	}
 }
 
+func TestNormalizeWikiPlanPages_DoesNotMergeTypedEntitiesWithSameTitle(t *testing.T) {
+	pages := []wikiPlanPage{
+		{Slug: "entity/fruit/苹果", Title: "苹果", PageType: "entity", EntityNames: []string{"苹果"}},
+		{Slug: "entity/company/苹果", Title: "苹果", PageType: "entity", EntityNames: []string{"苹果"}},
+	}
+	got := normalizeWikiPlanPages(pages, wikiExtract{Entities: []wikiEntity{
+		{Name: "苹果", Type: "fruit"},
+		{Name: "苹果", Type: "company"},
+	}})
+	if len(got) != 2 {
+		t.Fatalf("normalizeWikiPlanPages = %#v, want both typed entity pages", got)
+	}
+}
+
 func TestMergePlanCandidates_DeduplicatesWithoutLLMMerge(t *testing.T) {
 	p := &wikiPipeline{
 		docID: "doc-1",
@@ -261,6 +410,22 @@ func TestMergePlanCandidates_DeduplicatesWithoutLLMMerge(t *testing.T) {
 	}
 	if got := merged.Pages[1].RelatedKB; len(got) != 1 || got[0] != "entity/beta" {
 		t.Fatalf("alpha related links = %#v, want [entity/beta]", got)
+	}
+}
+
+func TestAssembleWikiPlanRelatedPagesFromRelations(t *testing.T) {
+	pages := []wikiPlanPage{
+		{Slug: "entity/alpha", Title: "Alpha", EntityNames: []string{"Alpha"}},
+		{Slug: "entity/beta", Title: "Beta", EntityNames: []string{"Beta"}},
+	}
+	relations := []wikiRelation{{From: "Alpha", To: "Beta", Type: "related"}}
+
+	got := assembleWikiPlanRelatedPages(pages, relations)
+	if want := []string{"entity/beta"}; !reflect.DeepEqual(got[0].RelatedKB, want) {
+		t.Fatalf("Alpha related links = %v, want %v", got[0].RelatedKB, want)
+	}
+	if want := []string{"entity/alpha"}; !reflect.DeepEqual(got[1].RelatedKB, want) {
+		t.Fatalf("Beta related links = %v, want %v", got[1].RelatedKB, want)
 	}
 }
 
@@ -416,5 +581,94 @@ func TestMergeWikiPageContent_PreservesShortExistingPage(t *testing.T) {
 	}
 	if !strings.Contains(merged, "Alpha launched a new process in 2026.") {
 		t.Fatalf("merged page dropped incoming content: %q", merged)
+	}
+}
+
+func TestReduceExtracts_MergesDuplicateEntitySlug(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Entities: []wikiEntity{{Name: "曹操", Type: "person", Aliases: []string{"孟德"}, SourceChunkIDs: []string{"c1"}}}},
+		{Entities: []wikiEntity{{Name: "曹操", Type: "person", SourceChunkIDs: []string{"c2"}}}},
+	})
+	if len(reduced.Entities) != 1 {
+		t.Fatalf("entities = %d, want 1", len(reduced.Entities))
+	}
+	if got := reduced.Entities[0].SourceChunkIDs; !slices.Equal(got, []string{"c1", "c2"}) {
+		t.Fatalf("source chunk ids = %#v, want [c1 c2]", got)
+	}
+	if got := reduced.Entities[0].Aliases; len(got) != 1 || got[0] != "孟德" {
+		t.Fatalf("aliases = %#v, want [孟德]", got)
+	}
+}
+
+func TestReduceExtracts_DifferentEntityTypesKeepDifferentSlugs(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Entities: []wikiEntity{{Name: "苹果", Type: "fruit"}}},
+		{Entities: []wikiEntity{{Name: "苹果", Type: "company"}}},
+	})
+	if len(reduced.Entities) != 2 {
+		t.Fatalf("entities = %d, want 2", len(reduced.Entities))
+	}
+	if got := entityPageSlug(reduced.Entities[0].Name, reduced.Entities[0].Type); got == entityPageSlug(reduced.Entities[1].Name, reduced.Entities[1].Type) {
+		t.Fatalf("different entity types have the same slug %q", got)
+	}
+}
+
+func TestReduceExtracts_EntityIdentityDoesNotCollideAtHyphenBoundary(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{{Entities: []wikiEntity{
+		{Name: "bar-baz", Type: "foo"},
+		{Name: "baz", Type: "foo-bar"},
+	}}})
+	if len(reduced.Entities) != 2 {
+		t.Fatalf("entities = %#v, want two distinct identities", reduced.Entities)
+	}
+	first := entityPageSlug("bar-baz", "foo")
+	second := entityPageSlug("baz", "foo-bar")
+	if first == second {
+		t.Fatalf("entity slugs collide: %q", first)
+	}
+}
+
+func TestReduceExtracts_NormalizesEntityWhitespace(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{{Entities: []wikiEntity{
+		{Name: "John  Smith", Type: "person"},
+		{Name: "John Smith", Type: "person"},
+	}}})
+	if len(reduced.Entities) != 1 {
+		t.Fatalf("entities = %#v, want whitespace-equivalent names merged", reduced.Entities)
+	}
+}
+
+func TestReduceExtracts_DoesNotMergeSimilarNames(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Entities: []wikiEntity{{Name: "Alpha", Type: "org"}}},
+		{Entities: []wikiEntity{{Name: "Alpha Incorporated", Type: "org"}}},
+	})
+	if len(reduced.Entities) != 2 {
+		t.Fatalf("entities = %d, want 2; REDUCE must not perform semantic merging", len(reduced.Entities))
+	}
+}
+
+func TestReduceExtracts_MergesDuplicateRelationProvenance(t *testing.T) {
+	reduced := reduceExtracts([]wikiExtract{
+		{Relations: []wikiRelation{{From: "A", To: "B", Type: "knows", SourceChunkIDs: []string{"c1"}}}},
+		{Relations: []wikiRelation{{From: "A", To: "B", Type: "knows", SourceChunkIDs: []string{"c2"}}}},
+	})
+	if len(reduced.Relations) != 1 || !slices.Equal(reduced.Relations[0].SourceChunkIDs, []string{"c1", "c2"}) {
+		t.Fatalf("relations = %#v, want one relation with both source chunks", reduced.Relations)
+	}
+}
+
+func TestEntityPageSlugIncludesType(t *testing.T) {
+	if got, want := entityPageSlug("曹操", "person"), "entity/person/曹操"; got != want {
+		t.Fatalf("entityPageSlug = %q, want %q", got, want)
+	}
+	if got, want := entityPageSlug("曹操", ""), "entity/曹操"; got != want {
+		t.Fatalf("entityPageSlug without type = %q, want %q", got, want)
+	}
+}
+
+func TestCosine32RejectsDifferentDimensions(t *testing.T) {
+	if got := cosine32([]float32{1}, []float32{1, 1}); got != 0 {
+		t.Fatalf("cosine32 unequal dimensions = %v, want 0", got)
 	}
 }

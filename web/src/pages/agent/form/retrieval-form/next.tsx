@@ -9,6 +9,10 @@ import {
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+import {
+  RerankCandidatesCountFormField,
+  rerankCandidatesCountSchema,
+} from '@/components/rerank-candidates-count-item';
 
 import { TopNFormField } from '@/components/top-n-item';
 import {
@@ -21,6 +25,10 @@ import {
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -46,7 +54,7 @@ export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
   keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
-  top_k: z.coerce.number(),
+  ...rerankCandidatesCountSchema,
   dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
@@ -150,14 +158,22 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(node?.id, form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <Form {...form}>
@@ -173,6 +189,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
               similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>

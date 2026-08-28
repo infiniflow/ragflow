@@ -103,7 +103,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.26.4` (the RAGFlow Docker image without embedding models).
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.0` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -149,7 +149,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### `ragflow`
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-- `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+- `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 ### `mysql`
 
@@ -186,7 +186,7 @@ s3:
 - `region_name`: Must be `auto`.
 - `endpoint_url`: `https://t3.storage.dev`, or `https://fly.storage.tigris.dev` on Fly.io.
 - `addressing_style`: Must be `virtual`.
-- `bucket` / `prefix_path`: Optional. Enables single-bucket mode — see [Migrate from multi-bucket to single-bucket mode](/migration#migrate-from-multi-bucket-to-single-bucket-mode).
+- `bucket` / `prefix_path`: Optional. Enables single-bucket mode — see [Migrate from multi-bucket to single-bucket mode](../migration/backup_and_migration.md#migrate-from-multi-bucket-to-single-bucket-mode).
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 

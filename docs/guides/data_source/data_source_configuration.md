@@ -390,6 +390,33 @@ The Bitbucket data source is used to synchronize Bitbucket repository content, i
 
 ![Bitbucket](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Bitbucket.jpg)
 
+## Azure DevOps
+
+The Azure DevOps data source is used to synchronize Azure Repos source files and pull requests to a RAGFlow knowledge base. After configuration, repository content and code review history can be queried.
+
+**Permission requirements**: The personal access token (PAT) must have the **Code (Read)** scope for the target organization.
+
+**Account version requirements**: Both Azure DevOps Services (`dev.azure.com`) and self-hosted Azure DevOps Server are supported. For a self-hosted server, provide the full collection URL as the organization, for example `https://tfs.contoso.com/DefaultCollection`. The URL must use HTTPS, because the personal access token is sent in the `Authorization` header.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Azure DevOps connection.
+- **Azure DevOps Personal Access Token**: The PAT used to access the organization.
+- **Azure DevOps Organization**: The organization name, or the collection URL of a self-hosted server.
+- **Index Mode**: Choose whether to index every repository in the organization, only selected team projects, or only selected repositories.
+- **Projects**: Comma separated team project names, used when indexing by project.
+- **Repositories**: Comma separated repositories, used when indexing by repository. Use `project/repo` to disambiguate repositories that share a name across projects.
+- **Content Types**: Choose whether to index source files, pull requests, or both.
+
+Pull request descriptions are re-fetched individually when they reach the 400
+character limit the list endpoint truncates at, so long descriptions are indexed
+in full. Completed and abandoned pull requests are filtered by their close date;
+active ones are always re-indexed, because Azure DevOps exposes no dependable
+"last updated" timestamp for them.
+- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+
+Build output and vendored directories such as `node_modules`, `bin`, `obj`, `dist`, and `vendor` are skipped, along with binary files and files larger than 1 MB.
+
 ## Jira
 
 The Jira data source is used to synchronize issues, comments, and project records in Jira to a RAGFlow knowledge base. After configuration, project tasks, requirements, bugs, and handling records can be queried.
@@ -635,6 +662,26 @@ The REST API data source is used to synchronize data returned by custom business
 - **Sync deleted files**: After this is enabled, deleted records are removed from the knowledge base index according to the synchronization or cleanup task.
 
 ![REST API](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/REST_API.jpg)
+
+## Xquik
+
+The Xquik data source searches public X posts and syncs each matching post into a RAGFlow knowledge base. Use it to retrieve posts by keyword, hashtag, author, language, or another supported X search operator.
+
+**Permission requirements**: Create an [Xquik API key](https://docs.xquik.com/api-reference/authentication). The key needs access to the Search Tweets API.
+
+**Usage requirements**: Each returned post uses 1 Xquik credit. The page size and maximum page count bound each sync. Xquik is an independent third-party service.
+
+**Configuration parameters**:
+
+- **Name**: Choose a name for this connection.
+- **Xquik API key**: Enter the key in the password field.
+- **X search query**: Enter keywords, hashtags, or operators such as `from:username`.
+- **Result order**: Select **Latest** for chronological results or **Top** for ranked results.
+- **Posts per page**: Set the maximum posts requested per API page.
+- **Max pages**: Stop each sync after this many pages.
+- **Batch size**: Set the number of posts sent to RAGFlow per batch.
+
+RAGFlow sends each incremental sync window to Xquik as inclusive `sinceTime` and exclusive `untilTime` bounds. Cursor pagination continues until no page remains or the configured maximum is reached.
 
 ## RSS
 

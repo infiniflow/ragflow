@@ -127,9 +127,13 @@ export const useProviderFields = ({
           return (values: any) => {
             const mt = values?.model_type;
             if (Array.isArray(mt)) {
-              return mt.includes('chat') || mt.includes('image2text');
+              return (
+                mt.includes('chat') ||
+                mt.includes('vision') ||
+                mt.includes('image2text')
+              );
             }
-            return mt === 'chat' || mt === 'image2text';
+            return mt === 'chat' || mt === 'vision' || mt === 'image2text';
           };
         case 'modelTypeIncludesTtsAndNotExists':
           return (values: any) => {

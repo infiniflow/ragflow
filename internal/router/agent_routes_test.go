@@ -17,12 +17,15 @@
 package router
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/handler"
 )
 
@@ -88,4 +91,63 @@ func TestAgentSessionCancelRouteRegistered(t *testing.T) {
 	if w.Code == http.StatusNotFound {
 		t.Fatal("POST /api/v1/tasks/:session_id/cancel was not registered")
 	}
+}
+
+// TestAgentUploadAndAttachmentDownloadOnBetaAuth pins the auth wiring of
+// the agent file upload and attachment-download routes: the embedded
+// agent page holds only a share (beta) token, so both must sit on the
+// beta-auth group. Unauthenticated, its middleware answers HTTP 200 +
+// code 102 instead of the bare 401 the JWT-only AuthMiddleware would
+// return, which is what bounced the embedded page to /login.
+func TestAgentUploadAndAttachmentDownloadOnBetaAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:  handler.NewAuthHandler(),
+		agentHandler: &handler.AgentHandler{},
+	}
+	r.Setup(engine)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"agent file upload", http.MethodPost, "/api/v1/agents/canvas-1/upload"},
+		{"agent attachment download", http.MethodGet, "/api/v1/agents/attachments/att-1/download"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
+			engine.ServeHTTP(resp, req)
+
+			if resp.Code == http.StatusNotFound {
+				t.Fatalf("%s %s returned 404; route is not registered", tt.method, tt.path)
+			}
+			var body struct {
+				Code common.ErrorCode `json:"code"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode response body: %v", err)
+			}
+			if resp.Code != http.StatusOK || body.Code != common.CodeDataError {
+				t.Fatalf("status=%d body=%s; want beta auth middleware to handle the route (HTTP 200 + code %d)", resp.Code, resp.Body.String(), common.CodeDataError)
+			}
+		})
+	}
+
+	t.Run("agent attachment preview stays JWT-only", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/agents/attachments/att-1/preview", nil)
+		engine.ServeHTTP(resp, req)
+
+		if resp.Code == http.StatusNotFound {
+			t.Fatal("GET /api/v1/agents/attachments/:attachment_id/preview was not registered")
+		}
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("status=%d body=%s; want the JWT-only AuthMiddleware to keep guarding the preview route", resp.Code, resp.Body.String())
+		}
+	})
 }

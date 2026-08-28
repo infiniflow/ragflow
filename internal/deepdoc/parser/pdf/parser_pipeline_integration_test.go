@@ -4,7 +4,6 @@ package pdf
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"image"
@@ -100,7 +99,7 @@ func TestIntegration_SectionsText(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -143,7 +142,7 @@ func TestIntegration_SectionsCount(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -169,7 +168,7 @@ func TestIntegration_TableStructure(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -223,7 +222,7 @@ func TestIntegration_TableImageB64(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -262,7 +261,7 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -322,7 +321,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("DLA", func(t *testing.T) {
 		var all [][]pdf.DLARegion
 		for i := 0; i < N; i++ {
-			regions, err := client.DLA(context.Background(), pageImg)
+			regions, err := client.DLA(t.Context(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -337,7 +336,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 200, 550, 400)
 		var all [][]pdf.TSRCell
 		for i := 0; i < N; i++ {
-			cells, err := client.TSR(context.Background(), cropped)
+			cells, err := client.TSR(t.Context(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -349,7 +348,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("OCRDetect", func(t *testing.T) {
 		var all [][]pdf.OCRBox
 		for i := 0; i < N; i++ {
-			boxes, err := client.OCRDetect(context.Background(), pageImg)
+			boxes, err := client.OCRDetect(t.Context(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -362,7 +361,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 100, 400, 130)
 		var all [][]pdf.OCRText
 		for i := 0; i < N; i++ {
-			texts, err := client.OCRRecognize(context.Background(), cropped)
+			texts, err := client.OCRRecognize(t.Context(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -506,7 +505,7 @@ func TestIntegration_TableAlign(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -546,7 +545,7 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -576,7 +575,7 @@ func TestIntegration_MultiChunk(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -605,7 +604,7 @@ func TestIntegration_NoRegression(t *testing.T) {
 			data := mustReadPDF(t, name)
 			cfg := pdf.DefaultParserConfig()
 			p := NewParser(cfg)
-			result, err := p.Parse(context.Background(), data, client)
+			result, err := p.Parse(t.Context(), data, client)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
@@ -631,7 +630,7 @@ func TestIntegration_TableRotation(t *testing.T) {
 		data := mustReadPDF(t, "rotate_0.pdf")
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), data, client)
+		result, err := p.Parse(t.Context(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -648,9 +647,8 @@ func TestIntegration_TableRotation(t *testing.T) {
 		// pages (regions and characters are in different coordinate
 		// spaces post-rotation).  Character extraction and rotation are
 		// verified via the lyt.CharsToBoxes path.
-		cfg.SkipOCR = true
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), data, client)
+		result, err := p.Parse(t.Context(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -669,7 +667,7 @@ func TestIntegration_WordSpacing(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -702,7 +700,7 @@ func TestE2E_ParseAndPostProcess(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), data, mock)
+	result, err := p.Parse(t.Context(), data, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

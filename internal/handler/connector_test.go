@@ -15,6 +15,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	syncerconnector "ragflow/internal/syncer/connector"
 )
 
 type fakeConnectorService struct {
@@ -36,7 +37,7 @@ func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.
 	return &service.ListConnectorsResponse{}, nil
 }
 
-func (s fakeConnectorService) TestConnector(context.Context, string, string) error {
+func (s fakeConnectorService) TestConnector(context.Context, string, string, entity.JSONMap) error {
 	return s.err
 }
 
@@ -240,9 +241,10 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name     string
-		err      error
-		wantCode common.ErrorCode
+		name        string
+		err         error
+		wantCode    common.ErrorCode
+		wantMessage string
 	}{
 		{
 			name:     "success",
@@ -262,12 +264,34 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 		{
 			name:     "unsupported source",
 			err:      service.ErrConnectorTestUnsupported,
-			wantCode: common.CodeArgumentError,
+			wantCode: common.CodeNotImplemented,
 		},
 		{
-			name:     "validation failure",
-			err:      fmt.Errorf("connector credentials are missing"),
+			name:        "source not implemented",
+			err:         fmt.Errorf("%w: seafile", service.ErrConnectorSourceNotImplemented),
+			wantCode:    common.CodeNotImplemented,
+			wantMessage: "connector source is not implemented: seafile",
+		},
+		{
+			name:     "schema validation failure",
+			err:      &syncerconnector.ConnectorValidationError{Message: "At least one content field must be configured (content_fields)."},
 			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "missing credential failure",
+			err:      &syncerconnector.ConnectorMissingCredentialError{Message: "REST API (bearer) requires 'token' in credentials"},
+			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "rate limit failure",
+			err:      &syncerconnector.RateLimitTriedTooManyTimesError{Message: "REST API rate limited"},
+			wantCode: common.CodeDataError,
+		},
+		{
+			name:        "unexpected failure",
+			err:         fmt.Errorf("boom"),
+			wantCode:    common.CodeServerError,
+			wantMessage: "boom",
 		},
 	}
 
@@ -293,6 +317,9 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 			}
 			if body["code"] != float64(tt.wantCode) {
 				t.Fatalf("code=%v want=%v body=%v", body["code"], tt.wantCode, body)
+			}
+			if tt.wantMessage != "" && body["message"] != tt.wantMessage {
+				t.Fatalf("message=%v want=%v body=%v", body["message"], tt.wantMessage, body)
 			}
 		})
 	}

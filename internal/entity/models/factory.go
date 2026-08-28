@@ -125,7 +125,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewPPIOModel(baseURL, urlSuffix), nil
 	case "voyage ai":
 		return NewVoyageModel(baseURL, urlSuffix), nil
-	case "paddleocr.net":
+	case "paddleocr":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
 	case "xunfei spark":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
@@ -149,7 +149,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewN1NModel(baseURL, urlSuffix), nil
 	case "bedrock":
 		return NewBedrockModel(baseURL, urlSuffix), nil
-	case "paddleocr":
+	case "paddleocr.local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
 	case "orcarouter":
 		return NewOrcaRouterModel(baseURL, urlSuffix), nil
@@ -163,6 +163,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewFunASRModel(baseURL, urlSuffix), nil
 	case "greenpt":
 		return NewGreenPTModel(baseURL, urlSuffix), nil
+	case "synthorai":
+		return NewSynthoraiModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

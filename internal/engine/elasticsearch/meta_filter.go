@@ -482,8 +482,8 @@ func csvOrList(value interface{}, flt map[string]interface{}) []interface{} {
 			}
 		} else {
 			// Comma-separated
-			parts := strings.Split(v, ",")
-			for _, p := range parts {
+			parts := strings.SplitSeq(v, ",")
+			for p := range parts {
 				trimmed := strings.TrimSpace(p)
 				if trimmed != "" {
 					members = append(members, strings.ToLower(trimmed))

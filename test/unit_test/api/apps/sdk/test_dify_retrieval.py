@@ -155,7 +155,12 @@ def _load_dify_retrieval(
         KnowledgebaseService=SimpleNamespace(get_by_id=lambda _id: kb, accessible=acc_fn),
     )
 
-    _stub(monkeypatch, "api.db.services.llm_service", LLMBundle=lambda *_a, **_k: SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=lambda *_a, **_k: SimpleNamespace(),
+        resolve_llm_setting=lambda *_a, **_k: {},
+    )
 
     _stub(
         monkeypatch,
@@ -422,7 +427,7 @@ class TestDifyRetrievalArgumentValidation:
 
         kwargs = module._fake_retriever.last_kwargs
         assert kwargs["page_size"] == 7
-        assert kwargs["top"] == 7
+        assert kwargs["knn_top_k"] == 7
         assert kwargs["similarity_threshold"] == 0.3
 
     @pytest.mark.p1

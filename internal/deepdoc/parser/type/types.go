@@ -95,10 +95,22 @@ type TextBox struct {
 	Top, Bottom float64
 	Text        string
 	PageNumber  int
-	LayoutType  string
-	LayoutNo    string
-	ColID       int
-	R           int
+	// Pages carries the full set of page numbers a box spans, when it is a
+	// single logical region split across consecutive pages (e.g. a table
+	// merged across pages by MergeTablesAcrossPages). When non-empty it
+	// overrides PageNumber for page-span computation in BoxesToSections, so a
+	// cross-page merged table records every page it occupies (not just the
+	// anchor page).
+	Pages      []int
+	LayoutType string
+	LayoutNo   string
+	ColID      int
+	R          int
+	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
+	// ocrMergeChars), as opposed to one built from embedded PDF chars
+	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
+	// so char-path digital PDFs are never silently de-duplicated.
+	IsOCR bool
 	// Post-TSR table annotation fields (Python: R/H/C/SP tags)
 	RTop, RBott   float64
 	HTop, HBott   float64
@@ -165,6 +177,10 @@ type TableItem struct {
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// Page is the 0-based page index this table was detected on. It is set
+	// by the pipeline and used by parity/replay harnesses to map replay
+	// intermediates (which are keyed by page) back onto the correct table.
+	Page int
 }
 
 // TSRCell represents one table cell from TSR.
@@ -172,6 +188,11 @@ type TSRCell struct {
 	X0, Y0, X1, Y1 float64
 	Text           string
 	Label          string
+	// Score is the TSR detection confidence. Python's layouts_cleanup keeps
+	// the higher-score line when two structure lines overlap (recognizer.py:141),
+	// so the production table assembly needs it to de-duplicate rows/columns
+	// the same way Python does.
+	Score float64
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {
@@ -212,7 +233,6 @@ type ParserConfig struct {
 	AutoRotateTables   *bool
 	SeparateTablesFigs bool
 	SortByTop          bool
-	SkipOCR            bool
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
@@ -250,6 +270,20 @@ const (
 	DLALabelFigureCaption = "figure caption"
 	DLALabelTableCaption  = "table caption"
 )
+
+// GarbageLayoutScoreThreshold is the minimum confidence a garbage-layout
+// region must reach to survive; below it the region is dropped. Mirrors
+// Python's garbage gate in LayoutRecognizer (deepdoc/vision/layout_recognizer.py:97).
+const GarbageLayoutScoreThreshold = 0.4
+
+// GarbageLayoutTypes are layout types dropped when their confidence is below
+// GarbageLayoutScoreThreshold. Mirrors Python's self.garbage_layouts
+// = ["footer", "header", "reference"].
+var GarbageLayoutTypes = map[string]bool{
+	LayoutTypeFooter:    true,
+	LayoutTypeHeader:    true,
+	LayoutTypeReference: true,
+}
 
 // ── Interfaces ────────────────────────────────────────────────────────────
 

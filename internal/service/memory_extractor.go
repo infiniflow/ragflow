@@ -51,9 +51,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// memoryTimeLayout is the storage format for valid_at / invalid_at,
-// matching timestamp_to_date on the Python side.
+// memoryTimeLayout is the storage format for valid_at / invalid_at: a
+// server-local wall-clock string ("YYYY-MM-DD HH:MM:SS"), never UTC-shifted.
 const memoryTimeLayout = "2006-01-02 15:04:05"
+
+// memoryNow is the wall clock behind every memory timestamp. Tests pin it
+// to a fixed instant in a fixed location so the server-local assertions are
+// deterministic on any host, including UTC CI runners.
+var memoryNow = time.Now
 
 // ErrMemoryTaskTerminal marks a memory-task failure that already has a durable
 // terminal outcome (task row absent, or progress already persisted as failed),
@@ -114,7 +119,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 
 	if err = s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
 		s.updateTaskProgress(ctx, taskID, -1, err.Error())
-		return fmt.Errorf("%w: %v", ErrMemoryTaskTerminal, err)
+		return fmt.Errorf("%w: %w", ErrMemoryTaskTerminal, err)
 	}
 	return nil
 }
@@ -147,7 +152,8 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 	}
 	s.updateTaskProgress(ctx, taskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(extracted)))
 
-	now := time.Now().UTC()
+	// conversation_time is stamped as server-local wall clock, not UTC.
+	now := memoryNow()
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
 		messages = append(messages, buildExtractedMessage(generateRawMessageID(ctx), sourceID, memoryID, msg, item, now))
@@ -172,7 +178,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	}
 
 	conversation := fmt.Sprintf("User Input: %s\nAgent Response: %s", msg.UserInput, msg.AgentResponse)
-	now := time.Now().UTC().Format(memoryTimeLayout)
+	now := memoryNow().Format(memoryTimeLayout)
 	messages := []models.Message{{Role: "system", Content: systemPrompt}}
 	if mem.UserPrompt != nil && strings.TrimSpace(*mem.UserPrompt) != "" {
 		messages = append(messages,
@@ -277,18 +283,20 @@ func parseMemoryExtraction(answer string, extractTypes []string) []extractedMemo
 }
 
 // formatMemoryTime normalizes an LLM-supplied timestamp (ISO 8601 or
-// already-formatted) into memoryTimeLayout. Unparseable or empty input
-// falls back to the supplied time.
+// already-formatted) into memoryTimeLayout. The parsed timestamp keeps its
+// own wall clock (no zone conversion). Unparseable or empty input falls
+// back to the supplied time formatted in its own location (server-local
+// when callers pass time.Now()).
 func formatMemoryTime(value string, fallback time.Time) string {
 	v := strings.TrimSpace(value)
 	if v != "" {
 		for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
 			if t, err := time.Parse(layout, v); err == nil {
-				return t.UTC().Format(memoryTimeLayout)
+				return t.Format(memoryTimeLayout)
 			}
 		}
 	}
-	return fallback.UTC().Format(memoryTimeLayout)
+	return fallback.Format(memoryTimeLayout)
 }
 
 // updateTaskProgress stamps and persists task progress, mirroring

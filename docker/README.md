@@ -24,6 +24,17 @@
 
 The [.env](./.env) file contains important environment variables for Docker.
 
+### Metadata database
+
+- `DB_TYPE`
+  The business metadata database type. Defaults to `mysql`. Supported values include `mysql`, `postgres`, `gaussdb`, and `oceanbase`.
+- `COMPOSE_PROFILES`
+  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}`.
+- `METADATA_DB_PROFILE`
+  Defaults to `mysql`, preserving the in-cluster MySQL service. Set it to `gaussdb` together with `DB_TYPE=gaussdb` to use an external GaussDB metadata database without starting MySQL.
+- `GAUSSDB_METADATA_HOST`, `GAUSSDB_METADATA_PORT`, `GAUSSDB_METADATA_USER`, `GAUSSDB_METADATA_PASSWORD`, `GAUSSDB_METADATA_DBNAME`, `GAUSSDB_METADATA_SCHEMA`
+  External GaussDB metadata database connection settings, used when `DB_TYPE=gaussdb`. Set `METADATA_DB_PROFILE=gaussdb` to keep the in-cluster MySQL service disabled.
+
 ### Elasticsearch
 
 - `STACK_VERSION`
@@ -50,7 +61,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### MySQL
 
 - `MYSQL_PASSWORD`
-  The password for MySQL.
+  The password for MySQL. Required only when `DB_TYPE=mysql` starts the in-cluster MySQL metadata database.
 - `MYSQL_PORT`
   The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
 - `EXPOSE_MYSQL_PORT`
@@ -79,7 +90,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.26.4`. The RAGFlow Docker image does not include embedding models.
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.0`. The RAGFlow Docker image does not include embedding models.
 
 
 > [!TIP]
@@ -172,11 +183,11 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
 
 ## 🐋 Service configuration
 
-[service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, this file is automatically created based on the [service_conf.yaml.template](./service_conf.yaml.template) file (replacing all environment variables by their values).
+[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-  - `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+  - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 - `deepdoc`
   The OSS DeepDoc vision service provides DLA, OCR, and TSR inference via ONNX Runtime.
@@ -206,6 +217,15 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
     - `password`: The password for OceanBase.
     - `host`: The hostname of the OceanBase service.
     - `port`: The port of OceanBase.
+
+- `gaussdb`
+  - `host`: The hostname or IP address of the GaussDB instance.
+  - `port`: The GaussDB port.
+  - `database`: The GaussDB database name. Defaults to `postgres`.
+  - `user`: The username for GaussDB.
+  - `password`: The password for GaussDB.
+  - `schema`: Optional schema used by the DocEngine. Defaults to `public`.
+  - RAGFlow does not start or manage GaussDB; set `DOC_ENGINE=gaussdb` only after preparing a GaussDB instance.
 
 - `oss`
   - `access_key`: The access key ID used to authenticate requests to the OSS service.

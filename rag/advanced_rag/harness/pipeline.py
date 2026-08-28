@@ -31,6 +31,11 @@ class Pipeline:
         self.trace: list[dict] = []
         # Latest relevant-document set produced by a routing tool this run.
         self._routed_docs: list[str] = list(getattr(rag_tools, "doc_scope", None) or [])
+        # Per-claim round state, read by both normal completion and timeout handling.
+        self._active_phase: str | None = None
+        self._round_initial_routed_docs: tuple[str, ...] = tuple(self._routed_docs)
+        self._round_had_evidence = False
+        self._round_had_routed_scope_progress = False
 
     async def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """Execute a registered tool by name."""
@@ -54,14 +59,19 @@ class Pipeline:
             elapsed = time.time() - start
             self.trace.append({"tool": tool_name, "args": kwargs, "elapsed": elapsed, "success": True})
             result = self._normalize(raw)
+            if result.chunks:
+                self._round_had_evidence = True
             # A routing tool (e.g. dataset_navigation_search) yields the relevant
             # document IDs; remember them so the scope-consuming tools above can
             # inherit them on later turns.
             if result.docs:
                 if hasattr(self.tools, "scoped_doc_ids"):
-                    self._routed_docs = self.tools.scoped_doc_ids(list(result.docs)) or []
+                    new_routed_docs = self.tools.scoped_doc_ids(list(result.docs)) or []
                 else:
-                    self._routed_docs = list(result.docs)
+                    new_routed_docs = list(result.docs)
+                if new_routed_docs and tuple(new_routed_docs) != self._round_initial_routed_docs:
+                    self._round_had_routed_scope_progress = True
+                self._routed_docs = new_routed_docs
             # Feed the shared citation pool: agent searches go through the
             # pipeline, so without this their evidence never reaches kbinfos and
             # the final answer has nothing to cite.

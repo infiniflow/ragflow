@@ -388,7 +388,7 @@ func loadLoopSnapshot[T any](ctx context.Context, defaultMode LoopStreamMode) (l
 	}
 	var st loopInterruptState
 	if err := json.Unmarshal(payload, &st); err != nil {
-		return loopSnapshot{}, fmt.Errorf("%w: decode state: %v", ErrLoopResumeStateInvalid, err)
+		return loopSnapshot{}, fmt.Errorf("%w: decode state: %w", ErrLoopResumeStateInvalid, err)
 	}
 	if st.Iteration < 1 {
 		return loopSnapshot{}, fmt.Errorf("%w: bad iteration %d", ErrLoopResumeStateInvalid, st.Iteration)
@@ -440,7 +440,7 @@ func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runna
 		current = input
 	} else {
 		if err := json.Unmarshal(snap.current, &current); err != nil {
-			return zero, fmt.Errorf("%w: decode current input: %v", ErrLoopResumeStateInvalid, err)
+			return zero, fmt.Errorf("%w: decode current input: %w", ErrLoopResumeStateInvalid, err)
 		}
 	}
 
@@ -498,7 +498,7 @@ func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runna
 		// shouldQuit fails the loop.
 		quit, qErr := shouldQuit(ctx, iteration, current, next)
 		if qErr != nil {
-			return zero, fmt.Errorf("%w: iteration %d: %v", ErrLoopQuitConditionFailed, iteration, qErr)
+			return zero, fmt.Errorf("%w: iteration %d: %w", ErrLoopQuitConditionFailed, iteration, qErr)
 		}
 		if quit {
 			bridgeState.delete(subCheckID)
@@ -570,7 +570,7 @@ func runLoopStream[T any](
 		current = input
 	} else {
 		if err := json.Unmarshal(snap.current, &current); err != nil {
-			return nil, fmt.Errorf("%w: decode current input: %v", ErrLoopResumeStateInvalid, err)
+			return nil, fmt.Errorf("%w: decode current input: %w", ErrLoopResumeStateInvalid, err)
 		}
 	}
 
@@ -597,7 +597,7 @@ func runLoopStream[T any](
 		// chunk cursor for "resume from the first un-emitted chunk".
 		replayed, derr := decodeReplayChunks[T](replayHistory)
 		if derr != nil {
-			return nil, fmt.Errorf("%w: decode replay chunks: %v", ErrLoopResumeStateInvalid, derr)
+			return nil, fmt.Errorf("%w: decode replay chunks: %w", ErrLoopResumeStateInvalid, derr)
 		}
 		streamReaders = append(streamReaders, schema.StreamReaderFromArray(replayed))
 		prefilledReplay = true
@@ -704,7 +704,7 @@ func runLoopStream[T any](
 
 			quit, qErr := shouldQuit(ctx, iteration, current, next)
 			if qErr != nil {
-				pipeErrCh <- fmt.Errorf("%w: iteration %d: %v", ErrLoopQuitConditionFailed, iteration, qErr)
+				pipeErrCh <- fmt.Errorf("%w: iteration %d: %w", ErrLoopQuitConditionFailed, iteration, qErr)
 				return
 			}
 			if quit {

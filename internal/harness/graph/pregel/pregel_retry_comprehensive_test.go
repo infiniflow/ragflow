@@ -53,6 +53,69 @@ func TestRetry_BackoffTiming(t *testing.T) {
 	}
 }
 
+func TestRetry_NodePolicyOverridesEnginePolicy(t *testing.T) {
+	var attempts atomic.Int32
+	sg := graphPkg.NewStateGraph(map[string]any{})
+	sg.AddChannel("value", channels.NewLastValue(""))
+
+	nodePolicy := types.RetryPolicy{
+		InitialInterval: 0,
+		BackoffFactor:   1,
+		MaxInterval:     0,
+		MaxAttempts:     1,
+		Jitter:          false,
+		RetryOn:         func(error) bool { return true },
+	}
+	sg.AddNodeWithOptions("work", func(context.Context, any) (any, error) {
+		attempts.Add(1)
+		return nil, fmt.Errorf("fail")
+	}, types.NodeOptions{RetryPolicy: &nodePolicy})
+	_ = sg.AddEdge(constants.Start, "work")
+	_ = sg.AddEdge("work", constants.End)
+
+	enginePolicy := nodePolicy
+	enginePolicy.MaxAttempts = 3
+	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&enginePolicy))
+
+	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Fatalf("expected node retry policy to stop after 1 attempt, got %d", got)
+	}
+}
+
+func TestRetry_EnginePolicyFallback(t *testing.T) {
+	var attempts atomic.Int32
+	sg := graphPkg.NewStateGraph(map[string]any{})
+	sg.AddChannel("value", channels.NewLastValue(""))
+	sg.AddNode("work", func(context.Context, any) (any, error) {
+		attempts.Add(1)
+		return nil, fmt.Errorf("fail")
+	})
+	_ = sg.AddEdge(constants.Start, "work")
+	_ = sg.AddEdge("work", constants.End)
+
+	enginePolicy := types.RetryPolicy{
+		InitialInterval: 0,
+		BackoffFactor:   1,
+		MaxInterval:     0,
+		MaxAttempts:     2,
+		Jitter:          false,
+		RetryOn:         func(error) bool { return true },
+	}
+	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&enginePolicy))
+
+	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Fatalf("expected engine retry policy to stop after 2 attempts, got %d", got)
+	}
+}
+
 // ============================================================
 // P0: Retry with jitter produces varying times
 // ============================================================

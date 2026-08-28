@@ -160,60 +160,6 @@ func (m *OpenAIAPICompatibleModel) ChatStreamlyWithSender(ctx context.Context, m
 	})
 }
 
-// Hint keywords for model type inference, matching Python's
-// OpenAIAPICompatible class-level hint constants.
-var (
-	embeddingHints = []string{"embed", "embedding", "bge"}
-	rerankHints    = []string{"rerank", "reranker"}
-	asrHints       = []string{"asr", "stt", "transcribe", "transcriber", "whisper"}
-	ttsHints       = []string{"tts", "text-to-speech"}
-	visionHints    = []string{
-		"vl", "vision", "llava", "internvl", "minicpm-v",
-		"gpt-4o", "glm-4v", "qvq", "qwen-vl", "pixtral",
-	}
-	ocrHints = []string{"ocr"}
-)
-
-// containsHint checks whether modelName (lowercased) contains any of the
-// given hint substrings.
-func containsHint(modelName string, hints []string) bool {
-	for _, hint := range hints {
-		if strings.Contains(modelName, hint) {
-			return true
-		}
-	}
-	return false
-}
-
-// InferModelTypes derives RAGFlow LLM model types from the model name using
-// keyword heuristics, covering all seven supported types: chat, embedding,
-// rerank, asr, tts, ocr, and vision (always combined with chat).
-func InferModelTypes(modelName string) []string {
-	lower := strings.ToLower(modelName)
-
-	if containsHint(lower, rerankHints) {
-		return []string{"rerank"}
-	}
-	if containsHint(lower, embeddingHints) {
-		return []string{"embedding"}
-	}
-	if containsHint(lower, asrHints) {
-		return []string{"asr"}
-	}
-	if containsHint(lower, ttsHints) {
-		return []string{"tts"}
-	}
-	if containsHint(lower, ocrHints) {
-		return []string{"ocr"}
-	}
-
-	types := []string{"chat"}
-	if containsHint(lower, visionHints) {
-		types = append(types, "vision")
-	}
-	return types
-}
-
 // ttsVoiceForModel maps model names to appropriate TTS voices for
 // OpenAI-compatible providers (e.g. SiliconFlow). Returns "alloy" as
 // the generic fallback.

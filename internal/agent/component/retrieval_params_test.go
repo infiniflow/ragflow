@@ -89,7 +89,7 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 		t.Fatalf("newRetrievalComponent: %v", err)
 	}
 
-	if _, err := component.Invoke(context.Background(), nil, map[string]any{"query": "爱"}); err != nil {
+	if _, err = component.Invoke(t.Context(), nil, map[string]any{"query": "爱"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 
@@ -137,7 +137,7 @@ func TestRetrievalComponentForwardsExplicitZeroSimilarityParams(t *testing.T) {
 		t.Fatalf("keywords_similarity_weight = %#v, present = %v; want explicit zero", value, ok)
 	}
 
-	if _, err := component.Invoke(context.Background(), nil, map[string]any{"query": "zero"}); err != nil {
+	if _, err := component.Invoke(t.Context(), nil, map[string]any{"query": "zero"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if recorder.request.SimilarityThreshold == nil || *recorder.request.SimilarityThreshold != 0 {

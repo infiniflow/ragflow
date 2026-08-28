@@ -223,7 +223,7 @@ func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ch := runParallelFanout(context.Background(), "par", runner, items, indices, opts, bridge)
+		ch := runParallelFanout(t.Context(), "par", runner, items, indices, opts, bridge)
 		for r := range ch {
 			// Each result must carry its original index
 			// (the order-preservation contract under

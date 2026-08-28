@@ -24,7 +24,7 @@ import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-
 import { getEmbeddingBaseName } from '@/utils/llm-util';
 import { useDebounce } from 'ahooks';
 import { toLower } from 'lodash';
-import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { RAGFlowAvatar } from './ragflow-avatar';
@@ -54,46 +54,27 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     handleScroll,
     hasNextPage,
   } = useFetchKnowledgeList(false, debouncedSearchString);
-  const datasetCacheRef = useRef(new Map<string, IDataset>());
-
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],
   );
 
-  // Selected dataset IDs that are neither in the currently loaded page nor
-  // already cached. These need to be fetched by ID so their names can be
-  // echoed back in the form field (the paginated list may not contain them).
-  const missingIds = useMemo(() => {
-    const loadedIds = new Set(datasetListOrigin.map((d) => d.id));
-    return selectedDatasetIds.filter(
-      (id) => !loadedIds.has(id) && !datasetCacheRef.current.has(id),
-    );
-  }, [datasetListOrigin, selectedDatasetIds]);
-
-  const { data: missingDatasets } = useFetchDatasetsByIds(missingIds);
+  // The paginated list may not contain the selected datasets (unloaded
+  // pages, filtered out by the search box), so resolve them by ID to echo
+  // their names back in the form field. A dataset that has been deleted
+  // comes back missing and its badge falls back to the raw id.
+  const { data: selectedDatasets } = useFetchDatasetsByIds(selectedDatasetIds);
 
   const datasetList = useMemo(() => {
-    datasetListOrigin.forEach((dataset) => {
-      datasetCacheRef.current.set(dataset.id, dataset);
-    });
-    missingDatasets?.forEach((dataset) => {
-      datasetCacheRef.current.set(dataset.id, dataset);
-    });
-
-    const selectedDatasets = selectedDatasetIds
-      .map((id) => datasetCacheRef.current.get(id))
-      .filter(Boolean) as IDataset[];
-
     return Array.from(
       new Map(
-        [...datasetListOrigin, ...selectedDatasets].map((dataset) => [
+        [...datasetListOrigin, ...(selectedDatasets ?? [])].map((dataset) => [
           dataset.id,
           dataset,
         ]),
       ).values(),
     );
-  }, [datasetListOrigin, selectedDatasetIds, missingDatasets]);
+  }, [datasetListOrigin, selectedDatasets]);
 
   // Datasets are mutually selectable when their embedding models resolve to
   // the same base model name, even if they use different provider instances
@@ -104,7 +85,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
-    const datasetListMap = datasetList.map((item: IDataset) => {
+    return datasetList.map((item: IDataset) => {
       return {
         label: item.name,
         icon: () => (
@@ -128,14 +109,13 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
         ),
         value: item.id,
         disabled:
-          item.chunk_count <= 0 ||
+          item.chunk_count === 0 ||
           item.chunk_method === DocumentParserType.Tag ||
           (selectedEmbedBaseName !== '' &&
-            getEmbeddingBaseName(item.embedding_model) !== selectedEmbedBaseName),
+            getEmbeddingBaseName(item.embedding_model) !==
+              selectedEmbedBaseName),
       };
     });
-
-    return datasetListMap;
   }, [datasetList, selectedEmbedBaseName]);
 
   const handleSearchChange = useCallback((value: string) => {

@@ -22,23 +22,25 @@ import (
 
 // Config contains runtime limits for the datasource syncer.
 type Config struct {
-	TaskWorkerCount    int
-	TaskQueueSize      int
-	JobWorkerCount     int
-	JobQueueSize       int
-	ItemRetryCount     int
-	ItemRetryBaseDelay time.Duration
+	TaskWorkerCount       int
+	TaskQueueSize         int
+	JobWorkerCount        int
+	JobQueueSize          int
+	ItemRetryCount        int
+	ItemRetryBaseDelay    time.Duration
+	MaxAnchorRestartCount int
 }
 
 // DefaultConfig returns the first-version syncer defaults.
 func DefaultConfig() Config {
 	return Config{
-		TaskWorkerCount:    5,
-		TaskQueueSize:      10,
-		JobWorkerCount:     400,
-		JobQueueSize:       400,
-		ItemRetryCount:     3,
-		ItemRetryBaseDelay: time.Second,
+		TaskWorkerCount:       5,
+		TaskQueueSize:         10,
+		JobWorkerCount:        400,
+		JobQueueSize:          450,
+		ItemRetryCount:        3,
+		ItemRetryBaseDelay:    time.Second,
+		MaxAnchorRestartCount: 2,
 	}
 }
 
@@ -67,6 +69,10 @@ func (c Config) Normalize() Config {
 
 	if c.ItemRetryBaseDelay <= 0 {
 		c.ItemRetryBaseDelay = def.ItemRetryBaseDelay
+	}
+
+	if c.MaxAnchorRestartCount <= 0 {
+		c.MaxAnchorRestartCount = def.MaxAnchorRestartCount
 	}
 
 	return c

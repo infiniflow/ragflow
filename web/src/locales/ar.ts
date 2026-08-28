@@ -466,9 +466,6 @@ export default {
       dataSource: 'مصدر البيانات',
       linkSourceSetTip: 'إدارة ربط مصدر البيانات بمجموعة البيانات هذه',
       linkDataSource: 'ربط مصدر البيانات',
-      tocExtraction: 'فهرس الصفحة',
-      tocExtractionTip:
-        'بالنسبة للقطع الموجودة، قم بإنشاء جدول محتويات هرمي (دليل واحد لكل ملف). أثناء الاستعلامات، عند تنشيط "تحسين الدليل"، سيستخدم النظام نموذجًا كبيرًا لتحديد عناصر الدليل ذات الصلة بسؤال المستخدم، وبالتالي تحديد الأجزاء ذات الصلة.',
       deleteGenerateModalContent:
         "<p>حذف النتائج <strong class='text-text-primary'>{{type}}</strong> التي تم إنشاؤها\n        سيؤدي إلى إزالة جميع الكيانات والعلاقات المشتقة من مجموعة البيانات هذه.\n        ستبقى ملفاتك الأصلية سليمة.<p>\n        <br/>\n        هل تريد الاستمرار؟",
       extractRaptor: 'استخراج رابتور',
@@ -926,6 +923,7 @@ export default {
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      azure_devopsDescription: 'اربط Azure DevOps لمزامنة ملفات المستودع وطلبات السحب.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',

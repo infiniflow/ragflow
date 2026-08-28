@@ -13,10 +13,14 @@ import (
 //	 - []interface{}: multimodal content array where each element is map[string]interface{}
 //	   (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
 type Message struct {
-	Role       string                   `json:"role"`
-	Content    interface{}              `json:"content"`
-	ToolCallID string                   `json:"tool_call_id,omitempty"`
-	ToolCalls  []map[string]interface{} `json:"tool_calls,omitempty"`
+	Role         string                   `json:"role"`
+	Content      interface{}              `json:"content"`
+	Name         interface{}              `json:"name,omitempty"`
+	ToolCallID   string                   `json:"tool_call_id,omitempty"`
+	ToolCalls    []map[string]interface{} `json:"tool_calls,omitempty"`
+	FunctionCall interface{}              `json:"function_call,omitempty"`
+	Refusal      interface{}              `json:"refusal,omitempty"`
+	Audio        interface{}              `json:"audio,omitempty"`
 }
 
 // ToolCallSession mirrors Python's common.mcp_tool_call_conn.ToolCallSession protocol.
@@ -98,6 +102,9 @@ type ASRResponse struct {
 
 type TTSResponse struct {
 	Audio []byte `json:"audio"`
+	// MediaType is the MIME type of Audio (e.g. "audio/mpeg", "audio/wav").
+	// Empty means the caller's default (audio/mpeg).
+	MediaType string `json:"media_type,omitempty"`
 }
 
 type OCRFileResponse struct {

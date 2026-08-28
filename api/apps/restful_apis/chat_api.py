@@ -27,7 +27,8 @@ from quart import Response, request
 from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
-from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config, resolve_llm_setting
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
+from api.db.services.llm_service import resolve_llm_setting
 from api.db.joint_services.tenant_model_service import (
     get_api_key,
     get_composite_model_name_by_id,
@@ -199,6 +200,7 @@ def _build_default_completion_dialog():
         prompt_config=deepcopy(_DEFAULT_DIRECT_CHAT_PROMPT_CONFIG),
         kb_ids=[],
         top_n=6,
+        rerank_candidates_count=64,
         top_k=1024,
         rerank_id="",
         similarity_threshold=0.1,
@@ -460,6 +462,7 @@ async def create():
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)
+        req.setdefault("rerank_candidates_count", 64)
         req.setdefault("top_k", 1024)
         req.setdefault("rerank_id", "")
         req.setdefault("similarity_threshold", 0.1)
@@ -1304,6 +1307,7 @@ async def session_completion(chat_id_in_arg=""):
             if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
+            dia.tenant_llm_id = None
             dia.llm_setting = chat_model_config
         elif not dia.llm_id:
             logging.info("empty chat_model_id in req, use default chat model.")

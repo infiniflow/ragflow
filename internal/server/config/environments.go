@@ -72,7 +72,6 @@ type Environments struct {
 	DeepDocBatchSingle                string `mapstructure:"deep_doc_batch_single"`
 	DeepDocBatchCount                 int    `mapstructure:"deep_doc_batch_count"`
 	DeepDocBatchLogLevel              string `mapstructure:"deep_doc_batch_log_level"`
-	DeepDocSkipOCR                    bool   `mapstructure:"deep_doc_skip_ocr"`
 	DeepDocCompareOnly                bool   `mapstructure:"deep_doc_compare_only"`
 	DeepDocCompareFilter              string `mapstructure:"deep_doc_compare_filter"`
 	DeepDocCompareCSV                 string `mapstructure:"deep_doc_compare_csv"`
@@ -366,12 +365,6 @@ func (c *Config) GetEnvironments() error {
 	DeepDocBatchLogLevelStr := common.GetEnv(common.EnvBatchLogLevel)
 	if DeepDocBatchLogLevelStr != "" {
 		c.environments.DeepDocBatchLogLevel = DeepDocBatchLogLevelStr
-	}
-
-	DeepDocBatchSkipOCRStr := common.GetEnv(common.EnvBatchSkipOCR)
-	if DeepDocBatchSkipOCRStr != "" {
-		DeepDocBatchSkipOCR := strings.ToLower(DeepDocBatchSkipOCRStr) == "true"
-		c.environments.DeepDocSkipOCR = DeepDocBatchSkipOCR
 	}
 
 	DeepDocBatchCompareOnlyStr := common.GetEnv(common.EnvBatchCompareOnly)
@@ -697,10 +690,6 @@ func (c *Config) GetDeepDocBatchCount() int {
 
 func (c *Config) GetDeepDocBatchLogLevel() string {
 	return c.environments.DeepDocBatchLogLevel
-}
-
-func (c *Config) GetDeepDocBatchSkipOCR() bool {
-	return c.environments.DeepDocSkipOCR
 }
 
 func (c *Config) GetDeepDocCompareOnly() bool {

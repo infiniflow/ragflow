@@ -652,9 +652,6 @@ export default {
       dataSource: '데이터 소스',
       linkSourceSetTip: '이 데이터셋과 데이터 소스 간의 연결을 관리합니다',
       linkDataSource: '데이터 소스 연결',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        '기존 chunk에 대해 계층적 목차(파일당 하나의 디렉토리)를 생성합니다. 쿼리 시 디렉토리 향상이 활성화되면 시스템이 대형 모델을 사용하여 사용자 질문과 관련된 디렉토리 항목을 결정하고 관련 chunk를 식별합니다.',
       deleteGenerateModalContent: `
         <p>생성된 <strong class='text-text-primary'>{{type}}</strong> 결과를 삭제하면
         이 데이터셋에서 파생된 모든 엔티티와 관계가 제거됩니다.
@@ -749,6 +746,12 @@ export default {
       methodExamplesDescription: '다음 스크린샷은 설명을 위해 제공됩니다.',
       dialogueExamplesTitle: '보기',
       methodEmpty: '데이터셋 카테고리에 대한 시각적 설명이 여기에 표시됩니다',
+      audio: `<p>지원 파일 형식: <b>WAV, MP3, AAC, FLAC, OGG</b> 및 기타 일반적인 오디오 형식.</p>
+<p>이 방법은 음성-텍스트 변환 모델을 사용하여 오디오 파일을 텍스트로 변환합니다.</p>`,
+      email: `<p>지원 파일 형식: <b>EML</b> 및 <b>MSG</b>.</p>
+<p>이 방법은 이메일 파일을 파싱하여 헤더 필드(보낸 사람, 받는 사람, 참조, 제목, 날짜 등), 본문 내용 및 첨부 파일을 추출합니다.</p>`,
+      knowledgeCompiler: `<p>이 파이프라인은 파일을 파싱하고 청크로 분할한 후, Knowledge Compiler 컴포넌트를 통해 청크를 구조화된 지식 단위(지식 그래프, 위키, RAPTOR, 마인드맵 또는 데이터셋 탐색)로 컴파일합니다.</p>
+<p>컴파일된 지식 단위는 청크 스트림에 병합된 청크로 출력되므로, 청크로 분할된 문서 위에 검색 가능한 지식 계층을 구축하는 데 적합합니다.</p>`,
       book: `<p>지원 파일 형식: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       PDF 도서의 경우 불필요한 정보를 제거하고 분석 시간을 줄이기 위해 <i>페이지 범위</i>를 설정하세요.</p>`,
       laws: `<p>지원 파일 형식: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -1066,6 +1069,9 @@ export default {
       created: '생성됨',
       action: '작업',
       embedModalTitle: '웹페이지에 삽입',
+      embedUserIdPlaceholder: '예: user-001',
+      embedUserIdTooltip:
+        '임베드 페이지의 최종 사용자를 식별하는 문자열(최대 255자)입니다. 임베드 URL에 userId 매개변수로 추가됩니다.',
       published: '게시됨',
       publishedTooltip:
         '이 삽입에 게시된 버전을 사용합니다. 활성화하면 생성된 URL에 release=true가 포함됩니다.',
@@ -1249,6 +1255,7 @@ export default {
         'Microsoft Graph를 통해 SharePoint 사이트를 연결하여 문서 라이브러리를 동기화합니다.',
       sharepointSiteUrlTip:
         '인덱싱할 SharePoint 사이트의 전체 URL (예: https://contoso.sharepoint.com/sites/MySite). Sites.Read.All 및 Files.Read.All 애플리케이션 권한이 있는 Azure AD 앱이 필요합니다 (관리자 동의).',
+      azure_devopsDescription: 'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
       bitbucketDescription: 'Bitbucket을 연결하여 PR 콘텐츠를 동기화합니다.',
       bitbucketTopWorkspaceTip:
         '인덱싱할 Bitbucket 워크스페이스 (예: https://bitbucket.org/atlassian/workspace 의 "atlassian").',
@@ -1757,6 +1764,8 @@ export default {
       listModelsEmpty: '사용 가능한 모델 없음',
       listModelsLoading: '모델 로딩 중…',
       selectModelBeforeVerify: '검증 전 모델을 최소 하나 이상 선택해 주세요.',
+      selectModelBeforeSave:
+        '저장하기 전에 모델을 하나 이상 검색하고 선택해 주세요.',
       addCustomModel: '커스텀 모델 추가',
       addCustomModelTitle: '커스텀 모델 추가',
       editCustomModelTitle: '모델 편집',
@@ -2676,7 +2685,7 @@ Task
 Extract the most important keywords/phrases of a given piece of text content.
 
 Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`,
@@ -2684,10 +2693,10 @@ Requirements
 You are a text analyzer.
 
 Task
-Propose 3 questions about a given piece of text content.
+Propose {{ topn }} questions about a given piece of text content.
 
 Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.

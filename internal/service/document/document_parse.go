@@ -111,7 +111,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if !exists {
 		return nil
 	}
-	if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
 	}
 	return nil
@@ -351,7 +351,7 @@ var errParseNotRunning = errors.New("parse task is not in running status")
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
+		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
 	}
 
 	docRun := ""
@@ -365,12 +365,12 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 
 	if task != nil {
 		if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
-			return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
+			return fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, err)
 		}
 	}
 
 	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
-		return fmt.Errorf("failed to update document %s: %v", doc.ID, upErr)
+		return fmt.Errorf("failed to update document %s: %w", doc.ID, upErr)
 	}
 	return nil
 }
@@ -405,7 +405,7 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", tenantID)
 			s.deleteChunkImages(ctx, doc, indexName)
-			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+			if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 				return err
 			}
 		}
@@ -517,16 +517,11 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 		return errors.New("database error (Document update)")
 	}
 
-	if s.docEngine == nil {
-		return nil
+	if s.docEngine != nil {
+		if err := s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+			return err
+		}
 	}
-
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	return s.docEngine.UpdateChunks(
-		ctx,
-		map[string]interface{}{"doc_id": doc.ID},
-		map[string]interface{}{"available_int": status},
-		indexName,
-		doc.KbID,
-	)
+	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	return nil
 }

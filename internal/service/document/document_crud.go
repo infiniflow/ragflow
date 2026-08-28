@@ -194,11 +194,41 @@ func (s *DocumentService) ApplyDocCounts(ctx context.Context, docID, kbID string
 // progress_msg) reflects in-flight Go pipeline progress. Best-effort by
 // design; callers log and continue on error.
 func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {
-	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"progress":     progress,
 		"run":          run,
 		"progress_msg": progressMsg,
-	})
+	}
+	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
+		return err
+	} else if doc != nil && doc.ProcessBeginAt != nil {
+		duration := time.Since(*doc.ProcessBeginAt).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		updates["process_duration"] = duration
+	}
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
+}
+
+// UpdateRunState mirrors live progress and status into the document row when
+// the existing progress log cannot be read. It intentionally leaves the log
+// untouched so a later event can retry seeding and append it safely.
+func (s *DocumentService) UpdateRunState(ctx context.Context, docID string, progress float64, run string) error {
+	updates := map[string]interface{}{
+		"progress": progress,
+		"run":      run,
+	}
+	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
+		return err
+	} else if doc != nil && doc.ProcessBeginAt != nil {
+		duration := time.Since(*doc.ProcessBeginAt).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		updates["process_duration"] = duration
+	}
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
 }
 
 // DeleteDocument delete document — delegates to full cleanup logic.
@@ -304,7 +334,18 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	return s.deleteDocRecordWithCounters(ctx, doc, kb.ID)
+	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
+		return err
+	}
+	// File replacement/deletion uses this path instead of deleteDocumentFull.
+	// Publish the same deletion event so the dataset-level Wiki consumer removes
+	// the deleted document's contribution in both paths.
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID); err != nil {
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
+	}
+	return nil
 }
 
 // InsertDocument creates a document row and increments the owning KB's doc_num

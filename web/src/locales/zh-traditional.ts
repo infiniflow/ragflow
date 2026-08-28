@@ -10,6 +10,7 @@ export default {
       name: '名稱',
       save: '保持',
       namePlaceholder: '請輸入名稱',
+      nameSlashError: '名稱不能包含 "/"',
       next: '下一步',
       create: '創建',
       edit: '編輯',
@@ -246,6 +247,12 @@ export default {
       methodExamplesDescription: '為方便您理解，我們附上相關截圖供您參考。',
       dialogueExamplesTitle: '對話示例',
       methodEmpty: '這將顯示知識庫類別的可視化解釋',
+      audio: `<p>支援的檔案格式為 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常見音訊格式。</p>
+<p>本方法使用語音轉文字模型將音訊檔案轉錄為文字。</p>`,
+      email: `<p>支援的檔案格式為 <b>EML</b> 和 <b>MSG</b>。</p>
+<p>本方法解析電子郵件檔案，擷取標頭欄位（如寄件者、收件者、副本、主旨和日期）、內文以及附件。</p>`,
+      knowledgeCompiler: `<p>本 pipeline 先解析檔案並分塊，然後透過 Knowledge Compiler 元件將分塊編譯為結構化知識單元（知識圖譜、百科、RAPTOR、心智圖或資料集導航）。</p>
+<p>編譯後的知識單元以分塊形式合併進分塊流輸出，適合在分塊文件之上構建可檢索的知識層。</p>`,
       book: `<p>支持的文件格式為<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
         由於一本書很長，並不是所有部分都有用，如果是 PDF，
         請為每本書設置<i>頁面範圍</i>，以消除負面影響並節省分析計算時間。</p>`,
@@ -772,6 +779,7 @@ export default {
       modelsToBeAddedTooltip:
         '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
       dropboxDescription: '連接 Dropbox，同步指定帳號下的文件與文件夾。',
+      azure_devopsDescription: '連接 Azure DevOps 以同步儲存庫檔案和拉取請求。',
       bitbucketDescription: '連接 Bitbucket，同步 PR 內容。',
       zendeskDescription: '連接 Zendesk，同步工單、文章及其他內容。',
       bitbucketTopWorkspaceTip:

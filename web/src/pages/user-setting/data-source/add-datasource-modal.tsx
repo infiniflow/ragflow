@@ -14,10 +14,15 @@
  *  limitations under the License.
  */
 
-import { DynamicForm, FormFieldConfig } from '@/components/dynamic-form';
+import {
+  DynamicForm,
+  DynamicFormRef,
+  FormFieldConfig,
+} from '@/components/dynamic-form';
+import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
@@ -27,6 +32,7 @@ import {
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
 } from './constant';
+import { useTestDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 
 const AddDataSourceModal = ({
@@ -37,6 +43,7 @@ const AddDataSourceModal = ({
   onOk,
 }: IModalProps<FieldValues> & { sourceData?: IDataSorceInfo }) => {
   const { t } = useTranslation();
+  const formRef = useRef<DynamicFormRef>(null);
   const fields = useMemo<FormFieldConfig[]>(() => {
     if (!sourceData) {
       return [];
@@ -46,6 +53,11 @@ const AddDataSourceModal = ({
       ...getDataSourceFieldsWithExtras(t, sourceData.id as any),
     ] as FormFieldConfig[];
   }, [sourceData, t]);
+  const { loading: testLoading, handleTest } = useTestDataSource(
+    formRef,
+    sourceData?.id,
+    fields,
+  );
 
   const defaultValues = useMemo<FieldValues>(
     () =>
@@ -58,10 +70,28 @@ const AddDataSourceModal = ({
     [sourceData],
   );
 
-  const handleOk = async (values?: FieldValues) => {
-    await onOk?.(values);
+  const handleOk = useCallback(
+    async (values?: FieldValues) => {
+      const success = await onOk?.(values);
+      if (success) {
+        hideModal?.();
+      }
+    },
+    [hideModal, onOk],
+  );
+
+  const handleCancel = useCallback(() => {
     hideModal?.();
-  };
+  }, [hideModal]);
+
+  const handleSubmit = useCallback(
+    (values: FieldValues) => {
+      handleOk(values);
+    },
+    [handleOk],
+  );
+
+  const handleFormSubmit = useCallback(() => {}, []);
 
   return (
     <Modal
@@ -80,25 +110,27 @@ const AddDataSourceModal = ({
       footer={<div className="p-4"></div>}
     >
       <DynamicForm.Root
+        ref={formRef}
         fields={fields}
-        onSubmit={(data) => {
-          console.log(data);
-        }}
+        onSubmit={handleFormSubmit}
         defaultValues={defaultValues}
         labelClassName="font-normal"
       >
         <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
-          <DynamicForm.CancelButton
-            handleCancel={() => {
-              hideModal?.();
-            }}
-          />
+          <DynamicForm.CancelButton handleCancel={handleCancel} />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleTest}
+            disabled={testLoading}
+            loading={testLoading}
+          >
+            {t('setting.dataSourceTestConnection')}
+          </Button>
           <DynamicForm.SavingButton
             submitLoading={loading || false}
             buttonText={t('common.confirm')}
-            submitFunc={(values: FieldValues) => {
-              handleOk(values);
-            }}
+            submitFunc={handleSubmit}
           />
         </div>
       </DynamicForm.Root>

@@ -844,7 +844,7 @@ async def _wiki_scan_current_chunk_state(
         while True:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "doc_id", "content_with_weight"],
+                ["id", "doc_id", "content_with_weight", "compile_kwd"],
                 [],
                 {
                     "doc_id": [doc_id],
@@ -858,8 +858,18 @@ async def _wiki_scan_current_chunk_state(
                 index,
                 [kb_id],
             )
-            rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight"]) or {}
+            rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight", "compile_kwd"]) or {}
             for row_id, row in rows.items():
+                # The source-chunk query also has a backend-level
+                # ``must_not exists compile_kwd`` guard. Keep this explicit
+                # check because some doc-store implementations do not apply
+                # that nested filter consistently. Derived Wiki/structure
+                # rows must never become MAP inputs or chunk deltas.
+                compile_kwd = row.get("compile_kwd")
+                if isinstance(compile_kwd, (list, tuple, set)):
+                    compile_kwd = next((str(value).strip() for value in compile_kwd if value), "")
+                if str(compile_kwd or "").strip():
+                    continue
                 chunk_id = str(row.get("id") or row_id or "")
                 if chunk_id:
                     state[chunk_id] = {
@@ -912,6 +922,39 @@ async def _wiki_load_active_map_state(
         if len(rows) < 1000:
             break
         offset += 1000
+    # Active snapshots are normally source-only because they are committed
+    # from _wiki_scan_current_chunk_state. Older snapshots, however, may have
+    # been created before derived rows were excluded. If a historical state ID
+    # still exists in the index and carries compile_kwd, it is a compiled
+    # product rather than an original chunk and must not be counted as a
+    # deleted source chunk. Missing rows are intentionally retained: they are
+    # the legitimate deleted/removed source chunks we need to report.
+    chunk_ids = list(state)
+    for start in range(0, len(chunk_ids), 500):
+        batch_ids = chunk_ids[start : start + 500]
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "compile_kwd"],
+                [],
+                {"id": batch_ids},
+                [],
+                OrderByExpr(),
+                0,
+                len(batch_ids),
+                index,
+                [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["id", "compile_kwd"]) or {}
+        except Exception:
+            logging.exception("wiki_map: failed to validate historical source snapshot")
+            continue
+        for row_id, row in rows.items():
+            compile_kwd = row.get("compile_kwd")
+            if isinstance(compile_kwd, (list, tuple, set)):
+                compile_kwd = next((str(value).strip() for value in compile_kwd if value), "")
+            if str(compile_kwd or "").strip():
+                state.pop(str(row.get("id") or row_id), None)
     return state
 
 

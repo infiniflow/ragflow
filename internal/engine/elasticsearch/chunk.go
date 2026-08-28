@@ -209,6 +209,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		// Document line: work with a copy to avoid mutating the original
 		docCopy := copyFields(doc)
 		docCopy["kb_id"] = datasetID
+		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
+			docCopy["tag_feas"] = raw
+		}
 		if err := jsonIterator.NewEncoder(&buf).Encode(docCopy); err != nil {
 			return nil, fmt.Errorf("failed to encode document: %w", err)
 		}
@@ -608,6 +611,9 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 
 	// Update document fields if any remain
 	if len(doc) > 0 {
+		if raw, ok := formatOrderedTagFeas(doc["tag_feas"]); ok {
+			doc["tag_feas"] = raw
+		}
 		updateBody := map[string]interface{}{"doc": doc}
 		body, _ := json.Marshal(updateBody)
 		req := esapi.UpdateRequest{
@@ -782,6 +788,90 @@ func copyFields(m map[string]interface{}) map[string]interface{} {
 	return result
 }
 
+// formatOrderedTagFeas formats tag_feas as json.RawMessage with keys ordered
+// strictly descending by score, preventing jsoniter map-key randomized output.
+func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
+	if v == nil {
+		return nil, false
+	}
+	if raw, ok := v.(json.RawMessage); ok {
+		return raw, true
+	}
+	if marshaler, ok := v.(json.Marshaler); ok {
+		b, err := marshaler.MarshalJSON()
+		if err == nil {
+			return json.RawMessage(b), true
+		}
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	var kvs []kv
+	roundScore := func(f float64) int {
+		if f < 0 {
+			return int(f - 0.5)
+		}
+		return int(f + 0.5)
+	}
+
+	switch m := v.(type) {
+	case map[string]int:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, val})
+		}
+	case map[string]float64:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, roundScore(val)})
+		}
+	case map[string]any:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			switch score := val.(type) {
+			case int:
+				kvs = append(kvs, kv{k, score})
+			case float64:
+				kvs = append(kvs, kv{k, roundScore(score)})
+			case int64:
+				kvs = append(kvs, kv{k, int(score)})
+			case json.Number:
+				if f, err := score.Float64(); err == nil {
+					kvs = append(kvs, kv{k, roundScore(f)})
+				}
+			}
+		}
+	default:
+		return nil, false
+	}
+
+	if len(kvs) == 0 {
+		return json.RawMessage("{}"), true
+	}
+
+	sort.Slice(kvs, func(i, j int) bool {
+		if kvs[i].v != kvs[j].v {
+			return kvs[i].v > kvs[j].v
+		}
+		return kvs[i].k < kvs[j].k
+	})
+
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, item := range kvs {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		kb, _ := json.Marshal(item.k)
+		buf.Write(kb)
+		buf.WriteByte(':')
+		buf.WriteString(strconv.Itoa(item.v))
+	}
+	buf.WriteByte('}')
+	return json.RawMessage(buf.Bytes()), true
+}
+
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
@@ -885,6 +975,9 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// Build the query
 	var qry map[string]interface{}
 	if len(filterClauses) == 0 && len(mustClauses) == 0 && len(mustNotClauses) == 0 {
+		if len(condition) > 0 {
+			return 0, fmt.Errorf("ES delete aborted: non-empty condition yielded match_all query on index %s", fullIndexName)
+		}
 		qry = map[string]interface{}{"match_all": map[string]interface{}{}}
 	} else {
 		boolMap := map[string]interface{}{}
@@ -1082,12 +1175,16 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if k <= 0 {
 			k = 1024
 		}
-		numCandidates := k * 2
+		k = min(k, 10000)
+		numCandidates := min(k*2, 10000)
 
 		similarity := 0.0
 		if matchDense.ExtraOptions != nil {
 			if sim, ok := matchDense.ExtraOptions["similarity"].(float64); ok {
 				similarity = sim
+			}
+			if n, ok := common.GetInt(matchDense.ExtraOptions["num_candidates"]); ok {
+				numCandidates = max(k, min(n, 10000))
 			}
 		}
 
@@ -1676,6 +1773,7 @@ func memoryMessageStatusBool(value interface{}) bool {
 // message indexes use memory_id plus message-specific storage fields.
 func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
+	var mustNotClauses []interface{}
 	var filterClauses []interface{}
 	var shouldClauses []interface{}
 
@@ -1750,6 +1848,14 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			}
 			continue
 		}
+		if k == "must_not" {
+			if condition, ok := v.(map[string]interface{}); ok {
+				if field, ok := condition["exists"].(string); ok && field != "" {
+					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
+				}
+			}
+			continue
+		}
 		if k == "id" {
 			if v == nil || v == "" {
 				continue
@@ -1814,6 +1920,9 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	boolQuery := make(map[string]interface{})
 	if len(mustClauses) > 0 {
 		boolQuery["must"] = mustClauses
+	}
+	if len(mustNotClauses) > 0 {
+		boolQuery["must_not"] = mustNotClauses
 	}
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses
@@ -2148,7 +2257,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
 				separator = "###"
 			}
-			for _, tag := range strings.Split(valueStr, separator) {
+			for tag := range strings.SplitSeq(valueStr, separator) {
 				countElasticsearchAggregationTag(tagCounts, tag)
 			}
 			continue

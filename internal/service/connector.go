@@ -78,15 +78,17 @@ var (
 	ErrConnectorNotFound = errors.New("can't find this Connector")
 	// ErrConnectorNoAuth mirrors Python's "no authorization" denial.
 	ErrConnectorNoAuth = errors.New("no authorization")
-	// ErrConnectorTestUnsupported is returned for connector sources whose
-	// validation path is not yet ported to Go.
-	ErrConnectorTestUnsupported = errors.New("test endpoint currently supports only REST API connectors")
+	// ErrConnectorTestUnsupported is returned for connector sources without a settings validator.
+	ErrConnectorTestUnsupported = errors.New("connector test is not supported for this source")
+	// ErrConnectorSourceNotImplemented is returned for connector sources not registered in the Go syncer.
+	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
 )
 
 // ConnectorService connector service
 type ConnectorService struct {
-	connectorDAO  *dao.ConnectorDAO
-	userTenantDAO *dao.UserTenantDAO
+	connectorDAO      *dao.ConnectorDAO
+	userTenantDAO     *dao.UserTenantDAO
+	connectorRegistry *syncerconnector.Registry
 }
 
 type syncTaskPublisher interface {
@@ -123,9 +125,16 @@ var getSyncCheckpointDeleter = func() (syncCheckpointDeleter, bool) {
 // NewConnectorService create connector service
 func NewConnectorService() *ConnectorService {
 	return &ConnectorService{
-		connectorDAO:  dao.NewConnectorDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		connectorDAO:      dao.NewConnectorDAO(),
+		userTenantDAO:     dao.NewUserTenantDAO(),
+		connectorRegistry: newConnectorRegistry(),
 	}
+}
+
+func newConnectorRegistry() *syncerconnector.Registry {
+	registry := syncerconnector.NewRegistry()
+	syncerconnector.RegisterBuiltIns(registry)
+	return registry
 }
 
 // ListConnectorsResponse list connectors response
@@ -365,7 +374,6 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*
 }
 
 // accessible reports whether the user can access the connector's tenant.
-// Mirrors Python's ConnectorService.accessible: owner access plus joined tenants.
 func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID string) (bool, error) {
 	conn, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
@@ -388,43 +396,108 @@ func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID s
 	return false, nil
 }
 
-// TestConnector validates a connector's stored configuration.
-// Equivalent to Python's test_connector. Per-connector credential validation
-// lives in the Python common.data_source package and is not yet available in
-// Go; for now this verifies access, that the connector exists, that the source
-// is REST_API (the only source Python currently tests), and that credentials
-// are present in the stored config. It returns ErrConnectorTestUnsupported for
-// other sources.
-func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string) error {
-	ok, err := s.accessible(ctx, connectorID, userID)
-	if err != nil && errors.Is(err, ErrConnectorNotFound) {
-		return ErrConnectorNotFound
+// TestConnector validates connector settings without persisting or syncing.
+func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string, config entity.JSONMap) error {
+	var storedConnector *entity.Connector
+	if connectorID != "" {
+		ok, err := s.accessible(ctx, connectorID, userID)
+		if err != nil && !errors.Is(err, ErrConnectorNotFound) {
+			return err
+		}
+		if err == nil && !ok {
+			return ErrConnectorNoAuth
+		}
+		if err == nil {
+			storedConnector, err = s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+			if err != nil {
+				return ErrConnectorNotFound
+			}
+		}
+		if errors.Is(err, ErrConnectorNotFound) && config == nil {
+			return ErrConnectorNotFound
+		}
 	}
+
+	source, connectorConfig, err := testConnectorSettings(storedConnector, config)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return ErrConnectorNoAuth
-	}
-
-	conn, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+	connector, err := s.connectorRegistry.OpenFromConfig(source, connectorConfig)
 	if err != nil {
-		return ErrConnectorNotFound
+		var unsupported *syncerconnector.UnsupportedSourceError
+		if errors.As(err, &unsupported) {
+			return fmt.Errorf("%w: %s", ErrConnectorSourceNotImplemented, unsupported.Source)
+		}
+		return err
 	}
-
-	if conn.Source != "rest_api" {
+	validator, ok := connector.(syncerconnector.SettingValidator)
+	if !ok {
 		return ErrConnectorTestUnsupported
 	}
+	return wrapConnectorValidationError(validator.ValidateConnectorSetting(ctx, connectorConfig))
+}
 
-	config := conn.Config
+func wrapConnectorValidationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var (
+		valErr  *syncerconnector.ConnectorValidationError
+		credErr *syncerconnector.ConnectorMissingCredentialError
+		rateErr *syncerconnector.RateLimitTriedTooManyTimesError
+	)
+	if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
+		return err
+	}
+	return &syncerconnector.ConnectorValidationError{Message: err.Error()}
+}
+
+func testConnectorSettings(stored *entity.Connector, request entity.JSONMap) (string, entity.JSONMap, error) {
+	source := ""
+	var config entity.JSONMap
+	if stored != nil {
+		source = strings.TrimSpace(stored.Source)
+		config = stored.Config
+	}
+	if request != nil {
+		if value := strings.TrimSpace(stringConfigValue(request["source"])); value != "" {
+			source = value
+		}
+		if nested, ok := request["config"]; ok {
+			config = jsonMapValue(nested)
+		} else if _, ok := request["source"]; !ok {
+			config = request
+		}
+	}
+	if source == "" {
+		return "", nil, fmt.Errorf("connector source is required")
+	}
 	if config == nil {
-		return fmt.Errorf("connector configuration is missing")
+		return "", nil, fmt.Errorf("connector configuration is missing")
 	}
-	creds, ok := config["credentials"].(map[string]interface{})
-	if !ok || len(creds) == 0 {
-		return fmt.Errorf("connector credentials are missing")
+	return source, config, nil
+}
+
+func jsonMapValue(value any) entity.JSONMap {
+	switch typed := value.(type) {
+	case entity.JSONMap:
+		return typed
+	case map[string]any:
+		return entity.JSONMap(typed)
+	default:
+		return nil
 	}
-	return nil
+}
+
+func stringConfigValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(typed)
+	}
 }
 
 func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
