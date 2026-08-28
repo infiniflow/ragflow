@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 import importlib
+import os
 import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
 
 def _load_parser_module(monkeypatch):
     for module_name in ("rag.flow.parser.parser", "deepdoc.parser.pdf_parser", "deepdoc.parser", "deepdoc"):
@@ -86,3 +88,38 @@ def test_pdf_markdown_consumes_docling_figure_without_image(monkeypatch):
 
     assert process.outputs["markdown"] == "figure OCR text\n"
     image2base64.assert_not_called()
+
+
+@pytest.mark.p2
+@pytest.mark.skipif(
+    not (os.environ.get("DOCLING_SERVER_URL") and os.environ.get("DOCLING_INTEGRATION_PDF")),
+    reason="requires DOCLING_SERVER_URL and a media-bearing DOCLING_INTEGRATION_PDF fixture",
+)
+def test_docling_server_media_reaches_json_and_markdown_outputs(monkeypatch):
+    """Manual integration coverage for the complete Docling flow branch.
+
+    The configured fixture must contain at least one table or figure. This test
+    intentionally uses the live Docling server so the parser's second result is
+    exercised rather than replaced with a mock.
+    """
+    parser_module = _load_parser_module(monkeypatch)
+    fixture = os.environ["DOCLING_INTEGRATION_PDF"]
+    with open(fixture, "rb") as file:
+        blob = file.read()
+    process = _FakeProcess()
+    process._canvas = SimpleNamespace(_tenant_id=None, _language="English")
+    docling_parser = parser_module.DoclingParser(docling_server_url=os.environ["DOCLING_SERVER_URL"])
+
+    monkeypatch.setattr(parser_module.TenantModelService, "get_by_id", Mock(return_value=(False, None)))
+    monkeypatch.setattr(parser_module, "DoclingParser", Mock(return_value=docling_parser))
+    monkeypatch.setattr(parser_module.VLM, "image2base64", Mock(return_value="data:image/png;base64,test"))
+
+    process._param.setups["pdf"]["output_format"] = "json"
+    parser_module.Parser._pdf(process, fixture, blob)
+    media = [item for item in process.outputs["json"] if item["doc_type_kwd"] in {"table", "image"}]
+    assert media
+
+    process.outputs.clear()
+    process._param.setups["pdf"]["output_format"] = "markdown"
+    parser_module.Parser._pdf(process, fixture, blob)
+    assert process.outputs["markdown"]
