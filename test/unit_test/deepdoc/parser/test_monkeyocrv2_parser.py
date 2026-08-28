@@ -2,6 +2,8 @@ import io
 import json
 import zipfile
 
+import pytest
+
 from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
 
 
@@ -106,6 +108,19 @@ def test_applies_requested_page_offset(monkeypatch):
     monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response())
     sections, _ = MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf", page_from=4)
     assert sections == [("page", "@@6\t1\t30\t2\t40##")]
+
+
+def test_wraps_malformed_zip_response(monkeypatch):
+    class Response:
+        headers = {"content-type": "application/zip"}
+        content = b"not a zip archive"
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response())
+    with pytest.raises(RuntimeError, match="Invalid MonkeyOCRv2 parse response"):
+        MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf")
 
 
 def test_sends_page_range_and_accepts_binary(monkeypatch):

@@ -38,7 +38,7 @@ class MonkeyOCRv2Parser:
             raise RuntimeError("MonkeyOCRv2 /parse did not return a ZIP archive")
         try:
             result = self._convert_zip(response.content, page_from=page_from)
-        except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
+        except (zipfile.BadZipFile, OSError, ValueError, TypeError, KeyError, IndexError) as exc:
             LOGGER.exception("MonkeyOCRv2 ZIP conversion failed")
             raise RuntimeError("Invalid MonkeyOCRv2 parse response") from exc
         LOGGER.info("MonkeyOCRv2 parse completed: sections=%d tables=%d", len(result[0]), len(result[1]))
