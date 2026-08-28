@@ -296,31 +296,27 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 	e.kcConcurrency = n
 }
 
-// Startup reconciliation thresholds: how long a task must sit in a
-// non-terminal status before the startup scan treats it as an orphan of a
-// previous process. RUNNING is judged by update_time (frozen when the previous
-// process claimed it); CREATED by create_time (never picked up).
+// Startup reconciliation thresholds: how long a CREATED task must sit
+// without being picked up before the startup scan treats it as an orphan
+// of a previous process (judged by create_time, never updated after creation).
 const (
-	reconcileRunningStaleAfter = 15 * time.Minute
 	reconcileCreatedStaleAfter = 5 * time.Minute
 	reconcileBatchLimit        = 500
 	reconcileOverallTimeout    = 5 * time.Minute
 )
 
-// reconcileStartupTasks heals tasks orphaned by a previous process crash, so a
-// restart self-heals instead of leaving stuck rows behind:
+// reconcileStartupTasks heals CREATED tasks orphaned by a previous process
+// crash (never consumed for 5min) by re-publishing via EnqueueByID.
+// Republishes are safe without broker-side dedup: the CREATED→RUNNING
+// transition in StartRunning is a CAS, and the in-process claim guard
+// ack-skips a second copy while a worker holds the task. (JetStream MsgID
+// dedup is intentionally NOT used - see NatsEngine.PublishTask: it would
+// swallow the retry republish of a task_id reused across runs, stranding
+// the row in CREATED.)
 //
-//  1. RUNNING orphans (not updated for 15min) are marked FAILED - a legal
-//     RUNNING→FAILED transition; the user can retry, and the failure is
-//     idempotent (a concurrent legit terminal write just wins the CAS).
-//  2. CREATED orphans (never consumed for 5min) are re-published via
-//     EnqueueByID. Republishes are safe without broker-side dedup: the
-//     CREATED→RUNNING transition in StartRunning is a CAS, and the
-//     in-process claim guard ack-skips a second copy while a worker holds
-//     the task. (JetStream MsgID dedup is intentionally NOT used - see
-//     NatsEngine.PublishTask: it would swallow the retry republish of a
-//     task_id reused across runs, stranding the row in CREATED.)
-//
+// RUNNING orphans are intentionally NOT touched here; recovery relies on
+// NATS redelivery (BackOff/InProgress) and the knowledge-compile style
+// lease would be the proper fix for long tasks, not a startup 15m→FAILED.
 // Errors are logged and skipped per task; the next restart re-runs the scan.
 // reconcileStartupTasks scans and heals orphaned rows. It carries no
 // WaitGroup bookkeeping of its own: start() wraps it with workerWg Add/Done,
@@ -334,46 +330,6 @@ func (e *Ingestor) reconcileStartupTasks() {
 	if dao.DB == nil {
 		common.Warn("startup reconciliation skipped: DB not initialized")
 		return
-	}
-
-	taskDAO := dao.NewIngestionTaskDAO()
-
-	// Paginated scan for RUNNING orphans: each full batch (== limit) may
-	// hide more stale rows. Marking FAILED removes the row from the stale
-	// set (status no longer RUNNING), so a simple Limit loop drains the
-	// entire orphan set without offset. CAS on the status transition and
-	// pagination both handle the race with consumeLoop's concurrent claim:
-	// whichever wins, the task ends in a terminal or RUNNING state, and
-	// the loser is idempotent. Context cancellation is checked both
-	// between batches and per-task to respect reconcileOverallTimeout and
-	// Stop.
-	for {
-		running, err := taskDAO.ListStaleByStatus(ctx, dao.DB, []string{common.RUNNING}, "update_time", time.Now().Add(-reconcileRunningStaleAfter), reconcileBatchLimit)
-		if err != nil {
-			common.Warn(fmt.Sprintf("startup reconciliation: list RUNNING orphans: %v", err))
-			break
-		}
-		if len(running) == 0 {
-			break
-		}
-		for _, task := range running {
-			if ctx.Err() != nil {
-				return
-			}
-			// markFailed logs its own failures; a persistently failing row is
-			// retried by the next startup scan.
-			if e.markFailed(ctx, task.ID) {
-				common.Info(fmt.Sprintf("startup reconciliation: orphaned RUNNING task %s marked FAILED", task.ID))
-				e.markReconcileFailedProgress(ctx, task)
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
-			}
-		}
-		if len(running) < reconcileBatchLimit {
-			break
-		}
-		if ctx.Err() != nil {
-			return
-		}
 	}
 
 	// CREATED orphans are re-published without a status change, so a
@@ -1154,40 +1110,6 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 		existingMsg = *doc.ProgressMsg
 	}
 	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
-}
-
-// markReconcileFailedProgress writes the reconciliation-failure markers to
-// the document row so the frontend does not stay stuck in RUNNING. It mirrors
-// markTimeoutProgress/markCancelProgress: progress=-1, run=FAIL, and an
-// appended timestamped message. Failures are logged and ignored — the task
-// row is already FAILED, so the next restart will not re-heal it, and a
-// document update failure is best-effort.
-func (e *Ingestor) markReconcileFailedProgress(ctx context.Context, task *entity.IngestionTask) {
-	if task == nil {
-		return
-	}
-	svc := documentpkg.NewDocumentService()
-	// Use the reconciliation ctx (5m timeout) when available; fall back to
-	// the ingestor's lifetime ctx if the caller passed a cancelled one.
-	if ctx == nil || ctx.Err() != nil {
-		ctx = e.ctx
-	}
-	doc, err := svc.GetDocumentByID(ctx, task.DocumentID)
-	if err != nil {
-		common.Warn(fmt.Sprintf("startup reconciliation: load document %s for task %s: %v", task.DocumentID, task.ID, err))
-		return
-	}
-	if doc == nil {
-		return
-	}
-	reconcileMsg := fmt.Sprintf("\n%s Task failed: orphaned RUNNING task reclaimed during startup reconciliation.", time.Now().Format("15:04:05"))
-	existingMsg := ""
-	if doc.ProgressMsg != nil {
-		existingMsg = *doc.ProgressMsg
-	}
-	if err := svc.UpdateRunProgress(ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+reconcileMsg); err != nil {
-		common.Warn(fmt.Sprintf("startup reconciliation: update document %s progress for task %s: %v", task.DocumentID, task.ID, err))
-	}
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another

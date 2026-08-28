@@ -71,9 +71,10 @@ func seedAgedTask(t *testing.T, db *gorm.DB, id, docID, status string, age time.
 	}
 }
 
-// TestStartupReconciliation drives the startup scan: stale RUNNING orphans
-// are finalized as FAILED (a previous process died mid-run), stale CREATED
-// orphans are re-published for consumption, and fresh rows are left alone.
+// TestStartupReconciliation drives the startup scan: stale CREATED orphans
+// are re-published for consumption, stale RUNNING orphans are intentionally
+// left untouched (recovery relies on NATS redelivery, not startup FAILED;
+// see ingestion_service.go reconcileStartupTasks), and fresh rows are left alone.
 func TestStartupReconciliation(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -100,9 +101,9 @@ func TestStartupReconciliation(t *testing.T) {
 		return task.Status
 	}
 
-	// RUNNING orphan: finalized as FAILED (legal transition, user can retry).
-	if got := statusOf("task-run-stale"); got != common.FAILED {
-		t.Fatalf("stale RUNNING task status = %q, want %q", got, common.FAILED)
+	// RUNNING orphans are intentionally left untouched (NATS redelivery path).
+	if got := statusOf("task-run-stale"); got != common.RUNNING {
+		t.Fatalf("stale RUNNING task status = %q, want %q (should be left for NATS redelivery)", got, common.RUNNING)
 	}
 	// Fresh RUNNING row belongs to a live worker — untouched.
 	if got := statusOf("task-run-fresh"); got != common.RUNNING {
