@@ -983,6 +983,530 @@ async def create_agent(tenant_id):
     return get_json_result(data=created_agent)
 
 
+def _remap_agent_dsl_for_tenant(dsl: dict, source_tenant_id: str, target_tenant_id: str) -> tuple[dict, list[dict]]:
+    """Remap llm_id / mcp_id in DSL by logical name (provider/instance/model or mcp name).
+
+    Returns (patched_dsl, warnings). Warnings are non-fatal: missing target model/mcp
+    keeps original id so import still succeeds and frontend can prompt user.
+    """
+    import copy as _copy
+
+    from api.db.joint_services.tenant_model_service import (
+        get_composite_model_name_by_id,
+        split_model_name,
+    )
+    from api.db.services.mcp_server_service import MCPServerService
+    from api.db.services.tenant_model_provider_service import TenantModelProviderService
+    from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+    from api.db.services.tenant_model_service import TenantModelService
+
+    patched = _copy.deepcopy(dsl)
+    warnings: list[dict] = []
+    components = patched.get("components", {}) if isinstance(patched, dict) else {}
+
+    # Collect LLM ids to resolve source logical names in batch would be faster,
+    # but per-component resolve keeps code simple and DSL is small.
+    for comp_id, comp in components.items():
+        obj = comp.get("obj", {}) if isinstance(comp, dict) else {}
+        params = obj.get("params", {}) if isinstance(obj, dict) else {}
+        if not isinstance(params, dict):
+            continue
+
+        # --- LLM remap (llm_id, also common alias fields) ---
+        for llm_key in ("llm_id", "llm_ids", "model_id"):
+            if llm_key not in params or not params[llm_key]:
+                continue
+            raw = params[llm_key]
+            # Normalize to list for uniform handling, remember scalar vs list.
+            is_list = isinstance(raw, list)
+            ids = raw if is_list else [raw]
+            new_ids: list[str] = []
+            for llm_id in ids:
+                if not isinstance(llm_id, str) or not llm_id.strip():
+                    new_ids.append(llm_id)
+                    continue
+                llm_id = llm_id.strip()
+                # Resolve source logical name.
+                logical: str | None = None
+                src_model_name: str | None = None
+                src_provider_name: str | None = None
+                src_instance_name: str | None = None
+                src_model_type = None
+                try:
+                    # Try id -> composite
+                    logical = get_composite_model_name_by_id(llm_id)
+                except Exception:
+                    logical = None
+                if logical:
+                    try:
+                        pure, inst, prov = split_model_name(logical)
+                        src_model_name, src_instance_name, src_provider_name = pure, inst, prov
+                        # Fetch source model type for accurate target lookup
+                        try:
+                            _ok, _m = TenantModelService.get_by_id(llm_id)
+                            if _ok and _m:
+                                src_model_type = _m.model_type
+                        except Exception:
+                            src_model_type = None
+                    except Exception:
+                        src_model_name = logical
+                else:
+                    # llm_id itself is already a logical name (e.g. gpt://... or model@provider)
+                    # Keep it as logical and try to split.
+                    try:
+                        pure, inst, prov = split_model_name(llm_id)
+                        # If provider empty and string contains :// treat whole as model name
+                        if not prov and "://" in llm_id:
+                            src_model_name, src_instance_name, src_provider_name = llm_id, "", ""
+                            logical = llm_id
+                        else:
+                            src_model_name, src_instance_name, src_provider_name = pure, inst, prov
+                            logical = llm_id
+                    except Exception:
+                        src_model_name = llm_id
+                        logical = llm_id
+
+                # Lookup target model by same logical identity.
+                def _model_matches(target_name: str, source_name: str) -> bool:
+                    if not target_name or not source_name:
+                        return False
+                    if target_name == source_name:
+                        return True
+                    # gpt:// prefix handling: match suffix or path component
+                    # e.g. gpt://b1g.../qwen3-235b-a22b-fp8/latest vs qwen3-235b-a22b-fp8
+                    # compare last path segment or substring
+                    try:
+                        # extract last meaningful segment from source
+                        src_seg = source_name.strip().rstrip("/").split("/")[-1]
+                        tgt_seg = target_name.strip().rstrip("/").split("/")[-1]
+                        if src_seg and tgt_seg and src_seg == tgt_seg:
+                            return True
+                        # fallback: one contains the other
+                        if src_seg and src_seg in target_name:
+                            return True
+                        if tgt_seg and tgt_seg in source_name:
+                            return True
+                    except Exception:
+                        pass
+                    return False
+
+                target_id: str | None = None
+                # Case 1: gpt:// or provider-less logical -> search by model_name (exact + suffix fallback)
+                if src_provider_name in (None, "") or (src_model_name and "://" in src_model_name):
+                    try:
+                        for prov in TenantModelProviderService.get_by_tenant_id(target_tenant_id) or []:
+                            for inst in TenantModelInstanceService.get_all_by_provider_id(prov.id) or []:
+                                for m in TenantModelService.get_models_by_instance_id(inst.id) or []:
+                                    if m.model_name == src_model_name or _model_matches(m.model_name, src_model_name):
+                                        target_id = m.id
+                                        break
+                                if target_id:
+                                    break
+                            if target_id:
+                                break
+                    except Exception:
+                        target_id = None
+                else:
+                    try:
+                        prov_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(target_tenant_id, src_provider_name)
+                        if prov_obj:
+                            inst_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(prov_obj.id, src_instance_name or "default")
+                            # Fallback to single active instance for legacy default
+                            if not inst_obj and (src_instance_name or "default") == "default":
+                                cands = [i for i in TenantModelInstanceService.get_all_by_provider_id(prov_obj.id) if getattr(i, "status", "1") == "1"]
+                                if len(cands) == 1:
+                                    inst_obj = cands[0]
+                            if inst_obj:
+                                # Try model lookup with type filter if we have source type
+                                if src_model_type is not None:
+                                    # Find by provider+instance+name+type
+                                    try:
+                                        from common.constants import LLMType as _LLMType
+
+                                        # Map binary to LLMType value string if needed
+                                        _type_val = None
+                                        # src_model_type is int bitflag, try each LLMType
+                                        for _lt in _LLMType:
+                                            try:
+                                                from api.utils.model_utils import calculate_model_type
+
+                                                if calculate_model_type(_lt.value) & int(src_model_type):
+                                                    _type_val = _lt.value
+                                                    break
+                                            except Exception:
+                                                continue
+                                        if _type_val:
+                                            m = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
+                                                prov_obj.id, inst_obj.id, _type_val, src_model_name
+                                            )
+                                            if m:
+                                                target_id = m.id
+                                    except Exception:
+                                        target_id = None
+                                if not target_id:
+                                    # Fallback: any type - scan models of instance
+                                    for mm in TenantModelService.get_models_by_instance_id(inst_obj.id) or []:
+                                        if mm.model_name == src_model_name:
+                                            target_id = mm.id
+                                            break
+                    except Exception:
+                        target_id = None
+                    # Fallback: provider/instance not found or model not found -> search any model with same name in target tenant (robust for renamed instances)
+                    if not target_id:
+                        try:
+                            for prov in TenantModelProviderService.get_by_tenant_id(target_tenant_id) or []:
+                                for inst in TenantModelInstanceService.get_all_by_provider_id(prov.id) or []:
+                                    for m in TenantModelService.get_models_by_instance_id(inst.id) or []:
+                                        if m.model_name == src_model_name or _model_matches(m.model_name, src_model_name):
+                                            target_id = m.id
+                                            break
+                                    if target_id:
+                                        break
+                                if target_id:
+                                    break
+                        except Exception:
+                            pass
+
+                if target_id:
+                    new_ids.append(target_id)
+                else:
+                    # Keep original for visibility, add warning so UI can prompt.
+                    new_ids.append(llm_id)
+                    warnings.append({"type": "model", "source_id": llm_id, "logical": logical or llm_id, "reason": "not found on target"})
+
+            params[llm_key] = new_ids if is_list else (new_ids[0] if new_ids else raw)
+
+        # --- MCP remap ---
+        mcp_list = params.get("mcp")
+        if isinstance(mcp_list, list) and mcp_list:
+            new_mcp_list = []
+            for entry in mcp_list:
+                if not isinstance(entry, dict):
+                    new_mcp_list.append(entry)
+                    continue
+                src_mcp_id = entry.get("mcp_id") or entry.get("id")
+                if not src_mcp_id:
+                    new_mcp_list.append(entry)
+                    continue
+                try:
+                    _ok, src_mcp = MCPServerService.get_by_id(src_mcp_id)
+                    src_name = src_mcp.name if _ok and src_mcp else None
+                    # Fallback: mcp_id may already be a name (yandex-tracker-mcp) not uuid
+                    if not src_name:
+                        _ok2, _q = MCPServerService.get_by_name_and_tenant(src_mcp_id, source_tenant_id)
+                        if _ok2 and _q:
+                            try:
+                                _first = _q[0] if isinstance(_q, (list, tuple)) else list(_q)[0] if hasattr(_q, "__iter__") and not isinstance(_q, str) else _q
+                            except Exception:
+                                _first = _q
+                            src_name = getattr(_first, "name", None) or src_mcp_id
+                        else:
+                            src_name = src_mcp_id  # assume id is name
+                except Exception:
+                    _ok, src_mcp, src_name = False, None, None
+                    src_name = src_mcp_id if isinstance(src_mcp_id, str) else None
+                if not src_name:
+                    # Cannot resolve source name, keep as is
+                    new_mcp_list.append(entry)
+                    warnings.append({"type": "mcp", "source_id": src_mcp_id, "reason": "source mcp not found"})
+                    continue
+                # Lookup target by name (get_by_name_and_tenant returns (bool, queryset/list))
+                try:
+                    _ok2, tgt_q = MCPServerService.get_by_name_and_tenant(src_name, target_tenant_id)
+                    tgt_mcp = None
+                    if _ok2 and tgt_q:
+                        try:
+                            if isinstance(tgt_q, (list, tuple)):
+                                tgt_mcp = tgt_q[0] if tgt_q else None
+                            else:
+                                # Peewee ModelSelect or single object
+                                try:
+                                    tgt_mcp = tgt_q[0]  # type: ignore
+                                except Exception:
+                                    tgt_mcp = tgt_q  # type: ignore
+                        except Exception:
+                            tgt_mcp = None
+                    if tgt_mcp:
+                        new_entry = dict(entry)
+                        tgt_id = getattr(tgt_mcp, "id", None)
+                        if tgt_id:
+                            new_entry["mcp_id"] = tgt_id
+                        # Filter tools to intersection with target's available tools
+                        try:
+                            tgt_vars = getattr(tgt_mcp, "variables", {}) or {}
+                            tgt_tools = tgt_vars.get("tools", {}) if isinstance(tgt_vars, dict) else {}
+                            if isinstance(entry.get("tools"), dict) and isinstance(tgt_tools, dict):
+                                filtered = {k: v for k, v in entry["tools"].items() if k in tgt_tools}
+                                if filtered != entry["tools"]:
+                                    new_entry["tools"] = filtered
+                        except Exception:
+                            pass
+                        new_mcp_list.append(new_entry)
+                    else:
+                        new_mcp_list.append(entry)
+                        warnings.append({"type": "mcp", "name": src_name, "source_id": src_mcp_id, "reason": "not found on target"})
+                except Exception as e:
+                    new_mcp_list.append(entry)
+                    warnings.append({"type": "mcp", "name": src_name, "source_id": src_mcp_id, "reason": str(e)})
+            params["mcp"] = new_mcp_list
+
+    # --- Also remap graph.nodes[].data.form for frontend (must stay in sync with components) ---
+    graph = patched.get("graph") if isinstance(patched, dict) else None
+    if isinstance(graph, dict) and isinstance(graph.get("nodes"), list):
+        for node in graph["nodes"]:
+            if not isinstance(node, dict):
+                continue
+            data = node.get("data")
+            if not isinstance(data, dict):
+                continue
+            form = data.get("form")
+            if not isinstance(form, dict):
+                continue
+            # LLM
+            for llm_key in ("llm_id", "llm_ids", "model_id"):
+                if llm_key not in form or not form[llm_key]:
+                    continue
+                raw = form[llm_key]
+                is_list = isinstance(raw, list)
+                ids = raw if is_list else [raw]
+                new_ids: list[str] = []
+                for llm_id in ids:
+                    if not isinstance(llm_id, str) or not llm_id.strip():
+                        new_ids.append(llm_id)
+                        continue
+                    llm_id = llm_id.strip()
+                    logical = None
+                    src_model_name = None
+                    src_provider_name = None
+                    src_instance_name = None
+                    src_model_type = None
+                    try:
+                        logical = get_composite_model_name_by_id(llm_id)
+                    except Exception:
+                        logical = None
+                    if logical:
+                        try:
+                            pure, inst, prov = split_model_name(logical)
+                            src_model_name, src_instance_name, src_provider_name = pure, inst, prov
+                            try:
+                                _ok, _m = TenantModelService.get_by_id(llm_id)
+                                if _ok and _m:
+                                    src_model_type = _m.model_type
+                            except Exception:
+                                src_model_type = None
+                        except Exception:
+                            src_model_name = logical
+                    else:
+                        try:
+                            pure, inst, prov = split_model_name(llm_id)
+                            if not prov and "://" in llm_id:
+                                src_model_name, src_instance_name, src_provider_name = llm_id, "", ""
+                                logical = llm_id
+                            else:
+                                src_model_name, src_instance_name, src_provider_name = pure, inst, prov
+                                logical = llm_id
+                        except Exception:
+                            src_model_name = llm_id
+                            logical = llm_id
+                    target_id = None
+                    if src_provider_name in (None, "") or (src_model_name and "://" in src_model_name):
+                        try:
+                            for prov in TenantModelProviderService.get_by_tenant_id(target_tenant_id) or []:
+                                for inst in TenantModelInstanceService.get_all_by_provider_id(prov.id) or []:
+                                    for m in TenantModelService.get_models_by_instance_id(inst.id) or []:
+                                        if m.model_name == src_model_name or _model_matches(m.model_name, src_model_name):
+                                            target_id = m.id
+                                            break
+                                    if target_id:
+                                        break
+                                if target_id:
+                                    break
+                        except Exception:
+                            target_id = None
+                    else:
+                        try:
+                            prov_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(target_tenant_id, src_provider_name)
+                            if prov_obj:
+                                inst_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(prov_obj.id, src_instance_name or "default")
+                                if not inst_obj and (src_instance_name or "default") == "default":
+                                    cands = [i for i in TenantModelInstanceService.get_all_by_provider_id(prov_obj.id) if getattr(i, "status", "1") == "1"]
+                                    if len(cands) == 1:
+                                        inst_obj = cands[0]
+                                if inst_obj:
+                                    for mm in TenantModelService.get_models_by_instance_id(inst_obj.id) or []:
+                                        if mm.model_name == src_model_name:
+                                            target_id = mm.id
+                                            break
+                        except Exception:
+                            target_id = None
+                        if not target_id:
+                            try:
+                                for prov in TenantModelProviderService.get_by_tenant_id(target_tenant_id) or []:
+                                    for inst in TenantModelInstanceService.get_all_by_provider_id(prov.id) or []:
+                                        for m in TenantModelService.get_models_by_instance_id(inst.id) or []:
+                                            if m.model_name == src_model_name or _model_matches(m.model_name, src_model_name):
+                                                target_id = m.id
+                                                break
+                                        if target_id:
+                                            break
+                                    if target_id:
+                                        break
+                            except Exception:
+                                pass
+                    if target_id:
+                        new_ids.append(target_id)
+                    else:
+                        new_ids.append(llm_id)
+                form[llm_key] = new_ids if is_list else (new_ids[0] if new_ids else raw)
+            # MCP in graph
+            mcp_list = form.get("mcp")
+            if isinstance(mcp_list, list) and mcp_list:
+                new_mcp_list = []
+                for entry in mcp_list:
+                    if not isinstance(entry, dict):
+                        new_mcp_list.append(entry)
+                        continue
+                    src_mcp_id = entry.get("mcp_id") or entry.get("id")
+                    if not src_mcp_id:
+                        new_mcp_list.append(entry)
+                        continue
+                    try:
+                        _ok, src_mcp = MCPServerService.get_by_id(src_mcp_id)
+                        src_name = src_mcp.name if _ok and src_mcp else None
+                        if not src_name:
+                            _ok2, _q = MCPServerService.get_by_name_and_tenant(src_mcp_id, source_tenant_id)
+                            if _ok2 and _q:
+                                try:
+                                    _first = _q[0] if isinstance(_q, (list, tuple)) else list(_q)[0] if hasattr(_q, "__iter__") and not isinstance(_q, str) else _q
+                                except Exception:
+                                    _first = _q
+                                src_name = getattr(_first, "name", None) or src_mcp_id
+                            else:
+                                src_name = src_mcp_id
+                    except Exception:
+                        src_name = src_mcp_id if isinstance(src_mcp_id, str) else None
+                    if not src_name:
+                        new_mcp_list.append(entry)
+                        continue
+                    try:
+                        _ok2, tgt_q = MCPServerService.get_by_name_and_tenant(src_name, target_tenant_id)
+                        tgt_mcp = None
+                        if _ok2 and tgt_q:
+                            try:
+                                if isinstance(tgt_q, (list, tuple)):
+                                    tgt_mcp = tgt_q[0] if tgt_q else None
+                                else:
+                                    try:
+                                        tgt_mcp = tgt_q[0]  # type: ignore
+                                    except Exception:
+                                        tgt_mcp = tgt_q  # type: ignore
+                            except Exception:
+                                tgt_mcp = None
+                        if tgt_mcp:
+                            new_entry = dict(entry)
+                            tgt_id = getattr(tgt_mcp, "id", None)
+                            if tgt_id:
+                                new_entry["mcp_id"] = tgt_id
+                            new_mcp_list.append(new_entry)
+                        else:
+                            new_mcp_list.append(entry)
+                    except Exception:
+                        new_mcp_list.append(entry)
+                form["mcp"] = new_mcp_list
+
+    return patched, warnings
+
+
+@manager.route("/agents/<agent_id>/duplicate", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def duplicate_agent(agent_id, tenant_id):
+    """Duplicate (fork) a team-shared agent into caller's own space.
+
+    Remaps llm_id/mcp_id by logical name so yandex-tracker-mcp and
+    gpt://... style models resolve to caller's own providers (see plan).
+    Resulting DSL is ready for import - no manual fixup.
+    """
+    if not UserCanvasService.accessible(agent_id, tenant_id):
+        return get_data_error_result(message="canvas not found.")
+
+    exists, src = UserCanvasService.get_by_id(agent_id)
+    if not exists or not src:
+        return get_data_error_result(message="canvas not found.")
+
+    source_tenant_id = src.user_id
+    req = {}
+    try:
+        body = await get_request_json()
+        if isinstance(body, dict):
+            req = body
+    except Exception:
+        req = {}
+
+    # Duplicate title handling (same as dataset duplicate_name)
+    desired_title = (req.get("title") or src.title or "agent").strip()
+    # Ensure unique title for target tenant
+    base_title = desired_title
+    existing_titles = {getattr(c, "title", "").lower() for c in UserCanvasService.query(user_id=tenant_id, canvas_category=src.canvas_category)}
+    title = base_title
+    counter = 1
+    while title.lower() in existing_titles:
+        title = f"{base_title}_{counter}"
+        counter += 1
+
+    src_dsl = src.dsl if isinstance(src.dsl, dict) else {}
+    try:
+        patched_dsl, warnings = _remap_agent_dsl_for_tenant(src_dsl, source_tenant_id, tenant_id)
+        patched_dsl = CanvasReplicaService.normalize_dsl(patched_dsl)
+    except ValueError as exc:
+        return get_json_result(data=False, message=str(exc), code=RetCode.ARGUMENT_ERROR)
+    except Exception as exc:
+        logging.exception("duplicate remap failed agent_id=%s", agent_id)
+        return server_error_response(exc)
+
+    new_id = get_uuid()
+    save_payload = {
+        "id": new_id,
+        "user_id": tenant_id,
+        "title": title,
+        "description": req.get("description") if req.get("description") is not None else src.description,
+        "permission": "me",
+        "canvas_type": src.canvas_type,
+        "canvas_category": src.canvas_category,
+        "avatar": src.avatar,
+        "dsl": patched_dsl,
+    }
+    if not UserCanvasService.save(**save_payload):
+        return get_data_error_result(message="Fail to duplicate agent.")
+
+    owner_nickname = _get_user_nickname(tenant_id)
+    UserCanvasVersionService.save_or_replace_latest(
+        user_canvas_id=new_id,
+        title=UserCanvasVersionService.build_version_title(owner_nickname, title),
+        dsl=patched_dsl,
+        release=False,
+    )
+    replica_ok = CanvasReplicaService.replace_for_set(
+        canvas_id=new_id,
+        tenant_id=str(tenant_id),
+        runtime_user_id=str(tenant_id),
+        dsl=patched_dsl,
+        canvas_category=src.canvas_category,
+        title=title,
+    )
+    if not replica_ok:
+        return get_data_error_result(message="agent duplicated, but replica sync failed.")
+
+    exists2, created = UserCanvasService.get_by_canvas_id(new_id)
+    if not exists2:
+        return get_data_error_result(message="Fail to duplicate agent.")
+    # Attach warnings so frontend can show "model not found" toast without blocking import.
+    data = created
+    if isinstance(data, dict):
+        data["_warnings"] = warnings
+    return get_json_result(data=data)
+
+
 @manager.route("/agents/<agent_id>/upload", methods=["POST"])  # noqa: F821
 @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 @add_tenant_id_to_kwargs
