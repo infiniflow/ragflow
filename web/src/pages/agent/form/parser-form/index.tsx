@@ -11,7 +11,7 @@ import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useHover } from 'ahooks';
 import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   useFieldArray,
   UseFieldArrayRemove,
@@ -108,7 +108,26 @@ function ParserItem({
   const isHovering = useHover(ref);
 
   const prefix = `${name}.${index}`;
-  const fileFormat = form.getValues(`setups.${index}.fileFormat`);
+  const fileFormat = form.watch(`setups.${index}.fileFormat`);
+  const prevFileFormatRef = useRef(fileFormat);
+
+  useEffect(() => {
+    if (!fileFormat || prevFileFormatRef.current === fileFormat) {
+      return;
+    }
+    prevFileFormatRef.current = fileFormat;
+
+    form.setValue(
+      `setups.${index}.output_format`,
+      InitialOutputFormatMap[fileFormat as FileType],
+      { shouldDirty: true, shouldValidate: true, shouldTouch: true },
+    );
+    form.setValue(
+      `setups.${index}.parse_method`,
+      getInitialParseMethod(fileFormat as FileType),
+      { shouldDirty: true, shouldValidate: true, shouldTouch: true },
+    );
+  }, [fileFormat, form, index]);
 
   const values = form.getValues();
   const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
@@ -127,22 +146,6 @@ function ParserItem({
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
       : () => <></>;
-
-  const handleFileTypeChange = useCallback(
-    (value: FileType) => {
-      form.setValue(
-        `setups.${index}.output_format`,
-        InitialOutputFormatMap[value],
-        { shouldDirty: true, shouldValidate: true, shouldTouch: true },
-      );
-      form.setValue(
-        `setups.${index}.parse_method`,
-        getInitialParseMethod(value),
-        { shouldDirty: true, shouldValidate: true, shouldTouch: true },
-      );
-    },
-    [form, index],
-  );
 
   return (
     <section
@@ -167,10 +170,7 @@ function ParserItem({
         {(field) => (
           <SelectWithSearch
             value={field.value}
-            onChange={(val) => {
-              field.onChange(val);
-              handleFileTypeChange(val as FileType);
-            }}
+            onChange={field.onChange}
             options={filteredFileFormatOptions}
           ></SelectWithSearch>
         )}
