@@ -43,6 +43,7 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
       <SheetContent
         className="top-24 p-0 flex flex-col gap-0 h-auto"
         closeIcon={false}
+        showOverlay={false}
       >
         <SheetHeader className="border-b py-2 px-4">
           <SheetTitle className="hidden"></SheetTitle>
