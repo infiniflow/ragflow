@@ -36,6 +36,8 @@ import {
   IDebugSingleRequestBody,
 } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
+import api from '@/utils/api';
+import request from '@/utils/request';
 import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import agentService, {
@@ -298,6 +300,32 @@ export const useDuplicateAgent = () => {
     mutationKey: [AgentApiAction.SetAgent, 'duplicate'],
     mutationFn: async (agent: Pick<IFlow, 'id' | 'title'>) => {
       try {
+        // Team duplicate: server remaps llm_id/mcp_id by logical name (yandex-tracker-mcp, gpt://...) so the fork is ready without manual fixup.
+        // Falls back to client-side copy if server endpoint is unavailable.
+        try {
+          const { data } = await request.post(api.duplicateAgent(agent.id), {});
+          if (data?.code === 0) {
+            message.success(i18n.t('message.created'));
+            queryClient.invalidateQueries({ queryKey: AgentKeys.list() });
+            queryClient.invalidateQueries({ queryKey: AgentKeys.filters() });
+            const warnings = (data?.data as any)?._warnings as
+              | Array<{ type: string; name?: string; reason?: string }>
+              | undefined;
+            if (warnings?.length) {
+              const missing = warnings.map((w) => w.name ?? w.type).join(', ');
+              message.warning(`Some models/MCP not found on target: ${missing}`);
+            }
+            return data;
+          }
+          // If server returns non-zero, fall through to client fallback
+          if (data?.code !== 404) {
+            message.error(data?.message ?? i18n.t('message.requestError'));
+            return null;
+          }
+        } catch {
+          // 404 or network - fallback to client copy
+        }
+
         const { data: detail } = await agentService.getAgent(agent.id);
         const source = detail?.data;
         if (!source) {

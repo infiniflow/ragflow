@@ -345,6 +345,7 @@ export default {
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
+  duplicateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/duplicate`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completions`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
   testDbConnect: `${restAPIv1}/agents/test_db_connection`,

@@ -9,9 +9,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useDeleteAgent } from '@/hooks/use-agent-request';
+import { useDeleteAgent, useDuplicateAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
-import { PenLine, Tag, Trash2 } from 'lucide-react';
+import { Copy, PenLine, Tag, Trash2 } from 'lucide-react';
 import {
   MouseEventHandler,
   PropsWithChildren,
@@ -32,6 +32,7 @@ export function AgentDropdown({
   }) {
   const { t } = useTranslation();
   const { deleteAgent } = useDeleteAgent();
+  const { duplicateAgent } = useDuplicateAgent();
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
 
   const handleShowAgentRenameModal: MouseEventHandler<HTMLDivElement> =
@@ -52,11 +53,22 @@ export function AgentDropdown({
     deleteAgent(agent.id);
   }, [agent.id, deleteAgent]);
 
+  const handleDuplicate: MouseEventHandler<HTMLDivElement> = useCallback(
+    (e) => {
+      e.stopPropagation();
+      duplicateAgent(agent);
+    },
+    [agent, duplicateAgent],
+  );
+
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
         <DropdownMenuContent>
+          <DropdownMenuItem onClick={handleDuplicate}>
+            {t('common.duplicate', 'Duplicate')} <Copy />
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleShowAgentRenameModal}>
             {t('common.rename')} <PenLine />
           </DropdownMenuItem>

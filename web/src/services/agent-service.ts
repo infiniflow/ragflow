@@ -81,6 +81,10 @@ const methods = {
     url: deleteAgent,
     method: 'delete',
   },
+  duplicateAgent: {
+    url: (agentId: string) => api.duplicateAgent(agentId),
+    method: 'post',
+  },
   agentChatCompletion: {
     url: agentChatCompletion,
     method: 'post',
