@@ -46,7 +46,7 @@ var integerParams = map[string]map[string]struct{}{
 	},
 	"docgenerator":   {"font_size": {}},
 	"docsgenerator":  {"font_size": {}},
-	"invoke":         {"max_retries": {}, "timeout": {}},
+	"invoke":         {"max_retries": {}},
 	"iteration":      {"max_concurrency": {}},
 	"listoperations": {"n": {}},
 	"llm": {
@@ -98,6 +98,9 @@ func validateIntegerParameters(value any, path string) error {
 
 func validateComponentIntegerParameters(node map[string]any, path string) error {
 	name, _ := node["component_name"].(string)
+	if name == "" {
+		name, _ = node["name"].(string)
+	}
 	params, _ := node["params"].(map[string]any)
 	if name == "" || params == nil {
 		return nil
