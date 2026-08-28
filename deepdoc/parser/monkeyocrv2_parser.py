@@ -1,4 +1,5 @@
 """Client for the MonkeyOCRv2-Parsing ZIP API."""
+
 import io
 import json
 import logging
@@ -6,7 +7,6 @@ import zipfile
 from pathlib import Path
 
 import requests
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,16 +49,7 @@ class MonkeyOCRv2Parser:
         sections, tables = [], []
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             names = archive.namelist()
-            roots = {
-                name.split("/", 1)[0]
-                for name in names
-                if "/" in name
-                and (
-                    name.endswith(".md")
-                    or "/jsons/" in name and name.endswith(".json")
-                    or name.endswith("/all_results.json")
-                )
-            }
+            roots = {name.split("/", 1)[0] for name in names if "/" in name and (name.endswith((".md", "/all_results.json")) or (name.endswith(".json") and "/jsons/" in name))}
             for root in roots:
                 candidates = [n for n in names if n.startswith(root + "/jsons/") and n.endswith(".json")]
                 records = []
