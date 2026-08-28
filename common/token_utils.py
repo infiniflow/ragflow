@@ -41,8 +41,39 @@ def _ensure_tiktoken_cache() -> str:
 
 tiktoken_cache_dir = _ensure_tiktoken_cache()
 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
-# encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
-encoder = tiktoken.get_encoding("cl100k_base")
+
+# Built on first use, not at import. `tiktoken.get_encoding` reads the BPE table from
+# TIKTOKEN_CACHE_DIR and downloads it from openaipublic.blob.core.windows.net when that
+# cache is cold, so building it here made importing this module a network operation.
+# Nothing in `rag.nlp` wants the encoder itself; it imports `num_tokens_from_string`.
+# The build ran regardless, so an unreachable blob host failed any import that reached
+# this file, including unit tests that never tokenize anything.
+_encoder = None
+# Reentrant: a plain Lock would deadlock if building the encoder ever re-entered
+# this module through an import hook.
+_encoder_lock = threading.RLock()
+
+
+def get_encoder():
+    """Return the shared cl100k_base encoder, building it on first use.
+
+    Failures propagate: a missing BPE table is a real problem and callers must not
+    silently treat it as an empty tokenization.
+    """
+    global _encoder
+    if _encoder is None:
+        with _encoder_lock:
+            if _encoder is None:
+                # encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
+                _encoder = tiktoken.get_encoding("cl100k_base")
+    return _encoder
+
+
+def __getattr__(name):
+    """Keep `from common.token_utils import encoder` working without an import-time build."""
+    if name == "encoder":
+        return get_encoder()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # Per-run token usage sink. An agent run (Canvas.run) installs a mutable dict here
@@ -125,8 +156,11 @@ def usage_from_response(resp) -> dict:
 
 def num_tokens_from_string(string: str) -> int:
     """Returns the number of tokens in a text string."""
+    # Resolve the encoder outside the try: an unavailable BPE table must fail loudly
+    # rather than be reported as a zero-token string by the guard below.
+    enc = get_encoder()
     try:
-        code_list = encoder.encode(string)
+        code_list = enc.encode(string)
         return len(code_list)
     except Exception:
         return 0
@@ -182,4 +216,5 @@ def total_token_count_from_response(resp):
 
 def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
-    return encoder.decode(encoder.encode(string)[:max_len])
+    enc = get_encoder()
+    return enc.decode(enc.encode(string)[:max_len])
