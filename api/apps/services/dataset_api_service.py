@@ -753,6 +753,26 @@ def get_flattened_metadata(dataset_ids: list[str], tenant_id: str):
     return True, DocMetadataService.get_flatted_meta_by_kbs(dataset_ids)
 
 
+def get_metadata_keys(dataset_ids: list[str], tenant_id: str):
+    """
+    Get the distinct metadata field names for datasets the tenant can access.
+
+    :param dataset_ids: list of dataset IDs
+    :param tenant_id: tenant ID
+    :return: (success, result) or (success, error_message)
+    """
+    if not dataset_ids:
+        return False, 'Lack of "dataset_ids"'
+
+    for dataset_id in dataset_ids:
+        if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+            return False, f"No authorization for dataset '{dataset_id}'"
+
+    from api.db.services.doc_metadata_service import DocMetadataService
+
+    return True, DocMetadataService.get_metadata_keys_by_kbs(dataset_ids)
+
+
 def get_auto_metadata(dataset_id: str, tenant_id: str):
     """
     Get auto-metadata configuration for a dataset.
