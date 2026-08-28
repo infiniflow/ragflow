@@ -270,3 +270,7 @@ internal/cpp/cmake-build-release
 
 # downloaded native static-lib artifacts (fetched by ragflow_deps/download_deps.py)
 ragflow_deps/*.zip
+
+# external DeepDoc testdata, fetched on demand via scripts/fetch_deepdoc_testdata.sh
+# (symlinked into place from ~/.cache/ragflow-testdata; never committed)
+internal/deepdoc/native/testdata
