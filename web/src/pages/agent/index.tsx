@@ -62,6 +62,7 @@ import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
+  useValidateNodeForms,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { PipelineLogSheet } from './pipeline-log-sheet';
@@ -105,6 +106,12 @@ export default function Agent() {
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
+  const { notifyIfInvalid } = useValidateNodeForms();
+  const handleSave = useCallback(() => {
+    if (notifyIfInvalid()) {
+      saveGraph();
+    }
+  }, [notifyIfInvalid, saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { buildDslData } = useBuildDslData();
   const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
@@ -282,7 +289,7 @@ export default function Agent() {
         <div className="flex items-center gap-5">
           <ButtonLoading
             variant={'secondary'}
-            onClick={() => saveGraph()}
+            onClick={handleSave}
             loading={loading}
           >
             <LaptopMinimalCheck /> {t('flow.save')}

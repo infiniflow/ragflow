@@ -7,6 +7,7 @@ import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import i18n from '@/locales/config';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useHover } from 'ahooks';
@@ -87,7 +88,27 @@ export const FormSchema = z.object({
       remove_toc: z.boolean().optional(),
       remove_header_footer: z.boolean().optional(),
       pages: z
-        .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
+        .array(
+          z
+            .object({
+              // Keep these checks on the fields themselves: an object-level
+              // `superRefine` is skipped whenever the base shape fails to
+              // parse, so one missing sibling would silently swallow the
+              // other field's error.
+              from: z.coerce
+                .number()
+                .int(i18n.t('knowledgeDetails.pageRangeFromInvalid'))
+                .min(1, i18n.t('knowledgeDetails.pageRangeFromInvalid')),
+              to: z.coerce
+                .number()
+                .int(i18n.t('knowledgeDetails.pageRangeToInvalid'))
+                .min(1, i18n.t('knowledgeDetails.pageRangeToInvalid')),
+            })
+            .refine(({ from, to }) => to >= from, {
+              path: ['to'],
+              message: i18n.t('knowledgeDetails.pageRangeToInvalid'),
+            }),
+        )
         .optional(),
     }),
   ),
@@ -201,6 +222,7 @@ const ParserForm = ({
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
     shouldUnregister: true,
   });
 
