@@ -39,18 +39,18 @@ export function NaiveConfiguration() {
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
         <ImageContextWindow />
-        <AutoMetadata />
+        <ExcelToHtmlFormField></ExcelToHtmlFormField>
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
         <Separator />
         <GlobalIndexModelItem />
+        <AutoMetadata />
         <AutoKeywordsFormField
           layout={FormLayout.Horizontal}
         ></AutoKeywordsFormField>
         <AutoQuestionsFormField
           layout={FormLayout.Horizontal}
         ></AutoQuestionsFormField>
-        <ExcelToHtmlFormField></ExcelToHtmlFormField>
         {/* <TagItems></TagItems> */}
       </ConfigurationFormContainer>
     </MainContainer>
