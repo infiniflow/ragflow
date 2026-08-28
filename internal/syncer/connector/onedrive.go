@@ -371,12 +371,13 @@ func (c *OneDriveConnector) doGraphRequest(ctx context.Context, apiURL string, m
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		resp, err := c.httpClient.Do(req)
-		cancel()
 		if err != nil {
+			cancel()
 			lastErr = err
 		} else {
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			resp.Body.Close()
+			cancel()
 			if resp.StatusCode >= 400 {
 				lastErr = &onedriveHTTPError{status: resp.StatusCode, body: strings.TrimSpace(string(body))}
 				if resp.StatusCode == http.StatusUnauthorized && !retriedUnauthorized {
