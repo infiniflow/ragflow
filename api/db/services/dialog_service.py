@@ -2001,6 +2001,21 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             yield ans
         return
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+
+    # Agentic RAG depends on the outer model being able to call the bound
+    # ``rag`` tool. Models without tool-calling support would otherwise receive
+    # only the router prompt and could answer from their own knowledge without
+    # ever running retrieval. Reuse the regular RAG path for those models so
+    # the configured knowledge base and citation flow remain authoritative.
+    if not getattr(chat_mdl, "is_tools", False):
+        logging.info("LLM does not support tool calls; falling back to regular RAG chat")
+        fallback_kwargs = dict(kwargs)
+        if isinstance(fallback_kwargs.get("doc_ids"), list):
+            fallback_kwargs["doc_ids"] = ",".join(str(doc_id) for doc_id in fallback_kwargs["doc_ids"] if doc_id)
+        async for ans in async_chat(dialog, messages, stream, **fallback_kwargs):
+            yield ans
+        return
+
     model_type = chat_mdl.model_config["model_type"]
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
