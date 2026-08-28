@@ -96,4 +96,4 @@ class TestLazyEncoder:
         module = _reimport_token_utils(monkeypatch, lambda name: None)
 
         with pytest.raises(AttributeError):
-            module.no_such_name
+            getattr(module, "no_such_name")
