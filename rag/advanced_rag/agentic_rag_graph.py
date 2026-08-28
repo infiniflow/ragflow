@@ -420,7 +420,7 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
 # admitted 0 for entire runs because prefetch filled the pool first).
 _MAX_SNIPPET_POOL = 60
 _DRILL_RESERVE = 12  # slots kept free after the FIRST prefetch so the research
-#                       executor (react / slot action sessions) can top up evidence
+#                       executor can top up evidence
 _SCA_VIEW_CAP = 24  # chunks shown to the Sufficient Context Agent per review
 
 
@@ -435,8 +435,7 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
       short match window.
     * Channel B (hybrid vector+BM25, **narrow bypass**): semantic hits whose
       text does NOT share surface words with the query. The 2026-08-27 hybrid
-      experiment proved these blocks are valuable (react uses them via
-      search_chunks) but are ALL filtered out by the keyword narrow step while
+      experiment proved these blocks are valuable but are ALL filtered out by the keyword narrow step while
       crowding candidates out of top_n — so they now bypass it entirely.
 
     Called after planning and again after every Query-Rewriter pass. Returns
@@ -580,15 +579,6 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
         return added
     _LOG.info("[Prefetch] fan-out channels added %d new chunk(s) (total %d)", added, len(kbinfos.get("chunks", [])))
     return added
-
-
-# ── Rag Agent: ONE native tool-calling research pass ──
-#
-# The researcher binds the dynamic tool set ONCE (bind_dynamic_tools is
-# idempotent — same innermost model, same @tool callables as the dynamic
-# runner) and drives the built-in tool loop via the SAME public wrapper the
-# dynamic runner uses. This is exactly the reference implementation's proven
-# behaviour; the surrounding phases are expressed as LangGraph nodes.
 
 
 # Reused by build_low_graph — lightweight direct search node.
@@ -767,7 +757,12 @@ def build_agentic_graph(
             └─ insufficient → query_rewrite ────────────→ rag_agent (next round)
     """
     answer_conf = dict(gen_conf) if gen_conf else {"temperature": 0.3}
-    sca_max_rounds = 3  # SCA iteration budget (Phase 4 loops)
+    # SCA iteration budget (Phase 4 loops). ultra is intentionally deeper:
+    # more research rounds before giving up, at the cost of latency — this is
+    # one of the two differentiators from high (the other is the ultra-only
+    # graph_explore relational tool). high/medium stay at 3.
+    _mode_label = str(getattr(tools, "thinking_mode", "") or "").lower()
+    sca_max_rounds = 5 if _mode_label == "ultra" else 3
 
     # ── Node: formalize_question ──
     @in_phase("formalize")
@@ -1100,7 +1095,7 @@ def build_agentic_graph(
 
 
 def _render_slot_draft(slot_table: dict, collected_answer: str | None = None) -> str:
-    """方案 B: render a slot table into a fact-preserving draft for the SCA.
+    """Render a slot table into a fact-preserving draft for the SCA.
 
     Each resolved slot becomes a ``<type>: <candidate> [strength]`` line with its
     discovered-clue tail; unresolved slots are listed explicitly so the SCA can
@@ -1181,7 +1176,7 @@ def _slot_table_deserialize(slot_table: dict):
 
 
 async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: dict, deadline_left_fn=None) -> tuple:
-    """方案 B: build a slot table for the react research executor.
+    """Build a slot table for the research executor.
 
     Reuses the tree's ``initialize_state`` (LLM decomposition into typed
     unknowns with question_clues). Planner fanouts are passed as ``fanout_hint``
@@ -1217,18 +1212,8 @@ async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: di
 
 
 async def _run_slot_research_pass(tools, question: str, state: AgenticState, answer_conf: dict, deadline_left: float) -> dict:
-    """方案 B (react unify): drive ONE research round with slot-aware action
-    sessions — the ``action_session`` graph-edge tool loop, one per unresolved
-    slot, instead of the model-driven ``async_chat_streamly_with_tools`` react
-    loop.
-
-    Each session is told WHICH slot to resolve (its question_clues) and is
-    backed by the full tool map (retrieve / search_chunks / list_chunks), so it
-    has react's retrieval breadth under action_session's controllability. Slot
-    patches aggregate back into the slot table; evidence lands in kbinfos.
-
-    Returns the updated serialized ``slot_table``, ``collected_answer``,
-    ``unresolved_slots``, ``rag_answer`` (slot-rendered draft) and ledger.
+    """Drive ONE research round with slot-aware action
+    sessions.
     """
     from rag.advanced_rag.harness.action_session import run_action_session
 

@@ -14,31 +14,7 @@
 #  limitations under the License.
 #
 
-"""Slot-table research primitives + the graph-edge action session (方案 B).
-
-This module is the single home of the unified react/tree architecture after the
-``tree/`` package was removed:
-
-* ``Variable`` / ``State`` (slot table) / ``Result`` (session outcome) — the
-  shared intermediate representation.
-* ``run_action_session`` — ONE DeepSearch ``run_action`` session as a LangGraph
-  graph-edge loop (RUN_ACTION -> TOOL -> RUN_ACTION), backed by a whitelisted
-  tool map (retrieve / search_chunks / list_chunks).
-* ``initialize_state`` — LLM decomposition of a question into a typed slot
-  table, used by the outer graph's planner after formalize.
-
-Graph structure (per session)
------------------------------
-    START -> run_action
-    run_action -(tool_calls)-> tool -(done)-> run_action
-    run_action -(terminal/<state>|<answer>)-> END
-    run_action -(attempts>=budget)-> finalize -> END
-
-Provider agnosticism without touching chat_model.py:
-* OpenAI-style wrappers expose ``async_client`` → native create();
-* LiteLLMBase → reuse its own public ``_construct_completion_args`` and call
-  ``litellm.acompletion`` with our schema injected.
-"""
+"""Slot-table research primitives + the graph-edge action session."""
 
 from __future__ import annotations
 
@@ -59,6 +35,7 @@ _LOG = logging.getLogger(__name__)
 
 _INIT_TIMEOUT_S = 45.0
 _ACTION_MAX_TURNS = 4
+_ACTION_MAX_TURNS_ULTRA = 6  # ultra runs deeper inside each action session
 _ACTION_TIMEOUT_S = 75.0
 _SNIPPETS_PER_QUERY = 4
 _MAX_TOOL_RESPONSE_CHARS = 12000
@@ -190,10 +167,18 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "search_chunks",
         "description": (
-            "Semantic retrieval (hybrid vector+BM25) for a natural-language "
-            "query. Use when exact-term ``retrieve`` returns nothing useful — the "
-            "answer passage may share NO surface words with the query. Returns "
-            "snippet chunks ranked by relevance. 1-2 queries per call."
+            "SEMANTIC retrieval (hybrid vector+BM25) with COMPILED-STRUCTURE "
+            "EXPANSION. Use as the PRIMARY recall tool when exact-term "
+            "``retrieve`` returns nothing useful, or when the dataset is large and "
+            "you are unsure which document holds the answer — the answer passage "
+            "may share NO surface words with the query. "
+            "Compiled expansion: automatically appends related chunks from the "
+            "dataset's compiled structure (page index, tree/heading hierarchy, "
+            "knowledge graph, wiki pages when present) so a semantic hit carries "
+            "its structural neighbours (parent/child headings, sibling pages). "
+            "If the dataset has NO compiled structure (incl. no wiki), expansion "
+            "is a no-op — no error, just semantic hits. "
+            "Returns snippet chunks ranked by relevance. 1-2 queries per call."
         ),
         "parameters": {
             "type": "object",
@@ -212,13 +197,17 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
 
 # Multi-tool registry. ``execute_tool`` dispatches by name; add new tools by
 # registering their callable + schema here (DeepSearch ToolNode equivalent).
-# 方案 B (react unify): search_chunks gives the session the SEMANTIC reach that
-# react's model-driven loop had — answer passages often carry no surface terms.
 _WEB_SEARCH_TOOL_SPEC = {
     "type": "function",
     "function": {
         "name": "web_search",
-        "description": ("Search the open WEB for world knowledge, recent events, or facts not covered by the fixed corpus. 1-2 queries per call."),
+        "description": (
+            "Search the open WEB. Use ONLY when the needed fact is world "
+            "knowledge / recent event / not covered by the fixed corpus — e.g. "
+            "a current event, a person's alive-now status, or a statistic newer "
+            "than the corpus. If the fact plausibly lives in the documents, "
+            "prefer corpus tools (retrieve/search_chunks) first. 1-2 queries per call."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -234,7 +223,155 @@ _WEB_SEARCH_TOOL_SPEC = {
     },
 }
 
-_TOOL_MAP = {"retrieve": _RETRIEVE_TOOL_SPEC, "list_chunks": _LIST_CHUNKS_TOOL_SPEC, "search_chunks": _SEARCH_CHUNKS_TOOL_SPEC, "web_search": _WEB_SEARCH_TOOL_SPEC}
+_NAVIGATE_TREE_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "navigate_tree",
+        "description": (
+            "LOCATE A DOCUMENT among many when you are unsure WHICH one carries "
+            "the answer (entity may span/alias across documents). Pure "
+            "embedding-based routing over the dataset's compiled document "
+            "navigation tree — matches on topic/clustering similarity, NOT exact "
+            "surface words. "
+            "Returns candidate doc_ids with a short first-chunk summary of each. "
+            "Use when: search_chunks/retrieve hit documents but you cannot tell "
+            "which one is the source; or the question names a topic/alias absent "
+            "from any exact match. "
+            "After you get a doc_id, continue with navigate_structure(doc_id=...) "
+            "to pinpoint the passage, or list_chunks(doc_id=...) to read it. "
+            "Do NOT use if you already know the document."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "topic / entity / alias whose document(s) to locate",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+_NAVIGATE_STRUCTURE_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "navigate_structure",
+        "description": (
+            "PINPOINT A PASSAGE inside ONE document using its compiled structure "
+            "(heading/catalog tree, concept mindmap, or entity graph) — the "
+            "in-document counterpart of navigate_tree. "
+            "Use AFTER you know the doc_id (from navigate_tree / search_chunks / "
+            "retrieve) and need to find where the answer lives WITHOUT reading "
+            "every chunk. Returns the structure outline annotated with matching "
+            "chunk_ids (reading-order aware). Then call list_chunks(doc_id, "
+            "chunk_ids) to read exactly those. "
+            "kind: 'catalog' (default) for page-index/heading/timeline trees, "
+            "'mindmap' for concept maps, 'graph' for entity-relation graphs. "
+            "If the document has NO compiled structure, an empty <doc/> is "
+            "returned — fall back to list_chunks to read the full document."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "doc_id": {"type": "string", "description": "document id seen from a prior tool result"},
+                "query": {"type": "string", "description": "what to locate within the document"},
+                "kind": {"type": "string", "enum": ["catalog", "mindmap", "graph"], "description": "compiled structure kind, default catalog"},
+            },
+            "required": ["doc_id"],
+        },
+    },
+}
+
+_CALCULATE_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "calculate",
+        "description": (
+            "COMPUTE a numeric answer by generating and safely running code. "
+            "Use as the FINAL step when you have collected the needed numbers "
+            "and the question requires a combination (sum, difference, "
+            "percentage, ratio, sorting, comparison). Pass the question and ALL "
+            "numbers you found verbatim from the evidence; do NOT estimate. "
+            "If the required facts are not yet retrieved, search first then "
+            "calculate. If the numbers are all directly stated with no "
+            "combination, answer directly without this tool."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "the user's question, verbatim"},
+                "facts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "numbers/facts found in the evidence, verbatim",
+                },
+            },
+            "required": ["question", "facts"],
+        },
+    },
+}
+
+_GRAPH_EXPLORE_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "graph_explore",
+        "description": (
+            "EXPLORE the compiled KNOWLEDGE GRAPH (entities + relations) for a "
+            "RELATIONAL/multi-hop answer. Different from navigate_*: instead of "
+            "locating a document or passage, it seeds entities for the query, "
+            "hops along their RELATIONS, and returns either a direct answer or "
+            "the source passages behind the relevant entities/relations. "
+            "Use when the answer requires connecting several entities through "
+            "their relations (e.g. who-was-related-to-whom, cause-effect chains, "
+            "membership/ownership) and you already have a starting entity from a "
+            "search result, a navigation outline, or a list_chunks reading. "
+            "If the dataset has NO compiled knowledge graph, it returns empty — "
+            "fall back to search_chunks / navigate_structure."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "the relational question / starting entity"},
+                "doc_scope": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "optional doc_ids to restrict the graph to (from prior navigation/list_chunks)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+# graph_explore is ULTRA-ONLY: relational graph exploration is the extra depth
+# that distinguishes ultra from high (which stays on document/structure tools).
+_ULTRA_ONLY_TOOLS = {"graph_explore"}
+
+_TOOL_MAP = {
+    "retrieve": _RETRIEVE_TOOL_SPEC,
+    "search_chunks": _SEARCH_CHUNKS_TOOL_SPEC,
+    "list_chunks": _LIST_CHUNKS_TOOL_SPEC,
+    "navigate_tree": _NAVIGATE_TREE_TOOL_SPEC,
+    "navigate_structure": _NAVIGATE_STRUCTURE_TOOL_SPEC,
+    "calculate": _CALCULATE_TOOL_SPEC,
+    "graph_explore": _GRAPH_EXPLORE_TOOL_SPEC,
+    "web_search": _WEB_SEARCH_TOOL_SPEC,
+}
+
+
+def _active_tool_specs(tools) -> list:
+    """Tool schemas exposed to the model for THIS mode.
+
+    Ultra gets the full 8-tool surface (incl. graph_explore); high/medium get
+    the 7-tool surface minus the ultra-only relational explorer. The returned
+    list is what the model can call this session.
+    """
+    mode = str(getattr(tools, "thinking_mode", "") or "").lower()
+    if mode == "ultra":
+        return list(_TOOL_MAP.values())
+    return [spec for name, spec in _TOOL_MAP.items() if name not in _ULTRA_ONLY_TOOLS]
 
 
 # ── JSON / terminal parsing helpers ──────────────────────────────────────
@@ -392,12 +529,13 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True):
         kbinfos["chunks"].append(c)
 
 
-async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int) -> tuple:
+async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, **kw) -> tuple:
     """Run a corpus search fn per query and admit hits to output + evidence pool.
 
     Shared driver for every query-based tool (retrieve / search_chunks): the
-    only differences are the search backend (grep vs hybrid), ``top_n`` and the
-    per-call query cap — all passed in.
+    only differences are the search backend (grep vs hybrid), ``top_n``, the
+    per-call query cap — all passed in. ``kw`` forwards backend kwargs such as
+    ``use_compiled`` (search_chunks' compiled-structure expansion).
     """
     from rag.advanced_rag.harness.tools.search import _chunk_id
 
@@ -408,7 +546,7 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int) -
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
     for fq in queries[:max_q]:
         try:
-            res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n)
+            res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
             cands = res.get("chunks", []) or []
         except Exception:
             _LOG.warning("[action_session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
@@ -425,12 +563,19 @@ async def _exec_retrieve(tools, queries: list) -> tuple:
     return await _run_search(tools, grep_search, queries, top_n=10, max_q=3)
 
 
-async def _exec_search_chunks(tools, queries: list) -> tuple:
+async def _exec_search_chunks(tools, queries: list, use_compiled: bool = False) -> tuple:
     """Semantic retrieval (hybrid vector+BM25, narrow bypass) — the react-style
-    channel that finds passages sharing NO surface words with the query."""
+    channel that finds passages sharing NO surface words with the query.
+
+    ``use_compiled=True`` (high mode) turns on hybrid_search's COMPILED
+    expansion: page-index / tree / knowledge-graph / wiki pages (when the
+    dataset has them) are appended to a semantic hit so its structural
+    neighbours (parent/child headings, sibling wiki pages) come along.
+    Datasets with NO compiled structure are unaffected — expansion is a no-op.
+    """
     from rag.advanced_rag.harness.tools.search import hybrid_search
 
-    return await _run_search(tools, hybrid_search, queries, top_n=20, max_q=2)
+    return await _run_search(tools, hybrid_search, queries, top_n=20, max_q=2, use_compiled=use_compiled)
 
 
 async def _exec_web_search(tools, queries: list) -> tuple:
@@ -441,8 +586,12 @@ async def _exec_web_search(tools, queries: list) -> tuple:
 
     provider = getattr(tools, "web_search", None)
     if provider is None:
+        # No web provider configured. DO NOT return an empty payload (the model
+        # would just retry and burn turns). Return an explicit, actionable note
+        # so the model moves on to the corpus tools — a web failure must never
+        # block the Q&A.
         _LOG.warning("[action_session] web_search unavailable (no provider configured)")
-        return [], []
+        return [{"kind": "web_search", "note": "Web search is NOT configured for this session. Do not use this tool again; use the corpus tools (retrieve / search_chunks / navigate_*) instead."}], []
 
     out, ids = [], []
     seen = set()
@@ -494,6 +643,94 @@ def _arg_query_list(args, max_q: int) -> list:
     return [str(x) for x in (q or [])][:max_q]
 
 
+def _inject_nav_tools_ref(tools) -> None:
+    """navigation.py's _navigate_*_impl / graph_explore read the request-scoped
+    tools instance from THEIR OWN module-level ``_tools_ref`` (for tenant /
+    embed_mdl resolution). The old bind_dynamic_tools used to populate it; it
+    is gone, so populate it here before any navigation/graph call — otherwise
+    those tools crash on a None tools instance ('NoneType' has no attribute
+    '_resolve_doc_tenant') or warn 'no embed_mdl available' and return empty.
+    """
+    try:
+        import rag.advanced_rag.harness.tools.navigation as _nav
+
+        _nav._tools_ref["tools"] = tools
+    except Exception:
+        _LOG.warning("[action_session] could not inject navigation tools ref", exc_info=True)
+
+
+async def _exec_navigate_tree(tools, args: dict) -> tuple:
+    """Document-level embedding routing (navigate_tree). Returns doc candidates
+    as a text outline; evidence ids = routed doc_ids for later deep-read."""
+    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl
+
+    _inject_nav_tools_ref(tools)
+    query = str(args.get("query") or "")
+    text = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
+    return [{"kind": "navigate_tree", "content": (text or "[]")[:8000]}], []
+
+
+async def _exec_navigate_structure(tools, args: dict) -> tuple:
+    """In-document compiled-structure navigation (navigate_structure). Returns
+    outline annotated with chunk_ids; those become evidence for list_chunks."""
+    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl
+
+    _inject_nav_tools_ref(tools)
+    doc_id = str(args.get("doc_id") or "")
+    query = str(args.get("query") or "")
+    kind = str(args.get("kind") or "catalog")
+    text = await _navigate_structure_impl(query, doc_id=doc_id, kind=kind)
+    return [{"kind": "navigate_structure", "doc_id": doc_id, "content": (text or "[]")[:8000]}], [doc_id] if doc_id else []
+
+
+async def _exec_calculate(tools, args: dict) -> tuple:
+    """Arithmetic terminal: compute_from_facts decides whether the question
+    needs a computed number and safely evaluates an expression over facts."""
+    from rag.advanced_rag.harness.arithmetic import compute_from_facts
+
+    question = str(args.get("question") or "")
+    facts = [str(f) for f in (args.get("facts") or []) if str(f).strip()]
+    # compute_from_facts needs BOTH ``max_length`` (message-fit budget) and
+    # ``async_chat``. The OUTER chat_mdl (CountingChatModel/LLMBundle) carries
+    # max_length; the innermost LiteLLMBase that _base_chat_mdl returns does
+    # NOT. Pass the outer bundle.
+    mdl = getattr(tools, "chat_mdl", None)
+    if mdl is None:
+        return [{"kind": "calculate", "error": "no model"}], []
+    try:
+        res = await compute_from_facts(mdl, question, facts)
+    except Exception:
+        _LOG.warning("[action_session] calculate failed", exc_info=True)
+        res = None
+    if not res:
+        # nothing derivable -> tell the model so it doesn't loop on it
+        return [{"kind": "calculate", "expression": None, "note": "no numeric answer derivable from given facts; answer directly or retrieve more numbers."}], []
+    return [{"kind": "calculate", "expression": res.get("expression"), "result": res.get("result"), "computed": res.get("computed_value")}], []
+
+
+async def _exec_graph_explore(tools, args: dict) -> tuple:
+    """Relational knowledge-graph exploration (ultra-only). Returns either a
+    direct answer or source passages behind relevant entities/relations, so the
+    model can continue with list_chunks/navigate on the returned chunk/doc ids."""
+    from rag.advanced_rag.harness.tools.navigation import graph_explore
+
+    _inject_nav_tools_ref(tools)
+    query = str(args.get("query") or "")
+    doc_scope = [str(d) for d in (args.get("doc_scope") or []) if str(d).strip()]
+    try:
+        res = await graph_explore(tools, query, doc_scope=doc_scope or None)
+    except Exception:
+        _LOG.warning("[action_session] graph_explore failed", exc_info=True)
+        res = {}
+    answer = str(res.get("answer") or "").strip()
+    chunks = res.get("chunks") or []
+    if answer:
+        return [{"kind": "graph_explore", "answer": answer}], []
+    snippet = [{"id": c.get("id"), "content": (str(c.get("content") or "")[:1500])} for c in chunks[:6]]
+    ids = [str(c.get("id")) for c in chunks[:6] if c.get("id")]
+    return [{"kind": "graph_explore", "chunks": snippet}], ids
+
+
 async def execute_tool(tools, name: str, args: dict) -> tuple:
     """DeepSearch ToolNode: dispatch ONE native tool call by name.
 
@@ -503,9 +740,20 @@ async def execute_tool(tools, name: str, args: dict) -> tuple:
     if name == "retrieve":
         return await _exec_retrieve(tools, _arg_query_list(args, 3))
     if name == "search_chunks":
-        return await _exec_search_chunks(tools, _arg_query_list(args, 2))
+        # Compiled-structure expansion (page-index/tree/wiki/KG) inside
+        # hybrid_search is enabled in ALL modes. Datasets with NO compiled
+        # structure are unaffected — expansion is a no-op there.
+        return await _exec_search_chunks(tools, _arg_query_list(args, 2), use_compiled=True)
     if name == "list_chunks":
         return await _exec_list_chunks(tools, str(args.get("doc_id") or ""))
+    if name == "navigate_tree":
+        return await _exec_navigate_tree(tools, args)
+    if name == "navigate_structure":
+        return await _exec_navigate_structure(tools, args)
+    if name == "calculate":
+        return await _exec_calculate(tools, args)
+    if name == "graph_explore":
+        return await _exec_graph_explore(tools, args)
     if name == "web_search":
         return await _exec_web_search(tools, _arg_query_list(args, 2))
     _LOG.warning("[action_session] unknown tool %r; ignored.", name)
@@ -552,9 +800,13 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
     return await litellm.acompletion(**args, drop_params=True, timeout=timeout_s)
 
 
-async def _llm_once_with_tools(mdl, messages: list):
-    """ONE native-tool completion with the DeepSearch tool schema."""
-    return await _acompletion(mdl, messages, tools_list=list(_TOOL_MAP.values()), temperature=0.3)
+async def _llm_once_with_tools(tools, mdl, messages: list):
+    """ONE native-tool completion with THIS mode's tool surface.
+
+    The exposed tool set is mode-dependent: ultra adds the relational
+    ``graph_explore``; high/medium keep the 7-tool document/structure surface.
+    """
+    return await _acompletion(mdl, messages, tools_list=_active_tool_specs(tools), temperature=0.3)
 
 
 def _parse_tool_calls(msg) -> list:
@@ -650,7 +902,7 @@ async def _run_action_node(state: _SessionState) -> dict:
     attempts = state.get("attempts", 0) + 1
     try:
         async with asyncio.timeout(wall):
-            resp = await _llm_once_with_tools(mdl, state["messages"])
+            resp = await _llm_once_with_tools(state["tools"], mdl, state["messages"])
     except TimeoutError:
         _LOG.warning("[action_session] turn timed out after %.0fs", wall)
         return {"_done": True, "new_states": [], "found_answer": None, "attempts": attempts}
@@ -845,6 +1097,15 @@ def _strip_unpaired_tool_calls(messages: list) -> list:
     return cleaned
 
 
+def _action_max_turns(state: _SessionState) -> int:
+    """Per-mode action-session turn budget: ultra goes deeper inside each
+    session (more tool calls before the finalize fallback) — the latency cost
+    of the relational depth that distinguishes it from high."""
+    tools = state.get("tools")
+    mode = str(getattr(tools, "thinking_mode", "") or "").lower()
+    return _ACTION_MAX_TURNS_ULTRA if mode == "ultra" else _ACTION_MAX_TURNS
+
+
 def _route(state: _SessionState) -> str:
     if state.get("_done"):
         return END
@@ -854,7 +1115,7 @@ def _route(state: _SessionState) -> str:
     # tool node clears _pending_calls, then the route re-checks the budget.
     if state.get("_pending_calls"):
         return "tool"
-    if state.get("attempts", 0) >= _ACTION_MAX_TURNS:
+    if state.get("attempts", 0) >= _action_max_turns(state):
         return "finalize"
     return "run_action"  # nudge retry
 
@@ -942,9 +1203,9 @@ async def _init_chat(tools, system: str, user: str, tmo: float) -> str:
             ans, _u = await mdl.async_chat(system, [{"role": "user", "content": user}], {"temperature": 0.3})
             return str(ans or "")
     except TimeoutError:
-        _LOG.warning("[action_session:init] timed out (%ds)", tmo)
+        _LOG.warning("[Action Session:init] timed out (%ds)", tmo)
     except Exception:
-        _LOG.exception("[action_session:init] failed")
+        _LOG.exception("[Action Session:init] failed")
     return ""
 
 
@@ -995,5 +1256,5 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
         first_queries = [question]
     ans_slot = ans_var if isinstance(ans_var, int) and 0 <= ans_var < len(slots) else 0
     root = State(state=slots, depth=0, answer_variable=ans_slot)
-    _LOG.info("[action_session:init] %s", root.brief())
+    _LOG.info("[Action Session:init] %s", root.brief())
     return root, first_queries
