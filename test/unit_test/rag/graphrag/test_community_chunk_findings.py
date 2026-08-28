@@ -21,6 +21,7 @@ strings reaches ``extract_community`` intact.
 """
 
 import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -73,13 +74,15 @@ _DICT_FINDING = {"summary": "Alpha matters", "explanation": "Because of beta"}
 class TestCommunityChunkFindings:
     @pytest.mark.p2
     @pytest.mark.asyncio
-    async def test_string_findings_do_not_break_chunk_building(self, monkeypatch):
+    async def test_string_findings_do_not_break_chunk_building(self, monkeypatch, caplog):
         structure = [{"title": "Community", "weight": 1.0, "entities": ["A"], "findings": ["Alpha matters", _DICT_FINDING]}]
 
-        chunks = await _run_extract_community(monkeypatch, structure, ["report text"])
+        with caplog.at_level(logging.DEBUG, logger="root"):
+            chunks = await _run_extract_community(monkeypatch, structure, ["report text"])
 
         assert len(chunks) == 1
         assert json.loads(chunks[0]["content_with_weight"])["evidences"] == "Because of beta"
+        assert "Omitted 1 non-dict findings" in caplog.text
 
     @pytest.mark.p2
     @pytest.mark.asyncio

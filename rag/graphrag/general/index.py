@@ -936,13 +936,17 @@ async def extract_community(
 
     chunks = []
     for stru, rep in zip(community_structure, community_reports):
+        # A finding may be a plain string rather than a dict, which the schema check allows
+        # because it only requires ("findings", list). CommunityReportsExtractor
+        # ._get_text_output handles both shapes. A string finding carries no separate
+        # explanation, and its text still reaches content_ltks through the report.
+        dict_findings = [f for f in stru["findings"] if isinstance(f, dict)]
+        skipped_findings = len(stru["findings"]) - len(dict_findings)
+        if skipped_findings:
+            logging.debug("Omitted %d non-dict findings from community evidences", skipped_findings)
         obj = {
             "report": rep,
-            # A finding may be a plain string rather than a dict, which the schema check
-            # allows because it only requires ("findings", list). CommunityReportsExtractor
-            # ._get_text_output handles both shapes. A string finding carries no separate
-            # explanation, and its text still reaches content_ltks through the report.
-            "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"] if isinstance(f, dict)]),
+            "evidences": "\n".join([f.get("explanation", "") for f in dict_findings]),
         }
         # Deterministic id derived from (kb_id, community title) so reruns of
         # extract_community produce stable ids.  Combined with insert-then-
