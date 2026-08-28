@@ -52,12 +52,19 @@ def test_postgres_lock_stops_after_supplied_timeout_without_retrying_timeout():
     with (
         patch("api.db.db_models.time.monotonic", side_effect=lambda: now[0]),
         patch("api.db.db_models.time.sleep", side_effect=_sleep),
+        patch("api.db.db_models.logging.warning") as warning,
         pytest.raises(Exception, match="acquire postgres lock add_chunk:1 timeout"),
     ):
         lock.lock()
 
     assert now[0] == pytest.approx(20.25)
     assert db.execute_sql.call_count == 4
+    warning.assert_called_once_with(
+        "Timed out acquiring %s advisory lock: lock_id=%s timeout=%s",
+        "postgres",
+        lock.lock_id,
+        0.25,
+    )
 
 
 @pytest.mark.p2

@@ -95,13 +95,15 @@ _ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(
     max_workers=_ADD_CHUNK_WORKERS,
     thread_name_prefix="add-chunk",
 )
+_ADD_CHUNK_IN_FLIGHT = set()
+_ADD_CHUNK_IN_FLIGHT_LOCK = threading.Lock()
 
 
 class _AddChunkOperationTimeout(TimeoutError):
     """Raised when add-chunk work exceeds its request deadline."""
 
 
-async def _run_add_chunk_operation(func, *args, stop_event=None):
+async def _run_add_chunk_operation(func, *args, stop_event=None, on_done=None):
     """Run blocking add-chunk work in the route's dedicated executor.
 
     Timing out cancels work that is still queued and releases the request task,
@@ -111,7 +113,10 @@ async def _run_add_chunk_operation(func, *args, stop_event=None):
     """
     loop = asyncio.get_running_loop()
     ctx = contextvars.copy_context()
-    future = loop.run_in_executor(_ADD_CHUNK_EXECUTOR, ctx.run, func, *args)
+    worker_future = _ADD_CHUNK_EXECUTOR.submit(ctx.run, func, *args)
+    if on_done is not None:
+        worker_future.add_done_callback(on_done)
+    future = asyncio.wrap_future(worker_future, loop=loop)
     try:
         done, _ = await asyncio.wait({future}, timeout=_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS)
     except asyncio.CancelledError:
@@ -1123,14 +1128,22 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     embd_mdl = TenantLLMService.model_instance(model_config)
     stop_event = threading.Event()
     index_name = search.index_name(dataset_tenant_id)
+    with _ADD_CHUNK_IN_FLIGHT_LOCK:
+        overlaps_in_flight = chunk_id in _ADD_CHUNK_IN_FLIGHT
+        if not overlaps_in_flight:
+            _ADD_CHUNK_IN_FLIGHT.add(chunk_id)
+
+    def _clear_in_flight(_future):
+        with _ADD_CHUNK_IN_FLIGHT_LOCK:
+            _ADD_CHUNK_IN_FLIGHT.discard(chunk_id)
 
     def _add_chunk_sync():
         """Embed, index, and count one chunk as one consistency unit."""
         if stop_event.is_set():
             return None
-        existing = settings.docStoreConn.get(chunk_id, index_name, [dataset_id])
-        if existing is not None:
-            return existing
+        existing_at_start = settings.docStoreConn.get(chunk_id, index_name, [dataset_id])
+        if stop_event.is_set():
+            return None
         v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
         if stop_event.is_set():
             return None
@@ -1142,18 +1155,28 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             if stop_event.is_set():
                 return None
             existing = settings.docStoreConn.get(chunk_id, index_name, [dataset_id])
-            if existing is not None:
-                return existing
+            if stop_event.is_set():
+                return None
+            if existing is not None and (overlaps_in_flight or existing_at_start is None):
+                return d
             settings.docStoreConn.insert([d], index_name, dataset_id)
         DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
         return d
 
     try:
-        stored_chunk = await _run_add_chunk_operation(_add_chunk_sync, stop_event=stop_event)
+        stored_chunk = await _run_add_chunk_operation(
+            _add_chunk_sync,
+            stop_event=stop_event,
+            on_done=None if overlaps_in_flight else _clear_in_flight,
+        )
     except _AddChunkOperationTimeout:
         message = f"Chunk creation timed out after {_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS:g} seconds"
         logging.error("%s; the worker may still be running. dataset_id=%s document_id=%s chunk_id=%s", message, dataset_id, document_id, chunk_id)
         return get_result(code=RetCode.EXCEPTION_ERROR, message=message)
+    except Exception:
+        if not overlaps_in_flight:
+            _clear_in_flight(None)
+        raise
 
     key_mapping = {
         "id": "id",

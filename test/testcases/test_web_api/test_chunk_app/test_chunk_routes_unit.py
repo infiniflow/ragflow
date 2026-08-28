@@ -989,6 +989,58 @@ def test_restful_add_chunk_timeout_waiting_for_idempotency_lock_skips_insert(mon
 
 
 @pytest.mark.p2
+def test_restful_add_chunk_timeout_during_duplicate_recheck_skips_insert(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.DocumentService.increment_calls.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS", 0.2)
+    duplicate_recheck_started = threading.Event()
+    release_recheck = threading.Event()
+    lock_released = threading.Event()
+    get_calls = 0
+    original_get = module.settings.docStoreConn.get
+
+    def _blocking_get(*args, **kwargs):
+        nonlocal get_calls
+        get_calls += 1
+        if get_calls == 2:
+            duplicate_recheck_started.set()
+            assert release_recheck.wait(2), "test did not release the duplicate recheck"
+        return original_get(*args, **kwargs)
+
+    class _TrackedLock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            lock_released.set()
+
+    monkeypatch.setattr(module.settings.docStoreConn, "get", _blocking_get)
+    monkeypatch.setattr(module.DB, "lock", lambda *_args, **_kwargs: _TrackedLock())
+    _set_request_json(monkeypatch, module, {"content": "chunk"})
+
+    async def _exercise():
+        task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        assert await asyncio.to_thread(duplicate_recheck_started.wait, 1), "worker did not start the duplicate recheck"
+        return await task
+
+    fallback_release = threading.Timer(2, release_recheck.set)
+    fallback_release.start()
+    try:
+        res = _run(_exercise())
+    finally:
+        release_recheck.set()
+        fallback_release.cancel()
+
+    assert lock_released.wait(1), "worker did not leave the idempotency lock after the duplicate recheck"
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "Chunk creation timed out" in res["message"], res
+    assert get_calls == 2
+    assert module.settings.docStoreConn.inserted == []
+    assert module.DocumentService.increment_calls == []
+
+
+@pytest.mark.p2
 def test_restful_add_chunk_insert_timeout_retry_is_idempotent(monkeypatch):
     module = _load_chunk_api_module(monkeypatch)
     module.request = SimpleNamespace(args={}, headers={})
@@ -1048,6 +1100,25 @@ def test_restful_add_chunk_insert_timeout_retry_is_idempotent(monkeypatch):
     assert counted.wait(1), "chunk count was not updated after the timed-out insert eventually succeeded"
     assert len(module.settings.docStoreConn.inserted) == 1
     assert len(module.DocumentService.increment_calls) == 1
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_sequential_duplicate_preserves_update_contract(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.DocumentService.increment_calls.clear()
+
+    _set_request_json(monkeypatch, module, {"content": "chunk", "important_keywords": ["first"]})
+    first = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    _set_request_json(monkeypatch, module, {"content": "chunk", "important_keywords": ["second"]})
+    second = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+
+    assert first["code"] == second["code"] == module.RetCode.SUCCESS
+    assert first["data"]["chunk"]["id"] == second["data"]["chunk"]["id"]
+    assert second["data"]["chunk"]["important_keywords"] == ["second"]
+    assert len(module.settings.docStoreConn.inserted) == 2
+    assert module.settings.docStoreConn.inserted_by_id[second["data"]["chunk"]["id"]]["important_kwd"] == ["second"]
+    assert len(module.DocumentService.increment_calls) == 2
 
 
 @pytest.mark.p2

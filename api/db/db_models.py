@@ -908,6 +908,12 @@ class PostgresDatabaseLock:
 
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                logging.warning(
+                    "Timed out acquiring %s advisory lock: lock_id=%s timeout=%s",
+                    self.database_label,
+                    self.lock_id,
+                    self.timeout,
+                )
                 raise Exception(f"acquire {self.database_label} lock {self.lock_name} timeout")
             time.sleep(min(self.poll_interval, remaining))
 
