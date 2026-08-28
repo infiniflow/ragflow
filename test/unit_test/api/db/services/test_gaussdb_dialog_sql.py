@@ -666,7 +666,8 @@ def _run_configured_chat(
     kb_id = "abcdefabcdefabcdefabcdefabcdefab"
     if embd_mdl is None:
         embd_mdl = object()
-    get_field_map = Mock(return_value=field_map or {"amount": "number"})
+    resolved_field_map = field_map if field_map is not None else {"amount": "number"}
+    get_field_map = Mock(return_value=resolved_field_map)
     monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
     monkeypatch.setattr(
         dialog_service,
@@ -684,7 +685,13 @@ def _run_configured_chat(
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda *_args, **_kwargs: ([types.SimpleNamespace(tenant_id=tenant_id)], embd_mdl, None, chat, None),
+        lambda *_args, **_kwargs: (
+            [types.SimpleNamespace(id=kb_id, tenant_id=tenant_id, parser_config={"field_map": resolved_field_map})],
+            embd_mdl,
+            None,
+            chat,
+            None,
+        ),
     )
     monkeypatch.setattr(dialog_service, "kb_prompt", lambda *_args, **_kwargs: ["fallback content"])
     monkeypatch.setattr(dialog_service, "message_fit_in", lambda messages, _limit: (0, messages))
