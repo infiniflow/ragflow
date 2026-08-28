@@ -343,13 +343,19 @@ async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
         # A model that wraps the object in an array, or emits several objects in a row,
         # parses to a list. The tags are still there, so merge the objects it holds.
         merged = {}
+        found_object = False
         for item in obj:
             if isinstance(item, dict):
+                found_object = True
                 merged.update(item)
+        if not found_object:
+            logging.warning(f"content_tagging: reply parsed to a list of {len(obj)} values holding no object ({len(kwd)} chars).")
+            return {}
         obj = merged
     if not isinstance(obj, dict):
         # A reply holding no JSON object parses to "", which used to reach .items() below.
-        logging.warning(f"content_tagging: expected a JSON object of tags, got {type(obj).__name__}. Response: {kwd[:500]}")
+        # The reply can echo the chunk back, so log its shape rather than its content.
+        logging.warning(f"content_tagging: expected a JSON object of tags, got {type(obj).__name__} ({len(kwd)} chars).")
         return {}
     res = {}
     for k, v in obj.items():

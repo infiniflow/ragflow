@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -70,6 +71,28 @@ class TestContentTagging:
         res = await content_tagging(_chat_model(reply), "chunk", ["alpha", "beta"], _EXAMPLES)
 
         assert res == {"alpha": 2, "beta": 1}
+
+    @pytest.mark.p2
+    @pytest.mark.asyncio
+    async def test_a_list_holding_no_object_is_reported_not_silently_empty(self, caplog):
+        """An empty result from a malformed reply must stay distinguishable from real
+        empty tags, so the list branch warns when it merged nothing."""
+        with caplog.at_level(logging.WARNING):
+            res = await content_tagging(_chat_model("[1, 2, 3]"), "chunk", ["alpha", "beta"], _EXAMPLES)
+
+        assert res == {}
+        assert "holding no object" in caplog.text
+
+    @pytest.mark.p2
+    @pytest.mark.asyncio
+    async def test_the_warning_does_not_carry_the_model_reply(self, caplog):
+        """The reply can echo the chunk back, so the log records shape, not content."""
+        secret = "PATIENT NAME REDACTED EXAMPLE STRING"
+        with caplog.at_level(logging.WARNING):
+            await content_tagging(_chat_model(secret), "chunk", ["alpha", "beta"], _EXAMPLES)
+
+        assert secret not in caplog.text
+        assert "content_tagging" in caplog.text
 
     @pytest.mark.p2
     @pytest.mark.asyncio
