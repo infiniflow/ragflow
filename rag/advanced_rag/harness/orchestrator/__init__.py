@@ -3,8 +3,6 @@
 import logging
 
 from rag.advanced_rag.harness.config import get_mode
-from rag.advanced_rag.harness.orchestrator.agentic import agentic_research
-from rag.advanced_rag.harness.orchestrator.decompose import decompose_and_search
 from rag.advanced_rag.harness.orchestrator.direct import direct_search
 from rag.advanced_rag.harness.stats import in_phase
 
@@ -26,12 +24,6 @@ async def orchestrator_loop(state: dict, tools) -> dict:
 
     if mode.execution_strategy == "direct_search":
         return await direct_search(state, tools)
-
-    if mode.execution_strategy == "decompose_and_search":
-        return await decompose_and_search(state, tools)
-
-    if mode.execution_strategy in ("agentic_research", "deep_research"):
-        return await agentic_research(state, tools)
 
     _LOG.warning("orchestrator: unknown strategy %s, fallback to direct", mode.execution_strategy)
     return await direct_search(state, tools)

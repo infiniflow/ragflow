@@ -16,6 +16,8 @@
 import json
 import logging
 import re
+import threading
+import time
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
@@ -46,9 +48,18 @@ def index_name(uid):
 
 
 class Dealer:
+    # Short-lived cache of "doc_id exists in MySQL" used by _prune_deleted_chunks.
+    # Every retrieval would otherwise hit MySQL per query (fan-out searches and the
+    # ReAct native loop hammer the same doc_ids repeatedly), which exhausts the
+    # connection pool under concurrency. Doc existence is stable within seconds, so
+    # a short TTL lets us skip the DB round-trip for repeats.
+    _DOC_EXISTS_TTL = 120.0
+
     def __init__(self, dataStore: DocStoreConnection):
         self.qryr = query.FulltextQueryer()
         self.dataStore = dataStore
+        self._doc_exists_cache: OrderedDict = OrderedDict()
+        self._doc_exists_lock = threading.Lock()
 
     @dataclass
     class SearchResult:
@@ -75,13 +86,37 @@ class Dealer:
             return set()
 
         unique_doc_ids = list(dict.fromkeys(doc_ids))
+        now = time.time()
 
-        def _load():
-            from api.db.services.document_service import DocumentService
+        # Fast path: serve every doc_id from the short-lived cache if it is fresh.
+        with self._doc_exists_lock:
+            cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
+            hit = {d for d in unique_doc_ids if d in cached}
+            miss = [d for d in unique_doc_ids if d not in cached]
 
-            return {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+        if not miss:
+            return hit
 
-        return await thread_pool_exec(_load)
+        # Run the existence check on the MAIN thread against the shared peewee pool.
+        # Doing it through ``thread_pool_exec`` spins up a fresh thread per call; the
+        # pooled MySQL connection gets bound to that (short-lived) thread's local pool
+        # and, once the thread is torn down, stays locked in the dead thread — a leak
+        # that exhausts the connection pool under fan-out / ReAct concurrency (hundreds
+        # of MaxConnectionsExceeded). Reusing the main thread's pool keeps connections
+        # returning properly; the query itself is small and the cache makes this rare.
+        from api.db.services.document_service import DocumentService
+
+        found = {row["id"] for row in DocumentService.get_by_ids(miss).dicts()}
+
+        # Merge results; a missing doc is recorded as False so repeat queries skip it too.
+        with self._doc_exists_lock:
+            for d in miss:
+                self._doc_exists_cache[d] = (now, d in found)
+            # Bound the cache so it cannot grow unbounded across many documents.
+            while len(self._doc_exists_cache) > 4096:
+                self._doc_exists_cache.popitem(last=False)
+
+        return hit.union(found)
 
     async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
         # Temporary safety net:

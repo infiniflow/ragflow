@@ -549,6 +549,23 @@ class Base(ABC):
 
                     logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
+                    # Terminal-tool short-circuit (mirror of the streaming
+                    # variant at the top of this file): a terminal tool already
+                    # produces the final answer, so return its result instead of
+                    # feeding it back for another LLM round. Without this the
+                    # non-streaming react loop keeps re-invoking `rag` every
+                    # round (Q654 spun 17 tree passes → 15 min). `rag` is always
+                    # terminal, so default to {"rag"} even if a probe wrapper
+                    # dropped the configured terminal_tools.
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info("[Tool loop] The %s tool produced the final answer — done.", name)
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                ans += out
+                            self.last_usage = dict(agg_usage)
+                            return ans, tk_count
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
@@ -2437,16 +2454,17 @@ class LiteLLMBase(ABC):
                     # Terminal-tool short-circuit: a terminal tool already
                     # produces the final answer, so stream its result and stop
                     # instead of feeding it back for another LLM round.
-                    _terminal = getattr(self, "terminal_tools", None)
-                    if _terminal:
-                        for tc, name, args, result, err in results:
-                            if name in _terminal and not err:
-                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
-                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-                                if out:
-                                    yield out
-                                yield total_tokens
-                                return
+                    # `rag` is always terminal (dialog_service sets terminal_tools,
+                    # but a probe wrapper may drop it, so default to {"rag"}).
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                yield out
+                            yield total_tokens
+                            return
 
                     history = self._append_history_batch(
                         history,
