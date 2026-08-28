@@ -9,8 +9,8 @@ import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { checkEmbedding } from '@/services/knowledge-service';
 import {
   getOperatorType,
-  transformApiConfigToForm,
   transformFormConfigToApi,
+  transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
 import { pick } from 'lodash';
 import {
@@ -69,30 +69,9 @@ export const useFetchDatasetSettingOnMount = (
   }, [knowledgeDetails?.connectors, dataSourceInfo]);
 
   useEffect(() => {
-    const parserConfig = knowledgeDetails.parser_config as
-      | Record<string, any>
-      | undefined;
-    let formParserConfig: Record<string, any> | undefined = parserConfig;
-
-    // Convert parser_config to form format if in pipeline mode
-    if (
-      parserConfig &&
-      typeof parserConfig === 'object' &&
-      !Array.isArray(parserConfig)
-    ) {
-      const keys = Object.keys(parserConfig);
-      const hasPipelineKeys = keys.some((key) => key.includes(':'));
-      if (hasPipelineKeys) {
-        formParserConfig = {};
-        for (const [operatorId, config] of Object.entries(parserConfig)) {
-          const operatorType = getOperatorType(operatorId);
-          formParserConfig[operatorId] = transformApiConfigToForm(
-            operatorType,
-            config as Record<string, any>,
-          );
-        }
-      }
-    }
+    const formParserConfig = transformSavedParserConfigToForm(
+      knowledgeDetails.parser_config as Record<string, any> | undefined,
+    );
 
     const formValues = {
       ...pick(knowledgeDetails, [

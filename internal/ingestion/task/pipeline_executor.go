@@ -989,23 +989,48 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		return nil, dsl, err
 	}
 
-	// Surface the debug-run result DSL to any sink that implements ResultSink
-	// (the DebugLogSink used by canvas-debug runs). This mirrors Python's
-	// END-marker `dsl` attachment (rag/flow/pipeline.py:98) so the front-end
-	// "View result" page can render parsed chunks. The probe is an optional
-	// capability: non-debug (DB-backed) sinks ignore it and the ProgressSink
-	// contract is unchanged, keeping the coupling one-directional.
-	if rs, ok := s.progressSink.(ResultSink); ok {
-		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-			rs.SetResult(resultDSL, output)
-		}
-	}
+	logDSL := s.buildLogDSL(dsl, output)
 
 	payload, err := pipelinepkg.ExtractPayload(dsl, output)
 	if err != nil {
 		return nil, dsl, err
 	}
-	return payload, dsl, nil
+	return payload, logDSL, nil
+}
+
+// buildLogDSL returns the DSL string recorded for a pipeline run: the
+// run-result DSL (static canvas structure + each component's runtime outputs
+// merged into obj.params.outputs) when it can be built and marshaled,
+// otherwise the static dsl unchanged — log recording must never fail a run.
+//
+// BuildDebugResultDSL needs the full run output, which is in scope only inside
+// runPipelineWithDSL: the extracted payload returned there no longer carries
+// output["state"]. Two consumers:
+//   - canvas-debug runs hand the map to the DebugLogSink END marker via the
+//     ResultSink capability (END-marker `dsl` attachment,
+//     rag/flow/pipeline.py:98);
+//   - persist (dataset parse) runs return its JSON as the log DSL so the
+//     pipeline operation log carries every component's output
+//     (dsl=str(pipeline), rag/svr/task_executor_refactor/dataflow_service.py)
+//     — without it the dataset log "View result" page renders blank panels.
+//
+// The sink probe stays an optional capability: non-debug (DB-backed) sinks
+// ignore it and the ProgressSink contract is unchanged.
+func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
+	logDSL := dsl
+	if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
+		if rs, ok := s.progressSink.(ResultSink); ok {
+			rs.SetResult(resultDSL, output)
+		}
+		if raw, e := json.Marshal(resultDSL); e == nil {
+			logDSL = string(raw)
+		} else {
+			common.Warn(fmt.Sprintf("marshal run-result dsl for pipeline log: %v", e))
+		}
+	} else {
+		common.Warn(fmt.Sprintf("build run-result dsl for pipeline log: %v", e))
+	}
+	return logDSL
 }
 
 // debugPageCapPages is the number of leading pages a canvas-debug
