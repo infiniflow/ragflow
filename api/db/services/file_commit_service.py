@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Optional
 
+from api.db import FileType
 from api.db.db_models import DB, FileCommit, FileCommitItem, File, User
 from api.db.services.common_service import CommonService
 from api.db.services.file_service import FileService
@@ -371,8 +372,21 @@ class FileCommitService(CommonService):
                         item["old_location"] = old_location
 
                     # Remove the file record. The blob stays in the content-addressed object
-                    # store and the tree_state tombstone below keeps it reachable from history.
-                    File.delete().where(File.id == file_id).execute()
+                    # store, and history keeps its metadata in the tree_state tombstone below
+                    # rather than in the File row.
+                    #
+                    # Folders are exempt: _build_hierarchical_tree resolves sub-folder parentage
+                    # from live File rows, so dropping one makes every historical entry beneath it
+                    # unreachable. File entries are read from tree_state, so they are unaffected.
+                    row = File.get_or_none(File.id == file_id)
+                    if row is not None and row.type == FileType.FOLDER.value:
+                        logging.warning(
+                            "create_commit: refusing to delete folder %s in commit for %s",
+                            file_id,
+                            folder_id,
+                        )
+                    elif row is not None:
+                        File.delete().where(File.id == file_id).execute()
 
                     # Remove from tree state (mark deleted)
                     if file_id in tree_state:
