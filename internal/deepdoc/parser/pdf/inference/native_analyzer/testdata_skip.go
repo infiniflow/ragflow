@@ -6,7 +6,7 @@
 // fetched (e.g. -tags fetch_testdata was not supplied, or the download failed),
 // the tests are skipped rather than failed — keeping the default `go test ./...`
 // and `go test -tags cgo` runs green without the assets.
-package native_analyzer
+package infnative
 
 import (
 	"fmt"

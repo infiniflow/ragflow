@@ -6,7 +6,7 @@
 // (via a relative path), so we fetch with pkg = "native". The download is
 // best-effort: if it fails, the guard in testdata_skip.go skips the tests
 // instead of failing.
-package native_analyzer
+package infnative
 
 import (
 	"fmt"
