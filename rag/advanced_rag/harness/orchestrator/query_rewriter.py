@@ -37,6 +37,7 @@ async def rewrite_gap_to_query(
     question: str,
     gaps: list[tuple[str, str]],
     bridge_values: list | None = None,
+    research_context: str = "",
 ) -> list[dict]:
     """Rewrite forward gaps into targeted search queries (multi-hop aware).
 
@@ -53,6 +54,12 @@ async def rewrite_gap_to_query(
         in a "which finale ran longest" question). The rewriter anchors the new
         search query to these, so a missing hop is re-searched with the resolved
         upstream value instead of re-deriving it.
+    research_context : str
+        Rendered block describing what previous rounds already tried (queries +
+        outcomes) and what the current evidence pool roughly contains. Gives the
+        rewriter enough information to aim at UNCOVERED angles instead of
+        paraphrasing dead ones — the information-augmented counterpart of the
+        react loop's in-context visibility.
 
     Returns
     -------
@@ -69,6 +76,7 @@ async def rewrite_gap_to_query(
         question=question or "",
         gaps=gaps_text,
         bridge_values=bridge_text,
+        research_context=research_context,
     )
     try:
         result = await gen_json(rendered, "Output:\n", chat_mdl)

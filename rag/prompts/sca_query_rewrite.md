@@ -6,6 +6,9 @@ Original user question:
 Already-resolved bridge values (facts confirmed from earlier searches — use these to anchor the new query instead of re-deriving them):
 {{ bridge_values }}
 
+Research history and evidence at hand (from previous retrieval rounds):
+{{ research_context }}
+
 Missing pieces identified by the Sufficient Context Agent (each has "what" = what the answer still needs, and "hint" = a suggested search hint):
 {{ gaps }}
 
@@ -17,6 +20,7 @@ Rewrite each missing piece into a concrete search query that the retriever can h
 5. Keep each query standalone and searchable — do NOT use pronouns ("he", "it", "this") — repeat the key entity explicitly.
 6. ONE QUERY PER MISSING PIECE. Do not emit multiple near-duplicate queries for the same gap ("What teams"/"For each team"/"Complete enumeration" of the same thing are duplicates — keep exactly one, the most concretely anchored). The number of output queries should equal the number of distinct, genuinely-different missing pieces.
 7. Drop any missing piece that cannot be turned into a searchable query.
+8. DIVERSITY: consult the "Research history and evidence at hand" section. Do NOT output any query that paraphrases an already-tried one (listed there WITH its outcome — a previous search that yielded nothing new means that angle is dead). Aim each new query at aspects the current evidence does NOT yet cover, possibly combining the bridge values with different entity/relation combinations.
 
 Output format (JSON):
 ```json

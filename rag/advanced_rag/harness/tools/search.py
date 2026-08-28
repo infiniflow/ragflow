@@ -795,7 +795,7 @@ async def _load_chunks_for_doc(tools, doc_id: str, chunk_ids: list[str]) -> list
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+    resolved = tools._resolve_doc_tenant(doc_id)
     if not resolved:
         return []
     kb_id, tenant_id = resolved
@@ -1397,6 +1397,7 @@ async def _grep_chunks_impl(
     chunk_ids: list[str] | None = None,
     dataset_ids: list[str] | None = None,
     doc_scope: list[str] | None = None,
+    tools=None,
 ) -> str:
     """Search dataset chunk content with a single POSIX regular expression,
     case-insensitive (behaves like grep -E -i).
@@ -1442,14 +1443,15 @@ async def _grep_chunks_impl(
     if not getattr(settings, "retriever", None):
         return '<grep_results count="0" error="no retriever">\n</grep_results>'
 
-    target_ids = dataset_ids or list(dict.fromkeys(_get_kb_ids(_tools_slot())))
+    _t = tools or _tools_slot()
+    target_ids = dataset_ids or list(dict.fromkeys(_get_kb_ids(_t)))
     if not target_ids:
         return '<grep_results count="0" error="no bound datasets">\n</grep_results>'
 
     # Precise path: grep ONLY within the chunk_ids flagged by navigate_structure's
     # outline pointers (inside doc_scope's documents). No full-dataset retrieval.
     if chunk_ids:
-        candidates = await _load_specific_chunks(_tools_slot(), chunk_ids, doc_scope)
+        candidates = await _load_specific_chunks(_t, chunk_ids, doc_scope)
         if not candidates:
             return '<grep_results count="0" error="none of the given chunk_ids found">\n</grep_results>'
     else:
@@ -1458,12 +1460,12 @@ async def _grep_chunks_impl(
         # the actual regex locate + context-window extraction (zero extra LLM).
         candidates = []
         try:
-            res = await bm25_search(_tools_slot(), q, kb_ids=target_ids, top_n=60, doc_scope=doc_scope)
+            res = await bm25_search(_t, q, kb_ids=target_ids, top_n=60, doc_scope=doc_scope)
             candidates = res.get("chunks", []) or []
         except Exception:
             _LOG.exception("[grep_chunks] bm25 candidate retrieval failed; falling back to hybrid")
             try:
-                res = await hybrid_search(_tools_slot(), q, kb_ids=target_ids, top_n=60, doc_scope=doc_scope)
+                res = await hybrid_search(_t, q, kb_ids=target_ids, top_n=60, doc_scope=doc_scope)
                 candidates = res.get("chunks", []) or []
             except Exception:
                 _LOG.exception("[grep_chunks] hybrid fallback failed")
@@ -1521,6 +1523,7 @@ async def _search_chunks_impl(
     full_content: bool = False,
     similarity_threshold: float = 0.2,
     keywords_similarity_weight: float = 0.3,
+    tools=None,
 ) -> str:
     """Semantic/vector search tool for retrieving knowledge by meaning, intent,
     and conceptual relevance.
@@ -1572,7 +1575,7 @@ async def _search_chunks_impl(
     if not queries:
         return '<search_results count="0" error="no queries">\n</search_results>'
 
-    tools_slot = _tools_slot()
+    tools_slot = tools or _tools_slot()
     target_ids = dataset_ids or list(dict.fromkeys(_get_kb_ids(tools_slot)))
     if not target_ids:
         return '<search_results count="0" error="no bound datasets">\n</search_results>'
@@ -1657,7 +1660,7 @@ async def _search_chunks_impl(
 
 
 @tool(timeout=120)
-async def _list_chunks_impl(doc_id: str, chunk_ids: list[str] | None = None, limit: int = 20, offset: int = 0) -> str:
+async def _list_chunks_impl(doc_id: str, chunk_ids: list[str] | None = None, limit: int = 20, offset: int = 0, tools=None) -> str:
     """Read the FULL original text of ONE dataset document in reading order
     (Deep Read).
 
@@ -1692,7 +1695,7 @@ async def _list_chunks_impl(doc_id: str, chunk_ids: list[str] | None = None, lim
     limit = max(1, min(int(limit or 20), 100))
     offset = max(0, int(offset or 0))
 
-    tools_slot = _tools_slot()
+    tools_slot = tools or _tools_slot()
     try:
         full = await tools_slot.fetch_full_document(doc_id)
     except Exception:
@@ -1957,6 +1960,113 @@ def _with_clean_names(callables: list) -> list:
     return callables
 
 
+_TOOL_NAME_ALIASES = {
+    # historical harness-config spellings → dynamic-registry clean names
+    "grep_search": "grep_chunks",
+    "search_chunks_tool": "search_chunks",
+    "retrieve": "search_chunks",
+    "list_pages": "list_chunks",
+    "calculator": "calculate",
+}
+
+
+def _canonical_tool_name(name: str) -> str:
+    return _TOOL_NAME_ALIASES.get(name, name)
+
+
+def bind_tool_subset(tools_slot, names: list[str]) -> list:
+    """Bind an EXPLICIT whitelist of dynamic tools (DeepSearch-style controllability).
+
+    ``bind_dynamic_tools`` always exposes the full mode set; research sessions
+    that must stay within a controlled tool surface call this instead.
+
+    Implementation note: the public tool names exist ONLY inside
+    ``bind_dynamic_tools``'s cleaned schemas — the raw ``@tool`` impls keep
+    their ``_*_impl`` spelling. So we do a full idempotent bind first to obtain
+    properly-named wrappers, filter them by the whitelist, then REBIND the
+    model to just that subset (the next ``bind_dynamic_tools`` call anywhere
+    restores the full surface).
+
+    Unknown leftovers are logged-and-skipped so a config typo can never
+    silently widen the attack surface.
+    """
+    wanted = {_canonical_tool_name(n) for n in (names or [])}
+    all_bound = bind_dynamic_tools(tools_slot)  # idempotent; also fixes clean names
+
+    def _name(item) -> str:
+        return getattr(item, "openai_schema", {}).get("function", {}).get("name", "")
+
+    subset = [item for item in all_bound if _name(item) in wanted]
+    skipped = [n for n in (names or []) if _canonical_tool_name(n) not in {(_name(i)) for i in subset}]
+    if skipped:
+        _LOG.warning("[ToolWhitelist] requested but unavailable tools skipped: %s", skipped)
+
+    # Rebind the model to the SUBSET so downstream wrappers validate against
+    # exactly these tools. Rebinding is safe: bind_tools stores the schema list;
+    # any later bind_dynamic_tools restores the full set.
+    mdl = _base_chat_mdl(tools_slot)
+    if mdl is None or not hasattr(mdl, "bind_tools"):
+        return subset
+    try:
+        mdl.bind_tools(subset)
+    except Exception:
+        _LOG.warning("[ToolWhitelist] rebind-to-subset failed; keeping full surface", exc_info=True)
+    return subset
+
+
+def bind_tool_callables(tools_slot, callables: list) -> list:
+    """Bind a caller-provided callable list — shared body with bind_dynamic_tools."""
+    mdl = _base_chat_mdl(tools_slot)
+    if mdl is None or not hasattr(mdl, "bind_tools"):
+        _LOG.warning("[ToolBind] cannot bind tools: no model with bind_tools() for slot")
+        return []
+    tools = mdl.bind_tools(callables)
+    if isinstance(tools, dict):
+        return tools.get("tool_calls", [])
+    return tools
+
+
+def _signature_tolerant(fn):
+    """Wrap a ``@tool`` callable so hallucinated kwargs never kill a loop round.
+
+    Live failure modes observed in the wrapper's tool loop (each one burns a
+    whole research round: the TypeError is caught & logged, an error payload is
+    appended to history, and the model must retry):
+
+    1. Models sometimes emit arguments NOT in the tool schema (e.g.
+       ``grep_chunks`` called with a hallucinated ``top_n``).
+    2. Streaming merge glitches can concatenate two tool calls into garbled
+       argument keys (e.g. ``think`` receiving ``'invoke name="navigate_tree"'``).
+
+    The session executes plain ``fn(**arguments)``, so any unknown key raises
+    TypeError. This wrapper drops keys that are not in the wrapped function's
+    signature (functions with ``**kwargs`` pass through untouched) —
+    ``functools.wraps`` keeps ``openai_schema`` / ``__name__`` intact so schema
+    derivation and clean-name rewriting are unaffected.
+    """
+    import functools
+    import inspect
+
+    try:
+        sig = inspect.signature(fn)
+        valid = {p for p in sig.parameters if p != "self"}
+        has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    except (TypeError, ValueError):  # builtins / C callables without signatures
+        return fn
+
+    @functools.wraps(fn)
+    async def inner(*args, **kwargs):
+        if not has_var_kw:
+            bad = [k for k in kwargs if k not in valid]
+            for k in bad:
+                kwargs.pop(k)
+            if bad:
+                _LOG.warning("[tool-sanitizer] %s dropped unsupported argument(s) %s", getattr(fn, "__name__", fn), bad)
+        return await fn(*args, **kwargs)
+
+    return inner
+
+
 def bind_dynamic_tools(tools_slot) -> list:
     """Bind the dynamic ReAct tool set onto the concrete chat model.
 
@@ -1981,12 +2091,12 @@ def bind_dynamic_tools(tools_slot) -> list:
     """
     _tools_ref["tools"] = tools_slot
     base_tools = [
-        _think_impl,
-        _todo_write_impl,
-        _grep_chunks_impl,
-        _search_chunks_impl,
-        _list_chunks_impl,
-        _calculate_impl,
+        _signature_tolerant(_think_impl),
+        _signature_tolerant(_todo_write_impl),
+        _signature_tolerant(_grep_chunks_impl),
+        _signature_tolerant(_search_chunks_impl),
+        _signature_tolerant(_list_chunks_impl),
+        _signature_tolerant(_calculate_impl),
     ]
     mode = str(getattr(tools_slot, "thinking_mode", "") or "").strip().lower()
     if mode in _COMPILED_TOOL_MODES:
@@ -1998,7 +2108,18 @@ def bind_dynamic_tools(tools_slot) -> list:
             _navigate_tree_impl,
         )
 
-        base_tools = base_tools + [_navigate_tree_impl, _navigate_structure_impl]
+        # The navigation tools read the REQUEST-scoped slot from their OWN
+        # module-level ``_tools_ref`` — populate it too, or navigate_tree /
+        # navigate_structure crash on a None tools instance (AttributeError:
+        # 'NoneType' object has no attribute '_resolve_doc_tenant').
+        from rag.advanced_rag.harness.tools.navigation import _tools_ref as _nav_tools_ref
+
+        _nav_tools_ref["tools"] = tools_slot
+
+        base_tools = base_tools + [
+            _signature_tolerant(_navigate_tree_impl),
+            _signature_tolerant(_navigate_structure_impl),
+        ]
     callables = _with_clean_names(base_tools)
     mdl = _base_chat_mdl(tools_slot)
     if mdl is None:

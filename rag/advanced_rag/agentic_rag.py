@@ -507,8 +507,8 @@ class RAGTools:
             return []
         logic = filters.get("logic", "and")
         try:
-            doc_ids = await thread_pool_exec(
-                DocMetadataService.filter_doc_ids_by_meta_pushdown,
+            # peewee MySQL lookup — call directly to reuse the pool's connection.
+            doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(
                 self.kb_ids,
                 conditions,
                 logic,
@@ -519,7 +519,8 @@ class RAGTools:
         return doc_ids or []
 
     async def _select_by_titles(self, question: str, max_docs: int = 512) -> list[str]:
-        docs = await thread_pool_exec(self._collect_doc_titles, max_docs)
+        # peewee MySQL lookup — call directly to reuse the pool's connection.
+        docs = self._collect_doc_titles(max_docs)
         if not docs:
             return []
 
@@ -597,7 +598,8 @@ class RAGTools:
             return {"chunks": [], "doc_aggs": []}
         if doc_scope:
             candidates = [d for d in doc_scope if isinstance(d, str)]
-            known = await thread_pool_exec(self._filter_known_doc_ids, candidates)
+            # peewee MySQL lookup — call directly to reuse the pool's connection.
+            known = self._filter_known_doc_ids(candidates)
             valid = [d for d in candidates if d in known]
             if valid:
                 doc_scope = valid
@@ -726,7 +728,8 @@ class RAGTools:
             return {"chunks": [], "doc_aggs": []}
         if self.doc_scope is not None and doc_id not in self.doc_scope:
             return {"chunks": [], "doc_aggs": []}
-        resolved = await thread_pool_exec(self._resolve_doc_tenant, doc_id)
+        # peewee MySQL lookup — call directly to reuse the pool's connection.
+        resolved = self._resolve_doc_tenant(doc_id)
         if resolved is None:
             logging.warning(f"fetch_full_document: doc_id {doc_id!r} not in any bound KB — refusing to fetch")
             return {"chunks": [], "doc_aggs": []}
@@ -917,7 +920,8 @@ class RAGTools:
         if not self.kb_ids:
             self._metas_cache = {}
             return self._metas_cache
-        self._metas_cache = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, self.kb_ids)
+        # peewee MySQL lookup — call directly to reuse the pool's connection.
+        self._metas_cache = DocMetadataService.get_flatted_meta_by_kbs(self.kb_ids)
         return self._metas_cache or {}
 
     def _collect_doc_titles(self, max_docs: int = 512) -> list[tuple[str, str]] | None:

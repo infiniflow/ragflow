@@ -79,7 +79,13 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+    # _resolve_doc_tenant is a short peewee (MySQL) lookup. Running it through
+    # thread_pool_exec opens a connection on a short-lived thread; the peewee pool
+    # tracks connections in a process-level _in_use set that is only released on
+    # close(), so short-lived threads leak connections (MaxConnectionsExceeded
+    # under fan-out parallelism). Call it directly on the event-loop thread to
+    # reuse the pool's existing connection.
+    resolved = tools._resolve_doc_tenant(doc_id)
     if not resolved:
         return {"entities": [], "relations": []}
     kb_id, tenant_id = resolved
@@ -168,7 +174,8 @@ async def _load_chunks_by_ids(tools, doc_id: str, chunk_ids: list[str]) -> list[
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+    # peewee MySQL lookup — call directly to reuse the pool's connection (see note).
+    resolved = tools._resolve_doc_tenant(doc_id)
     if not resolved:
         return []
     kb_id, tenant_id = resolved
@@ -726,14 +733,13 @@ async def _kg_scopes(tools, doc_scope: list[str] | None = None):
     With a ``doc_scope`` the graph is limited to those docs (grouped by their
     KB); otherwise the whole bound KB graph is explored.
     """
-    from common.misc_utils import thread_pool_exec
-
     if hasattr(tools, "scoped_doc_ids"):
         doc_scope = tools.scoped_doc_ids(doc_scope)
     if doc_scope:
         by_kb: dict[tuple, list[str]] = {}
         for doc_id in doc_scope:
-            resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+            # peewee MySQL lookup — call directly to reuse the pool's connection.
+            resolved = tools._resolve_doc_tenant(doc_id)
             if resolved:
                 by_kb.setdefault(resolved, []).append(doc_id)
         return [(kb, tenant, docs) for (kb, tenant), docs in by_kb.items()]
@@ -1420,7 +1426,8 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    resolved = await thread_pool_exec(tools_slot._resolve_doc_tenant, doc_id)
+    # peewee MySQL lookup — call directly to reuse the pool's connection (see note).
+    resolved = tools_slot._resolve_doc_tenant(doc_id)
     if not resolved:
         return []
     kb_id, tenant_id = resolved
