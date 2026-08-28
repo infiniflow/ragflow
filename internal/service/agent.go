@@ -35,6 +35,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	agentsandbox "ragflow/internal/agent/sandbox"
 	agenttool "ragflow/internal/agent/tool"
@@ -970,6 +971,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	} else if existing != nil {
 		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
+	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
+	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
 	// no-op when graph.nodes is already non-empty.
@@ -1155,6 +1159,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 				return fmt.Errorf("update agent %s: dsl must be an object", canvasID)
 			}
 		}
+		if err := component.ValidateIntegerParameters(dslMap); err != nil {
+			return fmt.Errorf("update agent %s: %w", canvasID, err)
+		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
@@ -1289,6 +1296,9 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	description := canvasInstance.Description
 	if req != nil {
 		if req.DSL != nil {
+			if err := component.ValidateIntegerParameters(req.DSL); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
 			dsl = dslpkg.NormalizeForCanvas(req.DSL)
 		}
 		if req.Title != nil {
