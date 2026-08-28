@@ -38,6 +38,7 @@ from api.db.services.tenant_model_provider_service import TenantModelProviderSer
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
 from api.utils.model_utils import calculate_model_type, get_model_type_human
+from api.db.joint_services.model_type_resolution import metadata_supports_model_type
 
 logger = logging.getLogger(__name__)
 
@@ -321,9 +322,15 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
         raise LookupError(f"Model {model_name} not found for model {model_type_val}")
 
 
-def get_model_config_by_id(tenant_id: str, model_type: str | enum.Enum, model_id: str):
+def get_model_config_by_id(
+    tenant_id: str,
+    model_type: str | enum.Enum,
+    model_id: str,
+    expected_model_type: str | enum.Enum | None = None,
+):
     """Get model config from tenant_model by its id (CharField PK)."""
-    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    requested_model_type = expected_model_type or model_type
+    model_type_val = requested_model_type if isinstance(requested_model_type, str) else requested_model_type.value
     model_type_bin = calculate_model_type(model_type_val)
     exist, model_obj = TenantModelService.get_by_id(model_id)
     if not exist:
@@ -332,12 +339,14 @@ def get_model_config_by_id(tenant_id: str, model_type: str | enum.Enum, model_id
         raise LookupError(f"TenantModel id={model_id} is disabled.")
     if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value:
         raise LookupError(f"TenantModel id={model_id} cannot be used as {model_type_val} model.")
-    if not (model_obj.model_type & model_type_bin):
-        raise LookupError(f"TenantModel id={model_id} cannot be used as {model_type_val} model.")
-
     ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     if not ok:
         raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
+
+    if not (model_obj.model_type & model_type_bin):
+        model_info = _lookup_factory_llm_info(provider_obj.provider_name, model_obj.model_name, {})
+        if not metadata_supports_model_type(model_info, model_type_val):
+            raise LookupError(f"TenantModel id={model_id} cannot be used as {model_type_val} model.")
 
     # Validate that tenant_id owns the provider or is a joined tenant of the provider's owner.
     if tenant_id != provider_obj.tenant_id:
