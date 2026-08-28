@@ -118,6 +118,21 @@ func TestConfluenceConnectorResume(t *testing.T) {
 	}
 }
 
+func TestConfluenceConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	server := newConfluenceFixtureServer(t, http.StatusOK)
+	defer server.Close()
+
+	connector := newTestConfluenceConnector(t, server.URL, map[string]any{"batch_size": 1})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     confluenceTestTime(t, "2026-01-03T00:00:00Z"),
+		Resume:        &SyncCheckpoint{},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestConfluenceConnectorPrune(t *testing.T) {
 	server := newConfluenceFixtureServer(t, http.StatusOK)
 	defer server.Close()

@@ -570,7 +570,7 @@ export default {
         '구분자는 하나 또는 여러 특수 문자로 구성될 수 있습니다. 여러 문자인 경우 백틱(` `)으로 감싸야 합니다. 예를 들어 구분자를 \\n`##`;으로 설정하면 줄바꿈, 이중 해시 기호(##), 세미콜론에서 텍스트가 분리됩니다.',
 
       html4excel: 'Excel을 HTML로',
-      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dev/enable_excel2html 을 참조하세요.`,
+      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration 을 참조하세요.`,
       autoKeywords: '자동 키워드',
       autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
       autoQuestions: '자동 질문',
@@ -680,10 +680,10 @@ export default {
       parseType: '파싱 유형',
       manualSetup: '파이프라인',
       builtIn: '기본 제공',
-      titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다.',
+      titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다',
       name: '데이터셋 이름',
       photo: '데이터셋 사진',
-      photoTip: '최대 4MB의 이미지를 업로드할 수 있습니다.',
+      photoTip: '최대 4MB의 이미지를 업로드할 수 있습니다',
       description: '설명',
       language: '문서 언어',
       languageMessage: '언어를 입력해 주세요',
@@ -870,7 +870,7 @@ export default {
       entityTypes: '엔티티 유형',
       vietnamese: 'Tiếng Việt',
       pageRank: 'Page rank',
-      pageRankTip: `검색 시 특정 데이터셋에 더 높은 PageRank 점수를 부여할 수 있습니다. 해당 점수는 이 데이터셋에서 검색된 chunk의 하이브리드 유사도 점수에 추가되어 순위를 높입니다. 자세한 내용은 https://ragflow.io/docs/dev/set_page_rank 을 참조하세요.`,
+      pageRankTip: `검색 시 특정 데이터셋에 더 높은 PageRank 점수를 부여할 수 있습니다. 해당 점수는 이 데이터셋에서 검색된 chunk의 하이브리드 유사도 점수에 추가되어 순위를 높입니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#basic-information 을 참조하세요.`,
       tagName: '태그',
       frequency: '빈도',
       searchTags: '태그 검색',
@@ -878,7 +878,7 @@ export default {
       tagTable: '표',
       tagSet: '태그 세트',
       tagSetTip: `
-     <p> 데이터셋의 chunk에 자동 태그를 지정할 태그 데이터셋을 하나 이상 선택하세요. 자세한 내용은 https://ragflow.io/docs/dev/use_tag_sets 을 참조하세요.</p>
+     <p> 데이터셋의 chunk에 자동 태그를 지정할 태그 데이터셋을 하나 이상 선택하세요. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#basic-information 을 참조하세요.</p>
 <p>사용자 쿼리도 자동으로 태그가 지정됩니다.</p>
 이 자동 태그 기능은 기존 데이터셋에 도메인별 지식 레이어를 추가하여 검색을 향상시킵니다.
 <p>자동 태그와 자동 키워드의 차이점:</p>
@@ -1069,6 +1069,9 @@ export default {
       created: '생성됨',
       action: '작업',
       embedModalTitle: '웹페이지에 삽입',
+      embedUserIdPlaceholder: '예: user-001',
+      embedUserIdTooltip:
+        '임베드 페이지의 최종 사용자를 식별하는 문자열(최대 255자)입니다. 임베드 URL에 userId 매개변수로 추가됩니다.',
       published: '게시됨',
       publishedTooltip:
         '이 삽입에 게시된 버전을 사용합니다. 활성화하면 생성된 URL에 release=true가 포함됩니다.',
@@ -1252,7 +1255,8 @@ export default {
         'Microsoft Graph를 통해 SharePoint 사이트를 연결하여 문서 라이브러리를 동기화합니다.',
       sharepointSiteUrlTip:
         '인덱싱할 SharePoint 사이트의 전체 URL (예: https://contoso.sharepoint.com/sites/MySite). Sites.Read.All 및 Files.Read.All 애플리케이션 권한이 있는 Azure AD 앱이 필요합니다 (관리자 동의).',
-      azure_devopsDescription: 'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
+      azure_devopsDescription:
+        'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
       bitbucketDescription: 'Bitbucket을 연결하여 PR 콘텐츠를 동기화합니다.',
       bitbucketTopWorkspaceTip:
         '인덱싱할 Bitbucket 워크스페이스 (예: https://bitbucket.org/atlassian/workspace 의 "atlassian").',

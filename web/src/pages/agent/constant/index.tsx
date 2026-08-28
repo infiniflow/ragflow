@@ -90,7 +90,6 @@ export const initialRetrievalValues = {
   rerank_candidates_count: 64,
   kb_ids: [],
   rerank_id: '',
-  empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
   cross_languages: [],
@@ -516,6 +515,7 @@ export const initialAgentValues = {
   exception_default_value: '',
   tools: [],
   mcp: [],
+  tool_timeout: 10,
   cite: true,
   showStructuredOutput: false,
   outputs: {

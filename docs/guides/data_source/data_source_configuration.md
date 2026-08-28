@@ -663,6 +663,26 @@ The REST API data source is used to synchronize data returned by custom business
 
 ![REST API](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/REST_API.jpg)
 
+## Xquik
+
+The Xquik data source searches public X posts and syncs each matching post into a RAGFlow knowledge base. Use it to retrieve posts by keyword, hashtag, author, language, or another supported X search operator.
+
+**Permission requirements**: Create an [Xquik API key](https://docs.xquik.com/api-reference/authentication). The key needs access to the Search Tweets API.
+
+**Usage requirements**: Each returned post uses 1 Xquik credit. The page size and maximum page count bound each sync. Xquik is an independent third-party service.
+
+**Configuration parameters**:
+
+- **Name**: Choose a name for this connection.
+- **Xquik API key**: Enter the key in the password field.
+- **X search query**: Enter keywords, hashtags, or operators such as `from:username`.
+- **Result order**: Select **Latest** for chronological results or **Top** for ranked results.
+- **Posts per page**: Set the maximum posts requested per API page.
+- **Max pages**: Stop each sync after this many pages.
+- **Batch size**: Set the number of posts sent to RAGFlow per batch.
+
+RAGFlow sends each incremental sync window to Xquik as inclusive `sinceTime` and exclusive `untilTime` bounds. Cursor pagination continues until no page remains or the configured maximum is reached.
+
 ## RSS
 
 The RSS data source is used to subscribe public websites, blogs, announcements, or product updates to a RAGFlow knowledge base. After configuration, the knowledge base can continuously obtain new content from the subscription source, making it convenient for users to view and ask questions in a unified way.

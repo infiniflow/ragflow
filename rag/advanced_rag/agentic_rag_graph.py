@@ -675,6 +675,10 @@ async def _compose_answer_from_evidence(state: AgenticState, tools, token_queue:
 
     rules = cp(tools.user_defined_prompts).strip()
     system = FINAL_ANSWER_SYSTEM.format(cite_rules=rules)
+    # Honor the dialog-level system prompt (UI-configured) the same way the
+    # reasoning-disabled path does — merge from upstream/main.
+    if getattr(tools, "system_prompt", "").strip():
+        system = f"{tools.system_prompt.strip()}\n\n{system}"
 
     parts.append(f"Evidence:\n{evidence}")
     user_content = "\n".join(parts)

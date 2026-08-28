@@ -151,14 +151,39 @@ all_codecs = [
 
 
 def find_codec(blob):
-    detected = chardet.detect(blob[:1024])
-    if detected["confidence"] > 0.5:
-        if detected["encoding"] == "ascii":
+    sample = blob[:1024]
+
+    # A blob that decodes as UTF-8 is UTF-8; nothing else needs to be guessed.
+    # Check this first because chardet can report a confident single-byte guess
+    # for short UTF-8 text, and callers decode with errors="ignore", so a wrong
+    # codec is silently lossy instead of raising. The second decode covers a
+    # multi-byte character that the 1024-byte sample cuts in half.
+    try:
+        sample.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        try:
+            blob.decode("utf-8")
             return "utf-8"
+        except UnicodeDecodeError:
+            pass
+
+    detected = chardet.detect(sample)
+    encoding = detected["encoding"]
+    if encoding:
+        # Honor the detection whenever it decodes the sample. The loop below
+        # returns the first codec that does not raise, and legacy single-byte
+        # codecs (cp037, utf_16) decode arbitrary bytes without error, so a
+        # low-confidence detection still beats the loop's first non-raising hit.
+        try:
+            sample.decode(encoding)
+            return encoding
+        except (UnicodeDecodeError, LookupError) as e:
+            logging.debug("find_codec: detection %r (%.2f) did not decode the sample: %s", encoding, detected["confidence"] or 0.0, e)
 
     for c in all_codecs:
         try:
-            blob[:1024].decode(c)
+            sample.decode(c)
             return c
         except Exception:
             pass
@@ -801,7 +826,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     return chunks
 
 
-def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False):
+def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False, section_page_offset: int = 0):
     from deepdoc.parser import PdfParser
 
     if table_context_size <= 0:
@@ -837,6 +862,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
+            page += section_page_offset
             page_bucket[page].append(((left, right, top, bottom), txt))
 
     def upper_context(page, i):
@@ -892,8 +918,11 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
 
         page, left, right, top, bott = poss[0]
         _page, _left, _right, _top, _bott = poss[-1]
-        if isinstance(tb, list):
-            tb = "\n".join(tb)
+        # Context extraction needs text, but list payloads identify images for
+        # tokenize_table; restore that shape before returning the media block.
+        image_rows = tb if isinstance(tb, list) else None
+        if image_rows is not None:
+            tb = "\n".join(image_rows)
 
         i = 0
         blks = page_bucket.get(page, [])
@@ -931,6 +960,8 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             contexts.append((upper.strip(), lower.strip()))
         if len(contexts) < len(res) + 1:
             contexts.append(("", ""))
+        if image_rows is not None:
+            tb = image_rows if tb == _tb else [tb]
         res.append(((img, tb), poss))
     return contexts if return_context else res
 

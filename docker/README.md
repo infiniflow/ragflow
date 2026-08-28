@@ -90,7 +90,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.0`. The RAGFlow Docker image does not include embedding models.
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.1`. The RAGFlow Docker image does not include embedding models.
 
 
 > [!TIP]
@@ -187,7 +187,7 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-  - `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+  - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 - `deepdoc`
   The OSS DeepDoc vision service provides DLA, OCR, and TSR inference via ONNX Runtime.

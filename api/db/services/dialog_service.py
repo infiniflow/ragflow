@@ -674,21 +674,38 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
     if field_map:
-        logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=scoped_doc_ids)
-        # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
-        if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
-            if include_reference_metadata and ans.get("reference", {}).get("chunks"):
-                if len(dialog.kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
-                    logging.warning(
-                        "Skipping some _enrich_chunks_with_document_metadata results because dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
-                        len(dialog.kb_ids),
-                    )
-                _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
-            yield ans
-            return
+        # Derive the doc-store tenant/namespace from the referenced dataset's own
+        # owner, not from dialog.tenant_id: a team-shared dataset may be owned by a
+        # different tenant than the one who created this chat.
+        sql_kbs = [kb for kb in kbs if kb.parser_config and kb.parser_config.get("field_map")]
+        sql_tenant_ids = {kb.tenant_id for kb in sql_kbs}
+        if len(sql_tenant_ids) > 1:
+            # use_sql queries a single tenant's doc-store index per call, and
+            # re-running it once per tenant is too slow to do inline (each call
+            # round-trips an LLM to generate SQL). Skip SQL retrieval rather than
+            # silently querying only one tenant's index and dropping the rest.
+            logging.warning(
+                "Skipping SQL retrieval: field-map datasets span multiple tenants (%s); falling back to vector search.",
+                sql_tenant_ids,
+            )
         else:
-            logging.debug("SQL failed or returned no results, falling back to vector search")
+            sql_tenant_id = sql_kbs[0].tenant_id if sql_kbs else dialog.tenant_id
+            sql_kb_ids = [kb.id for kb in sql_kbs] if sql_kbs else dialog.kb_ids
+            logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
+            ans = await use_sql(questions[-1], field_map, sql_tenant_id, chat_mdl, prompt_config.get("quote", True), sql_kb_ids, doc_ids=scoped_doc_ids)
+            # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
+            if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+                if include_reference_metadata and ans.get("reference", {}).get("chunks"):
+                    if len(sql_kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
+                        logging.warning(
+                            "Skipping some _enrich_chunks_with_document_metadata results because sql_kb_ids has %d entries and use_sql returned chunks without kb_id.",
+                            len(sql_kb_ids),
+                        )
+                    _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
+                yield ans
+                return
+            else:
+                logging.debug("SQL failed or returned no results, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
     if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in prompt_config.get("system", ""):
@@ -1900,6 +1917,39 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     return mind_map.output
 
 
+def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -> str:
+    """Render the dialog-level system prompt for the reasoning agent path.
+
+    Mirrors the substitutions ``async_chat`` performs for the non-reasoning path
+    so that configured system prompts are honored when reasoning is enabled.
+    The ``{knowledge}`` placeholder is defaulted to an empty string because the
+    agentic graph supplies retrieved evidence through its own evidence block.
+    """
+    system = prompt_config.get("system", "")
+    if not system:
+        return ""
+
+    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    kwargs["date"] = sys_date
+
+    param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
+    if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in system:
+        param_keys.append("knowledge")
+        kwargs.setdefault("knowledge", "")
+
+    for p in prompt_config.get("parameters", []):
+        if p["key"] == "knowledge":
+            continue
+        if p["key"] not in kwargs and not p["optional"]:
+            raise KeyError("Miss parameter: " + p["key"])
+        if p["key"] not in kwargs:
+            system = system.replace("{%s}" % p["key"], " ")
+
+    fmt_kwargs = dict(kwargs)
+    fmt_kwargs.setdefault("knowledge", "")
+    return system.format(**fmt_kwargs)
+
+
 async def rag_agent(dialog, messages, stream=True, **kwargs):
     prompt_config = dialog.prompt_config or {}
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
@@ -1963,6 +2013,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         do_refer=False,
         thinking_mode=thinking_mode,
         text_attachments_content=text_attachments_content,
+        system_prompt=_render_reasoning_system_prompt(dialog, prompt_config, kwargs),
     )
 
     async def decorate_answer(answer):

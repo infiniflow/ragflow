@@ -163,6 +163,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewFunASRModel(baseURL, urlSuffix), nil
 	case "greenpt":
 		return NewGreenPTModel(baseURL, urlSuffix), nil
+	case "synthorai":
+		return NewSynthoraiModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

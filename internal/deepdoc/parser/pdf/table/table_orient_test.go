@@ -92,7 +92,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				0: {regions: 10, avgConf: 0.9},
 			},
 		}
-		angle, _, scores := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, scores := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0°, got %d° (scores: %v)", angle, scores)
 		}
@@ -111,7 +111,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {regions: 2, avgConf: 0.2},
 			},
 		}
-		angle, _, scores := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, scores := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 90 {
 			t.Errorf("expected 90°, got %d° (scores: %v)", angle, scores)
 		}
@@ -130,7 +130,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {regions: 1, avgConf: 0.1},
 			},
 		}
-		angle, _, scores := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, scores := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 180 {
 			t.Errorf("expected 180°, got %d° (scores: %v)", angle, scores)
 		}
@@ -149,7 +149,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {regions: 9, avgConf: 0.88},
 			},
 		}
-		angle, _, scores := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, scores := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 270 {
 			t.Errorf("expected 270°, got %d° (scores: %v)", angle, scores)
 		}
@@ -167,7 +167,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				90: {regions: 8, avgConf: 0.55},
 			},
 		}
-		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, _ := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0° (threshold protection), got %d°", angle)
 		}
@@ -185,7 +185,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				90: {regions: 10, avgConf: 0.90},
 			},
 		}
-		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, _ := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 90 {
 			t.Errorf("expected 90° (threshold passed), got %d°", angle)
 		}
@@ -205,7 +205,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				90: {regions: 50, avgConf: 1.00},
 			},
 		}
-		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, _ := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0° (score_0 >= 0.8 guard), got %d°", angle)
 		}
@@ -224,7 +224,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {err: errMockOCR},
 			},
 		}
-		angle, img, scores := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, img, scores := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0° fallback, got %d°", angle)
 		}
@@ -252,7 +252,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				90: {regions: 2, avgConf: 0.05},
 			},
 		}
-		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, _ := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0° (score_0 == 0, low non-zero score), got %d°", angle)
 		}
@@ -272,7 +272,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				90: {regions: 50, avgConf: 0.95},
 			},
 		}
-		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		angle, _, _ := EvaluateTableOrientation(t.Context(), makeTestTableImage(), doc)
 		if angle != 90 {
 			t.Errorf("expected 90° (score_0 == 0, high non-zero score), got %d°", angle)
 		}

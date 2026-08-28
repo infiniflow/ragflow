@@ -72,7 +72,7 @@ func TestTool_Read_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{readResult: "file content"}})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "read_file" {
-			result, err := tool.Invoke(context.Background(), "test.txt")
+			result, err := tool.Invoke(t.Context(), "test.txt")
 			if err != nil {
 				t.Fatalf("read_file: %v", err)
 			}
@@ -90,7 +90,7 @@ func TestTool_Write_Function(t *testing.T) {
 	mw := New(&Config{Backend: backend})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "write_file" {
-			result, err := tool.Invoke(context.Background(), "file.txt|Hello World")
+			result, err := tool.Invoke(t.Context(), "file.txt|Hello World")
 			if err != nil {
 				t.Fatalf("write_file: %v", err)
 			}
@@ -106,7 +106,7 @@ func TestTool_Edit_Function(t *testing.T) {
 	mw := New(&Config{Backend: backend})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "edit_file" {
-			result, err := tool.Invoke(context.Background(), "file.txt|old text|new text")
+			result, err := tool.Invoke(t.Context(), "file.txt|old text|new text")
 			if err != nil {
 				t.Fatalf("edit_file: %v", err)
 			}
@@ -122,7 +122,7 @@ func TestTool_Ls_Function(t *testing.T) {
 	mw := New(&Config{Backend: backend})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "ls" {
-			result, err := tool.Invoke(context.Background(), ".")
+			result, err := tool.Invoke(t.Context(), ".")
 			if err != nil {
 				t.Fatalf("ls: %v", err)
 			}
@@ -139,7 +139,7 @@ func TestTool_Glob_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{}})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "glob" {
-			result, err := tool.Invoke(context.Background(), "*.txt")
+			result, err := tool.Invoke(t.Context(), "*.txt")
 			if err != nil {
 				t.Fatalf("glob: %v", err)
 			}
@@ -156,7 +156,7 @@ func TestTool_Grep_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{}})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "grep" {
-			result, err := tool.Invoke(context.Background(), "pattern|.")
+			result, err := tool.Invoke(t.Context(), "pattern|.")
 			if err != nil {
 				t.Fatalf("grep: %v", err)
 			}
@@ -173,7 +173,7 @@ func TestTool_Execute_Function(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{}})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "execute" {
-			result, err := tool.Invoke(context.Background(), "ls -la")
+			result, err := tool.Invoke(t.Context(), "ls -la")
 			if err != nil {
 				t.Fatalf("execute: %v", err)
 			}
@@ -190,7 +190,7 @@ func TestTool_ReadError(t *testing.T) {
 	mw := New(&Config{Backend: &testBackend{readErr: errors.New("permission denied")}})
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "read_file" {
-			_, err := tool.Invoke(context.Background(), "secret.txt")
+			_, err := tool.Invoke(t.Context(), "secret.txt")
 			if err != nil {
 				t.Logf("read error propagated: %v", err)
 			}
@@ -222,7 +222,7 @@ func TestTool_ReadBytesLimit(t *testing.T) {
 	mw := New(cfg)
 	for _, tool := range getTools(mw) {
 		if tool.Name() == "read_file" {
-			result, err := tool.Invoke(context.Background(), "short.txt")
+			result, err := tool.Invoke(t.Context(), "short.txt")
 			if err != nil {
 				t.Fatalf("read_file: %v", err)
 			}

@@ -24,6 +24,7 @@ export default {
       namePlaceholder: '请输入名称',
       nameSlashError: '名称不能包含 "/"',
       descriptionPlaceholder: '请输入描述',
+      descriptionMaxLength: '描述最多 {{max}} 个字符。',
       next: '下一步',
       create: '创建',
       edit: '编辑',
@@ -43,6 +44,7 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
+      figure: '图',
       close: '关闭',
       preview: '预览',
       move: '移动',
@@ -511,7 +513,7 @@ export default {
       toMessage: '缺少结束页码（不包含）',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dev/select_pdf_parser。',
+        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任务页面大小',
       taskPageSizeMessage: '请输入您的任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
@@ -541,7 +543,7 @@ export default {
         '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
 
       html4excel: '表格转 HTML',
-      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
+      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自动关键词提取',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自动问题提取',
@@ -831,7 +833,7 @@ export default {
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',
-      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dev/set_page_rank。`,
+      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
       frequency: '频次',
       searchTags: '搜索标签',
@@ -849,7 +851,7 @@ export default {
       <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
       <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
-      <p> 详见：https://ragflow.io/docs/dev/use_tag_sets </p>
+      <p> 详见：https://ragflow.io/docs/dataset_configuration#basic-information </p>
       `,
       tags: '标签',
       addTag: '增加标签',
@@ -1011,11 +1013,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       thinking: '思考中...',
+      thinkingMode: '思考',
       thought: '思考完成',
       thinkingDefault: '系统默认',
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
-      thinkingLevelNone: 'None',
+      thinkingLevelNone: 'Naive',
       thinkingLevelLow: 'Low',
       thinkingLevelLowDescription: '快速响应',
       thinkingLevelMedium: 'Medium',
@@ -1048,6 +1051,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       created: '创建于',
       action: '操作',
       embedModalTitle: '嵌入网站',
+      embedUserIdPlaceholder: '例如：user-001',
+      embedUserIdTooltip:
+        '用于标识嵌入页面终端用户的字符串，最长 255 个字符，会作为 userId 参数附加到嵌入链接中。',
       published: '已发布',
       publishedTooltip:
         '在嵌入中使用已发布的版本。启用后，生成的 URL 将包含 release=true。',
@@ -1259,11 +1265,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       azureDevOpsPatTip: '需要具有 Code (Read) 权限的个人访问令牌。',
-      azureDevOpsOrganizationTip: '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
-      azureDevOpsProjectsTip: '以逗号分隔的团队项目名称。例如：Project1,Project2',
-      azureDevOpsRepositoriesTip: '以逗号分隔的仓库。可使用 project/repo 形式以区分同名仓库。',
+      azureDevOpsOrganizationTip:
+        '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
+      azureDevOpsProjectsTip:
+        '以逗号分隔的团队项目名称。例如：Project1,Project2',
+      azureDevOpsRepositoriesTip:
+        '以逗号分隔的仓库。可使用 project/repo 形式以区分同名仓库。',
       azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
-      azureDevOpsContentTypesTip: '选择要索引的内容：源文件、拉取请求，或两者。',
+      azureDevOpsContentTypesTip:
+        '选择要索引的内容：源文件、拉取请求，或两者。',
       azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
@@ -2252,6 +2262,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxRounds: '最大反思轮数',
       delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
+      toolTimeout: '工具调用超时',
+      toolTimeoutTip:
+        '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       maxSteps: '最大步数',
       headless: '无头模式',
       enableDefaultExtensions: '启用默认扩展',

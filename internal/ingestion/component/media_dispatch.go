@@ -31,9 +31,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"log/slog"
 	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
+	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -156,7 +158,7 @@ func maybeDispatchImage(
 
 	if ocrText != "" {
 		wordCount := len(strings.Fields(ocrText))
-		charCount := len(ocrText)
+		charCount := len([]rune(ocrText))
 		if (eng && wordCount > 32) || charCount > 32 {
 			// OCR returned substantial text — skip VLM.
 			return imageDispatchResult(ocrText, dataURI), true, nil
@@ -164,7 +166,21 @@ func maybeDispatchImage(
 	}
 
 	// Short OCR text (or no text): supplement with VLM describe.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	modelRef := configuredMediaModelID(setup, "image")
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if err != nil {
+			slog.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	}
 	if err != nil {
 		// If VLM is unavailable, but we have OCR text, return it.
 		if ocrText != "" {
@@ -259,7 +275,21 @@ func maybeDispatchAudio(
 			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+	modelRef := configuredMediaModelID(setup, "audio")
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeSpeech2Text, modelRef)
+		if err != nil {
+			slog.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+		}
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+	}
 	if err != nil {
 		return parserDispatchResult{}, true,
 			fmt.Errorf("parser: audio speech2text model: %w", err)
