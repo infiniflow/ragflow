@@ -12,11 +12,6 @@ import (
 	"testing"
 )
 
-// testdataFetchAttempted is set to true by testdata_fetch.go (compiled only with
-// -tags fetch_testdata) once the external assets have been fetched and linked
-// into ./testdata. In the default build it remains false.
-var testdataFetchAttempted bool
-
 // TestMain skips the entire package unless the testdata was fetched via the
 // fetch_testdata build tag. In the default build (and any build without that
 // tag) it stays false, so the tests are skipped rather than failing on absent
