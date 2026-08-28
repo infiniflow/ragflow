@@ -35,6 +35,8 @@ import (
 	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -43,6 +45,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
@@ -158,7 +161,7 @@ func maybeDispatchImage(
 
 	if ocrText != "" {
 		wordCount := len(strings.Fields(ocrText))
-		charCount := len([]rune(ocrText))
+		charCount := utf8.RuneCountInString(ocrText)
 		if (eng && wordCount > 32) || charCount > 32 {
 			// OCR returned substantial text — skip VLM.
 			return imageDispatchResult(ocrText, dataURI), true, nil

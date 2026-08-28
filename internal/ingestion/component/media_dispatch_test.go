@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -516,5 +517,19 @@ func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
 	}
 	if len(res.JSON) != 1 || res.JSON[0]["text"] != "transcribed" {
 		t.Fatalf("unexpected audio result: %#v", res.JSON)
+	}
+}
+
+func TestMediaDispatch_ImageVLMGateRuneCount(t *testing.T) {
+	// CJK text with 20 Han chars (60 bytes) has RuneCount 20 <= 32
+	shortHan := "自然语言处理与多智能体系统开发测试"
+	if count := utf8.RuneCountInString(shortHan); count > 32 {
+		t.Errorf("expected <= 32 runes for short Han string, got %d", count)
+	}
+
+	// CJK text with 35 Han chars has RuneCount 35 > 32
+	longHan := "自然语言处理与多智能体系统开发测试架构设计分析模型评估流水线部署优化"
+	if count := utf8.RuneCountInString(longHan); count <= 32 {
+		t.Errorf("expected > 32 runes for long Han string, got %d", count)
 	}
 }
