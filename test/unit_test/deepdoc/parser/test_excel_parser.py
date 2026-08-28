@@ -167,4 +167,4 @@ def test_call_emits_zero_based_sheet_index():
     sheets = {pos[0] for _, pos in lines}
     assert sheets == {0, 1}
     second = next(pos for _, pos in lines if pos[0] == 1)
-    assert second[0] + 1 == 2
+    assert second == (1, 2, 2, 1, 1)

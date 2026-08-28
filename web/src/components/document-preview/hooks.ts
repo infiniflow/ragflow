@@ -226,7 +226,9 @@ type XsData = {
       ci: number,
     ) => { style?: number; text?: string };
     getHeight?: (ri: number) => number;
+    len?: number;
   };
+  cols?: { len?: number };
   scroll?: { x: number; y: number };
 };
 
@@ -241,7 +243,7 @@ type XsInstance = {
   };
   bottombar?: {
     items: HTMLElement[];
-    clickSwap2: (el: HTMLElement) => void;
+    clickSwap2?: (el: HTMLElement) => void;
   };
 };
 
@@ -258,8 +260,8 @@ export function applyExcelSourceLocate(
     xs.datas.length - 1,
     Math.max(0, (pos[0] || 1) - 1),
   );
-  const r1 = Math.max(0, (pos[1] || 1) - 1);
-  const r2 = Math.max(r1, (pos[2] || pos[1] || 1) - 1);
+  let r1 = Math.max(0, (pos[1] || 1) - 1);
+  let r2 = Math.max(r1, (pos[2] || pos[1] || 1) - 1);
   let c1 = (pos[3] || 1) - 1;
   let c2 = (pos[4] || pos[3] || 1) - 1;
   if (c1 < 0) c1 = 0;
@@ -268,19 +270,33 @@ export function applyExcelSourceLocate(
   const data = xs.datas[sheetIdx];
   if (!data?.addStyle || !data.rows?.setCell) return;
 
+  if (typeof data.rows.len === 'number') {
+    const lastRow = Math.max(0, data.rows.len - 1);
+    r1 = Math.min(r1, lastRow);
+    r2 = Math.min(r2, lastRow);
+  }
+  if (typeof data.cols?.len === 'number') {
+    const lastCol = Math.max(0, data.cols.len - 1);
+    c1 = Math.min(c1, lastCol);
+    c2 = Math.min(c2, lastCol);
+  }
+
   const theme = getComputedStyle(document.documentElement);
-  const styleIdx = data.addStyle({
-    bgcolor: theme.getPropertyValue('--background-highlight').trim(),
-    color: theme.getPropertyValue('--text-title').trim(),
-  });
-  for (let r = r1; r <= r2; r++) {
-    for (let c = c1; c <= c2; c++) {
-      data.rows.setCell(r, c, { style: styleIdx }, 'format');
+  if (r2 >= r1 && c2 >= c1) {
+    const styleIdx = data.addStyle({
+      bgcolor:
+        theme.getPropertyValue('--background-highlight').trim() || '#ffe58f',
+      color: theme.getPropertyValue('--text-title').trim() || '#1a1a1a',
+    });
+    for (let r = r1; r <= r2; r++) {
+      for (let c = c1; c <= c2; c++) {
+        data.rows.setCell(r, c, { style: styleIdx }, 'format');
+      }
     }
   }
 
   const tab = xs.bottombar?.items?.[sheetIdx];
-  if (tab && xs.bottombar) {
+  if (tab && typeof xs.bottombar?.clickSwap2 === 'function') {
     xs.bottombar.clickSwap2(tab);
   } else {
     xs.sheet.resetData(data);

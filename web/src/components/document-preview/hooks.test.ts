@@ -108,4 +108,25 @@ describe('applyExcelSourceLocate', () => {
     applyExcelSourceLocate(previewer as never, [1, 2]);
     expect(previewer.xs.datas[0].addStyle).not.toHaveBeenCalled();
   });
+
+  it('falls back to resetData when clickSwap2 is missing', () => {
+    const previewer = mockPreviewer();
+    delete previewer.xs.bottombar.clickSwap2;
+    applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
+    expect(previewer.xs.sheet.resetData).toHaveBeenCalledWith(
+      previewer.xs.datas[0],
+    );
+  });
+
+  it('uses hex fallbacks when theme tokens are empty', () => {
+    jest.spyOn(window, 'getComputedStyle').mockReturnValue({
+      getPropertyValue: () => '  ',
+    } as CSSStyleDeclaration);
+    const previewer = mockPreviewer();
+    applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
+    expect(previewer.xs.datas[0].addStyle).toHaveBeenCalledWith({
+      bgcolor: '#ffe58f',
+      color: '#1a1a1a',
+    });
+  });
 });

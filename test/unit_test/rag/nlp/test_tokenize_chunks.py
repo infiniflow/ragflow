@@ -82,3 +82,19 @@ def test_tokenize_chunks_with_positions_skips_blank_and_splits_children():
     )
     assert [doc["content_with_weight"] for doc in docs] == ["first\n", "second"]
     assert all(doc["position_int"][0] == (1, 3, 4, 1, 2) for doc in docs)
+
+
+@pytest.mark.p2
+def test_flow_json_sheet_is_one_based_after_add_positions():
+    # rag/flow/parser/parser.py output_format=json stores 0-based sheet.
+    # task_executor / dataflow_service then call add_positions (pn+1).
+    json_out = [
+        {"text": "s1", "positions": [[0, 2, 2, 1, 1]]},
+        {"text": "s2", "positions": [[1, 2, 2, 1, 1]]},
+    ]
+    sheets = []
+    for ck in json_out:
+        nlp.add_positions(ck, ck["positions"])
+        del ck["positions"]
+        sheets.append(ck["position_int"][0][0])
+    assert sheets == [1, 2]
