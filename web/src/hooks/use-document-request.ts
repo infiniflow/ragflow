@@ -304,7 +304,9 @@ export const useGetDocumentFilter = (): {
       if (!datasetId) {
         return;
       }
-      const { data } = await documentFilter(datasetId);
+      const { data } = await documentFilter(datasetId, {
+        keywords: debouncedSearchString,
+      });
       if (data.code === 0) {
         return data.data;
       }

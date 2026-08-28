@@ -337,8 +337,13 @@ export const listDocument = (
   return request.get(api.getDocumentList(params.id), { params: mergedParams });
 };
 
-export const documentFilter = (kb_id: string) =>
-  request.get(api.getDatasetFilter(kb_id), { params: {} });
+export const documentFilter = (
+  kb_id: string,
+  params?: { keywords?: string },
+) =>
+  request.get(api.getDatasetFilter(kb_id), {
+    params: params?.keywords ? { keywords: params.keywords } : {},
+  });
 
 export const uploadDocument = async (datasetId: string, formData: FormData) => {
   const url = api.documentUpload(datasetId);
