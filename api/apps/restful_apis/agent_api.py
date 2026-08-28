@@ -935,6 +935,15 @@ async def create_agent(tenant_id):
 
     try:
         req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+        # Import remap: if DSL came from another tenant (file import), llm_id/mcp_id
+        # are source tenant's ids (global uuids). Remap them by logical name to
+        # current tenant's ids so yandex-tracker-mcp / gpt://... work without manual fixup.
+        # For new blank agents the ids already belong to current tenant, remap is no-op.
+        try:
+            patched, _warn = _remap_agent_dsl_for_tenant(req["dsl"], tenant_id, tenant_id)
+            req["dsl"] = patched
+        except Exception:
+            logging.exception("create_agent remap skipped")
     except ValueError as exc:
         return get_json_result(
             data=False,
