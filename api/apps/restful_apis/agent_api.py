@@ -937,7 +937,7 @@ async def create_agent(tenant_id):
         req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
         # Import remap: if DSL came from another tenant (file import), llm_id/mcp_id
         # are source tenant's ids (global uuids). Remap them by logical name to
-        # current tenant's ids so yandex-tracker-mcp / gpt://... work without manual fixup.
+        # current tenant's ids so mcp-name / gpt://... work without manual fixup.
         # For new blank agents the ids already belong to current tenant, remap is no-op.
         try:
             patched, _warn = _remap_agent_dsl_for_tenant(req["dsl"], tenant_id, tenant_id)
@@ -1200,7 +1200,7 @@ def _remap_agent_dsl_for_tenant(dsl: dict, source_tenant_id: str, target_tenant_
                 try:
                     _ok, src_mcp = MCPServerService.get_by_id(src_mcp_id)
                     src_name = src_mcp.name if _ok and src_mcp else None
-                    # Fallback: mcp_id may already be a name (yandex-tracker-mcp) not uuid
+                    # Fallback: mcp_id may already be a name (example-mcp) not uuid
                     if not src_name:
                         _ok2, _q = MCPServerService.get_by_name_and_tenant(src_mcp_id, source_tenant_id)
                         if _ok2 and _q:
@@ -1430,7 +1430,7 @@ def _portabilize_agent_dsl(dsl: dict) -> dict:
     """Replace llm_id/mcp_id with portable logical names for cross-server export.
 
     llm_id uuid -> composite `model@instance@provider` or `gpt://...`
-    mcp_id uuid -> mcp name `yandex-tracker-mcp`
+    mcp_id uuid -> mcp name `example-mcp`
     Import on another server will remap by name via _remap_agent_dsl_for_tenant.
     """
     import copy as _copy2
@@ -1528,7 +1528,7 @@ def _portabilize_agent_dsl(dsl: dict) -> dict:
 async def duplicate_agent(agent_id, tenant_id):
     """Duplicate (fork) a team-shared agent into caller's own space.
 
-    Remaps llm_id/mcp_id by logical name so yandex-tracker-mcp and
+    Remaps llm_id/mcp_id by logical name so mcp-name and
     gpt://... style models resolve to caller's own providers (see plan).
     Resulting DSL is ready for import - no manual fixup.
     """
