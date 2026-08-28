@@ -25,7 +25,12 @@ from functools import partial
 from common.constants import LLMType
 from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
+from api.db.joint_services.tenant_model_service import (
+    get_model_config_from_provider_instance,
+    get_model_type_by_name,
+    resolve_model_config,
+    resolve_model_type,
+)
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
@@ -92,15 +97,10 @@ class LLM(ComponentBase):
 
     def __init__(self, canvas, component_id, param: ComponentParamBase):
         super().__init__(canvas, component_id, param)
-        try:
-            model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
-            model_type = "chat" if "chat" in model_types else model_types[0]
-            chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
-            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
-        except Exception as e:
-            logging.warning(f"Fail to load LLM configuration for component. {e}")
-            self.chat_mdl = None
-
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_type = "chat" if "chat" in model_types else model_types[0]
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:

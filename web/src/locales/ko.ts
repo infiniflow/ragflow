@@ -570,7 +570,7 @@ export default {
         '구분자는 하나 또는 여러 특수 문자로 구성될 수 있습니다. 여러 문자인 경우 백틱(` `)으로 감싸야 합니다. 예를 들어 구분자를 \\n`##`;으로 설정하면 줄바꿈, 이중 해시 기호(##), 세미콜론에서 텍스트가 분리됩니다.',
 
       html4excel: 'Excel을 HTML로',
-      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dev/enable_excel2html 을 참조하세요.`,
+      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration 을 참조하세요.`,
       autoKeywords: '자동 키워드',
       autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
       autoQuestions: '자동 질문',
@@ -870,7 +870,7 @@ export default {
       entityTypes: '엔티티 유형',
       vietnamese: 'Tiếng Việt',
       pageRank: 'Page rank',
-      pageRankTip: `검색 시 특정 데이터셋에 더 높은 PageRank 점수를 부여할 수 있습니다. 해당 점수는 이 데이터셋에서 검색된 chunk의 하이브리드 유사도 점수에 추가되어 순위를 높입니다. 자세한 내용은 https://ragflow.io/docs/dev/set_page_rank 을 참조하세요.`,
+      pageRankTip: `검색 시 특정 데이터셋에 더 높은 PageRank 점수를 부여할 수 있습니다. 해당 점수는 이 데이터셋에서 검색된 chunk의 하이브리드 유사도 점수에 추가되어 순위를 높입니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#basic-information 을 참조하세요.`,
       tagName: '태그',
       frequency: '빈도',
       searchTags: '태그 검색',
@@ -878,7 +878,7 @@ export default {
       tagTable: '표',
       tagSet: '태그 세트',
       tagSetTip: `
-     <p> 데이터셋의 chunk에 자동 태그를 지정할 태그 데이터셋을 하나 이상 선택하세요. 자세한 내용은 https://ragflow.io/docs/dev/use_tag_sets 을 참조하세요.</p>
+     <p> 데이터셋의 chunk에 자동 태그를 지정할 태그 데이터셋을 하나 이상 선택하세요. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#basic-information 을 참조하세요.</p>
 <p>사용자 쿼리도 자동으로 태그가 지정됩니다.</p>
 이 자동 태그 기능은 기존 데이터셋에 도메인별 지식 레이어를 추가하여 검색을 향상시킵니다.
 <p>자동 태그와 자동 키워드의 차이점:</p>
