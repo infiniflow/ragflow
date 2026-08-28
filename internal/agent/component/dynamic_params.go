@@ -36,34 +36,99 @@ func validateDynamicEntries(value any) error {
 }
 
 func validateDynamicParams(component string, params map[string]any) error {
-	for _, field := range []string{"include_domains", "exclude_domains", "site_include", "site_exclude", "country_include", "language_include", "delimiters", "children_delimiters"} {
+	for _, field := range []string{
+		"include_domains", "exclude_domains", "site_include", "site_exclude",
+		"country_include", "language_include", "delimiters", "children_delimiters",
+	} {
 		if values, ok := params[field].([]any); ok && containsBlank(values) {
 			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
 		}
 	}
-	if values, ok := params["content"].([]any); ok && containsBlankWithContent(values) {
-		return fmt.Errorf("[%s] content does not support empty entries", component)
+	switch strings.ToLower(component) {
+	case "dataoperations":
+		for _, field := range []string{"select_keys", "remove_keys"} {
+			if values, ok := params[field].([]any); ok && containsBlank(values) {
+				return fmt.Errorf("[%s] %s does not support empty entries", component, field)
+			}
+		}
+		for field, required := range map[string][]string{
+			"updates": {"key", "value"}, "rename_keys": {"old_key", "new_key"},
+			"filter_values": {"key", "operator", "value"},
+		} {
+			if err := validateRows(component, params, field, required); err != nil {
+				return err
+			}
+		}
+	case "agent":
+		if values, ok := params["tools"].([]any); ok && containsBlank(values) {
+			return fmt.Errorf("[%s] tools does not support empty entries", component)
+		}
+	case "invoke":
+		if err := validateRows(component, params, "variables", []string{"key", "ref", "value"}); err != nil {
+			return err
+		}
+	case "loop":
+		if err := validateRows(component, params, "loop_variables", []string{"variable"}); err != nil {
+			return err
+		}
+		if err := validateRows(component, params, "loop_termination_condition", []string{"variable", "operator", "value"}); err != nil {
+			return err
+		}
+	case "iteration":
+		if err := validateRows(component, params, "outputs", []string{"name", "value"}); err != nil {
+			return err
+		}
+	case "variableaggregator":
+		return validateVariableAggregatorGroups(component, params)
+	case "userfillup":
+		return validateInputOptions(component, params)
 	}
-	for field, required := range map[string][]string{
-		"tools": {"component_name"}, "select_keys": {"name"}, "remove_keys": {"name"},
-		"updates": {"key", "value"}, "rename_keys": {"old_key", "new_key"},
-		"filter_values": {"key", "value"}, "variables": {"variable"},
-		"loop_termination_condition": {"variable", "value"}, "outputs": {"name"},
-	} {
-		if rows, ok := params[field].([]any); ok {
-			for i, raw := range rows {
-				row, ok := raw.(map[string]any)
-				if !ok {
-					continue
-				}
-				for _, key := range required {
-					if isBlank(row[key]) {
-						return fmt.Errorf("[%s] %s[%d] is incomplete", component, field, i)
+	return nil
+}
+
+func validateRows(component string, params map[string]any, field string, required []string) error {
+	rows, ok := params[field].([]any)
+	if !ok {
+		return nil
+	}
+	for i, raw := range rows {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range required {
+			if isBlank(row[key]) {
+				return fmt.Errorf("[%s] %s[%d] is incomplete", component, field, i)
+			}
+		}
+	}
+	return nil
+}
+
+func validateVariableAggregatorGroups(component string, params map[string]any) error {
+	if groups, ok := params["groups"].([]any); ok {
+		for i, rawGroup := range groups {
+			group, ok := rawGroup.(map[string]any)
+			if !ok {
+				continue
+			}
+			if isBlank(group["group_name"]) {
+				return fmt.Errorf("[%s] groups[%d] is incomplete", component, i)
+			}
+			if variables, ok := group["variables"].([]any); ok {
+				for j, rawVariable := range variables {
+					variable, ok := rawVariable.(map[string]any)
+					if ok && isBlank(variable["value"]) {
+						return fmt.Errorf("[%s] groups[%d].variables[%d] is incomplete", component, i, j)
 					}
 				}
 			}
 		}
 	}
+	return nil
+}
+
+func validateInputOptions(component string, params map[string]any) error {
 	if inputs, ok := params["inputs"].(map[string]any); ok {
 		for key, raw := range inputs {
 			entry, ok := raw.(map[string]any)
@@ -90,17 +155,4 @@ func containsBlank(values []any) bool {
 		}
 	}
 	return false
-}
-
-func containsBlankWithContent(values []any) bool {
-	blank := false
-	content := false
-	for _, value := range values {
-		if isBlank(value) {
-			blank = true
-		} else {
-			content = true
-		}
-	}
-	return blank && content
 }
