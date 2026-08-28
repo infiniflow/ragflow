@@ -26,7 +26,7 @@ func TestValidateDynamicEntries(t *testing.T) {
 			"choice": map[string]any{"options": []any{"one", "two"}},
 		}}),
 		componentDSL("Iteration", map[string]any{"outputs": map[string]any{
-			"result": map[string]any{"type": "string", "value": "Iteration@result"},
+			"result": map[string]any{"type": "string", "ref": "Iteration@result"},
 		}}),
 	)
 
@@ -43,10 +43,12 @@ func TestValidateDynamicEntries(t *testing.T) {
 		{"tool name", componentDSL("Agent", map[string]any{"tools": []any{"web_search", ""}}), "tools"},
 		{"filter operator", componentDSL("DataOperations", map[string]any{"filter_values": []any{map[string]any{"key": "status", "operator": "", "value": "published"}}}), "filter_values[0]"},
 		{"invoke variable", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "", "ref": "Begin@query", "value": "query"}}}), "variables[0]"},
+		{"malformed group", componentDSL("VariableAggregator", map[string]any{"groups": []any{"not a group"}}), "groups[0]"},
 		{"aggregated variable", componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{"group_name": "answer", "variables": []any{map[string]any{"value": ""}}}}}), "groups[0].variables[0]"},
+		{"malformed aggregated variable", componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{"group_name": "answer", "variables": []any{nil}}}}), "groups[0].variables[0]"},
 		{"loop variable", componentDSL("Loop", map[string]any{"loop_variables": []any{map[string]any{"variable": ""}}}), "loop_variables[0]"},
 		{"loop operator", componentDSL("Loop", map[string]any{"loop_termination_condition": []any{map[string]any{"variable": "count", "operator": "", "value": 3}}}), "loop_termination_condition[0]"},
-		{"iteration output", componentDSL("Iteration", map[string]any{"outputs": []any{map[string]any{"name": "", "value": "Iteration@result"}}}), "outputs[0]"},
+		{"iteration output", componentDSL("Iteration", map[string]any{"outputs": map[string]any{"result": map[string]any{"ref": ""}}}), "outputs.result"},
 		{"input option", componentDSL("UserFillUp", map[string]any{"inputs": map[string]any{"choice": map[string]any{"options": []any{"one", ""}}}}), "inputs.choice.options"},
 	}
 

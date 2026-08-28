@@ -75,9 +75,7 @@ func validateDynamicParams(component string, params map[string]any) error {
 			return err
 		}
 	case "iteration":
-		if err := validateRows(component, params, "outputs", []string{"name", "value"}); err != nil {
-			return err
-		}
+		return validateIterationOutputs(component, params)
 	case "variableaggregator":
 		return validateVariableAggregatorGroups(component, params)
 	case "userfillup":
@@ -109,20 +107,36 @@ func validateVariableAggregatorGroups(component string, params map[string]any) e
 	if groups, ok := params["groups"].([]any); ok {
 		for i, rawGroup := range groups {
 			group, ok := rawGroup.(map[string]any)
-			if !ok {
-				continue
-			}
-			if isBlank(group["group_name"]) {
+			if !ok || group == nil {
 				return fmt.Errorf("[%s] groups[%d] is incomplete", component, i)
 			}
-			if variables, ok := group["variables"].([]any); ok {
-				for j, rawVariable := range variables {
-					variable, ok := rawVariable.(map[string]any)
-					if ok && isBlank(variable["value"]) {
-						return fmt.Errorf("[%s] groups[%d].variables[%d] is incomplete", component, i, j)
-					}
+			if !isNonBlankString(group["group_name"]) {
+				return fmt.Errorf("[%s] groups[%d] is incomplete", component, i)
+			}
+			variables, ok := group["variables"].([]any)
+			if !ok {
+				return fmt.Errorf("[%s] groups[%d].variables is incomplete", component, i)
+			}
+			for j, rawVariable := range variables {
+				variable, ok := rawVariable.(map[string]any)
+				if !ok || variable == nil || !isNonBlankString(variable["value"]) {
+					return fmt.Errorf("[%s] groups[%d].variables[%d] is incomplete", component, i, j)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+func validateIterationOutputs(component string, params map[string]any) error {
+	outputs, ok := params["outputs"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	for name, rawOutput := range outputs {
+		output, ok := rawOutput.(map[string]any)
+		if isBlank(name) || !ok || output == nil || !isNonBlankString(output["ref"]) {
+			return fmt.Errorf("[%s] outputs.%s is incomplete", component, name)
 		}
 	}
 	return nil
@@ -146,6 +160,11 @@ func validateInputOptions(component string, params map[string]any) error {
 func isBlank(value any) bool {
 	s, ok := value.(string)
 	return ok && strings.TrimSpace(s) == ""
+}
+
+func isNonBlankString(value any) bool {
+	s, ok := value.(string)
+	return ok && strings.TrimSpace(s) != ""
 }
 
 func containsBlank(values []any) bool {
