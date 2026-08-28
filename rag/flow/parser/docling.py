@@ -18,17 +18,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def docling_tables_to_bboxes(tables):
-    """Convert Docling tables and figures into flow parser bbox records.
+def media_records_to_bboxes(media_records, source):
+    """Convert parser media records into flow parser bbox records.
 
-    ``DoclingParser.parse_pdf`` returns tables as ``((image, html_or_caption),
-    positions)``.  Flow parser outputs use one-based page numbers, while
-    Docling's crop positions are zero-based.
+    Parser backends return media as ``((image, html_or_caption), positions)``.
+    Flow parser outputs use one-based page numbers, while parser crop positions
+    are zero-based.
+
+    Args:
+        media_records: Tables and figures returned by a parser backend.
+        source: Parser name included in count-only diagnostic logs.
     """
     bboxes = []
     skipped_records = 0
     skipped_positions = 0
-    for table in tables or []:
+    for table in media_records or []:
         if not isinstance(table, tuple) or len(table) != 2:
             skipped_records += 1
             continue
@@ -53,12 +57,18 @@ def docling_tables_to_bboxes(tables):
                 skipped_positions += 1
         bboxes.append(box)
     logger.debug(
-        "[Docling] Converted %d media records; skipped %d malformed records and %d invalid position sets.",
+        "[%s] Converted %d media records; skipped %d malformed records and %d invalid position sets.",
+        source,
         len(bboxes),
         skipped_records,
         skipped_positions,
     )
     return bboxes
+
+
+def docling_tables_to_bboxes(tables):
+    """Convert Docling tables and figures into flow parser bbox records."""
+    return media_records_to_bboxes(tables, "Docling")
 
 
 def order_docling_bboxes(bboxes):

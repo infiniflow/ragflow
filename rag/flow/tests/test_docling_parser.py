@@ -1,6 +1,6 @@
 import logging
 
-from rag.flow.parser.docling import docling_tables_to_bboxes, order_docling_bboxes
+from rag.flow.parser.docling import docling_tables_to_bboxes, media_records_to_bboxes, order_docling_bboxes
 
 
 def test_docling_tables_and_figures_are_converted_to_flow_bboxes():
@@ -47,6 +47,14 @@ def test_docling_figure_without_an_image_keeps_its_extracted_text():
     bboxes = docling_tables_to_bboxes([((None, ["OCR text from the figure"]), [])])
 
     assert bboxes == [{"layout_type": "figure", "text": "OCR text from the figure"}]
+
+
+def test_media_record_conversion_is_shared_by_parser_backends(caplog):
+    with caplog.at_level(logging.DEBUG, logger="rag.flow.parser.docling"):
+        bboxes = media_records_to_bboxes([((None, "<table></table>"), [(0, 1, 2, 3, 4)])], "OpenDataLoader")
+
+    assert bboxes == [{"layout_type": "table", "text": "<table></table>", "positions": [[1, 1, 2, 3, 4]]}]
+    assert "[OpenDataLoader] Converted 1 media records" in caplog.text
 
 
 def test_docling_bboxes_are_interleaved_in_stable_coordinate_order():
