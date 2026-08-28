@@ -174,7 +174,9 @@ def _load_tenant_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
     constants_mod = ModuleType("common.constants")
-    constants_mod.RetCode = SimpleNamespace(AUTHENTICATION_ERROR=401, SERVER_ERROR=500, DATA_ERROR=102)
+    # Match the production enum values (RetCode.AUTHENTICATION_ERROR == 109) so
+    # assertions exercise the same codes the real endpoint returns.
+    constants_mod.RetCode = SimpleNamespace(AUTHENTICATION_ERROR=109, SERVER_ERROR=500, DATA_ERROR=102)
     constants_mod.StatusEnum = SimpleNamespace(VALID=SimpleNamespace(value=1))
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
@@ -660,7 +662,7 @@ def _load_user_app(monkeypatch):
 
     constants_mod = ModuleType("common.constants")
     constants_mod.RetCode = SimpleNamespace(
-        AUTHENTICATION_ERROR=401,
+        AUTHENTICATION_ERROR=109,
         SERVER_ERROR=500,
         FORBIDDEN=403,
         EXCEPTION_ERROR=100,
@@ -1120,6 +1122,10 @@ def test_tenant_info_and_set_tenant_info_exception_matrix_unit(monkeypatch):
         module,
         {"tenant_id": "tenant-1", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
     )
+
+    # set_tenant_info validates ownership via get_info_by before updating;
+    # let that check pass so the update failure below is exercised.
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1"}])
 
     def _raise_update(_tenant_id, _payload):
         raise RuntimeError("tenant update boom")
@@ -1651,3 +1657,27 @@ def test_list_chats_authorized_multi_tenant_unit(monkeypatch):
     assert {c["id"] for c in res["data"]["chats"]} == {"c1", "c2"}
     assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
     assert captured["user_id"] == "tenant-1"
+
+
+@pytest.mark.p2
+def test_set_tenant_info_rejects_foreign_tenant_unit(monkeypatch):
+    module = _load_user_app(monkeypatch)
+
+    updated = []
+    monkeypatch.setattr(module.TenantService, "update_by_id", lambda tid, payload: updated.append((tid, payload)) or True)
+
+    # A tenant_id from the body that the caller does not own must be rejected
+    # instead of updating another tenant's model bindings.
+    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _user_id: [{"tenant_id": "tenant-mine"}])
+    _set_request_json(monkeypatch, module, {"tenant_id": "tenant-other", "llm_id": "llm-x", "embd_id": "embd-x", "asr_id": "asr-x", "img2txt_id": "img-x"})
+    res = _run(module.set_tenant_info())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert res["message"] == "no authorization", res
+    assert updated == []
+
+    # The caller's own tenant is still updatable.
+    _set_request_json(monkeypatch, module, {"tenant_id": "tenant-mine", "llm_id": "llm-x", "embd_id": "embd-x", "asr_id": "asr-x", "img2txt_id": "img-x"})
+    res = _run(module.set_tenant_info())
+    assert res["code"] == 0, res
+    assert updated and updated[0][0] == "tenant-mine", updated
+    assert updated[0][1]["llm_id"] == "llm-x", updated

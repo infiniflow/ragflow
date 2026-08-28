@@ -305,8 +305,19 @@ async def ask_about_embedded(tenant_id=None):
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
+        if not await thread_pool_exec(SearchService.accessible, search_id, uid):
+            logging.warning("Access denied: user=%s resource=%s", uid, search_id)
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
+
+    # `async_ask` lets `search_config["kb_ids"]` override the request kb_ids,
+    # so validate the effective set rather than `req["kb_ids"]` alone.
+    kb_ids = search_config.get("kb_ids", req["kb_ids"])
+    for kb_id in kb_ids:
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=uid):
+            logging.warning("Access denied: user=%s resource=%s", uid, kb_id)
+            return get_error_data_result(message=f"You don't own the dataset {kb_id}")
 
     chat_llm_name = ""
     if not search_config or not search_config.get("chat_id"):
@@ -357,12 +368,32 @@ async def retrieval_test_embedded(tenant_id=None):
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
     search_config = {}
+    if req.get("search_id", ""):
+        if not await thread_pool_exec(SearchService.accessible, req["search_id"], tenant_id):
+            logging.warning("Access denied: user=%s resource=%s", tenant_id, req["search_id"])
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
 
     async def _retrieval():
         nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id, rerank_candidates_count
         local_doc_ids = list(doc_ids) if doc_ids else []
-        tenant_ids = []
         _question = question
+
+        # Authorize every kb (and fetch their rows) BEFORE any metadata read:
+        # apply_meta_data_filter and its metas_loader must never touch a
+        # dataset the caller cannot access.
+        for kb_id in kb_ids:
+            if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=tenant_id):
+                logging.warning("Access denied: user=%s resource=%s", tenant_id, kb_id)
+                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        kbs = await thread_pool_exec(KnowledgebaseService.get_by_ids, kb_ids)
+        # Everything that passed the accessible loop above must still be here;
+        # a short result means a kb vanished between check and fetch.
+        kbs_by_id = {kb.id: kb for kb in kbs}
+        if len(kbs_by_id) != len(set(kb_ids)):
+            logging.warning("Retrieval test: knowledgebases vanished after the access check. requested=%d fetched=%d", len(set(kb_ids)), len(kbs_by_id))
+            return get_error_data_result(message="Knowledgebase not found!")
+        tenant_ids = list({kb.tenant_id for kb in kbs})
+        kb = kbs_by_id[kb_ids[0]]
 
         meta_data_filter = {}
         chat_mdl = None
@@ -406,19 +437,6 @@ async def retrieval_test_embedded(tenant_id=None):
                 kb_ids=kb_ids,
                 metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
             )
-
-        tenants = await thread_pool_exec(UserTenantService.query, user_id=tenant_id)
-        for kb_id in kb_ids:
-            for tenant in tenants:
-                if await thread_pool_exec(KnowledgebaseService.query, tenant_id=tenant.tenant_id, id=kb_id):
-                    tenant_ids.append(tenant.tenant_id)
-                    break
-            else:
-                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
-
-        e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
-        if not e:
-            return get_error_data_result(message="Knowledgebase not found!")
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
@@ -489,6 +507,9 @@ async def related_questions_embedded(tenant_id=None):
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
+        if not await thread_pool_exec(SearchService.accessible, search_id, tenant_id):
+            logging.warning("Access denied: user=%s resource=%s", tenant_id, search_id)
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
@@ -550,7 +571,18 @@ async def mindmap(tenant_id=None):
     req = await get_request_json()
 
     search_id = req.get("search_id", "")
-    search_app = await thread_pool_exec(SearchService.get_detail, search_id) if search_id else {}
+    search_app = {}
+    if search_id:
+        if not await thread_pool_exec(SearchService.accessible, search_id, tenant_id):
+            logging.warning("Access denied: user=%s resource=%s", tenant_id, search_id)
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
+        search_app = await thread_pool_exec(SearchService.get_detail, search_id)
+
+    # check if the kb_ids is accessible for this user
+    for kb_id in req["kb_ids"]:
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=tenant_id):
+            logging.warning("Access denied: user=%s resource=%s", tenant_id, kb_id)
+            return get_error_data_result(message=f"You don't own the dataset {kb_id}")
 
     mind_map = await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
