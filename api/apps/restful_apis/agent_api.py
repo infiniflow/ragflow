@@ -1426,6 +1426,102 @@ def _remap_agent_dsl_for_tenant(dsl: dict, source_tenant_id: str, target_tenant_
     return patched, warnings
 
 
+def _portabilize_agent_dsl(dsl: dict) -> dict:
+    """Replace llm_id/mcp_id with portable logical names for cross-server export.
+
+    llm_id uuid -> composite `model@instance@provider` or `gpt://...`
+    mcp_id uuid -> mcp name `yandex-tracker-mcp`
+    Import on another server will remap by name via _remap_agent_dsl_for_tenant.
+    """
+    import copy as _copy2
+
+    from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
+    from api.db.services.mcp_server_service import MCPServerService
+
+    portable = _copy2.deepcopy(dsl)
+    if not isinstance(portable, dict):
+        return portable
+    # components
+    for comp in (portable.get("components") or {}).values():
+        if not isinstance(comp, dict):
+            continue
+        params = (comp.get("obj") or {}).get("params") if isinstance(comp.get("obj"), dict) else None
+        if not isinstance(params, dict):
+            continue
+        for k in ("llm_id", "llm_ids", "model_id"):
+            if k not in params or not params[k]:
+                continue
+            raw = params[k]
+            is_list = isinstance(raw, list)
+            ids = raw if is_list else [raw]
+            new_vals = []
+            for _id in ids:
+                if not isinstance(_id, str):
+                    new_vals.append(_id)
+                    continue
+                try:
+                    logical = get_composite_model_name_by_id(_id)
+                    new_vals.append(logical)
+                except Exception:
+                    new_vals.append(_id)
+            params[k] = new_vals if is_list else (new_vals[0] if new_vals else raw)
+        mcp_list = params.get("mcp")
+        if isinstance(mcp_list, list):
+            for entry in mcp_list:
+                if not isinstance(entry, dict):
+                    continue
+                mid = entry.get("mcp_id") or entry.get("id")
+                if not mid:
+                    continue
+                try:
+                    ok, obj = MCPServerService.get_by_id(mid)
+                    if ok and obj and getattr(obj, "name", None):
+                        entry["mcp_id"] = obj.name
+                except Exception:
+                    pass
+    # graph.nodes
+    graph = portable.get("graph")
+    if isinstance(graph, dict) and isinstance(graph.get("nodes"), list):
+        for node in graph["nodes"]:
+            if not isinstance(node, dict):
+                continue
+            form = (node.get("data") or {}).get("form") if isinstance(node.get("data"), dict) else None
+            if not isinstance(form, dict):
+                continue
+            for k in ("llm_id", "llm_ids", "model_id"):
+                if k not in form or not form[k]:
+                    continue
+                raw = form[k]
+                is_list = isinstance(raw, list)
+                ids = raw if is_list else [raw]
+                new_vals = []
+                for _id in ids:
+                    if not isinstance(_id, str):
+                        new_vals.append(_id)
+                        continue
+                    try:
+                        logical = get_composite_model_name_by_id(_id)
+                        new_vals.append(logical)
+                    except Exception:
+                        new_vals.append(_id)
+                form[k] = new_vals if is_list else (new_vals[0] if new_vals else raw)
+            mcp_list = form.get("mcp")
+            if isinstance(mcp_list, list):
+                for entry in mcp_list:
+                    if not isinstance(entry, dict):
+                        continue
+                    mid = entry.get("mcp_id") or entry.get("id")
+                    if not mid:
+                        continue
+                    try:
+                        ok, obj = MCPServerService.get_by_id(mid)
+                        if ok and obj and getattr(obj, "name", None):
+                            entry["mcp_id"] = obj.name
+                    except Exception:
+                        pass
+    return portable
+
+
 @manager.route("/agents/<agent_id>/duplicate", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1633,6 +1729,12 @@ def get_agent(agent_id, tenant_id):
     from agent.dsl_migration import normalize_chunker_dsl
 
     canvas["dsl"] = normalize_chunker_dsl(canvas.get("dsl", {}))
+    # Portable export for cross-server import: replace ids with logical names
+    try:
+        if request.args.get("portable") in ("1", "true", "True", "TRUE"):
+            canvas["dsl"] = _portabilize_agent_dsl(canvas["dsl"])
+    except Exception:
+        pass
     canvas["last_publish_time"] = last_publish_time
 
     if canvas.get("canvas_category") == CanvasCategory.DataFlow:
