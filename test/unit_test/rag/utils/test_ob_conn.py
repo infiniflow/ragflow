@@ -18,7 +18,37 @@
 Unit tests for OceanBase connection utility functions.
 """
 
-from rag.utils.ob_conn import get_value_str, get_metadata_filter_expression
+import logging
+
+from rag.utils.ob_conn import OBConnection, SearchResult, get_metadata_filter_expression, get_value_str
+
+
+def _ob_connection_class():
+    return next(cell.cell_contents for cell in OBConnection.__closure__ if isinstance(cell.cell_contents, type))
+
+
+class TestOceanBaseVectorScoreExtraction:
+    def test_get_scores_preserves_scores_and_defaults_missing_scores(self, caplog):
+        """SeekDB vector results expose chunk ids and scores in SearchResult.chunks."""
+        connection = object.__new__(_ob_connection_class())
+        result = SearchResult(
+            total=5,
+            chunks=[
+                {"id": "chunk-1", "_score": 0.8123},
+                {"id": "chunk-2", "_score": 0.1034},
+                {"id": "chunk-3"},
+                {"id": "chunk-4", "_score": None},
+                {"_score": 0.5},
+            ],
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="ragflow.ob_conn"):
+            scores = connection.get_scores(result)
+
+        assert scores == {"chunk-1": 0.8123, "chunk-2": 0.1034, "chunk-3": 0.0, "chunk-4": 0.0}
+        assert "get_scores skipped chunks" in caplog.text
+        assert "missing_id=1" in caplog.text
+        assert "missing_score=2" in caplog.text
 
 
 class TestGetValueStr:

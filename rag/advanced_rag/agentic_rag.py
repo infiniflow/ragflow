@@ -208,6 +208,7 @@ class RAGTools:
         do_refer: bool | None = True,
         thinking_mode: str = "medium",
         text_attachments_content: str = "",
+        system_prompt: str = "",
     ):
         self.tenant_ids = tenant_ids
         # P0 instrumentation: count LLM calls / token usage per harness phase.
@@ -244,6 +245,7 @@ class RAGTools:
         self.empty_response = empty_response
         self.do_refer = do_refer
         self.text_attachments_content = text_attachments_content or ""
+        self.system_prompt = system_prompt or ""
         # Optional sink used by the outer agent stream to preserve the final
         # answer deltas produced by the inner research graph.  The tool API
         # still returns the complete string to the caller, but the stream
@@ -320,7 +322,7 @@ class RAGTools:
             if self.has_unstructured()
             else ""
         )
-        return (
+        router_prompt = (
             "You are a smart agent. For any question that needs "
             "evidence from the knowledge bases or the web, call the `rag` tool "
             "with a self-contained question — it runs the full search-and-answer "
@@ -331,6 +333,9 @@ class RAGTools:
             f"{summarize_line}"
             "Do not invent facts and do not fabricate document IDs."
         )
+        if self.system_prompt:
+            return f"{self.system_prompt}\n\n{router_prompt}"
+        return router_prompt
 
     # ------------------------------------------------------------------ #
     # Graph node helpers (plain async methods — never exposed as tools)

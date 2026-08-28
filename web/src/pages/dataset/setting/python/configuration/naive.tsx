@@ -19,6 +19,7 @@ import {
   OverlappedPercent,
 } from './common-item';
 import { FormLayout } from '@/constants/form';
+import { Separator } from '@/components/ui/separator';
 
 export function NaiveConfiguration() {
   const ownerTenantId = useOwnerTenantId();
@@ -29,7 +30,6 @@ export function NaiveConfiguration() {
           testId="ds-settings-parser-pdf-parser-select"
           ownerTenantId={ownerTenantId}
         ></LayoutRecognizeFormField>
-        <GlobalIndexModelItem />
         <MaxTokenNumberFormField
           initialValue={512}
           sliderTestId="ds-settings-parser-recommended-chunk-size-slider"
@@ -39,16 +39,18 @@ export function NaiveConfiguration() {
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
         <ImageContextWindow />
-        <AutoMetadata />
+        <ExcelToHtmlFormField></ExcelToHtmlFormField>
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
+        <Separator />
+        <GlobalIndexModelItem />
+        <AutoMetadata />
         <AutoKeywordsFormField
           layout={FormLayout.Horizontal}
         ></AutoKeywordsFormField>
         <AutoQuestionsFormField
           layout={FormLayout.Horizontal}
         ></AutoQuestionsFormField>
-        <ExcelToHtmlFormField></ExcelToHtmlFormField>
         {/* <TagItems></TagItems> */}
       </ConfigurationFormContainer>
     </MainContainer>

@@ -24,6 +24,7 @@ export default {
       namePlaceholder: 'Please input name',
       nameSlashError: 'Name cannot contain "/"',
       descriptionPlaceholder: 'Enter description',
+      descriptionMaxLength: 'Description must be at most {{max}} characters.',
       next: 'Next',
       create: 'Create',
       edit: 'Edit',
@@ -54,6 +55,7 @@ export default {
       viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
+      figure: 'Fig.',
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
@@ -1562,6 +1564,8 @@ Example: Virtual Hosted Style`,
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
         'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
+      webdavCaCertPathTip:
+        'Optional: Path to a CA certificate bundle mounted inside the RAGFlow container.',
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
@@ -1593,12 +1597,18 @@ Example: Virtual Hosted Style`,
       sharepointSiteUrlTip:
         'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       azureDevOpsPatTip: 'A personal access token with the Code (Read) scope.',
-      azureDevOpsOrganizationTip: 'Organization name (e.g. "contoso"), or the full collection URL of a self-hosted Azure DevOps Server (e.g. https://tfs.contoso.com/DefaultCollection).',
-      azureDevOpsProjectsTip: 'Comma separated team project names. E.g., Project1,Project2',
-      azureDevOpsRepositoriesTip: 'Comma separated repositories. Use project/repo to disambiguate repositories that share a name.',
-      azureDevOpsOrganizationScopeTip: 'Every repository visible to the token in this organization will be indexed.',
-      azureDevOpsContentTypesTip: 'Choose what to index: source files, pull requests, or both.',
-      azure_devopsDescription: 'Connect Azure DevOps to sync repository files and pull requests.',
+      azureDevOpsOrganizationTip:
+        'Organization name (e.g. "contoso"), or the full collection URL of a self-hosted Azure DevOps Server (e.g. https://tfs.contoso.com/DefaultCollection).',
+      azureDevOpsProjectsTip:
+        'Comma separated team project names. E.g., Project1,Project2',
+      azureDevOpsRepositoriesTip:
+        'Comma separated repositories. Use project/repo to disambiguate repositories that share a name.',
+      azureDevOpsOrganizationScopeTip:
+        'Every repository visible to the token in this organization will be indexed.',
+      azureDevOpsContentTypesTip:
+        'Choose what to index: source files, pull requests, or both.',
+      azure_devopsDescription:
+        'Connect Azure DevOps to sync repository files and pull requests.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
@@ -2634,6 +2644,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       maxRounds: 'Max reflection rounds',
       delayAfterError: 'Delay after error',
       maxRetries: 'Max retry rounds',
+      toolTimeout: 'Tool timeout',
+      toolTimeoutTip:
+        'Timeout in seconds for a single tool call (including MCP tools). Increase it for long-running tools.',
       maxSteps: 'Max steps',
       headless: 'Headless',
       enableDefaultExtensions: 'Enable default extensions',

@@ -351,14 +351,11 @@ export function transformTokenChunkerParams(
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
-    overlapped_percent:
-      params.delimiter_mode === 'one'
-        ? 0
-        : Number(params.overlapped_percent) / 100,
-    delimiters:
-      params.delimiter_mode === 'delimiter'
-        ? transformObjectArrayToPureArray(params.delimiters, 'value')
-        : [],
+    // Keep the configured values in 'one' mode too: the chunker ignores them
+    // while merging everything into a single chunk, but zeroing them here
+    // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
+    overlapped_percent: Number(params.overlapped_percent) / 100,
+    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 

@@ -1003,8 +1003,8 @@ func TestUpdateDataset_StripsUnknownParam_Builtin(t *testing.T) {
 	if _, exists := rhyme["no_such_param"]; exists {
 		t.Fatal("expected no_such_param to be stripped")
 	}
-	if result["parser_id"] != string(entity.ParserTypeNaive) {
-		t.Fatalf("expected parser_id preserved, got %#v", result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 }
 
@@ -1027,8 +1027,8 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != string(entity.ParserTypeNaive) {
-		t.Fatalf("expected parser_id preserved, got %#v", result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")

@@ -24,6 +24,7 @@ export default {
       namePlaceholder: '请输入名称',
       nameSlashError: '名称不能包含 "/"',
       descriptionPlaceholder: '请输入描述',
+      descriptionMaxLength: '描述最多 {{max}} 个字符。',
       next: '下一步',
       create: '创建',
       edit: '编辑',
@@ -43,6 +44,7 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
+      figure: '图',
       close: '关闭',
       preview: '预览',
       move: '移动',
@@ -1263,11 +1265,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       azureDevOpsPatTip: '需要具有 Code (Read) 权限的个人访问令牌。',
-      azureDevOpsOrganizationTip: '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
-      azureDevOpsProjectsTip: '以逗号分隔的团队项目名称。例如：Project1,Project2',
-      azureDevOpsRepositoriesTip: '以逗号分隔的仓库。可使用 project/repo 形式以区分同名仓库。',
+      azureDevOpsOrganizationTip:
+        '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
+      azureDevOpsProjectsTip:
+        '以逗号分隔的团队项目名称。例如：Project1,Project2',
+      azureDevOpsRepositoriesTip:
+        '以逗号分隔的仓库。可使用 project/repo 形式以区分同名仓库。',
       azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
-      azureDevOpsContentTypesTip: '选择要索引的内容：源文件、拉取请求，或两者。',
+      azureDevOpsContentTypesTip:
+        '选择要索引的内容：源文件、拉取请求，或两者。',
       azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
@@ -2256,6 +2262,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxRounds: '最大反思轮数',
       delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
+      toolTimeout: '工具调用超时',
+      toolTimeoutTip:
+        '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       maxSteps: '最大步数',
       headless: '无头模式',
       enableDefaultExtensions: '启用默认扩展',

@@ -680,10 +680,10 @@ export default {
       parseType: '파싱 유형',
       manualSetup: '파이프라인',
       builtIn: '기본 제공',
-      titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다.',
+      titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다',
       name: '데이터셋 이름',
       photo: '데이터셋 사진',
-      photoTip: '최대 4MB의 이미지를 업로드할 수 있습니다.',
+      photoTip: '최대 4MB의 이미지를 업로드할 수 있습니다',
       description: '설명',
       language: '문서 언어',
       languageMessage: '언어를 입력해 주세요',
@@ -1255,7 +1255,8 @@ export default {
         'Microsoft Graph를 통해 SharePoint 사이트를 연결하여 문서 라이브러리를 동기화합니다.',
       sharepointSiteUrlTip:
         '인덱싱할 SharePoint 사이트의 전체 URL (예: https://contoso.sharepoint.com/sites/MySite). Sites.Read.All 및 Files.Read.All 애플리케이션 권한이 있는 Azure AD 앱이 필요합니다 (관리자 동의).',
-      azure_devopsDescription: 'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
+      azure_devopsDescription:
+        'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
       bitbucketDescription: 'Bitbucket을 연결하여 PR 콘텐츠를 동기화합니다.',
       bitbucketTopWorkspaceTip:
         '인덱싱할 Bitbucket 워크스페이스 (예: https://bitbucket.org/atlassian/workspace 의 "atlassian").',

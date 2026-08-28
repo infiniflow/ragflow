@@ -471,7 +471,7 @@ def by_mistral_ocr(
 
 def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
-    if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
+    if (not layout_recognizer) or layout_recognizer.replace(" ", "").lower() == "plaintext":
         pdf_parser = PlainParser()
     else:
         tenant_id = kwargs.get("tenant_id")
