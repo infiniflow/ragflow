@@ -18,9 +18,9 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 2. Install ragflow-cli.
 
    ```bash
-   pipx install ragflow-cli==0.27.0
+   pipx install ragflow-cli==0.27.1
    ```
-  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.27.0`.
+  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.27.1`.
 
 3. Launch the CLI client:
 
