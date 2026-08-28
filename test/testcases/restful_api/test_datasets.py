@@ -915,7 +915,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
         elif IS_GO_PROXY and chunk_method == "":
             assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+            assert payload["message"].startswith("input should be 'general', 'qa'") and payload["message"].endswith("or 'email'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -925,7 +925,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     _skip_go_ignored_null(none_payload, PARSER_ID_FIELD)
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     if IS_GO_PROXY:
-        assert none_payload["message"].startswith("input should be 'audio', 'book'") and none_payload["message"].endswith("or 'table'"), none_payload
+        assert none_payload["message"].startswith("input should be 'general', 'qa'") and none_payload["message"].endswith("or 'email'"), none_payload
     else:
         assert expected_chunk_message in none_payload["message"], none_payload
 
@@ -1686,7 +1686,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         elif IS_GO_PROXY and chunk_method == "":
             assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+            assert payload["message"].startswith("input should be 'general', 'qa'") and payload["message"].endswith("or 'email'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 

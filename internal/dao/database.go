@@ -120,6 +120,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.File2Document{},
 		&entity.TenantLLM{},
 		&entity.Chat{},
+		&entity.ChatChannel{},
 		&entity.ChatSession{},
 		&entity.Task{},
 		&entity.APIToken{},

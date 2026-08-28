@@ -5,6 +5,7 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 import { CircleQuestionMark } from 'lucide-react';
+import { LinkifyText } from '../linkify-text';
 
 const TooltipProvider = TooltipPrimitive.Provider;
 
@@ -15,7 +16,7 @@ const TooltipTrigger = TooltipPrimitive.Trigger;
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
+>(({ className, sideOffset = 4, children, ...props }, ref) => (
   <TooltipPrimitive.Portal>
     <TooltipPrimitive.Content
       ref={ref}
@@ -25,7 +26,9 @@ const TooltipContent = React.forwardRef<
         className,
       )}
       {...props}
-    />
+    >
+      <LinkifyText>{children}</LinkifyText>
+    </TooltipPrimitive.Content>
   </TooltipPrimitive.Portal>
 ));
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
@@ -132,7 +135,7 @@ export const AntToolTip: React.FC<AntToolTipProps> = ({
             className,
           )}
         >
-          {title}
+          <LinkifyText>{title}</LinkifyText>
           <div
             className={cn(
               'absolute w-2 h-2  bg-muted ',

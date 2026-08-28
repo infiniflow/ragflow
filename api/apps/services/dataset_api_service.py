@@ -3689,7 +3689,7 @@ async def generate_nav(
             continue
         try:
             await upsert_dataset_nav_doc(
-                tenant_id=tenant_id,
+                tenant_id=kb.tenant_id,
                 kb_id=dataset_id,
                 doc_id=doc_id,
                 summary_or_tree=summary,
