@@ -2,6 +2,7 @@ import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
@@ -69,28 +70,49 @@ type ParserItemProps = {
   fileFormatOptions: SelectWithSearchFlagOptionType[];
 };
 
+const SetupSchema = z
+  .object({
+    fileFormat: z.string().nullish(),
+    // preprocess: z.array(z.string()).optional(),
+    output_format: z.string().optional(),
+    parse_method: z.string().optional(),
+    lang: z.string().optional(),
+    fields: z.array(z.string()).optional(),
+    vlm: z.object({ llm_id: z.string().optional() }).optional(),
+    flatten_media_to_text: z.boolean().optional(),
+    system_prompt: z.string().optional(),
+    table_result_type: z.string().optional(),
+    markdown_image_response_type: z.string().optional(),
+    enable_multi_column: z.boolean().optional(),
+    remove_toc: z.boolean().optional(),
+    remove_header_footer: z.boolean().optional(),
+    pages: z
+      .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
+      .optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.fileFormat === FileType.Email && !values.fields?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fields'],
+        message: 'Fields is required',
+      });
+    }
+    if (
+      (values.fileFormat === FileType.Video ||
+        values.fileFormat === FileType.Audio) &&
+      !values.vlm?.llm_id
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['vlm', 'llm_id'],
+        message: 'Model is required',
+      });
+    }
+  });
+
 export const FormSchema = z.object({
-  setups: z.array(
-    z.object({
-      fileFormat: z.string().nullish(),
-      // preprocess: z.array(z.string()).optional(),
-      output_format: z.string().optional(),
-      parse_method: z.string().optional(),
-      lang: z.string().optional(),
-      fields: z.array(z.string()).optional(),
-      vlm: z.object({ llm_id: z.string().optional() }).optional(),
-      flatten_media_to_text: z.boolean().optional(),
-      system_prompt: z.string().optional(),
-      table_result_type: z.string().optional(),
-      markdown_image_response_type: z.string().optional(),
-      enable_multi_column: z.boolean().optional(),
-      remove_toc: z.boolean().optional(),
-      remove_header_footer: z.boolean().optional(),
-      pages: z
-        .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
-        .optional(),
-    }),
-  ),
+  setups: z.array(SetupSchema),
 });
 
 export type ParserFormSchemaType = z.infer<typeof FormSchema>;
@@ -192,6 +214,7 @@ const ParserForm = ({
   node,
   onValuesChange,
   hideOutputs,
+  externalErrors,
 }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
@@ -202,7 +225,10 @@ const ParserForm = ({
     defaultValues,
     resolver: zodResolver(FormSchema),
     shouldUnregister: true,
+    mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   const name = 'setups';
   const { fields, remove, append } = useFieldArray({

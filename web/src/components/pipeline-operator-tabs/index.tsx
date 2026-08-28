@@ -17,6 +17,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { memo, useCallback } from 'react';
+import { FieldErrors } from 'react-hook-form';
 import PipelineOperatorForm from './pipeline-operator-form';
 
 type PipelineOperatorTabsProps = {
@@ -24,6 +25,9 @@ type PipelineOperatorTabsProps = {
   value: string;
   onValueChange: (value: string) => void;
   onOperatorValuesChange: (operatorId: string, values: any) => void;
+  // Validation errors from the outer form's parser_config, keyed by
+  // operatorId; each entry is mirrored onto the operator form's fields.
+  operatorFormErrors?: Record<string, FieldErrors | undefined>;
 };
 
 const PipelineOperatorTabs = ({
@@ -31,6 +35,7 @@ const PipelineOperatorTabs = ({
   value,
   onValueChange,
   onOperatorValuesChange,
+  operatorFormErrors,
 }: PipelineOperatorTabsProps) => {
   const getOperatorId = useCallback((node: RAGFlowNodeType) => {
     return (
@@ -71,6 +76,7 @@ const PipelineOperatorTabs = ({
             <PipelineOperatorForm
               node={node}
               onValuesChange={handleValuesChange(node)}
+              externalErrors={operatorFormErrors?.[getOperatorId(node)]}
             />
           </TabsContent>
         );
