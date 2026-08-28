@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import logging
 from types import SimpleNamespace
 
 import networkx as nx
@@ -169,15 +170,19 @@ class TestCommunityReportsExtractor:
 
     @pytest.mark.p2
     @pytest.mark.asyncio
-    async def test_report_with_a_non_numeric_rating_is_still_rejected(self, monkeypatch):
+    async def test_report_with_a_non_numeric_rating_is_still_rejected(self, monkeypatch, caplog):
         """The rating check must be widened, not switched off.
 
         Without this case the suite also passes against ("rating", object) and against
-        deleting the rating check outright, so it would guard nothing.
+        deleting the rating check outright, so it would guard nothing. The log assertion
+        holds the diagnostic too, since dropping it leaves no trace of why a report went
+        missing.
         """
         extractor = CommunityReportsExtractor(_build_llm_stub())
         graph = self._extract_with_rating(monkeypatch, extractor, '"high"')
 
-        result = await extractor(graph)
+        with caplog.at_level(logging.ERROR):
+            result = await extractor(graph)
 
         assert result.structured_output == []
+        assert "'rating': 'str'" in caplog.text
