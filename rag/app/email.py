@@ -21,6 +21,7 @@ from rag.app.naive import chunk as naive_chunk
 from common.constants import MAXIMUM_PAGE_NUMBER
 import re
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks
+from rag.nlp.delim import DEFAULT_DELIMITER
 from deepdoc.parser import HtmlParser, TxtParser
 from timeit import default_timer as timer
 import io
@@ -99,7 +100,7 @@ def chunk(
     chunks = naive_merge(
         sections,
         int(parser_config.get("chunk_token_num", 128)),
-        parser_config.get("delimiter", "\n!?。；！？"),
+        parser_config.get("delimiter", DEFAULT_DELIMITER),
     )
 
     main_res.extend(tokenize_chunks(chunks, doc, eng, None, language=lang))
