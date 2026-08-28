@@ -81,9 +81,10 @@ func (n *NatsEngine) Init() error {
 		Storage:   jetstream.FileStorage,
 		MaxMsgs:   1024 * 128,
 		MaxBytes:  1024 * 1024 * 64,
-		// Dedup window for publisher MsgIDs (task_id): a duplicate publish
-		// (e.g. startup reconciliation racing a residual original message)
-		// collapses to one stream seq instead of double-executing the task.
+		// Server-side dedup window. Inert for task publishes: PublishTask
+		// intentionally sends no MsgID (see below — dedup would swallow
+		// retry republishes of a reused task_id). It only takes effect for
+		// a publisher that opts into MsgIDs.
 		Duplicates: 10 * time.Minute,
 	}
 
@@ -109,17 +110,17 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Idempotent publish: carry the task_id as the JetStream MsgID so the
-	// stream's Duplicates window collapses repeated publishes of the same
-	// task (retries, startup reconciliation racing a residual original
-	// message) into a single seq. A payload that does not decode into a
-	// TaskMessage (or has no task_id) degrades to a plain publish.
-	var opts []jetstream.PublishOpt
-	var msg common.TaskMessage
-	if json.Unmarshal(payload, &msg) == nil && msg.TaskID != "" {
-		opts = append(opts, jetstream.WithMsgID(msg.TaskID), jetstream.WithExpectStream("RAGFLOW_TASKS"))
-	}
-	ack, err := n.jetStream.Publish(ctx, subject, payload, opts...)
+	// Deliberately NO MsgID/dedup here. Ingestion tasks reuse the same
+	// task_id across publish attempts (the FAILED/STOPPED→CREATED retry
+	// path), and the server's Duplicates window suppresses a republished
+	// MsgID for its whole lifetime regardless of whether the original
+	// message was already consumed and acked. A deduped retry publish
+	// strands the task in CREATED with no message behind it — unreachable
+	// by any consumer and un-reparsable ("already exists, status: CREATED").
+	// Duplicate delivery is instead made safe at the consumer level:
+	// StartRunning's CREATED→RUNNING CAS plus the in-process claim guard
+	// ack-skip any second copy (see Ingestor.processMessage).
+	ack, err := n.jetStream.Publish(ctx, subject, payload)
 	if err != nil {
 		return err
 	}

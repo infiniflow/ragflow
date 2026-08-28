@@ -300,9 +300,12 @@ const (
 //     RUNNING→FAILED transition; the user can retry, and the failure is
 //     idempotent (a concurrent legit terminal write just wins the CAS).
 //  2. CREATED orphans (never consumed for 5min) are re-published via
-//     EnqueueByID. Duplicate delivery is impossible: publisher MsgID + the
-//     stream's Duplicates window collapse the republish against any residual
-//     original message still resident in the stream.
+//     EnqueueByID. Republishes are safe without broker-side dedup: the
+//     CREATED→RUNNING transition in StartRunning is a CAS, and the
+//     in-process claim guard ack-skips a second copy while a worker holds
+//     the task. (JetStream MsgID dedup is intentionally NOT used - see
+//     NatsEngine.PublishTask: it would swallow the retry republish of a
+//     task_id reused across runs, stranding the row in CREATED.)
 //
 // Errors are logged and skipped per task; the next restart re-runs the scan.
 // reconcileStartupTasks scans and heals orphaned rows. It carries no

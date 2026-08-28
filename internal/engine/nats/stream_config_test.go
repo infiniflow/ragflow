@@ -59,18 +59,24 @@ func newEmbeddedNatsServer(t *testing.T) (string, int) {
 	return "127.0.0.1", addr.Port
 }
 
-// TestPublishTaskDedup: publishing the same task twice within the stream's
-// Duplicates window must collapse to a single stored message, so a startup
-// reconciliation republish racing a residual original message can never
-// double-execute a task.
-func TestPublishTaskDedup(t *testing.T) {
+// TestPublishTaskDeliversRepeatedTaskIDs: publishing the same task_id twice
+// MUST land two messages. Ingestion tasks reuse the task_id across publish
+// attempts (the FAILED/STOPPED→CREATED retry path), and a JetStream MsgID
+// dedup would suppress the retry republish within the Duplicates window even
+// though the original message is long gone — stranding the task in CREATED
+// with no message behind it ("already exists, status: CREATED" forever).
+// This test is the regression guard against reintroducing publish dedup.
+func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 	engine := NewNatsEngine(host, port)
 	if err := engine.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	if err := engine.InitConsumer("tasks.>"); err != nil {
+		t.Fatalf("InitConsumer: %v", err)
+	}
 
-	payload, err := json.Marshal(common.TaskMessage{TaskID: "task-dedup-1", TaskType: common.TaskTypeIngestionTask})
+	payload, err := json.Marshal(common.TaskMessage{TaskID: "task-repeat-1", TaskType: common.TaskTypeIngestionTask})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -78,7 +84,7 @@ func TestPublishTaskDedup(t *testing.T) {
 		t.Fatalf("first PublishTask: %v", err)
 	}
 	if err = engine.PublishTask("tasks.RAGFLOW", payload); err != nil {
-		t.Fatalf("duplicate PublishTask: %v", err)
+		t.Fatalf("repeated PublishTask: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -87,11 +93,11 @@ func TestPublishTaskDedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream info: %v", err)
 	}
-	if info.State.Msgs != 1 {
-		t.Fatalf("stream holds %d messages after duplicate publish, want 1 (MsgID dedup not applied)", info.State.Msgs)
+	if info.State.Msgs != 2 {
+		t.Fatalf("stream holds %d messages after two publishes of the same task_id, want 2 (publish dedup strands retry republishes)", info.State.Msgs)
 	}
 
-	// A payload without a task_id must degrade to a plain publish, not fail.
+	// A payload without a decodable TaskMessage shape must not fail either.
 	if err = engine.PublishTask("tasks.RAGFLOW", []byte("not-json")); err != nil {
 		t.Fatalf("non-TaskMessage PublishTask: %v", err)
 	}

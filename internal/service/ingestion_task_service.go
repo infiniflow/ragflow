@@ -460,8 +460,9 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 
 // EnqueueByID re-publishes the wake-up message for an existing task without
 // touching its status. Used by ingestor startup reconciliation to redeliver
-// CREATED orphans; broker-side MsgID dedup collapses the republish when the
-// original message is still resident in the stream.
+// CREATED orphans; duplicate delivery is made safe at the consumer level
+// (StartRunning CAS + in-process claim guard), not by broker dedup — see
+// NatsEngine.PublishTask for why publish-time MsgID dedup is harmful here.
 func (s *IngestionTaskService) EnqueueByID(taskID string) error {
 	return s.enqueueTask(taskID)
 }
