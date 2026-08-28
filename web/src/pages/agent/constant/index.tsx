@@ -90,7 +90,6 @@ export const initialRetrievalValues = {
   rerank_candidates_count: 64,
   kb_ids: [],
   rerank_id: '',
-  empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
   cross_languages: [],
