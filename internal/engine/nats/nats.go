@@ -226,10 +226,12 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	// defaultHeartbeatInterval) must stay below BackOff[0] = 5s, or in-flight
 	// messages get redelivered mid-run and the claim-guard ack-skip acks the
 	// only live copy.
-	// Note: only MaxWaiting is immutable on an existing consumer;
-	// AckWait/BackOff/MaxAckPending are mutable and updated via
-	// CreateOrUpdateConsumer. The fallback below handles the MaxWaiting case
-	// (error "max waiting can not be updated") and preserves existing behavior.
+	// Note: CreateOrUpdateConsumer is atomic. MaxWaiting is immutable after
+	// creation; if it mismatches the whole update fails (error "max waiting
+	// can not be updated") and NONE of AckWait/BackOff/MaxAckPending are
+	// applied. When MaxWaiting matches (the default, since this config omits
+	// it), the other three update in place. The fallback below handles the
+	// MaxWaiting mismatch by keeping the existing consumer.
 	n.consumer, err = n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Name:          "RAGFLOW_CONSUMER",
 		AckPolicy:     jetstream.AckExplicitPolicy,
@@ -240,7 +242,7 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 		BackOff:       []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second},
 	})
 	if err != nil {
-		// MaxWaiting is immutable after consumer creation (AckWait/BackOff/MaxAckPending remain mutable).
+		// MaxWaiting is immutable after consumer creation (AckWait/BackOff/MaxAckPending remain mutable when MaxWaiting matches; the update is atomic).
 		// If the consumer already exists, fall back to fetching it.
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
 			n.consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
