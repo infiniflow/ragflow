@@ -41,7 +41,7 @@ type IEmbedAppModalProps = {
 const EmbedAppModal = (props: IEmbedAppModalProps) => {
   const { t } = useTranslate('search');
   const { data: tenantInfo } = useFetchTenantInfo();
-  const tenantId = tenantInfo.tenant_id;
+  const tenantId = tenantInfo?.tenant_id ?? '';
   const { open, setOpen, token = '', from, url, beta = '' } = props;
 
   const [hideAvatar, setHideAvatar] = useState(false);
