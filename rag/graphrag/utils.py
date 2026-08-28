@@ -155,8 +155,10 @@ def clean_str(input: Any) -> str:
     return re.sub(r"[\"\x00-\x1f\x7f-\x9f]", "", result)
 
 
-def dict_has_keys_with_types(data: dict, expected_fields: list[tuple[str, type]]) -> bool:
-    """Return True if the given dictionary has the given keys with the given types."""
+def dict_has_keys_with_types(data: dict, expected_fields: list[tuple[str, type | tuple[type, ...]]]) -> bool:
+    """Return True if the given dictionary has the given keys with the given types.
+
+    A field may name a tuple of acceptable types, as ``isinstance`` accepts."""
     for field, field_type in expected_fields:
         if field not in data:
             return False

@@ -141,16 +141,22 @@ class CommunityReportsExtractor(Extractor):
                 logging.error(f"Failed to parse JSON response: {e}")
                 logging.error(f"Response content: {response}")
                 return
+            # JSON has a single number type, so a model that complies with the prompt's
+            # 0-10 severity score can still write 5 rather than 5.0. json.loads yields an
+            # int for that, and isinstance(5, float) is False, so requiring float alone
+            # discarded the report.
             if not dict_has_keys_with_types(
                 response,
                 [
                     ("title", str),
                     ("summary", str),
                     ("findings", list),
-                    ("rating", float),
+                    ("rating", (int, float)),
                     ("rating_explanation", str),
                 ],
             ):
+                field_types = {k: type(v).__name__ for k, v in response.items()}
+                logging.error(f"Community report does not match the expected schema, skipping. Field types: {field_types}")
                 return
             response["weight"] = weight
             response["entities"] = ents

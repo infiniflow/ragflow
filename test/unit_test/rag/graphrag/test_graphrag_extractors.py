@@ -91,3 +91,54 @@ class TestCommunityReportsExtractor:
 
         assert len(result.structured_output) == 1
         assert result.structured_output[0]["title"] == "Community"
+
+    @staticmethod
+    def _extract_with_rating(monkeypatch, extractor, rating_literal):
+        graph = nx.Graph()
+        graph.add_node("A", description="alpha")
+        graph.add_node("B", description="beta")
+        graph.add_edge("A", "B", description="related")
+
+        async def fake_async_chat(*_args, **_kwargs):
+            return '{"title":"Community","summary":"Summary","findings":[],"rating":' + rating_literal + ',"rating_explanation":"Clear"}'
+
+        monkeypatch.setattr(
+            community_reports_module.leiden,
+            "run",
+            lambda *_args, **_kwargs: {0: {"0": {"weight": 1.0, "nodes": ["A", "B"]}}},
+        )
+        monkeypatch.setattr(community_reports_module, "add_community_info2graph", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(extractor, "_async_chat", fake_async_chat)
+        return graph
+
+    @pytest.mark.p2
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rating", ["5", "5.0"], ids=["int", "float"])
+    async def test_report_is_kept_whatever_json_number_the_rating_uses(self, monkeypatch, rating):
+        """JSON has one number type, so a compliant 0-10 score may arrive as 5 or 5.0.
+
+        json.loads yields an int for the first, and isinstance(5, float) is False, so
+        requiring float alone dropped the report on a bare return.
+        """
+        extractor = CommunityReportsExtractor(_build_llm_stub())
+        graph = self._extract_with_rating(monkeypatch, extractor, rating)
+
+        result = await extractor(graph)
+
+        assert len(result.structured_output) == 1
+        assert result.structured_output[0]["title"] == "Community"
+
+    @pytest.mark.p2
+    @pytest.mark.asyncio
+    async def test_report_with_a_non_numeric_rating_is_still_rejected(self, monkeypatch):
+        """The rating check must be widened, not switched off.
+
+        Without this case the suite also passes against ("rating", object) and against
+        deleting the rating check outright, so it would guard nothing.
+        """
+        extractor = CommunityReportsExtractor(_build_llm_stub())
+        graph = self._extract_with_rating(monkeypatch, extractor, '"high"')
+
+        result = await extractor(graph)
+
+        assert result.structured_output == []
