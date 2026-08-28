@@ -94,13 +94,18 @@ class TestCommunityReportsExtractor:
 
     @staticmethod
     def _extract_with_rating(monkeypatch, extractor, rating_literal):
+        report = '{"title":"Community","summary":"Summary","findings":[],"rating":' + rating_literal + ',"rating_explanation":"Clear"}'
+        return TestCommunityReportsExtractor._extract_with_response(monkeypatch, extractor, report)
+
+    @staticmethod
+    def _extract_with_response(monkeypatch, extractor, response):
         graph = nx.Graph()
         graph.add_node("A", description="alpha")
         graph.add_node("B", description="beta")
         graph.add_edge("A", "B", description="related")
 
         async def fake_async_chat(*_args, **_kwargs):
-            return '{"title":"Community","summary":"Summary","findings":[],"rating":' + rating_literal + ',"rating_explanation":"Clear"}'
+            return response
 
         monkeypatch.setattr(
             community_reports_module.leiden,
@@ -127,6 +132,40 @@ class TestCommunityReportsExtractor:
 
         assert len(result.structured_output) == 1
         assert result.structured_output[0]["title"] == "Community"
+
+    @pytest.mark.p2
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("response", ["[]", '["a","b"]', "5", "null"], ids=["array", "string_array", "number", "null"])
+    async def test_json_that_is_not_an_object_never_reaches_the_schema_check(self, monkeypatch, response):
+        """The two re.sub calls above strip everything outside the outermost braces.
+
+        A reply with no braces is reduced to "" and json.loads rejects it, so the
+        schema check and the logging below only ever see a dict. Pinning that, because
+        it is what makes the field-type log safe.
+        """
+        extractor = CommunityReportsExtractor(_build_llm_stub())
+        graph = self._extract_with_response(monkeypatch, extractor, response)
+
+        result = await extractor(graph)
+
+        assert result.structured_output == []
+
+    @pytest.mark.p2
+    @pytest.mark.asyncio
+    async def test_a_boolean_rating_is_accepted_rather_than_costing_the_report(self, monkeypatch):
+        """isinstance(True, int) is True, so "rating": true passes the widened check.
+
+        Deliberate. Nothing reads the rating, so rejecting the value would discard a
+        usable title, summary and findings, which is the loss this check caused in the
+        first place. dict_has_keys_with_types treats bool as int elsewhere too, pinned
+        by test_graphrag_utils.py.
+        """
+        extractor = CommunityReportsExtractor(_build_llm_stub())
+        graph = self._extract_with_rating(monkeypatch, extractor, "true")
+
+        result = await extractor(graph)
+
+        assert len(result.structured_output) == 1
 
     @pytest.mark.p2
     @pytest.mark.asyncio
