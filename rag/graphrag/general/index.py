@@ -938,7 +938,11 @@ async def extract_community(
     for stru, rep in zip(community_structure, community_reports):
         obj = {
             "report": rep,
-            "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"]]),
+            # A finding may be a plain string rather than a dict, which the schema check
+            # allows because it only requires ("findings", list). CommunityReportsExtractor
+            # ._get_text_output handles both shapes. A string finding carries no separate
+            # explanation, and its text still reaches content_ltks through the report.
+            "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"] if isinstance(f, dict)]),
         }
         # Deterministic id derived from (kb_id, community title) so reruns of
         # extract_community produce stable ids.  Combined with insert-then-

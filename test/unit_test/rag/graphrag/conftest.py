@@ -29,6 +29,7 @@ _modules_to_mock = [
     "common.doc_store",
     "common.doc_store.doc_store_base",
     "api.db.services",
+    "api.db.services.document_service",
     "api.db.services.task_service",
     "rag.graphrag.general.leiden",
     "rag.llm.chat_model",
