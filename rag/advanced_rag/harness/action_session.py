@@ -214,7 +214,27 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
 # registering their callable + schema here (DeepSearch ToolNode equivalent).
 # 方案 B (react unify): search_chunks gives the session the SEMANTIC reach that
 # react's model-driven loop had — answer passages often carry no surface terms.
-_TOOL_MAP = {"retrieve": _RETRIEVE_TOOL_SPEC, "list_chunks": _LIST_CHUNKS_TOOL_SPEC, "search_chunks": _SEARCH_CHUNKS_TOOL_SPEC}
+_WEB_SEARCH_TOOL_SPEC = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": ("Search the open WEB for world knowledge, recent events, or facts not covered by the fixed corpus. 1-2 queries per call."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 2,
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+_TOOL_MAP = {"retrieve": _RETRIEVE_TOOL_SPEC, "list_chunks": _LIST_CHUNKS_TOOL_SPEC, "search_chunks": _SEARCH_CHUNKS_TOOL_SPEC, "web_search": _WEB_SEARCH_TOOL_SPEC}
 
 
 # ── JSON / terminal parsing helpers ──────────────────────────────────────
@@ -413,6 +433,37 @@ async def _exec_search_chunks(tools, queries: list) -> tuple:
     return await _run_search(tools, hybrid_search, queries, top_n=20, max_q=2)
 
 
+async def _exec_web_search(tools, queries: list) -> tuple:
+    """Open-web retrieval via the configured provider (Tavily/QuerIt/Serply/
+    YouCom). Results share the RAGFlow chunk shape so they merge into the same
+    evidence pool as corpus hits."""
+    from rag.advanced_rag.harness.tools.search import _chunk_id
+
+    provider = getattr(tools, "web_search", None)
+    if provider is None:
+        _LOG.warning("[action_session] web_search unavailable (no provider configured)")
+        return [], []
+
+    out, ids = [], []
+    seen = set()
+    kbinfos = _seed_evidence(tools)
+    kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
+    for q in queries[:2]:
+        try:
+            web_res = provider.retrieve_chunks(q)
+            if asyncio.iscoroutine(web_res) or hasattr(web_res, "__await__"):
+                web_res = await web_res
+        except Exception:
+            _LOG.warning("[action_session] web_search failed for %r", q, exc_info=True)
+            continue
+        for c in ((web_res or {}).get("chunks") or [])[:8]:
+            cid = _chunk_id(c)
+            if not cid or cid in seen:
+                continue
+            _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False)
+    return out, ids
+
+
 async def _exec_list_chunks(tools, doc_id: str) -> tuple:
     """Deep-read one document's full text (list_chunks tool)."""
     from rag.advanced_rag.harness.tools.search import _chunk_id, list_chunks
@@ -455,6 +506,8 @@ async def execute_tool(tools, name: str, args: dict) -> tuple:
         return await _exec_search_chunks(tools, _arg_query_list(args, 2))
     if name == "list_chunks":
         return await _exec_list_chunks(tools, str(args.get("doc_id") or ""))
+    if name == "web_search":
+        return await _exec_web_search(tools, _arg_query_list(args, 2))
     _LOG.warning("[action_session] unknown tool %r; ignored.", name)
     return [], []
 
