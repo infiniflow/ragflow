@@ -332,11 +332,15 @@ class DoclingParser(RAGFlowPdfParser):
                 captions = pic.caption_text(doc=doc)
             except Exception:
                 pass
+            captions = captions.strip() if isinstance(captions, str) else ""
             if not captions:
                 # Some Docling backends expose text extracted from a picture on
                 # the picture itself rather than as a caption reference. Keep
                 # that text so pipeline chunking does not discard the figure.
                 captions = getattr(pic, "text", "") or getattr(pic, "orig", "") or ""
+                captions = captions.strip() if isinstance(captions, str) else ""
+                if captions:
+                    self.logger.debug("[Docling] Using direct text for picture %s because no caption is available.", getattr(pic, "self_ref", "<unknown>"))
             tables.append(((img, [captions]), positions if positions else ""))
         return tables
 

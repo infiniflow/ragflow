@@ -1,4 +1,6 @@
-from rag.flow.parser.docling import docling_tables_to_bboxes
+import logging
+
+from rag.flow.parser.docling import docling_tables_to_bboxes, order_docling_bboxes
 
 
 def test_docling_tables_and_figures_are_converted_to_flow_bboxes():
@@ -28,18 +30,40 @@ def test_docling_tables_and_figures_are_converted_to_flow_bboxes():
     ]
 
 
-def test_docling_tables_skips_malformed_entries_without_dropping_valid_ones():
-    bboxes = docling_tables_to_bboxes(
-        [
-            "not a Docling table",
-            ((None, "<table></table>"), "not a position list"),
-        ]
-    )
+def test_docling_tables_skips_malformed_entries_without_dropping_valid_ones(caplog):
+    with caplog.at_level(logging.DEBUG, logger="rag.flow.parser.docling"):
+        bboxes = docling_tables_to_bboxes(
+            [
+                "not a Docling table",
+                ((None, "<table></table>"), "not a position list"),
+            ]
+        )
 
     assert bboxes == [{"layout_type": "table", "text": "<table></table>"}]
+    assert "skipped 1 malformed records and 1 invalid position sets" in caplog.text
 
 
 def test_docling_figure_without_an_image_keeps_its_extracted_text():
     bboxes = docling_tables_to_bboxes([((None, ["OCR text from the figure"]), [])])
 
     assert bboxes == [{"layout_type": "figure", "text": "OCR text from the figure"}]
+
+
+def test_docling_bboxes_are_interleaved_in_stable_coordinate_order():
+    unordered = [
+        {"text": "text below", "positions": [[1, 0, 10, 80, 90]]},
+        {"text": "unpositioned figure", "layout_type": "figure"},
+        {"text": "table in the middle", "positions": [[1, 0, 10, 40, 50]]},
+        {"text": "text on page two", "positions": [[2, 0, 10, 10, 20]]},
+        {"text": "text above", "positions": [[1, 0, 10, 10, 20]]},
+        {"text": "another unpositioned figure", "layout_type": "figure"},
+    ]
+
+    assert [box["text"] for box in order_docling_bboxes(unordered)] == [
+        "text above",
+        "table in the middle",
+        "text below",
+        "text on page two",
+        "unpositioned figure",
+        "another unpositioned figure",
+    ]

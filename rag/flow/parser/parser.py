@@ -48,7 +48,7 @@ from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParse
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
-from rag.flow.parser.docling import docling_tables_to_bboxes
+from rag.flow.parser.docling import docling_tables_to_bboxes, order_docling_bboxes
 from rag.flow.parser.pdf_chunk_metadata import (
     extract_pdf_positions,
     normalize_pdf_items_metadata,
@@ -464,6 +464,7 @@ class Parser(ProcessBase):
                         box["image"] = image
                 bboxes.append(box)
             bboxes.extend(docling_tables_to_bboxes(docling_tables))
+            bboxes = order_docling_bboxes(bboxes)
 
         elif parse_method.lower() == "opendataloader":
 

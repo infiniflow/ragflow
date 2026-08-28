@@ -188,3 +188,23 @@ def test_crop_drops_positions_beyond_rendered_pages(monkeypatch):
     tag = "@@5\t1.0\t2.0\t3.0\t4.0##"
     assert parser.crop(tag, need_position=True) == (None, None)
     assert parser.crop(tag) is None
+
+
+@pytest.mark.p2
+def test_picture_text_is_used_when_docling_has_no_caption(monkeypatch, caplog):
+    module = _load_docling_parser(monkeypatch)
+    parser = module.DoclingParser(docling_server_url="http://docling.local")
+    picture = types.SimpleNamespace(
+        prov=[],
+        self_ref="#/pictures/3",
+        text="  OCR text from the picture  ",
+        orig="original text",
+        caption_text=lambda *, doc: "   ",
+    )
+    doc = types.SimpleNamespace(tables=[], pictures=[picture])
+
+    with caplog.at_level(logging.DEBUG, logger="DoclingParser"):
+        tables = parser._transfer_to_tables(doc)
+
+    assert tables == [((None, ["OCR text from the picture"]), "")]
+    assert "#/pictures/3" in caplog.text

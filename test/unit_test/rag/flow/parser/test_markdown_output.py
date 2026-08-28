@@ -66,3 +66,23 @@ def test_pdf_markdown_preserves_figure_text_when_image_is_missing(monkeypatch):
 
     assert process.outputs["markdown"] == "caption survives\n"
     image2base64.assert_not_called()
+
+
+def test_pdf_markdown_consumes_docling_figure_without_image(monkeypatch):
+    parser_module = _load_parser_module(monkeypatch)
+    pdf_parser = SimpleNamespace(
+        outlines=[],
+        parse_pdf=Mock(return_value=([], [((None, ["figure OCR text"]), [(0, 1, 2, 3, 4)])])),
+    )
+    process = _FakeProcess()
+    image2base64 = Mock()
+
+    monkeypatch.setattr(parser_module.TenantModelService, "get_by_id", Mock(return_value=(False, None)))
+    monkeypatch.setattr(parser_module, "DoclingParser", Mock(return_value=pdf_parser))
+    monkeypatch.setattr(parser_module, "enhance_media_sections_with_vision", Mock())
+    monkeypatch.setattr(parser_module.VLM, "image2base64", image2base64)
+
+    parser_module.Parser._pdf(process, "document.pdf", b"pdf")
+
+    assert process.outputs["markdown"] == "figure OCR text\n"
+    image2base64.assert_not_called()
