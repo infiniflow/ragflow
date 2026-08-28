@@ -398,7 +398,9 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	}
 	canvasID := c.Param("canvas_id")
 	var req updateAgentRequest
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
