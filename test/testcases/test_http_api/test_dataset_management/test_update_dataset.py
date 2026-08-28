@@ -650,6 +650,25 @@ class TestDatasetUpdate:
             else:
                 assert res["data"][0]["parser_config"][k] == v, res
 
+    @pytest.mark.p1
+    def test_parser_config_partial_update_preserves_parent_child(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        parent_child = {"use_parent_child": True, "children_delimiter": "\n\n"}
+
+        res = update_dataset(HttpApiAuth, dataset_id, {"parser_config": {"parent_child": parent_child}})
+        assert res["code"] == 0, res
+
+        res = update_dataset(HttpApiAuth, dataset_id, {"parser_config": {"auto_keywords": 5}})
+        assert res["code"] == 0, res
+
+        res = list_datasets(HttpApiAuth, {"id": dataset_id})
+        assert res["code"] == 0, res
+        parser_config = res["data"][0]["parser_config"]
+        assert parser_config["parent_child"] == parent_child, res
+        assert parser_config["children_delimiter"] == parent_child["children_delimiter"], res
+        assert parser_config["enable_children"] is True, res
+        assert parser_config["auto_keywords"] == 5, res
+
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "parser_config, expected_message",
