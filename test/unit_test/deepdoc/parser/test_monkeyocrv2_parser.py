@@ -28,7 +28,7 @@ def make_zip(name, text, *, label="Text", include_markdown=True):
 def test_converts_native_layout_to_sections(monkeypatch):
     monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response(make_zip("doc", "hello")))
     sections, tables = MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf", page_from=1, page_to=3)
-    assert sections == [("hello", "@@3\t1\t30\t2\t40##")]
+    assert sections == [("hello", "@@2\t1\t30\t2\t40##")]
     assert tables == []
 
 
@@ -71,10 +71,10 @@ def test_skips_malformed_layout_records(monkeypatch):
     assert tables == []
 
 
-def test_applies_requested_page_offset(monkeypatch):
+def test_emits_slice_relative_page_numbers(monkeypatch):
     monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response(make_zip("doc", "page", include_markdown=False)))
     sections, _ = MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf", page_from=4)
-    assert sections == [("page", "@@6\t1\t30\t2\t40##")]
+    assert sections == [("page", "@@2\t1\t30\t2\t40##")]
 
 
 def test_wraps_malformed_zip_response(monkeypatch):

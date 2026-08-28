@@ -33,12 +33,12 @@ class MonkeyOCRv2Parser:
         if "zip" not in response.headers.get("content-type", "").lower():
             raise RuntimeError("MonkeyOCRv2 /parse did not return a ZIP archive")
         try:
-            result = self._convert_zip(response.content, page_from=page_from)
+            result = self._convert_zip(response.content)
         except (zipfile.BadZipFile, OSError, ValueError, TypeError, KeyError, IndexError) as exc:
             raise RuntimeError("Invalid MonkeyOCRv2 parse response") from exc
         return result
 
-    def _convert_zip(self, archive_bytes, page_from=0):
+    def _convert_zip(self, archive_bytes):
         """Convert native JSON layout records to RAGFlow sections and tables."""
         sections, tables = [], []
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
@@ -77,7 +77,7 @@ class MonkeyOCRv2Parser:
                         if not text:
                             continue
                         try:
-                            page = max(0, int(layout.get("page_num", 1)) - 1 + page_from)
+                            page = max(0, int(layout.get("page_num", 1)) - 1)
                         except (TypeError, ValueError):
                             continue
                         bbox = layout.get("bbox", [0, 0, 0, 0])

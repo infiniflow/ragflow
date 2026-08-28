@@ -1217,7 +1217,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 sections,
                 tables,
                 image_context_size,
-                section_page_offset=from_page if name == "mineru" else 0,
+                section_page_offset=from_page if name in {"mineru", "monkeyocrv2"} else 0,
             )
 
         if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
