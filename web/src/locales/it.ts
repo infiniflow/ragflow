@@ -582,7 +582,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Un delimitatore può consistere in uno o più caratteri speciali. Se sono più caratteri, assicurati che siano racchiusi tra backtick (``). Ad esempio, se configuri i tuoi delimitatori così: \\n`##`;, i tuoi testi saranno separati a interruzioni di riga, doppio cancelletto (##) e punto e virgola.',
 
       html4excel: 'Excel in HTML',
-      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dev/enable_excel2html per i dettagli.`,
+      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration per i dettagli.`,
       autoKeywords: 'Parole chiave automatiche',
       autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Domande automatiche',
@@ -891,7 +891,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       entityTypes: 'Tipi di entità',
       vietnamese: 'Vietnamita',
       pageRank: 'Page rank',
-      pageRankTip: `Puoi assegnare un punteggio PageRank più alto a specifici dataset durante il recupero. Il punteggio corrispondente viene aggiunto ai punteggi di similarità ibrida dei chunk recuperati da questi dataset, aumentando il loro ranking. Vedi https://ragflow.io/docs/dev/set_page_rank per i dettagli.`,
+      pageRankTip: `Puoi assegnare un punteggio PageRank più alto a specifici dataset durante il recupero. Il punteggio corrispondente viene aggiunto ai punteggi di similarità ibrida dei chunk recuperati da questi dataset, aumentando il loro ranking. Vedi https://ragflow.io/docs/dataset_configuration#basic-information per i dettagli.`,
       tagName: 'Tag',
       frequency: 'Frequenza',
       searchTags: 'Cerca tag',
@@ -899,7 +899,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       tagTable: 'Tabella',
       tagSet: 'Set di tag',
       tagSetTip: `
-     <p> Seleziona uno o più dataset tag per auto-taggare i chunk nel tuo dataset. Vedi https://ragflow.io/docs/dev/use_tag_sets per i dettagli.</p>
+     <p> Seleziona uno o più dataset tag per auto-taggare i chunk nel tuo dataset. Vedi https://ragflow.io/docs/dataset_configuration#basic-information per i dettagli.</p>
 <p>Anche la query dell'utente sarà auto-taggata.</p>
 Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulteriore livello di conoscenza specifica del dominio al dataset esistente.
 <p>Differenza tra auto-tag e auto-keyword:</p>

@@ -219,7 +219,7 @@ export default {
       layoutRecognize: 'レイアウト認識',
 
       layoutRecognizeTip:
-        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dev/select_pdf_parser をご覧ください。',
+        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dataset_configuration#document-parsing-configuration をご覧ください。',
 
       taskPageSize: 'タスクページサイズ',
       taskPageSizeMessage: 'タスクページサイズを入力してください',
@@ -251,7 +251,7 @@ export default {
         'デリミタやセパレータは、一つまたは複数の特殊文字で構成できます。複数の文字の場合、バッククォート(``)で囲むようにしてください。たとえば、デリミタを次のように設定した場合: \\n ## ;、テキストは行末、ダブルハッシュ記号(##)、およびセミコロンで分割されます。デリミタを設定する前に、テキストのセグメンテーションとチャンキングのメカニズムを理解していることを確認してください。',
 
       html4excel: 'ExcelをHTMLに変換',
-      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dev/enable_excel2html をご覧ください。`,
+      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration をご覧ください。`,
       autoKeywords: '自動キーワード',
       autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
       autoQuestions: '自動質問',
@@ -567,7 +567,7 @@ export default {
       randomSeedMessage: 'ランダムシードは必須です',
       entityTypes: 'エンティティタイプ',
       pageRank: 'ページランク',
-      pageRankTip: `検索時に特定の知識ベースにより高いPageRankスコアを割り当てることができます。対応するスコアは、これらの知識ベースから取得されたチャンクのハイブリッド類似度スコアに加算され、ランキングが向上します。詳細については、https://ragflow.io/docs/dev/set_page_rank を参照してください。`,
+      pageRankTip: `検索時に特定の知識ベースにより高いPageRankスコアを割り当てることができます。対応するスコアは、これらの知識ベースから取得されたチャンクのハイブリッド類似度スコアに加算され、ランキングが向上します。詳細については、https://ragflow.io/docs/dataset_configuration#basic-information を参照してください。`,
       paddleocrOptions: 'PaddleOCRオプション',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
@@ -687,7 +687,7 @@ export default {
       tagTable: 'テーブル',
       tagSet: 'タグセット',
       tagSetTip:
-        '\n     <p> 1つまたは複数のタグデータセットを選択すると、データセット内のチャンクに自動的にタグが付与されます。詳細は https://ragflow.io/docs/dev/use_tag_sets をご覧ください。</p>\n<p>ユーザーのクエリにも自動的にタグが付与されます。</p>\nこの自動タグ付け機能は、既存のデータセットにドメイン固有の知識をもう一層追加することで、検索精度を向上させます。\n<p>自動タグ付けと自動キーワードの違い:</p>\n<ul>\n  <li>タグデータセットはユーザーが定義したクローズドセットであるのに対し、LLMが抽出するキーワードはオープンセットとみなせます。</li>\n  <li>自動タグ付け機能を実行する前に、指定された形式でタグセットをアップロードする必要があります。</li>\n  <li>自動キーワード機能はLLMに依存しており、多くのトークンを消費します。</li>\n</ul>\n      ',
+        '\n     <p> 1つまたは複数のタグデータセットを選択すると、データセット内のチャンクに自動的にタグが付与されます。詳細は https://ragflow.io/docs/dataset_configuration#basic-information をご覧ください。</p>\n<p>ユーザーのクエリにも自動的にタグが付与されます。</p>\nこの自動タグ付け機能は、既存のデータセットにドメイン固有の知識をもう一層追加することで、検索精度を向上させます。\n<p>自動タグ付けと自動キーワードの違い:</p>\n<ul>\n  <li>タグデータセットはユーザーが定義したクローズドセットであるのに対し、LLMが抽出するキーワードはオープンセットとみなせます。</li>\n  <li>自動タグ付け機能を実行する前に、指定された形式でタグセットをアップロードする必要があります。</li>\n  <li>自動キーワード機能はLLMに依存しており、多くのトークンを消費します。</li>\n</ul>\n      ',
       topnTags: '上位N件のタグ',
       tags: 'タグ',
       addTag: 'タグを追加',
