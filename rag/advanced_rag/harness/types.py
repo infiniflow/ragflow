@@ -309,10 +309,9 @@ class OrchestratorContext:
     current_phase: str = "locate"
     verdict: SufficiencyVerdict | None = None
     history: list[dict] = field(default_factory=list)
-    # Follow-up search queries produced by the Phase-2 LLM Sufficient Context
+    # Follow-up search queries produced by the LLM Sufficient Context
     # AutoRater when evidence was deemed insufficient. They are consumed by the
-    # next research round to guide targeted follow-up search (Google's
-    # missing-pieces feedback), then cleared.
+    # next research round to guide targeted follow-up search, then cleared.
     pending_followups: list[dict] = field(default_factory=list)
     # Cross-claim synthesis instruction from the planner (how claim findings
     # combine into the final answer). Injected into pre_summary by _finalize.
@@ -322,7 +321,7 @@ class OrchestratorContext:
     # arithmetically from them. Computed by _compute_final_arithmetic and
     # injected into pre_summary so formalize_answer uses the exact value.
     computed_answer: str = ""
-    # Targeted search queries produced by the Query Rewriter (Google Phase 4)
+    # Targeted search queries produced by the Query Rewriter
     # from the SCA's forward gaps, as (claim_id, query) pairs recorded by
     # ``_try_replan`` for the newly-added claims. The orchestrator injects them
     # into the new claims' pending-query pool so they reach the retriever

@@ -1,6 +1,6 @@
-"""Query Rewriter (Google Agentic RAG Phase 1 + Phase 4).
+"""Query Rewriter
 
-Google's Query Rewriter has two jobs:
+Query Rewriter has two jobs:
   - Phase 1: break the long request into simple, searchable questions so the
     retriever finds relevant content more accurately.
   - Phase 4: turn the Sufficient Context Agent's missing-pieces feedback into a

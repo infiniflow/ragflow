@@ -39,6 +39,35 @@ _ACTION_MAX_TURNS_ULTRA = 6  # ultra runs deeper inside each action session
 _ACTION_TIMEOUT_S = 75.0
 _SNIPPETS_PER_QUERY = 4
 _MAX_TOOL_RESPONSE_CHARS = 12000
+# Near-duplicate search-query detection: the model re-issues the SAME intent with
+# many paraphrase queries (observed: 20+ "Culdcept original creator/designer/
+# OmiyaSoft/founder" variants in ONE session), each executed against ES even
+# though the evidence is unchanged. We Jaccard-dedupe retrieval queries so a
+# paraphrase (>= _NEAR_DUP_JACCARD token overlap with an already-run query) is
+# short-circuited with a nudge instead of burning a turn on a redundant search.
+_NEAR_DUP_JACCARD = 0.8
+_RETRIEVAL_TOOLS = ("search_chunks", "grep_chunks", "grep_search")
+
+
+def _search_tokens(q: str) -> set[str]:
+    """Lowercased alphanumeric tokens of a query for near-duplicate detection."""
+    return set(re.findall(r"[a-z0-9]{2,}", (q or "").lower()))
+
+
+def _is_near_dup(q: str, seen: list[str]) -> bool:
+    """True when q shares >= _NEAR_DUP_JACCARD of its tokens with any seen query."""
+    if not q or not seen:
+        return False
+    toks = _search_tokens(q)
+    if len(toks) < 2:
+        return False
+    for s in seen:
+        other = _search_tokens(s)
+        inter = len(toks & other)
+        union = len(toks | other)
+        if union and inter / union >= _NEAR_DUP_JACCARD:
+            return True
+    return False
 
 
 # ── Slot-table models (ex-tree/models.py) ─────────────────────────────────
@@ -228,18 +257,23 @@ _NAVIGATE_TREE_TOOL_SPEC = {
     "function": {
         "name": "navigate_tree",
         "description": (
-            "LOCATE A DOCUMENT among many when you are unsure WHICH one carries "
-            "the answer (entity may span/alias across documents). Pure "
-            "embedding-based routing over the dataset's compiled document "
-            "navigation tree — matches on topic/clustering similarity, NOT exact "
-            "surface words. "
-            "Returns candidate doc_ids with a short first-chunk summary of each. "
-            "Use when: search_chunks/retrieve hit documents but you cannot tell "
-            "which one is the source; or the question names a topic/alias absent "
-            "from any exact match. "
-            "After you get a doc_id, continue with navigate_structure(doc_id=...) "
-            "to pinpoint the passage, or list_chunks(doc_id=...) to read it. "
-            "Do NOT use if you already know the document."
+            "LOCATE the RIGHT DOCUMENT among MANY before deep-reading. Use it "
+            "BEFORE search_chunks when the dataset is large and you have no "
+            "doc_id yet — it routes by TOPIC/CLUSTERING similarity over the "
+            "compiled document-navigation tree (not exact surface words), so it "
+            "finds the document even when your query words differ from its text. "
+            "Returns candidate doc_ids + a first-chunk summary of each. "
+            "This is the FIRST hop of a navigation chain: "
+            "navigate_tree(query) -> doc_id -> navigate_structure(doc_id, ...) "
+            "-> list_chunks(doc_id, chunk_ids). "
+            "Use when: the question names a topic/entity/alias but you do not "
+            "know which document discusses it; search_chunks returned scattered "
+            "hits across many docs and you must pick the source. "
+            "Do NOT use if you already hold a doc_id (go straight to "
+            "navigate_structure) or if the answer is likely a single exact "
+            "passage (prefer retrieve/search_chunks). "
+            "If the dataset has no compiled document navigation tree, it returns "
+            "empty — fall back to search_chunks."
         ),
         "parameters": {
             "type": "object",
@@ -290,13 +324,18 @@ _CALCULATE_TOOL_SPEC = {
         "name": "calculate",
         "description": (
             "COMPUTE a numeric answer by generating and safely running code. "
-            "Use as the FINAL step when you have collected the needed numbers "
-            "and the question requires a combination (sum, difference, "
-            "percentage, ratio, sorting, comparison). Pass the question and ALL "
-            "numbers you found verbatim from the evidence; do NOT estimate. "
-            "If the required facts are not yet retrieved, search first then "
-            "calculate. If the numbers are all directly stated with no "
-            "combination, answer directly without this tool."
+            "MANDATORY whenever the question asks you to DERIVE a number by "
+            "combining facts you found (sum/difference/percentage/ratio/sort/"
+            "compare/difference in length/age, price, area, growth, etc.) — do "
+            "NOT do arithmetic mentally. Language-neutral: the question and "
+            "facts may be in ANY language (English, Chinese, ...); pass the "
+            "numbers verbatim as written in the evidence regardless of language. "
+            "Steps: (1) collect every needed number first (retrieve / "
+            "search_chunks / navigate_* / list_chunks); (2) call calculate with "
+            "the question + ALL those numbers; (3) report the computed result "
+            "verbatim. If a needed number is missing, search for it first — do "
+            "not estimate. If the answer IS one of the stated numbers (no "
+            "combination needed), answer directly without this tool."
         ),
         "parameters": {
             "type": "object",
@@ -364,14 +403,77 @@ _TOOL_MAP = {
 def _active_tool_specs(tools) -> list:
     """Tool schemas exposed to the model for THIS mode.
 
-    Ultra gets the full 8-tool surface (incl. graph_explore); high/medium get
-    the 7-tool surface minus the ultra-only relational explorer. The returned
-    list is what the model can call this session.
+    Visibility rules:
+    * ultra adds the relational ``graph_explore`` (high/medium do not see it).
+    * ``web_search`` is hidden when NO web provider is configured — the model
+      otherwise retries it up to 4× per session burning turns (40 empty calls
+      observed in a 20-question run). Hiding beats any "do not use again" note.
+    * compile-only tools (navigate_* / graph_explore) are kept visible even on
+      datasets without compiled structure; their executors return an explicit
+      empty-with-hint so the model falls back to plain search (see below).
+    * RUNTIME: a compile-only tool is REMOVED from the surface after its first
+      call proves the dataset has no such compiled structure (the executor marks
+      it in ``tools._disabled_tools``). Without this the model keeps re-invoking
+      a tool that always returns empty — e.g. 24 graph_explore calls in one
+      benchmark run, every one "No compiled knowledge graph in scope".
+
+    The returned list is what the model can call this session.
     """
     mode = str(getattr(tools, "thinking_mode", "") or "").lower()
-    if mode == "ultra":
-        return list(_TOOL_MAP.values())
-    return [spec for name, spec in _TOOL_MAP.items() if name not in _ULTRA_ONLY_TOOLS]
+    names = set(_TOOL_MAP.keys())
+    if mode != "ultra":
+        names -= _ULTRA_ONLY_TOOLS
+    # Hide web_search without a provider — a hard visibility gate beats hoping
+    # the model obeys a "do not use" note across sessions.
+    if getattr(tools, "web_search", None) is None:
+        names.discard("web_search")
+    # Runtime: drop tools proven unavailable this session (no compiled structure).
+    disabled = getattr(tools, "_disabled_tools", None) or set()
+    if disabled:
+        names -= set(disabled)
+    return [spec for name, spec in _TOOL_MAP.items() if name in names]
+
+
+def _disable_tool(tools, name: str) -> None:
+    """Mark a compile-only tool as unavailable for the REST of this session.
+
+    Records the (best-effort, tools-object-scoped) fact that the dataset has no
+    such compiled structure, so ``_active_tool_specs`` stops advertising it and
+    ``execute_tool`` short-circuits it. Subsequent calls return a note instead of
+    re-running a retrieval that would only come back empty.
+    """
+    if name not in _TOOL_MAP:
+        return
+    try:
+        disabled = getattr(tools, "_disabled_tools", None)
+        if disabled is None:
+            disabled = set()
+            try:
+                tools._disabled_tools = disabled
+            except Exception:  # tools may be frozen/slots in tests
+                return
+        disabled.add(name)
+    except Exception:
+        _LOG.warning("[action_session] could not mark tool %r disabled", name, exc_info=True)
+
+
+def _is_empty_structure(text, xml_tag: str) -> bool:
+    """True when a compiled-structure executor's payload has no usable content.
+
+    A payload is "empty" not only when blank — a well-formed XML with
+    ``count="0"`` or an ``error=`` marker also means "no structure compiled for
+    this kind". Treating those as empty lets the executor disable the tool and
+    steer the model back to plain retrieval instead of feeding it a count="0"
+    outline it will keep probing.
+    """
+    text = (text or "").strip()
+    if not text or text in ("[]", "{}"):
+        return True
+    if xml_tag and f"<{xml_tag}" in text and 'count="0"' in text:
+        return True
+    if "error=" in text:
+        return True
+    return False
 
 
 # ── JSON / terminal parsing helpers ──────────────────────────────────────
@@ -667,7 +769,16 @@ async def _exec_navigate_tree(tools, args: dict) -> tuple:
     _inject_nav_tools_ref(tools)
     query = str(args.get("query") or "")
     text = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
-    return [{"kind": "navigate_tree", "content": (text or "[]")[:8000]}], []
+    # Empty / count="0" / error= payloads mean no compiled navigation tree —
+    # this dataset has no such structure. Disable the tool for the session and
+    # tell the model to fall back to plain retrieval (a count="0" XML is NOT a
+    # useful payload: without this, the model keeps re-invoking it).
+    text = (text or "").strip()
+    if _is_empty_structure(text, "tree_navigation"):
+        _disable_tool(tools, "navigate_tree")
+        _LOG.info("[action_session] navigate_tree disabled: dataset has no compiled navigation tree (text=%r)", text[:120])
+        return [{"kind": "navigate_tree", "note": "This dataset has NO compiled document navigation tree. navigate_tree is unavailable; use search_chunks / retrieve instead."}], []
+    return [{"kind": "navigate_tree", "content": text[:8000]}], []
 
 
 async def _exec_navigate_structure(tools, args: dict) -> tuple:
@@ -680,7 +791,21 @@ async def _exec_navigate_structure(tools, args: dict) -> tuple:
     query = str(args.get("query") or "")
     kind = str(args.get("kind") or "catalog")
     text = await _navigate_structure_impl(query, doc_id=doc_id, kind=kind)
-    return [{"kind": "navigate_structure", "doc_id": doc_id, "content": (text or "[]")[:8000]}], [doc_id] if doc_id else []
+    # Empty / count="0" / error= payloads mean no compiled structure of this kind
+    # in the dataset — the tool is a dead end. Disable it for the session so the
+    # model stops re-invoking it (a count="0" XML is NOT a useful payload).
+    text = (text or "").strip()
+    if _is_empty_structure(text, "structure_navigation"):
+        _disable_tool(tools, "navigate_structure")
+        _LOG.info("[action_session] navigate_structure disabled: no compiled structure kind=%r (text=%r)", kind, text[:120])
+        return [
+            {
+                "kind": "navigate_structure",
+                "doc_id": doc_id,
+                "note": "This document/dataset has NO compiled structure of the requested kind. navigate_structure is unavailable here; use search_chunks / retrieve / list_chunks instead.",
+            }
+        ], [doc_id] if doc_id else []
+    return [{"kind": "navigate_structure", "doc_id": doc_id, "content": text[:8000]}], [doc_id] if doc_id else []
 
 
 async def _exec_calculate(tools, args: dict) -> tuple:
@@ -726,6 +851,19 @@ async def _exec_graph_explore(tools, args: dict) -> tuple:
     chunks = res.get("chunks") or []
     if answer:
         return [{"kind": "graph_explore", "answer": answer}], []
+    if not chunks:
+        # No knowledge graph compiled for this dataset/scope: relational
+        # exploration is a dead end. Disable the tool for the session (it will
+        # keep coming back empty otherwise — 24 empty calls in one run) and
+        # guide the model back to retrieval.
+        _disable_tool(tools, "graph_explore")
+        _LOG.info("[action_session] graph_explore disabled: no compiled knowledge graph in scope")
+        return [
+            {
+                "kind": "graph_explore",
+                "note": "This dataset has NO compiled knowledge graph (or none in the given scope). graph_explore is unavailable; use search_chunks / navigate_structure / retrieve instead.",
+            }
+        ], []
     snippet = [{"id": c.get("id"), "content": (str(c.get("content") or "")[:1500])} for c in chunks[:6]]
     ids = [str(c.get("id")) for c in chunks[:6] if c.get("id")]
     return [{"kind": "graph_explore", "chunks": snippet}], ids
@@ -737,6 +875,12 @@ async def execute_tool(tools, name: str, args: dict) -> tuple:
     Returns ``(results, evidence_ids)`` where results is a JSON-serializable
     payload and evidence_ids are any doc/chunk ids worth tracking.
     """
+    # Short-circuit a tool already proven unavailable this session (no compiled
+    # structure of its kind). We still return a note, not an error, so the model
+    # learns to switch to the corpus tools rather than loop.
+    if name in (_TOOL_MAP and (getattr(tools, "_disabled_tools", None) or set())):
+        _LOG.info("[action_session] tool %r disabled (no compiled structure); returning note", name)
+        return [{"kind": name, "note": f"{name} is unavailable in this dataset (no compiled structure of its kind). Use search_chunks / retrieve / list_chunks instead."}], []
     if name == "retrieve":
         return await _exec_retrieve(tools, _arg_query_list(args, 3))
     if name == "search_chunks":
@@ -982,7 +1126,35 @@ async def _tool_node(state: _SessionState) -> dict:
     # makes the model re-issue redundant retrieves. The same-session cache only
     # avoids RE-EXECUTING a repeated query, it still returns a response for it.
     pending = state.get("_pending_calls") or []
+    seen_queries = list(state.get("_search_queries") or [])
+    skipped = 0
     for c in pending:
+        # Near-duplicate retrieval suppression: if the model re-issues the same
+        # intent as an earlier search (paraphrase), do NOT re-run ES — return a
+        # nudge so it patches / reframes instead of burning turns (Q30 burned
+        # 20+ "Culdcept creator" paraphrases in one session).
+        q = str((c.get("args") or {}).get("query") or "").strip()
+        if c["name"] in _RETRIEVAL_TOOLS and q and _is_near_dup(q, seen_queries):
+            skipped += 1
+            _LOG.info("[action_session] skipping near-duplicate retrieval %r (already searched)", q[:80])
+            tool_msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": c["id"],
+                    "content": json.dumps(
+                        {
+                            "passages": [
+                                {
+                                    "kind": c["name"],
+                                    "note": "This query is a near-duplicate of an earlier retrieval and was skipped to avoid redundant searching. Patch the slot with what you have, or issue a genuinely NEW retrieval angle.",
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            )
+            continue
         # same-session tool cache: avoid re-grep/list_chunks on the same target
         cache_key = (c["name"], json.dumps(c["args"], sort_keys=True, ensure_ascii=False))
         if cache_key in cache:
@@ -990,6 +1162,8 @@ async def _tool_node(state: _SessionState) -> dict:
         else:
             chunks, ids = await execute_tool(tools, c["name"], c["args"])
             cache[cache_key] = (chunks, ids)
+        if q:
+            seen_queries.append(q)
         evidence_ids.extend(ids)
         payload = json.dumps({"passages": chunks}, ensure_ascii=False, default=str)
         # if the session is already heavy, cut this payload proportionally
@@ -1010,6 +1184,8 @@ async def _tool_node(state: _SessionState) -> dict:
         "retrieved_evidence_ids": evidence_ids,
         "_tool_cache": cache,
         "_tool_chars": used,
+        "_search_queries": seen_queries,
+        "_skipped_dup": int(state.get("_skipped_dup", 0)) + skipped,
     }
 
 
@@ -1117,6 +1293,13 @@ def _route(state: _SessionState) -> str:
         return "tool"
     if state.get("attempts", 0) >= _action_max_turns(state):
         return "finalize"
+    # No-progress convergence: if the model keeps re-issuing near-duplicate
+    # retrieval queries (skipped >=2), further turns are unlikely to surface new
+    # evidence — converge to finalize instead of burning the remaining budget on
+    # paraphrases (Q30/Q759 timeout root cause).
+    if int(state.get("_skipped_dup", 0)) >= 2:
+        _LOG.info("[action_session] %d near-duplicate retrieval(s) skipped; converging session early", int(state.get("_skipped_dup", 0)))
+        return "finalize"
     return "run_action"  # nudge retry
 
 
@@ -1176,6 +1359,8 @@ async def run_action_session(
         "_ctx_budget": _MAX_TOOL_RESPONSE_CHARS * 4,
         "_tool_chars": 0,
         "_tool_cache": {},
+        "_search_queries": [],
+        "_skipped_dup": 0,
     }
     try:
         final = await _SESSION_GRAPH.ainvoke(initial)

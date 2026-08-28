@@ -1,6 +1,6 @@
-"""Unified Sufficient Context Agent (Google Agentic RAG Phase 3).
+"""Unified Sufficient Context Agent
 
-Google's Sufficient Context Agent performs ONE review pass that simultaneously
+Sufficient Context Agent performs ONE review pass that simultaneously
 examines (1) the retrieved snippets, (2) the intermediate draft (each claim's
 report), and (3) what is still missing (missing-pieces analysis). This replaces
 the old two-call split — ``llm_sufficiency_boost`` (global verdict, no draft) +
@@ -147,9 +147,9 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
 
 
 def _render_overall_draft(claims, question: str = "") -> str:
-    """Build the OVERALL intermediate draft (Google "rough draft") for the SCA.
+    """Build the OVERALL intermediate draft ("rough draft") for the SCA.
 
-    Q3: Google's SCA reviews a single "rough draft" response for the WHOLE
+    SCA reviews a single "rough draft" response for the WHOLE
     question, not just per-claim drafts — so it can judge whether the context lets
     the model answer the original question end-to-end, including cross-claim
     synthesis. We assemble a problem-level draft by concatenating each claim's

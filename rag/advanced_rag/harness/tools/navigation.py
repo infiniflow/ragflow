@@ -96,6 +96,8 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
         "compile_kwd",
         "compilation_template_ids",
         "compilation_template_kind_kwd",
+        "knowledge_graph_kwd",
+        "doc_id",
     ]
 
     async def _query(condition: dict, limit: int) -> dict:
@@ -117,28 +119,54 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
             _LOG.exception("ontology_navigate: failed reading compiled structure for doc=%s", doc_id)
             return {}
 
-    rows = dict(await _query({"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]}, 1000))
+    # Two row shapes coexist for compiled structures:
+    #   * graph blob (``knowledge_graph_kwd="graph"``): a single compact row whose
+    #     content is ``{"entities": [...], "relations": [...]}``. This is what
+    #     RAPTOR/tree compilation (task_executor ``run_tree_templates`` →
+    #     ``_struct_upsert_graph_json``) writes.
+    #   * per-entity/relation rows (``knowledge_graph_kwd="entity"/"relation"``):
+    #     one row per node/edge, content is a single entity/relation dict. This is
+    #     what page_index (and pipeline Compiler tree via
+    #     ``_struct_upsert_tree_graph_rows``) writes.
+    # ``compile_kwd`` (NOT ``knowledge_graph_kwd``) distinguishes the compile
+    # TYPE (tree/page_index/timeline/...); ``knowledge_graph_kwd="graph"`` is a
+    # legacy marker we still read for RAPTOR blobs, while the same ``compile_kwd``
+    # may also have entity/relation rows. Read BOTH and merge so navigation works
+    # regardless of which shape a given compile type produced.
+    rows: dict = {}
+    rows.update(await _query({"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]}, 1000))
+    rows.update(
+        await _query(
+            {"doc_id": [doc_id], "knowledge_graph_kwd": ["entity", "relation"]},
+            3000,
+        )
+    )
     rows.update(await _query({"doc_id": [doc_id], "compile_kwd": ["raptor_graph"]}, 16))
 
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-
         compile_kwd = row.get("compile_kwd") or ""
         kind = _normalize_kind(row.get("compilation_template_kind_kwd") or compile_kwd)
         if compile_kwd == "raptor_graph":
             kind = "raptor"
         if kind not in kinds:
             continue
-
-        entities.extend(graph.get("entities") or [])
-        relations.extend(graph.get("relations") or [])
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        # graph blob: compact graph with nested entities/relations
+        if row.get("knowledge_graph_kwd") == "graph":
+            entities.extend(graph.get("entities") or [])
+            relations.extend(graph.get("relations") or [])
+        # per-entity/relation row: content is a single node/edge
+        elif row.get("knowledge_graph_kwd") == "entity":
+            entities.append(graph)
+        elif row.get("knowledge_graph_kwd") == "relation":
+            relations.append(graph)
 
     return {"entities": entities, "relations": relations}
 
@@ -1130,12 +1158,13 @@ async def _navigate_tree_impl(
     keywords: str = "",
     doc_scope: list[str] | None = None,
 ) -> str:
-    """Locate the document(s) most likely to hold the answer, by PURE embedding.
+    """Locate the document(s) most likely to hold the answer, via the dataset's
+    compiled navigation tree (``dataset_nav`` / ``nav_doc`` layer).
 
-    This tool routes the question by PURE embedding similarity against the real
-    document chunks (no keyword-literal gate, no hybrid/BM25 leg), then returns
-    each routed document with a short excerpt (its first chunk) so you can decide
-    which to deep-read.
+    This tool routes the question by searching the compiled navigation-tree
+    document leaves (nav_doc) — which cover EVERY document of the dataset
+    (2400+ here), organized into clusters — then returns each routed document
+    with a short excerpt (its first chunk) so you can decide which to deep-read.
 
     Use it when search_chunks / grep_chunks did not clearly locate the answer and
     you need the document-level view to guide you (e.g. an entity spans many
@@ -1150,7 +1179,7 @@ async def _navigate_tree_impl(
 
     :param query: REQUIRED: the question / topic to route.
     :param keywords: Optional terms kept only for prompt hints; document routing
-        is embedding-driven and does not require keyword hits.
+        is driven by the nav-tree doc leaves and does not require keyword hits.
     :param doc_scope: Optional document ids to restrict routing to (at most 8).
     :return: XML <tree_navigation> document.
     """
@@ -1163,10 +1192,13 @@ async def _navigate_tree_impl(
         return '<tree_navigation count="0" error="query is required">\n</tree_navigation>'
 
     tools_slot = _tools_slot()
-    # Locate documents by PURE embedding similarity (no nav-tree keyword-literal
-    # gate, no hybrid/BM25 leg). The compiled tree is used AFTER routing to pick
-    # which document to deep-read; it is NOT used to route by keyword hits.
-    routed = await _route_docs_via_embedding(tools_slot, query, doc_scope)
+    # Route via the compiled navigation tree (dataset_nav / nav_doc layer): it
+    # covers ALL documents of the dataset organized into clusters, so a query can
+    # reach documents that pure embedding routing would miss. Fall back to pure
+    # embedding routing only when the dataset has NO compiled navigation tree.
+    routed = await dataset_navigation_search(tools_slot, query, keywords, doc_scope)
+    if not routed:
+        routed = await _route_docs_via_embedding(tools_slot, query, doc_scope)
     if not routed:
         return '<tree_navigation count="0">\n</tree_navigation>'
 
@@ -1437,6 +1469,10 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
         fields.append(vec_field)
 
     try:
+        # Same dual-shape logic as _load_compiled_structure: RAPTOR/tree writes a
+        # compact graph blob (knowledge_graph_kwd="graph"), while page_index /
+        # pipeline-Compiler tree write per-entity rows (knowledge_graph_kwd="entity").
+        # Read BOTH so vector beam descent works for either shape.
         res = await thread_pool_exec(
             settings.docStoreConn.search,
             fields,
@@ -1449,7 +1485,20 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
             index_name,
             [kb_id],
         )
+        res2 = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            {"doc_id": [doc_id], "knowledge_graph_kwd": ["entity"]},
+            [],
+            OrderByExpr(),
+            0,
+            3000,
+            index_name,
+            [kb_id],
+        )
         rows = settings.docStoreConn.get_fields(res, fields) or {}
+        rows.update(settings.docStoreConn.get_fields(res2, fields) or {})
     except Exception:
         _LOG.exception("[navigate_structure] _load_entities_with_vectors failed for doc=%s", doc_id)
         return []
@@ -1466,7 +1515,10 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
         if kind not in kinds:
             continue
         vec = row.get(vec_field) if vec_field else None
-        for e in graph.get("entities") or []:
+        # graph blob: content nests entities under "entities"; entity row: content
+        # is a single entity dict.
+        candidates = graph.get("entities") or [] if row.get("knowledge_graph_kwd") == "graph" else [graph]
+        for e in candidates:
             if not isinstance(e, dict) or not (e.get("name") or "").strip():
                 continue
             e = dict(e)
