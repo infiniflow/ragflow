@@ -14,10 +14,8 @@
 #  limitations under the License.
 #
 
-import base64
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import Mock
 
 import pytest
 from PIL import Image
