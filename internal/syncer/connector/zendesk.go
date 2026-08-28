@@ -83,10 +83,16 @@ func NewZendeskConnector(config map[string]any) (*ZendeskConnector, error) {
 	return connector, nil
 }
 
-// Validate validates Zendesk settings and credentials against the Help Center API.
+// Validate validates Zendesk settings and credentials against the configured API.
 func (c *ZendeskConnector) Validate(ctx context.Context) error {
 	if err := c.validateConfig(); err != nil {
 		return err
+	}
+	if c.contentType == zendeskContentTypeTickets {
+		if _, err := c.listTicketsPage(ctx, 0); err != nil {
+			return classifyZendeskError(err)
+		}
+		return nil
 	}
 	query := url.Values{
 		"page[size]": {"1"},
@@ -113,7 +119,6 @@ func (c *ZendeskConnector) ValidateConnectorSetting(ctx context.Context, request
 		return err
 	}
 	connector.httpClient = c.httpClient
-	connector.doJSON = c.doJSON
 	return connector.Validate(ctx)
 }
 
@@ -364,6 +369,9 @@ type zendeskSyncSession struct {
 	contentTags       map[string]string
 	contentTagsLoaded bool
 
+	lastDocAfterCursor string
+	lastDocStartTime   int64
+
 	resumeSource  string
 	resumeSkip    bool
 	resumeChecked bool
@@ -473,6 +481,7 @@ func (s *zendeskSyncSession) nextArticle(ctx context.Context) (SourceDocument, b
 		if !ok || !includeZendeskDocument(s.request, doc.SourceID, doc.UpdatedAt, doc.Fingerprint) {
 			continue
 		}
+		s.lastDocAfterCursor = s.articleAfterCursor
 		return doc, true, nil
 	}
 }
@@ -592,6 +601,7 @@ func (s *zendeskSyncSession) nextTicket(ctx context.Context) (SourceDocument, bo
 		if !ok || !includeZendeskDocument(s.request, doc.SourceID, doc.UpdatedAt, doc.Fingerprint) {
 			continue
 		}
+		s.lastDocStartTime = s.ticketPageStartTime
 		return doc, true, nil
 	}
 }
@@ -684,10 +694,10 @@ func (s *zendeskSyncSession) checkpoint(last SourceDocument) *SyncCheckpoint {
 	}
 	if s.connector.contentType == zendeskContentTypeArticles {
 		cursor.StartTime = s.startTime
-		cursor.AfterCursor = s.articleAfterCursor
+		cursor.AfterCursor = s.lastDocAfterCursor
 		cursor.NextAfterCursor = s.nextArticleAfterCursor
 	} else {
-		cursor.StartTime = s.ticketPageStartTime
+		cursor.StartTime = s.lastDocStartTime
 		cursor.NextStartTime = s.ticketStartTime
 	}
 	data, err := json.Marshal(cursor)

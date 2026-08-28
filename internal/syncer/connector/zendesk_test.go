@@ -143,6 +143,30 @@ func TestZendeskConnectorValidateUsesArticlePage(t *testing.T) {
 	}
 }
 
+func TestZendeskConnectorValidateUsesTicketsEndpoint(t *testing.T) {
+	connector := newTestZendeskConnector(t, map[string]any{"zendesk_content_type": "tickets"})
+	calls := 0
+	connector.doJSON = func(ctx context.Context, endpoint string, query url.Values, out any) error {
+		calls++
+		if endpoint != "incremental/tickets.json" {
+			t.Fatalf("validation endpoint = %q, want incremental/tickets.json", endpoint)
+		}
+		if query.Get("start_time") != "0" {
+			t.Fatalf("validation query = %v", query)
+		}
+		if _, ok := out.(*zendeskTicketPage); !ok {
+			t.Fatalf("validation output type = %T", out)
+		}
+		return nil
+	}
+	if err := connector.Validate(context.Background()); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("validation calls = %d, want 1", calls)
+	}
+}
+
 func TestZendeskConnectorValidateMapsHTTPStatus(t *testing.T) {
 	tests := []struct {
 		status int
@@ -433,6 +457,112 @@ func TestZendeskConnectorResumeRejectsMissingArticleAnchor(t *testing.T) {
 	}
 }
 
+func TestZendeskConnectorCheckpointUsesPageContainingLastDocument(t *testing.T) {
+	t.Run("articles", func(t *testing.T) {
+		connector := newTestZendeskConnector(t, map[string]any{"batch_size": 2})
+		stub := &zendeskTestStub{
+			t: t,
+			articlePages: map[string]zendeskArticlePage{
+				"": {
+					Articles: []zendeskArticle{
+						{ID: json.Number("1"), Title: "One", Body: "one", UpdatedAt: "2026-01-01T00:00:00Z"},
+						{ID: json.Number("2"), Title: "Draft", Body: "draft", Draft: true},
+					},
+					Meta: zendeskArticleMeta{HasMore: true, AfterCursor: "c1"},
+				},
+				"c1": {
+					Articles: []zendeskArticle{},
+					Meta:     zendeskArticleMeta{HasMore: false},
+				},
+			},
+		}
+		connector.doJSON = stub.doJSON
+		session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+		if err != nil {
+			t.Fatalf("OpenSync: %v", err)
+		}
+		first, err := session.NextBatch(context.Background())
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		if len(first.Documents) != 1 || first.Documents[0].SourceID != "article:1" || first.Checkpoint == nil {
+			t.Fatalf("first batch = %#v", first)
+		}
+		var cursor zendeskSyncCursor
+		if err := json.Unmarshal([]byte(first.Checkpoint.Cursor), &cursor); err != nil {
+			t.Fatalf("decode cursor: %v", err)
+		}
+		if cursor.AfterCursor != "" {
+			t.Fatalf("article cursor after_cursor = %q, want page containing article:1", cursor.AfterCursor)
+		}
+		_ = session.Close()
+
+		resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+		if err != nil {
+			t.Fatalf("resumed OpenSync: %v", err)
+		}
+		_, err = resumed.NextBatch(context.Background())
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("resumed NextBatch = %v, want EOF", err)
+		}
+		_ = resumed.Close()
+	})
+
+	t.Run("tickets", func(t *testing.T) {
+		connector := newTestZendeskConnector(t, map[string]any{"zendesk_content_type": "tickets", "batch_size": 2})
+		stub := &zendeskTestStub{
+			t: t,
+			ticketPages: map[int64]zendeskTicketPage{
+				0: {
+					Tickets: []zendeskTicket{
+						{ID: json.Number("1"), Subject: "One", Status: "open", UpdatedAt: "2026-01-01T00:00:00Z"},
+					},
+					EndTime:     100,
+					EndOfStream: false,
+				},
+				100: {
+					Tickets:     []zendeskTicket{},
+					EndTime:     200,
+					EndOfStream: true,
+				},
+			},
+			comments: map[string]zendeskCommentsPage{
+				"tickets/1/comments": {},
+			},
+		}
+		connector.doJSON = stub.doJSON
+		session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+		if err != nil {
+			t.Fatalf("OpenSync: %v", err)
+		}
+		first, err := session.NextBatch(context.Background())
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		if len(first.Documents) != 1 || first.Documents[0].SourceID != "zendesk_ticket_1" || first.Checkpoint == nil {
+			t.Fatalf("first batch = %#v", first)
+		}
+		var cursor zendeskSyncCursor
+		if err := json.Unmarshal([]byte(first.Checkpoint.Cursor), &cursor); err != nil {
+			t.Fatalf("decode cursor: %v", err)
+		}
+		if cursor.StartTime != 0 {
+			t.Fatalf("ticket cursor start_time = %d, want page containing zendesk_ticket_1", cursor.StartTime)
+		}
+		_ = session.Close()
+
+		resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+		if err != nil {
+			t.Fatalf("resumed OpenSync: %v", err)
+		}
+		_, err = resumed.NextBatch(context.Background())
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("resumed NextBatch = %v, want EOF", err)
+		}
+		_ = resumed.Close()
+	})
+}
+
 func TestZendeskConnectorOpenSyncTickets(t *testing.T) {
 	connector := newTestZendeskConnector(t, map[string]any{"zendesk_content_type": "tickets", "batch_size": 10})
 	stub := &zendeskTestStub{
@@ -640,16 +770,10 @@ func TestZendeskConnectorPrune(t *testing.T) {
 	})
 }
 
-func TestZendeskConnectorValidateConnectorSettingUsesReceiverStub(t *testing.T) {
+func TestZendeskConnectorValidateConnectorSettingUsesRequestConfig(t *testing.T) {
 	receiver := newTestZendeskConnector(t, nil)
-	calls := 0
-	receiver.doJSON = func(ctx context.Context, endpoint string, query url.Values, out any) error {
-		calls++
-		if endpoint != "help_center/articles" {
-			t.Fatalf("validation endpoint = %q", endpoint)
-		}
-		return &zendeskAPIError{Status: http.StatusUnauthorized, Message: "bad auth"}
-	}
+	transport := &zendeskTestTransport{t: t}
+	receiver.httpClient = &http.Client{Transport: transport}
 	err := receiver.ValidateConnectorSetting(context.Background(), map[string]any{
 		"zendesk_content_type": "tickets",
 		"credentials": map[string]any{
@@ -662,8 +786,8 @@ func TestZendeskConnectorValidateConnectorSettingUsesReceiverStub(t *testing.T) 
 	if !errors.As(err, &missing) {
 		t.Fatalf("ValidateConnectorSetting err = %T %v, want ConnectorMissingCredentialError", err, err)
 	}
-	if calls != 1 {
-		t.Fatalf("validation calls = %d, want 1", calls)
+	if transport.calls != 1 {
+		t.Fatalf("validation calls = %d, want 1", transport.calls)
 	}
 }
 
@@ -702,6 +826,31 @@ func newTestZendeskConnector(t *testing.T, overrides map[string]any) *ZendeskCon
 		t.Fatalf("NewZendeskConnector: %v", err)
 	}
 	return connector
+}
+
+type zendeskTestTransport struct {
+	t     *testing.T
+	calls int
+}
+
+func (tr *zendeskTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	tr.t.Helper()
+	tr.calls++
+	wantURL := "https://other.zendesk.com/api/v2/incremental/tickets.json?start_time=0"
+	if req.URL.String() != wantURL {
+		tr.t.Fatalf("request URL = %q, want %q", req.URL.String(), wantURL)
+	}
+	username, password, ok := req.BasicAuth()
+	if !ok || username != "bob@example.com/token" || password != "token2" {
+		tr.t.Fatalf("request auth = username %q password %q ok %v", username, password, ok)
+	}
+	return &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Status:     "401 Unauthorized",
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader("bad auth")),
+		Request:    req,
+	}, nil
 }
 
 type zendeskTestStub struct {
