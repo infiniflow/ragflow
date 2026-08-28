@@ -511,6 +511,8 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
+      pageRangeFromInvalid: '起始页码必须为大于 0 的整数',
+      pageRangeToInvalid: '结束页码必须为不小于起始页码的整数',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
         '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dev/select_pdf_parser。',
@@ -2924,6 +2926,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: '分词器',
       tokenizerRequired: '请先添加 Tokenizer 节点',
+      nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
