@@ -975,7 +975,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       variable: '变量',
       variableTip: `你可以通过对话 API，并配合变量设置来动态调整大模型的系统提示词。
       {knowledge}为系统预留变量，代表从指定知识库召回的文本块。
-      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
+      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/chat_configuration#system-prompt。`,
       add: '新增',
       key: '关键字',
       variableKeyMessage: '请输入变量 key',
