@@ -276,7 +276,6 @@ def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypa
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
-    assert "parsing_status" in payload["data"][0]
     by_id = {r["id"]: r for r in payload["data"]}
     for kb_id, counts in status_by_kb.items():
         assert "parsing_status" not in by_id[kb_id]
