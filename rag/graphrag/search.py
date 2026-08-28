@@ -32,6 +32,36 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 
+def keywords_from_query_rewrite(result: str) -> dict:
+    """Return the keyword object a query-rewrite reply carries.
+
+    json_repair.loads returns "" for a reply holding no JSON object, so the value has to be
+    checked before it is read. It was not: query_rewrite read .get straight off it, and the
+    resulting AttributeError met `except json_repair.JSONDecodeError`. json_repair has no
+    such attribute, so evaluating that clause raised a second AttributeError that propagated
+    in place of the first and named json_repair as the problem.
+
+    Raising on an unusable reply is deliberate. KGSearch.retrieval catches it and falls back
+    to searching on the question, which keeps entity, n-hop and community retrieval running.
+    Returning empty keywords would skip that fallback and lose all three.
+    """
+    keywords_data = json_repair.loads(result)
+    if isinstance(keywords_data, dict):
+        return keywords_data
+    if isinstance(keywords_data, list):
+        # A model that wraps its object in an array parses to a list. Merge the objects it
+        # holds, the same way content_tagging treats this shape.
+        merged = {}
+        for item in keywords_data:
+            if isinstance(item, dict):
+                merged.update(item)
+        if merged:
+            return merged
+    # The reply can echo the question and the entity samples in the prompt, so report its
+    # shape rather than its content.
+    raise ValueError(f"query_rewrite expected a JSON object of keywords, got {type(keywords_data).__name__} from a {len(result)} character reply")
+
+
 class KGSearch(Dealer):
     async def _chat(self, llm_bdl, system, history, gen_conf):
         response = get_llm_cache(llm_bdl.llm_name, system, history, gen_conf)
@@ -47,23 +77,10 @@ class KGSearch(Dealer):
         ty2ents = await get_entity_type2samples(idxnms, kb_ids)
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question, TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
         result = await self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})
-        try:
-            keywords_data = json_repair.loads(result)
-            type_keywords = keywords_data.get("answer_type_keywords", [])
-            entities_from_query = keywords_data.get("entities_from_query", [])[:5]
-            return type_keywords, entities_from_query
-        except json_repair.JSONDecodeError:
-            try:
-                result = result.replace(hint_prompt[:-1], "").replace("user", "").replace("model", "").strip()
-                result = "{" + result.split("{")[1].split("}")[0] + "}"
-                keywords_data = json_repair.loads(result)
-                type_keywords = keywords_data.get("answer_type_keywords", [])
-                entities_from_query = keywords_data.get("entities_from_query", [])[:5]
-                return type_keywords, entities_from_query
-            # Handle parsing error
-            except Exception as e:
-                logging.exception(f"JSON parsing error: {result} -> {e}")
-                raise e
+        keywords_data = keywords_from_query_rewrite(result)
+        type_keywords = keywords_data.get("answer_type_keywords", [])
+        entities_from_query = keywords_data.get("entities_from_query", [])[:5]
+        return type_keywords, entities_from_query
 
     def _ent_info_from_(self, es_res, sim_thr=0.3):
         res = {}
