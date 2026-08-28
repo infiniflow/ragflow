@@ -27,16 +27,17 @@ Example: The API key is already set via environment variable, and you only want 
 >>> python test.py --agent-id YourAgentID
 """
 
-from argparse import (
-    Namespace,
-    ArgumentParser)
+from argparse import Namespace, ArgumentParser
+
 # Add current script directory to Python module search path to locate ragflow_sdk package
 import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ragflow_sdk import RAGFlow
 
-def parse_args()->"Namespace":
+
+def parse_args() -> "Namespace":
     """
     Parse Script Input Parameters
 
@@ -44,22 +45,14 @@ def parse_args()->"Namespace":
         None
     Returns:
         Namespace
-    
+
     """
     parser = ArgumentParser(description="RAGFlow Agent Test Script")
-    parser.add_argument("--api-key",
-                        type=str,
-                        default=os.getenv("RAGFLOW_API_KEY", ""),
-                        help="RAGFlow API Key; read from env RAGFLOW_API_KEY if not specified (required)")
-    parser.add_argument("--base-url",
-                        type=str,
-                        default=os.getenv("RAGFLOW_BASE_URL", "http://localhost:9380"),
-                        help="RAGFlow service base url; read from env RAGFLOW_BASE_URL if not specified")
-    parser.add_argument("--agent-id",
-                        type=str,
-                        default=os.getenv("RAGFLOW_AGENT_ID", ""),
-                        help="Target Agent ID; read from env RAGFLOW_AGENT_ID if not specified")
+    parser.add_argument("--api-key", type=str, default=os.getenv("RAGFLOW_API_KEY", ""), help="RAGFlow API Key; read from env RAGFLOW_API_KEY if not specified (required)")
+    parser.add_argument("--base-url", type=str, default=os.getenv("RAGFLOW_BASE_URL", "http://localhost:9380"), help="RAGFlow service base url; read from env RAGFLOW_BASE_URL if not specified")
+    parser.add_argument("--agent-id", type=str, default=os.getenv("RAGFLOW_AGENT_ID", ""), help="Target Agent ID; read from env RAGFLOW_AGENT_ID if not specified")
     return parser.parse_args()
+
 
 def main():
     """
@@ -67,7 +60,7 @@ def main():
 
     Args:
         None
-    
+
     Returns:
         None
     """
@@ -91,6 +84,7 @@ def main():
         for ans in session.ask(question, stream=True):
             print(ans.content[len(cont) :], end="", flush=True)
             cont = ans.content
+
 
 if __name__ == "__main__":
     main()
