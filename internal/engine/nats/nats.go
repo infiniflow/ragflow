@@ -222,6 +222,10 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	// DB) is retried with breathing room instead of the broker default. The
 	// server normalizes AckWait to BackOff[0] when BackOff is present; the
 	// 60s AckWait is the effective schedule if BackOff is ever dropped.
+	// INVARIANT: the worker's InProgress heartbeat (Ingestor
+	// defaultHeartbeatInterval) must stay below BackOff[0] = 5s, or in-flight
+	// messages get redelivered mid-run and the claim-guard ack-skip acks the
+	// only live copy.
 	// Note: AckWait/BackOff/MaxAckPending are immutable on an existing
 	// consumer; a pre-existing consumer keeps its old schedule (see the
 	// fallback below) until it is deleted and recreated by deployment.

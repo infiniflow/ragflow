@@ -43,7 +43,15 @@ import (
 	"github.com/cenkalti/backoff/v5"
 )
 
-const defaultHeartbeatInterval = 10 * time.Second
+// defaultHeartbeatInterval paces the InProgress() working pulse that keeps an
+// in-flight message's ack deadline renewed while a worker parses. It MUST stay
+// comfortably below the consumer's ack deadline, which the server normalizes
+// to BackOff[0] = 5s (see NatsEngine.InitConsumer): a pulse slower than the
+// deadline lets the broker redeliver mid-run, and the redelivered copy is
+// ack-skipped by the claim guard — acking the only in-flight copy, so a worker
+// crash afterwards would lose the delivery (downgraded to the 15min
+// reconciliation backstop instead of automatic redelivery).
+const defaultHeartbeatInterval = 2 * time.Second
 
 type Ingestor struct {
 	id     string
