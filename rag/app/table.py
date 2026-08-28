@@ -418,13 +418,21 @@ def column_data_type(arr):
             arr[i] = None
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
+            converted = trans[ty](str(arr[i]))
         except Exception as e:
-            arr[i] = None
             logging.warning(f"Column {i}: {e}")
-            # Keep original value from openpyxl/pandas instead of dropping to None.
-            # This preserves cells (e.g. text in numeric columns) that would
-            # otherwise be silently discarded by forced column-level conversion.
+            # Keep the original value when the column-level conversion fails.
+            # Otherwise a column of mostly numerics carrying ``N/A``, ``TBD``,
+            # ``-``, ``pending`` or a footnote would lose exactly those cells
+            # to ``None`` and ``chunk()`` would drop them from both the chunk
+            # body and the typed ES field. The consumer in ``chunk()`` already
+            # checks ``isinstance(val, str)`` to handle this case.
+            continue
+        if converted is None and ty in ("datetime", "bool"):
+            # ``trans_datatime`` / ``trans_bool`` return ``None`` (not raise)
+            # when the value is unparseable. Keep the original string.
+            continue
+        arr[i] = converted
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
