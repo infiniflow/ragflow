@@ -49,6 +49,7 @@ import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { UserIdFormField } from '../components/user-id-form-field';
 import { useValues } from './use-values';
+import { hasValidMemorySelection } from './validation';
 
 export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
@@ -65,10 +66,20 @@ export const RetrievalPartialSchema = {
   user_id: z.string().optional(),
 };
 
-export const FormSchema = z.object({
-  query: z.string().optional(),
-  ...RetrievalPartialSchema,
-});
+export const FormSchema = z
+  .object({
+    query: z.string().optional(),
+    ...RetrievalPartialSchema,
+  })
+  .superRefine((values, ctx) => {
+    if (!hasValidMemorySelection(values.retrieval_from, values.memory_ids)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['memory_ids'],
+        message: 'Select at least one memory when retrieving from memory.',
+      });
+    }
+  });
 
 export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 
