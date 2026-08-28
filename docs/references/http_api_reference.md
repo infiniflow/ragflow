@@ -1787,8 +1787,8 @@ curl --request GET \
   Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
 - `run`: (*Filter parameter*), `array[string]`
   Filter by document processing status. Supports numeric, text, and mixed formats:
-  - Numeric format: `["0", "1", "2", "3", "4"]`
-  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
+  - Numeric format: `["0", "1", "2", "3", "4", "5"]`
+  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL, SCHEDULE]`
   - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
   - Status mapping:
     - `0` / `UNSTART`: Document not yet processed
@@ -1796,6 +1796,7 @@ curl --request GET \
     - `2` / `CANCEL`: Document processing was canceled
     - `3` / `DONE`: Document processing completed successfully
     - `4` / `FAIL`: Document processing failed
+    - `5` / `SCHEDULE`: Document is scheduled and waiting to be processed
   Defaults to all statuses.
 - `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
   Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:

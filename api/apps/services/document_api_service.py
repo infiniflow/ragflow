@@ -298,17 +298,11 @@ def _process_run_mapping(doc, run_status):
     Returns:
         A dictionary with renamed keys for API response.
     """
-    run_mapping = {
-        "0": "UNSTART",
-        "1": "RUNNING",
-        "2": "CANCEL",
-        "3": "DONE",
-        "4": "FAIL",
-    }
+    run_mapping = {status.value: status.name for status in TaskStatus}
 
     # Handle run field
-    if run_status is None or run_status not in run_mapping.keys():
-        run_status = "0"
+    if run_status is None or str(run_status) not in run_mapping:
+        run_status = TaskStatus.UNSTART.value
 
-    doc["run"] = run_mapping[run_status]
+    doc["run"] = run_mapping[str(run_status)]
     return doc

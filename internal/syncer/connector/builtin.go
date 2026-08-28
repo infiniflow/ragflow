@@ -32,6 +32,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
 	registerBuiltIn(registry, "azure_devops", NewAzureDevOpsConnector)
 	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
+	registerBuiltIn(registry, "box", NewBoxConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
 	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
