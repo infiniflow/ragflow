@@ -60,8 +60,15 @@ export const buildMessageUuidWithRole = (
 };
 
 // Stable id for the agent prologue. The prologue is a frontend-only assistant
-// message, so a fixed id tells it apart from real conversation messages
-// (whose ids come from the backend or from uuid()).
+// message, so a fixed id tells it apart from real conversation messages.
+// Invariants relied on by addPrologue/removePrologue in logic-hooks.ts and by
+// the helpers below:
+// - this id must never collide with a real message id: those come from the
+//   backend (stream message ids) or from uuid() via buildMessageUuid (render
+//   keys additionally get a `role_` prefix via buildMessageUuidWithRole), so
+//   they never equal this literal;
+// - the prologue is always messages[0]: merge/drop only inspect the first
+//   message, so anything else in the list is left untouched.
 export const PROLOGUE_MESSAGE_ID = 'prologue-message';
 
 export const buildPrologueMessage = (prologue: string): IMessage => ({
@@ -78,6 +85,12 @@ export const buildPrologueMessage = (prologue: string): IMessage => ({
  * - the conversation started without a prologue (typically with the user's
  *   question) -> insert the prologue above the first message instead of
  *   overwriting it.
+ *
+ * Inserting above an in-progress conversation is intentional: the canvas
+ * debug chat toggles/edits the prologue while a test conversation is already
+ * open, and this keeps that live preview in sync without dropping any
+ * exchanged message. Flows that want the prologue on fresh conversations
+ * only (e.g. the agent Explore session) guard the addPrologue call site.
  */
 export const mergePrologueIntoMessages = (
   messages: IMessage[] = [],
