@@ -835,7 +835,7 @@ async def run_action_session(
     """Bounded graph-edge session pursuing ONE direction."""
     from rag.prompts.template import load_prompt
 
-    system = load_prompt("tree_run_action")
+    system = load_prompt("action_run")
     seed_user = f"Direction: {direction}\n\nState:\n{parent_state.render_slots()}"
     if base_summary:
         seed_user += f"\n\nPrior round summary:\n{base_summary}"
@@ -898,7 +898,7 @@ async def _init_chat(tools, system: str, user: str, tmo: float) -> str:
 async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     from rag.prompts.template import load_prompt
 
-    system = load_prompt("tree_initialize_state")
+    system = load_prompt("action_initialize_state")
     user = f"Question: {question}"
     if fanout_hint:
         user += "\n\nCandidate aspects already identified:\n" + "\n".join(f"- {h}" for h in fanout_hint)
