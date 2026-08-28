@@ -115,6 +115,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             base_url=config["base_url"],
             remote_path=config.get("remote_path", "/"),
             batch_size=batch_size,
+            ca_cert_path=config.get("ca_cert_path"),
         )
         connector.set_allow_images(config.get("allow_images", False))
         connector.load_credentials(config.get("credentials") or {})
@@ -131,6 +132,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         Raises:
             ConnectorMissingCredentialError: If required credentials are missing
+            ConnectorValidationError: If TLS verification cannot be configured
         """
         logging.debug(f"Loading credentials for WebDAV server {self.base_url}")
 
@@ -151,9 +153,9 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 auth=(username, password),
                 **client_options,
             )
-        except Exception as e:
-            logging.error(f"Failed to connect to WebDAV server: {e}")
-            raise ConnectorMissingCredentialError(f"Failed to authenticate with WebDAV server: {e}")
+        except OSError as e:
+            logging.error(f"Failed to configure TLS verification for WebDAV server: {e}")
+            raise ConnectorValidationError(f"Failed to configure WebDAV TLS verification: {e}") from e
 
         return None
 

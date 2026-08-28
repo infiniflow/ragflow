@@ -166,22 +166,40 @@ def test_load_credentials_preserves_default_ssl_verification(monkeypatch):
 
 
 @pytest.mark.p2
-def test_load_credentials_passes_custom_ca_certificate_path(monkeypatch):
-    """Pass a configured custom CA certificate path to the WebDAV client."""
+def test_build_connector_passes_custom_ca_certificate_path(monkeypatch):
+    """Pass a configured custom CA certificate path through the factory."""
     webdav_client = Mock(return_value=object())
     monkeypatch.setattr(webdav_connector, "WebDAVClient", webdav_client)
 
-    connector = WebDAVConnector(
-        "https://webdav.example",
-        ca_cert_path="/etc/ssl/certs/webdav-ca.pem",
+    connector = WebDAVConnector.build_connector(
+        {
+            "base_url": "https://webdav.example",
+            "ca_cert_path": "/etc/ssl/certs/webdav-ca.pem",
+            "credentials": {"username": "user", "password": "password"},
+        }
     )
-    connector.load_credentials({"username": "user", "password": "password"})
 
+    assert connector.ca_cert_path == "/etc/ssl/certs/webdav-ca.pem"
     webdav_client.assert_called_once_with(
         base_url="https://webdav.example",
         auth=("user", "password"),
         verify="/etc/ssl/certs/webdav-ca.pem",
     )
+
+
+@pytest.mark.p2
+def test_load_credentials_reports_invalid_ca_as_validation_error(monkeypatch):
+    """Report custom CA loading failures as configuration errors."""
+    webdav_client = Mock(side_effect=OSError("invalid CA certificate"))
+    monkeypatch.setattr(webdav_connector, "WebDAVClient", webdav_client)
+
+    connector = WebDAVConnector(
+        "https://webdav.example",
+        ca_cert_path="/etc/ssl/certs/invalid.pem",
+    )
+
+    with pytest.raises(webdav_connector.ConnectorValidationError, match="Failed to configure WebDAV TLS verification"):
+        connector.load_credentials({"username": "user", "password": "password"})
 
 
 class _FakeClient:
