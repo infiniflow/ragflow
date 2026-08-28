@@ -123,13 +123,7 @@ def _map_doc(doc):
         "token_num": "token_count",
         "parser_id": "chunk_method",
     }
-    run_mapping = {
-        "0": "UNSTART",
-        "1": "RUNNING",
-        "2": "CANCEL",
-        "3": "DONE",
-        "4": "FAIL",
-    }
+    run_mapping = {status.value: status.name for status in TaskStatus}
     renamed_doc = {}
     for key, value in doc.to_dict().items():
         renamed_doc[key_mapping.get(key, key)] = value

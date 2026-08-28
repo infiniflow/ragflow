@@ -320,7 +320,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 		return
 	}
 	var req service.CreateAgentRequest
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
@@ -381,6 +381,12 @@ type agentDetailResponse struct {
 // updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
 type updateAgentRequest map[string]interface{}
 
+func decodeJSONWithNumber(body io.Reader, target any) error {
+	decoder := json.NewDecoder(body)
+	decoder.UseNumber()
+	return decoder.Decode(target)
+}
+
 // UpdateAgent applies a partial update to the canvas draft.
 // @Summary Update Agent
 // @Tags agents
@@ -398,7 +404,7 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	}
 	canvasID := c.Param("canvas_id")
 	var req updateAgentRequest
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
@@ -721,7 +727,7 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 	}
 	canvasID := c.Param("canvas_id")
 	var req publishAgentRequest
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}

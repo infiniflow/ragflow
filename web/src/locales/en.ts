@@ -567,6 +567,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number (excluded)',
+      pageRangeFromInvalid: 'Start page must be an integer greater than 0',
+      pageRangeToInvalid:
+        'End page must be an integer no less than the start page',
       layoutRecognize: 'PDF parser',
       layoutRecognizeTip:
         'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
@@ -604,7 +607,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       delimiterPreviewCount: '({{count}})',
 
       html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
@@ -644,7 +647,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       datasetDescription: 'Describe your dataset',
       overlappedPercentTip: 'The overlapped percent between two nearby chunks',
       globalIndexModelTip:
-        'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
+        'Used to generate auto-metadata, auto-keywords, and auto-questions. Model performance affects generation quality.',
       globalIndexModel: 'Indexing model',
       settings: 'Settings',
       autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
@@ -918,7 +921,7 @@ Paragraphs:
       scopeFile: 'File',
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
-      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
+      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dataset_configuration#basic-information for details.`,
       tagName: 'Tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
@@ -926,7 +929,7 @@ Paragraphs:
       tagTable: 'Table',
       tagSet: 'Tag sets',
       tagSetTip: `
-     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
+     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dataset_configuration#basic-information for details.</p>
 <p>The user query will also be auto-tagged.</p>
 This auto-tagging feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
@@ -1076,7 +1079,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       rerankCandidatesCountValidation:
         'Rerank candidates must be greater than or equal to Top N.',
       variable: 'Variable',
-      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
+      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/chat_configuration#system-prompt for details.`,
       add: 'Add',
       key: 'Key',
       variableKeyMessage: 'Please input the variable key',
@@ -1564,6 +1567,8 @@ Example: Virtual Hosted Style`,
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
         'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
+      webdavCaCertPathTip:
+        'Optional: Path to a CA certificate bundle mounted inside the RAGFlow container.',
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
@@ -3360,6 +3365,8 @@ This process aggregates variables from multiple branches into a single variable 
         'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Indexer',
       tokenizerRequired: 'Please add the Indexer node first',
+      nodeFormInvalid:
+        'Cannot save: "{{name}}" has invalid settings. Please fix them first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',

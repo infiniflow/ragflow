@@ -575,7 +575,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       childrenDelimiterTip:
         'Bir sınırlayıcı bir veya birden fazla özel karakterden oluşabilir. Birden fazla karakter ise ters tırnak içine alındığından emin olun( ``). Örneğin, sınırlayıcılarınızı şöyle yapılandırırsanız: \\n`##`;, metinleriniz satır sonlarında, çift kare işaretlerinde (##) ve noktalı virgüllerde ayrılacaktır.',
       html4excel: "Excel'i HTML'ye dönüştür",
-      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dev/enable_excel2html.`,
+      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Otomatik anahtar kelime',
       autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Otomatik soru',
@@ -614,7 +614,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       datasetDescription: `Dataset'inizi açıklayın`,
       overlappedPercentTip: 'İki yakın parça arasındaki örtüşme yüzdesi',
       globalIndexModelTip:
-        'Bilgi grafikleri, RAPTOR, otomatik meta veri, otomatik anahtar kelime ve otomatik soru oluşturmak için kullanılır. Model performansı üretim kalitesini etkiler.',
+        'Otomatik meta veri, otomatik anahtar kelime ve otomatik soru oluşturmak için kullanılır. Model performansı üretim kalitesini etkiler.',
       globalIndexModel: 'İndeksleme modeli',
       settings: 'Ayarlar',
       autoMetadataTip: `Otomatik olarak meta veri oluşturur. Ayrıştırma sırasında yeni dosyalara uygulanır. Mevcut dosyaların güncellenmesi yeniden ayrıştırma gerektirir (parçalar korunur). 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın.`,
@@ -856,7 +856,7 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       entityTypes: 'Varlık türleri',
       vietnamese: 'Vietnamca',
       pageRank: 'Sayfa sıralaması',
-      pageRankTip: `Alım sırasında belirli datasets'e daha yüksek PageRank puanı atayabilirsiniz. İlgili puan, bu datasetlerden alınan parçaların hibrit benzerlik puanlarına eklenir ve sıralamalarını yükseltir. Ayrıntılar için bkz. https://ragflow.io/docs/dev/set_page_rank.`,
+      pageRankTip: `Alım sırasında belirli datasets'e daha yüksek PageRank puanı atayabilirsiniz. İlgili puan, bu datasetlerden alınan parçaların hibrit benzerlik puanlarına eklenir ve sıralamalarını yükseltir. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#basic-information.`,
       tagName: 'Etiket',
       frequency: 'Sıklık',
       searchTags: 'Etiketleri ara',
@@ -864,7 +864,7 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       tagTable: 'Tablo',
       tagSet: 'Etiket kümeleri',
       tagSetTip: `
-     <p> Dataset'inizdeki parçaları otomatik olarak etiketlemek için bir veya birden fazla etiket dataset seçin. Ayrıntılar için bkz. https://ragflow.io/docs/dev/use_tag_sets.</p>
+     <p> Dataset'inizdeki parçaları otomatik olarak etiketlemek için bir veya birden fazla etiket dataset seçin. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#basic-information.</p>
 <p>Kullanıcı sorgusu da otomatik olarak etiketlenecektir.</p>
 Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katmanı ekleyerek alımı geliştirir.
 <p>Otomatik etiket ve otomatik anahtar kelime arasındaki fark:</p>

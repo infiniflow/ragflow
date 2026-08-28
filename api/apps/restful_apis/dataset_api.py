@@ -513,7 +513,7 @@ async def search_datasets(tenant_id):
     """Search (retrieval test) across multiple datasets.
 
     POST /api/v1/datasets/search
-    JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "size": int,
+    JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "page_size": int, "size": int (fallback),
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
@@ -538,7 +538,7 @@ async def search(tenant_id, dataset_id):
     """Search (retrieval test) within a dataset.
 
     POST /api/v1/datasets/<dataset_id>/search
-    JSON body: {"question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "size": int,
+    JSON body: {"question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "page_size": int, "size": int (fallback),
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     The legacy "top_k" parameter is accepted as an alias for "knn_top_k".

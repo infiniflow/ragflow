@@ -20,11 +20,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -168,6 +171,82 @@ func webDAVTestConnector(t *testing.T, serverURL string, allowImages bool, batch
 		t.Fatalf("NewWebDAVConnector failed: %v", err)
 	}
 	return connector
+}
+
+func TestNewWebDAVConnectorPreservesDefaultHTTPTransport(t *testing.T) {
+	connector, err := NewWebDAVConnector(map[string]any{})
+	if err != nil {
+		t.Fatalf("NewWebDAVConnector failed: %v", err)
+	}
+	if connector.client.httpClient.Transport != nil {
+		t.Fatalf("HTTP transport = %T, want nil default transport", connector.client.httpClient.Transport)
+	}
+}
+
+func TestNewWebDAVConnectorUsesCustomCACertificate(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	caCertPath := filepath.Join(t.TempDir(), "webdav-ca.pem")
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(caCertPath, caPEM, 0o600); err != nil {
+		t.Fatalf("write CA certificate: %v", err)
+	}
+
+	connector, err := NewWebDAVConnector(map[string]any{
+		"base_url":     server.URL,
+		"ca_cert_path": caCertPath,
+	})
+	if err != nil {
+		t.Fatalf("NewWebDAVConnector failed: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), webdavRequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	resp, err := connector.client.httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("request with custom CA failed: %v", err)
+	}
+	defer resp.Body.Close()
+}
+
+func TestNewWebDAVConnectorRejectsInvalidCACertificate(t *testing.T) {
+	tests := []struct {
+		name       string
+		caCertPath func(t *testing.T) string
+	}{
+		{
+			name: "missing file",
+			caCertPath: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "missing.pem")
+			},
+		},
+		{
+			name: "invalid PEM",
+			caCertPath: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "invalid.pem")
+				if err := os.WriteFile(path, []byte("not a certificate"), 0o600); err != nil {
+					t.Fatalf("write invalid CA certificate: %v", err)
+				}
+				return path
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewWebDAVConnector(map[string]any{"ca_cert_path": tt.caCertPath(t)})
+			var validationErr *ConnectorValidationError
+			if !errors.As(err, &validationErr) {
+				t.Fatalf("error = %v, want ConnectorValidationError", err)
+			}
+		})
+	}
 }
 
 func TestWebDAVConnectorValidate(t *testing.T) {

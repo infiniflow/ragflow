@@ -15,16 +15,8 @@ import {
 } from '@/components/rerank-candidates-count-item';
 
 import { TopNFormField } from '@/components/top-n-item';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
-import { Textarea } from '@/components/ui/textarea';
 import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
@@ -57,7 +49,6 @@ export const RetrievalPartialSchema = {
   ...rerankCandidatesCountSchema,
   dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
-  empty_response: z.string(),
   cross_languages: z.array(z.string()),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
@@ -109,34 +100,6 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
   });
 
   return retrievalFrom === RetrievalFrom.Memory;
-}
-
-export function EmptyResponseField() {
-  const { t } = useTranslation();
-  const form = useFormContext();
-
-  return (
-    <FormField
-      control={form.control}
-      name="empty_response"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('chat.emptyResponseTip')}>
-            {t('chat.emptyResponse')}
-          </FormLabel>
-          <FormControl>
-            <Textarea
-              placeholder={t('common.namePlaceholder')}
-              {...field}
-              autoComplete="off"
-              rows={4}
-            />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
 }
 
 function RetrievalForm({ node }: INextOperatorForm) {
@@ -199,7 +162,6 @@ function RetrievalForm({ node }: INextOperatorForm) {
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}
-            <EmptyResponseField></EmptyResponseField>
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>

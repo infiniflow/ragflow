@@ -142,7 +142,7 @@ export default {
       toMessage: 'Nomor halaman akhir hilang (tidak termasuk)',
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
-        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/select_pdf_parser.',
+        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
       taskPageSize: 'Ukuran halaman tugas',
       taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
       taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
@@ -164,7 +164,7 @@ export default {
       topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
-      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/enable_excel2html.`,
+      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
     knowledgeConfiguration: {
       imageTableContextWindow: 'Jendela konteks gambar & tabel',
@@ -402,7 +402,7 @@ export default {
       topN: 'Top N',
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',
-      variableTip: `Digunakan bersama dengan API manajemen asisten obrolan RAGFlow, variabel dapat membantu mengembangkan strategi prompt sistem yang lebih fleksibel. Variabel yang didefinisikan akan digunakan oleh 'Prompt Sistem' sebagai bagian dari prompt untuk LLM. {knowledge} adalah variabel khusus yang dicadangkan, mewakili bagian-bagian yang diperoleh dari basis pengetahuan yang ditentukan, dan semua variabel harus dikelilingi oleh kurung kurawal {} dalam 'Prompt Sistem'. Lihat https://ragflow.io/docs/dev/set_chat_variables untuk detail lebih lanjut.`,
+      variableTip: `Digunakan bersama dengan API manajemen asisten obrolan RAGFlow, variabel dapat membantu mengembangkan strategi prompt sistem yang lebih fleksibel. Variabel yang didefinisikan akan digunakan oleh 'Prompt Sistem' sebagai bagian dari prompt untuk LLM. {knowledge} adalah variabel khusus yang dicadangkan, mewakili bagian-bagian yang diperoleh dari basis pengetahuan yang ditentukan, dan semua variabel harus dikelilingi oleh kurung kurawal {} dalam 'Prompt Sistem'. Lihat https://ragflow.io/docs/chat_configuration#system-prompt untuk detail lebih lanjut.`,
       add: 'Tambah',
       key: 'Kunci',
       optional: 'Opsional',

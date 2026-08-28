@@ -23,6 +23,9 @@ services:
       mysql:
         condition: service_healthy
         required: false
+      nats:
+        condition: service_healthy
+        required: false
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}
@@ -84,6 +87,9 @@ services:
   ragflow-gpu:
     depends_on:
       mysql:
+        condition: service_healthy
+        required: false
+      nats:
         condition: service_healthy
         required: false
     profiles:

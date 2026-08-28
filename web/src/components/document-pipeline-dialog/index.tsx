@@ -31,6 +31,7 @@ import { ParseType } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback } from 'react';
+import { FieldErrors, useFormState } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
   IDocumentPipelineDialogProps,
@@ -62,6 +63,7 @@ export function DocumentPipelineDialog({
     activeTab,
     setActiveTab,
     handleOperatorValuesChange,
+    operatorValues,
     showOperatorTabs,
     buildSubmitData,
   } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
@@ -76,6 +78,22 @@ export function DocumentPipelineDialog({
     [buildSubmitData, hideModal, onOk],
   );
 
+  const onInvalid = useCallback(
+    (errors: FieldErrors) => {
+      // Surface the first failing operator tab so its field errors are visible.
+      const firstOperatorId = Object.keys(errors?.parser_config ?? {})[0];
+      if (firstOperatorId) {
+        setActiveTab(firstOperatorId);
+      }
+    },
+    [setActiveTab],
+  );
+
+  const { errors } = useFormState({
+    control: form.control,
+    name: 'parser_config',
+  });
+
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[50vw] text-text-primary">
@@ -85,7 +103,7 @@ export function DocumentPipelineDialog({
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit, onInvalid)}
             className="space-y-6 max-h-[70vh] overflow-auto -mx-6 px-10 py-5"
             id={FormId}
           >
@@ -101,9 +119,15 @@ export function DocumentPipelineDialog({
             {showOperatorTabs && (
               <PipelineOperatorTabs
                 nodes={operatorNodes}
-                value={activeTab}
-                onValueChange={setActiveTab}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
                 onOperatorValuesChange={handleOperatorValuesChange}
+                operatorValues={operatorValues}
+                operatorFormErrors={
+                  errors.parser_config as
+                    | Record<string, FieldErrors | undefined>
+                    | undefined
+                }
               />
             )}
           </form>
