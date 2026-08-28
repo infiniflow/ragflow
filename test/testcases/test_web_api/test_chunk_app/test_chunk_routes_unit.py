@@ -888,16 +888,68 @@ def test_restful_update_chunk_remove_image_mode(monkeypatch):
         "content_with_weight": "chunk",
         "img_id": "kb-1-chunk-1",
     }
-    remove_calls = []
-    module.remove_chunk_image = lambda bucket, name: remove_calls.append((bucket, name))
+    call_order = []
+    original_update = module.settings.docStoreConn.update
+
+    def tracked_update(*args, **kwargs):
+        call_order.append("update")
+        return original_update(*args, **kwargs)
+
+    module.settings.docStoreConn.update = tracked_update
+    module.remove_chunk_image = lambda bucket, name: call_order.append(("remove", bucket, name))
 
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"image_update_mode": "remove"}))
     res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
     assert res["code"] == 0, res
-    assert remove_calls == [("kb-1", "chunk-1")], remove_calls
+    assert call_order == ["update", ("remove", "kb-1", "chunk-1")], call_order
     updated = module.settings.docStoreConn.updated[-1][1]
     assert updated["img_id"] == "", updated
     assert updated["doc_type_kwd"] == "text", updated
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_remove_image_skips_delete_when_encode_fails(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.settings.docStoreConn.chunk = {
+        "id": "chunk-1",
+        "doc_id": "doc-1",
+        "content_with_weight": "chunk",
+        "img_id": "kb-1-chunk-1",
+    }
+    remove_calls = []
+
+    class _FailingLLMBundle(_DummyLLMBundle):
+        def encode(self, _inputs):
+            raise RuntimeError("embedding failed")
+
+    module.TenantLLMService.model_instance = staticmethod(lambda _model_config: _FailingLLMBundle())
+    module.remove_chunk_image = lambda bucket, name: remove_calls.append((bucket, name))
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"image_update_mode": "remove"}))
+    with pytest.raises(RuntimeError, match="embedding failed"):
+        _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert remove_calls == [], remove_calls
+    assert module.settings.docStoreConn.updated == [], module.settings.docStoreConn.updated
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_remove_image_skips_delete_when_update_fails(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.settings.docStoreConn.chunk = {
+        "id": "chunk-1",
+        "doc_id": "doc-1",
+        "content_with_weight": "chunk",
+        "img_id": "kb-1-chunk-1",
+    }
+    remove_calls = []
+    module.settings.docStoreConn.update = lambda *_args, **_kwargs: False
+    module.remove_chunk_image = lambda bucket, name: remove_calls.append((bucket, name))
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"image_update_mode": "remove"}))
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "Index updating failure" in res["message"], res
+    assert remove_calls == [], remove_calls
 
 
 @pytest.mark.p2

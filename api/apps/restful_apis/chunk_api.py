@@ -1228,16 +1228,15 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
+    remove_image_after_update = False
     if "image_update_mode" in req or "image_base64" in req:
         image_mode, mode_err = _parse_image_update_mode(req)
         if mode_err:
             return get_error_data_result(message=mode_err)
         if image_mode == IMAGE_UPDATE_MODE_REMOVE:
-            remove_err = _remove_chunk_image_or_error(dataset_id, chunk_id)
-            if remove_err:
-                return get_error_data_result(message=remove_err)
             d["img_id"] = ""
             d["doc_type_kwd"] = "text"
+            remove_image_after_update = True
         elif "image_base64" in req:
             image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
             if image_err:
@@ -1270,7 +1269,12 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     )
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id)
+    if not settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id):
+        return get_error_data_result(message="Index updating failure")
+    if remove_image_after_update:
+        remove_err = _remove_chunk_image_or_error(dataset_id, chunk_id)
+        if remove_err:
+            return get_error_data_result(message=remove_err)
     return get_result()
 
 
