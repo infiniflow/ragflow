@@ -103,7 +103,7 @@ def format_content_disposition(disposition: str, filename: str | None) -> str:
         return disposition
     ascii_fallback = ascii_content_disposition_filename(base) or "file"
     encoded = quote(base, safe="")
-    return f'{disposition}; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+    return f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 def resolve_attachment_content_type(ext: str | None = None, mime_type: str | None = None) -> tuple[str | None, str | None]:

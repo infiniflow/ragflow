@@ -176,9 +176,7 @@ def _load_file_api_module(monkeypatch):
 
     web_utils_mod = ModuleType("api.utils.web_utils")
     web_utils_mod.CONTENT_TYPE_MAP = {"txt": "text/plain"}
-    web_utils_mod.apply_download_file_response_headers = lambda response, content_type, ext, filename=None: response.headers.update(
-        {"content_type": content_type, "ext": ext, "filename": filename}
-    )
+    web_utils_mod.apply_download_file_response_headers = lambda response, content_type, ext, filename=None: response.headers.update({"content_type": content_type, "ext": ext, "filename": filename})
     monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
     common_pkg = ModuleType("common")
