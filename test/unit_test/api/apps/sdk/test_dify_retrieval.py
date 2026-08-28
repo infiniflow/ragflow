@@ -288,15 +288,9 @@ class TestDifyRetrievalTenantCheck:
     def test_team_member_searches_the_owner_index_not_their_own(self, monkeypatch):
         """A permitted cross-tenant caller must search the KB owner's index.
 
-        ``KnowledgebaseService.accessible`` admits two callers: the owning tenant,
-        and a member of that tenant when the KB is ``TEAM``. In the second case the
-        caller's tenant is not the KB's, and every index lookup has to name the
-        owner or it searches a tenant that holds none of the KB's chunks.
-
-        Every sibling call site already does this -- ``agent/tools/retrieval.py``
-        passes ``[kb.tenant_id for kb in kbs]`` and ``chunk_api.py`` passes
-        ``[k.tenant_id for k in kbs]`` -- and the surrounding lines here already
-        build ``LLMBundle(kb.tenant_id, ...)``.
+        ``KnowledgebaseService.accessible`` admits the owning tenant and, for a
+        ``TEAM`` KB, a member of that tenant. In the second case the caller's tenant
+        is not the KB's, so an index named after the caller holds none of its chunks.
         """
         team_kb = SimpleNamespace(id="kb-shared", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
         module = _load_dify_retrieval(
@@ -318,13 +312,10 @@ class TestDifyRetrievalTenantCheck:
 
         assert module._fake_retriever.retrieval_calls, "retriever was not called"
         assert module._fake_retriever.retrieval_calls[0]["tenant_id"] == "tenant-owner"
-        assert module._fake_retriever.by_children_tenant_ids == ["tenant-owner"], (
-            "retrieval_by_children searched the caller's tenant instead of the KB owner's"
-        )
-        assert module._fake_kg.tenant_ids == ["tenant-owner"], (
-            "kg_retriever searched the caller's tenant instead of the KB owner's"
-        )
+        assert module._fake_retriever.by_children_tenant_ids == ["tenant-owner"], "retrieval_by_children searched the caller's tenant instead of the KB owner's"
+        assert module._fake_kg.tenant_ids == ["tenant-owner"], "kg_retriever searched the caller's tenant instead of the KB owner's"
 
+    @pytest.mark.p1
     def test_missing_knowledge_base_returns_not_found(self, monkeypatch):
         """KB id that does not exist returns 404 before the access check fires."""
         request_body = {"knowledge_id": "kb-does-not-exist", "query": "hello"}
