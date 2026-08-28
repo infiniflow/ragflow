@@ -749,26 +749,11 @@ func TestApplyChildrenDelimText_DefaultsMomToCurrentChunk(t *testing.T) {
 	}
 }
 
-// TestApplyChildrenDelimText_PreservesIncomingMom verifies that when a chunk
-// already has a non-empty Mom (e.g. set by an upstream delimiter branch),
-// applyChildrenDelimText forwards it to its children instead of clobbering
-// it with the current chunk's text. Regression for #17876.
-func TestApplyChildrenDelimText_PreservesIncomingMom(t *testing.T) {
-	docs := []schema.ChunkDoc{
-		{Text: "alpha. beta. gamma", Mom: "parent-segment-from-prior-branch"},
-	}
-	pattern := regexp.MustCompile(`\. `)
-
-	out := applyChildrenDelimText(docs, pattern)
-	if len(out) != 3 {
-		t.Fatalf("want 3 children, got %d", len(out))
-	}
-	for i, c := range out {
-		if c.Mom != "parent-segment-from-prior-branch" {
-			t.Errorf("child %d: Mom=%q, want preserved %q", i, c.Mom, "parent-segment-from-prior-branch")
-		}
-	}
-}
+// TestApplyChildrenDelimText_PreservesIncomingMom REMOVED: per the
+// #17876 review, no current caller of applyChildrenDelimText ever
+// sets an incoming Mom — the production code's "preserve Mom"
+// branch is unreachable. The real fix is merge-granularity alignment
+// (see #17876 for the open follow-up).
 
 // TestApplyChildrenDelimText_NilPatternIsNoop verifies the early return so
 // callers that pass a nil pattern don't accidentally clear Mom.
@@ -811,35 +796,9 @@ func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
 	}
 }
 
-// TestApplyChildrenDelim_SymmetryWithTextPath verifies that the JSON
-// branch (applyChildrenDelim, which takes an explicit seg argument) and
-// the text branch (applyChildrenDelimText, which falls back to the
-// current chunk's text) produce equivalent Mom values for equivalent
-// input. Regression for #17876.
-func TestApplyChildrenDelim_SymmetryWithTextPath(t *testing.T) {
-	pattern := regexp.MustCompile(`\. `)
-
-	// JSON path: caller supplies the explicit parent segment via the
-	// seg argument. Mirrors how upstream delimiter branches call
-	// applyChildrenDelim.
-	jsonOut := applyChildrenDelim(
-		[]schema.ChunkDoc{{Text: "alpha. beta. gamma"}},
-		pattern,
-		"\nalpha. beta. gamma", // seg = TrimPrefix(d.Text, "\n")
-	)
-	// Text path: no explicit seg; falls back to TrimPrefix(d.Text, "\n").
-	textOut := applyChildrenDelimText(
-		[]schema.ChunkDoc{{Text: "\nalpha. beta. gamma"}},
-		pattern,
-	)
-
-	if len(jsonOut) != 3 || len(textOut) != 3 {
-		t.Fatalf("expected 3 children each; json=%d text=%d", len(jsonOut), len(textOut))
-	}
-	for i := range jsonOut {
-		if jsonOut[i].Mom != textOut[i].Mom {
-			t.Errorf("child %d: json Mom=%q != text Mom=%q (branches must agree)",
-				i, jsonOut[i].Mom, textOut[i].Mom)
-		}
-	}
-}
+// TestApplyChildrenDelim_SymmetryWithTextPath REMOVED: it called
+// applyChildrenDelim, which doesn't exist anywhere in the repo
+// (verified via code search). The symmetry check was useful in
+// principle but the missing function makes it a compile error.
+// Per the #17876 review, the real fix is merge-granularity alignment,
+// which lives in a separate PR.
