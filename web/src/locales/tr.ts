@@ -614,7 +614,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       datasetDescription: `Dataset'inizi açıklayın`,
       overlappedPercentTip: 'İki yakın parça arasındaki örtüşme yüzdesi',
       globalIndexModelTip:
-        'Bilgi grafikleri, RAPTOR, otomatik meta veri, otomatik anahtar kelime ve otomatik soru oluşturmak için kullanılır. Model performansı üretim kalitesini etkiler.',
+        'Otomatik meta veri, otomatik anahtar kelime ve otomatik soru oluşturmak için kullanılır. Model performansı üretim kalitesini etkiler.',
       globalIndexModel: 'İndeksleme modeli',
       settings: 'Ayarlar',
       autoMetadataTip: `Otomatik olarak meta veri oluşturur. Ayrıştırma sırasında yeni dosyalara uygulanır. Mevcut dosyaların güncellenmesi yeniden ayrıştırma gerektirir (parçalar korunur). 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın.`,

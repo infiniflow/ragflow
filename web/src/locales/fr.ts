@@ -708,7 +708,7 @@ export default {
       overlappedPercentTip:
         'Le pourcentage de chevauchement entre deux segments adjacents',
       globalIndexModelTip:
-        'Utilisé pour générer les graphes de connaissances, RAPTOR, les métadonnées automatiques, les mots-clés et questions automatiques. Les performances du modèle affectent la qualité de la génération.',
+        'Utilisé pour générer les métadonnées, mots-clés et questions automatiques. Les performances du modèle affectent la qualité de la génération.',
       globalIndexModel: "Modèle d'indexation",
       settings: 'Paramètres',
       autoMetadataTip:

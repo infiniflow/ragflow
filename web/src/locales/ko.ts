@@ -609,7 +609,7 @@ export default {
       datasetDescription: '데이터셋을 설명하세요',
       overlappedPercentTip: '인접한 두 chunk 간의 겹침 비율',
       globalIndexModelTip:
-        '지식 그래프, RAPTOR, 자동 메타데이터, 자동 키워드 및 자동 질문 생성에 사용됩니다. 모델 성능이 생성 품질에 영향을 줍니다.',
+        '자동 메타데이터, 자동 키워드 및 자동 질문 생성에 사용됩니다. 모델 성능이 생성 품질에 영향을 줍니다.',
       globalIndexModel: '인덱싱 모델',
       settings: '설정',
       autoMetadataTip: `메타데이터를 자동으로 생성합니다. 파싱 시 새로 추가되는 파일에 적용되며, 기존 파일은 업데이트하려면 재파싱이 필요합니다(Chunk는 그대로 유지됩니다). 이때 '설정'에서 지정한 인덱싱 모델이 추가 토큰을 소비하니 참고하세요.`,
