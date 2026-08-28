@@ -11,6 +11,7 @@
 | `.env.example` | 环境变量样例（基于官方 `docker/.env` 裁剪，含 LLM / embedding 接入备注） |
 | `docker-compose.override.example.yml` | Compose 覆盖样例（镜像标签、9380/9382 端口、MCP 启动参数，全部默认注释） |
 | `MODELS.md` | 启动后在管理界面接入通义千问 / Ollama / OpenAI 兼容与 Embedding 的步骤 |
+| `API.md` | HTTP / SDK / MCP 调用约定（建库、上传、检索、对话） |
 
 ## 使用方法（复制到 docker/ 目录旁）
 
@@ -35,7 +36,7 @@ cd docker
 docker compose up -d
 ```
 
-4. 打开 `http://localhost`，在 **系统设置 → 模型提供商** 按 [MODELS.md](MODELS.md) 接入 LLM 和 Embedding。
+4. 打开 `http://localhost`，在 **系统设置 → 模型提供商** 按 [MODELS.md](MODELS.md) 接入 LLM 和 Embedding。对外系统按 [API.md](API.md) 调用检索和对话。
 
 ## 注意事项
 
