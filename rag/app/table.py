@@ -408,6 +408,7 @@ def column_data_type(arr):
         type_priority = {"text": 0, "datetime": 1, "float": 2, "int": 3, "bool": 4}
         counts = sorted(counts.items(), key=lambda x: (x[1] * -1, type_priority[x[0]]))
         ty = counts[0][0]
+    conversion_failures = 0
     for i in range(len(arr)):
         if arr[i] is None:
             continue
@@ -419,8 +420,8 @@ def column_data_type(arr):
             continue
         try:
             converted = trans[ty](str(arr[i]))
-        except Exception as e:
-            logging.warning(f"Column {i}: {e}")
+        except ValueError:
+            conversion_failures += 1
             # Keep original value from openpyxl/pandas instead of dropping to None.
             # This preserves cells (e.g. text in numeric columns) that would
             # otherwise be silently discarded by forced column-level conversion.
@@ -428,6 +429,11 @@ def column_data_type(arr):
         if converted is None:
             continue
         arr[i] = converted
+    if conversion_failures:
+        # Aggregate rather than log per-cell: individual cell values must not
+        # be written to application logs, and per-cell warnings would flood
+        # logs on large uploads.
+        logging.warning(f"column_data_type: kept {conversion_failures} cell(s) that could not convert to {ty}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
