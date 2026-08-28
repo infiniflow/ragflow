@@ -20,6 +20,7 @@ import {
   useResetParserConfigOnPipelineChange,
 } from '@/hooks/use-pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEqual } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { FieldErrors, useForm, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -165,6 +166,12 @@ export default function DatasetSetting() {
   const handleOperatorValuesChange = useCallback(
     (operatorId: string, values: any) => {
       const currentParserConfig = form.getValues('parser_config') || {};
+      // Skip no-op syncs (e.g. a remounted tab pushing back the values it was
+      // just initialized with) — otherwise each setValue re-renders the tabs,
+      // which re-fires the operator form's change callback in a loop.
+      if (isEqual(currentParserConfig[operatorId], values)) {
+        return;
+      }
       form.setValue('parser_config', {
         ...currentParserConfig,
         [operatorId]: values,
@@ -172,6 +179,11 @@ export default function DatasetSetting() {
     },
     [form],
   );
+
+  const parserConfigValues = useWatch({
+    control: form.control,
+    name: 'parser_config',
+  });
 
   const pipelineDataList = usePipelineDataList(sourceDataState);
 
@@ -226,9 +238,10 @@ export default function DatasetSetting() {
                   {showOperatorTabs && (
                     <PipelineOperatorTabs
                       nodes={operatorNodes}
-                      value={activeTab}
-                      onValueChange={setActiveTab}
+                      activeTab={activeTab}
+                      onTabChange={setActiveTab}
                       onOperatorValuesChange={handleOperatorValuesChange}
+                      operatorValues={parserConfigValues}
                       operatorFormErrors={
                         errors.parser_config as
                           | Record<string, FieldErrors | undefined>

@@ -63,6 +63,7 @@ export function DocumentPipelineDialog({
     activeTab,
     setActiveTab,
     handleOperatorValuesChange,
+    operatorValues,
     showOperatorTabs,
     buildSubmitData,
   } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
@@ -118,9 +119,10 @@ export function DocumentPipelineDialog({
             {showOperatorTabs && (
               <PipelineOperatorTabs
                 nodes={operatorNodes}
-                value={activeTab}
-                onValueChange={setActiveTab}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
                 onOperatorValuesChange={handleOperatorValuesChange}
+                operatorValues={operatorValues}
                 operatorFormErrors={
                   errors.parser_config as
                     | Record<string, FieldErrors | undefined>
