@@ -306,7 +306,7 @@ packages = [
 
 [tool.ruff]
 line-length = 200
-exclude = [".venv", "rag/svr/discord_svr.py"]
+exclude = [".venv"]
 
 [tool.ruff.lint]
 extend-select = ["ASYNC", "ASYNC1"]
