@@ -172,16 +172,21 @@ func TestOneDriveValidateConnectorSettingUsesCandidateConfig(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			if err := r.ParseForm(); err != nil {
-				t.Fatalf("parse token form: %v", err)
+				t.Errorf("parse token form: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
 			if r.Form.Get("client_id") != "request-client" || r.Form.Get("client_secret") != "request-secret" {
-				t.Fatalf("token credentials = %q/%q", r.Form.Get("client_id"), r.Form.Get("client_secret"))
+				t.Errorf("token credentials = %q/%q", r.Form.Get("client_id"), r.Form.Get("client_secret"))
+				w.WriteHeader(http.StatusUnauthorized)
+				return
 			}
 			w.Write([]byte(`{"access_token":"token","expires_in":3600}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1.0/drives":
 			w.Write([]byte(`{"value":[]}`))
 		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.String())
+			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
