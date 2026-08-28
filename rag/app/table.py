@@ -418,13 +418,26 @@ def column_data_type(arr):
             arr[i] = None
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
+            converted = trans[ty](str(arr[i]))
         except Exception as e:
-            arr[i] = None
+            converted = None
             logging.warning(f"Column {i}: {e}")
-            # Keep original value from openpyxl/pandas instead of dropping to None.
-            # This preserves cells (e.g. text in numeric columns) that would
-            # otherwise be silently discarded by forced column-level conversion.
+        if converted is None:
+            # #18459: keep the original value from openpyxl/pandas instead of
+            # dropping to None. The column-level type is a majority vote, and
+            # cells the winning converter cannot represent (N/A, TBD, '-' in a
+            # numeric column) were silently discarded — absent from both the
+            # chunk body and the stored field. Covers both the raising
+            # converters and the return-None ones (bool/datetime), which never
+            # hit the warning below otherwise.
+            # No raw cell value in the log: it is source-document content and
+            # can carry confidential or personal data (#18466 review).
+            logging.info(
+                "Column %d: value not representable as %s; preserving original",
+                i, ty,
+            )
+            continue
+        arr[i] = converted
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
