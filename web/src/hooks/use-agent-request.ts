@@ -300,7 +300,7 @@ export const useDuplicateAgent = () => {
     mutationKey: [AgentApiAction.SetAgent, 'duplicate'],
     mutationFn: async (agent: Pick<IFlow, 'id' | 'title'>) => {
       try {
-        // Team duplicate: server remaps llm_id/mcp_id by logical name (yandex-tracker-mcp, gpt://...) so the fork is ready without manual fixup.
+        // Team duplicate: server remaps llm_id/mcp_id by logical name (mcp-name, gpt://...) so the fork is ready without manual fixup.
         // Falls back to client-side copy if server endpoint is unavailable.
         try {
           const { data } = await request.post(api.duplicateAgent(agent.id), {});
