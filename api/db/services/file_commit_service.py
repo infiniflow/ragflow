@@ -370,8 +370,9 @@ class FileCommitService(CommonService):
                         item["old_hash"] = old_hash
                         item["old_location"] = old_location
 
-                    # Soft-delete the file record
-                    File.update(status="0", update_time=current_timestamp()).where(File.id == file_id).execute()
+                    # Remove the file record. The blob stays in the content-addressed object
+                    # store and the tree_state tombstone below keeps it reachable from history.
+                    File.delete().where(File.id == file_id).execute()
 
                     # Remove from tree state (mark deleted)
                     if file_id in tree_state:
