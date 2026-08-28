@@ -325,41 +325,61 @@ func GetContentType(ext string, fileType string) string {
 	return fallbackPrefix + "/" + normalizedExt
 }
 
-// SanitizeContentDispositionFilename sanitizes a filename for use in
-// Content-Disposition headers. Strips non-ASCII, path separators,
-// control characters, and quotes/percent signs. Falls back to "file"
-// when the result is empty. Mirrors Python file_response.py:
-// sanitize_content_disposition_filename().
+// contentDispositionBasename extracts the final path segment, treating both
+// "/" and "\" as separators. Mirrors Python file_response.py basename logic.
+func contentDispositionBasename(filename string) string {
+	base := filename
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	if idx := strings.LastIndex(base, "\\"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	return base
+}
+
+// rfc8187Encode percent-encodes a UTF-8 string for RFC 8187 filename*.
+// Mirrors Python urllib.parse.quote(s, safe="").
+func rfc8187Encode(s string) string {
+	var buf strings.Builder
+	for _, b := range []byte(s) {
+		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') ||
+			b == '-' || b == '.' || b == '_' || b == '~' {
+			buf.WriteByte(b)
+		} else {
+			buf.WriteString(fmt.Sprintf("%%%02X", b))
+		}
+	}
+	return buf.String()
+}
+
+// SanitizeContentDispositionFilename builds the ASCII filename fallback for
+// Content-Disposition headers. Mirrors Python file_response.py:
+// ascii_content_disposition_filename().
 func SanitizeContentDispositionFilename(filename string) string {
 	if filename == "" {
 		return "file"
 	}
-	// Strip non-ASCII.
 	var asciiOnly strings.Builder
 	for _, r := range filename {
 		if r < 0x80 {
 			asciiOnly.WriteRune(r)
 		}
 	}
-	sanitized := asciiOnly.String()
-
-	// Replace path separators, special chars.
-	sanitized = strings.ReplaceAll(sanitized, "/", "_")
-	sanitized = strings.ReplaceAll(sanitized, "\\", "_")
-	sanitized = strings.ReplaceAll(sanitized, ":", "_")
-	sanitized = strings.ReplaceAll(sanitized, "\"", "")
-	sanitized = strings.ReplaceAll(sanitized, "'", "")
-	sanitized = strings.ReplaceAll(sanitized, "%", "")
-
-	// Strip remaining control characters.
-	ctrlRe := regexp.MustCompile(`[\x00-\x1f\x7f]`)
-	sanitized = ctrlRe.ReplaceAllString(sanitized, "")
-
-	sanitized = strings.TrimSpace(sanitized)
-	if sanitized == "" {
+	var sanitized strings.Builder
+	for _, r := range asciiOnly.String() {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+			r == '_' || r == '.' || r == '-' {
+			sanitized.WriteRune(r)
+		} else {
+			sanitized.WriteRune('_')
+		}
+	}
+	result := strings.Trim(sanitized.String(), "._")
+	if result == "" {
 		return "file"
 	}
-	return sanitized
+	return result
 }
 
 // ResolveAttachmentContentType resolves a content type and extension from
@@ -402,12 +422,12 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 // FormatContentDisposition builds a Content-Disposition value with an ASCII
 // filename fallback and an RFC 5987 UTF-8 filename* parameter.
 func FormatContentDisposition(disposition, filename string) string {
-	base := filepath.Base(filename)
-	if base == "" || base == "." {
+	base := contentDispositionBasename(filename)
+	if base == "" {
 		return disposition
 	}
 	safe := SanitizeContentDispositionFilename(base)
-	encoded := url.PathEscape(base)
+	encoded := rfc8187Encode(base)
 	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disposition, safe, encoded)
 }
 
