@@ -51,7 +51,14 @@ export function SessionDropdown({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+      <DropdownMenuTrigger
+        asChild
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+      >
+        {children}
+      </DropdownMenuTrigger>
       <DropdownMenuContent>
         <ConfirmDeleteDialog onOk={handleDelete}>
           <DropdownMenuItem
