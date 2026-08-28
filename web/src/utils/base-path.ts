@@ -37,11 +37,11 @@ export function getRouterBasename(base?: string): string {
 }
 
 /** Prefix an absolute app path with the configured base path. */
-export function withAppBasePath(path: string): string {
+export function withAppBasePath(path: string, base?: string): string {
   if (!path.startsWith('/')) {
     path = `/${path}`;
   }
-  const basename = getRouterBasename();
+  const basename = base ?? getRouterBasename();
   if (basename === '/') {
     return path;
   }

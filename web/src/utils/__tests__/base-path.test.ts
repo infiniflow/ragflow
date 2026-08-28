@@ -20,5 +20,8 @@ describe('base-path helpers', () => {
 
   it('prefixes absolute paths when basename is provided', () => {
     expect(withAppBasePath('/api/v1/datasets')).toBe('/api/v1/datasets');
+    expect(withAppBasePath('/api/v1/datasets', '/ragflow')).toBe(
+      '/ragflow/api/v1/datasets',
+    );
   });
 });
