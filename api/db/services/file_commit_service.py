@@ -380,12 +380,16 @@ class FileCommitService(CommonService):
                     # unreachable. File entries are read from tree_state, so they are unaffected.
                     row = File.get_or_none(File.id == file_id)
                     if row is not None and row.type == FileType.FOLDER.value:
+                        # Drop the whole change, not just the delete: recording the tombstone and
+                        # the commit item below would leave history calling the folder deleted
+                        # while its row is still there.
                         logging.warning(
                             "create_commit: refusing to delete folder %s in commit for %s",
                             file_id,
                             folder_id,
                         )
-                    elif row is not None:
+                        continue
+                    if row is not None:
                         File.delete().where(File.id == file_id).execute()
 
                     # Remove from tree state (mark deleted)
