@@ -212,7 +212,7 @@ class RAGFlowPdfParser:
                 logging.warning("Could not load OCR alphabet from %s: %s; treating all text as representable.", res, e)
                 cls._OCR_ALPHABET = set()
         if not cls._OCR_ALPHABET:
-            return True                      # unknown alphabet: preserve existing behaviour
+            return True  # unknown alphabet: preserve existing behaviour
         letters = [c for c in text if c.strip()]
         if not letters:
             return True

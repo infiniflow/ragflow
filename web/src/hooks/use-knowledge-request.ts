@@ -1,13 +1,33 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { ParseType } from '@/constants/knowledge';
+import { useIsGoBackend } from '@/utils/backend-variant';
+import { isDatasetId } from '@/utils/dataset-util';
+import { GenerateType, ParseType } from '@/constants/knowledge';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
+  IArtifactAlteration,
   IArtifactGraph,
   IArtifactPage,
   IArtifactTopic,
   IDataset,
+  IDatasetFilter,
   IDatasetListResult,
   IKnowledgeGraph,
   INextTestingResult,
@@ -17,6 +37,7 @@ import {
   IWikiCommitDetail,
   IWikiCommitListResponse,
 } from '@/interfaces/database/dataset';
+import { type IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IFetchArtifactGraphRequestParams,
   ITestRetrievalRequestBody,
@@ -25,23 +46,30 @@ import {
 import i18n from '@/locales/config';
 import kbService, {
   clearWiki,
+  deleteArtifactsStructure,
   deleteKnowledgeGraph,
+  getArtifactsAlteration,
   getArtifactGraph,
   getArtifactPage,
+  getArtifactsStructure,
   getKbDetail,
   getKnowledgeGraph,
   getWikiCommit,
   listArtifactTopics,
   listArtifacts,
+  datasetFilter,
   listDataset,
+  listDatasetByIds,
   listTag,
   listWikiCommits,
   removeTag,
   renameTag,
+  runIndex,
   updateArtifactPage,
   updateKb,
 } from '@/services/knowledge-service';
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useIsMutating,
   useMutation,
@@ -57,11 +85,16 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
+import { DatasetGenerateKeys } from './use-dataset-generate';
 
 export const enum KnowledgeApiAction {
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
+  FetchDatasetFilter = 'fetchDatasetFilter',
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
@@ -80,6 +113,10 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
   ClearWiki = 'clearWiki',
+  FetchDatasetStructure = 'fetchDatasetStructure',
+  DeleteDatasetStructure = 'deleteDatasetStructure',
+  FetchArtifactAlteration = 'fetchArtifactAlteration',
+  RunArtifactIndex = 'runArtifactIndex',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -100,6 +137,7 @@ export const useTestRetrieval = () => {
       page: 1,
       doc_ids: filterValue.doc_ids,
       highlight: true,
+      include_knowledge_compilation: false,
     };
   }, [filterValue, knowledgeBaseId, values]);
 
@@ -169,10 +207,8 @@ export const useFetchNextKnowledgeListByPage = () => {
         filterValue,
       },
     ],
-    initialData: {
-      kbs: [],
-      total_datasets: 0,
-    },
+    placeholderData: (previousData) =>
+      previousData ?? { kbs: [], total_datasets: 0 },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await listDataset({
@@ -208,6 +244,24 @@ export const useFetchNextKnowledgeListByPage = () => {
   };
 };
 
+export const useGetDatasetFilter = (): { filter: IDatasetFilter } => {
+  const { data } = useQuery({
+    queryKey: [KnowledgeApiAction.FetchDatasetFilter],
+    queryFn: async () => {
+      const { data } = await datasetFilter();
+      if (data.code === 0) {
+        return data.data;
+      }
+    },
+  });
+
+  return {
+    filter: data?.filter || {
+      owner: [],
+    },
+  };
+};
+
 export const useCreateKnowledge = () => {
   const queryClient = useQueryClient();
   const {
@@ -233,7 +287,9 @@ export const useCreateKnowledge = () => {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
         );
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+        });
       }
       return data;
     },
@@ -257,6 +313,9 @@ export const useDeleteKnowledge = () => {
         queryClient.invalidateQueries({
           queryKey: [KnowledgeApiAction.FetchKnowledgeListByPage],
         });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchDatasetFilter],
+        });
       }
       return data?.data ?? [];
     },
@@ -264,15 +323,6 @@ export const useDeleteKnowledge = () => {
 
   return { data, loading, deleteKnowledge: mutateAsync };
 };
-
-function isPipelineParserConfig(
-  parserConfig: Record<string, any> | undefined,
-): boolean {
-  if (!parserConfig || typeof parserConfig !== 'object') {
-    return false;
-  }
-  return Object.keys(parserConfig).some((key) => key.includes(':'));
-}
 
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
@@ -420,6 +470,28 @@ export const ArtifactTopicKeys = {
   listByDataset: (datasetId: string) =>
     [KnowledgeApiAction.FetchArtifactTopicList, datasetId] as const,
 };
+
+export const ArtifactAlterationKeys = {
+  detail: (datasetId: string, kind: string) =>
+    [KnowledgeApiAction.FetchArtifactAlteration, datasetId, kind] as const,
+};
+
+export function useFetchArtifactAlteration(kind: string) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IArtifactAlteration | null>({
+    queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
+    initialData: null,
+    enabled: !!knowledgeBaseId && !!kind,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactsAlteration(knowledgeBaseId, kind);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
 
 const wikiCommitKeys = {
   list: (datasetId: string, pageType: string, slug: string) =>
@@ -676,13 +748,15 @@ export const useUpdateArtifactPage = () => {
       );
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
-        queryClient.invalidateQueries({
-          queryKey: ArtifactKeys.detail(
-            knowledgeBaseId,
-            params.pageType,
-            params.slug,
-          ),
-        });
+        const detailKey = ArtifactKeys.detail(
+          knowledgeBaseId,
+          params.pageType,
+          params.slug,
+        );
+        if (data.data) {
+          queryClient.setQueryData(detailKey, data.data);
+        }
+        await queryClient.invalidateQueries({ queryKey: detailKey });
       }
       return data;
     },
@@ -710,7 +784,13 @@ export function useFetchKnowledgeGraph() {
 
 export const artifactGraphKeys = {
   graph: (datasetId: string, params?: IFetchArtifactGraphRequestParams) =>
-    [KnowledgeApiAction.FetchArtifactGraph, datasetId, params?.node] as const,
+    [
+      KnowledgeApiAction.FetchArtifactGraph,
+      datasetId,
+      params?.node,
+      params?.keywords,
+      params?.top_n,
+    ] as const,
 };
 
 export function useFetchArtifactGraph(
@@ -722,6 +802,7 @@ export function useFetchArtifactGraph(
   const { data, isFetching: loading } = useQuery<IArtifactGraph>({
     queryKey: artifactGraphKeys.graph(knowledgeBaseId, params),
     initialData: { entities: [], relations: [] } as IArtifactGraph,
+    placeholderData: keepPreviousData,
     enabled: !!knowledgeBaseId && (options?.enabled ?? true),
     gcTime: 0,
     queryFn: async () => {
@@ -732,6 +813,76 @@ export function useFetchArtifactGraph(
 
   return { data, loading };
 }
+
+export const DatasetStructureKeys = {
+  all: (datasetId: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId] as const,
+  kind: (datasetId: string, kind: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId, kind] as const,
+  kindWithKeywords: (datasetId: string, kind: string, keywords: string) =>
+    [
+      KnowledgeApiAction.FetchDatasetStructure,
+      datasetId,
+      kind,
+      keywords,
+    ] as const,
+};
+
+export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const enabled = !!knowledgeBaseId && !!kind;
+  const trimmedKeywords = keywords?.trim();
+
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: trimmedKeywords
+        ? DatasetStructureKeys.kindWithKeywords(
+            knowledgeBaseId,
+            kind,
+            trimmedKeywords,
+          )
+        : DatasetStructureKeys.kind(knowledgeBaseId, kind),
+      initialData: null,
+      enabled,
+      gcTime: 0,
+      placeholderData: keepPreviousData,
+      queryFn: async () => {
+        const { data } = await getArtifactsStructure(
+          knowledgeBaseId,
+          kind,
+          trimmedKeywords,
+        );
+        return (data?.data as IStructureGraphResponse | null) ?? null;
+      },
+    });
+
+  return { data, loading };
+}
+
+export const useDeleteDatasetStructure = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.DeleteDatasetStructure],
+    mutationFn: async (kind: string) => {
+      const { data } = await deleteArtifactsStructure(knowledgeBaseId, kind);
+      if (data?.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DatasetStructureKeys.all(knowledgeBaseId),
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, deleteDatasetStructure: mutateAsync };
+};
 
 export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
   const { data, isFetching: loading } = useQuery<
@@ -826,50 +977,198 @@ export const useClearWiki = () => {
   return { data, loading, clearWiki: mutateAsync };
 };
 
-export const useFetchKnowledgeList = (
-  shouldFilterListWithoutDocument: boolean = false,
-  keywords = '',
-): {
-  list: IDataset[];
-  loading: boolean;
-} => {
-  const { data, isFetching: loading } = useQuery({
-    queryKey: [
-      KnowledgeApiAction.FetchKnowledgeList,
-      shouldFilterListWithoutDocument,
-      keywords,
-    ],
-    initialData: [],
-    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
-    queryFn: async () => {
-      const { data } = await listDataset(
-        keywords
-          ? {
-              ext: {
-                keywords,
-              },
-            }
-          : undefined,
-      );
-      const list = data?.data ?? [];
-      return shouldFilterListWithoutDocument
-        ? list.filter((x: IDataset) => x.chunk_count > 0)
-        : list;
+export const useRunArtifactIndex = (kind: string) => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.RunArtifactIndex],
+    mutationFn: async () => {
+      // Go: wiki compilation is auto-driven by the scheduler; there is no
+      // legacy RunIndex endpoint. Reject instead of reporting success so a wiki
+      // update can't be mistaken for a real re-merge (the UI hides/disables the
+      // update control — plan v4.1 §4.2).
+      if (isGo) {
+        throw new Error(i18n.t('message.compileNotSupported'));
+      }
+      const { data } = await runIndex(knowledgeBaseId, 'wiki');
+      if (data?.code === 0) {
+        message.success(i18n.t('message.operated'));
+        queryClient.invalidateQueries({
+          queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: DatasetGenerateKeys.traceById(
+            GenerateType.Artifact,
+            knowledgeBaseId,
+          ),
+        });
+      }
+      return data;
     },
   });
 
-  return { list: data, loading };
+  return { data, loading, runArtifactIndex: mutateAsync };
 };
 
-export const useSelectKnowledgeOptions = () => {
-  const { list } = useFetchKnowledgeList();
+const KNOWLEDGE_LIST_PAGE_SIZE = 10;
 
-  const options = list?.map((item) => ({
-    label: item.name,
-    value: item.id,
-  }));
+export const KnowledgeListKeys = {
+  list: (
+    shouldFilterListWithoutDocument: boolean,
+    keywords: string,
+    pageSize: number,
+  ) =>
+    [
+      KnowledgeApiAction.FetchKnowledgeList,
+      shouldFilterListWithoutDocument,
+      keywords,
+      pageSize,
+    ] as const,
+  byIds: (ids: string[]) =>
+    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids] as const,
+};
 
-  return options;
+export const useFetchKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
+  pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
+): {
+  list: IDataset[];
+  loading: boolean;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  handleScroll: (e: React.UIEvent<HTMLDivElement>) => void;
+} => {
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{ items: IDataset[]; total: number }>({
+      queryKey: KnowledgeListKeys.list(
+        shouldFilterListWithoutDocument,
+        keywords,
+        pageSize,
+      ),
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listDataset({
+          page,
+          page_size: pageSize,
+          ...(keywords ? { ext: { keywords } } : {}),
+        });
+        return {
+          items: (data?.data ?? []) as IDataset[],
+          total: data?.total_datasets ?? 0,
+        };
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        const loaded = allPages.reduce(
+          (total, page) => total + page.items.length,
+          0,
+        );
+        return loaded < lastPage.total ? allPages.length + 1 : undefined;
+      },
+    });
+
+  const list = useMemo(() => {
+    const all = data?.pages.flatMap((page) => page.items) ?? [];
+    return shouldFilterListWithoutDocument
+      ? all.filter((x) => x.chunk_count > 0)
+      : all;
+  }, [data, shouldFilterListWithoutDocument]);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    list,
+    loading: isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    handleScroll,
+  };
+};
+
+/**
+ * Fetch datasets by a set of IDs. Used to resolve already-selected datasets
+ * that are not present in the first page of the paginated list, e.g. to echo
+ * their names in a form field. For staleness checks see `useStaleDatasetIds`.
+ *
+ * Callers may pass values mixed with variable references (agent forms let
+ * users pick variables alongside datasets); those are not resolvable ids and
+ * are dropped before the request is built.
+ */
+export const useFetchDatasetsByIds = (ids: string[]) => {
+  const sortedIds = useMemo(() => ids.filter(isDatasetId).sort(), [ids]);
+  const { data, isFetching: loading } = useQuery<IDataset[]>({
+    queryKey: KnowledgeListKeys.byIds(sortedIds),
+    enabled: sortedIds.length > 0,
+    gcTime: 0,
+    // Hold the previous result across id-list changes so consumers rendering
+    // from `data` don't flash an empty state while the next lookup is in
+    // flight.
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const { data } = await listDatasetByIds(sortedIds);
+      return (data?.data ?? []) as IDataset[];
+    },
+  });
+
+  return { data, loading };
+};
+
+/**
+ * Resolve which of the given persisted dataset ids have gone stale — the
+ * dataset no longer exists or has been emptied of chunks. The set stays
+ * empty while the lookup is in flight so consumers can hold off validation
+ * until it settles; `settled` flips true once the lookup has finished.
+ */
+export const useStaleDatasetIds = (datasetIds?: string[]) => {
+  // Variable references (e.g. `sys.query`) never resolve to datasets, so
+  // exclude them up front instead of letting them fall out of the lookup
+  // below and get misreported as stale.
+  const persistedIds = useMemo(
+    () => (datasetIds ?? []).filter(isDatasetId),
+    [datasetIds],
+  );
+  const { data: datasets, loading } = useFetchDatasetsByIds(persistedIds);
+
+  const staleDatasetIds = useMemo(() => {
+    if (loading) {
+      return new Set<string>();
+    }
+    const usableIds = new Set(
+      (datasets ?? []).filter((x) => x.chunk_count > 0).map((x) => x.id),
+    );
+    return new Set(persistedIds.filter((id) => !usableIds.has(id)));
+  }, [datasets, loading, persistedIds]);
+
+  return { staleDatasetIds, settled: !loading };
 };
 
 //#region tags
@@ -1075,7 +1374,7 @@ export const useSelectTestingResult = (): ITestingResult => {
       return mutation.state.data;
     },
   });
-  return (data.at(-1) ?? {
+  return (data.filter((x) => x !== undefined).at(-1) ?? {
     chunks: [],
     documents: [],
     total: 0,
@@ -1109,7 +1408,7 @@ export const useAllTestingResult = (): ITestingResult => {
       return mutation.state.data;
     },
   });
-  return (data.at(-1) ?? {
+  return (data.filter((x) => x !== undefined).at(-1) ?? {
     chunks: [],
     documents: [],
     total: 0,

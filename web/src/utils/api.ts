@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 const webAPI = `/v1`;
 const restAPIv1 = `/api/v1`;
 
@@ -26,6 +42,9 @@ export default {
   // llm model
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
+  // AIMLAPI agent-authorization (OAuth device grant) — obtain a key from the provider dialog
+  aimlapiAuthorizeStart: `${restAPIv1}/llm/aimlapi/authorize/start`,
+  aimlapiAuthorizePoll: `${restAPIv1}/llm/aimlapi/authorize/poll`,
   listProviders: `${restAPIv1}/providers`,
   addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
@@ -46,11 +65,11 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
   showProviderInstance: ({
     provider_name,
-    instance_name,
+    id,
   }: {
     provider_name: string;
-    instance_name: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
+    id: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
   addInstanceModel: ({
     provider_name,
     instance_name,
@@ -71,11 +90,11 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances`,
   updateProviderInstance: ({
     provider_name,
-    instance_name,
+    id,
   }: {
     provider_name: string;
-    instance_name: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
+    id: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
   updateModelStatus: ({
     provider_name,
     instance_name,
@@ -140,6 +159,7 @@ export default {
   checkEmbedding: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/embedding/check`,
   kbList: `${restAPIv1}/datasets`,
+  datasetFilter: `${restAPIv1}/datasets?type=filter`,
   createKb: `${restAPIv1}/datasets`,
   updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   rmKb: `${restAPIv1}/datasets`,
@@ -155,8 +175,10 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
   artifactsList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  artifactsAlteration: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/alteration`,
   artifactsTopicList: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
+    `${restAPIv1}/datasets/${datasetId}/artifacts/topics`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
   listWikiCommits: (datasetId: string) =>
@@ -165,12 +187,35 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/commits/${commitId}`,
   getArtifactGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  artifactsStructure: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/structure`,
   clearWiki: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getDatasetSkillTree: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/skills`,
   getDatasetSkillPage: (datasetId: string, skillKwd: string) =>
     `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  deleteDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  deleteDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  getDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/navigation`,
+  getDatasetNavChildren: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/navigation/${name
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}/children`,
+  deleteDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/navigation`,
+  deleteDatasetNavNode: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/navigation/${name
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
@@ -186,6 +231,9 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
+  // Go scheduler compile-status contract.
+  compilationStatus: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/compilation/status`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
   pipelineRerun: `${restAPIv1}/agents/rerun`,
@@ -354,13 +402,13 @@ export default {
   // explore
 
   // compilation templates
-  compilationTemplates: `${restAPIv1}/compilation_templates`,
+  compilationTemplates: `${restAPIv1}/compilation-templates`,
   compilationTemplate: (id: string) =>
-    `${restAPIv1}/compilation_templates/${id}`,
-  compilationTemplateGroups: `${restAPIv1}/compilation_template_groups`,
+    `${restAPIv1}/compilation-templates/${id}`,
+  compilationTemplateGroups: `${restAPIv1}/compilation-template-groups`,
   compilationTemplateGroup: (id: string) =>
-    `${restAPIv1}/compilation_template_groups/${id}`,
-  wikiPresets: `${restAPIv1}/compilation_templates/wiki_presets`,
+    `${restAPIv1}/compilation-template-groups/${id}`,
+  wikiPresets: `${restAPIv1}/compilation-templates/wiki-presets`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

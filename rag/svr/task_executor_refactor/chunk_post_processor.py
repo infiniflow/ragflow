@@ -30,22 +30,62 @@ import random
 import re
 from datetime import datetime
 from timeit import default_timer as timer
-from typing import Dict, List
 
-from common.constants import TAG_FLD, LLMType
-from common.metadata_utils import turn2jsonschema, update_metadata_to
-from common import settings
-from rag.nlp import rag_tokenizer
-from rag.svr.task_executor_refactor.task_context import TaskContext
-
+from api.db.joint_services.tenant_model_service import resolve_model_config
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import resolve_model_config
-from rag.prompts.generator import gen_metadata, keyword_extraction, question_proposal, content_tagging
-from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
+from common import settings
+from common.constants import TAG_FLD, LLMType
+from common.metadata_utils import turn2jsonschema, update_metadata_to
+from rag.graphrag.utils import get_llm_cache, get_tags_from_cache, set_llm_cache, set_tags_to_cache
+from rag.nlp import rag_tokenizer
+from rag.prompts.generator import content_tagging, gen_metadata, keyword_extraction, question_proposal
+from rag.svr.task_executor_refactor.task_context import TaskContext
 
 
-async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
+# Elasticsearch keyword fields reject terms whose UTF-8 encoding exceeds
+# 32766 bytes. Split oversized terms so ingestion never fails because a
+# malformed LLM response produced a single huge "keyword".
+_ES_KEYWORD_MAX_TERM_BYTES = 32766
+
+
+def _sanitize_keyword_term(term: str) -> list[str]:
+    """Return keyword pieces that fit into an Elasticsearch keyword field.
+
+    If ``term`` is small enough it is returned as-is. Otherwise it is
+    truncated at a character boundary so the UTF-8 encoding never exceeds
+    the ES keyword limit. This avoids corrupting multi-byte characters by
+    slicing raw bytes.
+    """
+    term = term.strip()
+    if not term:
+        return []
+    term_byte_length = len(term.encode("utf-8"))
+    if term_byte_length <= _ES_KEYWORD_MAX_TERM_BYTES:
+        return [term]
+
+    logging.warning(
+        "Sanitizing oversized keyword term (%d bytes, limit %d)",
+        term_byte_length,
+        _ES_KEYWORD_MAX_TERM_BYTES,
+    )
+    length = 0
+    end = 0
+    for index, character in enumerate(term):
+        character_bytes = len(character.encode("utf-8"))
+        if length + character_bytes > _ES_KEYWORD_MAX_TERM_BYTES:
+            end = index
+            break
+        length += character_bytes
+    else:
+        end = len(term)
+    truncated = term[:end].rstrip()
+    if not truncated:
+        return []
+    return [truncated]
+
+
+async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:
     """Extract keywords for chunks.
 
     Args:
@@ -69,7 +109,7 @@ async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", cached) if k.strip()]
+                d["important_kwd"] = [kw for k in re.split(r"[,，;；、\r\n]+", cached) for kw in _sanitize_keyword_term(k)]
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
 
@@ -79,15 +119,15 @@ async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            logging.error("Error in doc_keyword_extraction: {}".format(e))
+            logging.error(f"Error in doc_keyword_extraction: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        ctx.progress_cb(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        ctx.progress_cb(msg=f"Keywords generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
-async def generate_questions(docs: List[Dict], ctx: TaskContext) -> None:
+async def generate_questions(docs: list[dict], ctx: TaskContext) -> None:
     """Generate questions for chunks.
 
     Args:
@@ -125,7 +165,7 @@ async def generate_questions(docs: List[Dict], ctx: TaskContext) -> None:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        ctx.progress_cb(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        ctx.progress_cb(msg=f"Question generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
 def build_metadata_config(parser_config: dict) -> list:
@@ -167,7 +207,7 @@ def build_metadata_config(parser_config: dict) -> list:
     return metadata_conf
 
 
-async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
+async def generate_metadata(docs: list[dict], ctx: TaskContext) -> None:
     """Generate metadata for chunks.
 
     Args:
@@ -219,7 +259,7 @@ async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
                 ctx.write_interceptor.intercept("DocMetadataService.update_document_metadata")
             else:
                 DocMetadataService.update_document_metadata(ctx.doc_id, metadata)
-        ctx.progress_cb(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        ctx.progress_cb(msg=f"Metadata generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
 def apply_built_in_metadata(ctx: TaskContext) -> None:
@@ -244,7 +284,7 @@ def apply_built_in_metadata(ctx: TaskContext) -> None:
             DocMetadataService.update_document_metadata(ctx.doc_id, existing_meta)
 
 
-async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
+async def apply_tags(docs: list[dict], ctx: TaskContext) -> None:
     """Apply tags to chunks.
 
     Args:
@@ -307,15 +347,15 @@ async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            logging.error("Error tagging docs: {}".format(e))
+            logging.error(f"Error tagging docs: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        ctx.progress_cb(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        ctx.progress_cb(msg=f"Tagging {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
-def count_with_key(docs: List[Dict], key: str) -> int:
+def count_with_key(docs: list[dict], key: str) -> int:
     """Count docs that have a specific key.
 
     Args:
@@ -348,37 +388,36 @@ def count_with_key(docs: List[Dict], key: str) -> int:
 # ``_load_chunks_for_doc`` without a circular import.
 # =====================================================================
 
-import numpy as np  # noqa: E402
-from typing import Callable, Optional  # noqa: E402
+from collections.abc import Callable
 
-from common.misc_utils import thread_pool_exec  # noqa: E402
-from common.token_utils import num_tokens_from_string  # noqa: E402
-from rag.nlp import search  # noqa: E402
-from api.db.services.document_service import DocumentService  # noqa: E402
-from api.db.services.compilation_template_group_service import (  # noqa: E402
+import numpy as np
+
+from api.db.services.compilation_template_group_service import (
     CompilationTemplateGroupService,
 )
-from api.db.services.task_service import (  # noqa: E402
+from api.db.services.document_service import DocumentService
+from api.db.services.task_service import (
     abort_doc_chunking_counter,
     clear_doc_chunking_counter,
     credit_doc_chunking_task,
     is_doc_chunking_aborted,
 )
-
+from common.misc_utils import thread_pool_exec
+from common.token_utils import num_tokens_from_string
 
 # ----- tunables ------------------------------------------------------
 # The structure-compile batching / merge-flush / chain-correction tunables
 # and the non-tree compilation core moved to
 # ``rag.advanced_rag.knowlege_compile.runner`` so the ``rag.flow`` Compiler
 # component can share them. Re-exported here for backwards compatibility.
-from rag.advanced_rag.knowlege_compile.runner import (  # noqa: E402
+from rag.advanced_rag.knowlege_compile.runner import (
     DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
     DOC_STRUCTURE_MERGE_MAX_DOCS,  # noqa: F401
     STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,  # noqa: F401
     load_active_templates,
     run_structure_compile_over_batches,
 )
-
+from rag.nlp import search
 
 # ----- parser_config helpers -----------------------------------------
 
@@ -425,16 +464,8 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
     return template_ids
 
 
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order: template ``llm_id`` → doc ``parser_config.llm_id``
-    → ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
+def _resolve_ingestion_chat_llm_id(ctx) -> str:
+    """Pick the ingestion model id for a knowledge-compilation template."""
     doc_cfg = getattr(ctx, "parser_config", None) or {}
     if isinstance(doc_cfg, dict):
         did = doc_cfg.get("llm_id")
@@ -469,14 +500,47 @@ def cap_done_progress(progress_cb: Callable) -> Callable:
 # ----- tree helpers --------------------------------------------------
 
 
-def raptor_tree_to_graph(tree: Dict) -> Dict:
+def raptor_tree_to_graph(tree: dict) -> dict:
     """Project a RAPTOR tree dict (from ``Raptor(is_tree=True)``) onto
     the ``{entities, relations}`` shape the document-structure graph
     endpoint already serves for ``page_index``-kind rows."""
     entities: list[dict] = []
     relations: list[dict] = []
 
-    def _walk(node: dict, parent_id: Optional[str]) -> None:
+    def _collapse_unary(node: dict) -> dict:
+        """Collapse tree nodes that only wrap one child."""
+        collapsed = dict(node)
+        collapsed["children"] = [_collapse_unary(child) for child in node.get("children") or [] if isinstance(child, dict)]
+
+        while len(collapsed["children"]) == 1:
+            child = collapsed["children"][0]
+            parent_title = collapsed.get("title") or ""
+            child_title = child.get("title") or ""
+            parent_description = collapsed.get("description") or parent_title
+            child_description = child.get("description") or child_title
+
+            descriptions = [str(parent_description)]
+            if child_title and child_title != parent_title and child_title not in child_description:
+                descriptions.append(str(child_title))
+            if child_description and child_description not in descriptions:
+                descriptions.append(str(child_description))
+
+            source_chunk_ids = []
+            for source in (collapsed.get("source_chunk_ids") or [], child.get("source_chunk_ids") or []):
+                for chunk_id in source:
+                    if isinstance(chunk_id, str) and chunk_id and chunk_id not in source_chunk_ids:
+                        source_chunk_ids.append(chunk_id)
+
+            collapsed["description"] = "\n\n".join(descriptions)
+            if source_chunk_ids:
+                collapsed["source_chunk_ids"] = source_chunk_ids
+            collapsed["children"] = child.get("children") or []
+
+        return collapsed
+
+    tree = _collapse_unary(tree) if isinstance(tree, dict) else tree
+
+    def _walk(node: dict, parent_id: str | None) -> None:
         if not isinstance(node, dict):
             return
         title = node.get("title") or ""
@@ -491,13 +555,87 @@ def raptor_tree_to_graph(tree: Dict) -> Dict:
         if isinstance(src_ids, list) and src_ids:
             ent["source_chunk_ids"] = [s for s in src_ids if isinstance(s, str) and s]
         entities.append(ent)
-        if parent_id is not None:
+        # A summary and its child can occasionally receive the same LLM-generated
+        # title. They are still valid tree nodes, but must not become a self-loop
+        # when the tree is projected to graph relations.
+        if parent_id is not None and parent_id != node_id:
             relations.append({"from": parent_id, "to": node_id, "type": "child"})
         for child in node.get("children") or []:
             _walk(child, node_id)
 
     _walk(tree, None)
     return {"entities": entities, "relations": relations}
+
+
+async def rewrite_duplicate_tree_names(tree: dict, chat_mdl) -> None:
+    """Rewrite only duplicate tree titles whose descriptions differ."""
+    from rag.advanced_rag.knowlege_compile._common import knowledge_compile_gen_conf
+    from rag.prompts.generator import gen_json
+
+    groups: dict[str, list[tuple[dict, str, str]]] = {}
+
+    def _walk(node: dict, path: tuple[int, ...]) -> None:
+        if not isinstance(node, dict):
+            return
+        title = str(node.get("title") or "").strip()
+        if title:
+            description = str(node.get("description") or title).strip()
+            node_key = ".".join(str(index) for index in path)
+            groups.setdefault(title, []).append((node, node_key, description))
+        for index, child in enumerate(node.get("children") or []):
+            _walk(child, (*path, index))
+
+    _walk(tree, (0,))
+    for title, candidates in groups.items():
+        descriptions = {description for _, _, description in candidates}
+        if len(candidates) < 2 or len(descriptions) < 2:
+            continue
+
+        items = [{"id": node_key, "description": description} for _, node_key, description in candidates]
+        prompt = (
+            "The following tree nodes currently have the same title but describe different content. "
+            "Give each node a concise, distinct human-readable title. Preserve the original language, "
+            "do not add numbering unless necessary, and return only a JSON array of objects with the "
+            "same ids and a name field.\n\n"
+            f"Current title: {title}\n"
+            f"Nodes: {json.dumps(items, ensure_ascii=False)}"
+        )
+        try:
+            result = await gen_json(
+                "You rename duplicate tree node titles for display.",
+                prompt,
+                chat_mdl,
+                gen_conf=knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}),
+            )
+        except Exception:
+            logging.exception("tree-template: duplicate title rewrite failed for title=%s", title)
+            continue
+
+        rewrites = {}
+        if isinstance(result, list):
+            rewrites = {str(item.get("id")): str(item.get("name")).strip() for item in result if isinstance(item, dict) and item.get("id") and str(item.get("name") or "").strip()}
+        for node, node_key, _ in candidates:
+            new_title = rewrites.get(node_key)
+            if new_title:
+                node["title"] = new_title
+
+    # The LLM is asked to produce distinct names, but enforce that contract
+    # deterministically before the graph uses titles as relation endpoints.
+    used_names: dict[str, int] = {}
+
+    def _ensure_unique(node: dict) -> None:
+        if not isinstance(node, dict):
+            return
+        title = str(node.get("title") or "").strip()
+        if title:
+            occurrence = used_names.get(title, 0) + 1
+            used_names[title] = occurrence
+            if occurrence > 1:
+                node["title"] = f"{title} ({occurrence})"
+        for child in node.get("children") or []:
+            _ensure_unique(child)
+
+    _ensure_unique(tree)
 
 
 async def load_chunks_with_vec(
@@ -520,7 +658,7 @@ async def load_chunks_with_vec(
     order_by.asc("page_num_int")
     order_by.asc("top_int")
 
-    out: list[tuple[str, "np.ndarray", str]] = []
+    out: list[tuple[str, np.ndarray, str]] = []
     offset = 0
     PAGE = 500
     while True:
@@ -582,6 +720,7 @@ async def rechunk_doc_by_tree(
     via ``available_int=0`` and stamped with ``superseded_by_chunk_id``.
     """
     from datetime import datetime
+
     from common.misc_utils import get_uuid
 
     ctx = handler._task_context
@@ -788,13 +927,14 @@ async def run_tree_templates(
     templates: list[tuple[str, dict]],
     chat_mdl_by_tid: dict[str, "LLMBundle"],
     embedding_model,
+    doc_name: str,
 ) -> None:
     """Run the ``tree``-kind compilation templates for the current
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
     ``RaptorService.build_doc_tree`` and persists a single graph row
     via ``_struct_upsert_graph_json``."""
-    from rag.svr.task_executor_refactor.raptor_service import RaptorService
     from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json
+    from rag.svr.task_executor_refactor.raptor_service import RaptorService
 
     ctx = handler._task_context
     progress_cb = ctx.progress_cb
@@ -839,8 +979,6 @@ async def run_tree_templates(
                 raptor_config=raptor_config,
                 chat_mdl=chat_mdl_by_tid[template_id],
                 embd_mdl=embedding_model,
-                tree_builder="raptor",
-                clustering_method="gmm",
                 max_errors=3,
             )
         except Exception:
@@ -873,6 +1011,7 @@ async def run_tree_templates(
                     doc_id,
                 )
 
+        await rewrite_duplicate_tree_names(tree, chat_mdl_by_tid[template_id])
         graph = raptor_tree_to_graph(tree)
         try:
             await _struct_upsert_graph_json(
@@ -880,6 +1019,7 @@ async def run_tree_templates(
                 ctx.tenant_id,
                 ctx.kb_id,
                 doc_id,
+                doc_name,
                 compile_kwd="tree",
                 compilation_template_id=template_id,
             )
@@ -891,17 +1031,30 @@ async def run_tree_templates(
             )
             continue
 
+        # Persist the per-doc nav_doc right after the graph node, so parsing a
+        # file yields a nav_doc with the FULL entity descriptions as
+        # graph_content -- without needing to run GENERATE NAVIGATION separately
+        # and without changing the nav clustering input. The `title` keeps using
+        # tree["title"] (what upsert_dataset_nav_doc used to derive from `tree`
+        # before this change), so the parse cluster-title logic is unchanged.
+        # Only do this when the graph actually contains entities, otherwise skip
+        # (avoid empty graph_content when RAPTOR produced nothing).
         try:
-            from rag.advanced_rag.knowlege_compile.dataset_nav import (
-                upsert_dataset_nav_doc,
-            )
+            if graph.get("entities"):
+                from rag.advanced_rag.knowlege_compile.dataset_nav import (
+                    build_nav_graph_text,
+                    upsert_dataset_nav_doc,
+                )
 
-            await upsert_dataset_nav_doc(
-                ctx.tenant_id,
-                ctx.kb_id,
-                doc_id,
-                tree,
-            )
+                _, nav_graph_text = build_nav_graph_text(graph)
+                await upsert_dataset_nav_doc(
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    doc_id,
+                    {"title": tree.get("title"), "graph_text": nav_graph_text},
+                    embd_mdl=embedding_model,
+                    chat_mdl=chat_mdl_by_tid[template_id],
+                )
         except Exception:
             logging.exception(
                 "tree-template %s: dataset_nav upsert failed for doc %s",
@@ -929,6 +1082,8 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     from api.apps.restful_apis.chunk_api import _compilation_template_kind
 
     ctx = handler._task_context
+    found, document = DocumentService.get_by_id(ctx.doc_id)
+    doc_name = document.name if found and document else ""
     template_ids = _parser_config_compilation_template_ids(ctx.parser_config, ctx.tenant_id)
     if not template_ids:
         return
@@ -937,36 +1092,14 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     if not active_templates:
         return
 
-    llm_bundle_cache: dict[str, LLMBundle] = {}
-    chat_mdl_by_tid: dict[str, LLMBundle] = {}
-    filtered_templates: list[tuple[str, dict]] = []
-    for template_id, parser_cfg in active_templates:
-        chat_llm_id = _resolve_template_chat_llm_id(parser_cfg, ctx)
-        if chat_llm_id not in llm_bundle_cache:
-            try:
-                cfg = resolve_model_config(
-                    ctx.tenant_id,
-                    LLMType.CHAT,
-                    chat_llm_id,
-                )
-                llm_bundle_cache[chat_llm_id] = LLMBundle(
-                    ctx.tenant_id,
-                    cfg,
-                    lang=ctx.language,
-                )
-            except Exception:
-                logging.exception(
-                    "document_structure_compile: cannot resolve chat model %s for template %s; skipping",
-                    chat_llm_id,
-                    template_id,
-                )
-                continue
-        chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
-        filtered_templates.append((template_id, parser_cfg))
-
-    if not filtered_templates:
+    chat_llm_id = _resolve_ingestion_chat_llm_id(ctx)
+    try:
+        cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, chat_llm_id)
+        chat_mdl = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
+    except Exception:
+        logging.exception("document_structure_compile: cannot resolve ingestion chat model %s", chat_llm_id)
         return
-    active_templates = filtered_templates
+    chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
 
     tree_templates: list[tuple[str, dict]] = []
     non_tree_templates: list[tuple[str, dict]] = []
@@ -982,6 +1115,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
             tree_templates,
             chat_mdl_by_tid,
             embedding_model,
+            doc_name,
         )
 
     if not non_tree_templates:
@@ -1003,6 +1137,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         tenant_id=ctx.tenant_id,
         kb_id=ctx.kb_id,
         doc_id=ctx.doc_id,
+        doc_name=doc_name,
         language=ctx.language,
         chunk_batches=_stream_doc_batches(),
         progress_cb=ctx.progress_cb,

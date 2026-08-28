@@ -4,7 +4,10 @@ import sys
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import Mock, call
 import json
+
+import pytest
 
 
 def _load_mineru_parser(monkeypatch):
@@ -39,6 +42,158 @@ def _load_mineru_parser(monkeypatch):
     return module
 
 
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("language", "expected_language"),
+    [
+        ("Japanese", "Japanese"),
+        ("", "English"),
+        (None, "English"),
+    ],
+)
+def test_enhance_images_with_vlm_passes_dataset_language_to_prompt(monkeypatch, tmp_path, language, expected_language):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    image_path = tmp_path / "figure.png"
+    module.Image.new("RGB", (1, 1)).save(image_path)
+
+    picture_module = ModuleType("rag.app.picture")
+    picture_module.vision_llm_chunk = Mock(return_value="description")
+    prompt = Mock(return_value="prompt")
+    generator_module = ModuleType("rag.prompts.generator")
+    generator_module.vision_llm_figure_describe_prompt = prompt
+    monkeypatch.setitem(sys.modules, "rag.app.picture", picture_module)
+    monkeypatch.setitem(sys.modules, "rag.prompts.generator", generator_module)
+
+    outputs = [{"type": module.MinerUContentType.IMAGE, "img_path": str(image_path)}]
+    parser._enhance_images_with_vlm(outputs, vision_model=object(), language=language)
+
+    prompt.assert_called_once_with(language=expected_language)
+    assert outputs[0]["vlm_description"] == "description"
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("language", "expected_language"),
+    [
+        ("Japanese", "Japanese"),
+        ("", "English"),
+        (None, "English"),
+    ],
+)
+def test_parse_pdf_forwards_normalized_dataset_language_to_image_enhancement(monkeypatch, tmp_path, language, expected_language):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    vision_model = object()
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", Mock())
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=[]))
+    enhance = Mock()
+    monkeypatch.setattr(parser, "_enhance_images_with_vlm", enhance)
+
+    language_kwargs = {} if language is None else {"lang": language}
+    parser.parse_pdf(
+        filepath=pdf_path,
+        binary=None,
+        output_dir=str(output_dir),
+        delete_output=False,
+        vision_model=vision_model,
+        **language_kwargs,
+    )
+
+    enhance.assert_called_once_with([], vision_model, callback=None, language=expected_language)
+
+
+def test_parse_pdf_forwards_page_range_and_callback_to_page_rendering(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    callback = Mock()
+    render_pages = Mock()
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", render_pages)
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=[]))
+
+    parser.parse_pdf(
+        filepath=str(pdf_path),
+        binary=None,
+        callback=callback,
+        output_dir=str(output_dir),
+        delete_output=False,
+        page_from=12,
+        page_to=15,
+    )
+
+    render_pages.assert_called_once_with(pdf_path, zoomin=1, page_from=12, page_to=15, callback=callback)
+
+
+def test_page_rendering_only_renders_requested_range(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+
+    class _Page:
+        def __init__(self, page_number):
+            self.page_number = page_number
+
+        def to_image(self, **_kwargs):
+            rendered_pages.append(self.page_number)
+            return type("RenderedPage", (), {"original": module.Image.new("RGB", (10, 20))})()
+
+    class _Pdf:
+        pages = [_Page(page_number) for page_number in range(15)]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    rendered_pages = []
+    monkeypatch.setattr(module.pdfplumber, "open", lambda *_args, **_kwargs: _Pdf())
+
+    parser.__images__(b"pdf", page_from=12, page_to=15)
+
+    assert rendered_pages == [12, 13, 14]
+    assert parser.page_images is not None
+    assert len(parser.page_images) == 3
+    assert parser.page_from == 12
+
+
+def test_crop_converts_local_page_to_document_page(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 12
+    parser.page_images = [module.Image.new("RGB", (100, 200), "white")]
+
+    image, positions = parser.crop("@@1\t10\t40\t50\t80##", need_position=True)
+
+    assert image is not None
+    assert positions == [(12, 10, 40, 50, 80)]
+
+
+def test_page_rendering_failure_is_reported_to_callback(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    callback = Mock()
+    monkeypatch.setattr(module.pdfplumber, "open", Mock(side_effect=ValueError("bad pdf")))
+
+    parser.__images__(b"pdf", page_from=2, page_to=4, callback=callback)
+
+    assert callback.call_args_list == [
+        call(0.16, "[MinerU] Rendering PDF pages..."),
+        call(0.16, "[MinerU] PDF page rendering failed for pages 2:4: bad pdf"),
+    ]
+
+
 def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):
     module = _load_mineru_parser(monkeypatch)
     text = "&lt;table&gt;&lt;tr&gt;&lt;td&gt;Alpha&lt;/td&gt;&lt;td&gt;Beta&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"
@@ -55,8 +210,10 @@ def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypat
     parser = module.MinerUParser()
     outputs = [
         {
-            "type": module.MinerUContentType.TEXT,
-            "text": "&lt;td&gt;&lt;/td&gt;",
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "&lt;td&gt;&lt;/td&gt;",
+            "table_caption": [],
+            "table_footnote": [],
             "page_idx": 0,
             "bbox": (0, 0, 1, 1),
         }
@@ -67,7 +224,83 @@ def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypat
 
     assert sections == []
     assert "Skip section after sanitization" in caplog.text
-    assert f"type={module.MinerUContentType.TEXT}" in caplog.text
+    assert f"type={module.MinerUContentType.TABLE}" in caplog.text
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ({"type": "text", "text": "Use List<String> and a<b. 5 &lt; 6"}, "Use List<String> and a<b. 5 &lt; 6"),
+        ({"type": "code", "code_body": "template<typename T> void f();", "code_caption": []}, "template<typename T> void f();"),
+        ({"type": "equation", "text": "x < y > z"}, "x < y > z"),
+    ],
+)
+def test_transfer_to_sections_only_sanitizes_tables(monkeypatch, output, expected):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    output = {**output, "page_idx": 0, "bbox": (0, 0, 1, 1)}
+
+    sections = parser._transfer_to_sections([output], parse_method="raw", table_enable=False)
+
+    assert sections[0][0] == expected
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("code_body", "expected_body"),
+    [
+        ("```txt\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```txt\nList<String> names = new ArrayList<String>();\n``` trailing", "```txt\nList<String> names = new ArrayList<String>();\n``` trailing"),
+    ],
+)
+def test_transfer_to_sections_wraps_caption_and_unwrapped_body_in_fence(
+    monkeypatch: pytest.MonkeyPatch,
+    code_body: str,
+    expected_body: str,
+) -> None:
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    caption = "Java / C# style"
+    output = {
+        "type": module.MinerUContentType.CODE,
+        "code_body": code_body,
+        "code_caption": [caption],
+        "page_idx": 0,
+        "bbox": (97, 195, 579, 252),
+    }
+
+    sections = parser._transfer_to_sections([output], parse_method="raw")
+
+    assert len(sections) == 1
+    assert sections[0][0] == f"```{caption}\n{expected_body}\n```"
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("transfer", ["sections", "tables"])
+def test_empty_table_fallback_is_logged(monkeypatch, caplog, transfer):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    output = {
+        "type": module.MinerUContentType.TABLE,
+        "table_body": "",
+        "table_caption": [],
+        "table_footnote": [],
+        "page_idx": 2,
+        "bbox": (0, 0, 1, 1),
+    }
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        if transfer == "sections":
+            result = parser._transfer_to_sections([output], parse_method="raw", table_enable=True)
+            fallback = result[0][0]
+        else:
+            result = parser._transfer_to_tables([output])
+            fallback = result[0][0][1]
+
+    assert fallback == "FAILED TO PARSE TABLE"
+    assert "Empty table content at page_idx=2; using fallback text." in caplog.text
 
 
 def test_transfer_to_sections_skips_page_chrome_without_duplicating_text(monkeypatch):
@@ -115,6 +348,150 @@ def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monke
 
     assert [section[0] for section in sections] == ["Primary content", "Next content"]
     assert "Skip unsupported section type=sidebar" in caplog.text
+
+
+@pytest.mark.p1
+def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
+    from rag.nlp import tokenize_table
+
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 12
+    image_path = tmp_path / "figure.png"
+    module.Image.new("RGB", (2, 2), "red").save(image_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>first</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (1, 2, 3, 4),
+            "_mineru_positions": [
+                {"page_idx": 0, "bbox": (1, 2, 3, 4)},
+                {"page_idx": 1, "bbox": (1, 0, 3, 2)},
+            ],
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "img_path": str(image_path),
+            "image_caption": ["Figure 1"],
+            "image_footnote": ["Source"],
+            "vlm_description": "A red square",
+            "page_idx": 0,
+            "bbox": (5, 6, 7, 8),
+        },
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "second table",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 1,
+            "bbox": (9, 10, 11, 12),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption without image"],
+            "image_footnote": [],
+        },
+    ]
+
+    media = parser._transfer_to_tables(outputs)
+
+    assert len(media) == 3
+    assert media[0][0] == (None, "<table><tr><td>first</td></tr></table>")
+    assert media[2][0] == (None, "second table")
+    image, texts = media[1][0]
+    image_path.unlink()
+    assert isinstance(image, module.Image.Image)
+    assert image.getpixel((0, 0)) == (255, 0, 0)
+    assert texts == ["Figure 1", "Source", "A red square"]
+    assert [[position[0] for position in item[1]] for item in media] == [[12, 13], [12], [13]]
+    chunks = tokenize_table(media, {}, False)
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["table", "image", "table"]
+    assert [chunk["page_num_int"] for chunk in chunks] == [[13, 14], [13], [14]]
+
+
+@pytest.mark.p1
+def test_tokenize_table_uses_payload_type_instead_of_html_content():
+    from PIL import Image
+
+    from rag.nlp import tokenize_table
+
+    image = Image.new("RGB", (1, 1))
+    media = [((image, "plain table"), []), ((image, ["caption with <tr> text"]), [])]
+
+    chunks = tokenize_table(media, {}, False)
+
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["table", "image"]
+    assert [chunk["image"] for chunk in chunks] == [image, image]
+
+
+@pytest.mark.p1
+def test_media_context_preserves_media_without_positions(monkeypatch):
+    from rag.nlp import append_context2table_image4pdf
+
+    parser_module = ModuleType("deepdoc.parser")
+    parser_module.PdfParser = Mock()
+    monkeypatch.setitem(sys.modules, "deepdoc.parser", parser_module)
+
+    image = object()
+    media = [((None, "table"), []), ((image, ["figure"]), [])]
+
+    assert append_context2table_image4pdf([], media, 1) == media
+    assert append_context2table_image4pdf([], media, 1, return_context=True) == [("", ""), ("", "")]
+
+
+@pytest.mark.p1
+def test_media_context_preserves_image_payload_type(monkeypatch):
+    import rag.nlp as nlp
+    from PIL import Image
+
+    image = Image.new("RGB", (1, 1))
+    sections = [("Context before.", "@@1\t0\t10\t0\t5##")]
+    media = [((image, ["Figure 1"]), [(12, 0, 1, 10, 20)])]
+
+    monkeypatch.setattr(nlp, "tokenize", lambda d, text, _eng, language="English": d.update({"content_with_weight": text}))
+    contextualized = nlp.append_context2table_image4pdf(sections, media, 1, section_page_offset=12)
+
+    rows = contextualized[0][0][1]
+    assert isinstance(rows, list)
+    assert "Context before." in rows[0]
+    assert "Figure 1" in rows[0]
+    chunks = nlp.tokenize_table(contextualized, {}, False)
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["image"]
+    assert chunks[0]["page_num_int"] == [13]
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("parse_method", ["naive", "manual", "paper"])
+def test_transfer_to_sections_routes_app_media_separately(monkeypatch, parse_method):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {"type": module.MinerUContentType.TEXT, "text": "Body", "page_idx": 0, "bbox": (0, 0, 1, 1)},
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "table",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 1, 1, 2),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["figure"],
+            "image_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 2, 1, 3),
+        },
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method=parse_method, table_enable=True)
+
+    assert len(sections) == 1
+    assert sections[0][0].startswith("Body")
+    assert len(parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)) == 3
 
 
 class _FakeZipResponse:

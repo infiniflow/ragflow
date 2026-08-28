@@ -24,13 +24,13 @@ from abc import ABC
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urljoin
 from json.decoder import JSONDecodeError
 
 import requests
 from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
+from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
@@ -395,6 +395,15 @@ class xAICV(GptV4):
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
+class MistralCV(GptV4):
+    _FACTORY_NAME = "Mistral"
+
+    def __init__(self, key, model_name="pixtral-12b-2409", lang="Chinese", base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://api.mistral.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
 class QWenCV(GptV4):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
@@ -719,7 +728,7 @@ class OpenRouterCV(GptV4):
 class LocalAICV(GptV4):
     _FACTORY_NAME = "LocalAI"
 
-    def __init__(self, key, model_name, base_url, lang="Chinese", **kwargs):
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local cv model url cannot be None")
         base_url = ensure_v1(base_url)
@@ -772,7 +781,7 @@ class OllamaCV(Base):
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
         from ollama import Client
 
-        self.base_url = ensure_v1(kwargs["base_url"])
+        self.base_url = kwargs["base_url"].rstrip("/")
         self.client = Client(host=self.base_url)
         self.model_name = model_name
         self.lang = lang
@@ -1091,86 +1100,13 @@ class GeminiCV(Base):
                 tmp_path.unlink()
 
 
-class NvidiaCV(Base):
+class NvidiaCV(GptV4):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(self, key, model_name, lang="Chinese", base_url="https://ai.api.nvidia.com/v1/vlm", **kwargs):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://integrate.api.nvidia.com/v1", **kwargs):
         if not base_url:
-            base_url = ("https://ai.api.nvidia.com/v1/vlm",)
-        self.lang = lang
-        factory, llm_name = model_name.split("/")
-        if factory != "liuhaotian":
-            self.base_url = urljoin(base_url, f"{factory}/{llm_name}")
-        else:
-            self.base_url = urljoin(f"{base_url}/community", llm_name.replace("-v1.6", "16"))
-        self.key = key
-        Base.__init__(self, **kwargs)
-
-    def _image_prompt(self, text, images):
-        if not images:
-            return text
-        htmls = ""
-        for img in images:
-            htmls += ' <img src="{}"/>'.format(f"data:image/jpeg;base64,{img}" if img[:4] != "data" else img)
-        return text + htmls
-
-    def describe(self, image):
-        b64 = self.image2base64(image)
-        response = requests.post(
-            url=self.base_url,
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "Authorization": f"Bearer {self.key}",
-            },
-            json={"messages": self.prompt(b64)},
-            timeout=60,
-        )
-        response = response.json()
-        return (
-            response["choices"][0]["message"]["content"].strip(),
-            total_token_count_from_response(response),
-        )
-
-    def _request(self, msg, gen_conf=None):
-        gen_conf = dict(gen_conf or {})
-        response = requests.post(
-            url=self.base_url,
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "Authorization": f"Bearer {self.key}",
-            },
-            json={"messages": msg, **gen_conf},
-            timeout=60,
-        )
-        return response.json()
-
-    def describe_with_prompt(self, image, prompt=None):
-        b64 = self.image2base64(image)
-        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
-        response = self._request(vision_prompt)
-        return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
-
-    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
-        try:
-            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
-            return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
-
-    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
-        total_tokens = 0
-        try:
-            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
-            cnt = response["choices"][0]["message"]["content"]
-            total_tokens += total_token_count_from_response(response)
-            for resp in cnt:
-                yield resp
-        except Exception as e:
-            yield "\n**ERROR**: " + str(e)
-
-        yield total_tokens
+            base_url = "https://integrate.api.nvidia.com/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
 class AnthropicCV(Base):
@@ -1389,6 +1325,18 @@ class FuturMixCV(GptV4):
         logging.info("[FuturMix] CV initialized with model %s", model_name)
 
 
+class AIMLAPICV(GptV4):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
+        logging.info("[aimlapi.com] CV initialized with model %s", model_name)
+
+
 class RAGconCV(GptV4):
     """
     RAGcon CV Provider - routes through LiteLLM proxy
@@ -1424,14 +1372,27 @@ class BedrockCV(Base):
         Base.__init__(self, **kwargs)
 
     def _parse_credentials(self, key):
+        from botocore.utils import validate_region_name
+
         bedrock_key = json.loads(key)
         self.auth_mode = bedrock_key.get("auth_mode", "")
-        self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
+        self.aws_region = bedrock_key.get("bedrock_region")
+        if not self.aws_region:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_region_name(self.aws_region)
         self.aws_ak = bedrock_key.get("bedrock_ak", "")
         self.aws_sk = bedrock_key.get("bedrock_sk", "")
         self.aws_role_arn = bedrock_key.get("aws_role_arn", "")
+        self.bedrock_api_key = bedrock_key.get("bedrock_api_key", "")
 
     def _get_aws_creds(self):
+        if self.auth_mode == "bedrock_api_key":
+            if not self.bedrock_api_key:
+                raise ValueError("Bedrock API key must be provided")
+            return {
+                "aws_region_name": self.aws_region,
+                "api_key": self.bedrock_api_key,
+            }
         if self.auth_mode == "access_key_secret":
             return {
                 "aws_region_name": self.aws_region,
@@ -1450,8 +1411,9 @@ class BedrockCV(Base):
                 "aws_secret_access_key": creds["SecretAccessKey"],
                 "aws_session_token": creds["SessionToken"],
             }
-        else:
+        elif self.auth_mode == "assume_role":
             return {"aws_region_name": self.aws_region}
+        raise ValueError(f"Unsupported Bedrock auth_mode: {self.auth_mode}")
 
     def describe_with_prompt(self, image, prompt=None):
         import litellm

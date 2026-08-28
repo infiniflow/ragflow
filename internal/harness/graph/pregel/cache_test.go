@@ -9,7 +9,7 @@ import (
 )
 
 func TestMemoryCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewMemoryCache(100, EvictLRU)
 
 	// Test Set and Get
@@ -54,7 +54,7 @@ func TestMemoryCache(t *testing.T) {
 }
 
 func TestMemoryCacheEviction(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewMemoryCache(3, EvictLRU)
 
 	// Fill cache
@@ -94,7 +94,7 @@ func TestGenerateCacheKey(t *testing.T) {
 }
 
 func TestCachedExecutor(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewMemoryCache(100, EvictLRU)
 
 	callCount := 0
@@ -146,7 +146,7 @@ func TestCachedExecutor(t *testing.T) {
 }
 
 func TestNoopCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := &NoopCache{}
 
 	cache.Set(ctx, "key", "value", 0)

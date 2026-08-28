@@ -33,6 +33,7 @@ export interface ISwitchForm {
 import { AgentCategory } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
+import { ICompilationTemplateGroup } from './compilation-template';
 import { IDataset } from './dataset';
 
 export type DSLComponents = Record<string, IOperator>;
@@ -84,6 +85,19 @@ export declare interface IFlow {
   datasets?: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
   tags?: string;
 }
+
+// GET /agents merges compilation template groups into the agent list when no
+// canvas_category is requested; every item carries this discriminator.
+export enum AgentListItemType {
+  Agent = 'agent',
+  CompilationTemplateGroup = 'compilation_template_group',
+}
+
+export type AgentListItem =
+  | (IFlow & { type?: AgentListItemType.Agent })
+  | (ICompilationTemplateGroup & {
+      type: AgentListItemType.CompilationTemplateGroup;
+    });
 
 export interface IFlowTemplate {
   avatar: string;
@@ -151,6 +165,7 @@ export interface IRetrievalForm {
   similarity_threshold?: number;
   keywords_similarity_weight?: number;
   top_n?: number;
+  rerank_candidates_count?: number;
   top_k?: number;
   rerank_id?: string;
   tenant_rerank_id?: string;

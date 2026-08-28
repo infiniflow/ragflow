@@ -18,6 +18,8 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,11 +34,18 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cloudwego/eino/compose"
+	"go.uber.org/zap"
 )
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
 type Pipeline struct {
-	taskID     string
+	taskID string
+	// rawDSL holds the canonical (key-sorted) JSON of the canvas DSL this
+	// pipeline was compiled from. It is the basis for the resume-time DSL
+	// fingerprint (guardDSLChange): any edit to the template DSL changes
+	// these bytes, so a stale checkpoint can be detected and discarded
+	// instead of being resumed against an incompatible graph.
+	rawDSL     []byte
 	documentID string // owning document; progress is mirrored back to the
 	// document table so the existing GET /api/v1/datasets/{dataset_id}/documents
 	// endpoint (which reads document.progress/run/progress_msg) reflects the
@@ -46,7 +55,7 @@ type Pipeline struct {
 	tracker *canvas.RunTracker     // optional injected; nil -> resolve at Run
 	// requireResume, when true, makes Run refuse to start if no checkpoint
 	// store can be resolved (no injected store AND no global Redis client).
-	// Plan §6.a M4 方案 A: a deployment that cannot persist checkpoints must
+	// Plan §6.a M4: a deployment that cannot persist checkpoints must
 	// not silently degrade to a non-resumable run — it must surface a clear,
 	// distinguishable error so the caller knows resume is unavailable.
 	requireResume bool
@@ -117,8 +126,8 @@ type ProgressEvent struct {
 // (internal/ingestion/service). A nil sink is valid: events are dropped and
 // the pipeline stays DB-independent (unit tests, headless runs).
 type ProgressSink interface {
-	OnComponentTotal(taskID string, total int)
-	OnComponentProgress(ev ProgressEvent)
+	OnComponentTotal(ctx context.Context, taskID string, total int)
+	OnComponentProgress(ctx context.Context, ev ProgressEvent)
 }
 
 // WithProgressSink injects a sink that receives component progress events
@@ -132,11 +141,10 @@ func WithProgressSink(s ProgressSink) PipelineOption {
 // It accepts either the inner canvas DSL or the template wrapper whose
 // top-level `dsl` field carries that canvas.
 func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pipeline, error) {
-	var raw map[string]any
-	if err := json.Unmarshal(dsl, &raw); err != nil {
-		return nil, fmt.Errorf("pipeline: decode DSL: %w", err)
-	}
-	canvasDSL, err := unwrapCanvasDSL(raw)
+	// UnwrapCanvasDSL is the single source of truth for stripping the
+	// optional {"dsl": {...}} canvas envelope; it also reports a nil/unparseable
+	// DSL.
+	canvasDSL, err := UnwrapCanvasDSL(dsl)
 	if err != nil {
 		return nil, err
 	}
@@ -144,14 +152,43 @@ func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pip
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: decode canvas DSL: %w", err)
 	}
+	if err := ValidatePipeline(cnv); err != nil {
+		return nil, err
+	}
+	// Capture the canonical canvas DSL bytes for the resume-time DSL
+	// fingerprint. json.Marshal sorts map keys, so this is stable across
+	// re-decodes of the same logical DSL (formatting-independent).
+	rawBytes, err := json.Marshal(canvasDSL)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline: canonicalize DSL: %w", err)
+	}
 	p := &Pipeline{
 		taskID: taskID,
 		canvas: cnv,
+		rawDSL: rawBytes,
 	}
 	for _, o := range opts {
 		o(p)
 	}
 	return p, nil
+}
+
+// ValidatePipeline enforces ingestion pipeline constraints.
+// Specifically, at most one Extractor component is permitted in the graph.
+func ValidatePipeline(cnv *canvas.Canvas) error {
+	if cnv == nil {
+		return nil
+	}
+	extractorCount := 0
+	for id, comp := range cnv.Components {
+		if isExtractorComponent(id, comp.Obj.ComponentName) {
+			extractorCount++
+		}
+	}
+	if extractorCount > 1 {
+		return fmt.Errorf("pipeline validation error: at most 1 Extractor component is allowed, found %d", extractorCount)
+	}
+	return nil
 }
 
 // WithComponentFactory installs an instance-scoped factory override for this
@@ -163,20 +200,6 @@ func (p *Pipeline) WithComponentFactory(factory runtime.ComponentFactory) *Pipel
 		p.factory = factory
 	}
 	return p
-}
-
-func unwrapCanvasDSL(raw map[string]any) (map[string]any, error) {
-	if len(raw) == 0 {
-		return nil, errNilDSL
-	}
-	if rawDSL, ok := raw["dsl"]; ok {
-		canvasDSL, ok := rawDSL.(map[string]any)
-		if !ok || len(canvasDSL) == 0 {
-			return nil, errNilDSL
-		}
-		return canvasDSL, nil
-	}
-	return raw, nil
 }
 
 func mergeInto(dst, src map[string]any) map[string]any {
@@ -208,11 +231,170 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 // the TTL only guards against leaks from crashed runs that never clean up.
 var defaultCheckpointTTL = 24 * time.Hour
 
+// dslKeySuffix / ovfKeySuffix derive the two DSL-fingerprint keys from a
+// checkpoint id. Both live in the same CheckPointStore as the eino payload
+// (under cpID+dslKeySuffix / cpID+ovfKeySuffix) so a resume can compare the
+// current DSL against the one that wrote the checkpoint — without depending
+// on the RunTracker being injected. eino only ever reads/writes the exact
+// cpID, so these sibling keys never collide with eino's checkpoint.
+//
+// The split is deliberate: dslKeySuffix fingerprints the DSL FILE (the full
+// canvas DSL — topology, component params, everything the user edits in the
+// template), while ovfKeySuffix fingerprints only the runtime override_params
+// (Doc.ParserConfig + injected LLM id). This lets the mismatch warning say
+// whether the DSL file changed or the runtime override changed, instead of an
+// ambiguous "params changed".
+const (
+	dslKeySuffix = ":dsl"
+	ovfKeySuffix = ":ovf"
+)
+
+// dslFileFingerprint returns a stable hash of the FULL canvas DSL this
+// pipeline was compiled from. It captures topology (components, edges, graph
+// grouping) AND the per-component params/defaults — i.e. everything the user
+// can edit in the DSL template file. The raw DSL bytes are key-sorted at
+// decode time, so logical edits (not whitespace) drive the value.
+//
+// It returns an error (instead of a silent fallback) when rawDSL is unset:
+// NewPipelineFromDSL always populates rawDSL, so an empty value means the
+// Pipeline was built through an unexpected path. A fallback that re-encodes
+// p.canvas would produce a different hash (Canvas.NodeParents is json:"-",
+// and struct field order differs from the map form), silently breaking the
+// change-detection contract.
+func (p *Pipeline) dslFileFingerprint() (string, error) {
+	if len(p.rawDSL) == 0 {
+		return "", fmt.Errorf("rawDSL not set (Pipeline built without NewPipelineFromDSL?)")
+	}
+	h := sha256.New()
+	h.Write(p.rawDSL)
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// overrideFingerprint returns a stable hash of the run-level override_params
+// (Doc.ParserConfig + injected LLM id). It is tracked separately from the DSL
+// file so a change limited to the runtime override is distinguishable (in the
+// warning log) from an edit to the DSL template file.
+func overrideFingerprint(override map[string]any) string {
+	h := sha256.New()
+	_ = json.NewEncoder(h).Encode(override)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// classifyDSLChange decides why a stored fingerprint pair no longer matches
+// the current run, for the mismatch warning log. It returns "" when neither
+// changed (no stale checkpoint to discard). A DSL file change takes precedence
+// in the label because an edited template is the more common/expected case;
+// when both changed the label still says DSL. The caller only invokes this
+// when a checkpoint actually exists, so an empty stored fingerprint is treated
+// as "changed" (safe: discard and re-run from scratch).
+func classifyDSLChange(storedDsl, storedOvf, dslFP, ovfFP string) string {
+	dslChanged := storedDsl != dslFP
+	ovfChanged := storedOvf != ovfFP
+	if !dslChanged && !ovfChanged {
+		return ""
+	}
+	if dslChanged {
+		return "DSL/template changed"
+	}
+	return "runtime override/parser-config changed"
+}
+
+// guardDSLChange prevents resuming a checkpoint written by a DIFFERENT DSL
+// than the one currently compiled. eino checkpoints are bound to the graph's
+// node ids / wiring; resuming against a modified graph restores state for
+// nodes that no longer exist (or have different wiring) and makes eino error
+// out. When either the DSL file fingerprint or the runtime override
+// fingerprint differs we drop the stale checkpoint (and the persisted
+// interrupt marker) so the run starts fresh from the entry node. When no
+// checkpoint exists this is simply a fresh run, and we record both
+// fingerprints so a later resume can detect edits. All store writes are
+// best-effort: a write failure must not abort the run.
+func (p *Pipeline) guardDSLChange(ctx context.Context, store canvas.CheckPointStore, tracker *canvas.RunTracker, cpID string, override map[string]any) {
+	// Only meaningful when a checkpoint store is wired (the resumable path).
+	// The non-resumable runPlain path never calls here, but guard anyway so a
+	// future caller cannot nil-panic on store.Get.
+	if store == nil {
+		return
+	}
+	dslKey := cpID + dslKeySuffix
+	ovfKey := cpID + ovfKeySuffix
+
+	dslFP, err := p.dslFileFingerprint()
+	if err != nil {
+		// Without a DSL fingerprint we cannot detect edits. Skip the guard
+		// rather than risk an empty hash that silently mismatches every run.
+		// The run still proceeds (best-effort); resume safety is unchanged
+		// only because rawDSL is always set via NewPipelineFromDSL.
+		common.Error(fmt.Sprintf("pipeline: skip DSL-change guard for %s: %v", p.taskID, err), err)
+		return
+	}
+	ovfFP := overrideFingerprint(override)
+
+	// A checkpoint from a previous run exists → this is a resume candidate.
+	// A read error means we cannot trust the existence check, so bail out
+	// entirely: do NOT overwrite cpID:dsl / cpID:ovf. Writing current
+	// fingerprints after a failed lookup could mask a real stale-checkpoint
+	// mismatch on a later resume (the old checkpoint would survive, but its
+	// fingerprint would be overwritten to match the new DSL).
+	_, found, cpErr := store.Get(ctx, cpID)
+	if cpErr != nil {
+		common.Error(fmt.Sprintf("pipeline: lookup checkpoint for %s failed, skip DSL-change guard: %v", p.taskID, cpErr), cpErr)
+		return
+	}
+	if found {
+		storedDsl, dOk, dErr := store.Get(ctx, dslKey)
+		storedOvf, oOk, oErr := store.Get(ctx, ovfKey)
+		if dErr != nil || oErr != nil {
+			common.Error(fmt.Sprintf("pipeline: read DSL fingerprints for %s failed, skip DSL-change guard: %v", p.taskID, coalesceErr(dErr, oErr)), coalesceErr(dErr, oErr))
+			return
+		}
+		reason := classifyDSLChange(orEmpty(dOk, storedDsl), orEmpty(oOk, storedOvf), dslFP, ovfFP)
+		if reason != "" {
+			common.Warn(fmt.Sprintf("pipeline: DSL for task %s changed since checkpoint was written (%s); discarding stale checkpoint and re-running from scratch", p.taskID, reason))
+			if err := store.Delete(ctx, cpID); err != nil {
+				common.Error(fmt.Sprintf("pipeline: delete stale checkpoint for %s failed: %v", p.taskID, err), err)
+			}
+			if tracker != nil {
+				if err := tracker.ClearInterruptID(ctx, cpID); err != nil {
+					common.Error(fmt.Sprintf("pipeline: clear interrupt id for %s failed: %v", p.taskID, err), err)
+				}
+			}
+		}
+	}
+	// Record the fingerprints of the DSL + override that produced this run.
+	if err := store.Set(ctx, dslKey, []byte(dslFP)); err != nil {
+		common.Error(fmt.Sprintf("pipeline: persist DSL fingerprint for %s failed: %v", p.taskID, err), err)
+	}
+	if err := store.Set(ctx, ovfKey, []byte(ovfFP)); err != nil {
+		common.Error(fmt.Sprintf("pipeline: persist override fingerprint for %s failed: %v", p.taskID, err), err)
+	}
+}
+
+// orEmpty returns the byte slice when ok, else an empty string, so a missing
+// stored fingerprint is treated as "" (classifyDSLChange then sees a change).
+func orEmpty(ok bool, b []byte) string {
+	if !ok {
+		return ""
+	}
+	return string(b)
+}
+
+// coalesceErr returns the first non-nil error, so a single message can report
+// whichever of two reads failed without dereferencing nil.
+func coalesceErr(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
 // Run executes the full ingestion graph described by the canonical DSL.
 // There is no pipeline-layer partial resume entry point: execution always
 // starts from the graph entry and component-level replay decisions belong to
 // the components themselves.
-func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_params map[string]any) (map[string]any, error) {
+func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParams map[string]any) (map[string]any, error) {
 	if p == nil {
 		return nil, fmt.Errorf("pipeline: Run on nil pipeline")
 	}
@@ -239,7 +421,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	store := p.resolveStore()
 	tracker := p.resolveTracker()
 
-	// M4 (plan §6.a 方案 A): refuse to start when resume is required but no
+	// M4 (plan §6.a): refuse to start when resume is required but no
 	// checkpoint store is resolvable. A Redis-less deployment must not pretend
 	// the task is resumable; it must report the gap clearly so the caller can
 	// refuse to enqueue the task instead of silently running a non-resumable
@@ -260,8 +442,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
 	// setups at compile time (higher priority; see canvas.WithOverrideParams).
-	if override_params != nil {
-		compileOpts = append(compileOpts, canvas.WithOverrideParams(override_params))
+	if overrideParams != nil {
+		compileOpts = append(compileOpts, canvas.WithOverrideParams(overrideParams))
 	}
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
@@ -272,7 +454,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	// progress percentage. Best-effort: a DB failure (or headless run
 	// with no DB) must not abort the pipeline — progress is observability.
 	if p.sink != nil {
-		p.sink.OnComponentTotal(p.taskID, len(p.canvas.Components))
+		p.sink.OnComponentTotal(ctx, p.taskID, len(p.canvas.Components))
 	}
 
 	runState := canvas.NewCanvasState("", p.taskID)
@@ -284,7 +466,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 	// is nil when the DB is not initialized (unit tests, headless
 	// runs), in which case TrackProgress is a no-op — progress is an
 	// observability concern, not a data dependency.
-	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback())
+	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
+	runCtx = runtime.WithProgressMessageCallback(runCtx, p.componentProgressMessageCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -300,10 +483,14 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, override_para
 		return p.runPlain(runCtx, current, compiled, tracker, runState)
 	}
 
+	// Resumable path: detect DSL / override edits since the checkpoint was
+	// written and discard a stale checkpoint before resuming (see guardDSLChange).
+	p.guardDSLChange(ctx, store, tracker, p.taskID, overrideParams)
+
 	// Resumable path: record the run, then loop Invoke until the graph
 	// completes or a non-resumable error surfaces.
 	if tracker != nil {
-		if err := tracker.Start(ctx, p.taskID, "", "", ""); err != nil {
+		if err = tracker.Start(ctx, p.taskID, "", "", ""); err != nil {
 			common.Error(fmt.Sprintf("pipeline: RunTracker.Start for task %s failed: %v", p.taskID, err), err)
 		}
 	}
@@ -393,6 +580,8 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 			}
 			if store != nil {
 				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("delete DSL fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+dslKeySuffix) })
+				utility.BestEffort(fmt.Sprintf("delete override fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+ovfKeySuffix) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
@@ -434,6 +623,16 @@ func (p *Pipeline) cleanupCheckpoint(ctx context.Context, store canvas.CheckPoin
 		if err := store.Delete(ctx, cpID); err != nil {
 			common.Error(fmt.Sprintf("pipeline: delete checkpoint %s failed: %v", cpID, err), err)
 		}
+		// Drop the DSL / override fingerprints alongside the checkpoint so
+		// they share one lifecycle on cancellation (otherwise the fingerprint
+		// keys linger up to TTL while the checkpoint is gone — harmless, but
+		// inconsistent). A later re-run overwrites them anyway.
+		if err := store.Delete(ctx, cpID+dslKeySuffix); err != nil {
+			common.Error(fmt.Sprintf("pipeline: delete DSL fingerprint %s failed: %v", cpID, err), err)
+		}
+		if err := store.Delete(ctx, cpID+ovfKeySuffix); err != nil {
+			common.Error(fmt.Sprintf("pipeline: delete override fingerprint %s failed: %v", cpID, err), err)
+		}
 	}
 	if tracker != nil {
 		_ = tracker.ClearInterruptID(ctx, cpID)
@@ -459,7 +658,7 @@ func finalizeResult(current, out map[string]any, runState *canvas.CanvasState) m
 // never touches the DAO layer. Returns nil when no sink is attached, leaving
 // TrackProgress a no-op and the pipeline DB-independent (unit tests, headless
 // runs).
-func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
+func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.ProgressCallback {
 	if p.sink == nil {
 		return nil
 	}
@@ -477,12 +676,59 @@ func (p *Pipeline) componentProgressCallback() runtime.ProgressCallback {
 				msg = ev.Component + " Error"
 			}
 		}
-		p.sink.OnComponentProgress(ProgressEvent{
+		// Surface every component lifecycle event as a structured log line so
+		// a component failure (e.g. an LLM/client error) is captured in
+		// ingestor_server.log even if the wrapped error never reaches the
+		// higher-level "Task ... failed" branch.
+		switch ev.Phase {
+		case runtime.PhaseError:
+			if ev.Err != nil {
+				common.Error("component progress: error", ev.Err,
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			} else {
+				common.Info("component progress: error",
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			}
+		default:
+			// Keep the message constant: msg may carry component names or
+			// error-derived text, and a newline in it could forge a log record
+			// (CWE-117). Pass msg and the phase as structured fields instead.
+			common.Info("component progress",
+				zap.String("message", msg),
+				zap.Int("phase", int(ev.Phase)),
+				zap.String("component", ev.Component),
+				zap.String("task_id", p.taskID),
+				zap.String("document_id", p.documentID))
+		}
+		p.sink.OnComponentProgress(ctx, ProgressEvent{
 			TaskID:     p.taskID,
 			DocumentID: p.documentID,
 			Component:  ev.Component,
 			Message:    msg,
 			Phase:      int(ev.Phase),
 		})
+	}
+}
+
+type detailedProgressSink interface {
+	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime.ProgressMessageCallback {
+	sink, ok := p.sink.(detailedProgressSink)
+	if !ok {
+		return nil
+	}
+	return func(component, message string) {
+		common.Info("component progress detail",
+			zap.String("component", component),
+			zap.String("task_id", p.taskID),
+			zap.String("document_id", p.documentID),
+			zap.String("message", message))
+		sink.OnComponentMessage(ctx, p.taskID, p.documentID, component, message)
 	}
 }

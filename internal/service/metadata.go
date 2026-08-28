@@ -64,17 +64,38 @@ func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 }
 
+// EnsureMetadataStore creates the metadata index/table for a tenant if it
+// does not already exist. This is the create-on-first-write logic that
+// belongs in the service layer; the engine layer should assume the store
+// already exists when performing insert/update operations.
+func (s *MetadataService) EnsureMetadataStore(ctx context.Context, tenantID string) error {
+	if s.docEngine == nil {
+		return fmt.Errorf("doc engine is not initialized")
+	}
+	exists, err := s.docEngine.MetadataStoreExists(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to check metadata store existence: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if err := s.docEngine.CreateMetadataStore(ctx, tenantID); err != nil {
+		return fmt.Errorf("failed to create metadata store: %w", err)
+	}
+	return nil
+}
+
 // GetTenantIDByKBID retrieves tenant ID from knowledge base ID
-func (s *MetadataService) GetTenantIDByKBID(kbID string) (string, error) {
-	return dao.GetTenantIDByKBID(kbID)
+func (s *MetadataService) GetTenantIDByKBID(ctx context.Context, kbID string) (string, error) {
+	return dao.GetTenantIDByKBID(ctx, dao.DB, kbID)
 }
 
 // GetTenantIDByKBIDs retrieves tenant ID from the first knowledge base ID in the list
-func (s *MetadataService) GetTenantIDByKBIDs(kbIDs []string) (string, error) {
+func (s *MetadataService) GetTenantIDByKBIDs(ctx context.Context, kbIDs []string) (string, error) {
 	if len(kbIDs) == 0 {
 		return "", fmt.Errorf("no kb_ids provided")
 	}
-	return dao.GetTenantIDByKBID(kbIDs[0])
+	return dao.GetTenantIDByKBID(ctx, dao.DB, kbIDs[0])
 }
 
 // SearchMetadataResponse holds the result of a metadata search
@@ -84,7 +105,7 @@ type SearchMetadataResponse struct {
 }
 
 // SearchMetadata searches the metadata index with the given parameters
-func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
+func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
 	searchReq := &types.SearchMetadataRequest{
 		TenantID: tenantID,
 		Offset:   0,
@@ -95,7 +116,7 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 		},
 	}
 
-	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -107,12 +128,12 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 }
 
 // SearchMetadataByKBs searches the metadata index for multiple knowledge bases
-func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*SearchMetadataResponse, error) {
+func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*SearchMetadataResponse, error) {
 	if len(kbIDs) == 0 {
 		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
 	}
 
-	tenantID, err := s.GetTenantIDByKBIDs(kbIDs)
+	tenantID, err := s.GetTenantIDByKBIDs(ctx, kbIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +147,7 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 		},
 	}
 
-	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -139,13 +160,13 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 
 // GetFlattedMetaByKBs returns flattened metadata in the format:
 // {field_name: {value: [doc_ids]}}
-func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
+func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error) {
 	if len(kbIDs) == 0 {
 		return make(common.MetaData), nil
 	}
 
 	// Get metadata for all docs in KBs (use large limit like Python's 10000)
-	result, err := s.SearchMetadataByKBs(kbIDs, 10000)
+	result, err := s.SearchMetadataByKBs(ctx, kbIDs, 10000)
 	if err != nil {
 		return nil, err
 	}
@@ -285,10 +306,10 @@ func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
 }
 
 // FetchDocMetaByKB fetches document metadata from ES for each KB.
-func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
+func (s *MetadataService) FetchDocMetaByKB(ctx context.Context, docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
 	metaByDoc := make(DocMetaMap)
 	for kbID, docIDs := range docIDsByKB {
-		result, err := s.SearchMetadata(kbID, tenantID, docIDs, len(docIDs))
+		result, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
 		if err != nil {
 			continue
 		}
@@ -332,7 +353,7 @@ func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap
 
 // EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
 // Combines CollectDocIDsByKB, FetchDocMetaByKB, and AttachDocMetaToChunks.
-func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
+func (s *MetadataService) EnrichChunksWithDocMetadata(ctx context.Context, chunks []map[string]interface{}, tenantID string, metadataFields []string) {
 	if len(chunks) == 0 || s.docEngine == nil {
 		return
 	}
@@ -340,7 +361,7 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 	if len(docIDsByKB) == 0 {
 		return
 	}
-	metaByDoc := s.FetchDocMetaByKB(docIDsByKB, tenantID)
+	metaByDoc := s.FetchDocMetaByKB(ctx, docIDsByKB, tenantID)
 	if len(metaByDoc) == 0 {
 		return
 	}
@@ -472,7 +493,7 @@ func appendDocID(existing interface{}, docID string) []string {
 	return result
 }
 
-// ParseLengthPrefixedJSON parses Infinity's length-prefixed JSON format
+// ParseLengthPrefixedJSON parses Infinity's length-prefixed JSON
 // Format: [4-byte length (little-endian)][JSON][4-byte length][JSON]...
 // Returns the FIRST valid JSON object found
 func ParseLengthPrefixedJSON(data []byte) map[string]interface{} {

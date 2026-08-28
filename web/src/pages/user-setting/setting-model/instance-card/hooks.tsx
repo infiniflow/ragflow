@@ -63,8 +63,8 @@ export function buildApiKeyValue(
  *   1. a raw JSON string  `'{"api_key":"sk-x","group_id":"123"}'`
  *   2. an already-parsed object `{ api_key, group_id }`
  *   3. a plain bare key string `'sk-x'`
- * Normalise all three into the bare key plus any nested credential
- * fields so the form pre-fills group_id / api_version / provider_order.
+ * Normalise all three into the bare key plus the registered nested
+ * credential fields so provider forms can restore their inputs.
  */
 export function unwrapApiKey(raw: unknown): {
   apiKey: string;
@@ -105,7 +105,7 @@ function pickDefaultUrl(
 
 /**
  * Fetch the catalog of available providers and derive the
- * `base_url` / `api_base` dropdown options for the current provider.
+ * `base_url` dropdown options for the current provider.
  * Used to pre-fill the URL field with the provider's default URL when
  * creating a new instance.
  */
@@ -157,17 +157,23 @@ export function useProviderBaseUrlOptions(providerName: string) {
  * lazy-loaded `showProviderInstance` details, and the provider's default
  * base URL.
  *
- * - Draft: empty form, with `base_url` / `api_base` pre-filled from the
+ * - Draft: empty form, with `base_url` pre-filled from the
  *   provider's `default` URL when available.
  * - Saved: prefer `instanceDetails` (which carries api_key / base_url);
- *   normalise api_key into the bare key plus any nested credential
- *   fields (see {@link unwrapApiKey}).
+ *   when `echoTransform` is supplied (provider-specific field mapping,
+ *   e.g. Google Cloud's top-level `google_project_id` or XunFei Spark's
+ *   nested `spark_api_password`), use it to reverse the corresponding
+ *   `submitTransform` so the provider-specific credential fields
+ *   pre-fill. Otherwise fall back to the generic `unwrapApiKey` path
+ *   which lifts the bare `api_key` plus the provider-specific fields
+ *   registered in `API_KEY_NESTED_FIELDS`.
  */
 export function useProviderInitialValues(
   instance: IProviderInstance,
   instanceDetails: IProviderInstance | undefined,
   isDraft: boolean,
   baseUrlOptions: SelectOption[] | undefined,
+  echoTransform?: (instance: Record<string, any>) => Record<string, any>,
 ) {
   return useMemo(() => {
     const defaultBaseUrl = pickDefaultUrl(baseUrlOptions);
@@ -176,7 +182,6 @@ export function useProviderInitialValues(
       const values: Record<string, any> = { instance_name: '' };
       if (defaultBaseUrl) {
         values.base_url = defaultBaseUrl;
-        values.api_base = defaultBaseUrl;
       }
       return values;
     }
@@ -188,22 +193,26 @@ export function useProviderInitialValues(
     const values: Record<string, any> = {
       instance_name: merged.instance_name,
     };
-    // api_key may come back as a JSON string, an already-parsed object,
-    // or a plain bare key (see `unwrapApiKey`). Normalise it so the
-    // api_key text field shows the bare key and the nested credential
-    // fields (MiniMax group_id, Azure api_version, OpenRouter
-    // provider_order) pre-fill their own form inputs.
-    if (merged.api_key) {
+    if (echoTransform) {
+      // Provider-specific echo: reverse the `submitTransform` mapping so
+      // credential fields that the backend persists either at the top
+      // level (Google Cloud, Tencent Cloud, Fish Audio) or nested inside
+      // `api_key` (XunFei Spark, Baidu YiYan, OpenDataLoader, PaddleOCR,
+      // MinerU) are restored into their own form inputs.
+      Object.assign(values, echoTransform(merged));
+    } else if (merged.api_key) {
+      // api_key may come back as a JSON string, an already-parsed object,
+      // or a plain bare key (see `unwrapApiKey`). Normalise it so the
+      // api_key text field shows the bare key and registered nested
+      // credentials pre-fill their own form inputs.
       const { apiKey, nested } = unwrapApiKey(merged.api_key);
       values.api_key = apiKey;
       Object.assign(values, nested);
     }
     if (merged.base_url) {
       values.base_url = merged.base_url;
-      values.api_base = merged.base_url;
     } else if (defaultBaseUrl) {
       values.base_url = defaultBaseUrl;
-      values.api_base = defaultBaseUrl;
     }
     // The /providers/<p>/instances/<i> endpoint also returns `region`
     // for providers where it applies; surface it so the form / region
@@ -218,7 +227,7 @@ export function useProviderInitialValues(
       }
     }
     return values;
-  }, [instance, instanceDetails, isDraft, baseUrlOptions]);
+  }, [instance, instanceDetails, isDraft, baseUrlOptions, echoTransform]);
 }
 
 // ---------------------------------------------------------------------------
@@ -235,21 +244,21 @@ export function useProviderInitialValues(
  */
 export function useLazyInstanceDetails(
   providerName: string,
-  instanceName: string,
+  instanceId: string,
   isDraft: boolean,
   open: boolean,
 ) {
   const { data: instanceDetails, refetch: refetchInstanceDetails } =
     useFetchProviderInstance(
       isDraft ? '' : providerName,
-      isDraft ? '' : instanceName,
+      isDraft ? '' : instanceId,
     );
 
   useEffect(() => {
-    if (!isDraft && open && providerName && instanceName) {
+    if (!isDraft && open && providerName && instanceId) {
       refetchInstanceDetails();
     }
-  }, [isDraft, open, providerName, instanceName, refetchInstanceDetails]);
+  }, [isDraft, open, providerName, instanceId, refetchInstanceDetails]);
 
   return { instanceDetails, refetchInstanceDetails };
 }
@@ -290,7 +299,7 @@ export function useFormResetOnDetailsLoad(
  *  maps provider-specific form field names (e.g. OpenDataLoader's
  *  `opendataloader_apiserver`) onto the `{ apiKey, baseUrl, modelInfo }`
  *  shape the verify endpoint expects. When absent the generic mapping
- *  (`values.api_key` / `values.base_url ?? values.api_base`) is used. */
+ *  (`values.api_key` / `values.base_url`) is used. */
 type VerifyTransform = (values: Record<string, any>) => {
   apiKey: string | object | Record<string, any>;
   baseUrl?: string;
@@ -308,17 +317,30 @@ type VerifyTransform = (values: Record<string, any>) => {
  * `opendataloader_api_key`), it is used to build the verify args;
  * otherwise the generic `values.api_key` / `values.base_url` mapping
  * is used.
+ *
+ * `modelInfoRef` carries the models selected in the List-models picker
+ * (not registered as form fields). Without it, verify payloads for
+ * local providers often omit `model_info` and the backend falls back
+ * to an empty factory catalog.
  */
 export function useVerifyProvider(
   providerName: string,
   formRef: RefObject<DynamicFormRef>,
   verifyTransform?: VerifyTransform,
+  modelInfoRef?: { current: IModelInfo[] },
 ) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
 
   return useCallback(
     async (params: any) => {
       const values = { ...(formRef.current?.getValues?.() ?? {}), ...params };
+      const selectedModels =
+        modelInfoRef?.current?.length && modelInfoRef.current.length > 0
+          ? modelInfoRef.current
+          : undefined;
+      if (selectedModels && !values.model_info) {
+        values.model_info = selectedModels;
+      }
       let verifyArgs: {
         api_key: string | object;
         base_url?: string;
@@ -330,14 +352,16 @@ export function useVerifyProvider(
         verifyArgs = {
           api_key: transformed.apiKey,
           base_url: transformed.baseUrl,
-          model_info: transformed.modelInfo ?? values.model_info,
+          model_info: transformed.modelInfo?.length
+            ? transformed.modelInfo
+            : (selectedModels ?? values.model_info),
           region: transformed.region,
         };
       } else {
         verifyArgs = {
           api_key: values.api_key ?? '',
-          base_url: values.base_url ?? values.api_base,
-          model_info: values.model_info,
+          base_url: values.base_url,
+          model_info: selectedModels ?? values.model_info,
         };
       }
       const ret = await verifyProviderConnection({
@@ -355,7 +379,13 @@ export function useVerifyProvider(
         logs: string;
       };
     },
-    [providerName, formRef, verifyProviderConnection, verifyTransform],
+    [
+      providerName,
+      formRef,
+      verifyProviderConnection,
+      verifyTransform,
+      modelInfoRef,
+    ],
   );
 }
 
@@ -428,9 +458,9 @@ interface UseInstanceSaveStateArgs {
  *   - `getSavePayload()`: return the body if dirty (or a draft with a
  *     name), else `null` so the parent can skip the redundant call.
  *   - `markSaved()`: re-baseline after a successful save.
- *   - `markModelsEdited()`: absorb a model PATCH into the baseline so
- *     the next top-save does not re-PUT the same model_info (the PATCH
- *     endpoint already persisted it).
+ *   - `markModelsEdited()`: absorb the authoritative saved model snapshot
+ *     into the baseline so the next top-save does not re-PUT model_info
+ *     that the backend already persisted.
  *
  * The dirty check compares a JSON signature of the current payload to
  * the baseline signature, mirroring the old `lastSavedPayloadRef`
@@ -481,7 +511,7 @@ export function useInstanceSaveState({
     // Provider-specific field mapping (e.g. OpenDataLoader's nested
     // `opendataloader_apiserver` / `opendataloader_api_key`). The
     // transform produces the canonical submit body shape
-    // (`instance_name`, `llm_factory`, `api_key`, `api_base`,
+    // (`instance_name`, `llm_factory`, `api_key`, `base_url`,
     // `model_info`); we then layer on the card's own state (typed /
     // edited name, model_info ref, update-only fields for saved cards).
     if (submitTransform) {
@@ -505,7 +535,7 @@ export function useInstanceSaveState({
         provider_name: providerName,
         instance_name: editedNameRef.current,
         id: resolvedId,
-        base_url: transformed.base_url ?? transformed.api_base ?? '',
+        base_url: transformed.base_url ?? '',
         region: values.region || 'default',
         model_info: modelInfo,
         verify: false,
@@ -519,7 +549,7 @@ export function useInstanceSaveState({
         llm_factory: providerName,
         instance_name: trimmed,
         api_key: buildApiKeyValue(values) ?? '',
-        base_url: values.base_url ?? values.api_base,
+        base_url: values.base_url,
       };
       if (modelInfoRef.current.length > 0) {
         payload.model_info = modelInfoRef.current;
@@ -536,7 +566,7 @@ export function useInstanceSaveState({
       instance_name: editedNameRef.current,
       id: resolvedId,
       api_key: apiKeyValue ?? '',
-      base_url: values.base_url ?? values.api_base,
+      base_url: values.base_url,
       region: values.region || 'default',
       model_info: modelInfoRef.current.length > 0 ? modelInfoRef.current : [],
       verify: false,
@@ -545,7 +575,6 @@ export function useInstanceSaveState({
   }, [
     isDraft,
     providerName,
-    instanceName,
     instanceId,
     instanceDetails?.id,
     formRef,
@@ -570,7 +599,7 @@ export function useInstanceSaveState({
       instance_name: instanceName,
       id: resolvedId,
       api_key: buildApiKeyValue(initialValues),
-      base_url: initialValues.base_url ?? initialValues.api_base,
+      base_url: initialValues.base_url,
       region: initialValues.region,
       // model_info baseline is `[]`; `markModelsEdited` rewrites it after
       // a model PATCH so the next top-save short-circuits. The first
@@ -593,9 +622,35 @@ export function useInstanceSaveState({
   // `getSavePayload()` is the imperative entry point the parent calls
   // when the user clicks the top Save button. For drafts it always
   // returns a payload (provided the name is non-empty); for saved
-  // cards it returns `null` when the current signature matches the
-  // baseline, so the parent skips the no-op PUT.
+  // cards it returns `null` when the current payload matches the
+  // last-synced baseline, so the parent skips the no-op PUT.
+  //
+  // Two guards skip cards that should not participate in the batch:
+  //
+  // 1. `!instanceDetails` - collapsed cards never lazy-fetch their
+  //    details (see `useLazyInstanceDetails`), so their form is empty
+  //    (api_key defaults to ''). Including them would (a) fail
+  //    validation on the required api_key field and abort the entire
+  //    batch, and (b) potentially send an empty api_key to the
+  //    backend. A user cannot have edited a card they never opened,
+  //    so skipping is always safe. Cards that were opened and then
+  //    collapsed still retain their cached `instanceDetails`, so
+  //    in-flight edits are not lost.
+  //
+  // 2. Signature comparison - the reliable dirty check. We
+  //    intentionally do NOT short-circuit on `form.formState.isDirty`
+  //    here. RHF only updates `_formState.isDirty` on field changes
+  //    when a component subscribes to `isDirty` in a render (via the
+  //    formState Proxy). This card reads `isDirty` only through the
+  //    imperative ref (in the parent's click handler), so the
+  //    subscription is never established and `_formState.isDirty`
+  //    stays stale at its post-`reset` value (`false`) - causing
+  //    api_key / base_url edits to be silently skipped. The signature
+  //    comparison compares the actual payload (api_key, base_url,
+  //    model_info, instance_name, etc.) against the baseline captured
+  //    at last sync, so it catches every real edit.
   const getSavePayload = useCallback((): InstanceSavePayload | null => {
+    if (!isDraft && !instanceDetails) return null;
     const payload = buildPayload();
     if (!payload) return null;
     if (!isDraft) {
@@ -613,7 +668,7 @@ export function useInstanceSaveState({
       // `IUpdateProviderInstanceRequestBody`).
       apiKind: isDraft ? 'add' : 'update',
     };
-  }, [buildPayload, isDraft, instanceName]);
+  }, [buildPayload, isDraft, instanceDetails]);
 
   // After a successful save the parent calls `markSaved()` so the
   // baseline catches up to the just-persisted values. Without this,
@@ -625,15 +680,11 @@ export function useInstanceSaveState({
     }
   }, [buildPayload]);
 
-  // Absorb a model patch into the baseline. `patchInstanceModel` has
-  // already persisted the new max_tokens / model_type / features
-  // server-side, so the next top-save should NOT re-PUT the same
-  // model_info. By parsing the previously-saved baseline and overwriting
-  // ONLY model_info, the baseline now matches the current state and the
-  // signature check in `getSavePayload` short-circuits - while any
-  // in-flight edits to api_key / base_url / region remain in the
-  // baseline unchanged and will still trigger a save via signature
-  // mismatch.
+  // Absorb the latest backend-fetched model list into the baseline. By
+  // parsing the previously-saved baseline and overwriting ONLY model_info,
+  // the signature check in `getSavePayload` short-circuits for an unchanged
+  // card while any in-flight api_key / base_url / region edits still differ
+  // from the baseline and remain eligible for saving.
   //
   // Skipped for drafts (the baseline is empty there) and until the
   // baseline has been seeded.
@@ -702,7 +753,7 @@ export function useFormFields(
       {}) as Record<string, any>;
     void _ignored;
     return rest;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [defaultValuesKey]);
 
   return { formFields, formDefaultValues };

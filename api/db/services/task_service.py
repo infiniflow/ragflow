@@ -25,6 +25,7 @@ from peewee import JOIN
 from api.db.db_models import DB, File2Document, File
 from api.db import FileType
 from api.db.db_models import Task, Document, Knowledgebase, Tenant
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
@@ -392,14 +393,18 @@ class TaskService(CommonService):
                         - progress_msg (str, optional): Progress message to append
                         - progress (float, optional): Progress percentage (0.0 to 1.0)
         """
-        task = cls.model.get_by_id(id)
+        try:
+            task = cls.model.get_by_id(id)
+        except cls.model.DoesNotExist:
+            logging.info("Skip progress update for deleted task %s", id)
+            return
         if not task:
             logging.warning("Update_progress error: task not found")
             return
 
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 prog = info["progress"]
@@ -407,7 +412,7 @@ class TaskService(CommonService):
         else:
             with DB.lock("update_progress", -1):
                 if info["progress_msg"]:
-                    progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                    progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                     cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
                 if "progress" in info:
                     prog = info["progress"]
@@ -473,7 +478,20 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         page_size = doc["parser_config"].get("task_page_size") or 12
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size") or 22
-        if doc["parser_id"] in ["one", "knowledge_graph"] or doc["parser_config"].get("toc_extraction", False):
+
+        # Splitting MinerU parsing into page-based tasks would repeatedly upload the entire PDF to the MinerU API server, increasing network bandwidth usage without improving parsing speed. The MinerU API server would also store duplicate copies of these files, wasting disk space.
+        is_mineru = False
+        layout_recognizer = doc["parser_config"].get("layout_recognize", "")
+        if isinstance(layout_recognizer, str) and len(layout_recognizer) == 32:
+            try:
+                layout_recognizer = get_composite_model_name_by_id(layout_recognizer)
+                if layout_recognizer.lower().endswith("@mineru"):
+                    is_mineru = True
+            except LookupError:
+                pass
+        if is_mineru:
+            logging.info("Document %s selected MinerU unsplit-task mode with page size %s", doc["id"], MAXIMUM_TASK_PAGE_NUMBER)
+        if doc["parser_id"] in ["one", "knowledge_graph"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
@@ -580,12 +598,8 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    if (
-        "from_page" in task
-        and "to_page" in task
-        and (int(task["to_page"]) - int(task["from_page"]) >= 10**6 or (int(task["from_page"]) == MAXIMUM_TASK_PAGE_NUMBER and int(task["to_page"]) == MAXIMUM_TASK_PAGE_NUMBER))
-    ):
-        task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
+    if "from_page" in task and "to_page" in task and int(task["to_page"]) - int(task["from_page"]) >= 10**6:
+        task["progress_msg"] = f"Page({int(task['from_page']) + 1}~{int(task['to_page'])}): "
     else:
         task["progress_msg"] = ""
     task["progress_msg"] = " ".join([datetime.now().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])

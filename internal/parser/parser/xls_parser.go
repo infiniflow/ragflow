@@ -18,6 +18,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
@@ -28,6 +29,7 @@ type XLSParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
+	ChunkRows                      int
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -40,6 +42,7 @@ func NewXLSParser(libType string) (*XLSParser, error) {
 	}
 	return &XLSParser{
 		libType:                        libType,
+		ChunkRows:                      defaultTableChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -59,6 +62,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
+	p.ChunkRows = decodeChunkRows(setup)
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -73,12 +77,12 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-func (p *XLSParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "XLS",
+		return parseWithTCADP(
+			ctx, filename, data, "XLS",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
@@ -97,26 +101,16 @@ func (p *XLSParser) ParseWithResult(filename string, data []byte) ParseResult {
 	}
 	defer f.Close()
 
-	var html strings.Builder
-	html.WriteString("<html><body>")
-	for _, sheet := range f.GetSheetList() {
-		html.WriteString("<h3>")
-		html.WriteString(sheet)
-		html.WriteString("</h3>")
-		rows, _ := f.GetRows(sheet)
-		html.WriteString("<table>")
-		for _, row := range rows {
-			html.WriteString("<tr>")
-			for _, cell := range row {
-				html.WriteString("<td>")
-				html.WriteString(htmlEscape(cell))
-				html.WriteString("</td>")
-			}
-			html.WriteString("</tr>")
-		}
-		html.WriteString("</table>")
+	sheets := f.GetSheetList()
+	chunkRows := p.ChunkRows
+	if chunkRows <= 0 {
+		chunkRows = defaultTableChunkRows
 	}
-	html.WriteString("</body></html>")
+
+	var html strings.Builder
+	for _, sheet := range sheets {
+		html.WriteString(renderSheetTables(f, sheet, chunkRows))
+	}
 
 	return ParseResult{
 		OutputFormat: "html",

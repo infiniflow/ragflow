@@ -102,7 +102,13 @@
                             "suffix": [
                                 "pdf"
                             ],
-                            "vlm": {}
+                            "vlm": {},
+                            "pages": [
+                                [
+                                    1,
+                                    100000
+                                ]
+                            ]
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
@@ -155,7 +161,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
@@ -208,16 +214,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
+                        "llm_id": "",
+                        "keywords": {
+                            "top_n": 0
                         },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
-                        "llm_id": ""
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -381,7 +396,7 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "token_size",
+                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"

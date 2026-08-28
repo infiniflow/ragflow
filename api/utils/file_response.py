@@ -80,7 +80,7 @@ def should_force_attachment(ext: str | None, content_type: str | None = None) ->
 def sanitize_content_disposition_filename(filename: str | None) -> str | None:
     if not filename:
         return None
-    base = re.sub(r"[^\w.\-]", "_", str(filename).split("/")[-1].split("\\")[-1])
+    base = re.sub(r"[^\w.\-]", "_", str(filename).split("/")[-1].split("\\")[-1], flags=re.ASCII)
     return base or None
 
 

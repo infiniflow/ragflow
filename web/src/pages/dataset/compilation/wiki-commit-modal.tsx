@@ -27,7 +27,7 @@ export function WikiCommitModal({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title={t('knowledgeDetails.confirmCommit')}
+      title={t('knowledgeCompilation.confirmCommit')}
       onOk={() => form.handleSubmit(onConfirm)()}
       confirmLoading={loading}
       okText={t('common.confirm')}
@@ -37,13 +37,13 @@ export function WikiCommitModal({
         <form className="space-y-4">
           <RAGFlowFormItem
             name="comments"
-            label={t('knowledgeDetails.versionContent')}
+            label={t('knowledgeCompilation.versionContent')}
             required
             rules={{ required: true }}
           >
             {(field) => (
               <Textarea
-                placeholder={t('knowledgeDetails.versionContentPlaceholder')}
+                placeholder={t('knowledgeCompilation.versionContentPlaceholder')}
                 {...field}
                 autoSize={{ minRows: 4, maxRows: 8 }}
               />

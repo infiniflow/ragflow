@@ -4,13 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
 // TestValidateParserID_AcceptsRegistryRefs verifies that every
 // canonical builtin pipeline id passes validation.
 func TestValidateParserID_AcceptsRegistryRefs(t *testing.T) {
-	for _, id := range []string{"general", "book", "audio", "qa", "table", "tag"} {
+	for _, id := range []string{"general", "book", "audio", "qa", "table"} {
 		if err := validateParserID(id); err != nil {
 			t.Errorf("validateParserID(%q) = %v, want nil", id, err)
 		}
@@ -89,8 +90,16 @@ func TestValidateDatasetEmbeddingModel_Empty(t *testing.T) {
 }
 
 func TestValidateDatasetEmbeddingModel_NameOnlyNoProvider(t *testing.T) {
-	if err := validateDatasetEmbeddingModel("BAAI/bge-large-zh-v1.5"); err != nil {
-		t.Fatalf("expected nil for name without @, got %v", err)
+	// A bare model name without @provider (and not a 32-char hex model ID) is
+	// rejected, mirroring the Python contract.
+	if err := validateDatasetEmbeddingModel("BAAI/bge-large-zh-v1.5"); err == nil {
+		t.Fatal("expected error for name without @provider")
+	}
+}
+
+func TestValidateDatasetEmbeddingModel_HexModelID(t *testing.T) {
+	if err := validateDatasetEmbeddingModel("aabbccdd11223344aabbccdd11223344"); err != nil {
+		t.Fatalf("expected nil for 32-char hex model ID, got %v", err)
 	}
 }
 
@@ -385,5 +394,59 @@ func TestNormalizeMetadataConfigFields_TrimsKey(t *testing.T) {
 	}
 	if result[0]["key"] != "my_field" {
 		t.Errorf("expected trimmed key 'my_field', got %v", result[0]["key"])
+	}
+}
+
+func TestPreserveDatasetParserConfigMetadata_FallsBackWhenIncomingNotMap(t *testing.T) {
+	existing := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled":           true,
+			"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
+			"built_in_metadata": []any{},
+		},
+	}
+	cases := map[string]interface{}{
+		"null":  nil,
+		"array": []any{},
+	}
+	for name, incomingMetadata := range cases {
+		t.Run(name, func(t *testing.T) {
+			incoming := map[string]interface{}{"metadata": incomingMetadata}
+			got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+			meta, ok := got["metadata"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected existing modular metadata preserved, got %#v", got["metadata"])
+			}
+			fields, ok := meta["metadata"].([]any)
+			if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "existing_field" {
+				t.Fatalf("expected existing_field preserved, got %#v", meta["metadata"])
+			}
+		})
+	}
+}
+
+func TestPreserveDatasetParserConfigMetadata_UsesValidIncomingMap(t *testing.T) {
+	existing := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled":           false,
+			"metadata":          []any{},
+			"built_in_metadata": []any{},
+		},
+	}
+	incoming := map[string]interface{}{
+		"metadata": map[string]any{
+			"enabled":           true,
+			"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
+			"built_in_metadata": []any{},
+		},
+	}
+	got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+	meta, ok := got["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected modular metadata map, got %#v", got["metadata"])
+	}
+	fields, ok := meta["metadata"].([]any)
+	if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "incoming_field" {
+		t.Fatalf("expected incoming_field to be used, got %#v", meta["metadata"])
 	}
 }

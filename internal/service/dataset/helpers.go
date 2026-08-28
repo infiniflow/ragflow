@@ -1,12 +1,14 @@
 package dataset
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
 
@@ -44,16 +46,37 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
-// validateParserID validates parser_id against the built-in pipeline registry.
-func validateParserID(chunkMethod string) error {
+// canonicalDatasetParserID resolves a parser ID to its canonical builtin ID.
+// The registry retains legacy aliases such as naive -> general for old clients.
+func canonicalDatasetParserID(parserID string) (string, error) {
+	if parserID == "knowledge_graph" {
+		return parserID, nil
+	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
-		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
+		return "", errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
 	}
-	if registry.IsValid(chunkMethod) {
-		return nil
+	template, ok := registry.Get(parserID)
+	if ok {
+		return template.ParserID, nil
 	}
-	return parserIDError()
+	return "", parserIDError()
+}
+
+// validateParserID validates parser_id against the built-in pipeline registry.
+func validateParserID(parserID string) error {
+	_, err := canonicalDatasetParserID(parserID)
+	return err
+}
+
+// datasetParserIDForResponse returns the canonical parser ID when a legacy
+// persisted value remains resolvable. Unknown stored values are preserved.
+func datasetParserIDForResponse(parserID string) string {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
+		return parserID
+	}
+	return canonicalID
 }
 
 func parserIDError() error {
@@ -66,9 +89,9 @@ func parserIDError() error {
 	case 0:
 		return errors.New("invalid parser_id")
 	case 1:
-		return fmt.Errorf("Input should be '%s'", refs[0])
+		return fmt.Errorf("input should be '%s'", refs[0])
 	default:
-		return fmt.Errorf("Input should be %s or '%s'", quoteList(refs[:len(refs)-1]), refs[len(refs)-1])
+		return fmt.Errorf("input should be %s or '%s'", quoteList(refs[:len(refs)-1]), refs[len(refs)-1])
 	}
 }
 
@@ -82,37 +105,46 @@ func quoteList(items []string) string {
 
 func validateDatasetAvatar(avatar string) error {
 	if !strings.Contains(avatar, ",") {
-		return errors.New("Missing MIME prefix. Expected format: data:<mime>;base64,<data>")
+		return errors.New("missing MIME prefix. Expected format: data:<mime>;base64,<data>")
 	}
 	prefix, _, _ := strings.Cut(avatar, ",")
 	if !strings.HasPrefix(prefix, "data:") {
-		return errors.New("Invalid MIME prefix format. Must start with 'data:'")
+		return errors.New("invalid MIME prefix format. Must start with 'data:'")
 	}
 	mimeType, _, _ := strings.Cut(strings.TrimPrefix(prefix, "data:"), ";")
 	if _, ok := datasetSupportedAvatarMIMETypes[mimeType]; !ok {
-		return errors.New("Unsupported MIME type. Allowed: [image/jpeg image/png]")
+		return errors.New("unsupported MIME type. Allowed: [image/jpeg image/png]")
 	}
 	return nil
 }
 
-func validateDatasetEmbeddingModel(embeddingModel string) error {
-	if embeddingModel == "" {
-		return errors.New("Embedding model identifier is required")
+func isHexID(s string) bool {
+	if len(s) != 32 {
+		return false
 	}
-	if !strings.Contains(embeddingModel, "@") {
-		return nil
-	}
-	parts := strings.Split(embeddingModel, "@")
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			return errors.New("Both model_name and provider must be non-empty strings")
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
 		}
 	}
-	if len(parts) < 2 {
-		return errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+	return true
+}
+
+func validateDatasetEmbeddingModel(embeddingModel string) error {
+	if isHexID(embeddingModel) {
+		return nil
 	}
-	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[len(parts)-1]) == "" {
-		return errors.New("Both model_name and provider must be non-empty strings")
+
+	if !strings.Contains(embeddingModel, "@") {
+		return errors.New("embedding model identifier must follow <model_name>@<provider> format")
+	}
+
+	parts := strings.SplitN(embeddingModel, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return errors.New("both model_name and provider must be non-empty strings")
+	}
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return errors.New("both model_name and provider must be non-empty strings")
 	}
 	return nil
 }
@@ -143,9 +175,16 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 		return errors.New("parser_config must be valid JSON")
 	}
 	if len(data) > 65535 {
-		return fmt.Errorf("Parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
+		return fmt.Errorf("parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
 	}
 	return nil
+}
+
+// NormalizeDatasetID validates the dataset ID format and returns its
+// dash-less UUID form. Exported so HTTP handlers can mirror the pydantic
+// UUID validation of the Python request models (error code 101).
+func NormalizeDatasetID(id string) (string, error) {
+	return normalizeDatasetID(id)
 }
 
 func normalizeDatasetID(id string) (string, error) {
@@ -159,9 +198,19 @@ func normalizeDatasetID(id string) (string, error) {
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }
 
-func canvasAccessibleForUser(userID, canvasID string) (bool, error) {
-	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
-	return dao.NewUserCanvasDAO().Accessible(canvasID, userID, tenantIDs), nil
+// pythonStringListRepr renders a string slice the way Python prints a list of
+// strings, e.g. ['a', 'b'], for error messages that mirror the Python API.
+func pythonStringListRepr(items []string) string {
+	quoted := make([]string, 0, len(items))
+	for _, item := range items {
+		quoted = append(quoted, "'"+item+"'")
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+func canvasAccessibleForUser(ctx context.Context, userID, canvasID string) (bool, error) {
+	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
+	return dao.NewUserCanvasDAO().Accessible(ctx, dao.DB, canvasID, userID, tenantIDs), nil
 }
 
 func parserConfigValueOrEmptyList(parserConfig map[string]interface{}, key string) interface{} {
@@ -192,10 +241,11 @@ func datasetUpdateParserID(req service.UpdateDatasetRequest) (string, bool, erro
 	if !provided {
 		return "", false, nil
 	}
-	if err := validateParserID(parserID); err != nil {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
 		return "", true, err
 	}
-	return parserID, true, nil
+	return canonicalID, true, nil
 }
 
 func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, error) {
@@ -212,12 +262,74 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 	if !provided {
 		return "", false, nil
 	}
-	if embdID != "" {
-		if err := validateDatasetEmbeddingModel(embdID); err != nil {
-			return "", true, err
-		}
+	if err := validateDatasetEmbeddingModel(embdID); err != nil {
+		return "", true, err
 	}
 	return embdID, true, nil
+}
+
+func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+	if next == nil {
+		next = entity.JSONMap{}
+	}
+	var mm map[string]any
+	if incoming != nil {
+		if v, ok := incoming["metadata"].(map[string]any); ok {
+			mm = v
+		}
+	}
+	if mm == nil && existing != nil {
+		if v, ok := existing["metadata"].(map[string]any); ok {
+			mm = v
+		}
+	}
+	if mm != nil {
+		next["metadata"] = mm
+	}
+	return next
+}
+
+func parserConfigJSONMap(value interface{}) entity.JSONMap {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case entity.JSONMap:
+		return typed
+	case map[string]interface{}:
+		return entity.JSONMap(typed)
+	default:
+		return nil
+	}
+}
+
+func cloneJSONMap(source entity.JSONMap) entity.JSONMap {
+	if source == nil {
+		return nil
+	}
+	cloned := make(entity.JSONMap, len(source))
+	for key, value := range source {
+		cloned[key] = cloneJSONValue(value)
+	}
+	return cloned
+}
+
+func cloneJSONValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		nested := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			nested[key] = cloneJSONValue(item)
+		}
+		return nested
+	case []interface{}:
+		nested := make([]interface{}, len(typed))
+		for idx, item := range typed {
+			nested[idx] = cloneJSONValue(item)
+		}
+		return nested
+	default:
+		return typed
+	}
 }
 
 func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {

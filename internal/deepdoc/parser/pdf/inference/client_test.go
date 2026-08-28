@@ -1,7 +1,6 @@
 package inference
 
 import (
-	"context"
 	"encoding/json"
 	"image"
 	"image/color"
@@ -50,8 +49,8 @@ func TestDeepDocHTTP_DLA(t *testing.T) {
 			t.Fatalf("missing 'request' multipart field: %v", err)
 		}
 		defer file.Close()
-		if !strings.HasSuffix(header.Filename, ".jpeg") {
-			t.Errorf("filename = %q, want *.jpeg", header.Filename)
+		if !strings.HasSuffix(header.Filename, ".png") {
+			t.Errorf("filename = %q, want *.png", header.Filename)
 		}
 
 		// Return canned DLA response: one table region (classId=5).
@@ -66,7 +65,7 @@ func TestDeepDocHTTP_DLA(t *testing.T) {
 	defer srv.Close()
 
 	client := mustNewDeepDocClient(t, srv.URL)
-	regions, err := client.DLA(context.Background(), testImage())
+	regions, err := client.DLA(t.Context(), testImage())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +99,7 @@ func TestDeepDocHTTP_TSR(t *testing.T) {
 	defer srv.Close()
 
 	client := mustNewDeepDocClient(t, srv.URL)
-	cells, err := client.TSR(context.Background(), testImage())
+	cells, err := client.TSR(t.Context(), testImage())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +123,11 @@ func TestDeepDocHTTP_OCRDetect(t *testing.T) {
 		if op := r.FormValue("operator"); op != "det" {
 			t.Errorf("operator = %q, want 'det'", op)
 		}
-		// Verify image is JPEG (not PNG).
+		// Verify image is PNG (not JPEG).
 		file, header, _ := r.FormFile("request")
 		defer file.Close()
-		if !strings.HasSuffix(header.Filename, ".jpeg") {
-			t.Errorf("filename = %q, want *.jpeg", header.Filename)
+		if !strings.HasSuffix(header.Filename, ".png") {
+			t.Errorf("filename = %q, want *.png", header.Filename)
 		}
 
 		// Return canned OCR detect response: 1 quad box.
@@ -146,7 +145,7 @@ func TestDeepDocHTTP_OCRDetect(t *testing.T) {
 	defer srv.Close()
 
 	client := mustNewDeepDocClient(t, srv.URL)
-	boxes, err := client.OCRDetect(context.Background(), testImage())
+	boxes, err := client.OCRDetect(t.Context(), testImage())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +185,7 @@ func TestDeepDocHTTP_OCRRecognize(t *testing.T) {
 	defer srv.Close()
 
 	client := mustNewDeepDocClient(t, srv.URL)
-	texts, err := client.OCRRecognize(context.Background(), testImage())
+	texts, err := client.OCRRecognize(t.Context(), testImage())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +237,7 @@ func TestDeepDocHTTP_ServerError(t *testing.T) {
 
 	client := mustNewDeepDocClient(t, srv.URL)
 
-	_, err := client.DLA(context.Background(), testImage())
+	_, err := client.DLA(t.Context(), testImage())
 	if err == nil {
 		t.Error("DLA: expected error for 500 response")
 	}
@@ -246,7 +245,7 @@ func TestDeepDocHTTP_ServerError(t *testing.T) {
 		t.Errorf("DLA error should mention 500: %v", err)
 	}
 
-	_, err = client.TSR(context.Background(), testImage())
+	_, err = client.TSR(t.Context(), testImage())
 	if err == nil {
 		t.Error("TSR: expected error for 500 response")
 	}
@@ -260,12 +259,12 @@ func TestDeepDocHTTP_MalformedJSON(t *testing.T) {
 
 	client := mustNewDeepDocClient(t, srv.URL)
 
-	_, err := client.DLA(context.Background(), testImage())
+	_, err := client.DLA(t.Context(), testImage())
 	if err == nil {
 		t.Error("DLA: expected error for malformed JSON")
 	}
 
-	_, err = client.TSR(context.Background(), testImage())
+	_, err = client.TSR(t.Context(), testImage())
 	if err == nil {
 		t.Error("TSR: expected error for malformed JSON")
 	}
@@ -279,7 +278,7 @@ func TestDeepDocHTTP_EmptyResponse(t *testing.T) {
 
 	client := mustNewDeepDocClient(t, srv.URL)
 
-	regions, err := client.DLA(context.Background(), testImage())
+	regions, err := client.DLA(t.Context(), testImage())
 	if err != nil {
 		t.Fatalf("DLA: unexpected error: %v", err)
 	}
@@ -287,7 +286,7 @@ func TestDeepDocHTTP_EmptyResponse(t *testing.T) {
 		t.Errorf("DLA: got %d regions, want 0", len(regions))
 	}
 
-	cells, err := client.TSR(context.Background(), testImage())
+	cells, err := client.TSR(t.Context(), testImage())
 	if err != nil {
 		t.Fatalf("TSR: unexpected error: %v", err)
 	}
@@ -309,7 +308,7 @@ func TestDeepDocHTTP_ShortBBox(t *testing.T) {
 	defer srv.Close()
 
 	client := mustNewDeepDocClient(t, srv.URL)
-	regions, err := client.DLA(context.Background(), testImage())
+	regions, err := client.DLA(t.Context(), testImage())
 	if err != nil {
 		t.Fatal(err)
 	}

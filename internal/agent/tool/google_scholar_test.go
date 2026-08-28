@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -180,6 +179,7 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 
 func TestGoogleScholar_ParseResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
@@ -191,7 +191,7 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGoogleScholarToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"query":"transformer","top_n":5,"sort_by":"relevance","year_low":2020,"year_high":2024,"patents":true}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -229,23 +229,25 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 
 func TestGoogleScholar_EmptyQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleScholarTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty): %v", err)
 	}
 	var envelope googleScholarEnvelope
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
 		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
 func TestGoogleScholar_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleScholarTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -259,6 +261,7 @@ func TestGoogleScholar_Info(t *testing.T) {
 
 func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	built, err := BuildByName("google_scholar", map[string]any{
 		"top_n":    float64(7),
@@ -286,7 +289,7 @@ func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	envelope := map[string]any{"results": []any{map[string]any{
 		"title": "Paper", "link": "https://paper.example", "authors": "A Author", "year": "2024", "snippet": "Abstract",
 	}}}
-	chunks, docAggs := scholar.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := scholar.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 || !strings.Contains(chunks[0]["content"].(string), "Authors: A Author") {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
@@ -325,6 +328,7 @@ func TestRenderGoogleScholarReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
 
 func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -362,7 +366,7 @@ func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 		YearHigh: 2024,
 		Patents:  boolPtr(false),
 	})
-	_, err := tool.InvokableRun(context.Background(), `{}`)
+	_, err := tool.InvokableRun(ctx, `{}`)
 	if err != nil {
 		t.Fatalf("InvokableRun with defaults: %v", err)
 	}

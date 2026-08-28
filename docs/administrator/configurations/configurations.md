@@ -40,7 +40,7 @@ docker compose -f docker/docker-compose.yml up -d
 We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve them.
 :::
 
-## Docker environment variables
+## Docker Environment Variables
 
 The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file contains important environment variables for Docker.
 
@@ -62,7 +62,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `KIBANA_PASSWORD`
   The password for Kibana. Defaults to `infini_rag_flow`.
 
-### Resource management
+### Resource Management
 
 - `MEM_LIMIT`
   The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
@@ -103,7 +103,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.26.4` (the RAGFlow Docker image without embedding models).
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.1` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -113,7 +113,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
   :::
 
-### Embedding service
+### Embedding Service
 
 - `TEI_MODEL`
   The embedding model which text-embeddings-inference serves. Allowed values are one of `Qwen/Qwen3-Embedding-0.6B`(default), `BAAI/bge-m3`, and `BAAI/bge-small-en-v1.5`.
@@ -126,30 +126,30 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `TZ`
   The local time zone. Defaults to `Asia/Shanghai`.
 
-### Hugging Face mirror site
+### Hugging Face Mirror Site
 
 - `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
-### MacOS
+### macOS
 
 - `MACOS`
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
-### User registration
+### User Registration
 
 - `REGISTER_ENABLED`
   - `1`: (Default) Enable user registration.
   - `0`: Disable user registration.
 
-## Service configuration
+## Service Configuration
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
 
 ### `ragflow`
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-- `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+- `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 ### `mysql`
 
@@ -166,7 +166,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
-### `s3` (Tigris)
+### `S3` (Tigris)
 
 To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `STORAGE_IMPL=AWS_S3` in `.env` and configure the `s3:` section:
 
@@ -186,7 +186,7 @@ s3:
 - `region_name`: Must be `auto`.
 - `endpoint_url`: `https://t3.storage.dev`, or `https://fly.storage.tigris.dev` on Fly.io.
 - `addressing_style`: Must be `virtual`.
-- `bucket` / `prefix_path`: Optional. Enables single-bucket mode — see [Migrate from multi-bucket to single-bucket mode](/migration#migrate-from-multi-bucket-to-single-bucket-mode).
+- `bucket` / `prefix_path`: Optional. Enables single-bucket mode — see [Migrate from multi-bucket to single-bucket mode](../migration/backup_and_migration.md#migrate-from-multi-bucket-to-single-bucket-mode).
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 

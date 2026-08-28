@@ -24,7 +24,7 @@
                             "field_name": "summary",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -131,7 +131,7 @@
                                 ]
                             },
                             "image": {
-                                "output_format": "text",
+                                "output_format": "json",
                                 "parse_method": "ocr",
                                 "preprocess": "main_content",
                                 "suffix": [
@@ -371,7 +371,7 @@
                                     },
                                     {
                                         "fileFormat": "image",
-                                        "output_format": "text",
+                                        "output_format": "json",
                                         "parse_method": "ocr",
                                         "preprocess": "main_content",
                                         "system_prompt": ""
@@ -570,7 +570,7 @@
                                 "field_name": "summary",
                                 "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
-                                "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                                "llm_id": "",
                                 "maxTokensEnabled": false,
                                 "max_tokens": 256,
                                 "outputs": {

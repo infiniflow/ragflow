@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,11 +57,13 @@ export const LargeModelFilterFormSchema = {
 
 type LargeModelFormFieldProps = Pick<
   NextInnerLLMSelectProps,
-  'showSpeech2TextModel' | 'ownerTenantId'
->;
+  'ownerTenantId'
+> & {
+  name?: string;
+};
 export function LargeModelFormField({
-  showSpeech2TextModel: showTTSModel,
   ownerTenantId,
+  name = 'llm_id',
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
@@ -55,7 +73,7 @@ export function LargeModelFormField({
     <>
       <FormField
         control={form.control}
-        name="llm_id"
+        name={name}
         render={({ field }) => (
           <FormItem>
             <FormLabel tooltip={t('chat.modelTip')}>
@@ -96,7 +114,6 @@ export function LargeModelFormField({
                 <NextLLMSelect
                   {...field}
                   filter={filter}
-                  showSpeech2TextModel={showTTSModel}
                   ownerTenantId={ownerTenantId}
                 />
               </FormControl>

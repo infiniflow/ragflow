@@ -15,6 +15,7 @@
 #
 import logging
 
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -126,24 +127,16 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     # Update document
     e = DocumentService.update_by_id(doc.id, update_fields)
     if not e:
-        return get_error_data_result(message="Document not found!")
+        return get_error_data_result(message="document not found")
 
-    # Update document statistics before deleting all document rows. Pipeline
-    # compilation rows may exist even when token_num is zero, so the doc-store
-    # cleanup must not be gated by the document counters.
-    if doc.token_num > 0:
-        try:
-            e = DocumentService.increment_chunk_num(
-                doc.id,
-                doc.kb_id,
-                doc.token_num * -1,
-                doc.chunk_num * -1,
-                doc.process_duration * -1,
-            )
-        except LookupError:
-            return get_error_data_result(message="Document not found!")
-        if not e:
-            return get_error_data_result(message="Document not found!")
+    # Release the document's chunk/token/duration counters from the knowledgebase
+    # aggregate under a row lock before clearing the chunks. release_reparse_counters
+    # guards the zero case internally, so the doc-store cleanup below still runs for
+    # pipeline compilation rows that exist even when token_num is zero.
+    try:
+        release_reparse_counters(doc.id)
+    except LookupError:
+        return get_error_data_result(message="Document not found!")
     settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     # Delete chunk images
@@ -305,17 +298,11 @@ def _process_run_mapping(doc, run_status):
     Returns:
         A dictionary with renamed keys for API response.
     """
-    run_mapping = {
-        "0": "UNSTART",
-        "1": "RUNNING",
-        "2": "CANCEL",
-        "3": "DONE",
-        "4": "FAIL",
-    }
+    run_mapping = {status.value: status.name for status in TaskStatus}
 
     # Handle run field
-    if run_status is None or run_status not in run_mapping.keys():
-        run_status = "0"
+    if run_status is None or str(run_status) not in run_mapping:
+        run_status = TaskStatus.UNSTART.value
 
-    doc["run"] = run_mapping[run_status]
+    doc["run"] = run_mapping[str(run_status)]
     return doc

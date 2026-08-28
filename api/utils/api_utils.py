@@ -256,11 +256,39 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
     return _safe_jsonify(response)
 
 
+# Internal RetCode values below 200 collide with the HTTP 1xx (informational) range.
+# h11 refuses to send a 1xx status as a final response, so Hypercorn drops the
+# connection and the client receives an empty reply instead of the JSON error body.
+# Map them to real HTTP statuses; the body keeps the original RetCode.
+RET_CODE_TO_HTTP_STATUS = {
+    RetCode.EXCEPTION_ERROR: 500,
+    RetCode.ARGUMENT_ERROR: 400,
+    RetCode.DATA_ERROR: 400,
+    RetCode.OPERATING_ERROR: 400,
+    RetCode.CONNECTION_ERROR: 500,
+    RetCode.RUNNING: 500,
+    RetCode.PERMISSION_ERROR: 403,
+    # Dify's external knowledge API expects HTTP 403 for authorization failures.
+    RetCode.AUTHENTICATION_ERROR: 403,
+}
+
+
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        response.status_code = code
+        ret_code = int(code)
+        http_status = RET_CODE_TO_HTTP_STATUS.get(ret_code)
+        # The status logs below carry the ret code only; `message` can hold user input.
+        if http_status is not None:
+            logging.debug("build_error_result: ret code %s mapped to HTTP %s", ret_code, http_status)
+        elif 200 <= ret_code <= 599:
+            http_status = ret_code
+            logging.debug("build_error_result: ret code %s used as HTTP status", ret_code)
+        else:
+            http_status = 500
+            logging.warning("build_error_result: unmapped ret code %s, falling back to HTTP 500", ret_code)
+        response.status_code = http_status
     return response
 
 
@@ -345,9 +373,10 @@ def get_parser_config(chunk_method, parser_config):
             "topn_tags": 3,
             "raptor": {
                 "use_raptor": True,
-                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                "max_token": 256,
-                "threshold": 0.1,
+                "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                "max_token": 512,
+                "clustering_threshold": 0.3,
+                "clustering_ratio": 0.5,
                 "max_cluster": 64,
                 "random_seed": 0,
             },
@@ -389,7 +418,7 @@ def get_parser_config(chunk_method, parser_config):
         "one": None,
         "knowledge_graph": {
             "chunk_token_num": 8192,
-            "delimiter": r"\n",
+            "delimiter": "\n",
             "entity_types": ["organization", "person", "location", "event", "time"],
             "raptor": {"use_raptor": False},
             "graphrag": {"use_graphrag": False},

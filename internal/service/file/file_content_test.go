@@ -39,8 +39,9 @@ func TestLooksLikeHTML(t *testing.T) {
 }
 
 func TestParseFileContent_HTMLOutputFormat(t *testing.T) {
+	ctx := t.Context()
 	// CSV parser produces OutputFormat "html".
-	result := parseFileContent("data.csv", []byte("a,b,c\n1,2,3\n"))
+	result := parseFileContent(ctx, "data.csv", []byte("a,b,c\n1,2,3\n"))
 	if result == "" || result == string([]byte("a,b,c\n1,2,3\n")) {
 		t.Skip("CSV parser not available or returned raw text; integration-only test")
 	}
@@ -51,8 +52,9 @@ func TestParseFileContent_HTMLOutputFormat(t *testing.T) {
 }
 
 func TestParseFileContent_MarkdownOutputFormat(t *testing.T) {
+	ctx := t.Context()
 	// .md files fall through to default parser or produce text/markdown.
-	result := parseFileContent("doc.md", []byte("# Title\n\nBody"))
+	result := parseFileContent(ctx, "doc.md", []byte("# Title\n\nBody"))
 	// This is integration-dependent; verify it doesn't crash and returns something.
 	if result == "" {
 		t.Skip("markdown parser returned empty (integration-only)")

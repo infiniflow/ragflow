@@ -17,6 +17,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -26,9 +27,9 @@ import (
 // service layer calls, avoiding HTTP round-trips to self.
 type ServiceConnector struct {
 	userID       string
-	listDatasets func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	listChats    func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	retrieval    func(userID string, req RetrievalRequest) (string, error)
+	listDatasets func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	listChats    func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	retrieval    func(ctx context.Context, userID string, req RetrievalRequest) (string, error)
 }
 
 // NewServiceConnector creates a ServiceConnector.
@@ -36,9 +37,9 @@ type ServiceConnector struct {
 // does not import the service layer directly.
 func NewServiceConnector(
 	userID string,
-	listDatasetsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	listChatsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	retrievalFunc func(userID string, req RetrievalRequest) (string, error),
+	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	listChatsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	retrievalFunc func(ctx context.Context, userID string, req RetrievalRequest) (string, error),
 ) *ServiceConnector {
 	return &ServiceConnector{
 		userID:       userID,
@@ -50,8 +51,8 @@ func NewServiceConnector(
 
 // ListDatasets returns newline-delimited JSON, each line being
 // {"id": "...", "description": "..."} for a dataset.
-func (c *ServiceConnector) ListDatasets(page, pageSize int, orderby string, desc bool) (string, error) {
-	data, _, err := c.listDatasets(c.userID, page, pageSize, orderby, desc)
+func (c *ServiceConnector) ListDatasets(ctx context.Context, page, pageSize int, orderby string, desc bool) (string, error) {
+	data, _, err := c.listDatasets(ctx, c.userID, page, pageSize, orderby, desc)
 	if err != nil {
 		return "", fmt.Errorf("list datasets: %w", err)
 	}
@@ -88,8 +89,8 @@ func (c *ServiceConnector) ListDatasets(page, pageSize int, orderby string, desc
 
 // ListChats returns newline-delimited JSON, each line being
 // {"id": "...", "name": "...", "description": "..."} for a chat assistant.
-func (c *ServiceConnector) ListChats(page, pageSize int, orderby string, desc bool) (string, error) {
-	data, _, err := c.listChats(c.userID, page, pageSize, orderby, desc)
+func (c *ServiceConnector) ListChats(ctx context.Context, page, pageSize int, orderby string, desc bool) (string, error) {
+	data, _, err := c.listChats(ctx, c.userID, page, pageSize, orderby, desc)
 	if err != nil {
 		return "", fmt.Errorf("list chats: %w", err)
 	}
@@ -125,6 +126,6 @@ func (c *ServiceConnector) ListChats(page, pageSize int, orderby string, desc bo
 
 // Retrieval executes a retrieval via the in-process service and returns
 // the result as a JSON string.
-func (c *ServiceConnector) Retrieval(req RetrievalRequest) (string, error) {
-	return c.retrieval(c.userID, req)
+func (c *ServiceConnector) Retrieval(ctx context.Context, req RetrievalRequest) (string, error) {
+	return c.retrieval(ctx, c.userID, req)
 }

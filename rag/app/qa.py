@@ -50,7 +50,8 @@ class Excel(ExcelParser):
             for i, r in enumerate(rows):
                 q, a = "", ""
                 for cell in r:
-                    if not cell.value:
+                    # A 0, 0.0, or False answer is falsy but is real content.
+                    if cell.value is None or str(cell.value).strip() == "":
                         continue
                     if not q:
                         q = str(cell.value)
@@ -229,6 +230,8 @@ class Docx(DocxParser):
                         if c.text == r.cells[j].text:
                             span += 1
                             i = j
+                        else:
+                            break
                     i += 1
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
@@ -423,8 +426,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        qai_list, tbls = docx_parser(filename, binary,
-                                     from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
+        qai_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         res = tokenize_table(tbls, doc, eng, language=lang)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))

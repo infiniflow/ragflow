@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -41,63 +42,63 @@ import (
 
 type mockKBService struct {
 	KBServiceIface
-	getByIDFn    func(kbID string) (*entity.Knowledgebase, error)
-	accessibleFn func(kbID, userID string) bool
+	getByIDFn    func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
+	accessibleFn func(ctx context.Context, kbID, userID string) bool
 }
 
-func (m *mockKBService) GetByID(kbID string) (*entity.Knowledgebase, error) {
+func (m *mockKBService) GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 	if m.getByIDFn != nil {
-		return m.getByIDFn(kbID)
+		return m.getByIDFn(ctx, kbID)
 	}
 	return &entity.Knowledgebase{
 		ID: kbID, TenantID: "tenant1", EmbdID: "text-embedding",
 	}, nil
 }
 
-func (m *mockKBService) Accessible(kbID, userID string) bool {
+func (m *mockKBService) Accessible(ctx context.Context, kbID, userID string) bool {
 	if m.accessibleFn != nil {
-		return m.accessibleFn(kbID, userID)
+		return m.accessibleFn(ctx, kbID, userID)
 	}
 	return true
 }
 
 type mockModelService struct {
 	ModelServiceIface
-	getEmbeddingFn func(tenantID, embdID string) (*modelModule.EmbeddingModel, error)
-	getChatModelFn func(tenantID, llmID string) (*modelModule.ChatModel, error)
+	getEmbeddingFn func(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
+	getChatModelFn func(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error)
 }
 
-func (m *mockModelService) GetEmbeddingModel(tenantID, embdID string) (*modelModule.EmbeddingModel, error) {
+func (m *mockModelService) GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error) {
 	if m.getEmbeddingFn != nil {
-		return m.getEmbeddingFn(tenantID, embdID)
+		return m.getEmbeddingFn(ctx, tenantID, embdID)
 	}
 	return &modelModule.EmbeddingModel{}, nil
 }
 
-func (m *mockModelService) GetChatModel(tenantID, llmID string) (*modelModule.ChatModel, error) {
+func (m *mockModelService) GetChatModel(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error) {
 	if m.getChatModelFn != nil {
-		return m.getChatModelFn(tenantID, llmID)
+		return m.getChatModelFn(ctx, tenantID, llmID)
 	}
 	return &modelModule.ChatModel{}, nil
 }
 
 type mockMetadataService struct {
 	MetadataServiceIface
-	getFlattedMetaFn    func(kbIDs []string) (common.MetaData, error)
-	searchMetadataByKBs func(kbIDs []string, size int) (*service.SearchMetadataResponse, error)
-	labelQuestionFn     func(question string, kbs []*entity.Knowledgebase) map[string]float64
+	getFlattedMetaFn    func(ctx context.Context, kbIDs []string) (common.MetaData, error)
+	searchMetadataByKBs func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error)
+	labelQuestionFn     func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
-func (m *mockMetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
+func (m *mockMetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error) {
 	if m.getFlattedMetaFn != nil {
-		return m.getFlattedMetaFn(kbIDs)
+		return m.getFlattedMetaFn(ctx, kbIDs)
 	}
 	return common.MetaData{}, nil
 }
 
-func (m *mockMetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+func (m *mockMetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
 	if m.searchMetadataByKBs != nil {
-		return m.searchMetadataByKBs(kbIDs, size)
+		return m.searchMetadataByKBs(ctx, kbIDs, size)
 	}
 	return &service.SearchMetadataResponse{
 		MetadataRecords: []map[string]interface{}{
@@ -106,9 +107,9 @@ func (m *mockMetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*se
 	}, nil
 }
 
-func (m *mockMetadataService) LabelQuestion(question string, kbs []*entity.Knowledgebase) map[string]float64 {
+func (m *mockMetadataService) LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
 	if m.labelQuestionFn != nil {
-		return m.labelQuestionFn(question, kbs)
+		return m.labelQuestionFn(ctx, question, kbs)
 	}
 	return nil
 }
@@ -131,12 +132,12 @@ func (m *mockRetrievalService) Retrieval(ctx context.Context, req *nlp.Retrieval
 
 type mockDocDAO struct {
 	DocumentDAOIface
-	getByIDsFn func(ids []string) ([]*entity.Document, error)
+	getByIDsFn func(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error)
 }
 
-func (m *mockDocDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+func (m *mockDocDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 	if m.getByIDsFn != nil {
-		return m.getByIDsFn(ids)
+		return m.getByIDsFn(ctx, db, ids)
 	}
 	return []*entity.Document{
 		{ID: "doc1", Name: strPtr("Test Doc")},
@@ -274,7 +275,7 @@ func TestDifyRetrieval_MissingArgs(t *testing.T) {
 func TestDifyRetrieval_KBNotFound(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		getByIDFn: func(kbID string) (*entity.Knowledgebase, error) {
+		getByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, gorm.ErrRecordNotFound
 		},
 	}
@@ -303,7 +304,7 @@ func TestDifyRetrieval_NoAuth(t *testing.T) {
 func TestDifyRetrieval_Unauthorized(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		accessibleFn: func(kbID, userID string) bool { return false },
+		accessibleFn: func(ctx context.Context, kbID, userID string) bool { return false },
 	}
 	w := httptest.NewRecorder()
 	body := `{"knowledge_id": "kb1", "query": "test"}`
@@ -318,7 +319,7 @@ func TestDifyRetrieval_Unauthorized(t *testing.T) {
 func TestDifyRetrieval_WithMetadataFilter(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.metadataSvc = &mockMetadataService{
-		getFlattedMetaFn: func(kbIDs []string) (common.MetaData, error) {
+		getFlattedMetaFn: func(ctx context.Context, kbIDs []string) (common.MetaData, error) {
 			return common.MetaData{}, nil
 		},
 	}
@@ -346,7 +347,7 @@ func TestDifyRetrieval_InvalidJSON(t *testing.T) {
 func TestDifyRetrieval_UseKG(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.metadataSvc = &mockMetadataService{
-		labelQuestionFn: func(question string, kbs []*entity.Knowledgebase) map[string]float64 {
+		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
 			return map[string]float64{"tag_1": 0.8}
 		},
 	}
@@ -365,7 +366,7 @@ func strPtr(s string) *string { return &s }
 func TestDifyRetrieval_KBDBError(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		getByIDFn: func(kbID string) (*entity.Knowledgebase, error) {
+		getByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, errors.New("connection refused")
 		},
 	}
@@ -382,7 +383,7 @@ func TestDifyRetrieval_KBDBError(t *testing.T) {
 func TestDifyRetrieval_DocLoadError(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.docDAO = &mockDocDAO{
-		getByIDsFn: func(ids []string) ([]*entity.Document, error) {
+		getByIDsFn: func(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 			return nil, errors.New("db unavailable")
 		},
 	}

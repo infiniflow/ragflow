@@ -111,6 +111,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowVariable(cmd)
 	case "admin_set_license":
 		return c.AdminSetLicenseCommand(cmd)
+	case "admin_set_soft_fingerprint":
+		return c.AdminSetSoftFingerprintCommand(cmd)
 	case "admin_set_license_config":
 		return c.AdminSetLicenseConfigCommand(cmd)
 	case "admin_set_variable":
@@ -177,6 +179,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonCheckProviderConnectionCommand(cmd)
 	case "admin_show_fingerprint":
 		return c.AdminShowFingerprintCommand(cmd)
+	case "admin_show_soft_fingerprint":
+		return c.AdminShowSoftFingerprintCommand(cmd)
 	case "admin_show_license":
 		return c.AdminShowLicenseCommand(cmd)
 	case "admin_show_user":
@@ -259,6 +263,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUserProviderInstanceModelsCommand(cmd)
 	case "admin_list_user_default_models":
 		return c.AdminListUserDefaultModelsCommand(cmd)
+	case "admin_list_user_operation_logs":
+		return c.AdminListUserLogsCommand(cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":
@@ -275,6 +281,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminDeleteInstancesCommand(cmd)
 	case "admin_delete_model":
 		return c.AdminDeleteModelsCommand(cmd)
+	case "admin_delete_soft_fingerprint":
+		return c.AdminDeleteSoftFingerprintCommand(cmd)
 	case "admin_enable_model":
 		return c.CommonEnableOrDisableModelCommand(cmd, "enable")
 	case "admin_disable_model":
@@ -317,8 +325,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.Logout()
 	case "api_ping_server":
 		return c.PingServerByCommand(cmd)
-	case "api_list_configs":
-		return c.ListConfigs(cmd)
 	case "api_set_log_level":
 		return c.APISetLogLevelCommand(cmd)
 	case "benchmark":
@@ -478,6 +484,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIStopIngestionCommand(cmd)
 	case "api_list_ingestion_tasks":
 		return c.APIListIngestionTasks(cmd)
+	case "api_list_sync_logs":
+		return c.APIListSyncLogsCommand(cmd)
 	case "api_remove_task":
 		return c.APIRemoveTaskCommand(cmd)
 	case "user_parse_local_file_command":

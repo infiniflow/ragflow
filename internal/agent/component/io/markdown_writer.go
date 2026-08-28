@@ -16,7 +16,7 @@
 
 // Package io — Markdown writer.
 //
-// Round-trips markdown content: header / footer become HTML
+// Round-trips Markdown content: header / footer become HTML
 // comments (so they don't affect rendering), and an optional
 // front-matter-style timestamp comment goes at the top.
 
