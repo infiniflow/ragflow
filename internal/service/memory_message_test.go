@@ -71,7 +71,10 @@ type memoryMessageDocEngine struct {
 	fakeChatDocEngine
 	engineType  string
 	searchReq   *enginetypes.SearchRequest
+	searchReqs  []*enginetypes.SearchRequest
 	searchResp  *enginetypes.SearchResult
+	searchResps []*enginetypes.SearchResult
+	mutateDense bool
 	updateCond  map[string]interface{}
 	updateValue map[string]interface{}
 	updateBase  string
@@ -80,10 +83,94 @@ type memoryMessageDocEngine struct {
 
 func (e *memoryMessageDocEngine) Search(ctx context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
 	e.searchReq = req
+	e.searchReqs = append(e.searchReqs, req)
+	if e.mutateDense && len(e.searchReqs) == 1 {
+		for _, expr := range req.MatchExprs {
+			if dense, ok := expr.(*enginetypes.MatchDenseExpr); ok {
+				dense.ExtraOptions["filter"] = "lexical predicate"
+				break
+			}
+		}
+	}
+	if len(e.searchResps) > 0 {
+		response := e.searchResps[0]
+		e.searchResps = e.searchResps[1:]
+		return response, nil
+	}
 	if e.searchResp != nil {
 		return e.searchResp, nil
 	}
 	return &enginetypes.SearchResult{}, nil
+}
+
+func TestMemoryDenseFallbackEnabled(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		weight float64
+		want   bool
+	}{
+		{name: "pure semantic", weight: 0, want: true},
+		{name: "semantic dominant boundary", weight: 0.5, want: true},
+		{name: "lexical dominant", weight: 0.5001, want: false},
+		{name: "pure keyword", weight: 1, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := memoryDenseFallbackEnabled(test.weight); got != test.want {
+				t.Fatalf("memoryDenseFallbackEnabled(%v) = %t, want %t", test.weight, got, test.want)
+			}
+		})
+	}
+}
+
+func TestSearchMemoryMessagesRetriesWithCleanDenseExpression(t *testing.T) {
+	dense := &enginetypes.MatchDenseExpr{
+		VectorColumnName: "q_2_vec",
+		EmbeddingData:    []float64{0.1, 0.2},
+		TopN:             5,
+		ExtraOptions:     map[string]interface{}{"similarity": 0.2},
+	}
+	docEngine := &memoryMessageDocEngine{
+		mutateDense: true,
+		searchResps: []*enginetypes.SearchResult{
+			{Total: 0},
+			{Total: 1, Chunks: []map[string]interface{}{{"message_id": 7}}},
+		},
+	}
+	svc := &MemoryService{docEngine: docEngine}
+	req := &enginetypes.SearchRequest{
+		IndexNames: []string{"memory_tenant-1"},
+		Filter:     map[string]interface{}{"memory_id": []string{"memory-1"}, "status": 1},
+		MatchExprs: []interface{}{
+			&enginetypes.MatchTextExpr{MatchingText: "needle"},
+			dense,
+			&enginetypes.FusionExpr{Method: "weighted_sum"},
+		},
+	}
+
+	result, err := svc.searchMemoryMessages(t.Context(), req, cloneMemoryDenseExpr(dense), []string{"memory-1"})
+	if err != nil {
+		t.Fatalf("searchMemoryMessages() error = %v", err)
+	}
+	if result == nil || result.Total != 1 {
+		t.Fatalf("searchMemoryMessages() result = %+v, want one fallback result", result)
+	}
+	if len(docEngine.searchReqs) != 2 {
+		t.Fatalf("search calls = %d, want 2", len(docEngine.searchReqs))
+	}
+	fallbackReq := docEngine.searchReqs[1]
+	if !reflect.DeepEqual(fallbackReq.Filter, req.Filter) {
+		t.Fatalf("fallback filter = %#v, want %#v", fallbackReq.Filter, req.Filter)
+	}
+	if len(fallbackReq.MatchExprs) != 1 {
+		t.Fatalf("fallback match expressions = %d, want 1", len(fallbackReq.MatchExprs))
+	}
+	fallbackDense, ok := fallbackReq.MatchExprs[0].(*enginetypes.MatchDenseExpr)
+	if !ok {
+		t.Fatalf("fallback expression type = %T, want *MatchDenseExpr", fallbackReq.MatchExprs[0])
+	}
+	if !reflect.DeepEqual(fallbackDense.ExtraOptions, map[string]interface{}{"similarity": 0.2}) {
+		t.Fatalf("fallback options = %#v, want clean similarity option", fallbackDense.ExtraOptions)
+	}
 }
 
 func (e *memoryMessageDocEngine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error {

@@ -15,6 +15,7 @@
 #
 
 import importlib
+import logging
 import sys
 import types
 
@@ -65,20 +66,21 @@ def _hybrid_expressions():
     return [text, dense, fusion]
 
 
-def test_zero_result_hybrid_search_retries_with_clean_dense_expression(messages_module):
+def test_zero_result_hybrid_search_retries_with_clean_dense_expression(messages_module, caplog):
     module, settings_stub = messages_module
     result_mapping = {"message-1": {"message_id": "message-1", "content": "semantic match"}}
     store = _Store([(None, 0), (result_mapping, 1)], mutate_first_dense=True)
     settings_stub.msgStoreConn = store
 
-    result = module.MessageService.search_message(
-        ["memory-1"],
-        {},
-        ["tenant-1"],
-        _hybrid_expressions(),
-        10,
-        allow_dense_fallback=True,
-    )
+    with caplog.at_level(logging.INFO):
+        result = module.MessageService.search_message(
+            ["memory-1"],
+            {},
+            ["tenant-1"],
+            _hybrid_expressions(),
+            10,
+            allow_dense_fallback=True,
+        )
 
     assert result == list(result_mapping.values())
     assert len(store.calls) == 2
@@ -88,6 +90,8 @@ def test_zero_result_hybrid_search_retries_with_clean_dense_expression(messages_
     assert fallback.extra_options == {"similarity": 0.2}
     assert store.calls[1]["condition"]["status"] == 1
     assert store.calls[1]["memory_ids"] == ["memory-1"]
+    assert "memory_dense_fallback_completed" in caplog.text
+    assert "result_count=1" in caplog.text
 
 
 def test_hybrid_hit_does_not_run_dense_fallback(messages_module):

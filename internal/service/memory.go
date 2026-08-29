@@ -34,6 +34,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/service/nlp"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -1108,6 +1109,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	}
 
 	matchExprs := make([]interface{}, 0, 3)
+	var denseFallback *enginetypes.MatchDenseExpr
 	if question != "" {
 		matchText := memoryMessageTextExpr(question, similarityThreshold)
 		matchDense, err := s.memoryMessageDenseExpr(ctx, question, memories[0], topN, similarityThreshold)
@@ -1122,6 +1124,9 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 			},
 		}
 		matchExprs = append(matchExprs, matchText, matchDense, fusionExpr)
+		if memoryDenseFallbackEnabled(keywordsSimilarityWeight) {
+			denseFallback = cloneMemoryDenseExpr(matchDense)
+		}
 	}
 
 	searchReq := &enginetypes.SearchRequest{
@@ -1134,7 +1139,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at"),
 	}
 
-	searchResult, err := s.docEngine.Search(ctx, searchReq)
+	searchResult, err := s.searchMemoryMessages(ctx, searchReq, denseFallback, memoryIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1153,6 +1158,55 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 		messages = append(messages, message)
 	}
 	return common.ConvertFloatsToPyFormat(messages).([]map[string]interface{}), common.CodeSuccess, nil
+}
+
+func memoryDenseFallbackEnabled(keywordsSimilarityWeight float64) bool {
+	return keywordsSimilarityWeight <= 0.5
+}
+
+func cloneMemoryDenseExpr(expr *enginetypes.MatchDenseExpr) *enginetypes.MatchDenseExpr {
+	if expr == nil {
+		return nil
+	}
+	clone := *expr
+	clone.EmbeddingData = append([]float64(nil), expr.EmbeddingData...)
+	if expr.ExtraOptions != nil {
+		clone.ExtraOptions = make(map[string]interface{}, len(expr.ExtraOptions))
+		for key, value := range expr.ExtraOptions {
+			clone.ExtraOptions[key] = value
+		}
+	}
+	return &clone
+}
+
+func (s *MemoryService) searchMemoryMessages(
+	ctx context.Context,
+	searchReq *enginetypes.SearchRequest,
+	denseFallback *enginetypes.MatchDenseExpr,
+	memoryIDs []string,
+) (*enginetypes.SearchResult, error) {
+	searchResult, err := s.docEngine.Search(ctx, searchReq)
+	if err != nil || denseFallback == nil || (searchResult != nil && searchResult.Total > 0) {
+		return searchResult, err
+	}
+
+	fallbackReq := *searchReq
+	fallbackReq.MatchExprs = []interface{}{denseFallback}
+	searchResult, err = s.docEngine.Search(ctx, &fallbackReq)
+	if err != nil {
+		return nil, err
+	}
+	var resultCount int64
+	if searchResult != nil {
+		resultCount = searchResult.Total
+	}
+	common.Info(
+		"Memory dense fallback completed",
+		zap.Strings("memory_ids", memoryIDs),
+		zap.Strings("index_names", searchReq.IndexNames),
+		zap.Int64("result_count", resultCount),
+	)
+	return searchResult, nil
 }
 
 func (s *MemoryService) filterAccessibleMemories(ctx context.Context, userID string, memoryIDs []string) ([]*entity.Memory, error) {

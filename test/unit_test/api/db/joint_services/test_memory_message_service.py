@@ -15,7 +15,7 @@
 #
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -50,6 +50,36 @@ def assert_custom_prompts_forwarded(extract_by_llm):
     extract_by_llm.assert_awaited_once()
     assert extract_by_llm.await_args.kwargs["system_prompt"] == "Custom system prompt"
     assert extract_by_llm.await_args.kwargs["user_prompt"] == "Custom user prompt"
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("keywords_similarity_weight", "expected"),
+    [(0.0, True), (0.5, True), (0.5001, False), (0.9, False), (1.0, False)],
+)
+def test_query_message_limits_dense_fallback_to_semantic_dominant_searches(monkeypatch, keywords_similarity_weight, expected):
+    memory = SimpleNamespace(id="memory-1", tenant_id="tenant-1", embd_id="embedding-1")
+    search_message = Mock(return_value=[])
+
+    monkeypatch.setattr(memory_message_service.MemoryService, "get_by_ids", lambda _memory_ids: [memory])
+    monkeypatch.setattr(memory_message_service, "resolve_model_config", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(memory_message_service, "LLMBundle", lambda *_args: object())
+    monkeypatch.setattr(memory_message_service, "get_vector", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(memory_message_service, "MsgTextQuery", lambda: SimpleNamespace(question=lambda *_args, **_kwargs: (object(), None)))
+    monkeypatch.setattr(memory_message_service.MemoryService, "search_message", search_message)
+
+    result = memory_message_service.query_message(
+        {"memory_id": ["memory-1"]},
+        {
+            "query": "needle",
+            "similarity_threshold": 0.2,
+            "keywords_similarity_weight": keywords_similarity_weight,
+            "top_n": 5,
+        },
+    )
+
+    assert result == []
+    assert search_message.call_args.kwargs["allow_dense_fallback"] is expected
 
 
 @pytest.mark.p1

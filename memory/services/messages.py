@@ -199,7 +199,6 @@ class MessageService:
             agg_fields=[],
         )
         if not total_count and dense_fallback is not None:
-            logger.debug("memory_dense_fallback_retry hybrid_result_count=%d", total_count)
             res, total_count = settings.msgStoreConn.search(
                 select_fields=select_fields,
                 highlight_fields=[],
@@ -211,6 +210,12 @@ class MessageService:
                 index_names=index_names,
                 memory_ids=memory_ids,
                 agg_fields=[],
+            )
+            logger.info(
+                "memory_dense_fallback_completed memory_ids=%s index_names=%s result_count=%d",
+                memory_ids,
+                index_names,
+                total_count,
             )
         if not total_count:
             return []

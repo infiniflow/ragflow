@@ -297,7 +297,9 @@ def query_message(filter_dict: dict, params: dict):
         uids,
         [match_text, match_dense, fusion_expr],
         params["top_n"],
-        allow_dense_fallback=keywords_similarity_weight < 1,
+        # A dense-only retry reverses the requested balance when lexical
+        # matching is dominant, so limit it to semantic-dominant blends.
+        allow_dense_fallback=keywords_similarity_weight <= 0.5,
     )
 
 
