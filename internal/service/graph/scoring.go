@@ -21,6 +21,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -40,8 +41,8 @@ func AnalyzeNHopPaths(entsFromQuery map[string]*KGEntity) map[Edge]EdgeScore {
 				edge := Edge{From: f, To: t}
 				es := nhopPathes[edge]
 				es.Sim += ent.Similarity / (2.0 + float64(i))
-				if i < len(weights) && weights[i] > es.PageRank {
-					es.PageRank = weights[i]
+				if i < len(weights) {
+					es.PageRank = math.Max(es.PageRank, weights[i])
 				}
 				nhopPathes[edge] = es
 			}
