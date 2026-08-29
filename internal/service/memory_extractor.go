@@ -251,12 +251,12 @@ func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg Memor
 	if !hasExplicitValidAt {
 		validAt = now.Format(memoryTimeLayout)
 	}
+	// invalid_at mirrors Python's memory_message_service (which passes
+	// fallback="" and stores None): an empty or unparseable value persists as
+	// null so the memory stays valid. Falling back to now here would persist
+	// every unparseable value as "expired at extraction time" — the opposite
+	// semantic on the same LLM output.
 	invalidAt, hasExplicitInvalidAt := normalizeMemoryTime(item.InvalidAt)
-	if strings.TrimSpace(item.InvalidAt) != "" {
-		if !hasExplicitInvalidAt {
-			invalidAt = now.Format(memoryTimeLayout)
-		}
-	}
 	var storedInvalidAt any
 	if invalidAt != "" {
 		storedInvalidAt = invalidAt

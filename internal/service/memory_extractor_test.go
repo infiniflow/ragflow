@@ -193,3 +193,39 @@ func TestTypeInstructionsStayInLockstepWithPython(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildExtractedMessageInvalidAtStaysValidWhenUnparseable: Python passes
+// fallback="" and stores None for an invalid_at the LLM made up, so the memory
+// stays valid. The Go side must not turn that same output into "expired at
+// extraction time" by falling back to now — the two implementations would give
+// one memory two different lifetimes.
+func TestBuildExtractedMessageInvalidAtStaysValidWhenUnparseable(t *testing.T) {
+	msg := MemoryMessage{UserID: "u1", AgentID: "a1", SessionID: "s1"}
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.Local)
+
+	unparseable := buildExtractedMessage(10, 42, "mem-1", msg, extractedMemory{
+		MessageType: "fact",
+		Content:     "likes coffee",
+		InvalidAt:   "last summer",
+	}, now)
+	if got := unparseable["invalid_at"]; got != nil {
+		t.Fatalf("invalid_at = %v, want nil so the memory stays valid", got)
+	}
+
+	empty := buildExtractedMessage(11, 42, "mem-1", msg, extractedMemory{
+		MessageType: "fact",
+		Content:     "likes coffee",
+	}, now)
+	if got := empty["invalid_at"]; got != nil {
+		t.Fatalf("invalid_at = %v, want nil for empty input", got)
+	}
+
+	parseable := buildExtractedMessage(12, 42, "mem-1", msg, extractedMemory{
+		MessageType: "fact",
+		Content:     "likes coffee",
+		InvalidAt:   "2026-12-31T23:59:59+08:00",
+	}, now)
+	if got := parseable["invalid_at"]; got != "2026-12-31 23:59:59" {
+		t.Fatalf("invalid_at = %v, want parsed wall clock %q", got, "2026-12-31 23:59:59")
+	}
+}
