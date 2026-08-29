@@ -1,20 +1,27 @@
-"""Navigation tools: document catalog and concept mindmap.
+"""Navigation tools over a dataset's compiled structures.
 
-Both answer from a document's *compiled structure* rather than going straight to
-retrieval: they read the compiled entities+relations for the documents in scope,
-let the chat model answer from that outline, and pull the underlying chunks back
-via each relevant entity's ``source_chunk_ids``.
+Two families live here, answering different questions about a dataset:
 
-Knowledge compilation writes every template kind into the same graph rows
-(``{"entities": [...], "relations": [...]}``), so the two tools share one
-implementation and differ only in which *kinds* they read:
+1. **Dataset navigation tree** (``dataset_nav``, KB-level). Knowledge
+   compilation builds a cluster tree covering EVERY document of the dataset
+   (``compile_kwd="dataset_nav"`` with ``type_kwd="nav_cluster"/"nav_doc"`` rows
+   linked by ``parent_kwd``). ``_navigate_tree_impl`` routes a question through
+   that tree's document leaves to pick which documents to deep-read.
 
-* ``ontology_navigate`` — the document's layout: tree / TOC, page index, RAPTOR.
-* ``mindmap_navigate`` — the concept mindmap.
+2. **Document structure navigation** (``compile_kwd="tree"/"page_index"/...``,
+   document-level). Reads a document's compiled entities+relations and renders a
+   drill-down outline, letting the chat model answer from the structure and pull
+   the underlying chunks back via each entity's ``source_chunk_ids``.
 
-Both take the same ``keywords`` the search tools do — keywords drive query
-expansion and the keyword-sentence narrowing; without them navigation would hand
-back full, un-narrowed chunks.
+   Two row shapes coexist for these and are read together: a compact *graph
+   blob* (``knowledge_graph_kwd="graph"``, content ``{"entities": [...],
+   "relations": [...]}``) written by RAPTOR/tree compilation, and *per-row*
+   ``knowledge_graph_kwd="entity"/"relation"`` documents written by page_index
+   (and pipeline-Compiler tree). ``compile_kwd`` — NOT ``knowledge_graph_kwd`` —
+   is what distinguishes the compile type.
+
+``graph_explore`` reads the compiled knowledge graph (``compile_kwd`` resolving
+to ``hypergraph``) and walks it breadth-first from seed entities.
 """
 
 import json
@@ -24,6 +31,13 @@ from typing import Any
 
 import json_repair
 
+from rag.advanced_rag.harness.chunk_utils import (
+    _chunk_id,
+    _chunk_text,
+    _doc_title,
+    _snippet,
+    _xml_escape,
+)
 from rag.llm.tool_decorator import tool
 
 _LOG = logging.getLogger(__name__)
@@ -37,22 +51,11 @@ _CATALOG_KINDS = {"tree", "timeline", "raptor", "page_index", "pageindex"}
 # Compiled-structure kinds that describe the document's *concepts*.
 _MINDMAP_KINDS = {"mindmap", "mind_map"}
 
-# Cap how much compiled structure we render into the prompt.
-_MAX_ENTITIES = 300
-_MAX_RELATIONS = 300
+# Cap on evidence chunks pulled from a compiled-structure outline.
 _MAX_EVIDENCE_CHUNKS = 24
 
-_NAV_SYSTEM = """You are given {noun} of one or more documents — an outline of entities and their relations — and a question.
-
-Decide whether that outline alone already answers the question.
-
-Rules:
-1. Answer ONLY from the outline below. Do not invent facts.
-2. Set "is_sufficient" to true only when the outline genuinely answers the question; otherwise false with an empty answer.
-3. Always fill "relevant_entities" with the exact `name` values of the entities most related to the question (up to 10), even when the outline is not sufficient — they are used to pull the underlying source text.
-
-Output ONLY JSON, no prose, no code fences:
-{{"is_sufficient": true/false, "answer": "<answer, or empty>", "relevant_entities": ["<entity name>", ...]}}"""
+# Cap on entities offered to the nav-tree entity selector.
+_MAX_ENTITIES = 300
 
 
 def _normalize_kind(kind) -> str:
@@ -171,28 +174,6 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
     return {"entities": entities, "relations": relations}
 
 
-def _render_structure(entities: list[dict], relations: list[dict]) -> str:
-    """Render the compiled structure as a compact outline for the prompt."""
-    lines: list[str] = []
-    if entities:
-        lines.append("Entities:")
-        for e in entities[:_MAX_ENTITIES]:
-            name = (e.get("name") or "").strip()
-            if not name:
-                continue
-            typ = (e.get("type") or "other").strip()
-            desc = " ".join((e.get("description") or "").split())
-            lines.append(f"- {name} ({typ})" + (f": {desc}" if desc else ""))
-    if relations:
-        lines.append("\nRelations:")
-        for r in relations[:_MAX_RELATIONS]:
-            src, tgt = (r.get("from") or "").strip(), (r.get("to") or "").strip()
-            if not src or not tgt:
-                continue
-            lines.append(f"- {src} -[{(r.get('type') or 'related').strip()}]-> {tgt}")
-    return "\n".join(lines)
-
-
 async def _load_chunks_by_ids(tools, doc_id: str, chunk_ids: list[str]) -> list[dict]:
     """Fetch chunks by their ids from the doc store."""
     if not chunk_ids:
@@ -248,44 +229,6 @@ def _doc_aggs(chunks: list[dict]) -> list[dict]:
             seen.add(did)
             aggs.append({"doc_id": did, "doc_name": c.get("docnm_kwd") or ""})
     return aggs
-
-
-async def _ask_structure(tools, topic: str, entities: list[dict], relations: list[dict], noun: str, label: str) -> tuple[str, list[str]]:
-    """Ask the chat model to answer ``topic`` from the rendered outline.
-
-    Returns ``(answer, relevant_entity_names)`` — ``answer`` is empty unless the
-    model judged the outline sufficient; the names are always returned so the
-    caller can pull the underlying source chunks.
-    """
-    verdict = {}
-    try:
-        from rag.prompts.generator import form_message, message_fit_in
-
-        user = f"Question:\n{topic}\n\n{noun.capitalize()}:\n{_render_structure(entities, relations)}\n\nOutput JSON:"
-        _, msg = message_fit_in(form_message(_NAV_SYSTEM.format(noun=f"the {noun}"), user), tools.chat_mdl.max_length)
-        ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.2})
-        if isinstance(ans, tuple):
-            ans = ans[0]
-        cleaned = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", cleaned).strip()
-        verdict = json_repair.loads(cleaned) or {}
-        if not isinstance(verdict, dict):
-            verdict = {}
-    except Exception:
-        _LOG.exception(f"[{label}] Could not read the outline with the model.")
-
-    is_sufficient = bool(verdict.get("is_sufficient"))
-    answer = (verdict.get("answer") or "").strip() if is_sufficient else ""
-    relevant = [n for n in (verdict.get("relevant_entities") or []) if isinstance(n, str)]
-    _LOG.info(
-        "[%s] The %s %s the question; %d relevant entity(ies): %s",
-        label,
-        noun,
-        "answers" if is_sufficient else "does not fully answer",
-        len(relevant),
-        ", ".join(relevant[:10]) or "none",
-    )
-    return answer, relevant
 
 
 async def _navigate_within_doc(
@@ -733,334 +676,21 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
     return routed[:_NAV_SEARCH_MAX_DOCS]
 
 
-# ── Knowledge-graph exploration ─────────────────────────────────────────────
-#
-# Unlike catalog/mindmap (which read the merged "graph" JSON of one doc), the KG
-# store keeps one searchable row per entity/relation, so graph_explore *searches*
-# its way to a small subgraph: seed entities by the question, hop out over
-# relations to the 2nd-degree neighbours, then answer from that subgraph.
-
-# Scope of the compiled KG rows we search. Without a doc_scope we read the
-# dataset-merged rows (one graph per dataset); with a doc_scope we read the
-# per-document rows and filter by doc_id. Kept local rather than imported from
-# the task-executor layer so the harness has no dependency on it.
-_SCOPE_KWD_DATASET = "dataset"
-_SCOPE_KWD_DOC = "doc"
-
-_KG_SEEDS = 2  # top-N entities matched directly to the question
-_KG_SEED_POOL = 64  # KNN candidate pool before the mention_count_int re-sort
-_KG_SEED_SIM = 0.8  # dense-similarity floor for seed entities
-_KG_HOPS = 2  # relation hops out from the seeds (1 => "2nd degree")
-_KG_NEIGHBORS = 128  # cap on neighbour entity rows resolved per hop
-_KG_REL_LIMIT = 32  # relations fetched per endpoint filter
-
-
-async def _kg_scopes(tools, doc_scope: list[str] | None = None):
-    """Resolve the (kb_id, tenant_id, doc_ids|None) groups to search.
-
-    With a ``doc_scope`` the graph is limited to those docs (grouped by their
-    KB); otherwise the whole bound KB graph is explored.
-    """
-    if hasattr(tools, "scoped_doc_ids"):
-        doc_scope = tools.scoped_doc_ids(doc_scope)
-    if doc_scope:
-        by_kb: dict[tuple, list[str]] = {}
-        for doc_id in doc_scope:
-            # peewee MySQL lookup — call directly to reuse the pool's connection.
-            resolved = tools._resolve_doc_tenant(doc_id)
-            if resolved:
-                by_kb.setdefault(resolved, []).append(doc_id)
-        return [(kb, tenant, docs) for (kb, tenant), docs in by_kb.items()]
-    return [(kb.id, kb.tenant_id, None) for kb in getattr(tools, "kbs", []) or []]
-
-
-async def _kg_search(
-    tools,
-    kb_id: str,
-    tenant_id: str,
-    doc_ids,
-    kind: str,
-    text: str = "",
-    top_n: int = 8,
-    extra: dict | None = None,
-    scope_kwd: str | None = None,
-    order_desc: str | None = None,
-    pool: int | None = None,
-    similarity: float = 0.6,
-) -> list[dict]:
-    """Search the compiled KG rows of one KB and return the raw field maps.
-
-    ``scope_kwd`` narrows to dataset-merged (``"dataset"``) or per-doc (``"doc"``)
-    rows. ``order_desc`` sorts the hits by that field descending; when combined
-    with a dense ``text`` match, ``pool`` sets the KNN candidate count so the
-    re-sort ranks a wider pool than the ``top_n`` finally kept. ``similarity`` is
-    the dense-match floor.
-    """
-    from common import settings
-    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
-    from common.misc_utils import thread_pool_exec
-    from rag.nlp import search
-
-    condition: dict = {"knowledge_graph_kwd": [kind]}
-    if scope_kwd:
-        condition["scope_kwd"] = [scope_kwd]
-    if doc_ids:
-        condition["doc_id"] = list(doc_ids)
-    if extra:
-        condition.update(extra)
-
-    fields = ["content_with_weight", "source_chunk_ids", "doc_id", "docnm_kwd", "name_kwd", "mention_count_int", "from_entity_kwd", "to_entity_kwd"]
-    exprs = []
-    if text:
-        knn_topn = pool or top_n
-        if getattr(tools, "embed_mdl", None):
-            try:
-                exprs.append(await settings.retriever.get_vector(text, tools.embed_mdl, knn_topn, similarity))
-            except Exception:
-                _LOG.exception("[Graph exploration] vector build failed; using keyword match")
-        if not exprs:
-            exprs.append(MatchTextExpr(["content_ltks", "content_sm_ltks"], text, knn_topn))
-
-    order_by = OrderByExpr()
-    if order_desc:
-        try:
-            order_by.desc(order_desc)
-        except Exception:
-            order_by = OrderByExpr()
-
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            condition,
-            exprs,
-            order_by,
-            0,
-            top_n,
-            search.index_name(tenant_id),
-            [kb_id],
-        )
-        rows = settings.docStoreConn.get_fields(res, fields) or {}
-    except Exception:
-        _LOG.exception("[Graph exploration] KG search failed (kind=%s)", kind)
-        return {}
-    return rows
-
-
-def _kg_parse_entity(row: dict) -> dict | None:
-    try:
-        payload = json.loads(row.get("content_with_weight") or "{}")
-    except Exception:
-        payload = {}
-    name = (payload.get("name") or payload.get("term") or payload.get("title") or "").strip()
-    if not name:
-        return None
-    aliases = [str(a).strip() for a in (payload.get("aliases") or []) if str(a).strip()]
-    return {
-        "name": name,
-        "type": (payload.get("type") or "other"),
-        "description": (payload.get("description") or payload.get("description") or ""),
-        "aliases": aliases,
-        "source_chunk_ids": list(row.get("source_chunk_ids") or []),
-        "doc_id": row.get("doc_id") or "",
-        "docnm_kwd": row.get("docnm_kwd") or "",
-    }
-
-
-def _kg_parse_relation(row: dict) -> dict | None:
-    src = (row.get("from_entity_kwd") or "").strip()
-    tgt = (row.get("to_entity_kwd") or "").strip()
-    if not src or not tgt:
-        return None
-    typ = "related"
-    try:
-        payload = json.loads(row.get("content_with_weight") or "{}")
-        typ = payload.get("type") or payload.get("relation") or "related"
-    except Exception:
-        pass
-    return {
-        "from": src,
-        "to": tgt,
-        "type": typ,
-        "source_chunk_ids": list(row.get("source_chunk_ids") or []),
-        "doc_id": row.get("doc_id") or "",
-    }
-
-
-def _endpoint_terms(names) -> list[str]:
-    """Case variants for matching relation endpoints.
-
-    ``dataset_structure_merger`` lowercases ``from_entity_kwd``/``to_entity_kwd``
-    on merged rows while entity names keep their original case, so hop queries
-    must try both forms. Accepts a single name or an iterable and returns the
-    sorted union of each name's original and lowercased form.
-    """
-    if isinstance(names, str):
-        names = [names]
-    terms: set[str] = set()
-    for n in names or []:
-        n = (n or "").strip()
-        if n:
-            terms.add(n)
-            terms.add(n.lower())
-    return sorted(terms)
-
-
-def _collect_evidence_ids(entities: list[dict], relations: list[dict], relevant_names: list[str]) -> dict:
-    """Group the source_chunk_ids of the relevant entities AND relations by doc.
-
-    An entity is relevant when its name/alias was named by the model; a relation
-    is relevant when either endpoint is.
-    """
-    wanted = {n.strip().lower() for n in relevant_names if isinstance(n, str) and n.strip()}
-    by_doc: dict[str, list[str]] = {}
-    seen: set[tuple[str, str]] = set()
-
-    def _add(doc_id: str, ids):
-        for cid in ids or []:
-            if not (isinstance(cid, str) and cid):
-                continue
-            key = (doc_id, cid)
-            if key in seen:
-                continue
-            seen.add(key)
-            by_doc.setdefault(doc_id, []).append(cid)
-
-    for e in entities:
-        names = {(e.get("name") or "").strip().lower(), *[(a or "").strip().lower() for a in (e.get("aliases") or [])]}
-        if names & wanted:
-            _add(e.get("doc_id") or "", e.get("source_chunk_ids"))
-    for r in relations:
-        if {(r.get("from") or "").strip().lower(), (r.get("to") or "").strip().lower()} & wanted:
-            _add(r.get("doc_id") or "", r.get("source_chunk_ids"))
-    return by_doc
-
-
-async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[str] | None = None) -> dict:
-    """Explore the compiled knowledge graph to answer ``query``.
-
-    Seeds the top-``_KG_SEEDS`` entities for the question (dense match above
-    ``_KG_SEED_SIM``, ranked by ``mention_count_int``), hops ``_KG_HOPS`` out over
-    their relations, then asks the chat model whether that subgraph answers the
-    question. When it does, the answer is returned directly; when it doesn't, the
-    source passages behind the entities/relations the model found relevant are
-    returned as evidence (narrowed by ``keywords``) so the caller can continue.
-
-    Without ``doc_scope`` the dataset-merged graph is searched
-    (``scope_kwd="dataset"``); with it, the per-document rows of those docs
-    (``scope_kwd="doc"``, filtered by ``doc_id``).
-
-    :returns: ``{"answer": str, "chunks": [...], "doc_aggs": [...]}`` — exactly one
-        of ``answer`` / ``chunks`` is populated.
-    """
-    from rag.advanced_rag.harness.tools.search import _narrow_by_keywords
-
-    _empty = {"answer": "", "chunks": [], "doc_aggs": []}
-    if hasattr(tools, "scoped_doc_ids"):
-        doc_scope = tools.scoped_doc_ids(doc_scope)
-    _LOG.info(f'[Graph exploration] Exploring the knowledge graph for "{query}" (keywords: {keywords})')
-
-    scopes = await _kg_scopes(tools, doc_scope)
-    if not scopes:
-        _LOG.info("[Graph exploration] No knowledge base in scope.")
-        return _empty
-
-    scope_kwd = _SCOPE_KWD_DOC if doc_scope else _SCOPE_KWD_DATASET
-    text = f"{query} {keywords}".strip()
-    entities: list[dict] = []
-    relations: list[dict] = []
-    ent_names: set[str] = set()
-
-    def _add_entities(new: list[dict], scope_key: str = "") -> list[str]:
-        added = []
-        for e in new:
-            key = f"{scope_key}:{e['name'].lower()}"
-            if key in ent_names:
-                continue
-            ent_names.add(key)
-            entities.append(e)
-            added.append(e["name"])
-        return added
-
-    for kb_id, tenant_id, doc_ids in scopes:
-        # (1) Seeds: condition C — dense match (>= _KG_SEED_SIM) over the scoped
-        # entity rows, ranked by mention_count_int desc, top _KG_SEEDS.
-        seed_rows = await _kg_search(
-            tools,
-            kb_id,
-            tenant_id,
-            doc_ids,
-            "entity",
-            text=text,
-            top_n=_KG_SEEDS,
-            scope_kwd=scope_kwd,
-            order_desc="mention_count_int",
-            pool=_KG_SEED_POOL,
-            similarity=_KG_SEED_SIM,
-        )
-        seeds = [e for e in (_kg_parse_entity(r) for r in seed_rows.values()) if e]
-        frontier = _add_entities(seeds, kb_id)
-        _LOG.info("[Graph exploration] Seeded %d entity(ies): %s", len(frontier), ", ".join(frontier) or "none")
-
-        # (2) Expand _KG_HOPS out, collecting relations and neighbour entities.
-        for _hop in range(_KG_HOPS):
-            if not frontier:
-                break
-            terms = _endpoint_terms(frontier)  # case variants — merged rows lowercase endpoints
-            rel_rows: dict = {}
-            rel_rows.update(await _kg_search(tools, kb_id, tenant_id, doc_ids, "relation", top_n=_KG_REL_LIMIT, scope_kwd=scope_kwd, extra={"from_entity_kwd": terms}))
-            rel_rows.update(await _kg_search(tools, kb_id, tenant_id, doc_ids, "relation", top_n=_KG_REL_LIMIT, scope_kwd=scope_kwd, extra={"to_entity_kwd": terms}))
-            hop_relations = [r for r in (_kg_parse_relation(x) for x in rel_rows.values()) if r]
-            relations.extend(hop_relations)
-
-            seen_lower = {k.split(":", 1)[1] for k in ent_names if k.startswith(f"{kb_id}:")}
-            neigh_names = {n.strip() for r in hop_relations for n in (r["from"], r["to"]) if n and n.strip()}
-            neigh_lower_set = {n.lower() for n in neigh_names} - seen_lower
-            if not neigh_lower_set:
-                break
-            neigh_filtered = {n for n in neigh_names if n.lower() in neigh_lower_set}
-            neigh_rows = await _kg_search(
-                tools,
-                kb_id,
-                tenant_id,
-                doc_ids,
-                "entity",
-                top_n=min(max(len(neigh_filtered), 1), _KG_NEIGHBORS),
-                scope_kwd=scope_kwd,
-                extra={"name_kwd": _endpoint_terms(neigh_filtered)},
-            )
-            neighbours = [e for e in (_kg_parse_entity(r) for r in neigh_rows.values()) if e]
-            frontier = _add_entities(neighbours, kb_id)
-            _LOG.info("[Graph exploration] Hop %d reached %d neighbour entity(ies).", _hop + 1, len(frontier))
-
-    if not entities and not relations:
-        _LOG.info("[Graph exploration] No compiled knowledge graph in scope.")
-        return _empty
-
-    _LOG.info("[Graph exploration] Built a subgraph of %d entity(ies) and %d relation(s).", len(entities), len(relations))
-
-    # (3) Does the subgraph answer the question?
-    answer, relevant = await _ask_structure(tools, query, entities, relations, "knowledge graph", "Graph exploration")
-
-    # (4a) Sufficient — return the answer, no chunks.
-    if answer:
-        _LOG.info("[Graph exploration] The subgraph answered the question directly.")
-        return {"answer": answer, "chunks": [], "doc_aggs": []}
-
-    # (4b) Insufficient — return the source passages behind the relevant nodes.
-    evidence = _collect_evidence_ids(entities, relations, relevant)
-    chunks: list[dict] = []
-    for doc_id, ids in evidence.items():
-        if doc_id and ids:
-            chunks.extend(await _load_chunks_by_ids(tools, doc_id, ids))
-
-    before = len(chunks)
-    chunks = _narrow_by_keywords(chunks, keywords)
-    _LOG.info("[Graph exploration] Insufficient; returning %d evidence passage(s) (%d before keyword filtering).", len(chunks), before)
-
-    return {"answer": "", "chunks": chunks, "doc_aggs": _doc_aggs(chunks)}
-
+# Knowledge-graph and wiki exploration live in ``exploration`` and are
+# re-exported here: compiled-product expansion imports ``_kg_scopes`` from this
+# module, and the action-session tool surface exposes ``graph_explore`` by this
+# name.
+from rag.advanced_rag.harness.tools.exploration import (  # noqa: F401
+    _collect_evidence_ids,
+    _endpoint_terms,
+    _kg_parse_entity,
+    _kg_parse_relation,
+    _kg_scopes,
+    _kg_search,
+    _SCOPE_KWD_DATASET,
+    _SCOPE_KWD_DOC,
+    graph_explore,
+)
 
 # ── Navigate-tree/structure tool set (migrated from harness/dynamic) ──
 _NAV_TREE_MAX_DOCS = 8
@@ -1072,39 +702,6 @@ _NAV_TREE_MAX_DATASETS = 10
 _SEARCH_SNIPPET_CHARS = 300
 
 # ── XML helpers (uniform tag vocabulary shared by all retrieval tools) ──
-
-
-def _xml_escape(value: Any) -> str:
-    s = "" if value is None else str(value)
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-
-
-def _chunk_text(c: dict) -> str:
-    return str(c.get("content_with_weight") or c.get("content") or c.get("text") or "")
-
-
-def _chunk_attr(c: dict, keys: tuple[str, ...]) -> str:
-    for k in keys:
-        v = c.get(k)
-        if v not in (None, ""):
-            return str(v)
-    return ""
-
-
-def _doc_id(c: dict) -> str:
-    return _chunk_attr(c, ("doc_id", "docid", "document_id"))
-
-
-def _dataset_id(c: dict) -> str:
-    return _chunk_attr(c, ("dataset_id", "kb_id", "knowledgebase_id"))
-
-
-def _doc_title(c: dict) -> str:
-    return _chunk_attr(c, ("docnm_kwd", "doc_title", "title", "document_name"))
-
-
-def _chunk_id(c: dict) -> str:
-    return _chunk_attr(c, ("chunk_id", "id"))
 
 
 def _rank_chunks_by_terms(candidates: list[dict], queries: list[str]) -> list[dict]:
@@ -1772,14 +1369,6 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
                 text = _chunk_text(c).strip()
                 lines.append(f"- [chunk {cid}]: {_snippet(text, 300)}")
     return "\n".join(lines)
-
-
-def _snippet(s: str, n: int) -> str:
-    """Truncate a string to ``n`` chars on a char boundary with an ellipsis."""
-    s = s.strip()
-    if len(s) <= n:
-        return s
-    return s[:n].rstrip() + "..."
 
 
 def _render_outline(entities: list[dict], relations: list[dict]) -> str:
