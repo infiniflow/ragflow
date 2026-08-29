@@ -749,11 +749,40 @@ func TestApplyChildrenDelimText_DefaultsMomToCurrentChunk(t *testing.T) {
 	}
 }
 
-// TestApplyChildrenDelimText_PreservesIncomingMom REMOVED: per the
-// #17876 review, no current caller of applyChildrenDelimText ever
-// sets an incoming Mom — the production code's "preserve Mom"
-// branch is unreachable. The real fix is merge-granularity alignment
-// (see #17876 for the open follow-up).
+// TestApplyChildrenDelimText_OverwritesIncomingMom documents the
+// CURRENT behaviour: when a chunk flowing into applyChildrenDelimText
+// already has a non-empty Mom, the function OVERWRITES it with
+// TrimPrefix(d.Text, "\n") of the current chunk's text. This is
+// the divergence that #17876 item 2 (multi-chunk text-path Mom
+// granularity) is tracking. Once the merge-granularity fix lands,
+// this test should be updated (or the PreservesIncomingMom version
+// added back).
+func TestApplyChildrenDelimText_OverwritesIncomingMom(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma", Mom: "incoming-mom-from-upstream"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Children must NOT carry the incoming Mom; the function
+		// overwrites it with TrimPrefix(d.Text, "\n") of the current
+		// chunk's text. This pins the current behavior; a future
+		// merge-granularity fix should update this test (or the test
+		// itself flips to assert the new preserved Mom behavior).
+		if c.Mom == "incoming-mom-from-upstream" {
+			t.Errorf("child %d: Mom=%q, expected overwrite to %q (not preserved)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (TrimPrefix(d.Text, \"\\n\"))",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
 
 // TestApplyChildrenDelimText_NilPatternIsNoop verifies the early return so
 // callers that pass a nil pattern don't accidentally clear Mom.
@@ -796,9 +825,9 @@ func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
 	}
 }
 
-// TestApplyChildrenDelim_SymmetryWithTextPath REMOVED: it called
-// applyChildrenDelim, which doesn't exist anywhere in the repo
-// (verified via code search). The symmetry check was useful in
-// principle but the missing function makes it a compile error.
-// Per the #17876 review, the real fix is merge-granularity alignment,
-// which lives in a separate PR.
+// TestApplyChildrenDelim_SymmetryWithTextPath was dropped because it
+// referenced applyChildrenDelim, a function that does not exist in
+// the current Go chunker — only applyChildrenDelimText exists. The
+// missing function makes the test a compile error, so the symmetry
+// check has to live in a follow-up that introduces the JSON-side
+// helper too.
