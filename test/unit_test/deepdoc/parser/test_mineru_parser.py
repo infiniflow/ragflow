@@ -1218,3 +1218,59 @@ def test_transfer_to_tables_counts_unreadable_resource(monkeypatch, tmp_path):
     assert coverage["images_described"] == 1
     assert coverage["images_dropped_no_text"] == 0  # text was non-empty
     assert coverage["images_unreadable_resource"] == 1  # the missing file
+
+
+def test_transfer_to_tables_counts_dropped_no_text_for_unreadable_textless_image(
+    monkeypatch, tmp_path,
+):
+    """Regression for the #16978 review follow-up: an app-media IMAGE
+    block whose caption/footnote/vlm_description are all empty but whose
+    binary resource can't be read must be counted under
+    images_dropped_no_text (text was never going to make it), NOT
+    images_unreadable_resource (which is reserved for the case where
+    text WAS there but the binary was unreadable).
+
+    This pins the fix that distinguishes the two failure modes in
+    _transfer_to_tables' unreadable-resource branch. The earlier
+    code unconditionally routed unreadable resources to
+    images_unreadable_resource, which overcounted that counter when
+    the image had no text to begin with.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    missing_path = tmp_path / "missing.jpg"
+    # Do NOT create the file — _transfer_to_tables should fail to
+    # open it and route to images_dropped_no_text (NOT
+    # images_unreadable_resource) because no meaningful text payload
+    # was attached to begin with.
+
+    outputs = [
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": [],
+            "image_footnote": [],
+            "img_path": str(missing_path),
+            "page_idx": 0,
+            "bbox": (0, 0, 10, 10),
+            # Explicitly NO vlm_description — the text would have been
+            # empty even if Image.open() had succeeded.
+        },
+    ]
+
+    # Mirror parse_pdf's call order: _transfer_to_sections first (so
+    # images_detected counts the IMAGE), then _transfer_to_tables.
+    parser._transfer_to_sections(outputs, parse_method="naive")
+    tables = parser._transfer_to_tables(outputs, table_enable=True)
+    # The image is unreadable AND textless, so it must NOT reach
+    # tables.
+    assert len(tables) == 0
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    # The textless + unreadable combo routes to images_dropped_no_text,
+    # NOT images_unreadable_resource.
+    assert coverage["images_dropped_no_text"] == 1
+    assert coverage["images_unreadable_resource"] == 0
+    # chunked was incremented then decremented (since the image never
+    # reached tables), ending back at 0.
+    assert coverage["images_chunked"] == 0

@@ -977,6 +977,12 @@ class MinerUParser(RAGFlowPdfParser):
             if vlm_description:
                 texts.append(vlm_description)
             has_vlm_description = bool(vlm_description)
+            # The text payload was non-empty if any of caption / footnote /
+            # vlm_description contributed a non-whitespace string. Use this
+            # to disambiguate "text was there but binary was unreadable"
+            # (images_unreadable_resource) from "text was empty" (text
+            # never made it into the chunk stream — images_dropped_no_text).
+            has_meaningful_text = any(t.strip() for t in texts)
 
             image = None
             image_path = output.get("img_path")
@@ -990,12 +996,21 @@ class MinerUParser(RAGFlowPdfParser):
             if image is None:
                 self.logger.debug("[MinerU] Skip image without a readable resource: %s", image_path)
                 # The IMAGE block was detected and counted as chunked, but
-                # Image.open() couldn't read the resource. Distinguish this
-                # from "dropped_no_text" (which means no caption/footnote/
-                # vlm_description) — the text was non-empty, only the
-                # binary resource was unreadable.
+                # Image.open() couldn't read the resource. Route the
+                # observation to whichever counter matches the underlying
+                # failure mode:
+                #   - has_meaningful_text → binary was unreadable; route to
+                #     images_unreadable_resource.
+                #   - text was empty → the image never made it into the
+                #     chunk stream at all; route to
+                #     images_dropped_no_text (the _transfer_to_sections
+                #     path skipped this for app-media modes BEFORE the
+                #     textless check could fire).
                 self.last_image_coverage["images_chunked"] -= 1
-                self.last_image_coverage["images_unreadable_resource"] += 1
+                if has_meaningful_text:
+                    self.last_image_coverage["images_unreadable_resource"] += 1
+                else:
+                    self.last_image_coverage["images_dropped_no_text"] += 1
                 continue
 
             # Only count this image as "described" when it actually
