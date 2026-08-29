@@ -49,6 +49,10 @@ func TestFormatMemoryTimeKeepsParsedWallClock(t *testing.T) {
 		{name: "naive iso", value: "2026-08-20T10:05:00", want: "2026-08-20 10:05:00"},
 		{name: "storage layout", value: "2026-08-20 10:05:00", want: "2026-08-20 10:05:00"},
 		{name: "date only", value: "2026-08-20", want: "2026-08-20 00:00:00"},
+		// Reduced-precision ISO 8601: Python's dateutil.parser.isoparse accepts
+		// these, so identical LLM output must not fall back on the Go side.
+		{name: "naive iso without seconds", value: "2026-08-20T10:05", want: "2026-08-20 10:05:00"},
+		{name: "storage layout without seconds", value: "2026-08-20 10:05", want: "2026-08-20 10:05:00"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := formatMemoryTime(test.value, fallback); got != test.want {
@@ -91,5 +95,39 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 	}, now)
 	if got := fallbackOnly["valid_at"]; got != now.Format(memoryTimeLayout) {
 		t.Fatalf("valid_at = %v, want fallback %q", got, now.Format(memoryTimeLayout))
+	}
+}
+
+// TestBuildExtractedMessageInvalidAtSemantics pins the Python-side policy for
+// invalid_at (api/db/joint_services/memory_message_service.py): an empty or
+// unparseable end time means "not invalidated" and persists as empty — never
+// as the extraction run time, which would mark still-true memories expired.
+func TestBuildExtractedMessageInvalidAtSemantics(t *testing.T) {
+	msg := MemoryMessage{UserID: "u1", AgentID: "a1", SessionID: "s1"}
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.Local)
+
+	parsed := buildExtractedMessage(10, 42, "mem-1", msg, extractedMemory{
+		MessageType: "fact",
+		Content:     "likes coffee",
+		InvalidAt:   "2026-08-21T09:00:00+08:00",
+	}, now)
+	if got := parsed["invalid_at"]; got != "2026-08-21 09:00:00" {
+		t.Fatalf("invalid_at = %v, want parsed wall clock %q", got, "2026-08-21 09:00:00")
+	}
+
+	for name, invalidAt := range map[string]string{
+		"empty":       "",
+		"unparseable": "when the user gets tired of coffee",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := buildExtractedMessage(11, 42, "mem-1", msg, extractedMemory{
+				MessageType: "fact",
+				Content:     "likes coffee",
+				InvalidAt:   invalidAt,
+			}, now)
+			if invalidAt, ok := got["invalid_at"]; ok && invalidAt != nil {
+				t.Fatalf("invalid_at = %v (%T), want nil for %s end time", invalidAt, invalidAt, name)
+			}
+		})
 	}
 }

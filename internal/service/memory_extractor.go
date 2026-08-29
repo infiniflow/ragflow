@@ -223,7 +223,14 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg MemoryMessage, item extractedMemory, now time.Time) map[string]any {
 	var invalidAt any
 	if strings.TrimSpace(item.InvalidAt) != "" {
-		invalidAt = formatMemoryTime(item.InvalidAt, now)
+		// Python's decided semantics (api/db/joint_services/memory_message_service.py)
+		// persist an unparseable end time as empty — "not invalidated" — while only
+		// valid_at falls back to the extraction run time. Stamping the run time here
+		// would mark still-true memories expired, so an unparseable invalid_at stays
+		// nil, same as an absent one.
+		if parsed, ok := parseMemoryTime(item.InvalidAt); ok {
+			invalidAt = parsed
+		}
 	}
 	return map[string]any{
 		"message_id":   messageID,
@@ -282,19 +289,40 @@ func parseMemoryExtraction(answer string, extractTypes []string) []extractedMemo
 	return out
 }
 
-// formatMemoryTime normalizes an LLM-supplied timestamp (ISO 8601 or
-// already-formatted) into memoryTimeLayout. The parsed timestamp keeps its
-// own wall clock (no zone conversion). Unparseable or empty input falls
-// back to the supplied time formatted in its own location (server-local
-// when callers pass time.Now()).
-func formatMemoryTime(value string, fallback time.Time) string {
+// parseMemoryTime normalizes an LLM-supplied timestamp (ISO 8601 or
+// already-formatted) into memoryTimeLayout, reporting whether the value
+// parsed at all. The layout set mirrors what Python's
+// dateutil.parser.isoparse accepts for extraction timestamps — including
+// reduced-precision forms ("2026-01-02T15:04") — so identical LLM output
+// takes the same path in both implementations.
+func parseMemoryTime(value string) (string, bool) {
 	v := strings.TrimSpace(value)
 	if v != "" {
-		for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
+		for _, layout := range []string{
+			time.RFC3339,
+			"2006-01-02T15:04:05",
+			"2006-01-02 15:04:05",
+			"2006-01-02",
+			"2006-01-02T15:04",
+			"2006-01-02 15:04",
+		} {
 			if t, err := time.Parse(layout, v); err == nil {
-				return t.Format(memoryTimeLayout)
+				return t.Format(memoryTimeLayout), true
 			}
 		}
+	}
+	return "", false
+}
+
+// formatMemoryTime normalizes an LLM-supplied timestamp into
+// memoryTimeLayout, falling back to the supplied time formatted in its own
+// location (server-local when callers pass time.Now()) when the value is
+// empty or unparseable. Callers that need to distinguish "unparseable" —
+// e.g. invalid_at, which persists as empty rather than the run time — use
+// parseMemoryTime directly.
+func formatMemoryTime(value string, fallback time.Time) string {
+	if parsed, ok := parseMemoryTime(value); ok {
+		return parsed
 	}
 	return fallback.Format(memoryTimeLayout)
 }
