@@ -57,3 +57,25 @@ class TestEnsureV1:
         no digit right after) is not a version segment - /v1 must still be
         appended."""
         assert ensure_v1("https://api.example.com/vendors/list") == "https://api.example.com/vendors/list/v1"
+
+    @pytest.mark.parametrize(
+        "url,expected",
+        [
+            # Issue #18965: a user pasting a full OpenAI-compatible endpoint
+            # URL must not have the path doubled by the OpenAI client.
+            ("https://api.pzero.studio/v1/chat/completions", "https://api.pzero.studio/v1"),
+            ("https://api.openai.com/v1/embeddings", "https://api.openai.com/v1"),
+            ("https://api.openai.com/v1/completions", "https://api.openai.com/v1"),
+            # No version segment + endpoint: strip the endpoint, then add /v1.
+            ("https://api.pzero.studio/chat/completions", "https://api.pzero.studio/v1"),
+            # Trailing slash on the input is preserved when no endpoint is
+            # stripped.
+            ("https://generativelanguage.googleapis.com/v1beta/openai/", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+        ],
+    )
+    def test_trailing_openai_endpoint_is_stripped(self, url, expected):
+        """A user pasting ``<base>/v1/chat/completions`` (or ``/embeddings`` /
+        ``/completions``) gets the endpoint stripped so the OpenAI client
+        can re-append it on the request without doubling the path. See
+        issue #18965."""
+        assert ensure_v1(url) == expected
