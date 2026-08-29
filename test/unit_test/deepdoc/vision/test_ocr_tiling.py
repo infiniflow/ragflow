@@ -134,7 +134,28 @@ def test_text_detector_tiles_large_images(ocr_module):
 
     assert calls == [(1000, 2880, 3)] * 2
     assert {(int(box[0][0]), int(box[0][1])) for box in boxes} == {(0, 0), (2120, 0)}
-    assert elapsed >= 0
+    assert elapsed == 0.5
+
+
+@pytest.mark.parametrize(
+    ("width", "expected_calls"),
+    [
+        (4096, [(100, 4096, 3)]),
+        (4097, [(100, 2880, 3)] * 2),
+    ],
+)
+def test_text_detector_uses_strict_tiling_threshold(ocr_module, width, expected_calls):
+    detector = object.__new__(ocr_module.TextDetector)
+    calls = []
+
+    def detect(image):
+        calls.append(image.shape)
+        return np.asarray([_box(0, 0, 20, 10)]), 0.25
+
+    detector._detect = detect
+    detector(np.zeros((100, width, 3), dtype=np.uint8))
+
+    assert calls == expected_calls
 
 
 def test_tiled_detection_maps_every_tile_back_to_image_coordinates():

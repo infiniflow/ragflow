@@ -158,6 +158,30 @@ type ocrRecognizeResponse struct {
 // OCRDetect detects text regions (bounding boxes) in an image.
 // DeepDoc /predict/ocr with operator=det returns quad boxes: [[[x0,y0],[x1,y1],[x2,y2],[x3,y3]], ...]
 func (c *Client) OCRDetect(ctx context.Context, cropped image.Image) ([]pdf.OCRBox, error) {
+	bounds := cropped.Bounds()
+	if bounds.Dx() <= ocrTilingThreshold && bounds.Dy() <= ocrTilingThreshold {
+		return c.ocrDetectSingle(ctx, cropped)
+	}
+
+	rowStarts := ocrTileStarts(bounds.Dy())
+	columnStarts := ocrTileStarts(bounds.Dx())
+	boxes, err := detectTiledOCR(cropped, func(tile image.Image) ([]pdf.OCRBox, error) {
+		return c.ocrDetectSingle(ctx, tile)
+	})
+	if err != nil {
+		return nil, err
+	}
+	slog.Debug(
+		"completed tiled OCR text detection",
+		"width", bounds.Dx(),
+		"height", bounds.Dy(),
+		"tiles", len(rowStarts)*len(columnStarts),
+		"boxes", len(boxes),
+	)
+	return boxes, nil
+}
+
+func (c *Client) ocrDetectSingle(ctx context.Context, cropped image.Image) ([]pdf.OCRBox, error) {
 	data, err := util.EncodePNG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("ocr detect: encode: %w", err)
