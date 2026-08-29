@@ -928,7 +928,7 @@ class MinerUParser(RAGFlowPdfParser):
             else:
                 sections.append((section, self._line_tag(output)))
         # Stash on the instance so callers (and parse_pdf) can inspect coverage
-        # for the most recent parse without changing the existing return shape.
+        # for the most recent parse.
         self.last_image_coverage = image_coverage
         if image_coverage["images_detected"] > 0:
             self.logger.info(
@@ -976,7 +976,7 @@ class MinerUParser(RAGFlowPdfParser):
             vlm_description = (output.get("vlm_description") or "").strip()
             if vlm_description:
                 texts.append(vlm_description)
-                self.last_image_coverage["images_described"] += 1
+            has_vlm_description = bool(vlm_description)
 
             image = None
             image_path = output.get("img_path")
@@ -986,9 +986,9 @@ class MinerUParser(RAGFlowPdfParser):
                         source.load()
                         image = source.copy()
                 except Exception as e:
-                    self.logger.warning(f"[MinerU] Failed to load image '{image_path}': {e}")
+                    self.logger.debug(f"[MinerU] Failed to load image '{image_path}': {e}")
             if image is None:
-                self.logger.warning("[MinerU] Skip image without a readable resource: %s", image_path)
+                self.logger.debug("[MinerU] Skip image without a readable resource: %s", image_path)
                 # The IMAGE block was detected and counted as chunked, but
                 # Image.open() couldn't read the resource. Distinguish this
                 # from "dropped_no_text" (which means no caption/footnote/
@@ -997,6 +997,13 @@ class MinerUParser(RAGFlowPdfParser):
                 self.last_image_coverage["images_chunked"] -= 1
                 self.last_image_coverage["images_unreadable_resource"] += 1
                 continue
+
+            # Only count this image as "described" when it actually
+            # reaches the tables list. An unreadable resource above
+            # (or a vlm_description that survives image-load failure)
+            # shouldn't inflate the metric.
+            if has_vlm_description:
+                self.last_image_coverage["images_described"] += 1
 
             tables.append(((image, texts or [""]), positions))
         return tables
@@ -1134,7 +1141,7 @@ class MinerUParser(RAGFlowPdfParser):
             # vlm_configured flag tells operators whether downstream chunks
             # could have been enriched by a vision model at all. The
             # coverage dict is initialized in __init__ so this access is
-            # unconditional — see issue #16978 review follow-up.
+            # unconditional — see issue #16978.
             coverage = self.last_image_coverage
             coverage["vlm_configured"] = vision_model is not None
             self.logger.info(

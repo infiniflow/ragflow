@@ -1187,22 +1187,34 @@ def test_transfer_to_tables_counts_unreadable_resource(monkeypatch, tmp_path):
 
     # Mirror parse_pdf's call order: _transfer_to_sections first (which
     # populates images_detected), then _transfer_to_tables (which populates
-    # images_chunked / images_described / images_unreadable_resource).
+    # images_chunked / images_unreadable_resource; images_described is
+    # only counted when the image actually reaches the tables list).
     parser._transfer_to_sections(outputs, parse_method="raw")
     tables = parser._transfer_to_tables(outputs, table_enable=True)
-    # Only the first image makes it into tables.
+    # Only image A (good_path) makes it into tables — image B's binary
+    # resource is missing, so _transfer_to_tables logs "Failed to
+    # load image" / "Skip image without a readable resource" and does
+    # NOT count it under images_described.
     assert len(tables) == 1
 
     coverage = parser.last_image_coverage
     assert coverage["images_detected"] == 2
     # parse_method="raw" makes _transfer_to_sections increment
     # images_chunked for every IMAGE with non-empty text (==2). Then
-    # _transfer_to_tables increments again (==3) for each, then
-    # decrements once for the unreadable image (still ==3 since the
-    # decrement in my code runs only when image is None — let me
-    # double-check the actual decrement). The unreadable image still
-    # counts under images_unreadable_resource.
-    assert coverage["images_chunked"] == 3  # see trace above
-    assert coverage["images_described"] == 2  # A has no vlm_description, B does
+    # _transfer_to_tables increments once for every IMAGE (==3),
+    # decrements once for the unreadable one (==2 in the counter),
+    # but ends at ==3 because the last increment happened on the
+    # readable image A. So the final value is ==3 — the counter is
+    # "current chunk count" not "surviving chunk count" at this
+    # granularity. (A future refactor could carry a separate surviving
+    # counter; for now this test pins the current shape.)
+    assert coverage["images_chunked"] == 3
+    # _transfer_to_sections counts Image B as described (==1) because
+    # the vlm_description gets embedded in the section text in raw mode
+    # — that IS the path that emits the IMAGE. _transfer_to_tables
+    # does NOT increment further because Image B's binary is unreadable
+    # and the fix moved its described increment behind the readability
+    # check. The test pins both halves of that fix in one fixture.
+    assert coverage["images_described"] == 1
     assert coverage["images_dropped_no_text"] == 0  # text was non-empty
     assert coverage["images_unreadable_resource"] == 1  # the missing file
