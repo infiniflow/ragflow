@@ -245,7 +245,7 @@ perform_restore() {
         fi
     done
 
-    if [ ${#existing_volumes[@]} -gt 0 ]; then
+    if [ ${#existing_volumes[@]} -gt 0 ] && [ "$RESTORE_FORCE" != "true" ]; then
         echo "⚠️  WARNING: The following Docker volumes already exist:"
         for volume in "${existing_volumes[@]}"; do
             echo "  - $volume"
@@ -261,6 +261,8 @@ perform_restore() {
         echo "   'docker volume create --name <snapshot>' + a tar backup, or stop and"
         echo "   copy the volume via a helper container):"
         echo "   $0 -p $PROJECT_NAME backup current_backup_$(date +%Y%m%d_%H%M%S)"
+        echo ""
+        echo "Pass --force to skip this prompt and auto-clear the target."
         echo ""
 
         if ! confirm_action "Continue with the restore? (type 'y' to permanently overwrite these volumes)"; then
@@ -366,9 +368,18 @@ main() {
     # Check if Docker is available
     check_docker
 
-    # Parse -p / --force flags (force preserves the prior auto-clear behavior)
+    # Parse -p / --force flags (force preserves the prior auto-clear
+    # behavior). Flags are accepted in any position relative to the
+    # operation/folder args so callers don't have to remember the order:
+    #   $0 restore --force
+    #   $0 --force restore my_backup
+    #   $0 -p ragflow restore my_backup --force
+    # all behave the same. We use a two-pass scan: first extract every
+    # recognised flag, then the remaining positional args are
+    # operation + backup_folder.
     PROJECT_NAME="$DEFAULT_PROJECT_NAME"
     RESTORE_FORCE="false"
+    local _positional=()
     while [ $# -gt 0 ]; do
         case "$1" in
             -p)
@@ -384,10 +395,18 @@ main() {
                 shift
                 ;;
             *)
-                break
+                _positional+=("$1")
+                shift
                 ;;
         esac
     done
+    # Restore positional args for the existing operation/folder parser
+    # below so it sees the same $@ it would have seen without the flag
+    # scan.
+    set -- "${_positional[@]}"
+
+    # Reset the positional index because set -- rebuilds $@ starting at 1
+    # (the loop above already used _positional, no index needed here).
 
     # Build volume names based on project name
     build_volume_names
