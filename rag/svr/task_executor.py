@@ -70,6 +70,7 @@ from timeit import default_timer as timer
 import signal
 import exceptiongroup
 import faulthandler
+from collections import deque
 import numpy as np
 from peewee import DoesNotExist
 from common.constants import LLMType, ParserType, PipelineTaskType
@@ -160,6 +161,7 @@ _KB_FANOUT_TASK_TYPES = [
 ]
 
 UNACKED_ITERATOR = None
+RECLAIMED_MESSAGES = deque()
 # Task type and executor index (consistent with SAAS version)
 TASK_TYPE = "common"
 TE_IDX = "0"
@@ -225,15 +227,18 @@ async def collect():
 
     redis_msg = None
     try:
-        if not UNACKED_ITERATOR:
+        if RECLAIMED_MESSAGES:
+            redis_msg = RECLAIMED_MESSAGES.popleft()
+        elif not UNACKED_ITERATOR:
             UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
-        try:
-            redis_msg = next(UNACKED_ITERATOR)
-        except StopIteration:
-            for svr_queue_name in svr_queue_names:
-                redis_msg = REDIS_CONN.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
-                if redis_msg:
-                    break
+        if not redis_msg:
+            try:
+                redis_msg = next(UNACKED_ITERATOR)
+            except StopIteration:
+                for svr_queue_name in svr_queue_names:
+                    redis_msg = REDIS_CONN.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
+                    if redis_msg:
+                        break
     except Exception as e:
         logging.exception(f"collect got exception: {e}")
         return None, None
@@ -1834,8 +1839,6 @@ async def report_status():
     ip_address = await get_server_ip()
     pid = os.getpid()
 
-    # Register the executor in Redis
-    REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
     redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
 
     while True:
@@ -1862,15 +1865,11 @@ async def report_status():
             }
         )
 
-        # Report heartbeat to Redis
-        try:
-            REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
-            REDIS_CONN.zadd(CONSUMER_NAME, heartbeat, now_ts)
-        except Exception as e:
-            logging.warning(f"Failed to report heartbeat: {e}")
-        else:
+        heartbeat_published = REDIS_CONN.register_task_executor(CONSUMER_NAME, heartbeat, now_ts)
+        if heartbeat_published:
             logging.debug(f"{CONSUMER_NAME} reported heartbeat: {heartbeat}")
-            pass
+        else:
+            logging.warning(f"Failed to publish heartbeat for {CONSUMER_NAME}; skipping task recovery")
 
         # Clean up own expired heartbeat
         try:
@@ -1880,10 +1879,11 @@ async def report_status():
 
         # Clean other executors
         lock_acquired = False
-        try:
-            lock_acquired = redis_lock.acquire()
-        except Exception as e:
-            logging.warning(f"Failed to acquire Redis lock: {e}")
+        if heartbeat_published:
+            try:
+                lock_acquired = redis_lock.acquire()
+            except Exception as e:
+                logging.warning(f"Failed to acquire Redis lock: {e}")
         if lock_acquired:
             try:
                 task_executors = REDIS_CONN.smembers("TASKEXE")
@@ -1910,11 +1910,13 @@ async def report_status():
                     reclaimed = REDIS_CONN.reclaim_pending_msg(
                         settings.get_svr_queue_names(TASK_TYPE),
                         SVR_CONSUMER_GROUP_NAME,
+                        CONSUMER_NAME,
                         live_workers,
                         min_idle_ms=WORKER_HEARTBEAT_TIMEOUT * 1000,
                     )
                     if reclaimed:
-                        logging.info(f"Reclaimed {reclaimed} orphaned pending message(s)")
+                        RECLAIMED_MESSAGES.extend(reclaimed)
+                        logging.info(f"Reclaimed {len(reclaimed)} orphaned pending message(s)")
             except Exception as e:
                 logging.warning(f"Failed to clean other executors: {e}")
             finally:

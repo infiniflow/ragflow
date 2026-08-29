@@ -61,24 +61,6 @@ class RedisMsg:
 class RedisDB:
     lua_delete_if_equal = None
     lua_token_bucket = None
-    lua_requeue_msg = None
-    LUA_REQUEUE_MSG_SCRIPT = """
-        -- KEYS[1] = stream
-        -- KEYS[2] = retry-deduplication marker
-        -- ARGV[1] = consumer group
-        -- ARGV[2] = pending message id
-        -- ARGV[3] = marker TTL in seconds
-
-        if redis.call("SET", KEYS[2], "1", "NX", "EX", tonumber(ARGV[3])) then
-            local entries = redis.call("XRANGE", KEYS[1], ARGV[2], ARGV[2])
-            if #entries > 0 then
-                redis.call("XADD", KEYS[1], "*", unpack(entries[1][2]))
-            end
-        end
-        redis.call("XACK", KEYS[1], ARGV[1], ARGV[2])
-        return 1
-    """
-
     LUA_DELETE_IF_EQUAL_SCRIPT = """
         local current_value = redis.call('get', KEYS[1])
         if current_value and current_value == ARGV[1] then
@@ -139,7 +121,6 @@ class RedisDB:
         client = self.REDIS
         cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
         cls.lua_token_bucket = client.register_script(cls.LUA_TOKEN_BUCKET_SCRIPT)
-        cls.lua_requeue_msg = client.register_script(cls.LUA_REQUEUE_MSG_SCRIPT)
 
     def __open__(self):
         try:
@@ -276,6 +257,18 @@ class RedisDB:
             return True
         except Exception as e:
             logging.warning("RedisDB.zadd got exception: %s", str(e))
+            self.__open__()
+        return False
+
+    def register_task_executor(self, executor_name: str, heartbeat: str, timestamp: float) -> bool:
+        """Publish executor membership and its heartbeat in one transaction."""
+        try:
+            pipeline = self.REDIS.pipeline(transaction=True)
+            pipeline.sadd("TASKEXE", executor_name)
+            pipeline.zadd(executor_name, {heartbeat: timestamp})
+            return len(pipeline.execute()) == 2
+        except Exception as e:
+            logging.warning("RedisDB.register_task_executor got exception: %s", str(e))
             self.__open__()
         return False
 
@@ -542,21 +535,38 @@ class RedisDB:
             self.__open__()
         return pending
 
-    def requeue_msg(self, queue: str, group_name: str, msg_id: str) -> bool:
-        """Atomically append a fresh delivery and acknowledge the orphaned entry."""
-        marker = f"{queue}:reclaim:{group_name}:{msg_id}"
-        for _ in range(3):
-            try:
-                self.lua_requeue_msg(keys=[queue, marker], args=[group_name, msg_id, 300], client=self.REDIS)
-                return True
-            except Exception as e:
-                logging.warning("RedisDB.requeue_msg " + str(queue) + " got exception: " + str(e))
-                self.__open__()
-        return False
+    def claim_pending_msg(self, queue: str, group_name: str, consumer_name: str, message_ids: list[str], min_idle_ms: int = 0) -> list[RedisMsg]:
+        """Transfer pending entries to a consumer without copying or acknowledging them."""
+        if not message_ids:
+            return []
+        try:
+            messages = self.REDIS.xclaim(
+                name=queue,
+                groupname=group_name,
+                consumername=consumer_name,
+                min_idle_time=min_idle_ms,
+                message_ids=message_ids,
+            )
+            return [RedisMsg(self.REDIS, queue, group_name, msg_id, payload) for msg_id, payload in messages if msg_id is not None and payload is not None]
+        except redis.exceptions.ResponseError as e:
+            error = str(e).lower()
+            if "no such key" not in error and "nogroup" not in error:
+                logging.warning("RedisDB.claim_pending_msg " + str(queue) + " got exception: " + str(e))
+        except Exception as e:
+            logging.warning("RedisDB.claim_pending_msg " + str(queue) + " got exception: " + str(e))
+            self.__open__()
+        return []
 
-    def reclaim_pending_msg(self, queue_names: list[str], group_name: str, live_consumers, min_idle_ms: int = 0) -> int:
-        """Requeue idle entries whose owning consumer is no longer alive."""
-        reclaimed = 0
+    def reclaim_pending_msg(
+        self,
+        queue_names: list[str],
+        group_name: str,
+        consumer_name: str,
+        live_consumers,
+        min_idle_ms: int = 0,
+    ) -> list[RedisMsg]:
+        """Claim idle entries whose owning consumer is no longer alive."""
+        reclaimed = []
         live_consumers = set(live_consumers)
         for queue_name in queue_names:
             messages = self.get_pending_msg(
@@ -564,13 +574,11 @@ class RedisDB:
                 group_name,
                 min_idle_ms=min_idle_ms or None,
             )
-            for message in messages:
-                if message.get("consumer") in live_consumers:
-                    continue
-                msg_id = message["message_id"]
-                if self.requeue_msg(queue_name, group_name, msg_id):
-                    reclaimed += 1
-                    logging.info(f"RedisDB.reclaim_pending_msg requeued {queue_name} {msg_id} from dead consumer {message.get('consumer')}")
+            message_ids = [message["message_id"] for message in messages if message.get("consumer") not in live_consumers]
+            claimed = self.claim_pending_msg(queue_name, group_name, consumer_name, message_ids, min_idle_ms)
+            reclaimed.extend(claimed)
+            for message in claimed:
+                logging.info(f"RedisDB.reclaim_pending_msg claimed {queue_name} {message.get_msg_id()} for {consumer_name}")
         return reclaimed
 
     def queue_info(self, queue, group_name) -> dict | None:

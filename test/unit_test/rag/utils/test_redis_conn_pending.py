@@ -84,29 +84,63 @@ class TestPendingInspection:
 
 @pytest.mark.p1
 class TestPendingReclaim:
-    def test_atomic_requeue_stops_after_success(self, redis_db):
-        redis_db.lua_requeue_msg = MagicMock(return_value=1)
+    def test_claim_uses_native_ownership_transfer(self, redis_db):
+        redis_db.REDIS.xclaim.return_value = [
+            ("3-0", {"message": '{"id": "task-3"}'}),
+            (None, None),
+        ]
 
-        assert redis_db.requeue_msg("te.0.common", "group", "3-0") is True
-        redis_db.lua_requeue_msg.assert_called_once()
-        assert redis_db.lua_requeue_msg.call_args.kwargs["keys"][0] == "te.0.common"
-        assert redis_db.lua_requeue_msg.call_args.kwargs["keys"][1] == "te.0.common:reclaim:group:3-0"
-        assert redis_db.lua_requeue_msg.call_args.kwargs["args"][:2] == ["group", "3-0"]
+        claimed = redis_db.claim_pending_msg("te.0.common", "group", "worker-b", ["3-0"], 120_000)
+
+        assert [message.get_msg_id() for message in claimed] == ["3-0"]
+        assert claimed[0].get_message() == {"id": "task-3"}
+        redis_db.REDIS.xclaim.assert_called_once_with(
+            name="te.0.common",
+            groupname="group",
+            consumername="worker-b",
+            min_idle_time=120_000,
+            message_ids=["3-0"],
+        )
+
+    def test_already_acknowledged_entry_is_not_claimed(self, redis_db):
+        redis_db.REDIS.xclaim.return_value = []
+
+        assert redis_db.claim_pending_msg("te.0.common", "group", "worker-b", ["3-0"], 120_000) == []
 
     def test_reclaims_only_idle_messages_from_dead_consumers(self, redis_db):
         redis_db.REDIS.xpending_range.return_value = [
             {"message_id": "1-0", "consumer": "dead-worker"},
             {"message_id": "2-0", "consumer": "live-worker"},
         ]
-        redis_db.lua_requeue_msg = MagicMock(return_value=1)
+        redis_db.REDIS.xclaim.return_value = [("1-0", {"message": '{"id": "task-1"}'})]
 
         reclaimed = redis_db.reclaim_pending_msg(
             ["te.0.common"],
             "group",
+            "recovery-worker",
             live_consumers={"live-worker"},
             min_idle_ms=120_000,
         )
 
-        assert reclaimed == 1
+        assert [message.get_msg_id() for message in reclaimed] == ["1-0"]
         assert redis_db.REDIS.xpending_range.call_args.kwargs["idle"] == 120_000
-        assert redis_db.lua_requeue_msg.call_args.kwargs["args"][:2] == ["group", "1-0"]
+        assert redis_db.REDIS.xclaim.call_args.kwargs["consumername"] == "recovery-worker"
+        assert redis_db.REDIS.xclaim.call_args.kwargs["message_ids"] == ["1-0"]
+
+
+@pytest.mark.p1
+class TestExecutorRegistration:
+    def test_membership_and_heartbeat_are_published_atomically(self, redis_db):
+        pipeline = redis_db.REDIS.pipeline.return_value
+        pipeline.execute.return_value = [1, 1]
+
+        assert redis_db.register_task_executor("worker-a", "heartbeat", 123.0) is True
+        redis_db.REDIS.pipeline.assert_called_once_with(transaction=True)
+        pipeline.sadd.assert_called_once_with("TASKEXE", "worker-a")
+        pipeline.zadd.assert_called_once_with("worker-a", {"heartbeat": 123.0})
+
+    def test_failed_atomic_publication_is_unhealthy(self, redis_db):
+        redis_db.REDIS.pipeline.return_value.execute.side_effect = valkey.exceptions.ConnectionError("connection reset")
+
+        assert redis_db.register_task_executor("worker-a", "heartbeat", 123.0) is False
+        redis_db.__open__.assert_called_once()
