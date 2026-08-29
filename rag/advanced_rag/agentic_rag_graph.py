@@ -60,6 +60,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+from rag.advanced_rag.harness.config import NAIVE, resolve_mode
 from rag.advanced_rag.harness.stats import in_phase
 from rag.prompts.generator import form_message, kb_prompt, message_fit_in
 
@@ -200,7 +201,7 @@ class AgenticState(TypedDict, total=False):
     partial_answer: bool
     abstain: bool
     empty_result: bool
-    verdict: dict  # SufficiencyVerdict serialized
+    verdict: dict  # sufficiency verdict as a plain dict (status/score/gaps/...)
     sca: dict  # raw SCA payload (its gaps feed the Query Rewriter)
 
     # ── budgets & counters ──
@@ -761,8 +762,7 @@ def build_agentic_graph(
     # more research rounds before giving up, at the cost of latency — this is
     # one of the two differentiators from high (the other is the ultra-only
     # graph_explore relational tool). high/medium stay at 3.
-    _mode_label = str(getattr(tools, "thinking_mode", "") or "").lower()
-    sca_max_rounds = 5 if _mode_label == "ultra" else 3
+    sca_max_rounds = resolve_mode(tools).sca_max_rounds
 
     # ── Node: formalize_question ──
     @in_phase("formalize")
@@ -1402,6 +1402,60 @@ async def _compose_fallback_draft(tools, state: AgenticState, answer_conf: dict)
         return evidence[:4000]
 
 
+async def _naive_rag(tools, messages: list, gen_conf: dict | None = None):
+    """Answer with one retrieve pass — no agentic graph at all.
+
+    Used when the thinking mode is unrecognised. Instead of failing the request
+    (the label comes from user input) we degrade to plain retrieval + one
+    composed answer, matching the ``run_agentic_rag`` yield contract so callers
+    are unaffected.
+    """
+    question = ""
+    for m in reversed(messages or []):
+        if m.get("role") == "user":
+            question = str(m.get("content") or "").strip()
+            break
+
+    _LOG.info("[Naive RAG] single-pass retrieval for question_len=%d", len(question))
+    try:
+        res = await tools.retrieve(question) if question else {"chunks": [], "doc_aggs": []}
+    except Exception:
+        _LOG.exception("[Naive RAG] retrieval failed")
+        res = {"chunks": [], "doc_aggs": []}
+
+    chunks = res.get("chunks") or []
+    if not chunks:
+        yield str(getattr(tools, "empty_response", "") or "")
+        return
+
+    # Accumulate onto the shared pool so the composed answer can be cited, and so
+    # callers reading tools.kbinfos see the same shape as the agentic path.
+    from rag.advanced_rag.harness.tools.search import _chunk_id
+
+    kbinfos = getattr(tools, "kbinfos", None)
+    if isinstance(kbinfos, dict):
+        existing = {_chunk_id(c) for c in (kbinfos.get("chunks") or [])}
+        for c in chunks:
+            if _chunk_id(c) not in existing:
+                kbinfos["chunks"].append(c)
+        tools.kbinfos = kbinfos
+
+    evidence = "\n\n".join(f"[{i}] {str(c.get('content_with_weight') or c.get('content') or '')[:1500]}" for i, c in enumerate(chunks[:8], 1))
+    answer_conf = dict(gen_conf) if gen_conf else {"temperature": 0.3}
+    try:
+        from rag.prompts.generator import form_message, message_fit_in
+
+        system = "Answer the question using ONLY the numbered evidence below. Cite with [n] markers. If the evidence does not answer it, say so plainly — do not use outside knowledge."
+        _, msg = message_fit_in(form_message(system, f"Question: {question}\n\nEvidence:\n{evidence}"), tools.chat_mdl.max_length)
+        ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], answer_conf)
+        if isinstance(ans, tuple):
+            ans = ans[0]
+        yield str(ans or "").strip() or str(getattr(tools, "empty_response", "") or "")
+    except Exception:
+        _LOG.exception("[Naive RAG] composition failed; returning evidence")
+        yield evidence[:4000]
+
+
 async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: dict | None = None):
     """Drive the agentic-search graph, yielding answer-token strings."""
     _LOG.info(
@@ -1412,15 +1466,27 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     )
 
     token_queue: asyncio.Queue = asyncio.Queue()
-    thinking_mode = str(getattr(tools, "thinking_mode", "") or "").lower()
+    mode = resolve_mode(tools)
+    thinking_mode = mode.label
     # One aligned graph for medium / high / ultra; only the planner+prefetch pair
     # (fan-out decomposition) and the SCA iteration separate the modes:
     #   medium: no planner (raw question), SCA review loop on
     #   high/ultra: planner + prefetch + SCA↔rewriter iteration
-    use_graph = thinking_mode in ("medium", "high", "ultra")
-    enable_sca = thinking_mode in ("medium", "high", "ultra")
-    use_fanout = thinking_mode in ("high", "ultra")
-    _LOG.info("[Agentic RAG] mode=%s sca=%s fanouts=%s", thinking_mode or "low", enable_sca, use_fanout)
+    # low has no agentic graph at all (direct_search), and an unrecognised label
+    # resolves to the naive spec — also non-agentic.
+    use_graph = mode.agentic
+    enable_sca = mode.enable_sca
+    use_fanout = mode.use_fanout
+
+    # An unrecognised mode label degrades to plain retrieval instead of failing:
+    # answer from one retrieve pass with no agentic graph whatsoever.
+    if mode is NAIVE:
+        _LOG.warning("[Agentic RAG] unrecognised thinking mode; falling back to naive (non-agentic) retrieval")
+        async for tok in _naive_rag(tools, messages, gen_conf=gen_conf):
+            yield tok
+        return
+
+    _LOG.info("[Agentic RAG] mode=%s sca=%s fanouts=%s", thinking_mode, enable_sca, use_fanout)
 
     if use_graph:
         graph = build_agentic_graph(tools, token_queue, gen_conf=gen_conf, enable_sca=enable_sca, use_fanout=use_fanout)

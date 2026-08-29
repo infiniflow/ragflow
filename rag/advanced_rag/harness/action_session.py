@@ -31,11 +31,11 @@ from langchain_core.messages import HumanMessage, SystemMessage, convert_to_open
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+from rag.advanced_rag.harness.config import resolve_mode
+
 _LOG = logging.getLogger(__name__)
 
 _INIT_TIMEOUT_S = 45.0
-_ACTION_MAX_TURNS = 4
-_ACTION_MAX_TURNS_ULTRA = 6  # ultra runs deeper inside each action session
 _ACTION_TIMEOUT_S = 75.0
 _SNIPPETS_PER_QUERY = 4
 _MAX_TOOL_RESPONSE_CHARS = 12000
@@ -384,10 +384,6 @@ _GRAPH_EXPLORE_TOOL_SPEC = {
     },
 }
 
-# graph_explore is ULTRA-ONLY: relational graph exploration is the extra depth
-# that distinguishes ultra from high (which stays on document/structure tools).
-_ULTRA_ONLY_TOOLS = {"graph_explore"}
-
 _TOOL_MAP = {
     "retrieve": _RETRIEVE_TOOL_SPEC,
     "search_chunks": _SEARCH_CHUNKS_TOOL_SPEC,
@@ -404,7 +400,8 @@ def _active_tool_specs(tools) -> list:
     """Tool schemas exposed to the model for THIS mode.
 
     Visibility rules:
-    * ultra adds the relational ``graph_explore`` (high/medium do not see it).
+    * the per-mode tool set is declared in ``config.THINKING_MODES`` — ultra is
+      the only mode that sees the relational ``graph_explore``.
     * ``web_search`` is hidden when NO web provider is configured — the model
       otherwise retries it up to 4× per session burning turns (40 empty calls
       observed in a 20-question run). Hiding beats any "do not use again" note.
@@ -419,10 +416,7 @@ def _active_tool_specs(tools) -> list:
 
     The returned list is what the model can call this session.
     """
-    mode = str(getattr(tools, "thinking_mode", "") or "").lower()
-    names = set(_TOOL_MAP.keys())
-    if mode != "ultra":
-        names -= _ULTRA_ONLY_TOOLS
+    names = set(resolve_mode(tools).tools) & set(_TOOL_MAP.keys())
     # Hide web_search without a provider — a hard visibility gate beats hoping
     # the model obeys a "do not use" note across sessions.
     if getattr(tools, "web_search", None) is None:
@@ -977,7 +971,16 @@ def _parse_tool_calls(msg) -> list:
         if not isinstance(args, dict):
             args = {}
         if name not in _TOOL_MAP:
-            _LOG.warning("[action_session] tool_call to unknown tool %r ignored", name)
+            # Do NOT drop it. OpenAI's protocol requires every assistant
+            # tool_call to be answered by a matching ``tool`` message — dropping
+            # one leaves a dangling tool_call and the next request is rejected
+            # ("tool call result does not follow tool call"). Keep it as a
+            # "unknown" call so _tool_node replies with a correction instead.
+            #
+            # Models most often emit the XML protocol tags (state / answer) as
+            # tool names; the hint below steers them back to plain-text output.
+            _LOG.warning("[action_session] tool_call to unknown tool %r; replying with a hint", name)
+            calls.append({"id": tc.id or f"call_{i}", "name": name, "args": args, "unknown": True})
             continue
         calls.append({"id": tc.id or f"call_{i}", "name": name, "args": args})
     return calls
@@ -1155,6 +1158,24 @@ async def _tool_node(state: _SessionState) -> dict:
                 }
             )
             continue
+        # Unknown tool name — never execute it; answer with a correction so the
+        # model can recover. Models usually emit the XML protocol tags (state /
+        # answer) as tool names; they belong in the reply body as plain text.
+        if c.get("unknown"):
+            hint = (
+                f"'{c['name']}' is not a tool. State patches and final answers are "
+                "plain TEXT in your reply body, wrapped in <state>...</state> or "
+                "<answer>...</answer> XML tags — do not emit them as tool calls. "
+                f"Available tools: {', '.join(sorted(_TOOL_MAP))}."
+            )
+            tool_msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": c["id"],
+                    "content": json.dumps({"passages": [{"kind": "error", "note": hint}]}, ensure_ascii=False),
+                }
+            )
+            continue
         # same-session tool cache: avoid re-grep/list_chunks on the same target
         cache_key = (c["name"], json.dumps(c["args"], sort_keys=True, ensure_ascii=False))
         if cache_key in cache:
@@ -1277,9 +1298,7 @@ def _action_max_turns(state: _SessionState) -> int:
     """Per-mode action-session turn budget: ultra goes deeper inside each
     session (more tool calls before the finalize fallback) — the latency cost
     of the relational depth that distinguishes it from high."""
-    tools = state.get("tools")
-    mode = str(getattr(tools, "thinking_mode", "") or "").lower()
-    return _ACTION_MAX_TURNS_ULTRA if mode == "ultra" else _ACTION_MAX_TURNS
+    return resolve_mode(state.get("tools")).action_max_turns
 
 
 def _route(state: _SessionState) -> str:
