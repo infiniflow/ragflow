@@ -32,6 +32,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -959,6 +960,14 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		if s.taskCtx.Doc.Type != "" {
 			inputs["file_type"] = s.taskCtx.Doc.Type
 		}
+		// A debug (dry-run) run with a chunker node keeps only the leading
+		// N chunks for preview. The cap is delivered through pipeline inputs
+		// (seeded into CanvasState.Globals by the pipeline run, read by the
+		// chunker decorator via globals.DebugChunkCap) — the same run-level
+		// channel as the other shared metadata, not override_params (the
+		// decorator is built at compile time and cannot read run-time
+		// override_params). An explicit caller-supplied cap is respected.
+		inputs = injectDebugChunkCap(inputs)
 	} else {
 		if s.taskCtx.File != nil {
 			inputs["file"] = s.taskCtx.File
@@ -1039,3 +1048,20 @@ func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
+
+// injectDebugChunkCap sets the canvas-debug chunk cap on the run inputs when
+// not already present. The cap is read by the chunker decorator (via
+// CanvasState.Globals / globals.DebugChunkCap) and limits a debug (dry-run)
+// preview to the leading N chunks. An existing value (a future caller-supplied
+// override) is respected, mirroring BuildParserPageCapOverride's respect for an
+// explicit page cap. A nil inputs map is initialized, so callers may pass a
+// concrete or nil map.
+func injectDebugChunkCap(inputs map[string]any) map[string]any {
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	if _, ok := inputs[globals.DebugChunkCapKey]; !ok {
+		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
+	}
+	return inputs
+}
