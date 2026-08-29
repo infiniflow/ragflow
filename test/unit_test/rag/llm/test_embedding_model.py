@@ -25,7 +25,8 @@
   (the old ``8196`` overshoot is gone);
 * ``ZhipuEmbed`` / ``OllamaEmbed`` now batch — ``ceil(n / batch_size)`` requests
   with input order and output shape preserved.
-* Embedding providers receive only standard request fields.
+* Direct embedding adapters omit LiteLLM controls while RAGcon keeps its
+  proxy-specific setting.
 """
 
 import json
@@ -46,6 +47,7 @@ from rag.llm.embedding_model import (
     OllamaEmbed,
     OpenAI_APIEmbed,
     OpenAIEmbed,
+    RAGconEmbed,
     TogetherAIEmbed,
     ZhipuEmbed,
 )
@@ -88,7 +90,7 @@ def _make_openai(cls=OpenAIEmbed, total_tokens=None):
 
 @pytest.mark.p1
 @pytest.mark.parametrize("embed_cls", [TogetherAIEmbed, OpenAI_APIEmbed])
-def test_openai_compatible_embedding_does_not_send_litellm_drop_params(embed_cls):
+def test_direct_openai_embedding_does_not_send_litellm_drop_params(embed_cls):
     """Strict embedding APIs reject LiteLLM-only request fields."""
 
     def _strict_create(**kwargs):
@@ -104,6 +106,17 @@ def test_openai_compatible_embedding_does_not_send_litellm_drop_params(embed_cls
     assert vectors.shape == (1, 1)
     assert tokens == 1
     assert "extra_body" not in embed.client.embeddings.create.call_args.kwargs
+
+
+@pytest.mark.p1
+def test_ragcon_embedding_sends_litellm_drop_params():
+    embed = _make_openai(cls=RAGconEmbed, total_tokens=1)
+
+    vectors, tokens = embed.encode(["hello"])
+
+    assert vectors.shape == (1, 3)
+    assert tokens == 1
+    assert embed.client.embeddings.create.call_args.kwargs["extra_body"] == {"drop_params": True}
 
 
 # --------------------------------------------------------------------------- #
