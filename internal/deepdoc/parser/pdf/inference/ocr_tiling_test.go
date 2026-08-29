@@ -78,12 +78,16 @@ func TestOCRDetectUsesStrictTilingThreshold(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				file, _, err := r.FormFile("request")
 				if err != nil {
-					t.Fatal(err)
+					t.Errorf("FormFile: %v", err)
+					http.Error(w, "invalid multipart request", http.StatusBadRequest)
+					return
 				}
 				defer file.Close()
 				img, _, err := image.Decode(file)
 				if err != nil {
-					t.Fatal(err)
+					t.Errorf("image.Decode: %v", err)
+					http.Error(w, "invalid image request", http.StatusBadRequest)
+					return
 				}
 				requestWidths = append(requestWidths, img.Bounds().Dx())
 				json.NewEncoder(w).Encode(map[string]any{
