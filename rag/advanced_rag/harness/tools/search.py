@@ -9,9 +9,15 @@ import logging
 import re
 from typing import Any
 from common import settings
-from rag.advanced_rag.harness.chunk_utils import (
+from rag.advanced_rag.harness.chunk_utils import (  # noqa: F401
+    _chunk_attr,
     _chunk_id,
     _chunk_text,
+    _dataset_id,
+    _doc_id,
+    _doc_title,
+    _snippet,
+    _xml_escape,
 )
 
 # ``_expand_related_via_structure`` is kept imported (not currently called here)
