@@ -20,10 +20,10 @@ import (
 // "first segment line one" with the newline dropped. Go's chunkFromItem does
 // the same via splitDroppingDelim, matching the Python reference.
 //
-// doc_type_kwd is intentionally asserted to remain present on every chunk.
-// It is a load-bearing Go field (index column + media dispatch) and is NOT
-// part of the divergence; it is classified go_intentional in known_diffs.json,
-// not a bug to fix here.
+// Plain text/markdown/html inputs must not gain doc_type_kwd merely because a
+// custom delimiter is configured: Python emits only text for those paths.
+// Structured JSON inputs keep their source doc_type_kwd, while ck_type remains
+// on Go text chunks for downstream crop dispatch.
 
 const backtickNewline = "`\n`"
 
@@ -54,6 +54,18 @@ func chunkTexts(chunks []map[string]any) []string {
 	return out
 }
 
+func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
+	t.Helper()
+	for i, chunk := range chunks {
+		if _, ok := chunk["doc_type_kwd"]; ok {
+			t.Errorf("chunk[%d] must not synthesize doc_type_kwd: %v", i, chunk)
+		}
+		if got := chunk["ck_type"]; got != "text" {
+			t.Errorf("chunk[%d] ck_type: want %q got %v", i, "text", got)
+		}
+	}
+}
+
 // TestCustomDelimTextDropsDelimiter reproduces token__text_backtick.
 func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
@@ -72,10 +84,8 @@ func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 		if got != w {
 			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
 		}
-		if kd, _ := chunks[i]["doc_type_kwd"].(string); kd != "text" {
-			t.Errorf("chunk[%d] doc_type_kwd: Go must keep it, want %q got %q", i, "text", kd)
-		}
 	}
+	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
 // TestCustomDelimJSONDropsDelimiter reproduces token__json_backtick: the
@@ -104,8 +114,10 @@ func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 		if got != w {
 			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
 		}
-		if kd, _ := chunks[i]["doc_type_kwd"].(string); kd != "text" {
-			t.Errorf("chunk[%d] doc_type_kwd: Go must keep it, want %q got %q", i, "text", kd)
+	}
+	for i, chunk := range chunks {
+		if kd, _ := chunk["doc_type_kwd"].(string); kd != "text" {
+			t.Errorf("chunk[%d] doc_type_kwd: structured JSON must keep it, want %q got %q", i, "text", kd)
 		}
 	}
 }
@@ -131,10 +143,8 @@ func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 		if got != w {
 			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
 		}
-		if kd, _ := chunks[i]["doc_type_kwd"].(string); kd != "text" {
-			t.Errorf("chunk[%d] doc_type_kwd: Go must keep it, want %q got %q", i, "text", kd)
-		}
 	}
+	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
 // TestCustomDelimHTMLDropsDelimiter reproduces token__html_backtick.
@@ -154,8 +164,6 @@ func TestCustomDelimHTMLDropsDelimiter(t *testing.T) {
 		if got != w {
 			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
 		}
-		if kd, _ := chunks[i]["doc_type_kwd"].(string); kd != "text" {
-			t.Errorf("chunk[%d] doc_type_kwd: Go must keep it, want %q got %q", i, "text", kd)
-		}
 	}
+	assertPlainCustomDelimiterMetadata(t, chunks)
 }

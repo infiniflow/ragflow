@@ -356,7 +356,10 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 	}
 	textDocs := make([]schema.ChunkDoc, 0, len(cleaned))
 	for _, s := range cleaned {
-		textDocs = append(textDocs, schema.ChunkDoc{Text: s, DocType: "text", CKType: "text"})
+		// Python's unstructured text path emits only text here. Keep CKType for
+		// Go's downstream crop dispatch, but do not synthesize structured-input
+		// metadata such as doc_type_kwd.
+		textDocs = append(textDocs, schema.ChunkDoc{Text: s, CKType: "text"})
 	}
 	docs := applyChildrenDelimText(textDocs, childrenPattern)
 	return chunkOutputs(docs)
