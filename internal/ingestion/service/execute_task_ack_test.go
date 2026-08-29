@@ -213,6 +213,10 @@ func claimTaskForTest(t *testing.T, ingestor *Ingestor, taskID string) bool {
 // distributed store is consulted.
 func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	t.Cleanup(func() {
+		ingestor.releaseTask("task-1")
+		ingestor.releaseTask("task-2")
+	})
 
 	if !claimTaskForTest(t, ingestor, "task-1") {
 		t.Fatal("first claim should succeed")
@@ -274,6 +278,7 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 	if !claimTaskForTest(t, ingestor, taskID) {
 		t.Fatal("expected reclaim after executeTask to succeed")
 	}
+	t.Cleanup(func() { ingestor.releaseTask(taskID) })
 }
 
 // TestSettleMessage_AckOnTerminal: body returns true -> Ack, no Nack.

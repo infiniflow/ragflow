@@ -839,11 +839,14 @@ func (r *Client) AcquireLease(ctx context.Context, key, owner string, ttl time.D
 	if ttl <= 0 {
 		return false, fmt.Errorf("redis: lease TTL must be positive")
 	}
-	ok, err := r.client.SetNX(ctx, key, owner, ttl).Result()
+	result, err := r.client.SetArgs(ctx, key, owner, redis.SetArgs{Mode: "NX", TTL: ttl}).Result()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("acquire lease %q: %w", key, err)
 	}
-	return ok, nil
+	return result == "OK", nil
 }
 
 // RenewLease extends a lease only while it is still owned by owner. The

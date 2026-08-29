@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -126,6 +127,27 @@ func TestTaskClaimHeartbeatStartsBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestTaskClaimDerivesRefreshIntervalFromTTL(t *testing.T) {
+	store := newSharedTaskClaimStore()
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.taskClaims = store
+	ingestor.taskClaimTTL = 30 * time.Millisecond
+	ingestor.taskClaimRefreshInterval = 0
+	claimCtx, claimed, err := ingestor.claimTask(t.Context(), "task-1")
+	if err != nil || !claimed {
+		t.Fatalf("claimTask = %v, %v; want true, nil", claimed, err)
+	}
+	defer ingestor.releaseTask("task-1")
+	select {
+	case <-store.renewed:
+	case <-time.After(time.Second):
+		t.Fatal("claim did not derive a renewal interval from its TTL")
+	}
+	if err := claimCtx.Err(); err != nil {
+		t.Fatalf("claim context cancelled after derived-interval renewal: %v", err)
+	}
+}
+
 func TestMessageHeartbeatStartsWhileClaimIsQueued(t *testing.T) {
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 	ingestor.taskClaims = nil
@@ -149,6 +171,107 @@ func TestMessageHeartbeatStartsWhileClaimIsQueued(t *testing.T) {
 			time.Sleep(time.Millisecond)
 		}
 	}
+}
+
+func TestMessageHeartbeatDoesNotReadReplacedTaskContext(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.heartbeatInterval = time.Microsecond
+	heartbeatCtx, cancelHeartbeat := context.WithCancel(t.Context())
+	handle := &fakeTaskHandle{}
+	taskCtx := taskpkg.NewTaskContextForScheduling(heartbeatCtx, &entity.IngestionTask{ID: "task-1"})
+	taskCtx.Handle = handle
+	stop := ingestor.startHeartbeat(taskCtx)
+	deadline := time.After(time.Second)
+	for handle.inProgress.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("heartbeat did not start")
+		default:
+			time.Sleep(time.Microsecond)
+		}
+	}
+
+	replacementCtx := context.Background()
+	for range 10_000 {
+		taskCtx.Ctx = replacementCtx
+	}
+	cancelHeartbeat()
+	stop()
+}
+
+func TestConcurrentLocalTaskClaimsHaveSingleOwner(t *testing.T) {
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.taskClaims = nil
+	const contenders = 32
+	start := make(chan struct{})
+	results := make(chan bool, contenders)
+	var wg sync.WaitGroup
+	for range contenders {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, claimed, err := ingestor.claimTask(t.Context(), "task-1")
+			if err != nil {
+				t.Errorf("claimTask: %v", err)
+			}
+			results <- claimed
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners := 0
+	for claimed := range results {
+		if claimed {
+			winners++
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("successful claims = %d, want 1", winners)
+	}
+	ingestor.releaseTask("task-1")
+}
+
+func TestConcurrentDistributedTaskClaimsHaveSingleOwner(t *testing.T) {
+	store := newSharedTaskClaimStore()
+	const contenders = 32
+	ingestors := make([]*Ingestor, contenders)
+	start := make(chan struct{})
+	results := make(chan int, contenders)
+	var wg sync.WaitGroup
+	for i := range contenders {
+		ingestor := NewIngestor(fmt.Sprintf("worker-%d", i), 1, []string{"pdf"})
+		ingestor.taskClaims = store
+		ingestor.taskClaimRefreshInterval = time.Hour
+		ingestors[i] = ingestor
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			_, claimed, err := ingestors[index].claimTask(t.Context(), "task-1")
+			if err != nil {
+				t.Errorf("claimTask(%d): %v", index, err)
+				return
+			}
+			if claimed {
+				results <- index
+			}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners := make([]int, 0, 1)
+	for index := range results {
+		winners = append(winners, index)
+	}
+	if len(winners) != 1 {
+		t.Fatalf("successful distributed claims = %d, want 1", len(winners))
+	}
+	ingestors[winners[0]].releaseTask("task-1")
 }
 
 func TestTaskClaimHeartbeatCancelsWithLeaseLostCause(t *testing.T) {

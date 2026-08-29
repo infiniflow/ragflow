@@ -26,7 +26,10 @@ import (
 	redis2 "ragflow/internal/engine/redis"
 )
 
-const taskClaimKeyPrefix = "ragflow:ingestion:task-claim:"
+const (
+	taskClaimKeyPrefix      = "ragflow:ingestion:task-claim:"
+	taskClaimReleaseTimeout = 2 * time.Second
+)
 
 var errTaskClaimLost = errors.New("ingestion task claim lost")
 
@@ -112,7 +115,7 @@ func (e *Ingestor) claimTask(ctx context.Context, taskID string) (context.Contex
 		e.tasksMu.Unlock()
 		cancel(context.Canceled)
 		if distributed {
-			releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			releaseCtx, cancel := context.WithTimeout(context.Background(), taskClaimReleaseTimeout)
 			defer cancel()
 			_, _ = e.taskClaims.Release(releaseCtx, taskID, e.id)
 		}
@@ -152,7 +155,7 @@ func (e *Ingestor) releaseTask(taskID string) {
 		return
 	}
 
-	releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	releaseCtx, cancel := context.WithTimeout(context.Background(), taskClaimReleaseTimeout)
 	defer cancel()
 	if _, err := e.taskClaims.Release(releaseCtx, taskID, e.id); err != nil {
 		common.Warn(fmt.Sprintf("release distributed claim for task %s: %v", taskID, err))
@@ -164,11 +167,19 @@ func (e *Ingestor) releaseTask(taskID string) {
 // so the message is Nacked and the task remains RUNNING for redelivery.
 func (e *Ingestor) renewTaskClaim(taskID string, claim *activeTaskClaim) {
 	defer close(claim.renewalDone)
-	if e.taskClaims == nil || e.taskClaimRefreshInterval <= 0 {
+	if e.taskClaims == nil {
 		claim.cancel(errTaskClaimLost)
 		return
 	}
-	ticker := time.NewTicker(e.taskClaimRefreshInterval)
+	refreshInterval := e.taskClaimRefreshInterval
+	if refreshInterval <= 0 {
+		refreshInterval = e.taskClaimTTL / 3
+	}
+	if refreshInterval <= 0 {
+		claim.cancel(errTaskClaimLost)
+		return
+	}
+	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
 	for {
 		select {

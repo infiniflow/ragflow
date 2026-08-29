@@ -1180,6 +1180,12 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 	if taskCtx.Handle == nil || e.heartbeatInterval <= 0 {
 		return func() {}
 	}
+	heartbeatCtx := taskCtx.Ctx
+	if heartbeatCtx == nil {
+		heartbeatCtx = context.Background()
+	}
+	handle := taskCtx.Handle
+	taskID := taskCtx.IngestionTask.ID
 	var wg sync.WaitGroup
 	wg.Add(1)
 	done := make(chan struct{})
@@ -1190,12 +1196,12 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 		for {
 			select {
 			case <-ticker.C:
-				if err := taskCtx.Handle.InProgress(); err != nil {
-					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.IngestionTask.ID), err)
+				if err := handle.InProgress(); err != nil {
+					common.Error(fmt.Sprintf("heartbeat task %s", taskID), err)
 				}
 			case <-done:
 				return
-			case <-taskCtx.Ctx.Done():
+			case <-heartbeatCtx.Done():
 				return
 			}
 		}
