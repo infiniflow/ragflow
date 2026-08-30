@@ -20,6 +20,7 @@ invokes the helper.
 
 import ast
 import inspect
+import re
 import textwrap
 from pathlib import Path
 
@@ -72,6 +73,61 @@ def test_helper_alters_tenant_model_model_type_to_integer():
     assert isinstance(new_type, ast.Call), "new type must be a Peewee field call"
     callee = new_type.func
     assert isinstance(callee, ast.Name) and callee.id == "IntegerField", f"new type must be IntegerField (model_type is a bitmask), got {ast.dump(callee)}"
+
+
+def test_helper_passes_pg_gaussdb_using_cast():
+    """PostgreSQL / GaussDB refuse to implicitly cast varchar -> integer.
+
+    Peewee's PostgresqlMigrator.alter_column_type only emits the ``USING``
+    clause when a ``cast`` argument is supplied
+    (``playhouse.migrate.PostgresqlMigrator.alter_column_type``). The helper
+    must therefore pass ``cast="model_type::integer"``; ``alter_db_column_type``
+    forwards it to the migrator on PG/GaussDB only (the MySQL/OceanBase
+    migrators ignore the kwarg). Without the cast the ALTER fails on
+    legacy-string rows that the pre-cleanup missed, and the service keeps
+    running with a varchar column that the bitwise query cannot use — see
+    the CodeRabbit review on PR #18885 and issue #18755.
+    """
+    source = _read_db_models_source()
+    func = _parse_function(source, "migrate_tenant_model_model_type_to_integer")
+    calls = _collect_alter_column_type_calls(func)
+
+    call = calls[("tenant_model", "model_type")]
+    # Helper must pass the USING cast as a keyword argument.
+    cast_kw = next((kw for kw in call.keywords if kw.arg == "cast"), None)
+    assert cast_kw is not None, "migrate_tenant_model_model_type_to_integer must pass cast=... to alter_db_column_type so PG/GaussDB get the USING clause"
+    assert isinstance(cast_kw.value, ast.Constant) and cast_kw.value.value == "model_type::integer", f"cast must be the PG/GaussDB USING clause 'model_type::integer', got {ast.dump(cast_kw.value)}"
+
+
+def test_alter_db_column_type_forwards_cast_to_postgres_migrator():
+    """alter_db_column_type must forward the ``cast`` kwarg to the
+    PostgresqlMigrator (so the USING clause is emitted) and silently drop
+    it on non-Postgres migrators (MySQL / OceanBase, which don't accept
+    the kwarg).
+    """
+    source = _read_db_models_source()
+    func = _parse_function(source, "alter_db_column_type")
+    func_src = textwrap.dedent(ast.get_source_segment(source, func) or "")
+
+    # Forwarding the kwarg means ``cast`` is plumbed through to the
+    # underlying ``migrator.alter_column_type(...)`` call (we expect the
+    # production code to build a kwargs dict and splat it — the literal
+    # ``cast=cast`` form is not required).
+    assert "migrator.alter_column_type(" in func_src, "alter_db_column_type must call migrator.alter_column_type"
+    assert "kwargs" in func_src, "alter_db_column_type must splat a kwargs dict into migrator.alter_column_type(...) so the cast is forwarded"
+    assert re.search(r"\*\*kwargs", func_src), "alter_db_column_type must splat **kwargs into migrator.alter_column_type(...) so the cast is forwarded"
+    assert re.search(r'kwargs\["cast"\]\s*=\s*cast', func_src), "alter_db_column_type must populate kwargs['cast'] from the local cast parameter"
+
+    # And gate the forwarding on isinstance(migrator, PostgresqlMigrator)
+    # so MySQL/OceanBase don't see an unexpected kwarg.
+    assert "isinstance(migrator, PostgresqlMigrator)" in func_src, "alter_db_column_type must gate the cast on isinstance(migrator, PostgresqlMigrator)"
+
+    # The function must now accept the new ``cast`` parameter.
+    from api.db import db_models
+
+    sig = inspect.signature(db_models.alter_db_column_type)
+    assert "cast" in sig.parameters, "alter_db_column_type must accept a 'cast' parameter"
+    assert sig.parameters["cast"].default is None, "alter_db_column_type's 'cast' parameter must default to None"
 
 
 def test_helper_pre_cleans_legacy_string_model_types():
