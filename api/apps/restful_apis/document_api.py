@@ -1341,9 +1341,7 @@ def list_thumbnails():
         kb_ids = {d["kb_id"] for d in docs}
         if kb_ids:
             joined_tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-            accessible_ids = KnowledgebaseService.get_accessible_ids(
-                [m["tenant_id"] for m in joined_tenants], current_user.id, list(kb_ids)
-            )
+            accessible_ids = KnowledgebaseService.get_accessible_ids([m["tenant_id"] for m in joined_tenants], current_user.id, list(kb_ids))
             denied = kb_ids - accessible_ids
             if denied:
                 logging.warning("Thumbnails denied: user=%s on %d dataset(s)", current_user.id, len(denied))
@@ -1876,7 +1874,7 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
-        if not await thread_pool_exec(KnowledgebaseService.accessible, bkt, current_user.id):
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=bkt, user_id=current_user.id):
             logging.warning("Document image denied: user=%s dataset=%s", current_user.id, bkt)
             return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)

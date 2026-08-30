@@ -17,7 +17,8 @@ import logging
 from datetime import datetime
 
 from api.apps import current_user, login_required
-from api.db.services.task_service import TaskService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
+from api.db.services.task_service import TaskService
+from api.db.services.document_service import DocumentService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils.api_utils import (
     get_json_result,
     get_request_json,
@@ -63,8 +64,6 @@ async def _cancel_task(task_id):
     # touching anything. Canvas-debug and graph-raptor tasks use sentinel doc
     # ids that have no Document row, so they are not scope-checked.
     if task.doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
-        from api.db.services.document_service import DocumentService
-
         if not DocumentService.accessible(task.doc_id, current_user.id):
             logging.warning("Task %s cancel denied: user %s lacks dataset access", task_id, current_user.id)
             return get_json_result(
@@ -96,8 +95,6 @@ async def _cancel_task(task_id):
     # If the task belongs to a document, also mark the document's run status as
     # cancelled so that the UI reflects the state correctly.
     try:
-        from api.db.services.document_service import DocumentService
-
         doc_id = task.doc_id
         if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
             _, doc = DocumentService.get_by_id(doc_id)

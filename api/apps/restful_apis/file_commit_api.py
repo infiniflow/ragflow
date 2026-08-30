@@ -131,8 +131,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def create_commit(entity_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         req = await get_request_json()
@@ -168,8 +171,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def list_commits(entity_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
@@ -232,8 +238,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def get_commit(entity_id, commit_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
@@ -287,8 +296,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def list_commit_files(entity_id, commit_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
@@ -323,8 +335,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def diff_commits(entity_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         from_id = request.args.get("from")
@@ -349,8 +364,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def get_uncommitted_changes(entity_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
@@ -365,8 +383,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def get_commit_tree(entity_id, commit_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
@@ -386,8 +407,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def get_commit_file_content(entity_id, commit_id, file_id):
         try:
             folder_id = _resolve(entity_id)
-        except PermissionError as e:
-            return get_json_result(code=RetCode.PERMISSION_ERROR, message=str(e))
+        except PermissionError:
+            # Existence-hiding denial (same shape as get_file_version_history):
+            # the server-side warning log carries the detail; the caller
+            # cannot distinguish "no such target" from "not yours".
+            return get_data_error_result(message="File not found.")
         except ValueError as e:
             return get_json_result(code=RetCode.NOT_FOUND, message=str(e))
         try:
