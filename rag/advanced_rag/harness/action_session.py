@@ -824,7 +824,7 @@ async def _exec_calculate(tools, args: dict) -> tuple:
     if not res:
         # nothing derivable -> tell the model so it doesn't loop on it
         return [{"kind": "calculate", "expression": None, "note": "no numeric answer derivable from given facts; answer directly or retrieve more numbers."}], []
-    return [{"kind": "calculate", "expression": res.get("expression"), "result": res.get("result"), "computed": res.get("computed_value")}], []
+    return [{"kind": "calculate", "expression": res.get("expression"), "result": res.get("value")}], []
 
 
 async def _exec_graph_explore(tools, args: dict) -> tuple:
