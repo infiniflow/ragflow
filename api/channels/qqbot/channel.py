@@ -18,6 +18,8 @@ LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.sgroup.qq.com"
 DEFAULT_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
+# Kept under the 5s join() in stop(), so a slow reply cannot outlive the shutdown path.
+DISPATCH_DRAIN_TIMEOUT = 4
 
 
 @dataclass
@@ -72,6 +74,7 @@ class QQBotChannel(Channel):
         self._ws_thread: Optional[threading.Thread] = None
         self._ws_loop: Optional[asyncio.AbstractEventLoop] = None
         self._ws_session: Optional[aiohttp.ClientSession] = None
+        self._dispatch_tasks: set[asyncio.Task] = set()
 
     async def start(self) -> None:
         if self._ws_thread and self._ws_thread.is_alive():
@@ -112,6 +115,13 @@ class QQBotChannel(Channel):
         except Exception:
             LOGGER.error("[qqbot:%s] websocket thread crashed", self.account_id, exc_info=True)
         finally:
+            if self._dispatch_tasks:
+                try:
+                    loop.run_until_complete(
+                        asyncio.wait(set(self._dispatch_tasks), timeout=DISPATCH_DRAIN_TIMEOUT)
+                    )
+                except Exception:
+                    LOGGER.error("[qqbot:%s] failed to drain in-flight dispatches", self.account_id, exc_info=True)
             try:
                 loop.close()
             except Exception:
@@ -254,7 +264,9 @@ class QQBotChannel(Channel):
         incoming = self._normalize_incoming_event(event_type, data)
         if incoming is None:
             return
-        asyncio.create_task(self._dispatch(incoming))
+        task = asyncio.create_task(self._dispatch(incoming))
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
 
     async def _heartbeat_loop(self, ws: aiohttp.ClientWebSocketResponse, interval_ms: int) -> None:
         delay = max(interval_ms / 1000.0, 1.0)
