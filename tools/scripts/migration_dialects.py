@@ -48,6 +48,16 @@ DB_TYPE_ALIASES: dict[str, str] = {
 
 DEFAULT_PORTS = {MYSQL: 3306, POSTGRES: 5432}
 
+# Connection settings carried over from the deployment's config block, so the
+# migration connects on the same terms as the application (which forwards its
+# whole block to the driver). TLS is not forced here: the application does not
+# require it either, and doing so would break every deployment that does not
+# already run TLS.
+CONNECT_OPTION_KEYS: dict[str, tuple[str, ...]] = {
+    MYSQL: ("ssl_ca", "ssl_cert", "ssl_key", "ssl_verify_cert", "ssl_verify_identity", "connect_timeout"),
+    POSTGRES: ("sslmode", "sslrootcert", "sslcert", "sslkey", "connect_timeout"),
+}
+
 
 def normalize_db_type(db_type: str | None) -> str:
     """Map a DB_TYPE / service_conf key onto a dialect name.
@@ -102,6 +112,9 @@ class SqlDialect:
 
     def make_migrator(self, db):
         raise NotImplementedError
+
+    def prepare_session(self, db, config) -> None:
+        """Configure a freshly opened connection. No-op unless overridden."""
 
     # --- identifiers -----------------------------------------------------
 
@@ -223,6 +236,7 @@ class MySQLDialect(SqlDialect):
             user=config.user,
             password=config.password,
             charset="utf8mb4",
+            **config.connect_options,
         )
 
     def make_migrator(self, db):
@@ -279,10 +293,20 @@ class PostgresDialect(SqlDialect):
             port=config.port,
             user=config.user,
             password=config.password,
+            **config.connect_options,
         )
 
     def make_migrator(self, db):
         return PostgresqlMigrator(db)
+
+    def prepare_session(self, db, config) -> None:
+        """Bind the session to the schema the catalog lookups inspect.
+
+        Unqualified DDL otherwise lands in whatever the server's default
+        search_path resolves to, so a non-public deployment would check one
+        namespace and create tables in another.
+        """
+        db.execute_sql(f"SET search_path TO {self.quote(config.schema)}")
 
     def catalog_scope(self, config) -> str:
         # information_schema.table_schema is the namespace, not the database.

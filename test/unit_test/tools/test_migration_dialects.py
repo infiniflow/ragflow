@@ -28,6 +28,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "tools", "scripts"))
 
 from migration_dialects import (
+    CONNECT_OPTION_KEYS,
     MYSQL,
     POSTGRES,
     Column,
@@ -194,3 +195,127 @@ def test_catalog_scope_is_the_database_on_mysql_and_the_schema_on_postgres():
     # information_schema.table_schema means the namespace in PostgreSQL, so
     # filtering by database name would match nothing.
     assert PostgresDialect().catalog_scope(Config()) == "public"
+
+
+class _RecordingDB:
+    def __init__(self):
+        self.statements = []
+
+    def execute_sql(self, sql, params=None):
+        self.statements.append(sql)
+
+
+class _Config:
+    def __init__(self, schema="public"):
+        self.schema = schema
+        self.database = "rag_flow"
+
+
+def test_mysql_session_needs_no_preparation():
+    db = _RecordingDB()
+    MySQLDialect().prepare_session(db, _Config())
+    assert db.statements == []
+
+
+@pytest.mark.parametrize("schema", ["public", "ragflow", "Mixed_Case"])
+def test_postgres_binds_the_session_to_the_configured_schema(schema):
+    """Catalog lookups scope to config.schema, so unqualified DDL must land there
+    too - otherwise a non-public deployment inspects one namespace and writes
+    to another."""
+    db = _RecordingDB()
+    PostgresDialect().prepare_session(db, _Config(schema))
+    assert db.statements == [f'SET search_path TO "{schema}"']
+
+
+def test_postgres_search_path_rejects_a_quoted_schema_name():
+    with pytest.raises(ValueError):
+        PostgresDialect().prepare_session(_RecordingDB(), _Config('pub"lic'))
+
+
+def test_connection_options_cover_each_driver_tls_settings():
+    assert "sslmode" in CONNECT_OPTION_KEYS[POSTGRES]
+    assert "sslrootcert" in CONNECT_OPTION_KEYS[POSTGRES]
+    assert "ssl_ca" in CONNECT_OPTION_KEYS[MYSQL]
+
+
+# --- config-block selection ------------------------------------------------
+
+
+def _write_conf(tmp_path, text):
+    path = tmp_path / "service_conf.yaml"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def _load(monkeypatch, tmp_path, text, db_type):
+    import mysql_migration
+
+    monkeypatch.setenv("DB_TYPE", db_type)
+    return mysql_migration.MigrationConfig.from_config_file(_write_conf(tmp_path, text))
+
+
+MYSQL_BLOCK = "mysql:\n  host: mysql-host\n  port: 3306\n  name: rag_flow\n"
+PG_BLOCK = "postgres:\n  host: pg-host\n  port: 5432\n  name: rag_flow\n  sslmode: verify-full\n"
+
+
+def test_postgres_reads_its_own_block(monkeypatch, tmp_path):
+    cfg = _load(monkeypatch, tmp_path, MYSQL_BLOCK + PG_BLOCK, "postgres")
+    assert (cfg.db_type, cfg.host, cfg.port) == (POSTGRES, "pg-host", 5432)
+
+
+def test_postgres_never_falls_back_to_the_mysql_block(monkeypatch, tmp_path):
+    """The dangerous case: `postgres:` still commented out in service_conf.yaml.
+    Reading `mysql:` would point --execute at a different server."""
+    with pytest.raises(KeyError):
+        _load(monkeypatch, tmp_path, MYSQL_BLOCK, "postgres")
+
+
+def test_mysql_keeps_the_legacy_block_lookup(monkeypatch, tmp_path):
+    cfg = _load(monkeypatch, tmp_path, "database:\n  host: legacy-host\n  name: rag_flow\n", "mysql")
+    assert (cfg.db_type, cfg.host) == (MYSQL, "legacy-host")
+
+
+def test_missing_config_file_is_not_swallowed_into_defaults(monkeypatch, tmp_path):
+    import mysql_migration
+
+    monkeypatch.setenv("DB_TYPE", "postgres")
+    with pytest.raises(OSError):
+        mysql_migration.MigrationConfig.from_config_file(str(tmp_path / "nope.yaml"))
+
+
+def test_tls_settings_are_carried_over_from_the_config_block(monkeypatch, tmp_path):
+    cfg = _load(monkeypatch, tmp_path, PG_BLOCK, "postgres")
+    assert cfg.connect_options == {"sslmode": "verify-full"}
+
+
+def test_unknown_block_keys_are_not_forwarded_to_the_driver(monkeypatch, tmp_path):
+    cfg = _load(monkeypatch, tmp_path, PG_BLOCK + "  max_connections: 100\n  stale_timeout: 30\n", "postgres")
+    assert "max_connections" not in cfg.connect_options
+    assert "stale_timeout" not in cfg.connect_options
+
+
+# --- information_schema type normalization ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("reported", "expected"),
+    [("integer", "int"), ("INTEGER", "int"), ("int", "int"), ("bigint", "bigint"), ("character varying", "character varying")],
+)
+def test_column_type_is_normalized_to_the_mysql_spelling(reported, expected):
+    """PostgreSQL reports INT as "integer". The merge/seeding stages compare
+    against "int", and missing that makes them run again on an already-migrated
+    table - the merge then re-maps ints through a string-keyed lookup and writes
+    model_type=0."""
+    import mysql_migration
+
+    class _Cursor:
+        @staticmethod
+        def fetchone():
+            return (reported,)
+
+    db = mysql_migration.MigrationDatabase.__new__(mysql_migration.MigrationDatabase)
+    db.config = _Config()
+    db.dialect = PostgresDialect()
+    db.execute_sql = lambda *_a, **_k: _Cursor()
+
+    assert db.get_column_type("tenant_model", "model_type") == expected

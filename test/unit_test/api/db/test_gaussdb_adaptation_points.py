@@ -390,8 +390,8 @@ def test_docker_launch_scripts_skip_mysql_migration_for_gaussdb():
 
     assert 'DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"' in entrypoint
     assert 'if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then' in entrypoint
-    assert "Skipping MySQL-specific model provider table migrations" in entrypoint
+    assert "Skipping model provider table migrations" in entrypoint
 
     assert 'local db_type="${DB_TYPE:-mysql}"' in launcher
     assert 'if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then' in launcher
-    assert "Skipping MySQL-specific model provider table migrations" in launcher
+    assert "Skipping model provider table migrations" in launcher

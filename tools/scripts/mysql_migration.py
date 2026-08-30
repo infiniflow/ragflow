@@ -55,7 +55,9 @@ sys.path.insert(0, PROJECT_BASE)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from migration_dialects import (
+    CONNECT_OPTION_KEYS,
     DEFAULT_PORTS,
+    MYSQL,
     Column,
     Index,
     TableSpec,
@@ -70,6 +72,10 @@ logger = logging.getLogger(__name__)
 
 MIGRATION_DB_VERSION_MARKER = "mysql_migration.database.version"
 
+# information_schema type names normalized to the spelling the stage predicates
+# use. PostgreSQL reports INT as "integer"; MySQL reports "int".
+COLUMN_TYPE_ALIASES = {"integer": "int"}
+
 
 class MigrationConfig:
     """Connection settings for the metadata database being migrated."""
@@ -83,6 +89,7 @@ class MigrationConfig:
         database: str = "rag_flow",
         db_type: str = "mysql",
         schema: str = "public",
+        connect_options: dict | None = None,
     ):
         self.db_type = normalize_db_type(db_type)
         self.host = host
@@ -93,6 +100,9 @@ class MigrationConfig:
         # PostgreSQL only: the namespace holding the tables. Ignored on MySQL,
         # where information_schema.table_schema is the database instead.
         self.schema = schema
+        # TLS and timeout settings carried over from the deployment's own config
+        # block, so the migration connects the way the application does.
+        self.connect_options = connect_options or {}
 
     @classmethod
     def from_config_file(cls, config_path: str) -> "MigrationConfig":
@@ -103,48 +113,50 @@ class MigrationConfig:
         so a deployment with a `postgres:` block and DB_TYPE=postgres is read
         without any migration-specific configuration.
 
-        Falls back to the legacy `database:`/`mysql:` block lookup so existing
-        MySQL deployments keep working unchanged.
+        The legacy `database:`/`mysql:` lookup is kept for MySQL only, because it
+        is what MySQL deployments already have. Any other dialect must have its
+        own block: silently reading the `mysql:` block would point the migration
+        at a different server than the one being migrated.
         """
         raw_db_type = os.getenv("DB_TYPE", "mysql")
         db_type = normalize_db_type(raw_db_type)
-        try:
-            from ruamel.yaml import YAML
 
-            yaml = YAML(typ="safe", pure=True)
+        from ruamel.yaml import YAML
 
-            with open(config_path, "r") as f:
-                config = yaml.load(f) or {}
+        yaml = YAML(typ="safe", pure=True)
 
-            # Prefer the block named by DB_TYPE, then the raw DB_TYPE spelling
-            # (so `serenedb:` or `postgresql:` are found), then the legacy keys.
-            db_config = None
-            for key in (db_type, raw_db_type.strip().lower(), "database", "mysql"):
-                candidate = config.get(key)
-                if isinstance(candidate, dict) and candidate:
-                    db_config = candidate
-                    if key not in (db_type, raw_db_type.strip().lower()):
-                        logger.info("Using legacy '%s' config block for DB_TYPE=%s", key, raw_db_type)
-                    break
+        with open(config_path, "r") as f:
+            config = yaml.load(f) or {}
 
-            if db_config is None:
-                raise KeyError(f"no database config block found for DB_TYPE={raw_db_type} in {config_path}")
+        # The block named by DB_TYPE, then the raw DB_TYPE spelling (so
+        # `serenedb:` or `postgresql:` are found), then - on MySQL only - the
+        # legacy keys, in the order the script used before it knew dialects.
+        keys = [db_type, raw_db_type.strip().lower()]
+        if db_type == MYSQL:
+            keys += ["database", "mysql"]
 
-            return cls(
-                host=db_config.get("host", "localhost"),
-                port=db_config.get("port", DEFAULT_PORTS[db_type]),
-                user=db_config.get("user", "root"),
-                password=db_config.get("password", ""),
-                database=db_config.get("name", db_config.get("database", "rag_flow")),
-                db_type=raw_db_type,
-                schema=db_config.get("schema", "public"),
-            )
-        except Exception as e:
-            # Defaults are MySQL-shaped and almost certainly wrong for any other
-            # dialect, so say which dialect was expected rather than failing
-            # later with a connection refused to port 3306.
-            logger.warning("Failed to load config file %s: %s; falling back to %s defaults", config_path, e, db_type)
-            return cls(db_type=raw_db_type)
+        db_config = None
+        for key in keys:
+            candidate = config.get(key)
+            if isinstance(candidate, dict) and candidate:
+                db_config = candidate
+                break
+
+        if db_config is None:
+            # Falling back to defaults here would migrate whatever happens to be
+            # reachable on localhost, so stop instead.
+            raise KeyError(f"No '{db_type}' database config block found in {config_path} for DB_TYPE={raw_db_type}")
+
+        return cls(
+            host=db_config.get("host", "localhost"),
+            port=db_config.get("port", DEFAULT_PORTS[db_type]),
+            user=db_config.get("user", "root"),
+            password=db_config.get("password", ""),
+            database=db_config.get("name", db_config.get("database", "rag_flow")),
+            db_type=raw_db_type,
+            schema=db_config.get("schema", "public"),
+            connect_options={k: db_config[k] for k in CONNECT_OPTION_KEYS[db_type] if k in db_config},
+        )
 
 
 class MigrationStats:
@@ -199,6 +211,7 @@ class MigrationDatabase:
 
     def connect(self):
         self.db.connect()
+        self.dialect.prepare_session(self.db, self.config)
         logger.info("Connected to %s database: %s", self.dialect.name, self.config.database)
 
     def close(self):
@@ -249,10 +262,16 @@ class MigrationDatabase:
         The column is spelled data_type in lower case: PostgreSQL folds unquoted
         identifiers to lower case, so MySQL's conventional DATA_TYPE would not
         resolve there.
+
+        The type name is normalized to the MySQL spelling the stage predicates
+        compare against - PostgreSQL reports an INT column as "integer", and a
+        stage that misses that runs a second time on an already-migrated table.
         """
         cursor = self.execute_sql("SELECT data_type FROM information_schema.columns WHERE table_schema = %s AND table_name = %s AND column_name = %s", (self._catalog_scope, table_name, column_name))
         row = cursor.fetchone()
-        return row[0] if row else None
+        if not row or row[0] is None:
+            return None
+        return COLUMN_TYPE_ALIASES.get(str(row[0]).strip().lower(), row[0])
 
     def get_system_setting_value(self, name: str) -> str | None:
         if not self.table_exists("system_settings"):
@@ -2284,7 +2303,11 @@ Examples:
 
     # Load configuration: command line args take precedence over config file
     if args.config:
-        config = MigrationConfig.from_config_file(args.config)
+        try:
+            config = MigrationConfig.from_config_file(args.config)
+        except Exception as e:
+            logger.error("Cannot load the database configuration: %s", e)
+            sys.exit(1)
         # Override with command line args if provided
         if args.host != "localhost":
             config.host = args.host
