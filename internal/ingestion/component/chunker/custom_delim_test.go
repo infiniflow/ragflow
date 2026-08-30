@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -54,6 +55,8 @@ func chunkTexts(chunks []map[string]any) []string {
 	return out
 }
 
+// assertPlainCustomDelimiterMetadata checks the metadata contract shared by
+// plain text, Markdown, and HTML custom-delimiter paths.
 func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 	t.Helper()
 	for i, chunk := range chunks {
@@ -64,6 +67,27 @@ func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 			t.Errorf("chunk[%d] ck_type: want %q got %v", i, "text", got)
 		}
 	}
+}
+
+// TestCustomDelimTextChildrenKeepCKType covers primary and child splitting in
+// combination: child chunks remain unstructured but retain Go's live CKType.
+func TestCustomDelimTextChildrenKeepCKType(t *testing.T) {
+	params := map[string]any{
+		"chunk_token_size":    float64(128),
+		"delimiters":          []string{"`::`"},
+		"children_delimiters": []string{"--"},
+	}
+	input := map[string]any{
+		"name": "t", "output_format": "text",
+		"text": "alpha--beta::gamma--delta",
+	}
+	chunks := invokeTokenChunks(t, params, input)
+
+	want := []string{"alpha", "beta", "gamma", "delta"}
+	if got := chunkTexts(chunks); !slices.Equal(got, want) {
+		t.Fatalf("chunk texts: want %v got %v", want, got)
+	}
+	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
 // TestCustomDelimTextDropsDelimiter reproduces token__text_backtick.

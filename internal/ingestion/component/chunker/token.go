@@ -1491,7 +1491,11 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
-			out = append(out, schema.ChunkDoc{Text: child, Mom: strings.TrimPrefix(t, "\n")})
+			out = append(out, schema.ChunkDoc{
+				Text:   child,
+				CKType: d.CKType,
+				Mom:    strings.TrimPrefix(t, "\n"),
+			})
 		}
 	}
 	return out
