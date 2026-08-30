@@ -293,6 +293,11 @@ class RAGFlowConnector:
             "vector_similarity_weight": vector_similarity_weight,
             "top_k": top_k,
             "rerank_id": rerank_id,
+            # The backend defaults rerank_candidates_count to 64 and rejects any
+            # request where it is smaller than page * page_size, so paging past the
+            # first 64 results fails with an error about a parameter this tool never
+            # exposes unless the candidate count grows with the requested window.
+            "rerank_candidates_count": max(64, page * page_size),
             "keyword": keyword,
             "question": question,
             "dataset_ids": dataset_ids,
