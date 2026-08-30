@@ -503,6 +503,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -608,6 +610,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
