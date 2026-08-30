@@ -218,6 +218,8 @@ export const ExceptiveType = [
   'txt',
   'csv',
   'pptx',
+  'html',
+  'htm',
   ...Images,
 ];
 

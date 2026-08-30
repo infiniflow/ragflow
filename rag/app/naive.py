@@ -58,6 +58,7 @@ from rag.nlp import (
     naive_merge_docx,
     rag_tokenizer,
     tokenize_chunks,
+    tokenize_chunks_with_positions,
     doc_tokenize_chunks_with_images,
     tokenize_table,
     append_context2table_image4pdf,
@@ -112,6 +113,53 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
         normalized_sections.append(normalize_arabic_presentation_forms(section))
 
     return normalized_sections
+
+
+def _merge_excel_items(items, chunk_token_num=128):
+    """Merge consecutive Excel rows within the same sheet by token budget.
+
+    Each item is (text, (sheet_idx, row_start, row_end, col_start, col_end)).
+    When chunk_token_num <= 0, items are returned unchanged (html4excel).
+    """
+    if not items:
+        return []
+    if chunk_token_num <= 0:
+        return items
+
+    merged = []
+    cur_text = ""
+    cur_pos = None
+    cur_tokens = 0
+
+    for text, pos in items:
+        sheet_idx, r1, r2, c1, c2 = pos
+        tok = num_tokens_from_string(text)
+        same_sheet = cur_pos is not None and cur_pos[0] == sheet_idx
+        if cur_text and (not same_sheet or cur_tokens + tok > chunk_token_num):
+            merged.append((cur_text, cur_pos))
+            cur_text = ""
+            cur_pos = None
+            cur_tokens = 0
+
+        if not cur_text:
+            cur_text = text
+            cur_pos = (sheet_idx, r1, r2, c1, c2)
+            cur_tokens = tok
+            continue
+
+        cur_text = cur_text + "\n" + text
+        cur_pos = (
+            sheet_idx,
+            min(cur_pos[1], r1),
+            max(cur_pos[2], r2),
+            min(cur_pos[3], c1),
+            max(cur_pos[4], c2),
+        )
+        cur_tokens += tok
+
+    if cur_text:
+        merged.append((cur_text, cur_pos))
+    return merged
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -1187,16 +1235,28 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english, language=lang)
+            sections = []
             callback(0.8, "Finish parsing.")
         else:
             # Default DeepDOC parser
             excel_parser = ExcelParser()
             if parser_config.get("html4excel"):
-                sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+                excel_items = [item for item in excel_parser.html(binary, 12) if item and item[0]]
                 parser_config["chunk_token_num"] = 0
             else:
-                sections = [(_, "") for _ in excel_parser(binary) if _]
-            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+                excel_items = [item for item in excel_parser(binary) if item and item[0]]
+            excel_items = [(normalize_arabic_presentation_forms(text), pos) for text, pos in excel_items]
+            res.extend(
+                tokenize_chunks_with_positions(
+                    _merge_excel_items(excel_items, int(parser_config.get("chunk_token_num", 128))),
+                    doc,
+                    is_english,
+                    child_delimiters_pattern=child_deli,
+                    language=lang,
+                )
+            )
+            sections = []
+            callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

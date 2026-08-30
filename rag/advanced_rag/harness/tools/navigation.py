@@ -1,27 +1,44 @@
-"""Navigation tools: document catalog and concept mindmap.
+"""Navigation tools over a dataset's compiled structures.
 
-Both answer from a document's *compiled structure* rather than going straight to
-retrieval: they read the compiled entities+relations for the documents in scope,
-let the chat model answer from that outline, and pull the underlying chunks back
-via each relevant entity's ``source_chunk_ids``.
+Two families live here, answering different questions about a dataset:
 
-Knowledge compilation writes every template kind into the same graph rows
-(``{"entities": [...], "relations": [...]}``), so the two tools share one
-implementation and differ only in which *kinds* they read:
+1. **Dataset navigation tree** (``dataset_nav``, KB-level). Knowledge
+   compilation builds a cluster tree covering EVERY document of the dataset
+   (``compile_kwd="dataset_nav"`` with ``type_kwd="nav_cluster"/"nav_doc"`` rows
+   linked by ``parent_kwd``). ``_navigate_tree_impl`` routes a question through
+   that tree's document leaves to pick which documents to deep-read.
 
-* ``ontology_navigate`` — the document's layout: tree / TOC, page index, RAPTOR.
-* ``mindmap_navigate`` — the concept mindmap.
+2. **Document structure navigation** (``compile_kwd="tree"/"page_index"/...``,
+   document-level). Reads a document's compiled entities+relations and renders a
+   drill-down outline, letting the chat model answer from the structure and pull
+   the underlying chunks back via each entity's ``source_chunk_ids``.
 
-Both take the same ``keywords`` the search tools do — keywords drive query
-expansion and the keyword-sentence narrowing; without them navigation would hand
-back full, un-narrowed chunks.
+   Two row shapes coexist for these and are read together: a compact *graph
+   blob* (``knowledge_graph_kwd="graph"``, content ``{"entities": [...],
+   "relations": [...]}``) written by RAPTOR/tree compilation, and *per-row*
+   ``knowledge_graph_kwd="entity"/"relation"`` documents written by page_index
+   (and pipeline-Compiler tree). ``compile_kwd`` — NOT ``knowledge_graph_kwd`` —
+   is what distinguishes the compile type.
+
+``graph_explore`` reads the compiled knowledge graph (``compile_kwd`` resolving
+to ``hypergraph``) and walks it breadth-first from seed entities.
 """
 
 import json
 import logging
 import re
+from typing import Any
 
 import json_repair
+
+from rag.advanced_rag.harness.chunk_utils import (
+    _chunk_id,
+    _chunk_text,
+    _doc_title,
+    _snippet,
+    _xml_escape,
+)
+from rag.llm.tool_decorator import tool
 
 _LOG = logging.getLogger(__name__)
 
@@ -34,22 +51,11 @@ _CATALOG_KINDS = {"tree", "timeline", "raptor", "page_index", "pageindex"}
 # Compiled-structure kinds that describe the document's *concepts*.
 _MINDMAP_KINDS = {"mindmap", "mind_map"}
 
-# Cap how much compiled structure we render into the prompt.
-_MAX_ENTITIES = 300
-_MAX_RELATIONS = 300
+# Cap on evidence chunks pulled from a compiled-structure outline.
 _MAX_EVIDENCE_CHUNKS = 24
 
-_NAV_SYSTEM = """You are given {noun} of one or more documents — an outline of entities and their relations — and a question.
-
-Decide whether that outline alone already answers the question.
-
-Rules:
-1. Answer ONLY from the outline below. Do not invent facts.
-2. Set "is_sufficient" to true only when the outline genuinely answers the question; otherwise false with an empty answer.
-3. Always fill "relevant_entities" with the exact `name` values of the entities most related to the question (up to 10), even when the outline is not sufficient — they are used to pull the underlying source text.
-
-Output ONLY JSON, no prose, no code fences:
-{{"is_sufficient": true/false, "answer": "<answer, or empty>", "relevant_entities": ["<entity name>", ...]}}"""
+# Cap on entities offered to the nav-tree entity selector.
+_MAX_ENTITIES = 300
 
 
 def _normalize_kind(kind) -> str:
@@ -76,7 +82,13 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+    # _resolve_doc_tenant is a short peewee (MySQL) lookup. Running it through
+    # thread_pool_exec opens a connection on a short-lived thread; the peewee pool
+    # tracks connections in a process-level _in_use set that is only released on
+    # close(), so short-lived threads leak connections (MaxConnectionsExceeded
+    # under fan-out parallelism). Call it directly on the event-loop thread to
+    # reuse the pool's existing connection.
+    resolved = tools._resolve_doc_tenant(doc_id)
     if not resolved:
         return {"entities": [], "relations": []}
     kb_id, tenant_id = resolved
@@ -87,6 +99,8 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
         "compile_kwd",
         "compilation_template_ids",
         "compilation_template_kind_kwd",
+        "knowledge_graph_kwd",
+        "doc_id",
     ]
 
     async def _query(condition: dict, limit: int) -> dict:
@@ -108,52 +122,56 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
             _LOG.exception("ontology_navigate: failed reading compiled structure for doc=%s", doc_id)
             return {}
 
-    rows = dict(await _query({"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]}, 1000))
+    # Two row shapes coexist for compiled structures:
+    #   * graph blob (``knowledge_graph_kwd="graph"``): a single compact row whose
+    #     content is ``{"entities": [...], "relations": [...]}``. This is what
+    #     RAPTOR/tree compilation (task_executor ``run_tree_templates`` →
+    #     ``_struct_upsert_graph_json``) writes.
+    #   * per-entity/relation rows (``knowledge_graph_kwd="entity"/"relation"``):
+    #     one row per node/edge, content is a single entity/relation dict. This is
+    #     what page_index (and pipeline Compiler tree via
+    #     ``_struct_upsert_tree_graph_rows``) writes.
+    # ``compile_kwd`` (NOT ``knowledge_graph_kwd``) distinguishes the compile
+    # TYPE (tree/page_index/timeline/...); ``knowledge_graph_kwd="graph"`` is a
+    # legacy marker we still read for RAPTOR blobs, while the same ``compile_kwd``
+    # may also have entity/relation rows. Read BOTH and merge so navigation works
+    # regardless of which shape a given compile type produced.
+    rows: dict = {}
+    rows.update(await _query({"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]}, 1000))
+    rows.update(
+        await _query(
+            {"doc_id": [doc_id], "knowledge_graph_kwd": ["entity", "relation"]},
+            3000,
+        )
+    )
     rows.update(await _query({"doc_id": [doc_id], "compile_kwd": ["raptor_graph"]}, 16))
 
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-
         compile_kwd = row.get("compile_kwd") or ""
         kind = _normalize_kind(row.get("compilation_template_kind_kwd") or compile_kwd)
         if compile_kwd == "raptor_graph":
             kind = "raptor"
         if kind not in kinds:
             continue
-
-        entities.extend(graph.get("entities") or [])
-        relations.extend(graph.get("relations") or [])
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        # graph blob: compact graph with nested entities/relations
+        if row.get("knowledge_graph_kwd") == "graph":
+            entities.extend(graph.get("entities") or [])
+            relations.extend(graph.get("relations") or [])
+        # per-entity/relation row: content is a single node/edge
+        elif row.get("knowledge_graph_kwd") == "entity":
+            entities.append(graph)
+        elif row.get("knowledge_graph_kwd") == "relation":
+            relations.append(graph)
 
     return {"entities": entities, "relations": relations}
-
-
-def _render_structure(entities: list[dict], relations: list[dict]) -> str:
-    """Render the compiled structure as a compact outline for the prompt."""
-    lines: list[str] = []
-    if entities:
-        lines.append("Entities:")
-        for e in entities[:_MAX_ENTITIES]:
-            name = (e.get("name") or "").strip()
-            if not name:
-                continue
-            typ = (e.get("type") or "other").strip()
-            desc = " ".join((e.get("description") or "").split())
-            lines.append(f"- {name} ({typ})" + (f": {desc}" if desc else ""))
-    if relations:
-        lines.append("\nRelations:")
-        for r in relations[:_MAX_RELATIONS]:
-            src, tgt = (r.get("from") or "").strip(), (r.get("to") or "").strip()
-            if not src or not tgt:
-                continue
-            lines.append(f"- {src} -[{(r.get('type') or 'related').strip()}]-> {tgt}")
-    return "\n".join(lines)
 
 
 async def _load_chunks_by_ids(tools, doc_id: str, chunk_ids: list[str]) -> list[dict]:
@@ -165,7 +183,8 @@ async def _load_chunks_by_ids(tools, doc_id: str, chunk_ids: list[str]) -> list[
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+    # peewee MySQL lookup — call directly to reuse the pool's connection (see note).
+    resolved = tools._resolve_doc_tenant(doc_id)
     if not resolved:
         return []
     kb_id, tenant_id = resolved
@@ -210,44 +229,6 @@ def _doc_aggs(chunks: list[dict]) -> list[dict]:
             seen.add(did)
             aggs.append({"doc_id": did, "doc_name": c.get("docnm_kwd") or ""})
     return aggs
-
-
-async def _ask_structure(tools, topic: str, entities: list[dict], relations: list[dict], noun: str, label: str) -> tuple[str, list[str]]:
-    """Ask the chat model to answer ``topic`` from the rendered outline.
-
-    Returns ``(answer, relevant_entity_names)`` — ``answer`` is empty unless the
-    model judged the outline sufficient; the names are always returned so the
-    caller can pull the underlying source chunks.
-    """
-    verdict = {}
-    try:
-        from rag.prompts.generator import form_message, message_fit_in
-
-        user = f"Question:\n{topic}\n\n{noun.capitalize()}:\n{_render_structure(entities, relations)}\n\nOutput JSON:"
-        _, msg = message_fit_in(form_message(_NAV_SYSTEM.format(noun=f"the {noun}"), user), tools.chat_mdl.max_length)
-        ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.2})
-        if isinstance(ans, tuple):
-            ans = ans[0]
-        cleaned = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", cleaned).strip()
-        verdict = json_repair.loads(cleaned) or {}
-        if not isinstance(verdict, dict):
-            verdict = {}
-    except Exception:
-        _LOG.exception(f"[{label}] Could not read the outline with the model.")
-
-    is_sufficient = bool(verdict.get("is_sufficient"))
-    answer = (verdict.get("answer") or "").strip() if is_sufficient else ""
-    relevant = [n for n in (verdict.get("relevant_entities") or []) if isinstance(n, str)]
-    _LOG.info(
-        "[%s] The %s %s the question; %d relevant entity(ies): %s",
-        label,
-        noun,
-        "answers" if is_sufficient else "does not fully answer",
-        len(relevant),
-        ", ".join(relevant[:10]) or "none",
-    )
-    return answer, relevant
 
 
 async def _navigate_within_doc(
@@ -695,331 +676,870 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
     return routed[:_NAV_SEARCH_MAX_DOCS]
 
 
-# ── Knowledge-graph exploration ─────────────────────────────────────────────
-#
-# Unlike catalog/mindmap (which read the merged "graph" JSON of one doc), the KG
-# store keeps one searchable row per entity/relation, so graph_explore *searches*
-# its way to a small subgraph: seed entities by the question, hop out over
-# relations to the 2nd-degree neighbours, then answer from that subgraph.
+# Knowledge-graph and wiki exploration live in ``exploration`` and are
+# re-exported here: compiled-product expansion imports ``_kg_scopes`` from this
+# module, and the action-session tool surface exposes ``graph_explore`` by this
+# name.
+from rag.advanced_rag.harness.tools.exploration import (  # noqa: F401
+    _collect_evidence_ids,
+    _endpoint_terms,
+    _kg_parse_entity,
+    _kg_parse_relation,
+    _kg_scopes,
+    _kg_search,
+    _SCOPE_KWD_DATASET,
+    _SCOPE_KWD_DOC,
+    graph_explore,
+)
 
-# Scope of the compiled KG rows we search. Without a doc_scope we read the
-# dataset-merged rows (one graph per dataset); with a doc_scope we read the
-# per-document rows and filter by doc_id. Kept local rather than imported from
-# the task-executor layer so the harness has no dependency on it.
-_SCOPE_KWD_DATASET = "dataset"
-_SCOPE_KWD_DOC = "doc"
+# ── Navigate-tree/structure tool set (migrated from harness/dynamic) ──
+_NAV_TREE_MAX_DOCS = 8
 
-_KG_SEEDS = 2  # top-N entities matched directly to the question
-_KG_SEED_POOL = 64  # KNN candidate pool before the mention_count_int re-sort
-_KG_SEED_SIM = 0.8  # dense-similarity floor for seed entities
-_KG_HOPS = 2  # relation hops out from the seeds (1 => "2nd degree")
-_KG_NEIGHBORS = 128  # cap on neighbour entity rows resolved per hop
-_KG_REL_LIMIT = 32  # relations fetched per endpoint filter
+# Cap on datasets scanned per tool call (avoids fan-out over too many KBs).
+_NAV_TREE_MAX_DATASETS = 10
+
+# Chars of a chunk's text returned by search_chunks in default (snippet) mode.
+_SEARCH_SNIPPET_CHARS = 300
+
+# ── XML helpers (uniform tag vocabulary shared by all retrieval tools) ──
 
 
-async def _kg_scopes(tools, doc_scope: list[str] | None = None):
-    """Resolve the (kb_id, tenant_id, doc_ids|None) groups to search.
+def _rank_chunks_by_terms(candidates: list[dict], queries: list[str]) -> list[dict]:
+    """Rank candidate chunks by how many query terms overlap with their text.
 
-    With a ``doc_scope`` the graph is limited to those docs (grouped by their
-    KB); otherwise the whole bound KB graph is explored.
+    Zero-LLM keyword relevance for the precise ``chunk_ids`` search path (the
+    scope is a handful of chunks, so a cheap overlap score suffices). Returns
+    chunks sorted most-relevant-first.
     """
-    from common.misc_utils import thread_pool_exec
+    # Collect significant terms from all queries.
+    terms: list[str] = []
+    for q in queries:
+        for tok in re.findall(r"[A-Za-z0-9_]{2,}", (q or "").lower()):
+            if tok not in terms:
+                terms.append(tok)
+    if not terms:
+        return list(candidates)
+    scored = []
+    for c in candidates:
+        text = _chunk_text(c).lower()
+        hits = sum(1 for t in terms if t in text)
+        if hits:
+            scored.append((hits, c))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [c for _, c in scored]
 
-    if hasattr(tools, "scoped_doc_ids"):
-        doc_scope = tools.scoped_doc_ids(doc_scope)
-    if doc_scope:
-        by_kb: dict[tuple, list[str]] = {}
-        for doc_id in doc_scope:
-            resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
-            if resolved:
-                by_kb.setdefault(resolved, []).append(doc_id)
-        return [(kb, tenant, docs) for (kb, tenant), docs in by_kb.items()]
-    return [(kb.id, kb.tenant_id, None) for kb in getattr(tools, "kbs", []) or []]
+
+# The rag-agent runner sets this module slot to the active RAGTools instance for
+# the current request, so the migrated navigation tools (defined once at import)
+# read the request-scoped retrieval context.
+_tools_ref: dict[str, Any] = {}
 
 
-async def _kg_search(
-    tools,
-    kb_id: str,
-    tenant_id: str,
-    doc_ids,
-    kind: str,
-    text: str = "",
-    top_n: int = 8,
-    extra: dict | None = None,
-    scope_kwd: str | None = None,
-    order_desc: str | None = None,
-    pool: int | None = None,
-    similarity: float = 0.6,
-) -> list[dict]:
-    """Search the compiled KG rows of one KB and return the raw field maps.
+def _tools_slot():
+    return _tools_ref.get("tools")
 
-    ``scope_kwd`` narrows to dataset-merged (``"dataset"``) or per-doc (``"doc"``)
-    rows. ``order_desc`` sorts the hits by that field descending; when combined
-    with a dense ``text`` match, ``pool`` sets the KNN candidate count so the
-    re-sort ranks a wider pool than the ``top_n`` finally kept. ``similarity`` is
-    the dense-match floor.
+
+def _get_kb_ids(tools_slot) -> list[str]:
+    if tools_slot is None:
+        return []
+    ids = getattr(tools_slot, "kb_ids", None) or []
+    return list(ids)
+
+
+# ── Tool: navigate_tree (compiled tree structure, high/ultra modes) ──
+
+
+@tool(timeout=120)
+async def _navigate_tree_impl(
+    query: str,
+    keywords: str = "",
+    doc_scope: list[str] | None = None,
+) -> str:
+    """Locate the document(s) most likely to hold the answer, via the dataset's
+    compiled navigation tree (``dataset_nav`` / ``nav_doc`` layer).
+
+    This tool routes the question by searching the compiled navigation-tree
+    document leaves (nav_doc) — which cover EVERY document of the dataset
+    (2400+ here), organized into clusters — then returns each routed document
+    with a short excerpt (its first chunk) so you can decide which to deep-read.
+
+    Use it when search_chunks / grep_chunks did not clearly locate the answer and
+    you need the document-level view to guide you (e.g. an entity spans many
+    docs, or the question mentions a general topic that lives across a document's
+    body). After it returns doc_id values, deep-read the relevant one(s) with
+    list_chunks / navigate_structure.
+
+    Returns an XML <tree_navigation> document. Each routed document is a <doc>
+    element with doc_id, doc_title attributes and a <snippet> element (a short
+    excerpt, NOT the full text). If nothing routes, an empty <tree_navigation/>
+    is returned.
+
+    :param query: REQUIRED: the question / topic to route.
+    :param keywords: Optional terms kept only for prompt hints; document routing
+        is driven by the nav-tree doc leaves and does not require keyword hits.
+    :param doc_scope: Optional document ids to restrict routing to (at most 8).
+    :return: XML <tree_navigation> document.
     """
     from common import settings
-    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
+
+    if not getattr(settings, "retriever", None):
+        return '<tree_navigation count="0" error="no retriever">\n</tree_navigation>'
+    query = str(query or "").strip()
+    if not query:
+        return '<tree_navigation count="0" error="query is required">\n</tree_navigation>'
+
+    tools_slot = _tools_slot()
+    # Route via the compiled navigation tree (dataset_nav / nav_doc layer): it
+    # covers ALL documents of the dataset organized into clusters, so a query can
+    # reach documents that pure embedding routing would miss. Fall back to pure
+    # embedding routing only when the dataset has NO compiled navigation tree.
+    routed = await dataset_navigation_search(tools_slot, query, keywords, doc_scope)
+    if not routed:
+        routed = await _route_docs_via_embedding(tools_slot, query, doc_scope)
+    if not routed:
+        return '<tree_navigation count="0">\n</tree_navigation>'
+
+    parts = [f'<tree_navigation count="{len(routed)}" query="{_xml_escape(query)}">']
+    for i, doc_id in enumerate(routed[:_NAV_TREE_MAX_DOCS]):
+        title = ""
+        snippet = ""
+        try:
+            full = await tools_slot.fetch_full_document(doc_id)
+            doc_chunks = full.get("chunks", []) or []
+            if doc_chunks:
+                title = _doc_title(doc_chunks[0]) or doc_id
+                snippet = _chunk_text(doc_chunks[0])
+                if len(snippet) > 500:
+                    snippet = snippet[:500]
+            else:
+                title = doc_id
+        except Exception:
+            title = doc_id
+        parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(doc_id)}" doc_title="{_xml_escape(title)}">')
+        if snippet:
+            parts.append(f"    <snippet>{_xml_escape(snippet)}</snippet>")
+        parts.append("  </doc>")
+    parts.append("</tree_navigation>")
+    return "\n".join(parts)
+
+
+async def _route_docs_via_embedding(tools_slot, query: str, doc_scope: list[str] | None = None, top_n: int = 12) -> list[str]:
+    """Route ``query`` to documents by PURE embedding similarity — ZERO keywords.
+
+    Encodes the query with ``tools.embed_mdl`` and retrieves the most
+    vector-similar real document chunks (compiled products excluded), aggregated
+    to documents via ``doc_aggs``. There is NO nav-tree ``_text_score > 0``
+    keyword-literal gate and no hybrid/BM25 leg: routing is driven purely by
+    vector similarity, so a question that matches a document's body only
+    semantically (e.g. an entity alias the summary never spells out) still
+    routes to the right document.
+
+    Returns a deduplicated most-relevant-first ``doc_id`` list, or ``[]`` on
+    failure / when nothing hits. This function only routes — it does not
+    retrieve structure.
+    """
+    if not query or not str(query).strip():
+        return []
+    if not getattr(tools_slot, "embed_mdl", None):
+        _LOG.warning("[navigate_structure] no embed_mdl available; cannot route by embedding")
+        return []
+    from common import settings
+
+    if not getattr(settings, "retriever", None):
+        return []
+    target_ids = _get_kb_ids(tools_slot)
+    if not target_ids:
+        return []
+    tenant_ids = getattr(tools_slot, "tenant_ids", None) or []
+    if not tenant_ids:
+        tid = _first_tenant_id(tools_slot)
+        if tid:
+            tenant_ids = [tid]
+    if not tenant_ids:
+        return []
+    try:
+        kbinfos = await settings.retriever.retrieval(
+            str(query).strip(),
+            tools_slot.embed_mdl,
+            tenant_ids,
+            target_ids,
+            1,
+            top_n,
+            0.2,
+            vector_similarity_weight=1.0,  # pure embedding — no keyword/BM25 leg
+            aggs=True,
+            highlight=False,
+            doc_ids=doc_scope,
+            must_not={"exists": "compile_kwd"},  # real doc chunks only; compiled products have their own tools
+        )
+    except Exception:
+        _LOG.exception("[navigate_structure] embedding doc routing failed")
+        return []
+    doc_ids: list[str] = []
+    seen: set[str] = set()
+    for agg in kbinfos.get("doc_aggs") or []:
+        did = str(agg.get("doc_id") or "").strip()
+        if did and did not in seen:
+            seen.add(did)
+            doc_ids.append(did)
+    _LOG.info("[navigate_structure] Embedding doc routing found %d candidate document(s).", len(doc_ids))
+    return doc_ids
+
+
+def _first_tenant_id(tools_slot) -> str:
+    """Best-effort tenant id from the RAGTools context."""
+    try:
+        for attr in ("tenant_id", "tenant_ids"):
+            v = getattr(tools_slot, attr, None)
+            if isinstance(v, list):
+                for t in v:
+                    if str(t or "").strip():
+                        return str(t)
+            elif v:
+                return str(v)
+    except Exception:
+        pass
+    try:
+        kbs = getattr(tools_slot, "kbs", None) or []
+        for kb in kbs:
+            tid = getattr(kb, "tenant_id", None)
+            if tid:
+                return str(tid)
+    except Exception:
+        pass
+    return ""
+
+
+# ── Tool: navigate_structure (compiled structure of a document, high/ultra) ──
+
+
+@tool(timeout=120)
+async def _navigate_structure_impl(
+    query: str,
+    doc_id: str = "",
+    kind: str = "catalog",
+    keywords: str = "",
+    doc_scope: list[str] | None = None,
+) -> str:
+    """Read a document's COMPILED STRUCTURE (tree / page-index catalog, concept
+    mindmap, or entity graph) and return its entities, relations, and the chunks
+    behind them — so you can see how the document is organized internally.
+
+    This is the "inside-the-doc" counterpart to navigate_tree. Use it when you
+    have located a document (via search_chunks / grep_chunks / navigate_tree) and
+    want to understand its internal structure — the catalog tree of headings, the
+    concept mindmap, or the entity graph — to find where an answer lives without
+    reading every chunk.
+
+    Returns an XML <structure_navigation> document. Each analyzed document is a
+    <doc> element with doc_id / doc_title and a <structure> element — a compact
+    OUTLINE of the compiled entities and relations, with each line annotating the
+    source-chunk ids that back it (e.g. ``[chunks: c100,c101]``). This is an
+    outline only (low token cost) — it does NOT include the chunk text. To read
+    the actual content behind a line, call list_chunks with its doc_id and
+    chunk_ids to deep-read precisely those chunks. If the document has no compiled
+    structure of the requested kind, an empty <doc/> is returned (no error) — fall
+    back to list_chunks / search_chunks.
+
+    This tool performs NO chat-LLM calls: it only reads the compiled structure
+    rows from the doc store.
+
+    :param query: REQUIRED: the question/topic (used to route to a document when
+        ``doc_id`` is not given).
+    :param doc_id: Optional: read the structure of this specific document. When
+        omitted, documents are located by PURE embedding similarity (no keyword
+        gate), not the compiled nav tree.
+    :param kind: Which compiled structure to read: "catalog" (tree / page-index /
+        timeline, default), "mindmap" (concept mindmap), or "graph" (entity graph).
+    :param keywords: Optional terms kept only for prompt hints; document routing
+        is embedding-driven and does not require keyword hits.
+    :param doc_scope: Optional document ids to restrict routing to (at most 8).
+    :return: XML <structure_navigation> document (outline only).
+    """
+    from common import settings
+
+    if not getattr(settings, "retriever", None):
+        return '<structure_navigation count="0" error="no retriever">\n</structure_navigation>'
+    query = str(query or "").strip()
+    if not query:
+        return '<structure_navigation count="0" error="query is required">\n</structure_navigation>'
+
+    # Determine which compiled kinds to read.
+    kinds = _structure_kinds_for(kind)
+
+    tools_slot = _tools_slot()
+    if doc_id:
+        doc_ids = [str(doc_id).strip()] if str(doc_id).strip() else []
+    else:
+        # Locate the document by PURE embedding similarity — no nav-tree
+        # keyword-literal gate, no hybrid/BM25 leg (see _route_docs_via_embedding).
+        doc_ids = await _route_docs_via_embedding(tools_slot, query, doc_scope)
+    if not doc_ids:
+        return '<structure_navigation count="0" error="no document located">\n</structure_navigation>'
+
+    structures = await _read_structures(tools_slot, query, doc_ids[:_NAV_TREE_MAX_DOCS], kinds)
+
+    parts = [f'<structure_navigation count="{len(structures)}" query="{_xml_escape(query)}" kind="{_xml_escape(kind)}">']
+    for i, s in enumerate(structures):
+        parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(s["doc_id"])}" doc_title="{_xml_escape(s["title"])}" entities="{len(s["entities"])}" relations="{len(s["relations"])}">')
+        outline = s["outline"]
+        if outline:
+            parts.append(f"    <structure>{_xml_escape(outline)}</structure>")
+        parts.append("  </doc>")
+    parts.append("</structure_navigation>")
+    return "\n".join(parts)
+
+
+def _structure_kinds_for(kind: str) -> set:
+    """Map a ``navigate_structure`` kind string to the compiled kinds set."""
+
+    k = (kind or "catalog").strip().lower()
+    if k in ("mindmap", "mind_map", "concept"):
+        return set(_MINDMAP_KINDS)
+    if k in ("graph", "kg", "entity", "ontology"):
+        return {"graph", "ontology", "entity", "raptor"}
+    return set(_CATALOG_KINDS)
+
+
+# --- navigate_structure hierarchical drill-down (zero LLM) ---
+# Caps controlling the drill-down scope.
+_STRUCT_MAX_DEPTH = 3  # max TOC levels drilled.
+_STRUCT_BRANCH_K = 2  # keep top-K most relevant nodes per level.
+_STRUCT_RELEVANCE_MIN = 1  # a node must match at least this many query terms to descend.
+_STRUCT_VEC_BEAM_RATIO = 0.5  # vector beam: drop nodes below best*this similarity.
+_STRUCT_MAX_NODES = 10  # cap on nodes rendered in the outline.
+_STRUCT_MAX_CHUNKS = 4  # cap on chunk snippets returned in the outline.
+_STRUCT_DESC_SNIPPET = 180  # cap on a node's description snippet in the outline.
+# Snippet length / per-doc cap for the related chunks appended after a
+# search_chunks hit (from the document's compiled structure, not a full read).
+_STRUCT_RELATED_SNIPPET_CHARS = 300
+_STRUCT_RELATED_MAX_PER_DOC = 4
+
+
+async def _embed_query(tools_slot, query: str):
+    """Encode ``query`` into a vector via the embedding model.
+
+    Returns ``(qvec, dim)`` where ``qvec`` is a list/np-array and ``dim`` is its
+    length (used to pick the ``q_<dim>_vec`` doc-store field). Returns ``(None, 0)``
+    when no embedding model is available (caller falls back to keyword scoring).
+    """
+    try:
+        embd = getattr(tools_slot, "embed_mdl", None)
+        if embd is None or not callable(getattr(embd, "encode_queries", None)):
+            return None, 0
+        # ``encode_queries`` is a SYNCHRONOUS method returning ``(vector, token_count)``
+        # on the embedding model; do NOT await it (it is not a coroutine).
+        qvec, _tok = embd.encode_queries(query)
+        if qvec is None:
+            return None, 0
+        import numpy as np
+
+        arr = np.asarray(qvec, dtype=float)
+        if arr.ndim != 1 or arr.size == 0:
+            return None, 0
+        return arr, int(arr.size)
+    except Exception:
+        _LOG.exception("[navigate_structure] query embedding failed; falling back to keyword")
+        return None, 0
+
+
+async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_field: str) -> list[dict]:
+    """Load a document's compiled-structure entities WITH their embeddings.
+
+    Like ``_load_compiled_structure`` but also reads ``vec_field`` (the ``q_<dim>_vec``
+    column) for each entity row, so vector beam descent can score nodes by cosine
+    similarity to the query. Returns entities with an added ``"_vec"`` key.
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    condition: dict = {"knowledge_graph_kwd": [kind]}
-    if scope_kwd:
-        condition["scope_kwd"] = [scope_kwd]
-    if doc_ids:
-        condition["doc_id"] = list(doc_ids)
-    if extra:
-        condition.update(extra)
-
-    fields = ["content_with_weight", "source_chunk_ids", "doc_id", "docnm_kwd", "name_kwd", "mention_count_int", "from_entity_kwd", "to_entity_kwd"]
-    exprs = []
-    if text:
-        knn_topn = pool or top_n
-        if getattr(tools, "embed_mdl", None):
-            try:
-                exprs.append(await settings.retriever.get_vector(text, tools.embed_mdl, top_k=knn_topn, num_candidates=knn_topn * 2, similarity=similarity))
-            except Exception:
-                _LOG.exception("[Graph exploration] vector build failed; using keyword match")
-        if not exprs:
-            exprs.append(MatchTextExpr(["content_ltks", "content_sm_ltks"], text, knn_topn))
-
-    order_by = OrderByExpr()
-    if order_desc:
-        try:
-            order_by.desc(order_desc)
-        except Exception:
-            order_by = OrderByExpr()
+    # peewee MySQL lookup — call directly to reuse the pool's connection (see note).
+    resolved = tools_slot._resolve_doc_tenant(doc_id)
+    if not resolved:
+        return []
+    kb_id, tenant_id = resolved
+    index_name = search.index_name(tenant_id)
+    fields = ["content_with_weight", "compile_kwd", "compilation_template_kind_kwd", "knowledge_graph_kwd", "doc_id"]
+    if vec_field:
+        fields.append(vec_field)
 
     try:
+        # Same dual-shape logic as _load_compiled_structure: RAPTOR/tree writes a
+        # compact graph blob (knowledge_graph_kwd="graph"), while page_index /
+        # pipeline-Compiler tree write per-entity rows (knowledge_graph_kwd="entity").
+        # Read BOTH so vector beam descent works for either shape.
         res = await thread_pool_exec(
             settings.docStoreConn.search,
             fields,
             [],
-            condition,
-            exprs,
-            order_by,
+            {"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]},
+            [],
+            OrderByExpr(),
             0,
-            top_n,
-            search.index_name(tenant_id),
+            1000,
+            index_name,
+            [kb_id],
+        )
+        res2 = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            {"doc_id": [doc_id], "knowledge_graph_kwd": ["entity"]},
+            [],
+            OrderByExpr(),
+            0,
+            3000,
+            index_name,
             [kb_id],
         )
         rows = settings.docStoreConn.get_fields(res, fields) or {}
+        rows.update(settings.docStoreConn.get_fields(res2, fields) or {})
     except Exception:
-        _LOG.exception("[Graph exploration] KG search failed (kind=%s)", kind)
-        return {}
-    return rows
+        _LOG.exception("[navigate_structure] _load_entities_with_vectors failed for doc=%s", doc_id)
+        return []
 
-
-def _kg_parse_entity(row: dict) -> dict | None:
-    try:
-        payload = json.loads(row.get("content_with_weight") or "{}")
-    except Exception:
-        payload = {}
-    name = (payload.get("name") or payload.get("term") or payload.get("title") or "").strip()
-    if not name:
-        return None
-    aliases = [str(a).strip() for a in (payload.get("aliases") or []) if str(a).strip()]
-    return {
-        "name": name,
-        "type": (payload.get("type") or "other"),
-        "description": (payload.get("description") or payload.get("description") or ""),
-        "aliases": aliases,
-        "source_chunk_ids": list(row.get("source_chunk_ids") or []),
-        "doc_id": row.get("doc_id") or "",
-        "docnm_kwd": row.get("docnm_kwd") or "",
-    }
-
-
-def _kg_parse_relation(row: dict) -> dict | None:
-    src = (row.get("from_entity_kwd") or "").strip()
-    tgt = (row.get("to_entity_kwd") or "").strip()
-    if not src or not tgt:
-        return None
-    typ = "related"
-    try:
-        payload = json.loads(row.get("content_with_weight") or "{}")
-        typ = payload.get("type") or payload.get("relation") or "related"
-    except Exception:
-        pass
-    return {
-        "from": src,
-        "to": tgt,
-        "type": typ,
-        "source_chunk_ids": list(row.get("source_chunk_ids") or []),
-        "doc_id": row.get("doc_id") or "",
-    }
-
-
-def _endpoint_terms(names) -> list[str]:
-    """Case variants for matching relation endpoints.
-
-    ``dataset_structure_merger`` lowercases ``from_entity_kwd``/``to_entity_kwd``
-    on merged rows while entity names keep their original case, so hop queries
-    must try both forms. Accepts a single name or an iterable and returns the
-    sorted union of each name's original and lowercased form.
-    """
-    if isinstance(names, str):
-        names = [names]
-    terms: set[str] = set()
-    for n in names or []:
-        n = (n or "").strip()
-        if n:
-            terms.add(n)
-            terms.add(n.lower())
-    return sorted(terms)
-
-
-def _collect_evidence_ids(entities: list[dict], relations: list[dict], relevant_names: list[str]) -> dict:
-    """Group the source_chunk_ids of the relevant entities AND relations by doc.
-
-    An entity is relevant when its name/alias was named by the model; a relation
-    is relevant when either endpoint is.
-    """
-    wanted = {n.strip().lower() for n in relevant_names if isinstance(n, str) and n.strip()}
-    by_doc: dict[str, list[str]] = {}
-    seen: set[tuple[str, str]] = set()
-
-    def _add(doc_id: str, ids):
-        for cid in ids or []:
-            if not (isinstance(cid, str) and cid):
+    out: list[dict] = []
+    for row in rows.values():
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        kind = _normalize_kind(row.get("compilation_template_kind_kwd") or row.get("compile_kwd") or "")
+        if kind not in kinds:
+            continue
+        vec = row.get(vec_field) if vec_field else None
+        # graph blob: content nests entities under "entities"; entity row: content
+        # is a single entity dict.
+        candidates = graph.get("entities") or [] if row.get("knowledge_graph_kwd") == "graph" else [graph]
+        for e in candidates:
+            if not isinstance(e, dict) or not (e.get("name") or "").strip():
                 continue
-            key = (doc_id, cid)
-            if key in seen:
-                continue
-            seen.add(key)
-            by_doc.setdefault(doc_id, []).append(cid)
-
-    for e in entities:
-        names = {(e.get("name") or "").strip().lower(), *[(a or "").strip().lower() for a in (e.get("aliases") or [])]}
-        if names & wanted:
-            _add(e.get("doc_id") or "", e.get("source_chunk_ids"))
-    for r in relations:
-        if {(r.get("from") or "").strip().lower(), (r.get("to") or "").strip().lower()} & wanted:
-            _add(r.get("doc_id") or "", r.get("source_chunk_ids"))
-    return by_doc
+            e = dict(e)
+            if vec is not None:
+                e["_vec"] = vec
+            out.append(e)
+    return out
 
 
-async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[str] | None = None) -> dict:
-    """Explore the compiled knowledge graph to answer ``query``.
+async def _read_structures(tools_slot, query: str, doc_ids: list[str], kinds: set) -> list[dict]:
+    """Read compiled structures for ``doc_ids`` — VECTOR BEAM DRILL-DOWN.
 
-    Seeds the top-``_KG_SEEDS`` entities for the question (dense match above
-    ``_KG_SEED_SIM``, ranked by ``mention_count_int``), hops ``_KG_HOPS`` out over
-    their relations, then asks the chat model whether that subgraph answers the
-    question. When it does, the answer is returned directly; when it doesn't, the
-    source passages behind the entities/relations the model found relevant are
-    returned as evidence (narrowed by ``keywords``) so the caller can continue.
+    The compiled structure (esp. tree_node / page_index TOC) is a HIERARCHY whose
+    nodes already carry embeddings (``q_<dim>_vec``). We exploit that: embed the
+    query once, then for each document follow the pre-built tree from its roots,
+    at every level keeping the top-K nodes by COSINE similarity to the query
+    (beam search) and descending to their children.
 
-    Without ``doc_scope`` the dataset-merged graph is searched
-    (``scope_kwd="dataset"``); with it, the per-document rows of those docs
-    (``scope_kwd="doc"``, filtered by ``doc_id``).
-
-    :returns: ``{"answer": str, "chunks": [...], "doc_aggs": [...]}`` — exactly one
-        of ``answer`` / ``chunks`` is populated.
+    Collect the union of ``source_chunk_ids`` over the drilled path — a SET of
+    relevant chunks (not a single one) — then return short snippets plus node
+    pointers, so the model follows the pointers with grep_chunks / search_chunks
+    instead of receiving large chunks. Zero chat-LLM.
     """
-    from rag.advanced_rag.harness.tools.search import _narrow_by_keywords
 
-    _empty = {"answer": "", "chunks": [], "doc_aggs": []}
-    if hasattr(tools, "scoped_doc_ids"):
-        doc_scope = tools.scoped_doc_ids(doc_scope)
-    _LOG.info(f'[Graph exploration] Exploring the knowledge graph for "{query}" (keywords: {keywords})')
+    qvec, dim = await _embed_query(tools_slot, query)
+    vec_field = f"q_{dim}_vec" if dim else ""
 
-    scopes = await _kg_scopes(tools, doc_scope)
-    if not scopes:
-        _LOG.info("[Graph exploration] No knowledge base in scope.")
-        return _empty
-
-    scope_kwd = _SCOPE_KWD_DOC if doc_scope else _SCOPE_KWD_DATASET
-    text = f"{query} {keywords}".strip()
-    entities: list[dict] = []
-    relations: list[dict] = []
-    ent_names: set[str] = set()
-
-    def _add_entities(new: list[dict], scope_key: str = "") -> list[str]:
-        added = []
-        for e in new:
-            key = f"{scope_key}:{e['name'].lower()}"
-            if key in ent_names:
-                continue
-            ent_names.add(key)
-            entities.append(e)
-            added.append(e["name"])
-        return added
-
-    for kb_id, tenant_id, doc_ids in scopes:
-        # (1) Seeds: condition C — dense match (>= _KG_SEED_SIM) over the scoped
-        # entity rows, ranked by mention_count_int desc, top _KG_SEEDS.
-        seed_rows = await _kg_search(
-            tools,
-            kb_id,
-            tenant_id,
-            doc_ids,
-            "entity",
-            text=text,
-            top_n=_KG_SEEDS,
-            scope_kwd=scope_kwd,
-            order_desc="mention_count_int",
-            pool=_KG_SEED_POOL,
-            similarity=_KG_SEED_SIM,
+    out: list[dict] = []
+    for doc_id in doc_ids:
+        # Entities with their embeddings (for cosine scoring) + relations (for the
+        # tree edges). ``kinds`` gates which compiled buckets we read.
+        entities: list[dict] = []
+        relations: list[dict] = []
+        try:
+            if vec_field:
+                entities = await _load_entities_with_vectors(tools_slot, doc_id, kinds, vec_field)
+            if not entities:
+                structure = await _load_compiled_structure(tools_slot, doc_id, kinds)
+                entities = structure.get("entities") or []
+                relations = structure.get("relations") or []
+            else:
+                structure = await _load_compiled_structure(tools_slot, doc_id, kinds)
+                relations = structure.get("relations") or []
+        except Exception:
+            _LOG.exception("[navigate_structure] structure load failed for doc=%s", doc_id)
+        outline = await _render_toc_drilldown(query, qvec, entities, relations)
+        out.append(
+            {
+                "doc_id": doc_id,
+                "title": "",
+                "entities": entities,
+                "relations": relations,
+                "outline": outline,
+            }
         )
-        seeds = [e for e in (_kg_parse_entity(r) for r in seed_rows.values()) if e]
-        frontier = _add_entities(seeds, kb_id)
-        _LOG.info("[Graph exploration] Seeded %d entity(ies): %s", len(frontier), ", ".join(frontier) or "none")
+    return out
 
-        # (2) Expand _KG_HOPS out, collecting relations and neighbour entities.
-        for _hop in range(_KG_HOPS):
-            if not frontier:
-                break
-            terms = _endpoint_terms(frontier)  # case variants — merged rows lowercase endpoints
-            rel_rows: dict = {}
-            rel_rows.update(await _kg_search(tools, kb_id, tenant_id, doc_ids, "relation", top_n=_KG_REL_LIMIT, scope_kwd=scope_kwd, extra={"from_entity_kwd": terms}))
-            rel_rows.update(await _kg_search(tools, kb_id, tenant_id, doc_ids, "relation", top_n=_KG_REL_LIMIT, scope_kwd=scope_kwd, extra={"to_entity_kwd": terms}))
-            hop_relations = [r for r in (_kg_parse_relation(x) for x in rel_rows.values()) if r]
-            relations.extend(hop_relations)
 
-            seen_lower = {k.split(":", 1)[1] for k in ent_names if k.startswith(f"{kb_id}:")}
-            neigh_names = {n.strip() for r in hop_relations for n in (r["from"], r["to"]) if n and n.strip()}
-            neigh_lower_set = {n.lower() for n in neigh_names} - seen_lower
-            if not neigh_lower_set:
-                break
-            neigh_filtered = {n for n in neigh_names if n.lower() in neigh_lower_set}
-            neigh_rows = await _kg_search(
-                tools,
-                kb_id,
-                tenant_id,
-                doc_ids,
-                "entity",
-                top_n=min(max(len(neigh_filtered), 1), _KG_NEIGHBORS),
-                scope_kwd=scope_kwd,
-                extra={"name_kwd": _endpoint_terms(neigh_filtered)},
-            )
-            neighbours = [e for e in (_kg_parse_entity(r) for r in neigh_rows.values()) if e]
-            frontier = _add_entities(neighbours, kb_id)
-            _LOG.info("[Graph exploration] Hop %d reached %d neighbour entity(ies).", _hop + 1, len(frontier))
+def _build_toc_tree(entities: list[dict], relations: list[dict]):
+    """Build parent→children map, child→parent map, and the root node names.
 
-    if not entities and not relations:
-        _LOG.info("[Graph exploration] No compiled knowledge graph in scope.")
-        return _empty
+    Tree relations are interpreted as ``from`` = parent, ``to`` = child. Roots are
+    tree nodes with no parent (isolated nodes are their own roots).
+    """
+    by_name: dict[str, dict] = {}
+    for e in entities:
+        name = (e.get("name") or "").strip()
+        if name and name not in by_name:
+            by_name[name] = e
+    children: dict[str, list[str]] = {}
+    parents: dict[str, str] = {}
+    for r in relations:
+        p = (r.get("from") or "").strip()
+        c = (r.get("to") or "").strip()
+        if not p or not c or p == c:
+            continue
+        children.setdefault(p, [])
+        if c not in children[p]:
+            children[p].append(c)
+        parents[c] = p
+    roots = [n for n in by_name if n not in parents]
+    if not roots:
+        # Every node has a parent? Use nodes with no children (isolated) as roots.
+        roots = [n for n in by_name if n not in children] or list(by_name)
+    return by_name, children, parents, roots
 
-    _LOG.info("[Graph exploration] Built a subgraph of %d entity(ies) and %d relation(s).", len(entities), len(relations))
 
-    # (3) Does the subgraph answer the question?
-    answer, relevant = await _ask_structure(tools, query, entities, relations, "knowledge graph", "Graph exploration")
+def _node_relevance(query_terms: list[str], entity: dict) -> int:
+    """Keyword-overlap relevance of a TOC node against the query."""
+    if not query_terms:
+        return 0
+    text = f"{entity.get('name') or ''} {entity.get('description') or ''}".lower()
+    return sum(1 for t in query_terms if t in text)
 
-    # (4a) Sufficient — return the answer, no chunks.
-    if answer:
-        _LOG.info("[Graph exploration] The subgraph answered the question directly.")
-        return {"answer": answer, "chunks": [], "doc_aggs": []}
 
-    # (4b) Insufficient — return the source passages behind the relevant nodes.
-    evidence = _collect_evidence_ids(entities, relations, relevant)
-    chunks: list[dict] = []
-    for doc_id, ids in evidence.items():
-        if doc_id and ids:
-            chunks.extend(await _load_chunks_by_ids(tools, doc_id, ids))
+def _collect_chunk_ids(nodes: list[dict], cap: int = 32) -> list[str]:
+    """Union of source_chunk_ids across nodes, deduped and bounded."""
+    seen: list[str] = []
+    for n in nodes:
+        for cid in n.get("source_chunk_ids") or []:
+            if isinstance(cid, str) and cid and cid not in seen:
+                seen.append(cid)
+            if len(seen) >= cap:
+                return seen
+    return seen
 
-    before = len(chunks)
-    chunks = _narrow_by_keywords(chunks, keywords)
-    _LOG.info("[Graph exploration] Insufficient; returning %d evidence passage(s) (%d before keyword filtering).", len(chunks), before)
 
-    return {"answer": "", "chunks": chunks, "doc_aggs": _doc_aggs(chunks)}
+def _cosine(a, b):
+    """Cosine similarity between two arrays (skip zero vectors)."""
+    import numpy as np
+
+    try:
+        aa = np.asarray(a, dtype=float).reshape(-1)
+        bb = np.asarray(b, dtype=float).reshape(-1)
+        if aa.size == 0 or bb.size == 0 or aa.size != bb.size:
+            return 0.0
+        denom = float(np.linalg.norm(aa) * np.linalg.norm(bb))
+        if denom == 0.0:
+            return 0.0
+        return float(np.dot(aa, bb) / denom)
+    except Exception:
+        return 0.0
+
+
+def _node_score(qvec, query_terms, entity: dict) -> float:
+    """Score a TOC node: cosine similarity (if the node has an embedding and we
+    have a query vector), else keyword-overlap. Higher is better."""
+    if qvec is not None:
+        v = entity.get("_vec")
+        if v is not None:
+            return _cosine(qvec, v)
+    return float(_node_relevance(query_terms, entity))
+
+
+def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relations: list[dict]) -> tuple[list[dict], dict, set]:
+    """VECTOR BEAM drill-down over the compiled TOC hierarchy.
+
+    From the roots, at each level keep the top-K nodes by cosine similarity to the
+    query (``_node_score``) and descend to their children; keyword-overlap is the
+    fallback when no vectors are available. Returns ``(kept_nodes, parents, kept_names)``
+    so callers can both render the outline AND collect the related chunks behind the
+    drilled nodes' ``source_chunk_ids``.
+    """
+    by_name, children, parents, roots = _build_toc_tree(entities, relations)
+    if not roots:
+        return [], {}, set()
+
+    frontier = list(roots)
+    kept_names: set[str] = set()
+    depth = 0
+    # ``<=`` so the deepest relevant leaf (at depth MAX_DEPTH) is also collected,
+    # not just the intermediate levels.
+    while frontier and depth <= _STRUCT_MAX_DEPTH:
+        scored = [(_node_score(qvec, query_terms, by_name[n]), n) for n in frontier if n in by_name]
+        if not scored:
+            break
+        scored.sort(key=lambda x: x[0], reverse=True)
+        if not scored:
+            break
+        best = scored[0][0]
+        # If even the best node has no relevance, stop descending.
+        if qvec is None and best < _STRUCT_RELEVANCE_MIN:
+            break
+        # Beam: keep top-K, but drop nodes far below the best (avoids pulling in
+        # low-similarity sibling sub-sections). For vector scoring use a relative
+        # threshold; for keyword scoring keep nodes above the absolute minimum.
+        if qvec is not None:
+            top = [s for s in scored if s[0] >= best * _STRUCT_VEC_BEAM_RATIO][:_STRUCT_BRANCH_K]
+        else:
+            top = [s for s in scored if s[0] >= _STRUCT_RELEVANCE_MIN][:_STRUCT_BRANCH_K]
+        if not top:
+            break
+        new_frontier: list[str] = []
+        for _score, name in top:
+            if name not in kept_names:
+                kept_names.add(name)
+            new_frontier.extend(children.get(name, []))
+        frontier = new_frontier
+        depth += 1
+
+    # Include ancestor path of the kept nodes so the outline shows the TOC chain.
+    for name in list(kept_names):
+        cur = parents.get(name)
+        guard = 0
+        while cur and cur not in kept_names and guard < _STRUCT_MAX_DEPTH:
+            kept_names.add(cur)
+            cur = parents.get(cur)
+            guard += 1
+
+    kept_nodes: list[dict] = []
+    for n in kept_names:
+        e = by_name.get(n)
+        if e is not None:
+            kept_nodes.append(e)
+    return kept_nodes, parents, kept_names
+
+
+async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relations: list[dict]) -> str:
+    """Drill down the pre-built TOC hierarchy toward the query and render an outline.
+
+    Uses VECTOR BEAM descent when the nodes carry embeddings (``_vec``) and a query
+    vector is available: from the roots, at each level keep the top-K nodes by
+    cosine similarity to the query and descend to their children. Falls back to
+    keyword-overlap when no vectors are available.
+
+    Returns lines like:
+        - Paris Demographics (tree_node): <desc> [chunks: c1,c2]
+          - Immigration since 1945 (tree_node): <desc> [chunks: c3]
+        - [chunk c3]: <snippet>
+    """
+    query_terms = [t for t in re.findall(r"[A-Za-z0-9_]{2,}", (query or "").lower()) if len(t) >= 2]
+    if not query_terms and qvec is None:
+        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES])
+
+    kept_nodes, parents, kept_names = _drill_kept_nodes(query_terms, qvec, entities, relations)
+    if not kept_nodes:
+        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES])
+
+    # Render the drilled nodes (indented by depth via ancestor count).
+    depth_of: dict[str, int] = {}
+    for n in kept_names:
+        d = 0
+        cur = parents.get(n)
+        while cur and cur in kept_names:
+            d += 1
+            cur = parents.get(cur)
+        depth_of[n] = d
+
+    lines: list[str] = []
+    for e in kept_nodes[:_STRUCT_MAX_NODES]:
+        name = (e.get("name") or "").strip()
+        etype = (e.get("type") or "other").strip()
+        desc = (e.get("description") or "").strip()
+        chunks = _chunk_ptrs(e)
+        indent = "  " * depth_of.get(name, 0)
+        line = f"{indent}- {name} ({etype})"
+        if desc:
+            line += f": {_snippet(desc, _STRUCT_DESC_SNIPPET)}"
+        if chunks:
+            line += f" [chunks: {chunks}]"
+        lines.append(line)
+
+    # Rank the chunks behind the drilled nodes and add short snippets.
+    wanted = _collect_chunk_ids(kept_nodes)
+    if wanted:
+        chunks = await _load_chunks_for_ids(_tools_slot(), wanted)
+        if chunks:
+            ranked = _rank_chunks_by_terms(chunks, [query])
+            for c in ranked[:_STRUCT_MAX_CHUNKS]:
+                cid = _chunk_id(c)
+                text = _chunk_text(c).strip()
+                lines.append(f"- [chunk {cid}]: {_snippet(text, 300)}")
+    return "\n".join(lines)
+
+
+def _render_outline(entities: list[dict], relations: list[dict]) -> str:
+    """Render a compact flat outline (fallback when no query terms are usable)."""
+    lines: list[str] = []
+    cap_e, cap_r = 40, 40
+    for e in entities[:cap_e]:
+        name = (e.get("name") or "").strip()
+        if not name:
+            continue
+        etype = (e.get("type") or "other").strip()
+        desc = (e.get("description") or "").strip()
+        chunks = _chunk_ptrs(e)
+        line = f"- {name} ({etype})"
+        if desc:
+            line += f": {_snippet(desc, _STRUCT_DESC_SNIPPET)}"
+        if chunks:
+            line += f" [chunks: {chunks}]"
+        lines.append(line)
+    for r in relations[:cap_r]:
+        frm = (r.get("from") or "").strip()
+        to = (r.get("to") or "").strip()
+        if not frm or not to:
+            continue
+        chunks = _chunk_ptrs(r)
+        line = f"- {frm} -[{r.get('type') or 'related_to'}]-> {to}"
+        if chunks:
+            line += f" [chunks: {chunks}]"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _chunk_ptrs(item: dict) -> str:
+    """Comma-join the source_chunk_ids of a structure entity/relation."""
+    cids = [c for c in (item.get("source_chunk_ids") or []) if isinstance(c, str) and c]
+    if not cids:
+        return ""
+    # Dedup + bound to avoid a huge pointer list.
+    seen: list[str] = []
+    for c in cids:
+        if c not in seen:
+            seen.append(c)
+        if len(seen) >= 8:
+            break
+    return ",".join(seen)
+
+
+async def _load_chunks_for_ids(tools_slot, chunk_ids: list[str]) -> list[dict]:
+    """Load chunks by id (across any owning document). Zero LLM.
+
+    Unlike ``_load_specific_chunks`` (which requires a doc_scope), this scans the
+    bound documents' chunks for the requested ids — used to fetch the chunks behind
+    the relevant entities of a navigate_structure outline.
+    """
+    if not chunk_ids:
+        return []
+    wanted = {str(c).strip() for c in chunk_ids if str(c).strip()}
+    if not wanted:
+        return []
+    # Resolve the owning document(s) by scanning the conversation's bound docs is
+    # not available here, so fall back to a per-kb chunk query by id via the
+    # retriever (zero LLM). If unavailable, return empty (model uses pointers).
+    try:
+        from common import settings
+        from rag.nlp import search as _rag_search
+
+        fields = ["content_with_weight", "docnm_kwd", "doc_id"]
+        kb_ids = _get_kb_ids(tools_slot) or []
+        found: dict[str, dict] = {}
+        tenant_ids = getattr(tools_slot, "tenant_ids", None) or []
+        if not tenant_ids:
+            tid = _first_tenant_id(tools_slot)
+            if tid:
+                tenant_ids = [tid]
+        from common.misc_utils import thread_pool_exec
+
+        for tid in tenant_ids[:4]:
+            for kb_id in kb_ids[:_NAV_TREE_MAX_DATASETS]:
+                index = _rag_search.index_name(tid)
+                try:
+                    res = await thread_pool_exec(
+                        settings.docStoreConn.search,
+                        fields,
+                        [],
+                        {"id": list(wanted)[:128]},
+                        [],
+                        None,
+                        0,
+                        128,
+                        index,
+                        [kb_id],
+                    )
+                    rows = settings.docStoreConn.get_fields(res, fields) or {}
+                except Exception:
+                    continue
+                for cid, row in rows.items():
+                    if cid in wanted:
+                        found[cid] = {
+                            "chunk_id": cid,
+                            "content_with_weight": row.get("content_with_weight") or "",
+                            "docnm_kwd": row.get("docnm_kwd") or "",
+                            "doc_id": row.get("doc_id") or "",
+                        }
+        return [found[c] for c in chunk_ids if c in found]
+    except Exception:
+        _LOG.exception("[navigate_structure] _load_chunks_for_ids failed")
+        return []
+
+
+async def _expand_related_via_structure(
+    tools_slot,
+    query: str,
+    doc_ids: list[str],
+    exclude: set[str],
+    max_per_doc: int = _STRUCT_RELATED_MAX_PER_DOC,
+) -> list[dict]:
+    """After ``search_chunks`` hits a document, read its compiled structure and
+    return OTHER chunks related to the query (behind the beam-drilled entities).
+
+    Uses the same VECTOR BEAM drill-down as ``navigate_structure`` (zero chat-LLM):
+    embed the query, descend the compiled tree/catalog hierarchy by cosine
+    similarity, collect the drilled entities' ``source_chunk_ids``, load those
+    chunks, and reduce each to a short snippet. Chunks already returned by the
+    search (``exclude``) are skipped so only genuinely NEW related chunks appear.
+
+    Returns a list of chunk dicts with ``content_with_weight`` set to the snippet,
+    ordered most-related-first. ``[]`` when the document has no compiled structure
+    with embeddings, nothing is relevant, or nothing is left after ``exclude``.
+    """
+    if not doc_ids or not query or not str(query).strip():
+        return []
+    from common import settings
+
+    if not getattr(settings, "retriever", None):
+        return []
+
+    qvec, dim = await _embed_query(tools_slot, query)
+    vec_field = f"q_{dim}_vec" if dim else ""
+    query_terms = [t for t in re.findall(r"[A-Za-z0-9_]{2,}", (query or "").lower()) if len(t) >= 2]
+
+    out: list[dict] = []
+    for doc_id in doc_ids[:_NAV_TREE_MAX_DOCS]:
+        try:
+            entities: list[dict] = []
+            relations: list[dict] = []
+            if vec_field:
+                entities = await _load_entities_with_vectors(tools_slot, doc_id, _CATALOG_KINDS, vec_field)
+            if not entities:
+                continue  # no compiled tree/catalog with embeddings -> nothing to drill
+            structure = await _load_compiled_structure(tools_slot, doc_id, _CATALOG_KINDS)
+            relations = structure.get("relations") or []
+
+            kept_nodes, _parents, _kept = _drill_kept_nodes(query_terms, qvec, entities, relations)
+            if not kept_nodes:
+                continue
+            wanted = _collect_chunk_ids(kept_nodes)
+            wanted = [c for c in wanted if c not in exclude]
+            if not wanted:
+                continue
+            chunks = await _load_chunks_for_ids(tools_slot, wanted)
+            if not chunks:
+                continue
+            ranked = _rank_chunks_by_terms(chunks, [query])
+            for c in ranked[:max_per_doc]:
+                cid = _chunk_id(c)
+                if cid in exclude:
+                    continue
+                exclude.add(cid)
+                c["content_with_weight"] = _snippet(_chunk_text(c), _STRUCT_RELATED_SNIPPET_CHARS)
+                c["related_via_structure"] = True
+                out.append(c)
+        except Exception:
+            _LOG.exception("[search_chunks] compiled-structure related-chunk expansion failed for doc=%s", doc_id)
+    return out
