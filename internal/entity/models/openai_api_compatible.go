@@ -97,18 +97,7 @@ func (m *OpenAIAPICompatibleModel) ChatWithMessages(ctx context.Context, modelNa
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
 
 	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
@@ -143,17 +132,7 @@ func (m *OpenAIAPICompatibleModel) ChatStreamlyWithSender(ctx context.Context, m
 		"include_usage": true,
 	}
 
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
 
 	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)

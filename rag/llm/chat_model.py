@@ -99,10 +99,9 @@ ALLOWED_GEN_CONF_KEYS = frozenset(
     }
 )
 
-# LiteLLM additionally understands reasoning-control parameters that the
-# model-family policies may inject into `gen_conf` (e.g. `thinking` for
-# Anthropic / Kimi reasoning models, `enable_thinking` for Qwen models,
-# `reasoning_effort` for OpenAI o-series).
+# LiteLLM additionally understands reasoning-control parameters that must
+# survive configuration cleaning until model-family policies are applied at
+# the final request-construction boundary.
 LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
     {
         "thinking",
@@ -121,11 +120,13 @@ def _apply_model_family_policies(
     gen_conf: dict | None = None,
     request_kwargs: dict | None = None,
 ):
+    """Normalize reasoning controls for a model/provider without mutating inputs."""
     model_name_lower = (model_name or "").lower()
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
     def _thinking_type():
+        """Return the normalized explicit thinking mode, if one was supplied."""
         val = sanitized_gen_conf.get("thinking")
         if isinstance(val, dict):
             val = val.get("type")
@@ -139,18 +140,26 @@ def _apply_model_family_policies(
         return None
 
     def _pop_thinking_controls():
+        """Remove generic controls after translating them to provider payloads."""
         sanitized_gen_conf.pop("thinking", None)
         sanitized_gen_conf.pop("enable_thinking", None)
 
     def _merge_extra_body(target: dict, extra: dict) -> None:
-        """Merge request body fields while preserving existing nested mappings."""
+        """Merge top-level request body fields."""
+        body = target.get("extra_body")
+        if not isinstance(body, dict):
+            body = {}
+        body.update(extra)
+        target["extra_body"] = body
+
+    def _merge_qwen_chat_template_kwargs(target: dict, enable_thinking: bool) -> None:
+        """Set Qwen thinking without replacing other chat-template options."""
         body = target.get("extra_body")
         body = dict(body) if isinstance(body, dict) else {}
-        for key, value in extra.items():
-            if isinstance(body.get(key), dict) and isinstance(value, dict):
-                body[key] = {**body[key], **value}
-            else:
-                body[key] = value
+        template_kwargs = body.get("chat_template_kwargs")
+        template_kwargs = dict(template_kwargs) if isinstance(template_kwargs, dict) else {}
+        template_kwargs["enable_thinking"] = enable_thinking
+        body["chat_template_kwargs"] = template_kwargs
         target["extra_body"] = body
 
     thinking_type = _thinking_type()
@@ -171,7 +180,8 @@ def _apply_model_family_policies(
         }:
             sanitized_gen_conf["enable_thinking"] = enable_thinking
         else:
-            _merge_extra_body(sanitized_kwargs, {"chat_template_kwargs": {"enable_thinking": enable_thinking}})
+            target = sanitized_gen_conf if backend == "litellm" else sanitized_kwargs
+            _merge_qwen_chat_template_kwargs(target, enable_thinking)
             logger.debug(
                 "Applied Qwen3 thinking policy: backend=%s provider=%s enable_thinking=%s payload_path=%s",
                 backend,
@@ -1928,12 +1938,8 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            gen_conf=gen_conf,
-        )
+        """Copy and filter generation settings before final request construction."""
+        gen_conf = deepcopy(gen_conf) if gen_conf else {}
 
         deepseek_max_tokens = None
         if self.provider == SupportedLiteLLMProvider.DeepSeek:
@@ -1977,6 +1983,7 @@ class LiteLLMBase(ABC):
         return text
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        """Send one non-streaming LiteLLM chat request with normalized settings."""
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
@@ -1984,12 +1991,6 @@ class LiteLLMBase(ABC):
 
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
         gen_conf = self._clean_conf(gen_conf)
-        _, kwargs = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            request_kwargs=kwargs,
-        )
 
         completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
@@ -2527,11 +2528,19 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
+        """Build the final LiteLLM arguments and apply model policies exactly once."""
+        kwargs, policy_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            gen_conf=kwargs,
+        )
         completion_args = {
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
             **kwargs,
+            **policy_request_kwargs,
         }
         if self.provider == SupportedLiteLLMProvider.Nvidia:
             completion_args["num_retries"] = 0
