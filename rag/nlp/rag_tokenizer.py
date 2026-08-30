@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import unicodedata
 
 import infinity.rag_tokenizer
@@ -40,6 +41,7 @@ class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
     def set_language(self, language: str):
         lang_key = (language or "English").strip().lower()
         self._fold_diacritics = lang_key in DIACRITIC_FOLDING_LANGUAGES
+        logging.debug("rag_tokenizer language=%s fold_diacritics=%s", lang_key, self._fold_diacritics)
         if self._fold_diacritics:
             # Force a no-stemming state rather than inheriting whatever stemmer
             # a previously processed dataset left on this shared instance.

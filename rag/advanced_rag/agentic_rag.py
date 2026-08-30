@@ -274,9 +274,11 @@ class RAGTools:
             for kb in kbs:
                 _exclude_sql_kb(kb)
 
-        # Dataset language for retrieval, mirroring `kbs[0].language if kbs else None`
-        # in the classic chat path. Folding languages need it on the query side too.
-        self.language = self.kbs[0].language if self.kbs else None
+        # Dataset language for retrieval; None whenever the datasets disagree,
+        # since one query cannot be tokenized two ways.
+        from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
+        self.language = dataset_language(self.kbs)
 
         self.web_search = web_search
         self.meta_data_filter = meta_data_filter

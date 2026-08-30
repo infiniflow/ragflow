@@ -324,6 +324,8 @@ async def stop_parsing(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def retrieval_test(tenant_id):
+    from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
     req = await get_request_json()
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
@@ -444,7 +446,7 @@ async def retrieval_test(tenant_id):
             rank_feature=label_question(question, kbs),
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
-            language=kb.language,
+            language=dataset_language(kbs),
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)

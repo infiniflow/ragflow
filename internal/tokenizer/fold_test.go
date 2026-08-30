@@ -63,3 +63,43 @@ func TestIsDiacriticFoldingLanguage(t *testing.T) {
 		}
 	}
 }
+
+func TestFoldWithOffsets_MatchesFoldDiacritics(t *testing.T) {
+	for _, in := range []string{"škola dom", "daňové priznanie", "příliš žluťoučký kůň", "plain ascii", "", "mixed ľĺŕ abc"} {
+		folded, offsets := foldWithOffsets(in)
+		if want := FoldDiacritics(in); folded != want {
+			t.Errorf("foldWithOffsets(%q) = %q, want %q", in, folded, want)
+		}
+		if len(offsets) != len(folded)+1 {
+			t.Errorf("foldWithOffsets(%q): %d offsets for %d bytes, want %d", in, len(offsets), len(folded), len(folded)+1)
+		}
+	}
+}
+
+func TestFoldWithOffsets_MapsBackToTheOriginalBytes(t *testing.T) {
+	// "škola dom": 'š' is two bytes, so every offset after it shifts by one.
+	const in = "škola dom"
+	folded, offsets := foldWithOffsets(in)
+	if folded != "skola dom" {
+		t.Fatalf("folded = %q", folded)
+	}
+
+	// The second word starts at byte 6 in the folded text and byte 7 in the original.
+	start := remapOffset(offsets, 6)
+	end := remapOffset(offsets, 9)
+	if got := in[start:end]; got != "dom" {
+		t.Errorf("in[%d:%d] = %q, want %q", start, end, got, "dom")
+	}
+
+	// The first token spans the whole accented word in the original.
+	if got := in[remapOffset(offsets, 0):remapOffset(offsets, 5)]; got != "škola" {
+		t.Errorf("first token = %q, want %q", got, "škola")
+	}
+}
+
+func TestRemapOffset_LeavesOutOfRangeOffsetsAlone(t *testing.T) {
+	_, offsets := foldWithOffsets("abc")
+	if got := remapOffset(offsets, 99); got != 99 {
+		t.Errorf("remapOffset(out of range) = %d, want 99", got)
+	}
+}

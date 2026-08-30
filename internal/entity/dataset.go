@@ -16,7 +16,10 @@
 
 package entity
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // DatasetNameLimit is the maximum length for dataset name
 const DatasetNameLimit = 128
@@ -160,14 +163,29 @@ func (kb *Knowledgebase) TableName() string {
 	return "knowledgebase"
 }
 
-// KnowledgebasesLanguage returns the language used for retrieval over kbs: the
-// first KB's language, mirroring `kbs[0].language if kbs else None` in
-// api/db/services/dialog_service.py. "" means English.
+// KnowledgebasesLanguage returns the language to retrieve with over kbs, which
+// is only well defined when they all agree: one query is tokenized once, but
+// each dataset was indexed under its own language. A mixed set therefore falls
+// back to "" (English, no folding) rather than letting the first dataset in the
+// slice decide how the others are searched.
+//
+// Mirrors dataset_language() in rag/nlp/__init__.py.
 func KnowledgebasesLanguage(kbs []*Knowledgebase) string {
-	if len(kbs) == 0 || kbs[0] == nil || kbs[0].Language == nil {
-		return ""
+	language := ""
+	for i, kb := range kbs {
+		current := ""
+		if kb != nil && kb.Language != nil {
+			current = *kb.Language
+		}
+		if i == 0 {
+			language = current
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(current), strings.TrimSpace(language)) {
+			return ""
+		}
 	}
-	return *kbs[0].Language
+	return language
 }
 
 // ToMap converts Knowledgebase to a map for JSON response

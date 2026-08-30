@@ -74,3 +74,44 @@ func foldForLanguage(lang, text string) string {
 	}
 	return text
 }
+
+// foldWithOffsets folds diacritics and returns, alongside the folded text, a
+// table mapping every byte offset in it back to a byte offset in text. Folding
+// shortens the input ('š' is two bytes, 's' is one), so positions the analyzer
+// reports against the folded text do not index the caller's string; the table
+// is what puts them back.
+//
+// The table has len(folded)+1 entries so an end offset is mappable too.
+func foldWithOffsets(text string) (string, []int) {
+	var b strings.Builder
+	b.Grow(len(text))
+	offsets := make([]int, 0, len(text)+1)
+
+	for i, r := range text {
+		// NFD decomposes per rune and never composes across runes, so folding
+		// one rune at a time gives the same result as folding the whole string.
+		for _, folded := range norm.NFD.String(string(r)) {
+			if unicode.Is(unicode.Mn, folded) {
+				continue
+			}
+			n := b.Len()
+			b.WriteRune(folded)
+			for range b.Len() - n {
+				offsets = append(offsets, i)
+			}
+		}
+	}
+	offsets = append(offsets, len(text))
+	return b.String(), offsets
+}
+
+// remapOffset translates a byte offset in the folded text back to the original.
+func remapOffset(offsets []int, folded uint32) uint32 {
+	i := int(folded)
+	if i < 0 || i >= len(offsets) {
+		// Out of range means the analyzer reported a position that does not
+		// belong to the text it was given; leave it rather than guess.
+		return folded
+	}
+	return uint32(offsets[i])
+}

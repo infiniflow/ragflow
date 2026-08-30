@@ -1560,6 +1560,8 @@ async def search_datasets(tenant_id: str, req: dict):
         _question += await keyword_extraction(chat_mdl, _question)
 
     labels = label_question(_question, kbs)
+    from rag.nlp import dataset_language
+
     ranks = await settings.retriever.retrieval(
         _question,
         embd_mdl,
@@ -1578,7 +1580,7 @@ async def search_datasets(tenant_id: str, req: dict):
         trace_id=search_id,
         must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
         rerank_candidates_count=rerank_candidates_count,
-        language=kb.language,
+        language=dataset_language(kbs),
     )
 
     if use_kg:

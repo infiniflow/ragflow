@@ -150,6 +150,27 @@ all_codecs = [
 ]
 
 
+def dataset_language(kbs) -> str | None:
+    """The language to retrieve with over ``kbs``.
+
+    Only well defined when every dataset agrees: the query is tokenized once,
+    but each dataset was indexed under its own language, so letting the first
+    dataset decide would make results depend on dataset order. A mixed set falls
+    back to None - English, no folding - which is how these searches behave
+    today. Mirrors KnowledgebasesLanguage in internal/entity/dataset.go.
+    """
+    language = None
+    first = None
+    for i, kb in enumerate(kbs or []):
+        current = getattr(kb, "language", None) or ""
+        key = current.strip().lower()
+        if i == 0:
+            language, first = current, key
+        elif key != first:
+            return None
+    return language or None
+
+
 def find_codec(blob):
     sample = blob[:1024]
 

@@ -117,3 +117,29 @@ def test_switching_back_to_english_restores_stemming():
 
     assert rag_tokenizer.tokenize("running") == "run"
     assert rag_tokenizer.tokenizer.fold_text("škola") == "škola"
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("languages", "expected"),
+    [
+        ([], None),
+        (["Slovak"], "Slovak"),
+        (["Slovak", "Slovak"], "Slovak"),
+        (["Slovak", " slovak "], "Slovak"),
+        # No single answer for a mixed set: the query is tokenized once, but the
+        # datasets were indexed under different rules. Fall back to English.
+        (["Slovak", "English"], None),
+        (["English", "Slovak"], None),
+        (["Slovak", None], None),
+        ([None, None], None),
+        ([None], None),
+    ],
+)
+def test_dataset_language_requires_agreement(languages, expected):
+    from types import SimpleNamespace
+
+    from rag.nlp import dataset_language
+
+    kbs = [SimpleNamespace(id=f"kb-{i}", language=lang) for i, lang in enumerate(languages)]
+    assert dataset_language(kbs) == expected

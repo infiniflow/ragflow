@@ -471,12 +471,25 @@ func TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
 }
 
 // TokenizeWithPosition tokenizes the text using the tokenizer's request-scoped language.
-// For diacritic-folding languages the reported positions refer to the folded text.
+// Offsets always index the text passed in, including for folding languages.
 func (t Tokenizer) TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
-	text = foldForLanguage(t.lang, text)
-	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
-		return a.TokenizeWithPosition(text)
+	if !IsDiacriticFoldingLanguage(t.lang) {
+		return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
+			return a.TokenizeWithPosition(text)
+		})
+	}
+	folded, offsets := foldWithOffsets(text)
+	tokens, err := withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
+		return a.TokenizeWithPosition(folded)
 	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range tokens {
+		tokens[i].Offset = remapOffset(offsets, tokens[i].Offset)
+		tokens[i].EndOffset = remapOffset(offsets, tokens[i].EndOffset)
+	}
+	return tokens, nil
 }
 
 // Analyze analyzes the text and returns all tokens.
@@ -485,11 +498,25 @@ func Analyze(text string) ([]rag.Token, error) {
 }
 
 // Analyze analyzes the text using the tokenizer's request-scoped language.
+// Offsets always index the text passed in, including for folding languages.
 func (t Tokenizer) Analyze(text string) ([]rag.Token, error) {
-	text = foldForLanguage(t.lang, text)
-	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {
-		return a.Analyze(text)
+	if !IsDiacriticFoldingLanguage(t.lang) {
+		return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {
+			return a.Analyze(text)
+		})
+	}
+	folded, offsets := foldWithOffsets(text)
+	tokens, err := withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {
+		return a.Analyze(folded)
 	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range tokens {
+		tokens[i].Offset = remapOffset(offsets, tokens[i].Offset)
+		tokens[i].EndOffset = remapOffset(offsets, tokens[i].EndOffset)
+	}
+	return tokens, nil
 }
 
 // SetFineGrained sets whether to use fine-grained tokenization
