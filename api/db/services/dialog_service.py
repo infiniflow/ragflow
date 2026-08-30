@@ -2014,6 +2014,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         thinking_mode=thinking_mode,
         text_attachments_content=text_attachments_content,
         system_prompt=_render_reasoning_system_prompt(dialog, prompt_config, kwargs),
+        similarity_threshold=dialog.similarity_threshold,
+        vector_similarity_weight=dialog.vector_similarity_weight,
+        top_n=dialog.top_n,
+        rerank_candidates_count=dialog.rerank_candidates_count,
+        top_k=dialog.top_k,
     )
 
     async def decorate_answer(answer):

@@ -235,8 +235,21 @@ class RAGTools:
         text_attachments_content: str = "",
         original_user_question: str = "",
         system_prompt: str = "",
+        similarity_threshold: float | None = None,
+        vector_similarity_weight: float | None = None,
+        top_n: int | None = None,
+        rerank_candidates_count: int | None = None,
+        top_k: int | None = None,
     ):
         self.tenant_ids = tenant_ids
+        # Retrieval settings from the caller (a chat assistant's dialog row, an
+        # agent's Retrieval component). The search tools fall back to their own
+        # defaults on None, so an unconfigured caller is unaffected.
+        self.similarity_threshold = similarity_threshold
+        self.vector_similarity_weight = vector_similarity_weight
+        self.top_n = top_n
+        self.rerank_candidates_count = rerank_candidates_count
+        self.top_k = top_k
         # The user's ORIGINAL, complete question as received from the chat layer
         # (before the outer smart agent may have rewritten/compressed it). The
         # outer LLM's `rag(question=...)` argument is model-generated and
