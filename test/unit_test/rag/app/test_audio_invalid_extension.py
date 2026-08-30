@@ -22,14 +22,8 @@ from rag.app import audio
 
 
 @pytest.mark.p2
-def test_missing_extension_reports_error_instead_of_name_error():
-    """A file without an extension must be reported via the failure callback.
-
-    Regression: ``tmp_path`` used to be initialized inside the ``try`` block
-    after the extension checks, so the ``finally`` clause raised
-    ``NameError: name 'tmp_path' is not defined`` and masked the graceful
-    error handling.
-    """
+def test_missing_extension_reports_error():
+    """A file without an extension is reported via the failure callback."""
     messages: list[tuple] = []
 
     def callback(prog=None, msg=""):
@@ -43,7 +37,7 @@ def test_missing_extension_reports_error_instead_of_name_error():
 
 
 @pytest.mark.p2
-def test_unsupported_extension_reports_error_instead_of_name_error():
+def test_unsupported_extension_reports_error():
     messages: list[tuple] = []
 
     def callback(prog=None, msg=""):
