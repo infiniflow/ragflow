@@ -19,6 +19,7 @@ package tokenizer
 import (
 	"context"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"runtime"
 	"sync"
@@ -478,6 +479,11 @@ func (t Tokenizer) TokenizeWithPosition(text string) ([]rag.TokenWithPosition, e
 			return a.TokenizeWithPosition(text)
 		})
 	}
+	if len(text) > math.MaxUint32 {
+		// Offsets are uint32 on the binding, so a longer input cannot be mapped
+		// back without wrapping. Refuse rather than return corrupt positions.
+		return nil, fmt.Errorf("tokenizer: input of %d bytes exceeds the %d-byte limit for position mapping", len(text), int64(math.MaxUint32))
+	}
 	folded, offsets := foldWithOffsets(text)
 	tokens, err := withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
 		return a.TokenizeWithPosition(folded)
@@ -504,6 +510,11 @@ func (t Tokenizer) Analyze(text string) ([]rag.Token, error) {
 		return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {
 			return a.Analyze(text)
 		})
+	}
+	if len(text) > math.MaxUint32 {
+		// Offsets are uint32 on the binding, so a longer input cannot be mapped
+		// back without wrapping. Refuse rather than return corrupt positions.
+		return nil, fmt.Errorf("tokenizer: input of %d bytes exceeds the %d-byte limit for position mapping", len(text), int64(math.MaxUint32))
 	}
 	folded, offsets := foldWithOffsets(text)
 	tokens, err := withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {

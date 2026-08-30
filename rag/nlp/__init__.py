@@ -167,8 +167,11 @@ def dataset_language(kbs) -> str | None:
         if i == 0:
             language, first = current, key
         elif key != first:
+            logging.debug("dataset_language: datasets disagree (%s vs %s); retrieving as English", first or "unset", key or "unset")
             return None
-    return language or None
+    resolved = language or None
+    logging.debug("dataset_language: %s", resolved or "English (unset)")
+    return resolved
 
 
 def find_codec(blob):

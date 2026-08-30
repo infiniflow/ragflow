@@ -143,3 +143,17 @@ def test_dataset_language_requires_agreement(languages, expected):
 
     kbs = [SimpleNamespace(id=f"kb-{i}", language=lang) for i, lang in enumerate(languages)]
     assert dataset_language(kbs) == expected
+
+
+@pytest.mark.p2
+def test_dataset_language_logs_the_resolution(caplog):
+    """Operators need to see why folding did or did not apply."""
+    import logging as _logging
+    from types import SimpleNamespace
+
+    from rag.nlp import dataset_language
+
+    kbs = [SimpleNamespace(id="kb-0", language="Slovak"), SimpleNamespace(id="kb-1", language="English")]
+    with caplog.at_level(_logging.DEBUG, logger="root"):
+        assert dataset_language(kbs) is None
+    assert "disagree" in caplog.text

@@ -16,7 +16,10 @@
 
 package tokenizer
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestFoldDiacritics(t *testing.T) {
 	tests := []struct {
@@ -101,5 +104,14 @@ func TestRemapOffset_LeavesOutOfRangeOffsetsAlone(t *testing.T) {
 	_, offsets := foldWithOffsets("abc")
 	if got := remapOffset(offsets, 99); got != 99 {
 		t.Errorf("remapOffset(out of range) = %d, want 99", got)
+	}
+}
+
+func TestRemapOffset_MapsWideOffsets(t *testing.T) {
+	// The offset table holds int; the binding reports uint32. Values inside the
+	// uint32 range must survive the round trip unchanged.
+	offsets := []int{0, 1, 2, math.MaxUint32}
+	if got := remapOffset(offsets, 3); got != math.MaxUint32 {
+		t.Errorf("remapOffset = %d, want %d", got, uint32(math.MaxUint32))
 	}
 }
