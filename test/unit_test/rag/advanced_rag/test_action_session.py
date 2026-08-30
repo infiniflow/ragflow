@@ -41,3 +41,4 @@ def test_initialize_state_prompt_uses_runtime_answer_variable():
 
     assert '"answer_variable"' in prompt
     assert '"answer_slot"' not in prompt
+    assert "zero-based index" in prompt
