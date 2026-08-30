@@ -247,10 +247,37 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
     # Public methods
     def check_installation(self) -> tuple[bool, str]:
-        """Check if the parser is properly installed and configured."""
+        """Check that the parser is configured and the OCR service is reachable.
+
+        The access token is validated with a minimal POST to the jobs endpoint
+        (model only, no file). The official service authenticates the token
+        before accepting a job, so an invalid token yields HTTP 401/403 without
+        creating a job or consuming page quota, while a valid token yields a
+        different error (e.g. 422 for a missing file).
+        """
         if not self.access_token:
             return False, "[PaddleOCR] Access token not configured"
 
+        if not self.base_url:
+            return False, "[PaddleOCR] Base URL not configured"
+
+        headers: dict[str, str] = {"Client-Platform": "ragflow"}
+        headers["Authorization"] = f"Bearer {self.access_token}"
+        jobs_url = f"{self.base_url.rstrip('/')}/api/v2/ocr/jobs"
+
+        try:
+            resp = requests.post(jobs_url, data={"model": self.algorithm}, headers=headers, timeout=10)
+        except Exception as exc:  # noqa: BLE001 - connectivity failures are expected here
+            reason = f"[PaddleOCR] service unreachable at {self.base_url}: {exc}"
+            self.logger.warning(reason)
+            return False, reason
+
+        if resp.status_code in (401, 403):
+            reason = f"[PaddleOCR] access token rejected by {self.base_url} (HTTP {resp.status_code})"
+            self.logger.warning(reason)
+            return False, reason
+
+        self.logger.info(f"[PaddleOCR] service reachable at {self.base_url} (HTTP {resp.status_code})")
         return True, ""
 
     def parse_pdf(
