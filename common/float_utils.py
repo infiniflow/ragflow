@@ -69,6 +69,11 @@ def minimum_should_match_percent(fraction):
     int(fraction * 100) silently sends a stricter-than-requested threshold for
     many two-decimal fractions (0.29 -> "28%", not "29%").
 
+    Exact midpoints use Python's round()-to-even, so they land on the nearer
+    even percent rather than always rounding up: 0.005 -> "0%", 0.015 -> "2%".
+    That is the intended contract here; a caller-facing search threshold does
+    not need half-up tie-breaking.
+
     Examples:
         >>> minimum_should_match_percent(0.29)
         '29%'

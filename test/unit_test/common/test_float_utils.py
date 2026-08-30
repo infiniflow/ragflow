@@ -106,3 +106,10 @@ class TestMinimumShouldMatchPercent:
         assert minimum_should_match_percent(0.0) == "0%"
         assert minimum_should_match_percent(1.0) == "100%"
         assert minimum_should_match_percent(0.5) == "50%"
+
+    def test_midpoint_ties_round_to_even(self):
+        """Documents the intended tie-breaking contract: an exact half-percent
+        rounds to the nearer even percent, matching Python's round(), not
+        always up."""
+        assert minimum_should_match_percent(0.005) == "0%"
+        assert minimum_should_match_percent(0.015) == "2%"
