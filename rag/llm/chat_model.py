@@ -2568,7 +2568,9 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
-        if self.provider in FACTORY_DEFAULT_BASE_URL:
+        # OpenRouter is handled separately below because it may add routing
+        # metadata without replacing model-specific fields in extra_body.
+        if self.provider in FACTORY_DEFAULT_BASE_URL and self.provider != SupportedLiteLLMProvider.OpenRouter:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
@@ -2617,6 +2619,7 @@ class LiteLLMBase(ABC):
                 raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            completion_args["api_base"] = self.base_url
             if self.provider_order:
 
                 def _to_order_list(x):
@@ -2628,13 +2631,13 @@ class LiteLLMBase(ABC):
                         return [str(s).strip() for s in x if str(s).strip()]
                     return []
 
-                extra_body = {}
-                provider_cfg = {}
-                provider_order = _to_order_list(self.provider_order)
-                provider_cfg["order"] = provider_order
-                provider_cfg["allow_fallbacks"] = False
-                extra_body["provider"] = provider_cfg
-                completion_args.update({"extra_body": extra_body})
+                extra_body = completion_args.get("extra_body")
+                extra_body = dict(extra_body) if isinstance(extra_body, dict) else {}
+                extra_body["provider"] = {
+                    "order": _to_order_list(self.provider_order),
+                    "allow_fallbacks": False,
+                }
+                completion_args["extra_body"] = extra_body
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
             completion_args.update(
                 {

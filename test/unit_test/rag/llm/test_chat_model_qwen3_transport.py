@@ -208,3 +208,35 @@ def test_litellm_dashscope_qwen3_keeps_provider_native_payload():
     assert completion_args["extra_body"] == {"enable_thinking": False}
     assert "enable_thinking" not in completion_args
     assert "chat_template_kwargs" not in completion_args["extra_body"]
+
+
+def test_litellm_openrouter_qwen3_preserves_routing_and_thinking_payload():
+    """OpenRouter routing must not replace Qwen chat-template settings."""
+    model = _make_litellm_qwen(SupportedLiteLLMProvider.OpenRouter)
+    model.provider_order = "provider-a, provider-b"
+
+    completion_args = model._construct_completion_args(
+        history=[],
+        stream=False,
+        tools=False,
+        thinking="disabled",
+        extra_body={
+            "seed": 1,
+            "chat_template_kwargs": {"custom_template_flag": "keep"},
+        },
+    )
+
+    assert completion_args["api_base"] == model.base_url
+    assert completion_args["extra_body"] == {
+        "seed": 1,
+        "chat_template_kwargs": {
+            "custom_template_flag": "keep",
+            "enable_thinking": False,
+        },
+        "provider": {
+            "order": ["provider-a", "provider-b"],
+            "allow_fallbacks": False,
+        },
+    }
+    assert "thinking" not in completion_args
+    assert "enable_thinking" not in completion_args
