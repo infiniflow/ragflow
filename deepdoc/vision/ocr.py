@@ -31,6 +31,7 @@ import numpy as np
 import cv2
 import onnxruntime as ort
 
+from .ocr_tiling import DEFAULT_TILE_OVERLAP, DEFAULT_TILE_SIZE, DEFAULT_TILING_THRESHOLD, detect_tiled_boxes, tile_starts
 from .postprocess import build_post_process
 
 loaded_models = {}
@@ -452,7 +453,7 @@ class TextDetector:
             del self.predictor
         gc.collect()
 
-    def __call__(self, img):
+    def _detect(self, img):
         ori_im = img.copy()
         data = {"image": img}
 
@@ -480,6 +481,40 @@ class TextDetector:
         dt_boxes = self.filter_tag_det_res(dt_boxes, ori_im.shape)
 
         return dt_boxes, time.time() - st
+
+    def __call__(self, img):
+        height, width = img.shape[:2]
+        # 4096px keeps common 300-DPI document pages (A4 is about 3508px tall)
+        # on the existing single-pass path. Above it, scaling the whole image
+        # to the detector's 960px input would fall below 0.234x; 2880px tiles
+        # keep the effective scale at about 0.33x without changing the model.
+        if height <= DEFAULT_TILING_THRESHOLD and width <= DEFAULT_TILING_THRESHOLD:
+            return self._detect(img)
+
+        row_count = len(tile_starts(height, DEFAULT_TILE_SIZE, DEFAULT_TILE_OVERLAP))
+        column_count = len(tile_starts(width, DEFAULT_TILE_SIZE, DEFAULT_TILE_OVERLAP))
+        elapsed = 0.0
+
+        def detect_tile(tile):
+            nonlocal elapsed
+            boxes, tile_elapsed = self._detect(tile)
+            elapsed += tile_elapsed
+            return boxes
+
+        boxes = detect_tiled_boxes(
+            img,
+            detect_tile,
+            tile_size=DEFAULT_TILE_SIZE,
+            overlap=DEFAULT_TILE_OVERLAP,
+        )
+        logging.debug(
+            "Completed tiled OCR text detection for %dx%d image using %d overlapping tiles: %d boxes",
+            width,
+            height,
+            row_count * column_count,
+            len(boxes),
+        )
+        return boxes, elapsed
 
     def __del__(self):
         self.close()
