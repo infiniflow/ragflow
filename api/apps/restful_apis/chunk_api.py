@@ -444,6 +444,7 @@ async def retrieval_test(tenant_id):
             rank_feature=label_question(question, kbs),
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
+            language=kb.language,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -1014,6 +1015,8 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         if not all(isinstance(q, str) for q in req["questions"]):
             return get_error_data_result("`questions` must be a list of strings")
 
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    rag_tokenizer.tokenizer.set_language(kb.language if ok and kb.language else "English")
     chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
     d = {
         "id": chunk_id,
@@ -1161,6 +1164,8 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             return get_error_data_result(message="`content` is required")
     else:
         content = chunk.get("content_with_weight", "")
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    rag_tokenizer.tokenizer.set_language(kb.language if ok and kb.language else "English")
     d = {"id": chunk_id, "content_with_weight": content}
     d["content_ltks"] = rag_tokenizer.tokenize(d["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])

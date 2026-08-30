@@ -501,6 +501,7 @@ async def _content_recall_docs(tools, query: str, doc_scope: list[str] | None = 
             doc_ids=doc_scope,
             aggs=True,
             highlight=False,
+            language=getattr(tools, "language", None),
         )
     except Exception:
         _LOG.exception("[Dataset navigation] content-recall retrieval failed")
@@ -871,6 +872,7 @@ async def _route_docs_via_embedding(tools_slot, query: str, doc_scope: list[str]
             highlight=False,
             doc_ids=doc_scope,
             must_not={"exists": "compile_kwd"},  # real doc chunks only; compiled products have their own tools
+            language=getattr(tools_slot, "language", None),
         )
     except Exception:
         _LOG.exception("[navigate_structure] embedding doc routing failed")

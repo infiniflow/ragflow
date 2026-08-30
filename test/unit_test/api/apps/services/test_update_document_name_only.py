@@ -94,9 +94,17 @@ def _load_update_document_name_only_module(monkeypatch, *, file_lookup):
     )
     _stub(
         monkeypatch,
+        "api.db.services.knowledgebase_service",
+        KnowledgebaseService=SimpleNamespace(
+            get_by_id=lambda kb_id: (True, SimpleNamespace(id=kb_id, language="English")),
+        ),
+    )
+    _stub(
+        monkeypatch,
         "rag.nlp.rag_tokenizer",
         tokenize=lambda text: [text],
         fine_grained_tokenize=lambda tokens: tokens,
+        tokenizer=SimpleNamespace(set_language=lambda language: None),
     )
 
     module_path = Path(__file__).resolve().parents[5] / "api" / "apps" / "services" / "document_api_service.py"

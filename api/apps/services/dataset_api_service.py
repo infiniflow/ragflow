@@ -1174,6 +1174,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         rank_feature=labels,
         trace_id=search_id,
         rerank_candidates_count=rerank_candidates_count,
+        language=kb.language,
     )
 
     if use_kg:
@@ -1577,6 +1578,7 @@ async def search_datasets(tenant_id: str, req: dict):
         trace_id=search_id,
         must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
         rerank_candidates_count=rerank_candidates_count,
+        language=kb.language,
     )
 
     if use_kg:
@@ -3894,6 +3896,7 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
             fetch_k,
             0.0,
             0.3,
+            language=kb.language if kb else None,
             **kwargs,
         )
     except Exception:

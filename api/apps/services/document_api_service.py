@@ -19,6 +19,7 @@ from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import validation_utils
 from common import settings
 from common.constants import TaskStatus
@@ -44,15 +45,17 @@ def update_document_name_only(document_id, req_doc_name):
             FileService.update_by_id(file.id, {"name": req_doc_name})
     # Add logic to update index - refer to rename method in document_app.py
     tenant_id = DocumentService.get_tenant_id(document_id)
+    ok, doc = DocumentService.get_by_id(document_id)
+    if not ok:
+        return get_error_data_result(message=f"Not able to find document by id:{document_id}")
+    ok, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+    rag_tokenizer.tokenizer.set_language(kb.language if ok and kb.language else "English")
     title_tks = rag_tokenizer.tokenize(req_doc_name)
     es_body = {
         "docnm_kwd": req_doc_name,
         "title_tks": title_tks,
         "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
     }
-    ok, doc = DocumentService.get_by_id(document_id)
-    if not ok:
-        return get_error_data_result(message=f"Not able to find document by id:{document_id}")
     if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
         settings.docStoreConn.update(
             {"doc_id": document_id},

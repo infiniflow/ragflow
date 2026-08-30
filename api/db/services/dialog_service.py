@@ -760,6 +760,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(" ".join(questions), kbs),
                 rerank_candidates_count=rerank_candidates_count,
+                language=kbs[0].language if kbs else None,
             )
             if prompt_config.get("toc_enhance"):
                 cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -1809,6 +1810,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
         rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
+        language=kbs[0].language if kbs else None,
     )
     if include_reference_metadata:
         logging.debug(
@@ -1911,6 +1913,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
+        language=kbs[0].language if kbs else None,
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])

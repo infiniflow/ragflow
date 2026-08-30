@@ -451,6 +451,7 @@ async def retrieval_test_embedded(tenant_id=None):
             highlight=req.get("highlight"),
             rank_feature=labels,
             rerank_candidates_count=rerank_candidates_count,
+            language=kb.language,
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)

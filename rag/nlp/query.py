@@ -39,9 +39,13 @@ class FulltextQueryer(QueryBase):
             "content_sm_ltks",
         ]
 
-    def question(self, txt, tbl="qa", min_match: float = 0.6):
+    def question(self, txt, tbl="qa", min_match: float = 0.6, language: str | None = None):
         original_query = txt
-        txt = self.add_space_between_eng_zh(txt)
+        # Keep query tokenization symmetric with indexing, which calls
+        # set_language() per dataset (see rag/nlp/__init__.py). Folding up
+        # front makes the heuristics below see the same form as index tokens.
+        rag_tokenizer.tokenizer.set_language(language or "English")
+        txt = rag_tokenizer.tokenizer.fold_text(self.add_space_between_eng_zh(txt))
 
         # Strip Infinity ESCAPABLE characters from the query.
         #

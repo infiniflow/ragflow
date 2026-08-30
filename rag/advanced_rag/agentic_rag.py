@@ -274,6 +274,10 @@ class RAGTools:
             for kb in kbs:
                 _exclude_sql_kb(kb)
 
+        # Dataset language for retrieval, mirroring `kbs[0].language if kbs else None`
+        # in the classic chat path. Folding languages need it on the query side too.
+        self.language = self.kbs[0].language if self.kbs else None
+
         self.web_search = web_search
         self.meta_data_filter = meta_data_filter
         self.doc_scope = list(dict.fromkeys(doc_scope)) if doc_scope is not None else None
@@ -636,6 +640,7 @@ class RAGTools:
             highlight=True,
             doc_ids=doc_scope,
             rank_feature=label_question(question, self.kbs),
+            language=self.language,
         )
         if not kbinfos:
             return {"chunks": [], "doc_aggs": []}

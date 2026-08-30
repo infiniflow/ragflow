@@ -119,6 +119,7 @@ async def hybrid_search(
         highlight=False,
         doc_ids=doc_scope,
         must_not={"exists": "compile_kwd"},  # plain retrieval = document chunks only; compiled products have their own tools
+        language=getattr(tools, "language", None),
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     # Preserve the RAW retrieved chunks in the central memory store BEFORE any
@@ -168,6 +169,7 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         highlight=False,
         doc_ids=doc_scope,
         must_not={"exists": "compile_kwd"},
+        language=getattr(tools, "language", None),
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     try:
@@ -199,6 +201,7 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         highlight=False,
         doc_ids=doc_scope,
         must_not={"exists": "compile_kwd"},
+        language=getattr(tools, "language", None),
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     try:
