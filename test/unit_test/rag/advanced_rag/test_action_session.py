@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -32,3 +33,11 @@ async def test_exec_calculate_returns_computed_value(monkeypatch):
 
     assert results == [{"kind": "calculate", "expression": "2 + 3", "result": "5"}]
     assert evidence_ids == []
+
+
+def test_initialize_state_prompt_uses_runtime_answer_variable():
+    prompt_path = Path(__file__).resolve().parents[4] / "rag" / "prompts" / "action_initialize_state.md"
+    prompt = prompt_path.read_text(encoding="utf-8")
+
+    assert '"answer_variable"' in prompt
+    assert '"answer_slot"' not in prompt

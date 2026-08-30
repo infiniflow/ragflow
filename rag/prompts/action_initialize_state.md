@@ -11,13 +11,13 @@ Output ONLY a JSON object:
     {"id": 0, "type": "<entity|person|date|duration|count|number|place|web|dataset>", "clues": ["<what identifies this slot from the question>", "..."], "source": "<dataset name or 'web'>"},
     ...
   ],
-  "answer_slot": <id of the slot the FINAL answer goes to>,
+  "answer_variable": <id of the slot the FINAL answer goes to>,
   "first_queries": ["<concrete searchable query for the first retrieval round>", ...]
 }
 
 Rules:
 - 2-6 slots; each slot ONE fact (a name, a date, a count...), never a clause.
-- "answer_slot" holds the top-level requested fact; other slots are its dependencies.
+- "answer_variable" holds the top-level requested fact; other slots are its dependencies.
 - Cover EVERY listed source: one or more slots per dataset, plus a "web" slot when Web is available and the question touches world knowledge or recent events.
 - clues must be self-contained phrases usable as retrieval hints.
 - 1-4 first_queries: direct keyword-style searches against the listed sources.
