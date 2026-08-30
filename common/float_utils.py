@@ -56,3 +56,23 @@ def normalize_overlapped_percent(overlapped_percent):
         value *= 100
     value = int(value)
     return max(0, min(value, 90))
+
+
+def minimum_should_match_percent(fraction):
+    """
+    Convert a 0..1 minimum_should_match fraction to the percent-string the
+    full-text doc-store connectors (es_conn/opensearch_conn/ob_conn/infinity_conn)
+    pass through to their query engine, e.g. 0.57 -> "57%".
+
+    Rounds rather than truncates: a base-10 fraction like 0.29 is not exactly
+    representable in IEEE-754 (it is stored as 0.28999999999999998...), so
+    int(fraction * 100) silently sends a stricter-than-requested threshold for
+    many two-decimal fractions (0.29 -> "28%", not "29%").
+
+    Examples:
+        >>> minimum_should_match_percent(0.29)
+        '29%'
+        >>> minimum_should_match_percent(0.5)
+        '50%'
+    """
+    return f"{round(fraction * 100)}%"

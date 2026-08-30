@@ -15,7 +15,7 @@
 #
 
 import math
-from common.float_utils import get_float
+from common.float_utils import get_float, minimum_should_match_percent
 
 
 class TestGetFloat:
@@ -86,3 +86,23 @@ class TestGetFloat:
         result = get_float("  invalid  ")
         assert math.isinf(result)
         assert result < 0
+
+
+class TestMinimumShouldMatchPercent:
+    def test_rounds_ieee754_representation_error_up(self):
+        """0.29 * 100 == 28.999999999999996 in IEEE-754; the old int() truncation
+        sent "28%" instead of the requested "29%". These are the exact fractions
+        the issue reproduced against (old buggy output in parens)."""
+        assert minimum_should_match_percent(0.29) == "29%"  # was "28%"
+        assert minimum_should_match_percent(0.57) == "57%"  # was "56%"
+        assert minimum_should_match_percent(0.58) == "58%"  # was "57%"
+
+    def test_all_two_decimal_fractions_round_to_nearest_percent(self):
+        for hundredths in range(1, 100):
+            fraction = hundredths / 100
+            assert minimum_should_match_percent(fraction) == f"{hundredths}%"
+
+    def test_exact_boundaries(self):
+        assert minimum_should_match_percent(0.0) == "0%"
+        assert minimum_should_match_percent(1.0) == "100%"
+        assert minimum_should_match_percent(0.5) == "50%"

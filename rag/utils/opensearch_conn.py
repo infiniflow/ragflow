@@ -27,6 +27,7 @@ from opensearchpy import ConnectionTimeout
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
+from common.float_utils import minimum_should_match_percent
 from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
@@ -385,7 +386,7 @@ class OSConnection(DocStoreConnection):
                 use_text = True
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
-                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                    minimum_should_match = minimum_should_match_percent(minimum_should_match)
                 bqry.must.append(Q("query_string", fields=m.fields, type="best_fields", query=m.matching_text, minimum_should_match=minimum_should_match, boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
 
