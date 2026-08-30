@@ -177,7 +177,7 @@ func (s *MetadataService) TagQuery(ctx context.Context, question string, tenantI
 
 	// Process question to get match text
 	queryBuilder := nlp.GetQueryBuilder()
-	matchTextExpr, warns := queryBuilder.Question(question, "qa", 0.0) // min_match=0.0
+	matchTextExpr, warns := queryBuilder.Question(question, "qa", 0.0, "") // min_match=0.0
 	if len(warns) > 0 {
 		common.Warn("TagQuery: failed to build match text", zap.Any("warnings", warns))
 		return make(map[string]float64), nil

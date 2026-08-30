@@ -653,6 +653,7 @@ func (s *ChatPipelineService) AsyncChat(
 							PageSize:              int(chat.TopN),
 							RerankCandidatesCount: &rerankCandidatesCount,
 							EmbeddingModel:        embModel,
+							Language:              entity.KnowledgebasesLanguage(kbs),
 						})
 					}
 
@@ -715,6 +716,7 @@ func (s *ChatPipelineService) AsyncChat(
 							RerankModel:            rerankModel,
 							EmbeddingModel:         embModel,
 							Aggs:                   func() *bool { v := true; return &v }(),
+							Language:               entity.KnowledgebasesLanguage(kbs),
 						}
 
 						result, retErr := retrievalSvc.Retrieval(ctx, req)

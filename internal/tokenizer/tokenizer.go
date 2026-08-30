@@ -459,6 +459,7 @@ func (t Tokenizer) Tokenize(text string) (string, error) {
 	if engineType == "infinity" {
 		return text, nil
 	}
+	text = foldForLanguage(t.lang, text)
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
 		return a.Tokenize(text)
 	})
@@ -470,7 +471,9 @@ func TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
 }
 
 // TokenizeWithPosition tokenizes the text using the tokenizer's request-scoped language.
+// For diacritic-folding languages the reported positions refer to the folded text.
 func (t Tokenizer) TokenizeWithPosition(text string) ([]rag.TokenWithPosition, error) {
+	text = foldForLanguage(t.lang, text)
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.TokenWithPosition, error) {
 		return a.TokenizeWithPosition(text)
 	})
@@ -483,6 +486,7 @@ func Analyze(text string) ([]rag.Token, error) {
 
 // Analyze analyzes the text using the tokenizer's request-scoped language.
 func (t Tokenizer) Analyze(text string) ([]rag.Token, error) {
+	text = foldForLanguage(t.lang, text)
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) ([]rag.Token, error) {
 		return a.Analyze(text)
 	})
@@ -513,6 +517,7 @@ func (t Tokenizer) FineGrainedTokenize(tokens string) (string, error) {
 	if engineType == "infinity" {
 		return tokens, nil
 	}
+	tokens = foldForLanguage(t.lang, tokens)
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
 		return a.FineGrainedTokenize(tokens)
 	})

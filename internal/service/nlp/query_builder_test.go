@@ -16,6 +16,7 @@ package nlp
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -221,6 +222,52 @@ func TestQueryBuilder_Traditional2Simplified(t *testing.T) {
 	}
 }
 
+// TestQueryBuilder_Question_FoldingLanguage verifies that for
+// diacritic-folding languages the raw query text is folded to ASCII before
+// any keyword/split heuristics, so every emitted keyword and the query
+// expression are accent-free and match index tokens.
+func TestQueryBuilder_Question_FoldingLanguage(t *testing.T) {
+	qb := NewQueryBuilder()
+	hasDiacritics := func(s string) bool {
+		for _, r := range s {
+			if r > 127 {
+				return true
+			}
+		}
+		return false
+	}
+
+	expr, keywords := qb.Question("daňové priznanie pre živnostníkov", "test", 0.5, "Slovak")
+	if expr == nil {
+		t.Fatal("Question(Slovak) returned nil expr")
+	}
+	if hasDiacritics(expr.MatchingText) {
+		t.Errorf("Question(Slovak) query contains diacritics: %q", expr.MatchingText)
+	}
+	for _, k := range keywords {
+		if hasDiacritics(k) {
+			t.Errorf("Question(Slovak) keyword contains diacritics: %q", k)
+		}
+	}
+	if !strings.Contains(expr.MatchingText, "danove") {
+		t.Errorf("Question(Slovak) query missing folded token 'danove': %q", expr.MatchingText)
+	}
+
+	// original_query must stay untouched for highlighting.
+	if orig, _ := expr.ExtraOptions["original_query"].(string); orig != "daňové priznanie pre živnostníkov" {
+		t.Errorf("Question(Slovak) original_query = %q, want the unfolded input", orig)
+	}
+
+	// Non-folding languages keep accents untouched.
+	exprEn, _ := qb.Question("daňové priznanie pre živnostníkov", "test", 0.5, "")
+	if exprEn == nil {
+		t.Fatal("Question(English) returned nil expr")
+	}
+	if !hasDiacritics(exprEn.MatchingText) {
+		t.Errorf("Question(English) unexpectedly folded diacritics: %q", exprEn.MatchingText)
+	}
+}
+
 func TestQueryBuilder_Question(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
@@ -290,7 +337,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			expr, keywords := qb.Question(tt.txt, tt.tbl, tt.minMatch)
+			expr, keywords := qb.Question(tt.txt, tt.tbl, tt.minMatch, "")
 			if tt.expectNil && expr != nil {
 				t.Errorf("Question(%q) expected nil expr, got %v", tt.txt, expr)
 			}

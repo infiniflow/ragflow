@@ -75,7 +75,7 @@ func TestAlphabeticOOVFrequencyMatchesSharedFixture(t *testing.T) {
 func TestOOVWeightsFavorLongerContentTerms(t *testing.T) {
 	d := NewTermWeightDealer(t.TempDir())
 	terms := []string{"was", "largest", "supplier", "equipment"}
-	weights := d.Weights(terms, false)
+	weights := d.Weights(terms, false, "")
 	if len(weights) != len(terms) {
 		t.Fatalf("Weights returned %d terms; want %d", len(weights), len(terms))
 	}
@@ -86,7 +86,7 @@ func TestOOVWeightsFavorLongerContentTerms(t *testing.T) {
 	}
 
 	d.df["equipment"] = 1_000_000
-	weights = d.Weights([]string{"supplier", "equipment"}, false)
+	weights = d.Weights([]string{"supplier", "equipment"}, false, "")
 	if weights[1].Weight >= weights[0].Weight {
 		t.Fatalf("dictionary frequency should take precedence over the OOV prior: %v", weights)
 	}
@@ -205,7 +205,7 @@ func TestPretoken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := d.Pretoken(tt.txt, tt.num, tt.stpwd)
+			result := d.Pretoken(tt.txt, tt.num, tt.stpwd, "")
 			// Just check it doesn't panic and returns a slice
 			if result == nil {
 				t.Error("Pretoken returned nil")
@@ -391,7 +391,7 @@ func TestWeights(t *testing.T) {
 
 	t.Run("without preprocess", func(t *testing.T) {
 		tks := []string{"hello", "world", "123"}
-		weights := d.Weights(tks, false)
+		weights := d.Weights(tks, false, "")
 
 		if len(weights) != len(tks) {
 			t.Errorf("Expected %d weights, got %d", len(tks), len(weights))
@@ -409,7 +409,7 @@ func TestWeights(t *testing.T) {
 
 	t.Run("with preprocess", func(t *testing.T) {
 		tks := []string{"hello world", "test"}
-		weights := d.Weights(tks, true)
+		weights := d.Weights(tks, true, "")
 
 		// Check it doesn't panic and returns results
 		if weights == nil {
@@ -418,7 +418,7 @@ func TestWeights(t *testing.T) {
 	})
 
 	t.Run("empty input", func(t *testing.T) {
-		weights := d.Weights([]string{}, false)
+		weights := d.Weights([]string{}, false, "")
 		if len(weights) != 0 {
 			t.Errorf("Expected empty weights for empty input, got %d", len(weights))
 		}
@@ -431,7 +431,7 @@ func TestWeights(t *testing.T) {
 		d2 := NewTermWeightDealer(tmpDir2)
 
 		tks := []string{"toxicterm", "normal"}
-		weights := d2.Weights(tks, false)
+		weights := d2.Weights(tks, false, "")
 
 		if len(weights) != 2 {
 			t.Fatalf("Expected 2 weights, got %d", len(weights))
@@ -612,7 +612,7 @@ func TestWeightsNormalization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			weights := d.Weights(tt.tks, false)
+			weights := d.Weights(tt.tks, false, "")
 
 			if len(weights) != len(tt.tks) {
 				t.Fatalf("Expected %d weights, got %d", len(tt.tks), len(weights))
@@ -664,7 +664,7 @@ func BenchmarkWeights(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		d.Weights(tks, false)
+		d.Weights(tks, false, "")
 	}
 }
 
@@ -720,7 +720,7 @@ func TestIntegration(t *testing.T) {
 	// Step 2: Pretoken
 	var allTokens []string
 	for _, s := range splitted {
-		tokens := d.Pretoken(s, true, true)
+		tokens := d.Pretoken(s, true, true, "")
 		allTokens = append(allTokens, tokens...)
 	}
 
@@ -728,7 +728,7 @@ func TestIntegration(t *testing.T) {
 	merged := d.TokenMerge(allTokens)
 
 	// Step 4: Calculate weights
-	weights := d.Weights(merged, false)
+	weights := d.Weights(merged, false, "")
 
 	// Verify results
 	if len(weights) == 0 && len(merged) > 0 {
@@ -751,7 +751,7 @@ func TestWeightsEdgeCases(t *testing.T) {
 
 	t.Run("numbers pattern", func(t *testing.T) {
 		tks := []string{"123,45", "abc"}
-		weights := d.Weights(tks, false)
+		weights := d.Weights(tks, false, "")
 		if len(weights) != 2 {
 			t.Fatalf("Expected 2 weights, got %d", len(weights))
 		}
@@ -760,7 +760,7 @@ func TestWeightsEdgeCases(t *testing.T) {
 
 	t.Run("short letters pattern", func(t *testing.T) {
 		tks := []string{"ab", "abc"}
-		weights := d.Weights(tks, false)
+		weights := d.Weights(tks, false, "")
 		if len(weights) != 2 {
 			t.Fatalf("Expected 2 weights, got %d", len(weights))
 		}
@@ -768,7 +768,7 @@ func TestWeightsEdgeCases(t *testing.T) {
 
 	t.Run("letter pattern with spaces", func(t *testing.T) {
 		tks := []string{"hello world test"}
-		weights := d.Weights(tks, true)
+		weights := d.Weights(tks, true, "")
 		// Should not panic
 		if weights == nil {
 			t.Error("Weights returned nil for letter pattern")
@@ -781,7 +781,7 @@ func TestPretokenWithNumbers(t *testing.T) {
 	d := NewTermWeightDealer("")
 
 	t.Run("num=false filters single digits", func(t *testing.T) {
-		result := d.Pretoken("5", false, true)
+		result := d.Pretoken("5", false, true, "")
 		// Single digit should be filtered when num=false
 		if slices.Contains(result, "5") {
 			t.Error("Single digit should be filtered when num=false")
@@ -789,7 +789,7 @@ func TestPretokenWithNumbers(t *testing.T) {
 	})
 
 	t.Run("num=true keeps single digits", func(t *testing.T) {
-		result := d.Pretoken("5 123", true, true)
+		result := d.Pretoken("5 123", true, true, "")
 		// Check at least something is returned
 		if len(result) == 0 {
 			t.Log("Single digit may still be filtered by other rules")
@@ -802,7 +802,7 @@ func TestPretokenStopWords(t *testing.T) {
 	d := NewTermWeightDealer("")
 
 	t.Run("stpwd=true removes stop words", func(t *testing.T) {
-		result := d.Pretoken("请问", true, true)
+		result := d.Pretoken("请问", true, true, "")
 		// "请问" is a stop word
 		for _, r := range result {
 			if r == "请问" {
@@ -812,7 +812,7 @@ func TestPretokenStopWords(t *testing.T) {
 	})
 
 	t.Run("stpwd=false keeps stop words", func(t *testing.T) {
-		result := d.Pretoken("请问", true, false)
+		result := d.Pretoken("请问", true, false, "")
 		// With tokenizer, this might still filter it
 		_ = result
 	})

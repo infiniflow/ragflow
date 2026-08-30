@@ -161,6 +161,10 @@ public:
 
     bool use_lemmatizer_{true};
 
+    // Diacritic-folding languages (Slovak, Czech) have no Snowball stemmer and
+    // arrive pre-folded to ASCII from the Go side.
+    bool disable_stemming_{false};
+
     bool fine_grained_{false};
 
     bool enable_position_{false};

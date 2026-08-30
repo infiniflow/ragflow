@@ -160,6 +160,16 @@ func (kb *Knowledgebase) TableName() string {
 	return "knowledgebase"
 }
 
+// KnowledgebasesLanguage returns the language used for retrieval over kbs: the
+// first KB's language, mirroring `kbs[0].language if kbs else None` in
+// api/db/services/dialog_service.py. "" means English.
+func KnowledgebasesLanguage(kbs []*Knowledgebase) string {
+	if len(kbs) == 0 || kbs[0] == nil || kbs[0].Language == nil {
+		return ""
+	}
+	return *kbs[0].Language
+}
+
 // ToMap converts Knowledgebase to a map for JSON response
 func (kb *Knowledgebase) ToMap() map[string]interface{} {
 	result := map[string]interface{}{

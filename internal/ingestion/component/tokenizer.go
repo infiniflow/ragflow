@@ -694,8 +694,10 @@ func normalizeChunkTextFallback(chunks []schema.ChunkDoc) {
 // Mirrors python tokenizer.py:130-185 and rag/nlp/__init__.py tokenize() /
 // tokenize_chunks().
 //
-// language sets the Snowball stemmer language, matching Python's
-// rag_tokenizer.tokenizer.set_language(language) call inside tokenize().
+// language sets the Snowball stemmer language (and, for diacritic-folding
+// languages like Slovak/Czech, ASCII folding with stemming disabled),
+// matching Python's rag_tokenizer.tokenizer.set_language(language) call
+// inside tokenize().
 func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string) error {
 	tok := tokenizer.New(language)
 	for i := range chunks {
