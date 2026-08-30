@@ -1976,9 +1976,21 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
         pass
 
 
-def alter_db_column_type(migrator, table_name, column_name, new_column_type):
+def alter_db_column_type(migrator, table_name, column_name, new_column_type, cast=None):
+    """ALTER TABLE <t> ALTER COLUMN <c> TYPE <new>.
+
+    ``cast`` is only honoured on PostgreSQL/GaussDB (which both derive from
+    ``PostgresqlMigrator``) and is rendered as the ``USING <cast>`` clause
+    that Peewee's ``PostgresqlMigrator.alter_column_type`` requires when the
+    old and new types aren't implicitly cast-compatible — e.g. a varchar column
+    holding legacy string enum values to INTEGER. MySQL/OceanBase ignore
+    ``cast``.
+    """
     try:
-        migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
+        kwargs = {}
+        if cast is not None and isinstance(migrator, PostgresqlMigrator):
+            kwargs["cast"] = cast
+        migrate(migrator.alter_column_type(table_name, column_name, new_column_type, **kwargs))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
         pass
@@ -2007,10 +2019,12 @@ def migrate_tenant_model_model_type_to_integer(migrator):
     relies on. The pre-cleanup is a no-op on rows that already hold an
     integer (the migration is idempotent).
 
-    Peewee's ``alter_column_type`` is a no-op when the column already
-    matches the target type, so calling this on every startup is safe on
-    fresh installs and on databases that have already been migrated. See
-    issue #18755.
+    The ALTER itself needs an explicit ``USING model_type::integer`` cast on
+    PostgreSQL / GaussDB. Peewee's ``PostgresqlMigrator.alter_column_type``
+    only emits the ``USING`` clause when a ``cast`` argument is supplied
+    (``playhouse/migrate.py:alter_column_type``), so the helper passes the
+    cast and ``alter_db_column_type`` forwards it on PG/GaussDB only. MySQL
+    and OceanBase ignore ``cast``. See issue #18755.
     """
     if not (DB.table_exists("tenant_model") and DB.column_exists("tenant_model", "model_type")):
         return
@@ -2050,11 +2064,18 @@ def migrate_tenant_model_model_type_to_integer(migrator):
         # surface the original error and a maintainer can intervene.
         logging.warning("Failed to pre-cleanup tenant_model.model_type: %s", ex)
 
+    # PostgreSQL / GaussDB require a USING clause when the source type
+    # (varchar) is not implicitly cast-compatible with the target type
+    # (integer). Without the cast, the ALTER fails with
+    # ``column "model_type" cannot be cast automatically to type integer``
+    # and the migration helper logs the failure and moves on, leaving the
+    # column varchar and every model-config lookup broken.
     alter_db_column_type(
         migrator,
         "tenant_model",
         "model_type",
         IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr"),
+        cast="model_type::integer",
     )
 
 
