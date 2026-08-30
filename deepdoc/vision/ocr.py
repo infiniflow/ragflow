@@ -377,7 +377,25 @@ class TextRecognizer:
 
 
 class TextDetector:
-    def __init__(self, model_dir, device_id: int | None = None, limit_side_len: int = 2048):
+    def __init__(self, model_dir, device_id: int | None = None, *, limit_side_len: int = 2048):
+        """Initialize the text detector.
+
+        Args:
+            model_dir: Path to the ONNX model directory.
+            device_id: GPU device id; None / 0 = CPU. Kept as the 2nd positional
+                arg for backwards compatibility with the four internal call sites
+                in :class:`OCR` and any external callers.
+            limit_side_len: Upper bound on the longer image side after the
+                ``DetResizeForTest`` downscale. Only used for dynamic-input models
+                (when ``self.input_tensor.shape[2:]`` is symbolic); for
+                fixed-shape models the pre-process list is replaced with
+                ``image_shape`` and ``limit_side_len`` is ignored — see the
+                comment near the ``pre_process_list[0] = ...`` assignment below.
+
+        ``limit_side_len`` is keyword-only so a future caller writing
+        ``TextDetector(model_dir, 2048)`` cannot silently bind ``2048`` to
+        ``device_id``. (See PR #18888 review comment from xugangqiang.)
+        """
         pre_process_list = [
             {
                 "DetResizeForTest": {
@@ -397,8 +415,16 @@ class TextDetector:
 
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
+            # Dynamic-shape model: ``limit_side_len`` is the resize cap; keep
+            # the first pre-process entry as built above.
             pass
         elif img_h is not None and img_w is not None and img_h > 0 and img_w > 0:
+            # Fixed-shape ONNX model: the model forces a concrete input size,
+            # so ``limit_side_len`` is ignored and we resize to the model's
+            # own shape. This is intentional — overriding ``image_shape``
+            # with ``limit_side_len`` would crash the model. See PR #18888
+            # review (xugangqiang) — fixed-shape models silently ignore
+            # ``limit_side_len`` and the contract is now documented here.
             pre_process_list[0] = {"DetResizeForTest": {"image_shape": [img_h, img_w]}}
         self.preprocess_op = create_operators(pre_process_list)
 
