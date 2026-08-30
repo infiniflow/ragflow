@@ -15,13 +15,13 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,26 +47,6 @@ type webhookTraceResponse struct {
 	Code    int                       `json:"code"`
 	Data    *webhookTraceResponseData `json:"data"`
 	Message string                    `json:"message"`
-}
-
-type miniredisWebhookTraceWriter struct {
-	client *goredis.Client
-}
-
-func (w miniredisWebhookTraceWriter) Get(ctx context.Context, key string) (string, error) {
-	value, err := w.client.Get(ctx, key).Result()
-	if errors.Is(err, goredis.Nil) {
-		return "", nil
-	}
-	return value, err
-}
-
-func (w miniredisWebhookTraceWriter) SetObj(ctx context.Context, key string, value any, ttl time.Duration) bool {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return false
-	}
-	return w.client.Set(ctx, key, payload, ttl).Err() == nil
 }
 
 // newWebhookTraceTestHandler wires ownership storage and miniredis for HTTP tests.
@@ -137,6 +117,7 @@ func seedWebhookTrace(t *testing.T, rdb *goredis.Client, canvasID string, webhoo
 	}
 }
 
+// TestAppendWebhookTracePersistsReadableEvents covers sequential appends and polling.
 func TestAppendWebhookTracePersistsReadableEvents(t *testing.T) {
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -147,17 +128,20 @@ func TestAppendWebhookTracePersistsReadableEvents(t *testing.T) {
 	t.Cleanup(func() { _ = rdb.Close() })
 
 	ctx := t.Context()
-	writer := miniredisWebhookTraceWriter{client: rdb}
 	start := time.Unix(1_700_000_000, 0)
-	appendWebhookTraceWithWriter(ctx, writer, "c1", start, canvas.RunEvent{
+	if err = appendWebhookTraceWithClient(ctx, rdb, "c1", start, canvas.RunEvent{
 		Type:      "message",
 		Data:      `{"content":"hello"}`,
 		SessionID: "task-1",
-	})
-	appendWebhookTraceWithWriter(ctx, writer, "c1", start, canvas.RunEvent{
+	}); err != nil {
+		t.Fatalf("append message trace: %v", err)
+	}
+	if err = appendWebhookTraceWithClient(ctx, rdb, "c1", start, canvas.RunEvent{
 		Type: "finished",
 		Data: `{"success":true}`,
-	})
+	}); err != nil {
+		t.Fatalf("append finished trace: %v", err)
+	}
 
 	const key = "webhook-trace-c1-logs"
 	raw, err := rdb.Get(ctx, key).Result()
@@ -179,8 +163,119 @@ func TestAppendWebhookTracePersistsReadableEvents(t *testing.T) {
 	if !poll.Finished {
 		t.Fatal("persisted trace should be finished")
 	}
-	if ttl := mr.TTL(key); ttl != 600*time.Second {
+	if ttl := mr.TTL(key); ttl != webhookTraceTTL {
 		t.Fatalf("trace TTL = %s, want 10m0s", ttl)
+	}
+}
+
+// TestAppendWebhookTracePreservesConcurrentRuns covers overlapping runs on one agent key.
+func TestAppendWebhookTracePreservesConcurrentRuns(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	const runCount = 32
+	ctx := t.Context()
+	errorsByRun := make(chan error, runCount)
+	var wg sync.WaitGroup
+	for index := range runCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			start := time.Unix(1_700_000_000, int64(index)*int64(time.Millisecond))
+			errorsByRun <- appendWebhookTraceWithClient(ctx, rdb, "c1", start, canvas.RunEvent{
+				Type:      "message",
+				SessionID: "task-" + strconv.Itoa(index),
+			})
+		}()
+	}
+	wg.Wait()
+	close(errorsByRun)
+	for appendErr := range errorsByRun {
+		if appendErr != nil {
+			t.Fatalf("append concurrent trace: %v", appendErr)
+		}
+	}
+
+	const key = "webhook-trace-c1-logs"
+	raw, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("read concurrent trace: %v", err)
+	}
+	var persisted webhookTraceStore
+	if err = json.Unmarshal([]byte(raw), &persisted); err != nil {
+		t.Fatalf("decode concurrent trace: %v", err)
+	}
+	if got := len(persisted.Webhooks); got != runCount {
+		t.Fatalf("persisted runs = %d, want %d", got, runCount)
+	}
+	for runID, run := range persisted.Webhooks {
+		if len(run.Events) != 1 {
+			t.Errorf("run %s events = %d, want 1", runID, len(run.Events))
+		}
+	}
+	if ttl := mr.TTL(key); ttl != webhookTraceTTL {
+		t.Fatalf("trace TTL = %s, want 10m0s", ttl)
+	}
+}
+
+// TestAppendWebhookTraceOrdersConcurrentEvents protects incremental polling cursors.
+func TestAppendWebhookTraceOrdersConcurrentEvents(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	const eventCount = 32
+	ctx := t.Context()
+	start := time.Unix(1_700_000_000, 0)
+	errorsByEvent := make(chan error, eventCount)
+	var wg sync.WaitGroup
+	for index := range eventCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errorsByEvent <- appendWebhookTraceWithClient(ctx, rdb, "c1", start, canvas.RunEvent{
+				Type:      "message",
+				SessionID: "task-" + strconv.Itoa(index),
+			})
+		}()
+	}
+	wg.Wait()
+	close(errorsByEvent)
+	for appendErr := range errorsByEvent {
+		if appendErr != nil {
+			t.Fatalf("append concurrent event: %v", appendErr)
+		}
+	}
+
+	raw, err := rdb.Get(ctx, "webhook-trace-c1-logs").Result()
+	if err != nil {
+		t.Fatalf("read concurrent events: %v", err)
+	}
+	var persisted webhookTraceStore
+	if err = json.Unmarshal([]byte(raw), &persisted); err != nil {
+		t.Fatalf("decode concurrent events: %v", err)
+	}
+	runID := strconv.FormatFloat(float64(start.UnixNano())/1e9, 'f', -1, 64)
+	events := persisted.Webhooks[runID].Events
+	if len(events) != eventCount {
+		t.Fatalf("persisted events = %d, want %d", len(events), eventCount)
+	}
+	previousTimestamp := float64(0)
+	for index, event := range events {
+		timestamp := webhookTraceEventTimestamp(event)
+		if timestamp <= previousTimestamp {
+			t.Fatalf("event %d timestamp = %v, want greater than %v", index, timestamp, previousTimestamp)
+		}
+		previousTimestamp = timestamp
 	}
 }
 

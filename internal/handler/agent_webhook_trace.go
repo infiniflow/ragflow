@@ -39,7 +39,8 @@ type webhookTraceStore struct {
 }
 
 type webhookTraceRun struct {
-	Events []map[string]any `json:"events"`
+	StartTS float64          `json:"start_ts"`
+	Events  []map[string]any `json:"events"`
 }
 
 // parseWebhookSinceTS parses an optional finite timestamp cursor.
