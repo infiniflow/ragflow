@@ -56,6 +56,10 @@ class _Recorder:
         self.args, self.kwargs = args, kwargs
         return {"chunks": [], "doc_aggs": []}
 
+    @staticmethod
+    def retrieval_by_children(chunks, _tenant_ids):
+        return chunks
+
 
 @pytest.fixture
 def recorder(monkeypatch):
@@ -153,3 +157,61 @@ async def test_top_k_reaches_every_search_tool(recorder):
     for tool in (search_tools.hybrid_search, search_tools.vector_search, search_tools.bm25_search):
         await tool(_Tools(top_k=4096), query="q")
         assert _top_k(recorder) == 4096, tool.__name__
+
+
+async def test_ragtools_retrieve_honours_the_configuration(monkeypatch):
+    """The naive fallback (`_naive_rag` -> `RAGTools.retrieve`) bypasses the search
+    tools, so it has to resolve the same settings itself."""
+    from rag.advanced_rag import agentic_rag
+
+    rec = _Recorder()
+    monkeypatch.setattr(agentic_rag.settings, "retriever", rec)
+    monkeypatch.setattr(agentic_rag, "label_question", lambda _q, _kbs: None)
+
+    tools = agentic_rag.RAGTools.__new__(agentic_rag.RAGTools)
+    tools.kb_ids = ["kb-1"]
+    tools.kbs = []
+    tools.tenant_ids = ["t-1"]
+    tools.embed_mdl = object()
+    tools.doc_scope = None
+    tools.similarity_threshold = 0.35
+    tools.vector_similarity_weight = 0.8
+    tools.top_n = 20
+    tools.rerank_candidates_count = 256
+    tools.top_k = 4096
+    monkeypatch.setattr(type(tools), "scoped_doc_ids", lambda _self, scope: scope, raising=False)
+
+    await tools.retrieve("q", using_embedding=True)
+
+    assert rec.args[5] == 20
+    assert rec.args[6] == 0.35
+    assert rec.kwargs["vector_similarity_weight"] == 0.8
+    assert rec.kwargs["knn_top_k"] == 4096
+    assert rec.kwargs["rerank_candidates_count"] == 256
+
+
+async def test_ragtools_retrieve_keeps_its_own_defaults_when_unconfigured(monkeypatch):
+    """Unconfigured callers keep this method's previous behaviour, which is not
+    the same as the search tools' (top_n 6, vector weight 0.7)."""
+    from rag.advanced_rag import agentic_rag
+
+    rec = _Recorder()
+    monkeypatch.setattr(agentic_rag.settings, "retriever", rec)
+    monkeypatch.setattr(agentic_rag, "label_question", lambda _q, _kbs: None)
+
+    tools = agentic_rag.RAGTools.__new__(agentic_rag.RAGTools)
+    tools.kb_ids = ["kb-1"]
+    tools.kbs = []
+    tools.tenant_ids = ["t-1"]
+    tools.embed_mdl = object()
+    tools.doc_scope = None
+    for name in ("similarity_threshold", "vector_similarity_weight", "top_n", "rerank_candidates_count", "top_k"):
+        setattr(tools, name, None)
+    monkeypatch.setattr(type(tools), "scoped_doc_ids", lambda _self, scope: scope, raising=False)
+
+    await tools.retrieve("q", using_embedding=True)
+
+    assert rec.args[5] == 6
+    assert rec.args[6] == 0.2
+    assert rec.kwargs["vector_similarity_weight"] == 0.7
+    assert rec.kwargs["knn_top_k"] == 1024

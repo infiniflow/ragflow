@@ -48,7 +48,7 @@ from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _split_think_stream
 from rag.advanced_rag.harness.keywords import extract_weighted_keywords
 from rag.advanced_rag.harness.stats import CountingChatModel, LLMUsageStats, in_phase, using_stats
-from rag.advanced_rag.harness.tools.search import _compact_keywords
+from rag.advanced_rag.harness.tools.search import _compact_keywords, _resolve_rerank_candidates, _resolve_top_k, _setting
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -595,8 +595,8 @@ class RAGTools:
         question: str,
         keywords: str | list = "",
         doc_scope: list[str] | None = None,
-        top_n: int = 6,
-        similarity_threshold: float = 0.2,
+        top_n: int | None = None,
+        similarity_threshold: float | None = None,
         using_embedding: bool = False,
     ) -> dict[str, list]:
         """Retrieve chunks from the unstructured KBs for one question.
@@ -609,6 +609,12 @@ class RAGTools:
             return {"chunks": [], "doc_aggs": []}
         if isinstance(keywords, list):
             keywords = ",".join(keywords)
+        # Explicit argument wins, then the caller's configuration, then this
+        # method's own defaults, which differ from the search tools' on purpose.
+        if top_n is None:
+            top_n = int(_setting(self, "top_n", 6))
+        if similarity_threshold is None:
+            similarity_threshold = _setting(self, "similarity_threshold", 0.2)
         logging.info(f"@retrieve: {question}@{keywords}")
 
         doc_scope = self.scoped_doc_ids(doc_scope)
@@ -635,7 +641,17 @@ class RAGTools:
             question = question + " " + search_terms
 
         embd_mdl = self.embed_mdl if using_embedding else None
-        vector_weight = 0.7 if embd_mdl else 0
+        vector_weight = _setting(self, "vector_similarity_weight", 0.7) if embd_mdl else 0
+        knn_top_k = _resolve_top_k(self)
+        rerank_candidates_count = _resolve_rerank_candidates(self, top_n)
+        logging.debug(
+            "retrieve: top_n=%s threshold=%s vector_weight=%s knn_top_k=%s rerank_candidates_count=%s",
+            top_n,
+            similarity_threshold,
+            vector_weight,
+            knn_top_k,
+            rerank_candidates_count,
+        )
         kbinfos = await settings.retriever.retrieval(
             question,
             embd_mdl,
@@ -645,10 +661,12 @@ class RAGTools:
             top_n,
             similarity_threshold,
             vector_similarity_weight=vector_weight,
+            knn_top_k=knn_top_k,
             aggs=True,
             highlight=True,
             doc_ids=doc_scope,
             rank_feature=label_question(question, self.kbs),
+            rerank_candidates_count=rerank_candidates_count,
         )
         if not kbinfos:
             return {"chunks": [], "doc_aggs": []}

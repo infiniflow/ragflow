@@ -144,6 +144,17 @@ async def hybrid_search(
     # No embedding model means no vector leg, whatever the caller asked for.
     vector_weight = _setting(tools, "vector_similarity_weight", _DEFAULT_HYBRID_VECTOR_WEIGHT) if embd_mdl else 0
 
+    similarity_threshold = _setting(tools, "similarity_threshold", _DEFAULT_SIMILARITY_THRESHOLD)
+    knn_top_k = _resolve_top_k(tools)
+    rerank_candidates_count = _resolve_rerank_candidates(tools, top_n)
+    _LOG.debug(
+        "[Hybrid search] top_n=%s threshold=%s vector_weight=%s knn_top_k=%s rerank_candidates_count=%s",
+        top_n,
+        similarity_threshold,
+        vector_weight,
+        knn_top_k,
+        rerank_candidates_count,
+    )
     kbinfos = await settings.retriever.retrieval(
         effective_query,
         embd_mdl,
@@ -151,14 +162,14 @@ async def hybrid_search(
         target_ids,
         1,
         top_n,
-        _setting(tools, "similarity_threshold", _DEFAULT_SIMILARITY_THRESHOLD),
+        similarity_threshold,
         vector_similarity_weight=vector_weight,
-        knn_top_k=_resolve_top_k(tools),
+        knn_top_k=knn_top_k,
         aggs=True,
         highlight=False,
         doc_ids=doc_scope,
         must_not={"exists": "compile_kwd"},  # plain retrieval = document chunks only; compiled products have their own tools
-        rerank_candidates_count=_resolve_rerank_candidates(tools, top_n),
+        rerank_candidates_count=rerank_candidates_count,
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     # Preserve the RAW retrieved chunks in the central memory store BEFORE any
@@ -196,6 +207,9 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
     target_ids = kb_ids or tools.kb_ids
     if hasattr(tools, "scoped_doc_ids"):
         doc_scope = tools.scoped_doc_ids(doc_scope)
+    knn_top_k = _resolve_top_k(tools)
+    rerank_candidates_count = _resolve_rerank_candidates(tools, top_n)
+    _LOG.debug("[Vector search] top_n=%s knn_top_k=%s rerank_candidates_count=%s", top_n, knn_top_k, rerank_candidates_count)
     kbinfos = await settings.retriever.retrieval(
         effective_query,
         tools.embed_mdl,
@@ -205,12 +219,12 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         top_n,
         0.2,  # pure-cosine floor, not the caller's hybrid threshold
         vector_similarity_weight=1.0,  # vector-only by definition of this tool
-        knn_top_k=_resolve_top_k(tools),
+        knn_top_k=knn_top_k,
         aggs=False,
         highlight=False,
         doc_ids=doc_scope,
         must_not={"exists": "compile_kwd"},
-        rerank_candidates_count=_resolve_rerank_candidates(tools, top_n),
+        rerank_candidates_count=rerank_candidates_count,
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     try:
@@ -230,6 +244,9 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
     effective_query = f"{query} {retrieval_query}".strip()[:400] if retrieval_query else f"{query} {keywords}".strip() if keywords else query
     if hasattr(tools, "scoped_doc_ids"):
         doc_scope = tools.scoped_doc_ids(doc_scope)
+    knn_top_k = _resolve_top_k(tools)
+    rerank_candidates_count = _resolve_rerank_candidates(tools, top_n)
+    _LOG.debug("[BM25 search] top_n=%s knn_top_k=%s rerank_candidates_count=%s", top_n, knn_top_k, rerank_candidates_count)
     kbinfos = await settings.retriever.retrieval(
         effective_query,
         None,
@@ -239,12 +256,12 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         top_n,
         0.0,  # BM25 scores are not comparable to a hybrid threshold
         vector_similarity_weight=0,  # keyword-only by definition of this tool
-        knn_top_k=_resolve_top_k(tools),
+        knn_top_k=knn_top_k,
         aggs=False,
         highlight=False,
         doc_ids=doc_scope,
         must_not={"exists": "compile_kwd"},
-        rerank_candidates_count=_resolve_rerank_candidates(tools, top_n),
+        rerank_candidates_count=rerank_candidates_count,
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     try:
