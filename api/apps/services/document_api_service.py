@@ -49,7 +49,7 @@ def update_document_name_only(document_id, req_doc_name):
     if not ok:
         return get_error_data_result(message=f"Not able to find document by id:{document_id}")
     ok, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-    rag_tokenizer.tokenizer.set_language(kb.language if ok and kb.language else "English")
+    rag_tokenizer.tokenizer.set_language((getattr(kb, "language", None) if ok else None) or "English")
     title_tks = rag_tokenizer.tokenize(req_doc_name)
     es_body = {
         "docnm_kwd": req_doc_name,
