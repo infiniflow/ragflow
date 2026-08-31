@@ -318,8 +318,6 @@ class ESConnection(ESConnectionBase):
             q["fields"] = vector_fields
         self.logger.debug(f"ESConnection.search {index_names!s} query: " + json.dumps(q))
 
-        print(json.dumps(q, ensure_ascii=False))
-
         for i in range(ATTEMPT_TIME):
             try:
                 if use_search_after:
