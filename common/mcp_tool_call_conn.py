@@ -80,7 +80,8 @@ class MCPToolCallSession(ToolCallSession):
             # header whose value is made only of those letters -- "rare", "rae" --
             # collapsed to "" and the header was silently dropped. The intent is
             # to skip an Authorization header carrying no token after "Bearer".
-            if nh.strip() and nv.strip() and nv.strip() != "Bearer":
+            token = nv.strip()
+            if nh.strip() and token and token != "Bearer":
                 headers[nh] = nv
 
         for h, v in custom_header.items():
