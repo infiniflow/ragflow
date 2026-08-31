@@ -149,7 +149,7 @@ export default {
       toMessage: '缺少結束頁碼（不包含）',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dev/select_pdf_parser。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
@@ -173,7 +173,7 @@ export default {
       delimiterTip:
         '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
       html4excel: '表格轉HTML',
-      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dev/enable_excel2html。`,
+      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自動關鍵字',
       autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自動問題',
@@ -360,7 +360,7 @@ export default {
       maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
       pageRank: '頁面排名',
-      pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dev/set_page_rank。`,
+      pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '標籤',
       frequency: '頻次',
       searchTags: '搜尋標籤',
@@ -378,7 +378,7 @@ export default {
         <li>在給你的知識庫文本塊批量打標籤之前，你需要先生成標籤集作為樣本。</li>
         <li>自動關鍵詞功能中的關鍵詞由 LLM 生成，此過程相對耗時，並且會產生一定的 Token 消耗。</li>
       </ul>
-      <p>詳情請參閱 https://ragflow.io/docs/dev/use_tag_sets。</p>
+      <p>詳情請參閱 https://ragflow.io/docs/dataset_configuration#basic-information。</p>
  `,
       tags: '標籤',
       addTag: '增加標籤',
@@ -478,7 +478,7 @@ export default {
       variable: '變量',
       variableTip: `你可以透過對話 API，並配合變數設定來動態調整大模型的系統提示詞。
       {knowledge}為系統預留變數，代表從指定知識庫召回的文本塊。
-     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/dev/set_chat_variables。`,
+     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/chat_configuration#system-prompt。`,
       add: '新增',
       key: '關鍵字',
       optional: '可選的',

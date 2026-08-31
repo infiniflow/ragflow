@@ -2396,6 +2396,7 @@ async def _struct_upsert_graph_json(
     row_id = _struct_graph_row_id(doc_id, compile_kwd, compilation_template_id)
     row = {
         "id": row_id,
+        "content_with_weight": json.dumps(graph, ensure_ascii=False),
         "compile_kwd": compile_kwd,
         "knowledge_graph_kwd": "graph",
         "doc_id": doc_id,

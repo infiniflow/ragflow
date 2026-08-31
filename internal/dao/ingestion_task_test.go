@@ -3,6 +3,7 @@ package dao
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"fmt"
 	"ragflow/internal/common"
@@ -136,6 +137,96 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentRejectsMismatchedStatus(t *testing
 	if reloaded.Status != common.STOPPING {
 		t.Fatalf("status = %q, want %q", reloaded.Status, common.STOPPING)
 	}
+}
+
+// seedStaleTask inserts an ingestion task whose create/update timestamps are
+// aged back so ListStaleByStatus staleness windows can be asserted.
+func seedStaleTask(t *testing.T, db *gorm.DB, id, status string, age time.Duration) {
+	t.Helper()
+	ts := time.Now().Add(-age).UnixMilli()
+	task := &entity.IngestionTask{
+		ID:         id,
+		UserID:     "user-1",
+		DocumentID: "doc-" + id,
+		DatasetID:  "kb-1",
+		Status:     status,
+		BaseModel:  entity.BaseModel{CreateTime: &ts, UpdateTime: &ts},
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task %s: %v", id, err)
+	}
+}
+
+// TestIngestionTaskDAOListStaleByStatus covers the three contract axes of the
+// startup-reconciliation query: status filtering, the staleness time window
+// (per column), and the result limit.
+func TestIngestionTaskDAOListStaleByStatus(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	seedStaleTask(t, db, "run-stale", common.RUNNING, 20*time.Minute)
+	seedStaleTask(t, db, "run-fresh", common.RUNNING, 1*time.Minute)
+	seedStaleTask(t, db, "created-stale", common.CREATED, 20*time.Minute)
+	seedStaleTask(t, db, "created-fresh", common.CREATED, 1*time.Minute)
+	seedStaleTask(t, db, "completed-stale", common.COMPLETED, 20*time.Minute)
+
+	ctx := t.Context()
+	d := NewIngestionTaskDAO()
+	threshold := time.Now().Add(-15 * time.Minute)
+
+	// Status filter + update_time window: only the stale RUNNING row matches.
+	running, err := d.ListStaleByStatus(ctx, db, []string{common.RUNNING}, "update_time", threshold, 0)
+	if err != nil {
+		t.Fatalf("ListStaleByStatus(RUNNING): %v", err)
+	}
+	if len(running) != 1 || running[0].ID != "run-stale" {
+		t.Fatalf("RUNNING stale rows = %v, want [run-stale]", idsOfTasks(running))
+	}
+
+	// CREATED is judged by create_time: fresh CREATED rows stay outside the
+	// window even though their status is in the filter.
+	created, err := d.ListStaleByStatus(ctx, db, []string{common.CREATED}, "create_time", threshold, 0)
+	if err != nil {
+		t.Fatalf("ListStaleByStatus(CREATED): %v", err)
+	}
+	if len(created) != 1 || created[0].ID != "created-stale" {
+		t.Fatalf("CREATED stale rows = %v, want [created-stale]", idsOfTasks(created))
+	}
+
+	// Rows in unlisted statuses (COMPLETED) are never returned.
+	all, err := d.ListStaleByStatus(ctx, db, []string{common.RUNNING, common.CREATED}, "create_time", threshold, 0)
+	if err != nil {
+		t.Fatalf("ListStaleByStatus(RUNNING+CREATED): %v", err)
+	}
+	for _, task := range all {
+		if task.ID == "completed-stale" {
+			t.Fatal("COMPLETED row must not be returned for RUNNING/CREATED filter")
+		}
+	}
+
+	// Limit caps the (oldest-first) result set.
+	limited, err := d.ListStaleByStatus(ctx, db, []string{common.RUNNING, common.CREATED}, "create_time", threshold, 1)
+	if err != nil {
+		t.Fatalf("ListStaleByStatus(limit): %v", err)
+	}
+	if len(limited) != 1 {
+		t.Fatalf("limited rows = %v, want exactly 1", idsOfTasks(limited))
+	}
+
+	// An unsupported staleness column is rejected, not silently ignored.
+	if _, err = d.ListStaleByStatus(ctx, db, []string{common.RUNNING}, "status; --", threshold, 0); err == nil {
+		t.Fatal("expected error for unsupported staleness column")
+	}
+}
+
+func idsOfTasks(tasks []*entity.IngestionTask) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
 }
 
 func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {

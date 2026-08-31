@@ -15,6 +15,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
@@ -28,6 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 	goredis "github.com/redis/go-redis/v9"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -45,6 +47,26 @@ type webhookTraceResponse struct {
 	Code    int                       `json:"code"`
 	Data    *webhookTraceResponseData `json:"data"`
 	Message string                    `json:"message"`
+}
+
+type miniredisWebhookTraceWriter struct {
+	client *goredis.Client
+}
+
+func (w miniredisWebhookTraceWriter) Get(ctx context.Context, key string) (string, error) {
+	value, err := w.client.Get(ctx, key).Result()
+	if errors.Is(err, goredis.Nil) {
+		return "", nil
+	}
+	return value, err
+}
+
+func (w miniredisWebhookTraceWriter) SetObj(ctx context.Context, key string, value any, ttl time.Duration) bool {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	return w.client.Set(ctx, key, payload, ttl).Err() == nil
 }
 
 // newWebhookTraceTestHandler wires ownership storage and miniredis for HTTP tests.
@@ -112,6 +134,53 @@ func seedWebhookTrace(t *testing.T, rdb *goredis.Client, canvasID string, webhoo
 	}
 	if err = rdb.Set(t.Context(), "webhook-trace-"+canvasID+"-logs", payload, 0).Err(); err != nil {
 		t.Fatalf("seed trace: %v", err)
+	}
+}
+
+func TestAppendWebhookTracePersistsReadableEvents(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	ctx := t.Context()
+	writer := miniredisWebhookTraceWriter{client: rdb}
+	start := time.Unix(1_700_000_000, 0)
+	appendWebhookTraceWithWriter(ctx, writer, "c1", start, canvas.RunEvent{
+		Type:      "message",
+		Data:      `{"content":"hello"}`,
+		SessionID: "task-1",
+	})
+	appendWebhookTraceWithWriter(ctx, writer, "c1", start, canvas.RunEvent{
+		Type: "finished",
+		Data: `{"success":true}`,
+	})
+
+	const key = "webhook-trace-c1-logs"
+	raw, err := rdb.Get(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("read persisted trace: %v", err)
+	}
+	sinceTS := float64(start.Unix() - 1)
+	discovery, err := pollWebhookTrace(raw, sinceTS, "")
+	if err != nil || discovery.WebhookID == nil {
+		t.Fatalf("discover persisted trace: result=%+v err=%v", discovery, err)
+	}
+	poll, err := pollWebhookTrace(raw, sinceTS, *discovery.WebhookID)
+	if err != nil {
+		t.Fatalf("poll persisted trace: %v", err)
+	}
+	if len(poll.Events) != 2 || poll.Events[0]["event"] != "message" || poll.Events[1]["event"] != "finished" {
+		t.Fatalf("persisted events = %+v, want message and finished", poll.Events)
+	}
+	if !poll.Finished {
+		t.Fatal("persisted trace should be finished")
+	}
+	if ttl := mr.TTL(key); ttl != 600*time.Second {
+		t.Fatalf("trace TTL = %s, want 10m0s", ttl)
 	}
 }
 

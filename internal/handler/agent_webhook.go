@@ -743,20 +743,27 @@ func mustJSON(v any) string {
 }
 
 // appendWebhookTrace appends a single RunEvent to the per-canvas trace
-// key in Redis. Mirrors python's append_webhook_trace at
-// agent_api.py:2073-2091.
-//
+// key in Redis.
 // The trace key is `webhook-trace-<agent_id>-logs` with a 600 s TTL.
 // Each event is recorded as {"ts": <float>, "event": <type>, ...}.
-// Tests use miniredis to verify the key shape.
 func appendWebhookTrace(ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent) {
 	rdb := rediscli.Get()
 	if rdb == nil {
 		return
 	}
+	appendWebhookTraceWithWriter(ctx, rdb, agentID, startTs, ev)
+}
 
+type webhookTraceWriter interface {
+	Get(context.Context, string) (string, error)
+	SetObj(context.Context, string, any, time.Duration) bool
+}
+
+func appendWebhookTraceWithWriter(
+	ctx context.Context, writer webhookTraceWriter, agentID string, startTs time.Time, ev canvas.RunEvent,
+) {
 	key := fmt.Sprintf("webhook-trace-%s-logs", agentID)
-	raw, _ := rdb.Get(ctx, key)
+	raw, _ := writer.Get(ctx, key)
 	obj := map[string]any{}
 	if raw != "" {
 		_ = json.Unmarshal([]byte(raw), &obj)
@@ -792,10 +799,5 @@ func appendWebhookTrace(ctx context.Context, agentID string, startTs time.Time, 
 	}
 	entry["events"] = append(events, eventRecord)
 
-	encoded, err := json.Marshal(obj)
-	if err != nil {
-		common.Warn("webhook trace marshal failed", zap.Error(err))
-		return
-	}
-	rdb.SetObj(ctx, key, string(encoded), 600*time.Second)
+	writer.SetObj(ctx, key, obj, 600*time.Second)
 }

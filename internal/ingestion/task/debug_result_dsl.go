@@ -13,22 +13,23 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 //
-//  This file is the Go analogue of Python's `Graph.__str__`
-//  (agent/canvas.py:119) used by the dataflow debug "View result" page.
-//  Python attaches `dsl = json.loads(str(self))` to the END debug-log marker
-//  (rag/flow/pipeline.py:98); the front-end reads `dsl.components[<id>].obj`
-//  to render each component's parsed output. Go has no per-component `__str__`
-//  serialization, so BuildDebugResultDSL combines the STATIC DSL structure
-//  (component_name / downstream / params / graph.nodes) with the RUN output map
-//  (state.go:284 `out[<componentID>] = <outputs>`) to emit the identical JSON
-//  shape. Result is a strict subset (UI-relevant fields only) of Python's, so
-//  the front-end renders chunks with parity and a smaller payload.
+//  This file builds the run-result DSL attached to the dataflow debug-log END
+//  marker (agent/canvas.py:126, rag/flow/pipeline.py:104) and persisted as the
+//  pipeline operation-log DSL; the front-end "View result" page reads
+//  `dsl.components[<id>].obj` to render each component's parsed output.
+//  BuildDebugResultDSL combines the STATIC DSL structure (component_name /
+//  downstream / params / graph.nodes) with the RUN output map (state.go:284
+//  `out[<componentID>] = <outputs>`). Every non-`components` top-level key
+//  (graph / path / task_id / …) is carried verbatim; each rebuilt obj keeps
+//  the UI-relevant fields, so the front-end renders chunks at a smaller
+//  payload.
 
 package task
 
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -47,6 +48,12 @@ type ResultSink interface {
 // outputFormats is the priority order used to pick a component's payload key,
 // mirroring NormalizeChunks (chunk_utils.go:27).
 var outputFormats = []string{"chunks", "json", "text", "html", "markdown"}
+
+// bookkeepingKeys are the TrackElapsed stamps every component's run output
+// carries. They are copied into the outputs wrapper (as plain {value, type}
+// entries) so the front-end timeline can render per-node elapsed times even
+// for components with no recognized payload format (e.g. File).
+var bookkeepingKeys = []string{"_elapsed_time", "_created_time"}
 
 // vectorKeys are dropped from payloads while copying. The front-end never
 // renders raw vectors and Python's serialized component obj excludes them;
@@ -126,14 +133,33 @@ func BuildDebugResultDSL(dsl string, output map[string]any) (map[string]any, err
 		for k, v := range staticParams {
 			mergedParams[k] = deepCopy(v, false)
 		}
-		if format, payload := detectFormat(lookupComponentOutput(output, id)); format != "" {
-			mergedParams["outputs"] = map[string]any{
-				format: map[string]any{
-					"value": deepCopy(payload, true),
-					"type":  "",
-				},
-				"output_format": map[string]any{"value": format},
+		runOut, _ := lookupComponentOutput(output, id).(map[string]any)
+		outputsWrapper := map[string]any{}
+		if format, payload := detectFormat(runOut); format != "" {
+			value := deepCopy(payload, true)
+			outputsWrapper[format] = map[string]any{
+				"value": value,
+				"type":  pythonTypeName(value),
 			}
+			outputsWrapper["output_format"] = map[string]any{
+				"value": format,
+				"type":  pythonTypeName(format),
+			}
+		}
+		// TrackElapsed stamps the bookkeeping pair into every component's run
+		// output (internal/agent/canvas/node_body.go). Carry them into the
+		// outputs wrapper as plain {value, type} entries so the front-end
+		// timeline renders per-node elapsed times — it reads exactly
+		// params.outputs._elapsed_time.value
+		// (web/src/pages/dataflow-result/hooks.ts; agent/component/base.py
+		// set_output's the same keys).
+		for _, k := range bookkeepingKeys {
+			if v, ok := runOut[k]; ok && v != nil {
+				outputsWrapper[k] = map[string]any{"value": v, "type": pythonTypeName(v)}
+			}
+		}
+		if len(outputsWrapper) > 0 {
+			mergedParams["outputs"] = outputsWrapper
 		}
 
 		built[id] = map[string]any{
@@ -146,10 +172,18 @@ func BuildDebugResultDSL(dsl string, output map[string]any) (map[string]any, err
 		}
 	}
 
-	result := map[string]any{
-		"components": built,
-		"graph":      deepCopy(root["graph"], false),
+	// Carry every non-components top-level key (graph, path, task_id,
+	// canvas_type, ...) verbatim (contract: agent/canvas.py:126). The
+	// persisted log DSL round-trips through the front-end rerun flow, so a
+	// dropped key is lost to every consumer.
+	result := make(map[string]any, len(root)+1)
+	for k, v := range root {
+		if k == "components" {
+			continue
+		}
+		result[k] = deepCopy(v, false)
 	}
+	result["components"] = built
 	return result, nil
 }
 
@@ -203,6 +237,32 @@ func detectFormat(out any) (string, any) {
 		}
 	}
 	return "", nil
+}
+
+// pythonTypeName returns the type string recorded next to every output value —
+// str(type(value)) (agent/component/base.py:467) — for the values a Go run
+// output carries. Every sequence reports "list" and every mapping "dict",
+// regardless of the Go element type.
+func pythonTypeName(v any) string {
+	switch v.(type) {
+	case nil:
+		return "<class 'NoneType'>"
+	case bool:
+		return "<class 'bool'>"
+	case string:
+		return "<class 'str'>"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "<class 'int'>"
+	case float32, float64:
+		return "<class 'float'>"
+	}
+	switch reflect.TypeOf(v).Kind() {
+	case reflect.Slice, reflect.Array:
+		return "<class 'list'>"
+	case reflect.Map:
+		return "<class 'dict'>"
+	}
+	return fmt.Sprintf("<class '%T'>", v)
 }
 
 // deepCopy returns a JSON-compatible deep copy of v (maps/slices/primitives),

@@ -1,5 +1,6 @@
 import { DelimiterInput } from '@/components/delimiter-form-field';
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ const TokenChunkerForm = ({
   node,
   onValuesChange,
   hideOutputs,
+  externalErrors,
 }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialTokenChunkerValues, node);
   const { t } = useTranslation();
@@ -66,7 +68,10 @@ const TokenChunkerForm = ({
   const form = useForm<TokenChunkerFormSchemaType>({
     defaultValues: formDefaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   const delimiterMode = form.watch('delimiter_mode');
   const name = 'delimiters';
