@@ -155,7 +155,7 @@ func TestAirtableValidateConnectorSettingUsesCandidateConfig(t *testing.T) {
 
 func TestAirtableOpenSyncUsesAttachmentsAndFetch(t *testing.T) {
 	connector := newAirtableTestConnector()
-	connector.batchSize = 2
+	connector.batchSize = 3
 	connector.listRecords = func(ctx context.Context, pageURL string) (airtableRecordPage, error) {
 		return airtableRecordPage{Records: []airtableRecord{airtableTestRecord()}}, nil
 	}
@@ -176,10 +176,14 @@ func TestAirtableOpenSyncUsesAttachmentsAndFetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 2 {
-		t.Fatalf("documents len = %d, want 2", len(batch.Documents))
+	if len(batch.Documents) != 3 {
+		t.Fatalf("documents len = %d, want 3", len(batch.Documents))
 	}
-	doc := batch.Documents[0]
+	recordDoc := batch.Documents[0]
+	if recordDoc.SourceID != "airtable:rec-1" || recordDoc.Extension != ".json" || len(recordDoc.Blob) == 0 {
+		t.Fatalf("record document = %+v", recordDoc)
+	}
+	doc := batch.Documents[1]
 	if doc.SourceID != "airtable:rec-1:att-1" || doc.SemanticIdentifier != "report.PDF" || doc.Extension != ".pdf" {
 		t.Fatalf("document shape = %+v", doc)
 	}
@@ -197,7 +201,7 @@ func TestAirtableOpenSyncUsesAttachmentsAndFetch(t *testing.T) {
 	if !ok {
 		t.Fatalf("session does not implement Fetcher")
 	}
-	blob, err := fetcher.Fetch(context.Background(), *batch.Documents[0].FetchRef)
+	blob, err := fetcher.Fetch(context.Background(), *batch.Documents[1].FetchRef)
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
@@ -230,8 +234,15 @@ func TestAirtableOpenSyncWindowFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "airtable:inside:att-1" {
-		t.Fatalf("documents = %+v, want inside", batch.Documents)
+	if len(batch.Documents) != 2 {
+		t.Fatalf("documents len = %d, want 2", len(batch.Documents))
+	}
+	got := map[string]bool{}
+	for _, doc := range batch.Documents {
+		got[doc.SourceID] = true
+	}
+	if !got["airtable:inside"] || !got["airtable:inside:att-1"] {
+		t.Fatalf("documents = %+v, want record and attachment", got)
 	}
 }
 
@@ -265,14 +276,27 @@ func TestAirtableOpenSyncFingerprintFilter(t *testing.T) {
 	for _, doc := range batch.Documents {
 		got = append(got, doc.SourceID)
 	}
-	if len(got) != 2 || got[0] != "airtable:changed:att-1" || got[1] != "airtable:missing:att-1" {
-		t.Fatalf("documents = %v, want changed and missing", got)
+	if len(got) != 5 {
+		t.Fatalf("documents = %v, want 5", got)
+	}
+	want := map[string]bool{
+		"airtable:changed":       true,
+		"airtable:same":          true,
+		"airtable:missing":       true,
+		"airtable:changed:att-1": true,
+		"airtable:missing:att-1": true,
+	}
+	for _, sourceID := range got {
+		delete(want, sourceID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("documents missing %v; got %v", want, got)
 	}
 }
 
 func TestAirtableOpenSyncResumeWithinPage(t *testing.T) {
 	connector := newAirtableTestConnector()
-	connector.batchSize = 2
+	connector.batchSize = 4
 	connector.listRecords = func(ctx context.Context, pageURL string) (airtableRecordPage, error) {
 		return airtableRecordPage{Records: []airtableRecord{
 			airtableTestRecordWithIDTime("rec-1", "2026-01-01T00:00:00Z", "a.pdf"),
@@ -288,7 +312,7 @@ func TestAirtableOpenSyncResumeWithinPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 2 || batch.Checkpoint == nil || batch.Checkpoint.SourceID != "airtable:rec-2:att-1" {
+	if len(batch.Documents) != 4 || batch.Checkpoint == nil || batch.Checkpoint.SourceID != "airtable:rec-2:att-1" {
 		t.Fatalf("first batch = %+v", batch)
 	}
 
@@ -300,8 +324,15 @@ func TestAirtableOpenSyncResumeWithinPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resume NextBatch failed: %v", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "airtable:rec-3:att-1" {
-		t.Fatalf("resume documents = %+v, want rec-3", second.Documents)
+	if len(second.Documents) != 2 {
+		t.Fatalf("resume documents = %+v, want 2", second.Documents)
+	}
+	got := map[string]bool{}
+	for _, doc := range second.Documents {
+		got[doc.SourceID] = true
+	}
+	if !got["airtable:rec-3"] || !got["airtable:rec-3:att-1"] {
+		t.Fatalf("resume documents = %+v, want rec-3 record and attachment", got)
 	}
 }
 
@@ -368,8 +399,22 @@ func TestAirtableOpenPrune(t *testing.T) {
 			got = append(got, doc.SourceID)
 		}
 	}
-	if len(got) != 2 || got[0] != "airtable:rec-1:att-1" || got[1] != "airtable:rec-2:att-1" {
-		t.Fatalf("prune documents = %v", got)
+	if len(got) != 6 {
+		t.Fatalf("prune documents = %v, want 6", got)
+	}
+	want := map[string]bool{
+		"airtable:rec-1":       true,
+		"airtable:rec-1:att-1": true,
+		"airtable:rec-invalid": true,
+		"airtable:rec-missing": true,
+		"airtable:rec-2":       true,
+		"airtable:rec-2:att-1": true,
+	}
+	for _, sourceID := range got {
+		delete(want, sourceID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("prune documents missing %v; got %v", want, got)
 	}
 }
 
@@ -384,7 +429,9 @@ func TestAirtablePrunePaginationStall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
-	if _, err := session.NextBatch(context.Background()); err == nil || !strings.Contains(err.Error(), "did not advance") {
+	pruneSession := session.(*airtablePruneSession)
+	pruneSession.pageURL = connector.recordsURL("same", airtablePageSize)
+	if _, err := pruneSession.NextBatch(context.Background()); err == nil || !strings.Contains(err.Error(), "did not advance") {
 		t.Fatalf("prune NextBatch err = %v, want stalled pagination error", err)
 	}
 }
@@ -443,6 +490,27 @@ func TestAirtableDoJSONRetriesTransientStatus(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("calls = %d, want 2", calls)
+	}
+}
+
+func TestAirtableDoJSONReadsBodyBeforeCancel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.Write([]byte(`{"records":[]}`))
+	}))
+	defer server.Close()
+
+	connector := newAirtableTestConnector()
+	connector.apiBaseURL = server.URL + "/v0"
+	connector.httpClient = server.Client()
+	var page airtableRecordPage
+	if err := connector.doJSON(context.Background(), connector.recordsURL("", 1), &page); err != nil {
+		t.Fatalf("doJSON failed: %v", err)
 	}
 }
 

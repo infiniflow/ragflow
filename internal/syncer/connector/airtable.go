@@ -218,12 +218,13 @@ func (c *AirtableConnector) doJSON(ctx context.Context, apiURL string, out any) 
 		}
 		req.Header.Set("Authorization", "Bearer "+c.accessToken)
 		resp, err := c.httpClient.Do(req)
-		cancel()
 		if err != nil {
+			cancel()
 			lastErr = err
 		} else {
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, airtableMaxJSONResponseSize+1))
 			resp.Body.Close()
+			cancel()
 			if resp.StatusCode >= 400 {
 				lastErr = &airtableAPIError{status: resp.StatusCode, body: strings.TrimSpace(string(body))}
 				if !isAirtableRetryable(resp.StatusCode) {
@@ -323,8 +324,68 @@ func (c *AirtableConnector) sourceDocument(recordID, fieldName string, attachmen
 	}, true
 }
 
+func (c *AirtableConnector) recordDocument(record airtableRecord) (SourceDocument, bool) {
+	if strings.TrimSpace(record.ID) == "" || record.CreatedTime == "" {
+		return SourceDocument{}, false
+	}
+	createdAt := parseOutlookTime(record.CreatedTime)
+	if createdAt.IsZero() {
+		return SourceDocument{}, false
+	}
+	blob := airtableRecordBlob(record)
+	return SourceDocument{
+		SourceID:           airtableRecordSourceID(record.ID),
+		SemanticIdentifier: airtableRecordTitle(record),
+		Extension:          ".json",
+		Blob:               blob,
+		UpdatedAt:          createdAt,
+		SizeBytes:          int64(len(blob)),
+		Metadata: map[string]any{
+			"record_id":        record.ID,
+			"base_id":          c.baseID,
+			"table_name_or_id": c.tableNameOrID,
+			"created_time":     createdAt.UTC().Format(time.RFC3339Nano),
+		},
+		Fingerprint: airtableRecordFingerprint(record),
+	}, true
+}
+
+func airtableRecordBlob(record airtableRecord) []byte {
+	blob, err := json.MarshalIndent(record.Fields, "", "  ")
+	if err != nil {
+		return []byte("{}")
+	}
+	return blob
+}
+
+func airtableRecordFingerprint(record airtableRecord) string {
+	return contentFingerprint(airtableRecordBlob(record))
+}
+
 func airtableSourceID(recordID, attachmentID string) string {
 	return "airtable:" + recordID + ":" + attachmentID
+}
+
+func airtableRecordSourceID(recordID string) string {
+	return "airtable:" + recordID
+}
+
+func airtableRecordTitle(record airtableRecord) string {
+	if name := strings.TrimSpace(stringConfig(record.Fields["Name"])); name != "" {
+		return truncateRunes(name, 120)
+	}
+	fieldNames := make([]string, 0, len(record.Fields))
+	for fieldName := range record.Fields {
+		fieldNames = append(fieldNames, fieldName)
+	}
+	sort.Strings(fieldNames)
+	for _, fieldName := range fieldNames {
+		value := strings.TrimSpace(stringConfig(record.Fields[fieldName]))
+		if value != "" && len([]rune(value)) < 100 {
+			return truncateRunes(value, 50)
+		}
+	}
+	return "Record " + record.ID
 }
 
 func airtableAttachmentFingerprint(recordID, fieldName string, attachment airtableAttachment) string {
@@ -337,6 +398,28 @@ func airtableAttachmentFingerprint(recordID, fieldName string, attachment airtab
 		"type":          attachment.Type,
 		"url":           attachment.URL,
 	})
+}
+
+func includeAirtableRecord(request SyncRequest, record airtableRecord) bool {
+	if request.FromBeginning {
+		return true
+	}
+	createdAt := parseOutlookTime(record.CreatedTime)
+	if createdAt.IsZero() {
+		return false
+	}
+	if len(request.Fingerprints) > 0 {
+		fingerprint := airtableRecordFingerprint(record)
+		stored, ok := request.Fingerprints[airtableRecordSourceID(record.ID)]
+		return fingerprint == "" || !ok || stored == "" || stored != fingerprint
+	}
+	if request.WindowStart != nil && createdAt.Before(*request.WindowStart) {
+		return false
+	}
+	if !request.WindowEnd.IsZero() && !createdAt.Before(request.WindowEnd) {
+		return false
+	}
+	return true
 }
 
 func includeAirtableAttachment(request SyncRequest, recordID string, attachment airtableAttachment) bool {
@@ -443,6 +526,18 @@ func (s *airtableSyncSession) nextDocumentPage(ctx context.Context) ([]airtableB
 	included := make([]airtableBufferedDocument, 0)
 	offset := 0
 	for _, record := range page.Records {
+		if recordDoc, ok := s.connector.recordDocument(record); ok {
+			offset++
+			buffered := airtableBufferedDocument{
+				document:   recordDoc,
+				checkpoint: s.checkpoint(airtableSyncCursor{PageURL: pageURL, Offset: offset, SourceID: recordDoc.SourceID}, recordDoc),
+				offset:     offset,
+			}
+			all = append(all, buffered)
+			if includeAirtableRecord(s.request, record) {
+				included = append(included, buffered)
+			}
+		}
 		for _, attachment := range airtableAttachments(record) {
 			if !s.connector.isAcceptedAttachment(record.ID, attachment) {
 				continue
@@ -610,6 +705,9 @@ func (s *airtablePruneSession) nextSlimPage(ctx context.Context) ([]SlimDocument
 	}
 	documents := make([]SlimDocument, 0)
 	for _, record := range page.Records {
+		if _, ok := s.connector.recordDocument(record); ok {
+			documents = append(documents, SlimDocument{SourceID: airtableRecordSourceID(record.ID)})
+		}
 		for _, attachment := range airtableAttachments(record) {
 			if s.connector.isAcceptedAttachment(record.ID, attachment) {
 				documents = append(documents, SlimDocument{SourceID: airtableSourceID(record.ID, attachment.ID)})
