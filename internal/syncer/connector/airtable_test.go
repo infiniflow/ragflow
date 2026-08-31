@@ -128,10 +128,12 @@ func TestAirtableValidateClassifiesAPIErrors(t *testing.T) {
 func TestAirtableValidateConnectorSettingUsesCandidateConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v0/base/table" || r.URL.Query().Get("pageSize") != "1" {
-			t.Fatalf("unexpected validation URL %s", r.URL.String())
+			t.Errorf("unexpected validation URL %s", r.URL.String())
+			return
 		}
 		if r.Header.Get("Authorization") != "Bearer request-token" {
-			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
+			return
 		}
 		w.Write([]byte(`{"records":[]}`))
 	}))
