@@ -857,10 +857,11 @@ def build_agentic_graph(
         )
         if not slot_result:
             return {}
+        slot_table = slot_result.get("slot_table")
         _LOG.info(
             "[RAGAgent] pass %d — %d slot(s) filled, unresolved=%d",
             int(state.get("search_rounds", 0)) + 1,
-            sum(1 for s in (slot_result.get("slot_table") or {}).get("slots", []) if s.get("candidate")),
+            sum(1 for s in getattr(slot_table, "state", []) if getattr(s, "candidate", None)),
             len(slot_result.get("unresolved_slots") or []),
         )
         return slot_result
