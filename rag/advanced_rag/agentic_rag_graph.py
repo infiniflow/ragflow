@@ -185,7 +185,11 @@ class AgenticState(TypedDict, total=False):
     current_queries: list  # active research targets (fanouts, then rewritten gap queries)
 
     # outer draft/SCA/rewrite stages can validate and close unresolved slots.
-    slot_table: dict  # {"slots": [{id,type,question_clues,discovered_clues,candidate,candidate_strength}], "answer_variable": int}
+    # The shared slot table is held as the ``State`` object itself. The graph is
+    # compiled without a checkpointer, so graph state never needs to be
+    # JSON-serialized — keeping the object avoids carrying a parallel dict
+    # representation of the same data.
+    slot_table: object  # action_session.State (None until the planner runs)
     slot_draft: str  # slot-rendered fact draft fed to the SCA (structured view)
     collected_answer: str  # non-terminal <answer> candidate surfaced for SCA validation
     unresolved_slots: list  # [{id,type,question_clues,discovered_clues}] still unfilled after the tree round
@@ -806,7 +810,7 @@ def build_agentic_graph(
             answer_conf,
             lambda: _remaining_s(state) - 15.0,
         )
-        out["slot_table"] = _slot_table_serialize(root)
+        out["slot_table"] = root
         if first_queries:
             out["current_queries"] = [str(q) for q in first_queries]
         return out
@@ -853,10 +857,11 @@ def build_agentic_graph(
         )
         if not slot_result:
             return {}
+        slot_table = slot_result.get("slot_table")
         _LOG.info(
             "[RAGAgent] pass %d — %d slot(s) filled, unresolved=%d",
             int(state.get("search_rounds", 0)) + 1,
-            sum(1 for s in (slot_result.get("slot_table") or {}).get("slots", []) if s.get("candidate")),
+            sum(1 for s in getattr(slot_table, "state", []) if getattr(s, "candidate", None)),
             len(slot_result.get("unresolved_slots") or []),
         )
         return slot_result
@@ -1094,7 +1099,7 @@ def build_agentic_graph(
     return g.compile()
 
 
-def _render_slot_draft(slot_table: dict, collected_answer: str | None = None) -> str:
+def _render_slot_draft(slot_table, collected_answer: str | None = None) -> str:
     """Render a slot table into a fact-preserving draft for the SCA.
 
     Each resolved slot becomes a ``<type>: <candidate> [strength]`` line with its
@@ -1102,77 +1107,30 @@ def _render_slot_draft(slot_table: dict, collected_answer: str | None = None) ->
     call them out as gaps. When the tree surfaced a ``collected_answer`` it leads
     the draft (it is the strongest candidate); the slot view stays as structured
     context below it.
+
+    Takes the shared ``State`` (slot table) object directly.
     """
-    slots = slot_table.get("slots") if isinstance(slot_table, dict) else None
+    slots = list(getattr(slot_table, "state", None) or [])
     lines = []
     if collected_answer:
         lines.append(f"Candidate answer: {collected_answer}")
         lines.append("")
     if not slots:
         return "\n".join(lines) if lines else ""
-    for s in slots:
-        if not isinstance(s, dict):
-            continue
-        vid = s.get("id")
-        vtype = s.get("type") or "entity"
-        cand = s.get("candidate")
+    for v in slots:
+        vid = v.id
+        vtype = getattr(v, "type", None) or "entity"
+        cand = getattr(v, "candidate", None)
         if cand:
-            cs = s.get("candidate_strength")
+            cs = getattr(v, "candidate_strength", None)
             strength = f"{float(cs):.2f}" if isinstance(cs, (int, float)) else "?"
-            clues = s.get("discovered_clues") or []
+            clues = list(getattr(v, "discovered_clues", None) or [])
             tail = "; ".join(str(c)[:80] for c in clues[-2:])
             lines.append(f"- slot {vid} [{vtype}]: {cand} (strength={strength})" + (f" — {tail}" if tail else ""))
         else:
-            qc = s.get("question_clues") or []
+            qc = list(getattr(v, "question_clues", None) or [])
             lines.append(f"- slot {vid} [{vtype}]: NOT RESOLVED ({'; '.join(str(c)[:80] for c in qc[:2])})")
     return "\n".join(lines)
-
-
-def _slot_table_serialize(state) -> dict:
-    """Serialize a tree ``State`` (slot table) into a JSON-friendly dict for
-    graph-state transport. ``None``/empty yields a minimal empty table."""
-    if state is None:
-        return {"slots": [], "answer_variable": None}
-    slots = []
-    for v in getattr(state, "state", []):
-        slots.append(
-            {
-                "id": v.id,
-                "type": v.type,
-                "question_clues": list(v.question_clues),
-                "discovered_clues": list(v.discovered_clues),
-                "candidate": v.candidate,
-                "candidate_strength": v.candidate_strength,
-            }
-        )
-    return {"slots": slots, "answer_variable": getattr(state, "answer_variable", None)}
-
-
-def _slot_table_deserialize(slot_table: dict):
-    """Rebuild a tree ``State`` from a serialized slot-table dict (方案 B).
-    Returns ``None`` when no usable table is present."""
-    from rag.advanced_rag.harness.action_session import State, Variable
-
-    slots = (slot_table or {}).get("slots") if isinstance(slot_table, dict) else None
-    if not slots:
-        return None
-    vars_ = []
-    for s in slots:
-        if not isinstance(s, dict):
-            continue
-        vars_.append(
-            Variable(
-                id=int(s.get("id", len(vars_))),
-                type=str(s.get("type") or "entity"),
-                question_clues=[str(c) for c in (s.get("question_clues") or [])],
-                discovered_clues=[str(c) for c in (s.get("discovered_clues") or [])],
-                candidate=s.get("candidate"),
-                candidate_strength=s.get("candidate_strength"),
-            )
-        )
-    if not vars_:
-        return None
-    return State(state=vars_, depth=0, answer_variable=(slot_table or {}).get("answer_variable"))
 
 
 async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: dict, deadline_left_fn=None) -> tuple:
@@ -1204,7 +1162,6 @@ async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: di
         root = State(
             state=[Variable(id=i, type="aspect", question_clues=[str(q)[:160]]) for i, q in enumerate(queries[:4])],
             depth=0,
-            answer_variable=0,
         )
         first_queries = first_queries or queries[:3]
     _LOG.info("[SlotTable] built %d slot(s): %s", len(root.state), root.brief())
@@ -1217,7 +1174,7 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
     """
     from rag.advanced_rag.harness.action_session import run_action_session
 
-    slot_table = _slot_table_deserialize(state.get("slot_table"))
+    slot_table = state.get("slot_table")
     if slot_table is None:
         # No planner ran (medium single-pass, or planner failed): build the slot
         # table from the raw question so the slot research still executes. The
@@ -1274,8 +1231,8 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
 
         ledger.append({"q": (r.found_answer or str(getattr(r, "messages", [])))[:80] if hasattr(r, "found_answer") else "", "new": 1})
 
-    # Serialize the updated table and expose unresolved slots for the rewriter.
-    out_table = _slot_table_serialize(slot_table)
+    # Expose the updated table and its unresolved slots for the rewriter.
+    out_table = slot_table
     unresolved_slots = [
         {
             "id": v.id,
@@ -1288,7 +1245,7 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
     draft = _render_slot_draft(out_table, collected)
     _LOG.info(
         "[SlotResearch] round done — %d slot(s) filled, unresolved=%d, collected_answer=%s",
-        sum(1 for s in out_table.get("slots", []) if s.get("candidate")),
+        sum(1 for v in getattr(out_table, "state", []) if getattr(v, "candidate", None)),
         len(unresolved_slots),
         bool(collected),
     )
@@ -1319,15 +1276,25 @@ def _merge_slot_patch(base, branch):
         if bv is None:
             merged_vars.append(v)
             continue
-        cand = bv.candidate or v.candidate
         bstr = bv.candidate_strength if bv.candidate_strength is not None else None
         vstr = v.candidate_strength if v.candidate_strength is not None else None
-        strength = None
-        strength = None
-        if cand is not None:
-            strength = bstr if bstr is not None else (vstr if vstr is not None else 0.5)
-        elif vstr is not None:
-            strength = vstr
+        # Adopt the branch candidate only when it is STRONGER than the base.
+        # Sessions run concurrently and their branches are folded in completion
+        # order, so an unconditional "branch wins" made the result both
+        # order-dependent (same inputs, different answers) and destructive: a
+        # session with weak evidence (0.3, tentative) could downgrade a slot
+        # another session had already proven (0.95). Strength is the model's own
+        # calibrated confidence (see the candidate_strength bands in the
+        # action_run prompt), so picking the max is deterministic and keeps the
+        # best-supported candidate.
+        if bv.candidate is None:
+            cand, strength = v.candidate, vstr
+        elif v.candidate is None:
+            cand, strength = bv.candidate, bstr
+        elif (bstr or 0.0) > (vstr or 0.0):
+            cand, strength = bv.candidate, bstr
+        else:
+            cand, strength = v.candidate, vstr
         clues = list(dict.fromkeys(list(v.discovered_clues) + list(bv.discovered_clues)))
         if cand != v.candidate or clues != v.discovered_clues:
             changed = True
@@ -1346,7 +1313,6 @@ def _merge_slot_patch(base, branch):
     return State(
         state=merged_vars,
         depth=base.depth + 1,
-        answer_variable=base.answer_variable,
         retrieved_evidence_ids=list(base.retrieved_evidence_ids),
     )
 

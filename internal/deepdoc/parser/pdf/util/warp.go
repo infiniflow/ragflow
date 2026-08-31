@@ -34,13 +34,13 @@ type Pt struct {
 // falls back to an axis-aligned crop of the quad's bounding box so callers
 // stay safe.
 // maxWarpDim bounds the allocated crop so a (clamped) quad can never drive an
-// unbounded image.NewRGBA. Detector boxes arrive from a remote DocAnalyzer /
-// DEEPDOC_URL and are treated as untrusted; this ceiling is a last line of
+// unbounded image.NewRGBA. Detector boxes arrive from the DocAnalyzer backend
+// and are treated as untrusted; this ceiling is a last line of
 // defence against an unexpectedly large source image even after clamping.
 const maxWarpDim = 1 << 16
 
 func WarpCrop(src image.Image, points [4]Pt) *image.RGBA {
-	// Detection boxes come from a remote DocAnalyzer / DEEPDOC_URL and are
+	// Detection boxes come from the DocAnalyzer backend and are
 	// effectively untrusted. FastCrop clamps its rectangle to the source
 	// bounds before allocating; this path must do the same on its four
 	// corners and must reject non-finite coordinates, so a malformed or

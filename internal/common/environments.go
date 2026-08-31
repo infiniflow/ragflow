@@ -18,6 +18,7 @@ package common
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,7 +32,6 @@ func GetEnvSmall(key string) string {
 
 // environment variables
 const (
-	EnvDeepDocURL                        = "DEEPDOC_URL"
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
@@ -139,7 +139,6 @@ const (
 	EnvBatchCompareFilter                = "BATCH_COMPARE_FILTER"
 	EnvBatchCompareCSV                   = "BATCH_COMPARE_CSV"
 	EnvPYOCRSuffix                       = "PY_OCR_SUFFIX"
-	EnvOSSDeepDocURL                     = "OSSDEEPDOC_URL"
 	EnvUpdateGolden                      = "UPDATE_GOLDEN"
 	EnvBatchParityFilter                 = "BATCH_PARITY_FILTER"
 	EnvBatchParityVariant                = "BATCH_PARITY_VARIANT"
@@ -211,4 +210,61 @@ const (
 	EnvGmailWebOAuthRedirectURI          = "GMAIL_WEB_OAUTH_REDIRECT_URI"
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
+
+	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
+	// model snapshot (see common.DeepDocModelFiles); mirrors
+	// deepdoc_server.py's --model-dir (default rag/res/deepdoc).
+	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
+	// EnvDeepDocDropScore overrides the confidence threshold below which the
+	// in-process (Go) DeepDoc backend blanks recognized text while preserving
+	// the real score. It MUST match the Python inference service's
+	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
+	// backends apply the same text-blanking contract.
+	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
 )
+
+// DeepDocModelFiles is the single source of truth for the weights the
+// in-process (Go) DeepDoc backend and the Python DeepDoc service both
+// require. cmd/ resolves the model directory against it; infnative
+// validates file presence against it. Order is insignificant (callers do
+// set-membership checks); keep it stable so logs and diffs stay readable.
+//
+// External consumers that re-list these names must stay in sync:
+//   - .github/workflows/deepdoc-drift.yml  (MODEL_FILES)
+//   - deepdoc/server/download_deps.py      (FILES)
+var DeepDocModelFiles = []string{
+	"det.onnx",
+	"layout.onnx",
+	"tsr.onnx",
+	"rec.onnx",
+	"ocr.res",
+}
+
+// HasModelFiles reports whether dir contains every file listed in
+// DeepDocModelFiles. It is the single presence check shared by the server
+// (cmd/ragflow_server.go) and the in-process analyzer (infnative:
+// NewAnalyzer / canServe); those call sites must not re-roll this loop.
+func HasModelFiles(dir string) bool {
+	for _, f := range DeepDocModelFiles {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// DeepDocORTVersion is the onnxruntime native release the in-process (Go)
+// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is the
+// single source for the download URL and extracted dir name used across Go
+// and Python. The Go binding (github.com/yalue/onnxruntime_go, forked to
+// github.com/xugangqiang/onnxruntime_go) and the pip onnxruntime== pin must
+// track this MINOR version: the binding uses its own release numbering
+// (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
+// the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
+// so there is no .so / SONAME at runtime.
+//
+// To bump ORT: update DeepDocORTVersion (Go) AND ORT_VERSION in
+// ragflow_deps/download_deps.py AND the onnxruntime/onnxruntime-gpu pins in
+// pyproject.toml + .github/workflows/deepdoc-drift.yml, and refresh the
+// onnxruntime_go binding minor in go.mod.
+const DeepDocORTVersion = "1.23.2"

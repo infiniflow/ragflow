@@ -97,7 +97,6 @@ class State:
     state: list
     depth: int = 0
     id: str = ""
-    answer_variable: int | None = None
     retrieved_evidence_ids: list = field(default_factory=list)
 
     def __post_init__(self):
@@ -574,7 +573,6 @@ def apply_patch(base: State, branch_patches: list) -> State | None:
     return State(
         state=new_vars,
         depth=base.depth + 1,
-        answer_variable=base.answer_variable,
         retrieved_evidence_ids=list(base.retrieved_evidence_ids),
     )
 
@@ -1439,7 +1437,6 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
                 )
             )
     first_queries = [str(q).strip() for q in (data.get("first_queries") or [])][:3]
-    ans_var = data.get("answer_variable")
     if not slots:
         # Decomposition failed (timeout/parse): build the table from planner
         # fanouts so the first round still targets DISTINCT aspects instead of
@@ -1448,17 +1445,14 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
         hint_slots = [Variable(id=i, type="aspect", question_clues=[str(h)[:120]]) for i, h in enumerate((fanout_hint or [])[:4])]
         if hint_slots:
             slots = hint_slots
-            ans_var = 0
             if not first_queries:
                 first_queries = [str(h) for h in (fanout_hint or [])[:3]]
         else:
             slots = [Variable(id=0, type="answer", question_clues=[question])]
-            ans_var = 0
             if not first_queries:
                 first_queries = [question]
     elif not first_queries:
         first_queries = [question]
-    ans_slot = ans_var if isinstance(ans_var, int) and 0 <= ans_var < len(slots) else 0
-    root = State(state=slots, depth=0, answer_variable=ans_slot)
+    root = State(state=slots, depth=0)
     _LOG.info("[Action Session:init] %s", root.brief())
     return root, first_queries

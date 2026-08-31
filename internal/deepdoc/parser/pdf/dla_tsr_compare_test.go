@@ -23,7 +23,7 @@ import (
 //  2. Run Python:     python3 tools/dla_tsr_compare.py
 //  3. Diff the JSON:  diff testdata/output/render_compare/go_dla.json testdata/output/render_compare/py_dla.json
 func TestDLATSRResponseCompare(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
@@ -35,14 +35,14 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	outDir := filepath.Join("testdata", "output", "render_compare")
 	os.MkdirAll(outDir, 0755)
 
-	// Save rendered image as JPEG (matching what DLA/TSR actually send).
-	jpegData, err := util.EncodeJPEG(pageImg)
+	// Save rendered image as PNG (matching what DLA/TSR actually send).
+	pngData, err := util.EncodePNG(pageImg)
 	if err != nil {
-		t.Fatalf("encode jpeg: %v", err)
+		t.Fatalf("encode png: %v", err)
 	}
-	imgPath := filepath.Join(outDir, "dla_input.jpeg")
-	os.WriteFile(imgPath, jpegData, 0644)
-	t.Logf("Input image saved: %s (%dx%d, %d bytes JPEG)", imgPath, pageImg.Bounds().Dx(), pageImg.Bounds().Dy(), len(jpegData))
+	imgPath := filepath.Join(outDir, "dla_input.png")
+	os.WriteFile(imgPath, pngData, 0644)
+	t.Logf("Input image saved: %s (%dx%d, %d bytes PNG)", imgPath, pageImg.Bounds().Dx(), pageImg.Bounds().Dy(), len(pngData))
 
 	ctx := t.Context()
 	// ── DLA ──
@@ -73,9 +73,9 @@ func TestDLATSRResponseCompare(t *testing.T) {
 			int(tableRegion.X0), int(tableRegion.Y0),
 			int(tableRegion.X1), int(tableRegion.Y1))
 
-		cropPath := filepath.Join(outDir, "tsr_input.jpeg")
-		cropJPEG, _ := util.EncodeJPEG(cropped)
-		os.WriteFile(cropPath, cropJPEG, 0644)
+		cropPath := filepath.Join(outDir, "tsr_input.png")
+		cropPNG, _ := util.EncodePNG(cropped)
+		os.WriteFile(cropPath, cropPNG, 0644)
 
 		cells, err := client.TSR(ctx, cropped)
 		if err != nil {
@@ -105,9 +105,9 @@ func TestDLATSRResponseCompare(t *testing.T) {
 		cropped := cropImageRect(pageImg,
 			int(b.X0), int(b.Y0), int(b.X2), int(b.Y2))
 
-		cropPath := filepath.Join(outDir, "ocr_rec_input.jpeg")
-		recJPEG, _ := util.EncodeJPEG(cropped)
-		os.WriteFile(cropPath, recJPEG, 0644)
+		cropPath := filepath.Join(outDir, "ocr_rec_input.png")
+		recPNG, _ := util.EncodePNG(cropped)
+		os.WriteFile(cropPath, recPNG, 0644)
 
 		var texts []pdf.OCRText
 		texts, err = client.OCRRecognize(ctx, cropped)

@@ -119,8 +119,12 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		}
 
 		// FPDF_ANNOT (0x01) — render annotations.
-		// LCD text AA (0x02) is left off; default text smoothing is sufficient.
-		C.FPDF_RenderPageBitmap(bitmap, page, 0, 0, C.int(pxW), C.int(pxH), 0, 0x01)
+		// FPDF_LCD_TEXT (0x02) — upgrade text from pdfium's default grayscale
+		// anti-aliasing to LCD sub-pixel AA, matching Python pdfplumber's
+		// antialiased text more closely. (pdfium anti-aliases by default; 0x02
+		// only refines text AA. It does NOT affect vector/figure rendering, which
+		// is why dense figure pages keep their ~0.7px raster residual.)
+		C.FPDF_RenderPageBitmap(bitmap, page, 0, 0, C.int(pxW), C.int(pxH), 0, 0x01|0x02)
 
 		// pdfium outputs BGRA; convert to RGBA.
 		img := image.NewRGBA(image.Rect(0, 0, pxW, pxH))
