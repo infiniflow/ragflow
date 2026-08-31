@@ -18,9 +18,12 @@ async def test_dataset_navigation_search_ranks_across_all_bound_kbs(monkeypatch)
     kb1_items = [{"doc_id": f"kb1-doc-{i}", "score": 0.30 + i * 0.01} for i in range(_NAV_SEARCH_MAX_DOCS)]
     kb2_items = [{"doc_id": "kb2-best", "score": 0.99}]
 
-    async def fake_search_dataset_layers(kb_id, tenant_id, query, mode, top_k, doc_scope):
+    async def fake_search_dataset_layers(kb_id, tenant_id, query, mode, top_k, doc_scope, dense_only):
         assert query == "topic keywords"
-        assert mode == "nav_doc"
+        # Routing descends the compiled nav TREE rather than flat-sweeping every
+        # nav_doc row, and it does so on vectors alone.
+        assert mode == "navigation_tree"
+        assert dense_only is True
         assert top_k == _NAV_SEARCH_MAX_DOCS
         assert doc_scope is None
         if kb_id == kb1.id:
