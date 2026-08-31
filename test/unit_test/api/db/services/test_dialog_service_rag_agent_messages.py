@@ -248,3 +248,51 @@ def test_render_reasoning_system_prompt_replaces_optional_missing_parameters():
 
     # Missing optional parameters are replaced with a space, matching async_chat.
     assert rendered == "Lang:  ."
+
+
+def _capture_rag_agent_doc_scope(monkeypatch, messages, **kwargs):
+    """Drive rag_agent and return the ``doc_scope`` it handed to RAGTools."""
+    captured = {}
+
+    class _CapturingRAGTools(_StubRAGTools):
+        def __init__(self, *args, **kw):
+            captured["doc_scope"] = kw.get("doc_scope")
+            super().__init__(*args, **kw)
+
+    chat_mdl = _RecordingChatModel()
+    monkeypatch.setattr(dialog_service, "get_models", lambda _dialog, **_kw: ([_KB], None, None, chat_mdl, None))
+    monkeypatch.setattr(dialog_service, "RAGTools", _CapturingRAGTools)
+    monkeypatch.setattr(dialog_service, "tts", lambda _mdl, _text: None)
+
+    async def _run():
+        return [ev async for ev in dialog_service.rag_agent(_DIALOG, messages, False, reasoning="2", **kwargs)]
+
+    assert asyncio.run(_run()), "rag_agent must yield an answer event"
+    return captured["doc_scope"]
+
+
+@pytest.mark.p2
+def test_rag_agent_doc_scope_is_none_when_no_usable_doc_ids(monkeypatch):
+    """``doc_scope=[]`` is a filter on an empty document set, never "no filter".
+
+    ``RAGTools`` forwards ``doc_scope`` verbatim to ``Dealer.retrieval(doc_ids=)``,
+    which only omits the ``doc_id`` condition for ``None``. An empty list would
+    either widen the search to the whole dataset or be rejected by the backend.
+    """
+    # Absent entirely.
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi"}]) is None
+
+    # Present but empty / blank, as a string kwarg and as a list.
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi"}], doc_ids="") is None
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi"}], doc_ids=",,") is None
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi"}], doc_ids=["", ""]) is None
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi", "doc_ids": []}]) is None
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi", "doc_ids": ["", ""]}]) is None
+
+
+@pytest.mark.p2
+def test_rag_agent_doc_scope_keeps_usable_doc_ids(monkeypatch):
+    """A real selection still reaches RAGTools, with blanks dropped."""
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi"}], doc_ids="doc-1,,doc-2") == ["doc-1", "doc-2"]
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi"}], doc_ids=["doc-1", "", "doc-2"]) == ["doc-1", "doc-2"]
+    assert _capture_rag_agent_doc_scope(monkeypatch, [{"role": "user", "content": "hi", "doc_ids": ["doc-1", ""]}]) == ["doc-1"]
