@@ -5967,6 +5967,22 @@
       "max_output": 256000
     },
     {
+      "name": "doubao-seed-evolving",
+      "content_length": 1024000,
+      "max_output": 256000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
       "name": "doubao-seed-1-6-flash-250615",
       "model_types": [
         "chat",
@@ -6116,6 +6132,44 @@
       "max_output": 256000
     },
     {
+      "name": "doubao-seed-2-1-pro-260628",
+      "alias": [
+        "doubao-seed-2-1-pro"
+      ],
+      "content_length": 256000,
+      "max_output": 256000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "doubao-seed-2-1-turbo-260628",
+      "alias": [
+        "doubao-seed-2-1-turbo"
+      ],
+      "content_length": 256000,
+      "max_output": 256000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
       "name": "doubao-seed-2-0-lite-260215",
       "model_types": [
         "chat",
@@ -6184,6 +6238,22 @@
       ],
       "content_length": 131072,
       "max_output": 131072
+    },
+    {
+      "name": "doubao-seed-character-260628",
+      "content_length": 128000,
+      "max_output": 32000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "doubao-seed-code-preview-251028",
@@ -7087,6 +7157,21 @@
       },
       "content_length": 200000,
       "max_output": 128000
+    },
+    {
+      "name": "glm-5-2-260617",
+      "content_length": 1024000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-5v-turbo",
@@ -40610,12 +40695,42 @@
       "max_output": 393216
     },
     {
+      "name": "deepseek-v4-flash-ga-260731",
+      "content_length": 1024000,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
       "name": "deepseek-v4-pro-202606",
       "model_types": [
         "chat"
       ],
       "content_length": 1048576,
       "max_output": 393216
+    },
+    {
+      "name": "deepseek-v4-pro-ga-260813",
+      "content_length": 1024000,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "hy-mt2-pro",

@@ -100,16 +100,15 @@ The [.env](./.env) file contains important environment variables for Docker.
 >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
 >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 
-### DeepDoc Vision Service (OSS)
+### DeepDoc (in-process)
 
-- `DEEPDOC_URL`
-  URL for the deepdoc vision API serving DLA (layout analysis), OCR (text detection/recognition), and TSR (table structure recognition). The `deepdoc` service in `docker-compose.yml` provides this endpoint. Defaults to `http://deepdoc:9390`. When unset, the parser falls back to inline ONNX Runtime inference.
-
-  > The OSS deepdoc service runs on CPU using ONNX Runtime models. No GPU required.
-  > API endpoints: `GET /health`, `GET /model`, `POST /predict/dla`, `POST /predict/tsr`, `POST /predict/ocr`.
-
-- `DEEPDOC_IMAGE`
-  Docker image for the OSS deepdoc service. Defaults to `infiniflow/deepdoc_oss:latest`.
+DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table
+structure recognition (TSR) run **in-process** inside the RAGFlow server using
+ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is
+statically linked into the server binary (resolved at runtime via dlopen(NULL);
+no `libonnxruntime.so` is required) and the models are loaded at runtime;
+`DEEPDOC_MODEL_DIR` overrides the default model directory, which falls back to
+the `ragflow_deps/download_deps.py` snapshot.
 
 ### Timezone
 
@@ -188,13 +187,6 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
   - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
-
-- `deepdoc`
-  The OSS DeepDoc vision service provides DLA, OCR, and TSR inference via ONNX Runtime.
-  Defined in `docker-compose.yml`, it is started automatically as a dependency of `ragflow-cpu` and `ragflow-gpu`.
-  - `image`: Docker image. Defaults to `infiniflow/deepdoc_oss:latest`.
-  - `port`: Serving port inside the container. Defaults to `9390`.
-  - Health check: `curl -f http://localhost:9390/health` every 10s.
 
 - `mysql`
   - `name`: The MySQL database name. Defaults to `rag_flow`.

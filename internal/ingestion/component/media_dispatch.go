@@ -32,9 +32,10 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
-	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -43,8 +44,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -154,15 +155,9 @@ func maybeDispatchImage(
 	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
 	// then use OCR text only; otherwise call cv_mdl.describe().
 	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
-	eng := strings.EqualFold(lang, "english")
-
-	if ocrText != "" {
-		wordCount := len(strings.Fields(ocrText))
-		charCount := len([]rune(ocrText))
-		if (eng && wordCount > 32) || charCount > 32 {
-			// OCR returned substantial text — skip VLM.
-			return imageDispatchResult(ocrText, dataURI), true, nil
-		}
+	if vlmGateShouldSkip(ocrText, lang) {
+		// OCR returned substantial text — skip VLM.
+		return imageDispatchResult(ocrText, dataURI), true, nil
 	}
 
 	// Short OCR text (or no text): supplement with VLM describe.
@@ -444,6 +439,23 @@ func videoMIME(filename string) string {
 
 // --- OCR helpers for picture dispatch ---
 
+// vlmGateShouldSkip determines whether the OCR text is substantial enough
+// to skip the secondary VLM description call.
+// Mirrors Python picture.py:chunk():
+//
+//	txt = txt.strip()
+//	if (eng and len(txt.split()) > 32) or len(txt) > 32 -> skip VLM
+func vlmGateShouldSkip(ocrText, lang string) bool {
+	ocrText = strings.TrimSpace(ocrText)
+	if ocrText == "" {
+		return false
+	}
+	eng := strings.EqualFold(lang, "english")
+	wordCount := len(strings.Fields(ocrText))
+	charCount := utf8.RuneCountInString(ocrText)
+	return (eng && wordCount > 32) || charCount > 32
+}
+
 // runPaddleOCRImage tries PaddleOCR remote API for image text extraction.
 // Mirrors Python's picture.py:_try_paddleocr_image() which creates a
 // PaddleOCRParser and calls parse_image().
@@ -455,10 +467,10 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 	return client.ParseImage(binary, filename)
 }
 
-// runLocalImageOCR uses the DeepDoc inference service (/predict/ocr) to
-// detect and recognize text in an image. Mirrors Python's
-// deepdoc.vision.OCR (local ONNX pipeline), but routed through the
-// DeepDoc HTTP service which wraps the same ONNX models.
+// runLocalImageOCR detects and recognizes text in an image using the
+// in-process DeepDoc analyzer (ONNX models served locally via the native
+// backend). Mirrors Python's deepdoc.vision.OCR local ONNX pipeline; the
+// external HTTP service is no longer a backend (see parser.GetDocAnalyzer).
 //
 // Pipeline:
 //  1. Decode image bytes → image.Image
@@ -467,15 +479,7 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
 func runLocalImageOCR(binary []byte) (string, error) {
-	deepdocURL := common.GetEnv(common.EnvDeepDocURL)
-	if deepdocURL == "" {
-		deepdocURL = common.GetEnv(common.EnvTensorrtDLAServer)
-	}
-	if deepdocURL == "" {
-		return "", fmt.Errorf("local OCR: DEEPDOC_URL not configured")
-	}
-
-	client, err := inference.NewClient(deepdocURL)
+	analyzer, err := parser.GetDocAnalyzer()
 	if err != nil {
 		return "", fmt.Errorf("local OCR: %w", err)
 	}
@@ -487,7 +491,7 @@ func runLocalImageOCR(binary []byte) (string, error) {
 
 	// Step 1: Detect text regions.
 	ctx := context.Background()
-	boxes, err := client.OCRDetect(ctx, img)
+	boxes, err := analyzer.OCRDetect(ctx, img)
 	if err != nil {
 		return "", fmt.Errorf("local OCR: detect: %w", err)
 	}
@@ -543,7 +547,7 @@ func runLocalImageOCR(binary []byte) (string, error) {
 			continue
 		}
 
-		recTexts, err := client.OCRRecognize(ctx, crop)
+		recTexts, err := analyzer.OCRRecognize(ctx, crop)
 		if err != nil {
 			continue // skip boxes that fail recognition
 		}

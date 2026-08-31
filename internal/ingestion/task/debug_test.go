@@ -32,6 +32,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/ingestion/pipeline"
 )
 
@@ -265,6 +267,91 @@ func TestInjectDebugPageCap(t *testing.T) {
 			t.Errorf("parserConfig[%q][\"pdf\"][\"pages\"] = %v, want [[1, 1000000]] (explicit cap must be respected, not overridden by debug default)", parserCpnID, pdf["pages"])
 		}
 	})
+}
+
+// TestInjectDebugChunkCap pins the canvas-debug chunk cap on the run inputs.
+// The cap travels via pipeline inputs → CanvasState.Globals (seeded by
+// globals.SeedIngestionGlobals) → the chunker decorator reads it through
+// globals.DebugChunkCap. It is injected only in the debug branch of
+// runPipelineWithDSL (mirroring the page-cap override). The default is
+// DebugChunkCapDefault (3); an explicit caller-supplied value is respected,
+// exactly like a caller-supplied page cap.
+func TestInjectDebugChunkCap(t *testing.T) {
+	t.Run("defaults to DebugChunkCapDefault when absent", func(t *testing.T) {
+		inputs := injectDebugChunkCap(map[string]any{"name": "doc.pdf"})
+		got, ok := inputs[globals.DebugChunkCapKey].(int)
+		if !ok {
+			t.Fatalf("inputs[%q] missing or wrong type: %#v", globals.DebugChunkCapKey, inputs[globals.DebugChunkCapKey])
+		}
+		if got != DebugChunkCapDefault {
+			t.Errorf("inputs[%q] = %d, want %d", globals.DebugChunkCapKey, got, DebugChunkCapDefault)
+		}
+	})
+
+	t.Run("respects explicit caller-supplied cap", func(t *testing.T) {
+		inputs := injectDebugChunkCap(map[string]any{
+			"name":                   "doc.pdf",
+			globals.DebugChunkCapKey: 9,
+		})
+		if got, _ := inputs[globals.DebugChunkCapKey].(int); got != 9 {
+			t.Errorf("inputs[%q] = %d, want 9 (explicit cap must be respected)", globals.DebugChunkCapKey, got)
+		}
+	})
+
+	t.Run("nil inputs is safe", func(t *testing.T) {
+		inputs := injectDebugChunkCap(nil)
+		if got, _ := inputs[globals.DebugChunkCapKey].(int); got != DebugChunkCapDefault {
+			t.Errorf("inputs[%q] = %d, want %d (nil inputs must be initialized)", globals.DebugChunkCapKey, got, DebugChunkCapDefault)
+		}
+	})
+}
+
+// TestExecute_DebugViaEntry_NoKnowledgeCompilePublish pins requirement #2:
+// a canvas-debug (dry-run) run must NOT trigger a dataset-level
+// knowledge-compile rebuild (no PublishCompleted / no notification), even when
+// the pipeline contains a knowledge-compiler node that completes. The debug
+// path returns via collectDebugOutput and never reaches processOutput (the
+// only caller of knowledge_compile.PublishCompleted), so a FakeScheduler
+// records zero publishes. The compiler component itself is structurally free
+// of any publish call (verified by grep), so this test locks the executor's
+// routing rather than the component.
+func TestExecute_DebugViaEntry_NoKnowledgeCompilePublish(t *testing.T) {
+	fake := knowledge_compile.NewFakeScheduler()
+	prev := knowledge_compile.DefaultPublisher()
+	knowledge_compile.SetScheduler(fake)
+	t.Cleanup(func() { knowledge_compile.SetScheduler(prev) })
+
+	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
+
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0)
+	if err != nil {
+		t.Fatalf("NewPipelineExecutor: %v", err)
+	}
+	exec.
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return "dsl", "canvas-1", nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			// Simulate a completed knowledge-compiler node plus chunks.
+			return map[string]any{
+				"chunks": []map[string]any{
+					{"text": "c1"},
+					{"text": "c2"},
+				},
+				"state": map[string]any{
+					"KnowledgeCompiler:Abc": map[string]any{
+						"compile_kwd": map[string]any{"structure": true},
+					},
+				},
+			}, dsl, nil
+		})
+
+	if _, err := exec.Execute(context.Background()); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if n := fake.PublishedCount(); n != 0 {
+		t.Errorf("debug run published %d knowledge-compile event(s); want 0 (no dataset rebuild in debug)", n)
+	}
 }
 
 // TestWarnUnknownComponentParamsDetectsUnknownCPNFromEnvelope pins the fix for

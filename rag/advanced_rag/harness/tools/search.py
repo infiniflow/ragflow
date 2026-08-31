@@ -1,174 +1,48 @@
-"""Search tools: hybrid, vector, BM25, web, structured."""
+"""Search tools: hybrid, vector, BM25, web, structured.
+
+Retrieval legs plus the compiled-structure expansion layered on top of hybrid
+search. The tool-facing schemas and dispatch live in ``action_session``; this
+module owns the retrieval implementations they call.
+"""
 
 import logging
 import re
-import hashlib
+from typing import Any
 from common import settings
-from .navigation import _kg_scopes
+from rag.advanced_rag.harness.chunk_utils import (  # noqa: F401
+    _chunk_attr,
+    _chunk_id,
+    _chunk_text,
+    _dataset_id,
+    _doc_id,
+    _doc_title,
+    _snippet,
+    _xml_escape,
+)
+
+# ``_expand_related_via_structure`` is kept imported (not currently called here)
+# so the compiled-structure related-chunk expansion stays reachable without
+# re-editing imports; the @tool front-end that used it was removed.
+from .navigation import _expand_related_via_structure, _kg_scopes  # noqa: F401
 
 _LOG = logging.getLogger(__name__)
 
 
-# Sentence terminators: Chinese 。！？；, English ! ? ;, newline, and a
-# digit-guarded English period (so "3.14" / "v1.2" don't split).
-_SENT_END = re.compile(r"[。！？；!?;]+|(?<!\d)\.(?!\d)")
-
-# Table blocks are kept ATOMIC — never split by sentence terminators — so a
-# whole table counts as one "sentence" for keyword matching / narrowing.
-_HTML_TABLE = re.compile(r"<table\b[^>]*>.*?</table>", re.IGNORECASE | re.DOTALL)
-# Markdown table: a header row with a pipe, a separator row of dashes/colons/
-# pipes, then zero+ body rows with a pipe.
-_MD_TABLE = re.compile(
-    r"^[ \t]*\|?[^\n]*\|[^\n]*\r?\n"
-    r"[ \t]*\|?[ \t]*:?-{1,}:?[ \t]*(?:\|[ \t]*:?-{1,}:?[ \t]*)+\|?[ \t]*\r?\n"
-    r"(?:[ \t]*\|?[^\n]*\|[^\n]*\r?\n?)*",
-    re.MULTILINE,
+# Text processing (sentence split / stemming / keyword narrowing) lives in
+# ``text_processing`` and is re-exported here: callers across the harness
+# import these names from this module.
+from rag.advanced_rag.harness.tools.text_processing import (  # noqa: F401
+    _compact_keywords,
+    _highlight_keywords,
+    _is_fact_dense_sentence,
+    _keyword_forms,
+    _narrow_by_keywords,
+    _narrow_content,
+    _narrow_or_keep,
+    _sentence_matches,
+    _split_sentences,
+    _stem,
 )
-
-
-def _protected_spans(text: str) -> list[tuple[int, int]]:
-    """Non-overlapping ``(start, end)`` spans of table blocks, in order."""
-    spans = [(m.start(), m.end()) for m in _HTML_TABLE.finditer(text)]
-    spans += [(m.start(), m.end()) for m in _MD_TABLE.finditer(text)]
-    spans.sort()
-    merged: list[tuple[int, int]] = []
-    last_end = -1
-    for s, e in spans:
-        if s < last_end:  # overlaps an already-kept span -> skip
-            continue
-        merged.append((s, e))
-        last_end = e
-    return merged
-
-
-def _split_plain(text: str) -> list[str]:
-    """Terminator-based sentence split, keeping each terminator attached."""
-    sents: list[str] = []
-    start = 0
-    for m in _SENT_END.finditer(text):
-        end = m.end()
-        seg = text[start:end]
-        if seg.strip():
-            sents.append(seg)
-        start = end
-    if start < len(text):
-        tail = text[start:]
-        if tail.strip():
-            sents.append(tail)
-    return sents
-
-
-def _split_sentences(text: str) -> list[str]:
-    """Split ``text`` into sentences, keeping each terminator attached.
-
-    Table blocks — HTML ``<table>...</table>`` and markdown tables — are treated
-    as a single atomic sentence and are never split internally.
-    """
-    if not text:
-        return []
-    spans = _protected_spans(text)
-    if not spans:
-        return _split_plain(text)
-
-    sents: list[str] = []
-    pos = 0
-    for s, e in spans:
-        if s > pos:
-            sents.extend(_split_plain(text[pos:s]))
-        block = text[s:e]
-        if block.strip():
-            sents.append(block)
-        pos = e
-    if pos < len(text):
-        sents.extend(_split_plain(text[pos:]))
-    return sents
-
-
-def _narrow_content(content: str, kwds: list[str]) -> str | None:
-    """Return ``content`` narrowed to keyword sentences +/- 1 neighbour.
-
-    Returns ``None`` when no keyword occurs anywhere in ``content``.
-    """
-    sents = _split_sentences(content)
-    if not sents:
-        return None
-    keep: set[int] = set()
-    matched = False
-    for i, s in enumerate(sents):
-        low = s.lower()
-        if any(kw in low for kw in kwds):
-            matched = True
-            if i > 0:
-                keep.add(i - 1)
-            keep.add(i)
-            if i + 1 < len(sents):
-                keep.add(i + 1)
-    if not matched:
-        return None
-    narrowed = "".join(sents[i] for i in sorted(keep)).strip()
-    return "..." + _highlight_keywords(narrowed, kwds) + "..."
-
-
-def _highlight_keywords(text: str, kwds: list[str]) -> str:
-    terms = sorted({kw for kw in kwds if kw}, key=len, reverse=True)
-    if not terms:
-        return text
-    pattern = re.compile("|".join(re.escape(term) for term in terms), re.IGNORECASE)
-    return pattern.sub(lambda m: f"*{m.group(0)}*", text)
-
-
-def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
-    """Narrow each chunk to its keyword-bearing sentences (+/- 1 neighbour) and
-    drop keyword-less chunks.
-
-    Keywords are the comma-separated terms (with close synonyms) produced by
-    ``formalize``; matching is case-insensitive substring.
-    """
-    kwds = [k.strip().lower() for k in (keywords or "").split(",") if k.strip()]
-    if not kwds or not chunks:
-        return chunks
-    if len(kwds) < 3:
-        kwds = [k.strip().lower() for k in (keywords or "").split(" ") if k.strip()]
-        _kwds = []
-        for i in range(len(kwds) - 1):
-            _kwds.append(kwds[i] + " " + kwds[i + 1])
-        kwds = _kwds
-
-    scored = [(ck, _narrow_content(ck.get("content_with_weight") or ck.get("content") or "", kwds)) for ck in chunks]
-    out: list[dict] = []
-    dedup: set[str] = set()
-    for ck, nc in scored:
-        if nc is not None:
-            nc_hash = hashlib.md5(nc.encode("utf-8")).hexdigest()
-            if nc_hash in dedup:
-                continue
-            dedup.add(nc_hash)
-            ck["content_with_weight"] = nc
-            if "content" in ck:
-                ck["content"] = nc
-            ck.pop("highlight", None)
-            out.append(ck)
-    return out
-
-
-def _narrow_or_keep(chunks: list[dict], keywords: str, label: str) -> list[dict]:
-    """Narrow chunks to keyword sentences, but keep the originals when
-    narrowing would drop everything.
-
-    No keyword overlap does not mean irrelevant — the retriever already ranked
-    these chunks, and a sub-question's wording need not contain the parent
-    question's keywords. Dropping them all produced empty results, unverified
-    claims and pointless retry cycles.
-    """
-    if not keywords or not chunks:
-        return chunks
-    length = len(chunks)
-    narrowed = _narrow_by_keywords(chunks, keywords)
-    if narrowed:
-        _LOG.info(f"[{label}] Kept {len(narrowed)} of {length} passage(s) that actually mention the keywords.")
-        return narrowed
-    _LOG.info(f"[{label}] Keyword narrowing matched nothing — keeping all {length} retrieved passage(s).")
-    return chunks
 
 
 def _search_cache_key(effective_query: str, target_ids, top_n: int, doc_scope) -> tuple:
@@ -200,7 +74,9 @@ def _normalize(kbinfos: dict, tenant_ids: list[str] | str | None) -> dict:
     return kbinfos
 
 
-async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, doc_scope: list[str] | None = None, keywords: str = "", use_compiled: bool = False) -> dict:
+async def hybrid_search(
+    tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, doc_scope: list[str] | None = None, keywords: str = "", retrieval_query: str = "", use_compiled: bool = False
+) -> dict:
     target_ids = kb_ids or list(dict.fromkeys(tools.kb_ids + [kb.id for kb in tools.sql_kbs]))
     if not target_ids:
         return {"chunks": [], "doc_aggs": []}
@@ -208,9 +84,14 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         doc_scope = tools.scoped_doc_ids(doc_scope)
     _LOG.info(f'[Hybrid search] Searching the knowledge base for "{query}" (keywords: {keywords})')
 
-    # Query expansion: append the formalized-question keywords + close synonyms
-    # so hybrid/BM25 retrieval gets extra recall signal.
-    effective_query = f"{query} {keywords}".strip() if keywords else query
+    # Query expansion: append the entity-weighted ``retrieval_query`` (entity
+    # terms repeated so BM25 weights them up inside the same query) — the plain
+    # keyword union or the compact formalize keywords fall back when none is
+    # supplied. ``keywords`` is always used only to narrow retrieved chunks.
+    if retrieval_query:
+        effective_query = f"{query} {retrieval_query}".strip()[:400]
+    else:
+        effective_query = f"{query} {keywords}".strip() if keywords else query
 
     # Per-request dedup: an identical query+scope is retrieved at most once, so
     # e.g. pre_search and a claim search asking the same question don't repeat
@@ -240,7 +121,22 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         must_not={"exists": "compile_kwd"},  # plain retrieval = document chunks only; compiled products have their own tools
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Hybrid search")
+    # Preserve the RAW retrieved chunks in the central memory store BEFORE any
+    # narrowing. search is cheap and the raw corpus may hold a fact the LLM's
+    # report/grounded extraction later compresses away — a gap-driven grep over
+    # memory recovers it without re-querying the knowledge base.
+    try:
+        from rag.advanced_rag.harness.memory import add as _memory_add
+
+        _memory_add(tools, kbinfos.get("chunks", []) or [])
+    except Exception:
+        pass  # memory is best-effort; never fail the search over it.
+    # Narrow-or-keep: if the query keywords match any chunk, keep only the
+    # matching passages (shrinking the evidence handed to the LLM so a single
+    # full-context call stays small and fast); if nothing matches, keep ALL
+    # chunks intact so no evidence is silently dropped. This bounds per-claim
+    # analysis size without losing the numeric/entity rows when keywords hit.
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "hybrid_search")
     if use_compiled and kbinfos.get("chunks"):
         _LOG.info("[Hybrid search] Compiled expansion enabled — enriching with page_index/tree/KG navigation.")
         await _expand_with_compiled(tools, query, keywords, kbinfos, doc_scope)
@@ -249,13 +145,13 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
     return kbinfos
 
 
-async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "", doc_scope: list[str] | None = None) -> dict:
+async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "", retrieval_query: str = "", doc_scope: list[str] | None = None) -> dict:
     if not tools.embed_mdl:
         _LOG.warning("vector_search: no embed_mdl available")
         return {"chunks": [], "doc_aggs": []}
 
     _LOG.info(f'[Vector search] Searching by meaning for "{query}" (keywords: {keywords})')
-    effective_query = f"{query} {keywords}".strip() if keywords else query
+    effective_query = f"{query} {retrieval_query}".strip()[:400] if retrieval_query else f"{query} {keywords}".strip() if keywords else query
     target_ids = kb_ids or tools.kb_ids
     if hasattr(tools, "scoped_doc_ids"):
         doc_scope = tools.scoped_doc_ids(doc_scope)
@@ -274,14 +170,20 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
+    try:
+        from rag.advanced_rag.harness.memory import add as _memory_add
+
+        _memory_add(tools, kbinfos.get("chunks", []) or [])
+    except Exception:
+        pass
     kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Vector search")
     return kbinfos
 
 
-async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "", doc_scope: list[str] | None = None) -> dict:
+async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "", retrieval_query: str = "", doc_scope: list[str] | None = None) -> dict:
     _LOG.info(f'[BM25 search] Searching by keyword for "{query}" (keywords: {keywords})')
     target_ids = kb_ids or tools.kb_ids
-    effective_query = f"{query} {keywords}".strip() if keywords else query
+    effective_query = f"{query} {retrieval_query}".strip()[:400] if retrieval_query else f"{query} {keywords}".strip() if keywords else query
     if hasattr(tools, "scoped_doc_ids"):
         doc_scope = tools.scoped_doc_ids(doc_scope)
     kbinfos = await settings.retriever.retrieval(
@@ -299,478 +201,30 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
+    try:
+        from rag.advanced_rag.harness.memory import add as _memory_add
+
+        _memory_add(tools, kbinfos.get("chunks", []) or [])
+    except Exception:
+        pass
     kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "BM25 search")
     return kbinfos
 
 
-# ─── Compiled product expansion (zero-LLM, used by hybrid_search with use_compiled=True) ───
+# Compiled-product expansion lives in ``compiled_expansion`` and is
+# re-exported here: navigation and the dynamic runner import these names
+# from this module.
+from rag.advanced_rag.harness.tools.compiled_expansion import (  # noqa: F401
+    _expand_compiled_strategy,
+    _expand_wiki_page_strategy,
+    _expand_with_compiled,
+    _load_chunks_for_doc,
+    _search_compiled_rows,
+    _search_synthesis_pages,
+)
 
 
-async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict, doc_scope: list[str] | None = None) -> None:
-    """Zero-LLM compiled-product expansion: page_index → tree → KG.
-
-    For each bound KB, searches compiled entity rows matching the query,
-    hops 1-hop via relations to find neighbour entities, then appends
-    their source passages to ``kbinfos["chunks"]``.
-    """
-    before = len(kbinfos.get("chunks", []))
-    seen_ids = {c.get("chunk_id") or c.get("id") for c in kbinfos.get("chunks", [])}
-
-    scopes = await _kg_scopes(tools, doc_scope)
-    if not scopes:
-        return
-
-    for kb_id, tenant_id, doc_ids in scopes:
-        # 1-hop entity-graph expansion per template kind.
-        # Each template writes entity/relation rows tagged with
-        # ``compilation_template_kind_kwd`` — search them independently.
-        for label, template_kind in (
-            ("knowledge_graph", "knowledge_graph"),
-            ("mind_map", "mind_map"),
-            ("timeline", "timeline"),
-            ("page_index", "page_index"),
-        ):
-            chunks = await _expand_compiled_strategy(
-                tools,
-                kb_id,
-                tenant_id,
-                doc_ids,
-                query,
-                seen_ids,
-                template_kind=template_kind,
-                max_chunks=5,
-            )
-            if chunks:
-                kbinfos.setdefault("chunks", []).extend(chunks)
-                _LOG.debug("[Compiled expand] %s: +%d chunks", label, len(chunks))
-
-        # Tree structure graph (uses ``compile_kwd``, not template kind).
-        chunks = await _expand_compiled_strategy(
-            tools,
-            kb_id,
-            tenant_id,
-            doc_ids,
-            query,
-            seen_ids,
-            compile_kwd="tree",
-            max_chunks=5,
-        )
-        if chunks:
-            kbinfos.setdefault("chunks", []).extend(chunks)
-            _LOG.debug("[Compiled expand] tree: +%d chunks", len(chunks))
-
-        # Synthesis pages — standalone rendered articles from wiki / session
-        # graph / session essence templates.  Searched directly (no entity-graph nav).
-        for label, ckwd in (
-            ("wiki_page", "wiki_page"),
-            ("artifact_page", "artifact_page"),
-            ("essence", "essence"),
-        ):
-            chunks = await _expand_wiki_page_strategy(
-                tools,
-                kb_id,
-                tenant_id,
-                doc_ids,
-                query,
-                seen_ids,
-                compile_kwd=ckwd,
-                max_chunks=5,
-            )
-            if chunks:
-                kbinfos.setdefault("chunks", []).extend(chunks)
-                _LOG.debug("[Compiled expand] %s: +%d chunks", label, len(chunks))
-
-    # Re-sort so compiled-expansion chunks blend by similarity with regular ones.
-    chunks = kbinfos.get("chunks", [])
-    if chunks:
-        chunks.sort(key=lambda c: c.get("similarity", 0.0), reverse=True)
-
-    after = len(chunks)
-    _LOG.info("[Hybrid search] Compiled expansion added %d chunks.", after - before)
-
-
-async def _search_compiled_rows(
-    tools,
-    kb_id: str,
-    tenant_id: str,
-    doc_ids: list[str] | None,
-    kind: str,
-    *,
-    text: str = "",
-    top_n: int = 8,
-    extra: dict | None = None,
-    compile_kwd: str | None = None,
-    template_kind: str | None = None,
-) -> dict:
-    """Search compiled KG rows in one KB, returning raw field maps.
-
-    *compile_kwd* filters by the ``compile_kwd`` field (e.g. "tree" for tree
-    structure nodes).  *template_kind* filters by ``compilation_template_kind_kwd``
-    (e.g. "knowledge_graph", "mind_map").  Leave both ``None`` to scan all rows.
-    """
-    from common import settings
-    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
-    from common.misc_utils import thread_pool_exec
-    from rag.nlp import search
-
-    condition: dict = {"knowledge_graph_kwd": [kind]}
-    if compile_kwd:
-        condition["compile_kwd"] = compile_kwd
-    if template_kind:
-        condition["compilation_template_kind_kwd"] = template_kind
-    if doc_ids:
-        condition["doc_id"] = list(doc_ids)
-    if extra:
-        condition.update(extra)
-
-    fields = [
-        "content_with_weight",
-        "source_chunk_ids",
-        "doc_id",
-        "docnm_kwd",
-        "from_entity_kwd",
-        "to_entity_kwd",
-        "name_kwd",
-    ]
-    exprs = []
-    if text:
-        embd_mdl = getattr(tools, "embed_mdl", None)
-        if embd_mdl:
-            try:
-                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_k=top_n, num_candidates=top_n * 2, similarity=0.1))
-            except Exception:
-                _LOG.exception("[Compiled expand] vector build failed; using keyword match")
-        if not exprs:
-            exprs.append(
-                MatchTextExpr(
-                    ["content_ltks", "content_sm_ltks"],
-                    text,
-                    top_n,
-                )
-            )
-
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            condition,
-            exprs,
-            OrderByExpr(),
-            0,
-            top_n,
-            search.index_name(tenant_id),
-            [kb_id],
-        )
-        return settings.docStoreConn.get_fields(res, fields) or {}
-    except Exception:
-        _LOG.exception("[Compiled expand] search failed (kind=%s compile_kwd=%s)", kind, compile_kwd)
-        return {}
-
-
-async def _load_chunks_for_doc(tools, doc_id: str, chunk_ids: list[str]) -> list[dict]:
-    """Load chunks by their IDs from the doc store."""
-    if not chunk_ids:
-        return []
-    from common import settings
-    from common.doc_store.doc_store_base import OrderByExpr
-    from common.misc_utils import thread_pool_exec
-    from rag.nlp import search
-
-    resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
-    if not resolved:
-        return []
-    kb_id, tenant_id = resolved
-
-    fields = ["content_with_weight", "docnm_kwd", "doc_id", "id"]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            {"id": list(chunk_ids)},
-            [],
-            OrderByExpr(),
-            0,
-            len(chunk_ids),
-            search.index_name(tenant_id),
-            [kb_id],
-        )
-        rows = settings.docStoreConn.get_fields(res, fields)
-        if not rows:
-            return []
-        return [{**v, "chunk_id": k} for k, v in rows.items()]
-    except Exception:
-        _LOG.exception("[Compiled expand] failed to load chunks for doc_id=%s", doc_id)
-        return []
-
-
-async def _expand_compiled_strategy(
-    tools,
-    kb_id: str,
-    tenant_id: str,
-    doc_ids: list[str] | None,
-    query: str,
-    seen_ids: set[str],
-    *,
-    compile_kwd: str | None = None,
-    template_kind: str | None = None,
-    max_chunks: int = 5,
-) -> list[dict]:
-    """Generic 1-hop compiled expansion: entity search → relation nav → chunk load.
-
-    1. Embedding-match seed entities (filtered by *compile_kwd* or *template_kind*).
-    2. Fetch relations adjacent to seed entities (forward + backward).
-    3. Collect neighbour entity names (1-hop away).
-    4. Look up neighbour entities to get ``source_chunk_ids``.
-    5. Load actual chunks, deduplicate, respect *max_chunks*.
-
-    *compile_kwd* is used for structure graphs (e.g. "tree").
-    *template_kind* is used for entity extraction rows (e.g. "knowledge_graph").
-    """
-    import json
-
-    # -- 1. Seed entities --
-    seed_rows = await _search_compiled_rows(
-        tools,
-        kb_id,
-        tenant_id,
-        doc_ids,
-        "entity",
-        text=query,
-        top_n=5,
-        compile_kwd=compile_kwd,
-        template_kind=template_kind,
-    )
-    if not seed_rows:
-        return []
-
-    seed_names: set[str] = set()
-    for r in seed_rows.values():
-        try:
-            payload = json.loads(r.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        name = (payload.get("name") or payload.get("title") or "").strip()
-        if name:
-            seed_names.add(name)
-    if not seed_names:
-        return []
-
-    # -- 2. Adjacent relations (outgoing + incoming) --
-    # Provide both original and lowercased names — dataset_structure_merger
-    # lowercases merged-row endpoints while per-doc rows keep original case.
-    seed_list = sorted({n.lower() for n in seed_names} | seed_names)
-    fwd = await _search_compiled_rows(
-        tools,
-        kb_id,
-        tenant_id,
-        doc_ids,
-        "relation",
-        top_n=50,
-        compile_kwd=compile_kwd,
-        template_kind=template_kind,
-        extra={"from_entity_kwd": seed_list},
-    )
-    bwd = await _search_compiled_rows(
-        tools,
-        kb_id,
-        tenant_id,
-        doc_ids,
-        "relation",
-        top_n=50,
-        compile_kwd=compile_kwd,
-        template_kind=template_kind,
-        extra={"to_entity_kwd": seed_list},
-    )
-    all_rels = {**fwd, **bwd}
-
-    # -- 3. Neighbour names (1-hop, exclude seeds) --
-    seed_lower = {n.lower() for n in seed_names}
-    neighbour_names: set[str] = set()
-    for r in all_rels.values():
-        frm = (r.get("from_entity_kwd") or "").strip()
-        frm_lower = frm.lower()
-        to = (r.get("to_entity_kwd") or "").strip()
-        to_lower = to.lower()
-        if frm_lower in seed_lower and to and to_lower not in seed_lower:
-            neighbour_names.add(to)
-        if to_lower in seed_lower and frm and frm_lower not in seed_lower:
-            neighbour_names.add(frm)
-    if not neighbour_names:
-        return []
-
-    # -- 4. Neighbour entity source_chunk_ids --
-    # Provide both original and lowercased — same as seed_list above.
-    neigh_list = sorted({n.lower() for n in neighbour_names} | neighbour_names)
-    if len(neigh_list) > 100:
-        neigh_list = neigh_list[:100]  # reasonable cap for name_kwd search
-    neigh_rows = await _search_compiled_rows(
-        tools,
-        kb_id,
-        tenant_id,
-        doc_ids,
-        "entity",
-        top_n=len(neigh_list),
-        compile_kwd=compile_kwd,
-        template_kind=template_kind,
-        extra={"name_kwd": neigh_list},
-    )
-
-    # Group chunk IDs by doc
-    by_doc: dict[str, set[str]] = {}
-    for r in neigh_rows.values():
-        doc_id = r.get("doc_id") or ""
-        for cid in r.get("source_chunk_ids") or []:
-            if cid and cid not in seen_ids:
-                by_doc.setdefault(doc_id, set()).add(cid)
-
-    # -- 5. Load and return --
-    new_chunks: list[dict] = []
-    for doc_id, cids in by_doc.items():
-        if len(new_chunks) >= max_chunks:
-            break
-        limit = max_chunks - len(new_chunks)
-        chunks = await _load_chunks_for_doc(tools, doc_id, list(cids)[:limit])
-        for c in chunks:
-            cid = c.get("chunk_id") or c.get("id")
-            if cid and cid not in seen_ids:
-                seen_ids.add(cid)
-                new_chunks.append(c)
-
-    return new_chunks
-
-
-async def _search_synthesis_pages(
-    tools,
-    kb_id: str,
-    tenant_id: str,
-    doc_ids: list[str] | None,
-    text: str,
-    *,
-    compile_kwd: str = "wiki_page",
-    top_n: int = 8,
-) -> dict:
-    """Search synthesis-compiled page rows (no knowledge_graph_kwd filter).
-
-    Synthesis pages are standalone articles (wiki_page, artifact_page,
-    essence, etc.) with ``content_with_weight``, keyword index, and
-    vector.  They do NOT carry the ``knowledge_graph_kwd`` field (unlike
-    entity/relation rows from extraction).
-    """
-    from common import settings
-    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
-    from common.misc_utils import thread_pool_exec
-    from rag.nlp import search
-
-    condition: dict = {"compile_kwd": compile_kwd, "available_int": 1}
-    if doc_ids:
-        condition["source_doc_ids"] = list(doc_ids)
-
-    fields = [
-        "content_with_weight",
-        "summary_with_weight",
-        "source_chunk_ids",
-        "doc_id",
-        "title_kwd",
-        "topic_kwd",
-    ]
-
-    exprs = []
-    if text:
-        embd_mdl = getattr(tools, "embed_mdl", None)
-        if embd_mdl:
-            try:
-                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_k=top_n, num_candidates=top_n * 2, similarity=0.1))
-            except Exception:
-                _LOG.exception("[Wiki expand] vector build failed; using keyword match")
-        if not exprs:
-            exprs.append(
-                MatchTextExpr(
-                    ["content_ltks", "content_sm_ltks"],
-                    text,
-                    top_n,
-                )
-            )
-
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            condition,
-            exprs,
-            OrderByExpr(),
-            0,
-            top_n,
-            search.index_name(tenant_id),
-            [kb_id],
-        )
-        return settings.docStoreConn.get_fields(res, fields) or {}
-    except Exception:
-        _LOG.exception("[Wiki expand] search failed for kb=%s", kb_id)
-        return {}
-
-
-async def _expand_wiki_page_strategy(
-    tools,
-    kb_id: str,
-    tenant_id: str,
-    doc_ids: list[str] | None,
-    query: str,
-    seen_ids: set[str],
-    *,
-    compile_kwd: str = "wiki_page",
-    max_chunks: int = 5,
-) -> list[dict]:
-    """Expand synthesis-compiled pages: semantic search → load source chunks.
-
-    Unlike ``_expand_compiled_strategy`` (which does 1-hop entity-graph
-    navigation), synthesis pages are standalone rendered articles — we search
-    them directly and load the referenced source chunks as context.
-
-    *compile_kwd* selects which synthesis type: "wiki_page" (Wiki template),
-    "artifact_page" (Session Graph synthesis), "essence" (Session Essence).
-    """
-    # -- 1. Search synthesis pages --
-    wiki_rows = await _search_synthesis_pages(
-        tools,
-        kb_id,
-        tenant_id,
-        doc_ids,
-        query,
-        compile_kwd=compile_kwd,
-        top_n=5,
-    )
-    if not wiki_rows:
-        return []
-
-    # -- 2. Collect source_chunk_ids from matching pages --
-    by_doc: dict[str, set[str]] = {}
-    for r in wiki_rows.values():
-        doc_id = r.get("doc_id") or ""
-        for cid in r.get("source_chunk_ids") or []:
-            if cid and cid not in seen_ids:
-                by_doc.setdefault(doc_id, set()).add(cid)
-
-    # -- 3. Load chunks, assign high similarity for priority ranking --
-    new_chunks: list[dict] = []
-    for doc_id, cids in by_doc.items():
-        if len(new_chunks) >= max_chunks:
-            break
-        limit = max_chunks - len(new_chunks)
-        chunks = await _load_chunks_for_doc(tools, doc_id, list(cids)[:limit])
-        for c in chunks:
-            cid = c.get("chunk_id") or c.get("id")
-            if cid and cid not in seen_ids:
-                seen_ids.add(cid)
-                c.setdefault("similarity", 0.9)  # wiki pages rank high
-                new_chunks.append(c)
-
-    return new_chunks
-
-
-async def web_search(tools, query: str, keywords: str = "") -> dict:
+async def web_search(tools, query: str, keywords: str = "", retrieval_query: str = "") -> dict:
     if not tools.has_web():
         return {"chunks": [], "doc_aggs": []}
 
@@ -778,7 +232,7 @@ async def web_search(tools, query: str, keywords: str = "") -> dict:
     try:
         from common.misc_utils import thread_pool_exec
 
-        effective_query = f"{query} {keywords}".strip() if keywords else query
+        effective_query = f"{query} {retrieval_query}".strip()[:400] if retrieval_query else f"{query} {keywords}".strip() if keywords else query
         web_res = await thread_pool_exec(tools.web_search.retrieve_chunks, effective_query)
         return {"chunks": web_res.get("chunks", []), "doc_aggs": web_res.get("doc_aggs", [])}
     except Exception:
@@ -816,3 +270,292 @@ async def structured_query(tools, query: str, keywords: str = "", kb_ids: list[s
         "chunks": ref.get("chunks") or [],
         "doc_aggs": ref.get("doc_aggs") or [],
     }
+
+
+# ─── Grep-style exact search (BM25 candidate pool + regex locate), and ───
+# ─── list_chunks (deep-read a document) — used by the sub-agent so it can   ───
+# ─── do exact keyword/pattern locate + full-document deep-read like dynamic. ───
+
+_GREP_TERMS_MAX = 10
+_GREP_OUT_CHARS_PER_CHUNK = 700
+_GREP_OUT_TOTAL_CHARS = 8000
+_LIST_CHUNKS_MAX_CHUNKS = 80
+
+
+def _grep_terms_from_query(query: str, max_terms: int = _GREP_TERMS_MAX) -> list[str]:
+    """Extract compact grep terms from a query: bare alnum words of length>=2,
+    deduped (order-preserving) and capped. Numbers/ids are preserved as-is."""
+    if not query:
+        return []
+    terms: list[str] = []
+    seen: set[str] = set()
+    for m in re.findall(r"[A-Za-z0-9][A-Za-z0-9_.\-]{1,}", query):
+        t = m.strip("._-")
+        if len(t) < 2:
+            continue
+        low = t.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        terms.append(t)
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
+async def grep_search(
+    tools,
+    query: str,
+    kb_ids: list[str] | None = None,
+    top_n: int = 60,
+    doc_scope: list[str] | None = None,
+) -> dict:
+    """Exact keyword/pattern locate: BM25-first candidate pool, then a
+    case-insensitive regex locate with a short context window (like dynamic's
+    grep_chunks, but returning the ``Pipeline`` ``{"chunks": [...]}`` contract).
+
+    Returns compact snippet chunks (token-cheap) for the sub-agent. When grep
+    matches nothing, the BM25 candidates are returned unchanged so evidence is
+    never dropped (enumeration / multi-hop answers must not lose candidates).
+    """
+    from rag.advanced_rag.harness.grep_sed_narrow import narrow_by_terms
+
+    _LOG.info('[Grep search] Keyword-first locate for "%s"', query)
+    if not query or not str(query).strip():
+        return {"chunks": [], "doc_aggs": []}
+    res = await bm25_search(tools, query=str(query).strip(), kb_ids=kb_ids, top_n=top_n, doc_scope=doc_scope)
+    chunks = res.get("chunks", []) or []
+    terms = _grep_terms_from_query(str(query).strip())
+    if not chunks or not terms:
+        return res
+    try:
+        out = narrow_by_terms(
+            chunks,
+            terms,
+            keywords=str(query).strip(),
+            context={"before": 1, "after": 0},
+            max_out_chars_per_chunk=_GREP_OUT_CHARS_PER_CHUNK,
+            max_out_total_chars=_GREP_OUT_TOTAL_CHARS,
+        )
+        kept = out.get("kept") or []
+        if kept:
+            _LOG.info(
+                "[Grep search] narrowed %d->%d chunk(s), %.1fK chars.",
+                len(chunks),
+                len(kept),
+                sum(len(str(c.get("content_with_weight") or c.get("content") or "")) for c in kept) / 1000.0,
+            )
+            res["chunks"] = kept
+    except Exception:
+        _LOG.exception("[Grep search] narrow failed; using raw BM25 candidates.")
+    return res
+
+
+async def list_chunks(tools, doc_id: str) -> dict:
+    """Deep-read a document: return its COMPLETE chunk list in reading order.
+
+    The sub-agent calls this after grep_search / hybrid_search hit a document
+    when it needs the full text (enumeration / count / arithmetic answers), like
+    dynamic's ``list_chunks`` tool. Returns ``{"chunks": [...], "doc_aggs": [...]}``.
+    """
+    if not doc_id or not str(doc_id).strip():
+        return {"chunks": [], "doc_aggs": []}
+    if not callable(getattr(tools, "fetch_full_document", None)):
+        return {"chunks": [], "doc_aggs": []}
+    _LOG.info("[List chunks] Deep-reading document %s", doc_id)
+    try:
+        full = await tools.fetch_full_document(str(doc_id).strip())
+    except Exception:
+        _LOG.exception("[List chunks] fetch_full_document failed doc=%s", doc_id)
+        return {"chunks": [], "doc_aggs": []}
+    chunks = (full.get("chunks") or [])[:_LIST_CHUNKS_MAX_CHUNKS]
+    return {"chunks": chunks, "doc_aggs": full.get("doc_aggs") or []}
+
+
+# ── Rag-agent tool set (migrated from harness/dynamic) ──
+_NAV_TREE_MAX_DOCS = 8
+
+# Cap on datasets scanned per tool call (avoids fan-out over too many KBs).
+_NAV_TREE_MAX_DATASETS = 10
+
+# Chars of a chunk's text returned by search_chunks in default (snippet) mode.
+_SEARCH_SNIPPET_CHARS = 300
+
+
+async def _load_specific_chunks(tools_slot, chunk_ids: list[str], doc_scope: list[str] | None = None) -> list[dict]:
+    """Load specific chunks (from navigate_structure outline pointers) by id.
+
+    Fetches each ``doc_scope`` document's full chunk list and filters to the
+    requested ``chunk_ids``. When ``doc_scope`` is omitted, scans all bound
+    documents (expensive) — so prefer passing doc_scope with the owning doc(s).
+    Zero LLM.
+    """
+    wanted = {str(c).strip() for c in chunk_ids if str(c).strip()}
+    if not wanted:
+        return []
+    if not doc_scope:
+        # Derive candidate docs from the tools' kb_ids' documents is not available
+        # here; require doc_scope for the precise path.
+        return []
+    found: list[dict] = []
+    seen: set[str] = set()
+    for doc_id in doc_scope[:8]:
+        try:
+            full = await tools_slot.fetch_full_document(doc_id)
+        except Exception:
+            _LOG.exception("[grep_chunks] fetch_full_document failed for doc_id=%s", doc_id)
+            continue
+        for c in full.get("chunks", []) or []:
+            cid = _chunk_id(c)
+            if cid in wanted and cid not in seen:
+                seen.add(cid)
+                found.append(c)
+    return found
+
+
+def _rank_chunks_by_terms(candidates: list[dict], queries: list[str]) -> list[dict]:
+    """Rank candidate chunks by how many query terms overlap with their text.
+
+    Zero-LLM keyword relevance for the precise ``chunk_ids`` search path (the
+    scope is a handful of chunks, so a cheap overlap score suffices). Returns
+    chunks sorted most-relevant-first.
+    """
+    # Collect significant terms from all queries.
+    terms: list[str] = []
+    for q in queries:
+        for tok in re.findall(r"[A-Za-z0-9_]{2,}", (q or "").lower()):
+            if tok not in terms:
+                terms.append(tok)
+    if not terms:
+        return list(candidates)
+    scored = []
+    for c in candidates:
+        text = _chunk_text(c).lower()
+        hits = sum(1 for t in terms if t in text)
+        if hits:
+            scored.append((hits, c))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [c for _, c in scored]
+
+
+# The dynamic runner sets this module slot to the active RAGTools instance for
+# the current request, so the tools above (defined once at import) read the
+# request-scoped retrieval context.
+_tools_ref: dict[str, Any] = {}
+
+
+def _tools_slot():
+    return _tools_ref.get("tools")
+
+
+def _get_kb_ids(tools_slot) -> list[str]:
+    if tools_slot is None:
+        return []
+    ids = getattr(tools_slot, "kb_ids", None) or []
+    return list(ids)
+
+
+def _query_to_terms(query: str) -> list[str]:
+    """Derive plain grep terms from a regex query for narrow_by_terms.
+
+    Splits the alternation into its constituents (capped) so the regex locate
+    and the term-based context window both fire on the same broad set of names.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    # Strip regex anchors/quantifiers that are meaningless as grep terms.
+    q = re.sub(r"^\(\?i\)", "", q)
+    q = q.replace("\\b", "").replace("(?i)", "")
+    parts = re.split(r"\|", q)
+    terms = []
+    for p in parts:
+        p = re.sub(r"[.*+?^$()\[\]{}]", " ", p).strip()
+        if not p:
+            continue
+        for tok in re.split(r"\s+", p):
+            tok = tok.strip()
+            if tok and len(tok) >= 2 and tok not in terms:
+                terms.append(tok)
+        if len(terms) >= 16:
+            break
+    return terms
+
+
+def _base_chat_mdl(tools_slot):
+    """Return the concrete model instance that runs the tool-calling loop.
+
+    The chain is ``RAGTools.chat_mdl`` → ``CountingChatModel`` (proxy) →
+    ``LLMBundle`` (tenant bundle) → ``mdl`` (a ``rag.llm.chat_model.Base``
+    instance). We must bind and run the loop on the *innermost* ``Base`` object,
+    because ``LLMBundle.bind_tools`` is the legacy ``(toolcall_session, tools)``
+    style (gated on ``is_tools``) and does NOT expose the decorator
+    ``bind_tools(tools=[...])`` style nor ``async_chat_streamly_with_tools``.
+    """
+    try:
+        chat_mdl = getattr(tools_slot, "chat_mdl", None)
+        if chat_mdl is None:
+            return None
+        # CountingChatModel proxy → LLMBundle bundle.
+        raw = getattr(chat_mdl, "_chat_mdl", None) or chat_mdl
+        # LLMBundle → innermost Base/ChatModel instance.
+        mdl = getattr(raw, "mdl", None) or raw
+        if mdl is None:
+            return None
+        # Ensure we actually landed on a tool-calling-capable object; otherwise
+        # surface the chain for debugging.
+        if not callable(getattr(mdl, "bind_tools", None)) or not callable(getattr(mdl, "async_chat_streamly_with_tools", None)):
+            _LOG.error(
+                "[dynamic] resolved model %r lacks tool loop methods (chain: chat_mdl=%r raw=%r)",
+                mdl,
+                chat_mdl,
+                raw,
+            )
+            return None
+        return mdl
+    except Exception:
+        _LOG.exception("[dynamic] failed to resolve base chat model")
+        return None
+
+
+# Public tool name the model / prompt refers to, mapped from the internal
+# ``@tool``-decorated function name. ``_build_openai_schema`` uses ``fn.__name__``
+# (e.g. ``_grep_chunks_impl``), but the model should call the clean, documented
+# names below (matching the Go port and the prompt's tool-selection guidelines).
+_TOOL_NAME_BY_FUNC = {
+    "_think_impl": "think",
+    "_todo_write_impl": "todo_write",
+    "_grep_chunks_impl": "grep_chunks",
+    "_search_chunks_impl": "search_chunks",
+    "_list_chunks_impl": "list_chunks",
+    "_calculate_impl": "calculate",
+    "_navigate_tree_impl": "navigate_tree",
+    "_navigate_structure_impl": "navigate_structure",
+}
+
+# Thinking modes that enable the knowledge-compilation tools (``navigate_tree``
+# + ``navigate_structure``). Mirrors the high/ultra static tool lists in
+# ``harness/config.py``.
+_COMPILED_TOOL_MODES = {"high", "ultra"}
+
+
+def _with_clean_names(callables: list) -> list:
+    """Return ``callables`` with their schema ``function.name`` set to the clean
+    public name. Re-uses the cached schema to avoid re-deriving param docs."""
+    for fn in callables:
+        fname = fn.__name__
+        clean = _TOOL_NAME_BY_FUNC.get(fname)
+        if not clean:
+            _LOG.warning("[dynamic] no public name mapped for tool function %r; leaving as-is", fname)
+            continue
+        schema = fn.openai_schema
+        schema["function"]["name"] = clean
+    return callables
+
+
+async def _only_strings(stream):
+    """Pass through only string items from a tool-loop stream, silently dropping
+    non-string metadata (int token sentinels, provider-specific tuples)."""
+    async for item in stream:
+        if isinstance(item, str):
+            yield item

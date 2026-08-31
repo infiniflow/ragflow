@@ -502,7 +502,10 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         if status_by_kb:
-            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
+            # The documented contract (HTTP API + Python SDK references) places the
+            # counts at the top level of each dataset record, not under a nested
+            # "parsing_status" object.
+            kb.update(status_by_kb.get(kb["id"], {}))
         response_data_list.append(remap_dictionary_keys(kb))
 
     embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
@@ -1572,6 +1575,7 @@ async def search_datasets(tenant_id: str, req: dict):
         knn_top_k=knn_top_k,
         knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,
+        highlight=req.get("highlight", False),
         rank_feature=labels,
         trace_id=search_id,
         must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},

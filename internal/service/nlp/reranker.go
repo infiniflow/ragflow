@@ -134,12 +134,16 @@ func RerankByModel(
 		contentLtks := extractContentTokens(chunk, cfield)
 		titleTks := extractTitleTokens(chunk)
 		importantKwd := extractImportantKeywords(chunk)
+		questionTks := extractQuestionTokens(chunk)
 
-		// Combine tokens without repetition (simpler version for model reranking)
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd))
+		// Unlike RerankStandard/RerankWithKNN, the fields are not repeated here:
+		// these tokens are joined back into `docs` for a cross-encoder, where
+		// duplicating a field would distort the model's own scoring.
+		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd)+len(questionTks))
 		tks = append(tks, contentLtks...)
 		tks = append(tks, titleTks...)
 		tks = append(tks, importantKwd...)
+		tks = append(tks, questionTks...)
 		insTw = append(insTw, tks)
 
 		// Build document text for model reranking

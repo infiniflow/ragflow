@@ -42,6 +42,8 @@ from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
 
+logger = logging.getLogger(__name__)
+
 
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
@@ -97,10 +99,9 @@ ALLOWED_GEN_CONF_KEYS = frozenset(
     }
 )
 
-# LiteLLM additionally understands reasoning-control parameters that the
-# model-family policies may inject into `gen_conf` (e.g. `thinking` for
-# Anthropic / Kimi reasoning models, `enable_thinking` for Qwen models,
-# `reasoning_effort` for OpenAI o-series).
+# LiteLLM additionally understands reasoning-control parameters that must
+# survive configuration cleaning until model-family policies are applied at
+# the final request-construction boundary.
 LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
     {
         "thinking",
@@ -119,11 +120,13 @@ def _apply_model_family_policies(
     gen_conf: dict | None = None,
     request_kwargs: dict | None = None,
 ):
+    """Normalize reasoning controls for a model/provider without mutating inputs."""
     model_name_lower = (model_name or "").lower()
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
     def _thinking_type():
+        """Return the normalized explicit thinking mode, if one was supplied."""
         val = sanitized_gen_conf.get("thinking")
         if isinstance(val, dict):
             val = val.get("type")
@@ -137,14 +140,26 @@ def _apply_model_family_policies(
         return None
 
     def _pop_thinking_controls():
+        """Remove generic controls after translating them to provider payloads."""
         sanitized_gen_conf.pop("thinking", None)
         sanitized_gen_conf.pop("enable_thinking", None)
 
     def _merge_extra_body(target: dict, extra: dict) -> None:
+        """Merge top-level request body fields."""
         body = target.get("extra_body")
         if not isinstance(body, dict):
             body = {}
         body.update(extra)
+        target["extra_body"] = body
+
+    def _merge_qwen_chat_template_kwargs(target: dict, enable_thinking: bool) -> None:
+        """Set Qwen thinking without replacing other chat-template options."""
+        body = target.get("extra_body")
+        body = dict(body) if isinstance(body, dict) else {}
+        template_kwargs = body.get("chat_template_kwargs")
+        template_kwargs = dict(template_kwargs) if isinstance(template_kwargs, dict) else {}
+        template_kwargs["enable_thinking"] = enable_thinking
+        body["chat_template_kwargs"] = template_kwargs
         target["extra_body"] = body
 
     thinking_type = _thinking_type()
@@ -165,7 +180,15 @@ def _apply_model_family_policies(
         }:
             sanitized_gen_conf["enable_thinking"] = enable_thinking
         else:
-            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
+            target = sanitized_gen_conf if backend == "litellm" else sanitized_kwargs
+            _merge_qwen_chat_template_kwargs(target, enable_thinking)
+            logger.debug(
+                "Applied Qwen3 thinking policy: backend=%s provider=%s enable_thinking=%s payload_path=%s",
+                backend,
+                provider,
+                enable_thinking,
+                "extra_body.chat_template_kwargs.enable_thinking",
+            )
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
@@ -549,6 +572,23 @@ class Base(ABC):
 
                     logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
+                    # Terminal-tool short-circuit (mirror of the streaming
+                    # variant at the top of this file): a terminal tool already
+                    # produces the final answer, so return its result instead of
+                    # feeding it back for another LLM round. Without this the
+                    # non-streaming react loop keeps re-invoking `rag` every
+                    # round (Q654 spun 17 tree passes → 15 min). `rag` is always
+                    # terminal, so default to {"rag"} even if a probe wrapper
+                    # dropped the configured terminal_tools.
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info("[Tool loop] The %s tool produced the final answer — done.", name)
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                ans += out
+                            self.last_usage = dict(agg_usage)
+                            return ans, tk_count
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
@@ -1898,12 +1938,8 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            gen_conf=gen_conf,
-        )
+        """Copy and filter generation settings before final request construction."""
+        gen_conf = deepcopy(gen_conf) if gen_conf else {}
 
         deepseek_max_tokens = None
         if self.provider == SupportedLiteLLMProvider.DeepSeek:
@@ -1947,6 +1983,7 @@ class LiteLLMBase(ABC):
         return text
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        """Send one non-streaming LiteLLM chat request with normalized settings."""
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
@@ -1954,12 +1991,6 @@ class LiteLLMBase(ABC):
 
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
         gen_conf = self._clean_conf(gen_conf)
-        _, kwargs = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            request_kwargs=kwargs,
-        )
 
         completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
@@ -2437,16 +2468,17 @@ class LiteLLMBase(ABC):
                     # Terminal-tool short-circuit: a terminal tool already
                     # produces the final answer, so stream its result and stop
                     # instead of feeding it back for another LLM round.
-                    _terminal = getattr(self, "terminal_tools", None)
-                    if _terminal:
-                        for tc, name, args, result, err in results:
-                            if name in _terminal and not err:
-                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
-                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-                                if out:
-                                    yield out
-                                yield total_tokens
-                                return
+                    # `rag` is always terminal (dialog_service sets terminal_tools,
+                    # but a probe wrapper may drop it, so default to {"rag"}).
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                yield out
+                            yield total_tokens
+                            return
 
                     history = self._append_history_batch(
                         history,
@@ -2496,11 +2528,19 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
+        """Build the final LiteLLM arguments and apply model policies exactly once."""
+        kwargs, policy_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            gen_conf=kwargs,
+        )
         completion_args = {
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
             **kwargs,
+            **policy_request_kwargs,
         }
         if self.provider == SupportedLiteLLMProvider.Nvidia:
             completion_args["num_retries"] = 0
@@ -2528,7 +2568,9 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
-        if self.provider in FACTORY_DEFAULT_BASE_URL:
+        # OpenRouter is handled separately below because it may add routing
+        # metadata without replacing model-specific fields in extra_body.
+        if self.provider in FACTORY_DEFAULT_BASE_URL and self.provider != SupportedLiteLLMProvider.OpenRouter:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
@@ -2577,6 +2619,7 @@ class LiteLLMBase(ABC):
                 raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            completion_args["api_base"] = self.base_url
             if self.provider_order:
 
                 def _to_order_list(x):
@@ -2588,13 +2631,13 @@ class LiteLLMBase(ABC):
                         return [str(s).strip() for s in x if str(s).strip()]
                     return []
 
-                extra_body = {}
-                provider_cfg = {}
-                provider_order = _to_order_list(self.provider_order)
-                provider_cfg["order"] = provider_order
-                provider_cfg["allow_fallbacks"] = False
-                extra_body["provider"] = provider_cfg
-                completion_args.update({"extra_body": extra_body})
+                extra_body = completion_args.get("extra_body")
+                extra_body = dict(extra_body) if isinstance(extra_body, dict) else {}
+                extra_body["provider"] = {
+                    "order": _to_order_list(self.provider_order),
+                    "allow_fallbacks": False,
+                }
+                completion_args["extra_body"] = extra_body
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
             completion_args.update(
                 {

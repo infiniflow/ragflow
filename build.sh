@@ -37,6 +37,13 @@ PDFIUM_STATIC_VERSION="7809"
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
 PDF_OXIDE_VERSION="0.3.67"
 
+# onnxruntime native library settings — static linking for the in-process
+# (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
+# (--whole-archive + --export-dynamic); OrtGetApiBase is then resolved via
+# dlopen(self), so no libonnxruntime.so is needed at runtime. Downloaded by
+# ragflow_deps/download_deps.py into onnxruntime/static_lib.
+ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
+
 # Copy a dependency from the system pre-seed directory to the user cache.
 # Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
 _seed_from_system() {
@@ -253,6 +260,34 @@ build_cpp() {
         exit 1
     fi
 
+    # Rename the tokenizer's bundled re2 symbols into a private namespace so they
+    # never collide with onnxruntime's copy of re2 at final link time.
+    #
+    # Why this is needed: onnxruntime.a and librag_tokenizer_c_api.a both embed a
+    # copy of re2, but they are built against different toolchains/libstdc++ and
+    # are ABI-incompatible. Symbol-localization approaches (--exclude-libs, linker
+    # version scripts) cannot fix it: both re2 copies must live in the same global
+    # symbol table, and the linker resolves the tokenizer's re2 references to
+    # whichever copy was archived first (here, onnxruntime's), regardless of which
+    # copy is localized. SIGSEGV in re2::DFA::InlinedSearchLoop is the symptom.
+    #
+    # Renaming the tokenizer's re2 symbols into a private prefix gives each copy
+    # its own namespace, so the tokenizer calls its own ABI-compatible re2 and
+    # onnxruntime keeps calling its own. Verified to eliminate the crash.
+    local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
+    local rename_map="$BUILD_DIR/re2_rename.map"
+    if command -v objcopy >/dev/null 2>&1; then
+        nm "$tok_a" \
+            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_ZN3re2|_ZNK3re2|_ZTVN3re2|_ZTIN3re2|_ZTSN3re2/ { print $3" ragtokre2_"$3 }' \
+            | sort -u > "$rename_map"
+        if [ -s "$rename_map" ]; then
+            objcopy --redefine-syms="$rename_map" "$tok_a"
+            echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Warning: objcopy not found, skipping re2 symbol rename (re2 collision with onnxruntime may cause SIGSEGV)${NC}"
+    fi
+
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
 }
 
@@ -322,7 +357,8 @@ build_go() {
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/ragflow_server.go
+        go build -tags cgo "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
+        cmd/ragflow_server.go
 
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
@@ -364,7 +400,8 @@ setup_cgo_env() {
     # cannot merge. Use lld (LLVM linker) which handles them correctly.
     # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
     # staticlibs that embed the Rust runtime; linking them together produces
-    # duplicate rust_eh_personality symbols.
+    # duplicate rust_eh_personality / compiler-rt builtins. Those duplicates are
+    # ABI-IDENTICAL, so merging them is benign.
     if [ "$(uname -s)" = "Linux" ]; then
         if ! command -v ld.lld >/dev/null 2>&1; then
             echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
@@ -375,6 +412,11 @@ setup_cgo_env() {
             ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
             -fuse-ld=lld -Wl,--allow-multiple-definition"
+        # The re2 regex-library collision between onnxruntime.a and
+        # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
+        # the tokenizer's bundled re2 symbols are renamed into a private
+        # namespace (ragtokre2_) so the two re2 copies never share a symbol.
+        # See build_cpp() for details.
     fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
@@ -398,6 +440,80 @@ setup_cgo_env() {
             ;;
     esac
     export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}/libpdf_oxide.a"
+
+    # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
+    # macOS native builds of the in-process DeepDoc backend are not supported:
+    # ONNX Runtime is statically linked with GNU ld flags (--whole-archive /
+    # --export-dynamic) and resolved at runtime via dlopen(NULL); Apple's ld64
+    # does not understand these flags. Build on Linux or cross-compile there.
+    case "$(uname -s)" in
+        Darwin)
+            echo "Error: macOS native build of the in-process DeepDoc backend is not supported." >&2
+            echo "  ONNX Runtime is linked with GNU ld flags (--whole-archive / --export-dynamic)" >&2
+            echo "  and resolved via dlopen(NULL); Apple's ld64 does not support them. Build on Linux." >&2
+            return 1
+            ;;
+    esac
+    # Statically link libonnxruntime*.a into the binary. The forked Go binding
+    # (onnxruntime_go, github.com/xugangqiang/onnxruntime_go) resolves
+    # OrtGetApiBase with dlopen(NULL), so the symbols must (a) be pulled in
+    # wholesale with --whole-archive (ORT registers its execution providers
+    # lazily at runtime, beyond what a normal link would keep) and (b) be
+    # exported with --export-dynamic so the process-global symbol table
+    # dlopen finds them. No libonnxruntime.so is required or supported at
+    # runtime; there is no dynamic .so fallback.
+    #
+    # Seed the static ORT archives from the system pre-bake (/opt, laid down
+    # by the CI runner image) into the user cache before the link check
+    # below. Mirrors the existing _seed_from_system calls for the other
+    # native libs so CI never downloads ORT at build/test time.
+    _seed_from_system "onnxruntime" || true
+    if [ -d "$ONNXRUNTIME_STATIC_PREFIX" ]; then
+        # Collect every .a, but skip GPU-only providers we never build
+        # against (would pull in CUDA/cuDNN/TensorRT which we don't ship).
+        local ort_a=""
+        local seen_version_dir=""
+        while IFS= read -r f; do
+            case "$(basename "$f")" in
+                *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
+            esac
+            # Guard against coexisting stale version dirs: if .a files span
+            # more than one onnxruntime-linux-x64-static_lib-* dir, fail fast
+            # instead of silently linking two ORT versions (duplicate symbols
+            # / wrong version). Re-run `download_deps.py` to prune stale dirs
+            # after a version bump, or remove the old dir by hand.
+            case "$f" in
+                */onnxruntime-linux-x64-static_lib-*/lib/*.a)
+                    local vdir="${f#*/onnxruntime-linux-x64-static_lib-}"
+                    vdir="${vdir%%/*}"
+                    if [ -z "$seen_version_dir" ]; then
+                        seen_version_dir="$vdir"
+                    elif [ "$seen_version_dir" != "$vdir" ]; then
+                        echo "  Error: multiple ONNX Runtime versions found under $ONNXRUNTIME_STATIC_PREFIX" >&2
+                        echo "    $seen_version_dir  AND  $vdir" >&2
+                        echo "  Remove the stale version dir (or re-run download_deps.py to prune it)." >&2
+                        return 1
+                    fi
+                    ;;
+            esac
+            ort_a="$ort_a $f"
+        done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
+
+        if [ -n "$ort_a" ]; then
+            export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--export-dynamic -Wl,--whole-archive$ort_a -Wl,--no-whole-archive -lstdc++"
+            echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
+            # The re2 regex-library collision between onnxruntime.a and
+            # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
+            # the tokenizer's bundled re2 symbols are renamed into a private
+            # namespace (ragtokre2_) so the two re2 copies never share a symbol
+            # name. --export-dynamic is required because OrtGetApiBase is
+            # resolved via dlopen(NULL) at runtime (see the block comment above).
+        else
+            echo "  onnxruntime static_lib dir has no .a files; the in-process DeepDoc backend cannot link ORT" >&2
+        fi
+    else
+        echo "  onnxruntime static_lib not found ($ONNXRUNTIME_STATIC_PREFIX); the in-process DeepDoc backend cannot link ORT" >&2
+    fi
 
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in
@@ -430,6 +546,67 @@ run_go_tests() {
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go test -count=1 "$@"
+
+    run_native_tests
+}
+
+# Run the unit tests of the native package (DeepDoc det/DLA/TSR/OCR-rec Go
+# ports), now a regular package under the MAIN module gated by the `cgo` build
+# tag (same isolation as office_oxide/pdfium). It used to be a nested Go module
+# (own go.mod) that the root `./...` never descended into; after the merge it is
+# covered by the normal module tests. The build is pure-Go geometry plus the
+# cgo onnxruntime binding, so it runs whenever CGO_ENABLED=1 (the same gate the
+# rest of the native C libs use). Model-backed integration tests are handled by
+# run_native_integration_tests.
+run_native_tests() {
+    print_section "Running native unit tests"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags cgo -count=1 ./internal/deepdoc/native/... )
+}
+
+# Run the model-backed integration tests of the native package and the
+# native_analyzer package (the DocAnalyzer the PDF parser consumes). These
+# require MODEL_DIR at runtime; ONNX Runtime is statically linked and resolved
+# via dlopen(NULL), so no ORT_LIB is needed. The tests self-skip when MODEL_DIR
+# is unset or the binary lacks static ORT (see native_integration_test.go
+# skipIfNoModels / native_analyzer_test.go analyzerWithModels). Run under the
+# `cgo integration` tier.
+#
+# Why -race is split instead of applied to the whole suite:
+# - The DLA/TSR/OCR-rec/Det golden-comparison tests are single-threaded and
+#   deterministic. -race multiplies their (model-heavy) heap ~10x for ZERO
+#   race-detection value, and that is what used to OOM-kill the runner
+#   (SIGTERM) under `cgo integration`. So they run WITHOUT -race.
+# - Only the concurrency-correctness tests (TestInferenceConcurrency* in the
+#   native package, and native_analyzer's TestAnalyzerConcurrentBatchAndSingle)
+#   actually benefit from -race: they hammer the shared session pools from many
+#   goroutines, and the detector catches data races on the pools / per-session
+#   in-out tensors / cross-call batch state. Those run WITH -race.
+# ORT's C internals are not instrumented, but all our shared mutable state lives
+# in Go, which the detector covers. CGO_ENABLED=1 is required for both the build
+# and the race runtime.
+run_native_integration_tests() {
+    print_section "Running native integration tests (golden/comparison, no race)"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags "cgo integration fetch_testdata" -count=1 ./internal/deepdoc/native/... )
+
+    print_section "Running native integration concurrency tests (race detector on)"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags "cgo integration fetch_testdata" -race -count=1 \
+      -run 'TestInferenceConcurrency' ./internal/deepdoc/native/... )
+
+    print_section "Running native_analyzer race tests (race detector on)"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags "cgo integration fetch_testdata" -race -count=1 \
+      ./internal/deepdoc/parser/pdf/inference/native_analyzer/... )
 }
 
 # Run Go tests gated behind a build tag (or space-separated tag list), e.g.
@@ -522,6 +699,10 @@ OPTIONS:
     --test-manual        Run Go tests tagged 'manual' (very slow; local opt-in
                     ONLY, never run in CI).
     --test-all           Run 'integration' + 'e2e' tests (excludes 'manual').
+    --test-native        Run the in-process (Go) DeepDoc backend tests tagged
+                    'cgo integration' (needs libonnxruntime + the
+                    InfiniFlow/deepdoc model snapshot; self-skip otherwise).
+                    e.g. `$0 --test-native`
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
@@ -594,6 +775,7 @@ main() {
             else
                 run_go_tests_tagged integration "${args[@]:1}"
             fi
+            run_native_integration_tests
             ;;
         --test-e2e)
             check_go_deps
@@ -618,6 +800,19 @@ main() {
             else
                 run_go_tests_tagged "integration e2e" "${args[@]:1}"
             fi
+            ;;
+        --test-native)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                pkgs=("${args[@]:2}")
+            else
+                pkgs=("${args[@]:1}")
+            fi
+            if [ "${#pkgs[@]}" -eq 0 ]; then
+                pkgs=(./internal/deepdoc/parser/pdf/inference/native_analyzer/...)
+            fi
+            run_go_tests_tagged "cgo integration" "${pkgs[@]}"
+            run_native_integration_tests
             ;;
         --clean|-C)
             clean

@@ -514,7 +514,7 @@ async def search_datasets(tenant_id):
 
     POST /api/v1/datasets/search
     JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "page_size": int, "size": int (fallback),
-               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
+               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool, "highlight": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
     "knn_num_candidates" currently applies only to Elasticsearch.

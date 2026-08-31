@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import {
   useFetchAgent,
   useResetAgent,
@@ -9,10 +10,60 @@ import {
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
+import { t } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { Operator } from '../constant';
+import { FormSchema as ParserFormSchema } from '../form/parser-form';
 import useGraphStore from '../store';
+import { getEmptyMessageNodeNames } from '../utils';
 import { useBuildDslData } from './use-build-dsl';
+
+/**
+ * A node's form only validates while its panel is mounted, so bad values can
+ * sit in the store long after the user has moved on. Re-check them against the
+ * same schema before persisting, but only for nodes the user actually edited —
+ * a node still carrying stale DSL from an older version must not wedge saving.
+ */
+function findInvalidNode(nodes: RAGFlowNodeType[], editedNodeIds: string[]) {
+  return nodes.find(
+    (node) =>
+      editedNodeIds.includes(node.id) &&
+      node.data?.label === Operator.Parser &&
+      !ParserFormSchema.safeParse(node.data?.form).success,
+  );
+}
+
+export const useValidateNodeForms = () => {
+  const { t } = useTranslation();
+  const nodes = useGraphStore((state) => state.nodes);
+  const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
+
+  const getInvalidNode = useCallback(
+    (currentNodes?: RAGFlowNodeType[]) =>
+      findInvalidNode(currentNodes ?? nodes, editedNodeFormIds),
+    [editedNodeFormIds, nodes],
+  );
+
+  // Only the entry points the user drives explicitly should warn; autosave and
+  // publish stay silent and just skip the write.
+  const notifyIfInvalid = useCallback(
+    (currentNodes?: RAGFlowNodeType[]) => {
+      const invalidNode = getInvalidNode(currentNodes);
+      if (invalidNode) {
+        message.warning(
+          t('flow.nodeFormInvalid', { name: invalidNode.data?.name }),
+        );
+        return false;
+      }
+      return true;
+    },
+    [getInvalidNode, t],
+  );
+
+  return { getInvalidNode, notifyIfInvalid };
+};
 
 export const useSaveGraph = (
   showMessage: boolean = true,
@@ -22,6 +73,7 @@ export const useSaveGraph = (
   const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
+  const { getInvalidNode } = useValidateNodeForms();
 
   const saveGraph = useCallback(
     async (
@@ -33,6 +85,26 @@ export const useSaveGraph = (
     ) => {
       if (!id) {
         return;
+      }
+
+      if (getInvalidNode(currentNodes)) {
+        return;
+      }
+
+      // Warn about Message components with empty content at save time; the
+      // canvas only fails on them when the agent runs otherwise (backend
+      // MessageParam.check() rejects empty content). Advisory only — the save
+      // itself proceeds. Autosave/publish (showMessage=false) stay silent to
+      // avoid nagging toasts.
+      if (showMessage) {
+        const emptyMessageNodeNames = getEmptyMessageNodeNames(
+          currentNodes ?? useGraphStore.getState().nodes,
+        );
+        if (emptyMessageNodeNames.length > 0) {
+          message.warning(
+            `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
+          );
+        }
       }
 
       const params: Record<string, any> = {
@@ -47,7 +119,7 @@ export const useSaveGraph = (
 
       return setAgent(params);
     },
-    [setAgent, data, id, buildDslData],
+    [id, getInvalidNode, showMessage, data.title, buildDslData, setAgent],
   );
 
   return { saveGraph, loading };
@@ -56,9 +128,14 @@ export const useSaveGraph = (
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetAgent } = useResetAgent();
+  const { notifyIfInvalid } = useValidateNodeForms();
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
+      if (!notifyIfInvalid(nextNodes)) {
+        return;
+      }
+
       const saveRet = await saveGraph(nextNodes);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
@@ -69,7 +146,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         }
       }
     },
-    [saveGraph, resetAgent, show],
+    [notifyIfInvalid, saveGraph, resetAgent, show],
   );
 
   return { handleRun, loading };

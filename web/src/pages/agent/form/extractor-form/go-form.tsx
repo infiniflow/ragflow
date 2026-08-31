@@ -21,6 +21,7 @@ import {
 import { Collapse } from '@/components/collapse';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { AsyncTreeSelect } from '@/components/ui/async-tree-select';
@@ -92,6 +93,8 @@ export const FormSchema = z.object({
     })
     .optional(),
   ...LlmSettingSchema,
+  // No required mark on the model field — an LLM is optional for extraction.
+  llm_id: z.string().optional(),
 });
 
 export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
@@ -191,6 +194,7 @@ const GoExtractorForm = ({
   node,
   onValuesChange,
   hideOutputs,
+  externalErrors,
 }: INextOperatorForm) => {
   const defaultValues = useNormalizedExtractorFormValues(node);
   const { t } = useTranslation();
@@ -198,7 +202,10 @@ const GoExtractorForm = ({
   const form = useForm<ExtractorFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
@@ -307,6 +314,7 @@ const GoExtractorForm = ({
                 max={10}
                 defaultValue={0}
                 layout={FormLayout.Vertical}
+                integer
               />
               <RAGFlowFormItem
                 label={t('flow.tagFile')}
@@ -327,7 +335,7 @@ const GoExtractorForm = ({
 
           <Collapse
             title={t('flow.summary')}
-            defaultOpen={summaryEnabled}
+            defaultOpen
             rightContent={
               <Switch
                 checked={summaryEnabled}
@@ -350,7 +358,7 @@ const GoExtractorForm = ({
 
           <Collapse
             title={t('flow.metadata')}
-            defaultOpen={metadataEnabled}
+            defaultOpen
             rightContent={
               <Switch
                 checked={metadataEnabled}

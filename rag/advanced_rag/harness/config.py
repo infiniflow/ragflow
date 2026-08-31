@@ -1,112 +1,133 @@
-"""Thinking mode configurations."""
+"""Thinking-mode configuration: the single authority for mode behaviour.
 
-from rag.advanced_rag.harness.types import ExecutionStrategy
+Every mode-dependent decision in the harness reads from this module instead of
+re-deriving it from a ``thinking_mode`` string. The decisions that used to be
+hard-coded in four places are:
 
-THINKING_MODES: dict[str, ExecutionStrategy] = {
-    "low": ExecutionStrategy(
+=====================  ==========================================  =========================
+decision                previously hard-coded in                    now
+=====================  ==========================================  =========================
+graph + SCA + fanout   ``agentic_rag_graph.run_agentic_rag``       ``ModeSpec.graph`` /
+                                                                   ``enable_sca`` /
+                                                                   ``use_fanout``
+SCA iteration budget   ``agentic_rag_graph.build_agentic_graph``   ``sca_max_rounds``
+tool surface           ``action_session._active_tool_specs``       ``tools``
+session turn budget    ``action_session._action_max_turns``        ``action_max_turns``
+=====================  ==========================================  =========================
+
+The values below reproduce the previous behaviour exactly, so this is a
+structural change only — tune a mode by editing one table.
+
+Unknown labels: ``resolve_mode`` falls back to ``NAIVE`` rather than raising.
+The mode comes from user input at request time, and raising would fail the whole
+request; a naive (non-agentic) answer degrades gracefully instead.
+"""
+
+from dataclasses import dataclass, field
+
+# Tools the action session can bind, in the order they are declared. Kept here
+# so a mode's tool set is data, not an if-chain in the runtime.
+_ALL_TOOLS = (
+    "retrieve",
+    "search_chunks",
+    "list_chunks",
+    "navigate_tree",
+    "navigate_structure",
+    "calculate",
+    "web_search",
+)
+# Relational exploration is the extra depth reserved for ultra.
+_GRAPH_EXPLORE = "graph_explore"
+
+
+@dataclass(frozen=True)
+class ModeSpec:
+    """Everything that varies between thinking modes.
+
+    :param label: the mode's own name.
+    :param agentic: run the agentic graph. When False the caller must answer
+        without it (naive retrieval) — see :data:`NAIVE`.
+    :param enable_sca: run the sufficiency-check review loop.
+    :param sca_max_rounds: SCA→rewriter iteration budget (0 when disabled).
+    :param use_fanout: planner + prefetch decomposition (multi-slot research).
+    :param action_max_turns: turns inside one action session.
+    :param tools: tool names visible to the model in this mode. Empty means the
+        model gets no tool loop at all.
+    """
+
+    label: str
+    agentic: bool = True
+    enable_sca: bool = True
+    sca_max_rounds: int = 3
+    use_fanout: bool = False
+    action_max_turns: int = 4
+    tools: frozenset[str] = field(default_factory=lambda: frozenset(_ALL_TOOLS))
+
+
+def _tools(*names: str) -> frozenset[str]:
+    return frozenset(names)
+
+
+THINKING_MODES: dict[str, ModeSpec] = {
+    # low: one hybrid-search pass through ``direct_search``. No action session,
+    # so no tool loop — the model never sees tools in this mode.
+    "low": ModeSpec(
         label="low",
-        execution_strategy="direct_search",
-        requires_decomposition=False,
-        requires_agent_loop=False,
-        requires_sufficiency_judge=False,
-        requires_selective_gen=False,
-        allows_dynamic_claims=False,
-        allows_replan=False,
-        max_orchestrator_cycles=1,
-        max_agent_cycles=0,
-        max_parallel_agents=1,
-        available_tools=["hybrid_search", "web_search", "bm25_search"],
-        sufficiency_threshold=0.85,
-        fallback_to_direct_llm=False,
+        agentic=False,
+        enable_sca=False,
+        sca_max_rounds=0,
+        use_fanout=False,
+        action_max_turns=4,
+        tools=frozenset(),
     ),
-    "medium": ExecutionStrategy(
+    # medium: agentic, SCA review on, no planner decomposition.
+    "medium": ModeSpec(
         label="medium",
-        execution_strategy="decompose_and_search",
-        requires_decomposition=True,
-        requires_agent_loop=False,
-        requires_sufficiency_judge=True,
-        requires_selective_gen=True,
-        allows_dynamic_claims=False,
-        allows_replan=False,
-        max_orchestrator_cycles=3,
-        max_agent_cycles=0,
-        max_parallel_agents=1,
-        available_tools=["hybrid_search", "web_search", "bm25_search"],
-        sufficiency_threshold=0.75,
-        fallback_to_direct_llm=False,
-        c_high=0.75,
-        c_low=0.45,
-        llm_floor=0.55,
-        allows_reconcile=False,
+        action_max_turns=4,
+        sca_max_rounds=3,
+        use_fanout=False,
+        tools=_tools(*_ALL_TOOLS),
     ),
-    "high": ExecutionStrategy(
+    # high: adds planner + prefetch fan-out over the same tool surface.
+    "high": ModeSpec(
         label="high",
-        execution_strategy="agentic_research",
-        requires_decomposition=True,
-        requires_agent_loop=False,
-        requires_sufficiency_judge=True,
-        requires_selective_gen=True,
-        allows_dynamic_claims=False,
-        allows_replan=False,
-        max_orchestrator_cycles=3,
-        max_agent_cycles=2,
-        max_parallel_agents=4,
-        available_tools=[
-            "hybrid_search",
-            "web_search",
-            "bm25_search",
-            "ontology_navigate",
-            "dataset_navigation_search",
-            "graph_explore",
-            "inspector_open_context",
-            "inspector_compare",
-        ],
-        sufficiency_threshold=0.65,
-        fallback_to_direct_llm=False,
-        c_high=0.70,
-        c_low=0.40,
-        llm_floor=0.50,
-        allows_reconcile=True,
+        action_max_turns=4,
+        sca_max_rounds=3,
+        use_fanout=True,
+        tools=_tools(*_ALL_TOOLS),
     ),
-    "ultra": ExecutionStrategy(
+    # ultra: deeper sessions, more SCA rounds, and the relational tool.
+    "ultra": ModeSpec(
         label="ultra",
-        execution_strategy="deep_research",
-        requires_decomposition=True,
-        requires_agent_loop=True,
-        requires_sufficiency_judge=True,
-        requires_selective_gen=True,
-        allows_dynamic_claims=True,
-        allows_replan=True,
-        max_orchestrator_cycles=4,
-        max_agent_cycles=2,
-        max_parallel_agents=4,
-        available_tools=[
-            "hybrid_search",
-            "bm25_search",
-            "web_search",
-            "structured_query",
-            "ontology_navigate",
-            "dataset_navigation_search",
-            "mindmap_navigate",
-            "graph_explore",
-            "wiki_query",
-            "inspector_open_context",
-            "inspector_compare",
-            "inspector_grep_within",
-            "inspector_request_adjacent",
-        ],
-        sufficiency_threshold=0.55,
-        fallback_to_direct_llm=True,
-        c_high=0.65,
-        c_low=0.35,
-        llm_floor=0.45,
-        allows_reconcile=True,
+        action_max_turns=6,
+        sca_max_rounds=5,
+        use_fanout=True,
+        tools=_tools(*_ALL_TOOLS, _GRAPH_EXPLORE),
     ),
 }
 
+#: Fallback for an unrecognised mode label. Not agentic — the caller answers
+#: with plain retrieval rather than failing the request.
+NAIVE = ModeSpec(
+    label="naive",
+    agentic=False,
+    enable_sca=False,
+    sca_max_rounds=0,
+    use_fanout=False,
+    action_max_turns=4,
+    tools=frozenset(),
+)
 
-def get_mode(label: str) -> ExecutionStrategy:
-    mode = THINKING_MODES.get(label)
-    if not mode:
-        raise ValueError(f"Unknown thinking mode: {label}. Available: {list(THINKING_MODES.keys())}")
-    return mode
+
+def get_mode(label: str) -> ModeSpec:
+    """Return the spec for ``label``.
+
+    Unknown labels fall back to :data:`NAIVE` (non-agentic) — the label arrives
+    from user input, and raising here would fail the request outright.
+    """
+    return THINKING_MODES.get(str(label or "").strip().lower(), NAIVE)
+
+
+def resolve_mode(tools) -> ModeSpec:
+    """Read a ``RAGTools``-like object's ``thinking_mode`` into its spec."""
+    return get_mode(getattr(tools, "thinking_mode", ""))

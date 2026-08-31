@@ -3,10 +3,10 @@ package pdf
 import (
 	"fmt"
 	"image"
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"strings"
 	"testing"
 )
@@ -452,7 +452,7 @@ func TestMockDocAnalyzer_OCRDetectError_DoesNotCrash(t *testing.T) {
 	// Parse should succeed — the page with OCRDetect error is just skipped.
 }
 
-// TestTSRLabels verifies Go inf.DefaultTSRLabels() matches Python's table_structure_recognizer.py labels.
+// TestTSRLabels verifies Go doctype.DefaultTSRLabels() matches Python's table_structure_recognizer.py labels.
 // Order must be exact — the ONNX model returns class IDs that index into this array.
 func TestTSRLabels(t *testing.T) {
 	want := []string{
@@ -460,12 +460,12 @@ func TestTSRLabels(t *testing.T) {
 		"table column header", "table projected row header",
 		"table spanning cell",
 	}
-	if len(inf.DefaultTSRLabels()) != len(want) {
-		t.Fatalf("inf.DefaultTSRLabels() length %d, want %d", len(inf.DefaultTSRLabels()), len(want))
+	if len(doctype.DefaultTSRLabels()) != len(want) {
+		t.Fatalf("doctype.DefaultTSRLabels() length %d, want %d", len(doctype.DefaultTSRLabels()), len(want))
 	}
 	for i := range want {
-		if inf.DefaultTSRLabels()[i] != want[i] {
-			t.Errorf("inf.DefaultTSRLabels()[%d] = %q, want %q", i, inf.DefaultTSRLabels()[i], want[i])
+		if doctype.DefaultTSRLabels()[i] != want[i] {
+			t.Errorf("doctype.DefaultTSRLabels()[%d] = %q, want %q", i, doctype.DefaultTSRLabels()[i], want[i])
 		}
 	}
 }

@@ -138,19 +138,20 @@ def message_fit_in(msg, max_length=4000):
 
 
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
-    knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
+    chunks = kbinfos["chunks"]
+    knowledges = [get_value(ck, "content", "content_with_weight") for ck in chunks]
     kwlg_len = len(knowledges)
     used_token_count = 0
-    chunks_num = 0
-    for i, c in enumerate(knowledges):
+    selected_chunks = []
+    for ck, c in zip(chunks, knowledges):
         if not c:
             continue
-        used_token_count += num_tokens_from_string(c)
-        chunks_num += 1
-        if max_tokens * 0.97 < used_token_count:
-            knowledges = knowledges[:i]
-            logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
+        chunk_tokens = num_tokens_from_string(c)
+        if max_tokens * 0.97 < used_token_count + chunk_tokens:
+            logging.warning(f"Not all the retrieval into prompt: {len(selected_chunks)}/{kwlg_len}")
             break
+        used_token_count += chunk_tokens
+        selected_chunks.append(ck)
 
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
@@ -160,7 +161,7 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
         return f"\n├── {k}: " + re.sub(r"\n+", " ", line, flags=re.DOTALL)
 
     knowledges = []
-    for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
+    for i, ck in enumerate(selected_chunks):
         cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 500))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
         cnt += draw_node("URL", ck.get("url", ""))
@@ -291,7 +292,11 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
 async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import resolve_model_config, get_tenant_default_model_by_type, resolve_model_type
+    from api.db.joint_services.tenant_model_service import (
+        get_tenant_default_model_by_type,
+        resolve_model_config,
+        resolve_model_type,
+    )
 
     if llm_id and "vision" in resolve_model_type(tenant_id, llm_id):
         chat_model_config = resolve_model_config(tenant_id, LLMType.VISION, llm_id)

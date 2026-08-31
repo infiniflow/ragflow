@@ -160,7 +160,7 @@ def num_tokens_from_string(string: str) -> int:
     # rather than be reported as a zero-token string by the guard below.
     enc = get_encoder()
     try:
-        code_list = enc.encode(string)
+        code_list = enc.encode(string, disallowed_special=())
         return len(code_list)
     except Exception:
         return 0
@@ -217,4 +217,4 @@ def total_token_count_from_response(resp):
 def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     enc = get_encoder()
-    return enc.decode(enc.encode(string)[:max_len])
+    return enc.decode(enc.encode(string, disallowed_special=())[:max_len])

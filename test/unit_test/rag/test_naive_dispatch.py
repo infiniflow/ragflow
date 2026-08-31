@@ -221,6 +221,7 @@ def naive_module():
             naive_merge_with_images=lambda *a, **k: [],
             naive_merge_docx=lambda *a, **k: [],
             tokenize_chunks=lambda *a, **k: [],
+            tokenize_chunks_with_positions=lambda *a, **k: [],
             doc_tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_table=lambda *a, **k: [],
@@ -374,3 +375,29 @@ def test_dispatch_uses_resolved_layout_recognize_via_override_for_opendataloader
     assert name == "opendataloader"
     assert parser is _ByOpenDataLoader
     assert op_name == resolved
+
+
+def test_merge_excel_items_keeps_sheets_separate(naive_module):
+    items = [
+        ("a b", (0, 2, 2, 1, 2)),
+        ("c d", (0, 3, 3, 1, 2)),
+        ("e f", (1, 2, 2, 1, 3)),
+    ]
+    merged = naive_module._merge_excel_items(items, chunk_token_num=10)
+    assert [pos for _, pos in merged] == [(0, 2, 3, 1, 2), (1, 2, 2, 1, 3)]
+    assert merged[0][0] == "a b\nc d"
+
+
+def test_merge_excel_items_splits_on_token_budget(naive_module):
+    items = [
+        ("one two", (0, 2, 2, 1, 1)),
+        ("three four", (0, 3, 3, 1, 1)),
+    ]
+    merged = naive_module._merge_excel_items(items, chunk_token_num=2)
+    assert [pos for _, pos in merged] == [(0, 2, 2, 1, 1), (0, 3, 3, 1, 1)]
+
+
+def test_merge_excel_items_passthrough_when_budget_disabled(naive_module):
+    items = [("a", (0, 2, 2, 1, 1)), ("b", (0, 3, 3, 1, 1))]
+    assert naive_module._merge_excel_items(items, chunk_token_num=0) == items
+    assert naive_module._merge_excel_items([], chunk_token_num=128) == []

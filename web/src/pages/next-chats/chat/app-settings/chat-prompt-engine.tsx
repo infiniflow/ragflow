@@ -223,15 +223,15 @@ export function ChatPromptEngine({
         ></RerankCandidatesCountFormField>
         <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
 
+        <RerankFormFields prefix={prefix}></RerankFormFields>
+        <CrossLanguageFormField
+          name={prefixName(prefix, 'prompt_config.cross_languages')}
+        ></CrossLanguageFormField>
         <SwitchFormField
           name={prefixName(prefix, 'prompt_config.refine_multiturn')}
           label={t('chat.multiTurn')}
           tooltip={t('chat.multiTurnTip')}
         ></SwitchFormField>
-        <RerankFormFields prefix={prefix}></RerankFormFields>
-        <CrossLanguageFormField
-          name={prefixName(prefix, 'prompt_config.cross_languages')}
-        ></CrossLanguageFormField>
         <DynamicVariableForm
           name={prefixName(prefix, 'prompt_config.parameters')}
         ></DynamicVariableForm>

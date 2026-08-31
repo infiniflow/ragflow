@@ -46,7 +46,9 @@ from common import settings
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _split_think_stream
+from rag.advanced_rag.harness.keywords import extract_weighted_keywords
 from rag.advanced_rag.harness.stats import CountingChatModel, LLMUsageStats, in_phase, using_stats
+from rag.advanced_rag.harness.tools.search import _compact_keywords
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -150,6 +152,29 @@ _RAG_CACHE_STOPWORDS = frozenset(
 )
 
 
+def _resolve_effective_question(question: str, original_user_question: str) -> str:
+    """Prefer the user's ORIGINAL, complete question over the outer model's
+    rewritten `question` argument, but only when the two are clearly the SAME
+    user turn (>=2 shared significant keywords). The outer smart agent's rewrite
+    frequently drops the FINAL target of a multi-hop question (Q317 lost the
+    purchaser's death date, Q305 lost the "shortest abbreviation" attribute) by
+    compressing to the first hop; using the lossy rewrite means the inner graph
+    answers a question whose answer-attribute was deleted, and no planner /
+    sufficiency fix can recover it. Keyword-overlap guards against a genuine
+    multi-turn re-ask for a DIFFERENT question, which must keep its own query.
+    """
+    if not question or not original_user_question:
+        return question or ""
+    _oq = (original_user_question or "").strip()
+    if not _oq:
+        return question
+    _qk = set(_question_keywords(question)[0])
+    _ok = set(_question_keywords(_oq)[0])
+    if _qk and _ok and len(_qk & _ok) >= 2:
+        return _oq
+    return question
+
+
 def _question_keywords(question: str) -> tuple[set[str], set[str]]:
     """(significant words, numeric tokens) of a question.
 
@@ -208,9 +233,20 @@ class RAGTools:
         do_refer: bool | None = True,
         thinking_mode: str = "medium",
         text_attachments_content: str = "",
+        original_user_question: str = "",
         system_prompt: str = "",
     ):
         self.tenant_ids = tenant_ids
+        # The user's ORIGINAL, complete question as received from the chat layer
+        # (before the outer smart agent may have rewritten/compressed it). The
+        # outer LLM's `rag(question=...)` argument is model-generated and
+        # frequently drops the FINAL target of a multi-hop question (Q317 lost
+        # the purchaser's death, Q305 lost the "shortest abbreviation" attribute)
+        # because it compresses the question to the first hop. When this original
+        # is available and this is the same user turn, the `rag` tool must use it
+        # instead of the model-rewritten argument, so the inner graph never
+        # answers a question whose answer-attribute was silently deleted.
+        self.original_user_question = original_user_question
         # P0 instrumentation: count LLM calls / token usage per harness phase.
         # The wrapper proxies every ``async_chat*`` entry point (and ``clone``)
         # of the bundle, keeping the rest of the harness untouched.
@@ -265,6 +301,15 @@ class RAGTools:
         # threshold (≥0.85 n-gram Jaccard) so near-identical phrasing is caught
         # without confusing genuinely different questions.
         self._rag_cache: dict[str, tuple[str, set[str]]] = {}
+        # Sufficiency verdict of the most recent agentic-graph run, used by the outer
+        # loop (via `rag`) to decide whether to re-run research and how to rephrase
+        # the next question. Set in run_agentic_rag.
+        self._rag_verdict: dict | None = None
+        # Outer-loop guardrail: count of consecutive rag calls that ended
+        # UNANSWERABLE / INSUFFICIENT (evidence conflicts or missing). Once this
+        # exceeds a threshold, `rag` tells the outer LLM to stop re-running, so we
+        # keep the outer loop's question-rewrite value while bounding useless retries.
+        self._consecutive_unanswerable = 0
 
         # Per-request retrieval cache keyed by the effective query + scope, so
         # the same question is never retrieved twice within one turn (e.g.
@@ -330,6 +375,16 @@ class RAGTools:
             "After the `rag` tool returns, do not call `rag` again for the same "
             "user question. Use the returned cited answer as the final answer "
             "unless the user explicitly asks a new question.\n"
+            "CRITICAL — preserve the full multi-hop structure when phrasing the "
+            "`rag` question. A question that compares two or more DISTINCT "
+            'targets or needs an arithmetic result across them ("how much taller '
+            'is X than Y", "how many days after A\'s death did B die", "which of '
+            'these was discovered last") MUST keep every target and relation in '
+            "the question you pass to `rag`. Never rewrite a comparison into a "
+            "single-entity question — dropping the second entity (e.g. the "
+            'purchaser in "how many days after his death did the man who '
+            'purchased it in 1933 die") makes the pipeline answer only the first '
+            "part. Pass the complete comparison.\n"
             f"{summarize_line}"
             "Do not invent facts and do not fabricate document IDs."
         )
@@ -370,21 +425,31 @@ class RAGTools:
             lines.append(f"{prefix}: {content}")
         transcript = "\n".join(lines)
 
+        user_msgs = [m for m in messages if (isinstance(m, str) or m.get("role", "user") == "user")]
+        multi_turn = len(user_msgs) > 1
+        if not multi_turn and last_user:
+            _LOG.info("[Formalize] Single-turn self-contained question — kept verbatim (no rewrite): %s", last_user.strip()[:120])
+            try:
+                keywords = await self.extract_keywords(last_user)
+            except Exception as exc:
+                _LOG.info("[Formalize] extract_keywords failed for single-turn question: %s", exc)
+                keywords = ""
+            return last_user.strip(), keywords
+
         system = (
             "You are given a conversation. Do BOTH of the following and return JSON only:\n"
             "1. Rewrite the LAST user message into a single, self-contained question that can be "
-            "understood without seeing the prior conversation — resolve pronouns, ellipses and "
-            "follow-up shortcuts using earlier turns. Preserve the original language of the last "
-            "user message. If it is already a complete standalone question, keep it unchanged.\n"
-            "2. Extract keywords ONLY from the wording of the STANDALONE QUESTION itself — the "
-            "salient content words and phrases that literally appear in it (key nouns, named "
-            "entities, domain terms). Do NOT answer the question, and do NOT include any term that "
-            "would be part of the answer or is not present in the question. Then, for each extracted "
-            "term, you MAY add 1-2 close synonyms or alternative phrasings OF THAT SAME TERM. Output "
-            "them all together as one comma-separated list, in the SAME language as the question.\n"
-            '   Example — question "In which year did Apple acquire Beats?": keywords = '
-            '"Apple, Apple Inc., acquire, acquisition, Beats" (terms from the question + synonyms; '
-            "the year is the ANSWER, so it must NOT appear).\n\n"
+            "understood without the prior conversation — resolve pronouns, ellipses and follow-up "
+            "shortcuts using the earlier turns. In most cases, it should be EXACTLY THE SAME as the "
+            "last user query — only rewrite when there is something to resolve (a pronoun/ellipsis "
+            "pointing back at an earlier turn). Preserve the original language.\n"
+            "2. Extract keywords for a keyword search: the salient content words and phrases that "
+            "literally appear in the (standalone) question — key nouns, named entities, domain "
+            "terms — PLUS 2-3 close synonyms/abbreviations/aliases/alternative spellings of each, "
+            "in the SAME language as the question. Maximize recall. Do NOT include terms that would "
+            "be part of the answer.\n"
+            '   Example — "In which year did Apple acquire Beats?" -> keywords = "Apple, Apple '
+            'Inc., AAPL, acquire, acquisition, acquired, Beats, Beats Electronics".\n\n'
             "Output ONLY JSON, no prose, no code fences: "
             '{"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}'
         )
@@ -408,11 +473,16 @@ class RAGTools:
             # Fall back to the raw last user message rather than an empty question.
             question = (last_user or "").strip()
 
+        # Multi-turn: keywords come from the SAME single LLM call (the JSON above
+        # outputs both question and keywords) — no second LLM round-trip.
         keywords = data.get("keywords") or ""
         if isinstance(keywords, list):
             keywords = ", ".join(str(k).strip() for k in keywords if str(k).strip())
         keywords = str(keywords).strip()
-        return question, keywords
+        # Same source-level compacting as extract_keywords: the multi-turn
+        # formalize prompt asks for synonyms/aliases per term, which models over-
+        # answer with a long redundant run. Cap + dedupe so it stays a hint.
+        return question, _compact_keywords(keywords)
 
     async def pick_documents(self, question: str) -> list[str] | None:
         """Narrow the search to a document subset for ``question``.
@@ -442,8 +512,8 @@ class RAGTools:
             return []
         logic = filters.get("logic", "and")
         try:
-            doc_ids = await thread_pool_exec(
-                DocMetadataService.filter_doc_ids_by_meta_pushdown,
+            # peewee MySQL lookup — call directly to reuse the pool's connection.
+            doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(
                 self.kb_ids,
                 conditions,
                 logic,
@@ -454,7 +524,8 @@ class RAGTools:
         return doc_ids or []
 
     async def _select_by_titles(self, question: str, max_docs: int = 512) -> list[str]:
-        docs = await thread_pool_exec(self._collect_doc_titles, max_docs)
+        # peewee MySQL lookup — call directly to reuse the pool's connection.
+        docs = self._collect_doc_titles(max_docs)
         if not docs:
             return []
 
@@ -484,32 +555,27 @@ class RAGTools:
         known = {doc_id for doc_id, _ in docs}
         return [doc_id for doc_id in ids if isinstance(doc_id, str) and doc_id in known]
 
+    async def _extract_keywords_weighted(self, question: str) -> tuple[str, str]:
+        """Extract FOUR weighted keyword aspects for ``question``.
+
+        Returns ``(query, keywords)``: ``query`` is the entity-weighted search
+        string (entity terms repeated x3 so BM25 weights them up, other aspects
+        once), ``keywords`` is the plain deduped union used to narrow retrieved
+        chunks. Thin wrapper over ``harness.keywords.extract_weighted_keywords``.
+        """
+        return await extract_weighted_keywords(self.chat_mdl, question)
+
     async def extract_keywords(self, question: str) -> str:
-        """Produce a compact keyword string (terms + a few close synonyms).
+        """Produce a compact keyword string (the deduped union of the four
+        weighted aspects, plus close synonyms).
 
         Replaces the keywords the outer LLM used to hand to the retrieval
         tool. Falls back to the question itself when extraction fails.
         """
         if not question:
             return ""
-        system = (
-            "Extract the search terms for a knowledge-base query from the "
-            "question below. Output 3-8 of the most important content terms, "
-            "plus 1-2 close synonyms or alternative phrasings for any ambiguous "
-            "term. Single words or short noun phrases, space-separated, in the "
-            "SAME language as the question. Output ONLY the terms — no labels, "
-            "no punctuation lists, no explanation."
-        )
-        try:
-            _, msg = message_fit_in(form_message(system, question), self.chat_mdl.max_length)
-            ans = await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.2})
-            if isinstance(ans, tuple):
-                ans = ans[0]
-            ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL).strip()
-        except Exception:
-            logging.exception("extract_keywords failed")
-            ans = ""
-        return ans or question
+        _weighted, union = await self._extract_keywords_weighted(question)
+        return _compact_keywords(union)
 
     async def retrieve(
         self,
@@ -537,7 +603,8 @@ class RAGTools:
             return {"chunks": [], "doc_aggs": []}
         if doc_scope:
             candidates = [d for d in doc_scope if isinstance(d, str)]
-            known = await thread_pool_exec(self._filter_known_doc_ids, candidates)
+            # peewee MySQL lookup — call directly to reuse the pool's connection.
+            known = self._filter_known_doc_ids(candidates)
             valid = [d for d in candidates if d in known]
             if valid:
                 doc_scope = valid
@@ -666,7 +733,8 @@ class RAGTools:
             return {"chunks": [], "doc_aggs": []}
         if self.doc_scope is not None and doc_id not in self.doc_scope:
             return {"chunks": [], "doc_aggs": []}
-        resolved = await thread_pool_exec(self._resolve_doc_tenant, doc_id)
+        # peewee MySQL lookup — call directly to reuse the pool's connection.
+        resolved = self._resolve_doc_tenant(doc_id)
         if resolved is None:
             logging.warning(f"fetch_full_document: doc_id {doc_id!r} not in any bound KB — refusing to fetch")
             return {"chunks": [], "doc_aggs": []}
@@ -733,18 +801,43 @@ class RAGTools:
             # the cache (their content is appended to the question message below).
             if question and not self.text_attachments_content:
                 qk = _question_keywords(question)
-                if self._rag_cache:
+                # If the last research round was not sufficient, do not reuse a cached
+                # (similarly-worded) answer — the outer loop asked again because it
+                # needs more evidence, so re-run the graph instead of returning the
+                # same incomplete answer (Google "iteration" phase).
+                last_status = ""
+                v = getattr(self, "_rag_verdict", None)
+                if isinstance(v, dict):
+                    last_status = str(v.get("status") or "")
+                _cache_ok = not last_status or last_status == "SUFFICIENT"
+                if _cache_ok and self._rag_cache:
                     for cached_q, (cached_answer, cached_gram) in list(self._rag_cache.items()):
                         if cached_gram and _cache_similar(qk, cached_gram):
                             shared = len(qk[0] & cached_gram[0])
                             _LOG.info("[Agentic RAG] Cache hit — reused prior answer for near-identical question %r (%d shared words); skipped research.", question, shared)
                             return cached_answer
 
-            messages = [{"role": "user", "content": question}] if question else []
+            # Prefer the user's ORIGINAL, complete question over the outer model's
+            # rewritten `question` argument (same-turn only). See
+            # `_resolve_effective_question` for the rationale — the outer rewrite
+            # drops the FINAL target of multi-hop questions (Q317 purchaser death,
+            # Q305 "shortest abbreviation").
+            effective_q = _resolve_effective_question(question or "", self.original_user_question)
+            if effective_q and effective_q != question:
+                _LOG.info(
+                    "[Agentic RAG] Using original user question over outer rewrite (original=%r → rewrite=%r)",
+                    self.original_user_question[:80],
+                    (question or "")[:80],
+                )
+            messages = [{"role": "user", "content": effective_q}] if effective_q else []
             if self.text_attachments_content and messages:
                 messages[-1]["content"] += self.text_attachments_content
+
+            # Run the inner research executor (the static LangGraph pipeline).
+            research = run_agentic_rag(self, messages)
+
             final = ""
-            async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
+            async for kind, delta in _split_think_stream(research):
                 if kind == "answer":
                     final += delta
                 if self.answer_sink is not None:
@@ -754,6 +847,46 @@ class RAGTools:
             # Cache the freshly produced answer for later near-identical questions.
             if question and final and not self.text_attachments_content:
                 self._rag_cache[question] = (final, _question_keywords(question))
+
+            # Expose the sufficiency verdict to the outer LLM so it can decide whether
+            # to re-run `rag` from the reported gaps (Google "missing pieces" feedback)
+            # instead of guessing from the answer text. This is appended to the tool
+            # result — it does NOT change the final answer (the graph's formalize_answer
+            # composes that independently from kbinfos).
+            #
+            # Outer-loop guardrail: bound useless re-runs. If consecutive rag calls keep
+            # ending insufficient (UNANSWERABLE / INSUFFICIENT / CONFLICTING), tell the
+            # outer LLM to STOP re-running and answer from the existing evidence — the
+            # corpus likely lacks the data, so re-querying different angles won't help
+            # and only inflates latency / risks timeout.
+            verdict = getattr(self, "_rag_verdict", None)
+            insufficient_statuses = {"UNANSWERABLE", "INSUFFICIENT", "CONFLICTING"}
+            if isinstance(verdict, dict):
+                status = verdict.get("status")
+                missing = verdict.get("missing_claims") or []
+                feedback = verdict.get("feedback") or ""
+                hard = verdict.get("hard_violations") or []
+                conf = verdict.get("agent_confidence")
+                if status and status != "SUFFICIENT":
+                    status_hint = {
+                        "USEFUL_BUT_INCOMPLETE": "evidence is partially sufficient (gaps remain)",
+                        "INSUFFICIENT": "evidence is not yet sufficient",
+                        "CONFLICTING": "evidence contains conflicts",
+                    }.get(status, f"sufficiency status: {status}")
+                    missing_txt = ("; missing: " + "; ".join(missing[:3])) if missing else ""
+                    hard_txt = ("; hard gaps: " + ", ".join(str(x) for x in hard[:3])) if hard else ""
+                    conf_txt = f"; agent confidence: {conf:.2f}" if isinstance(conf, (int, float)) else ""
+                    fb_txt = f"; feedback: {feedback[:200]}" if feedback else ""
+                    # Guardrail counter.
+                    if status in insufficient_statuses:
+                        self._consecutive_unanswerable += 1
+                    else:
+                        self._consecutive_unanswerable = 0
+                    _GUA = 2  # consecutive-insufficient threshold
+                    if self._consecutive_unanswerable >= _GUA:
+                        final = f"{final}\n\n[Research status] {status_hint}{missing_txt}{hard_txt}{conf_txt}{fb_txt}. STOP calling rag again: {self._consecutive_unanswerable} consecutive research rounds returned insufficient evidence. The sources likely lack the required data. Give your best answer from the evidence already gathered; do not re-run rag."
+                    else:
+                        final = f"{final}\n\n[Research status] {status_hint}{missing_txt}{hard_txt}{conf_txt}{fb_txt}. If these gaps are material, call rag again with a question focused on them."
             call_stats.log()
             return final
 
@@ -792,7 +925,8 @@ class RAGTools:
         if not self.kb_ids:
             self._metas_cache = {}
             return self._metas_cache
-        self._metas_cache = await thread_pool_exec(DocMetadataService.get_flatted_meta_by_kbs, self.kb_ids)
+        # peewee MySQL lookup — call directly to reuse the pool's connection.
+        self._metas_cache = DocMetadataService.get_flatted_meta_by_kbs(self.kb_ids)
         return self._metas_cache or {}
 
     def _collect_doc_titles(self, max_docs: int = 512) -> list[tuple[str, str]] | None:

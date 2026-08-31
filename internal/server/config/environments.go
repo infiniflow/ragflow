@@ -66,9 +66,7 @@ type Environments struct {
 	GmailWebOAuthRedirectURL       string `mapstructure:"gmail_web_oauth_redirect_url"`        // GMAIL_WEB_OAUTH_REDIRECT_URI
 	GoogleDriveWebOAuthRedirectURL string `mapstructure:"google_drive_web_oauth_redirect_url"` // GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI
 
-	DeepDocURL                        string `mapstructure:"deep_doc_url"`
 	TensorRTDLAServer                 string `mapstructure:"tensorrt_dla_server"`
-	OSSDeepDocURL                     string `mapstructure:"oss_deep_doc_url"` // open source deepdoc URL
 	DeepDocBatchSingle                string `mapstructure:"deep_doc_batch_single"`
 	DeepDocBatchCount                 int    `mapstructure:"deep_doc_batch_count"`
 	DeepDocBatchLogLevel              string `mapstructure:"deep_doc_batch_log_level"`
@@ -333,19 +331,9 @@ func (c *Config) GetEnvironments() error {
 		c.environments.GoogleDriveWebOAuthRedirectURL = GoogleDriveWebOAuthRedirectURLStr
 	}
 
-	deepDocURLStr := common.GetEnv(common.EnvDeepDocURL)
-	if deepDocURLStr != "" {
-		c.environments.DeepDocURL = deepDocURLStr
-	}
-
 	tensorRTDLAServerStr := common.GetEnv(common.EnvTensorrtDLAServer)
 	if tensorRTDLAServerStr != "" {
 		c.environments.TensorRTDLAServer = tensorRTDLAServerStr
-	}
-
-	OSSDeepDocURLStr := common.GetEnv(common.EnvOSSDeepDocURL)
-	if OSSDeepDocURLStr != "" {
-		c.environments.OSSDeepDocURL = OSSDeepDocURLStr
 	}
 
 	DeepDocBatchSingleStr := common.GetEnv(common.EnvBatchSingle)
@@ -668,16 +656,8 @@ func (c *Config) GetGoogleDriveWebOAuthRedirectURL() string {
 	return c.environments.GoogleDriveWebOAuthRedirectURL
 }
 
-func (c *Config) GetDeepDocURL() string {
-	return c.environments.DeepDocURL
-}
-
 func (c *Config) GetTensorRTDLAServer() string {
 	return c.environments.TensorRTDLAServer
-}
-
-func (c *Config) GetOSSDeepDocURL() string {
-	return c.environments.OSSDeepDocURL
 }
 
 func (c *Config) GetDeepDocBatchSingle() string {
