@@ -203,7 +203,7 @@ Usage:
 
 ### Thinking placeholder
 
-To keep the end user informed while a completion is still running, the WeCom channel replies to every inbound message with a short `🤔 开始思考...` placeholder first, and then sends a second message with the final answer once the Chat or Agent has finished. This applies to both Chat and custom Agent bindings.
+To keep the end user informed while a completion is still running, the WeCom channel first sends a short `🤔 开始思考...` placeholder for every accepted, non-empty inbound message, and then sends a second message with the final answer once the Chat or Agent has produced a result. Blank messages are ignored, and if a completion produces no result, no final reply is sent. This applies to both Chat and custom Agent bindings.
 
 The placeholder is only sent on the WeCom channel. The final reply is also cleaned up before it is sent: reasoning content (the `<think>` blocks produced by the model) is removed, so end users only see the final answer instead of the internal thinking process.
 

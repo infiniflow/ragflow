@@ -25,7 +25,7 @@ import chatService from '@/services/next-chat-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
-import { useFetchAllAgentList } from '@/hooks/use-agent-request';
+import { AgentKeys, fetchAllAgents } from '@/hooks/use-agent-request';
 import { ChatChannelKey, useChatChannelInfo } from './constant';
 import { IChatChannel, IChatChannelBase, IChatChannelInfo } from './interface';
 
@@ -210,24 +210,44 @@ export const useConnectChatChannelTarget = () => {
   return { connect: mutateAsync, connecting: isPending };
 };
 
-// Assistants (dialogs) available to connect a channel to.
-export const useChatChannelDialogList = () => {
-  const { data, isFetching } = useQuery<Array<{ id: string; name: string }>>({
-    queryKey: ChatChannelKeys.dialogs(),
-    initialData: [],
-    queryFn: async () => {
-      const { data } = await chatService.listChats(
-        { params: { page_size: 100, page: 1 }, data: {} },
-        true,
-      );
-      return data?.data?.chats ?? [];
-    },
-  });
-  return { dialogs: data, isFetching };
+type ChatChannelTarget = { id: string; name: string };
+
+// Factory for the "assistant / agent" option lists shared by the channel
+// connect dialog, so the two hooks stay consistent.
+const createChatChannelTargetListHook = (
+  queryKey: readonly unknown[],
+  fetchTargets: () => Promise<ChatChannelTarget[]>,
+) => {
+  return () => {
+    const { data, isFetching } = useQuery<ChatChannelTarget[]>({
+      queryKey,
+      initialData: [],
+      queryFn: fetchTargets,
+    });
+    return { targets: data ?? [], isFetching };
+  };
 };
 
+// Assistants (dialogs) available to connect a channel to.
+export const useChatChannelDialogList = createChatChannelTargetListHook(
+  ChatChannelKeys.dialogs(),
+  async () => {
+    const { data } = await chatService.listChats(
+      { params: { page_size: 100, page: 1 }, data: {} },
+      true,
+    );
+    return data?.data?.chats ?? [];
+  },
+);
+
 // Flow agents available to connect a channel to.
-export const useChatChannelAgentList = () => {
-  const { data: agents } = useFetchAllAgentList();
-  return { agents: agents ?? [], isFetching: false };
-};
+export const useChatChannelAgentList = createChatChannelTargetListHook(
+  AgentKeys.all(),
+  async () => {
+    const agents = await fetchAllAgents();
+    return (agents || []).map((agent) => ({
+      id: agent.id,
+      name: 'title' in agent ? agent.title : agent.id,
+    }));
+  },
+);

@@ -136,12 +136,11 @@ def _build_one(account_id: str, channel: str, credential: dict):
 def _make_chat_handler(ch):
     """Build the inbound-message handler bound to a single channel.
 
-    Mirrors the non-streaming path of ``session_completion``: the message is
-    appended to a per-end-user conversation under the dialog connected to the
-    bot, a RAG completion is run against that dialog, and the answer is sent
-    back. The connected dialog is resolved per message, so connection changes
-    take effect immediately without restarting the channel. Channels with no
-    connected dialog ignore inbound messages.
+    Resolves the connected target for each inbound message. Agent targets run
+    ``_run_agent_completion``; dialog targets run the RAG completion path.
+    The connected target is resolved per message, so connection changes take
+    effect immediately without restarting the channel. Channels with no
+    connected target ignore inbound messages.
     """
     from api.db.services.chat_channel_service import ChatChannelService
     from api.db.services.conversation_service import ConversationService, structure_answer
@@ -234,6 +233,7 @@ async def _run_agent_completion(ch, cc, msg: IncomingMessage) -> None:
     from api.db.services.canvas_service import UserCanvasService, completion
     from api.db.services.user_canvas_version import UserCanvasVersionService
     from common.misc_utils import thread_pool_exec
+    from peewee import IntegrityError
 
     e, _ = await thread_pool_exec(UserCanvasService.get_by_id, cc.agent_id)
     if not e:
@@ -269,11 +269,20 @@ async def _run_agent_completion(ch, cc, msg: IncomingMessage) -> None:
                 ex,
             )
             return
-        version_title = await thread_pool_exec(
-            UserCanvasVersionService.get_latest_version_title,
-            cc.agent_id,
-            release_mode=False,
-        )
+        try:
+            version_title = await thread_pool_exec(
+                UserCanvasVersionService.get_latest_version_title,
+                cc.agent_id,
+                release_mode=False,
+            )
+        except Exception:
+            LOGGER.warning(
+                "[%s:%s] failed to load agent version title; continuing",
+                ch.channel_id,
+                ch.account_id,
+                exc_info=True,
+            )
+            version_title = None
         try:
             await thread_pool_exec(
                 API4ConversationService.save,
@@ -287,6 +296,14 @@ async def _run_agent_completion(ch, cc, msg: IncomingMessage) -> None:
                 source="agent",
                 dsl=dsl,
                 version_title=version_title,
+            )
+        except IntegrityError:
+            # A concurrent first message from the same end user created the
+            # session first; keep processing against the existing session.
+            LOGGER.info(
+                "[%s:%s] agent conversation created concurrently; reusing it",
+                ch.channel_id,
+                ch.account_id,
             )
         except Exception:
             LOGGER.exception(
@@ -316,10 +333,14 @@ async def _run_agent_completion(ch, cc, msg: IncomingMessage) -> None:
                     continue
             if not isinstance(ans, dict):
                 continue
-            if ans.get("event") not in ("message", "message_end"):
+            if ans.get("event") != "message":
                 continue
-            if ans.get("event") == "message":
-                answer_text += (ans.get("data") or {}).get("content") or ""
+            data = ans.get("data") or {}
+            answer_text += data.get("content") or ""
+            if data.get("start_to_think", False):
+                answer_text += "<think>"
+            elif data.get("end_to_think", False):
+                answer_text += "</think>"
     except Exception as ex:
         LOGGER.exception(
             "[%s:%s] agent completion failed",

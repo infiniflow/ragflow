@@ -16,6 +16,7 @@
 import logging
 
 from api.apps import current_user, login_required
+from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.chat_channel_service import ChatChannelService
 from api.db.services.dialog_service import DialogService
@@ -41,6 +42,9 @@ def _validate_channel_target(req: dict, tenant_id: str):
     if agent_id:
         if not UserCanvasService.accessible(agent_id, tenant_id):
             return "no authorization"
+        e, canvas = UserCanvasService.get_by_id(agent_id)
+        if not e or canvas.canvas_category != CanvasCategory.Agent.value:
+            return "Only flow agents can be bound to a chat channel"
     return None
 
 

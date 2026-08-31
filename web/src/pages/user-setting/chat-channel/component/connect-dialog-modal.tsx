@@ -16,7 +16,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -38,8 +38,8 @@ const ConnectDialogModal = ({
   channel?: IChatChannelBase;
 }) => {
   const { t } = useTranslation();
-  const { dialogs } = useChatChannelDialogList();
-  const { agents } = useChatChannelAgentList();
+  const { targets: dialogs } = useChatChannelDialogList();
+  const { targets: agents } = useChatChannelAgentList();
   const { connect, connecting } = useConnectChatChannelTarget();
   const [targetType, setTargetType] = useState<TargetType>('dialog');
   const [dialogId, setDialogId] = useState<string | undefined>(
@@ -56,28 +56,38 @@ const ConnectDialogModal = ({
   }, [channel?.id, channel?.chat_id, channel?.agent_id]);
 
   const dialogOptions = useMemo(
-    () => (dialogs || []).map((d) => ({ label: d.name, value: d.id })),
+    () => dialogs.map((d) => ({ label: d.name, value: d.id })),
     [dialogs],
   );
   const agentOptions = useMemo(
-    () =>
-      (agents || []).map((a) => ({
-        label: 'title' in a ? a.title : a.id,
-        value: a.id,
-      })),
+    () => agents.map((a) => ({ label: a.name, value: a.id })),
     [agents],
   );
+
+  const handleTargetTypeChange = (type: TargetType) => {
+    setTargetType(type);
+  };
+
+  const handleDialogChange = (value: string) => {
+    setDialogId(value || undefined);
+  };
+
+  const handleAgentChange = (value: string) => {
+    setAgentId(value || undefined);
+  };
 
   const handleConfirm = async () => {
     if (!channel) {
       return;
     }
-    await connect({
+    const result = await connect({
       channelId: channel.id,
       dialogId: targetType === 'dialog' ? dialogId || null : null,
       agentId: targetType === 'agent' ? agentId || null : null,
     });
-    hideModal();
+    if (result.code === 0) {
+      hideModal();
+    }
   };
 
   const targetTypeButtonClass = (active: boolean) =>
@@ -109,29 +119,31 @@ const ConnectDialogModal = ({
           {t('setting.connectTargetType')}
         </label>
         <div className="flex gap-2 bg-bg-card rounded-md p-1">
-          <button
-            type="button"
+          <Button
+            type={'button'}
+            variant={'ghost'}
             className={targetTypeButtonClass(targetType === 'dialog')}
-            onClick={() => setTargetType('dialog')}
+            onClick={() => handleTargetTypeChange('dialog')}
           >
             {t('setting.targetAssistant')}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            type={'button'}
+            variant={'ghost'}
             className={targetTypeButtonClass(targetType === 'agent')}
-            onClick={() => setTargetType('agent')}
+            onClick={() => handleTargetTypeChange('agent')}
           >
             {t('setting.targetAgent')}
-          </button>
+          </Button>
         </div>
         {targetType === 'dialog' ? (
           <>
             <label className="text-sm text-text-secondary">
               {t('setting.selectDialog')}
             </label>
-            <RAGFlowSelect
+            <SelectWithSearch
               value={dialogId}
-              onChange={(val: string) => setDialogId(val || undefined)}
+              onChange={handleDialogChange}
               options={dialogOptions}
               allowClear
               placeholder={t('setting.selectDialog')}
@@ -145,9 +157,9 @@ const ConnectDialogModal = ({
             <label className="text-sm text-text-secondary">
               {t('setting.selectAgent')}
             </label>
-            <RAGFlowSelect
+            <SelectWithSearch
               value={agentId}
-              onChange={(val: string) => setAgentId(val || undefined)}
+              onChange={handleAgentChange}
               options={agentOptions}
               allowClear
               placeholder={t('setting.selectAgent')}
