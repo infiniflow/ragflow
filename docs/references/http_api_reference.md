@@ -2164,6 +2164,7 @@ Adds a chunk to a specified document in a specified dataset.
   - `"tag_kwd"`: `list[string]`
   - `"questions"`: `list[string]`
   - `"image_base64"`: `string`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -2195,6 +2196,8 @@ curl --request POST \
   Optional questions to use when embedding the chunk.
 - `"image_base64"`: (*Body parameter*), `string`
   A base64-encoded image to associate with the chunk.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on the embedding request for this chunk. Omitted when unset.
 
 #### Response
 
@@ -2498,6 +2501,7 @@ Updates content or configurations for a specified chunk.
   - `"tag_kwd"`: `list[string]`
   - `"available"`: `boolean`
   - `"image_base64"`: `string`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -2537,6 +2541,8 @@ curl --request PATCH \
   - `false`: Unavailable
 - `"image_base64"`: (*Body parameter*), `string`
   Base64-encoded image content to associate with the chunk.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on the embedding request for this update. Omitted when unset.
 
 #### Response
 

@@ -71,6 +71,13 @@ class TestCurrentLlmUser:
         finally:
             reset_llm_request_context(token)
 
+    def test_whitespace_user_id_is_ignored(self):
+        token = set_llm_request_context(user_id="   ")
+        try:
+            assert current_llm_user() is None
+        finally:
+            reset_llm_request_context(token)
+
     def test_identifier_is_truncated_to_128_chars(self):
         token = set_llm_request_context(session_id="s" * 200)
         try:

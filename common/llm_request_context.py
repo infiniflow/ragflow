@@ -37,6 +37,16 @@ import logging
 llm_request_context: contextvars.ContextVar = contextvars.ContextVar("ragflow_llm_request_context", default=None)
 
 
+def normalize_llm_user_id(value) -> str | None:
+    """Sanitize an optional end-user id from an API body or Redis task payload."""
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    return trimmed[:128]
+
+
 def set_llm_request_context(session_id: str | None = None, user_id: str | None = None):
     """Install the current request identifiers and return the reset token.
 
@@ -46,8 +56,9 @@ def set_llm_request_context(session_id: str | None = None, user_id: str | None =
     ctx = {}
     if session_id:
         ctx["session_id"] = str(session_id)[:128]
+    user_id = normalize_llm_user_id(user_id)
     if user_id:
-        ctx["user_id"] = str(user_id)[:128]
+        ctx["user_id"] = user_id
     # Log only presence flags, never the raw identifiers.
     logging.debug("Installing LLM request context (session=%s, user=%s)", bool(session_id), bool(user_id))
     return llm_request_context.set(ctx or None)
@@ -74,16 +85,6 @@ def current_llm_user() -> str | None:
     if not ctx:
         return None
     return ctx.get("session_id") or ctx.get("user_id") or None
-
-
-def normalize_llm_user_id(value) -> str | None:
-    """Sanitize an optional end-user id from an API body or Redis task payload."""
-    if not isinstance(value, str):
-        return None
-    trimmed = value.strip()
-    if not trimmed:
-        return None
-    return trimmed[:128]
 
 
 def openai_user_kwargs() -> dict:

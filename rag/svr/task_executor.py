@@ -173,6 +173,14 @@ FAILED_TASKS = 0
 
 CURRENT_TASKS = {}
 
+
+def _redact_task_user(task: dict) -> dict:
+    """Copy a task dict for logs/heartbeat without the raw end-user identifier."""
+    payload = dict(task)
+    if "user_id" in payload:
+        payload["user_id"] = True
+    return payload
+
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get("WORKER_HEARTBEAT_TIMEOUT", "120"))
 stop_event = threading.Event()
 
@@ -1763,7 +1771,7 @@ async def handle_task():
     task_id = task["id"]
     ctx_token = set_llm_request_context(user_id=normalize_llm_user_id(task.get("user_id")))
     try:
-        CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
+        CURRENT_TASKS[task["id"]] = _redact_task_user(copy.deepcopy(task))
         run_mode = os.environ.get("TE_RUN_MODE", "0")
         logging.info(f"TE_RUN_MODE is {run_mode}")
 
@@ -1786,7 +1794,7 @@ async def handle_task():
 
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
-        logging.info(f"handle_task done for task {json.dumps(task)}")
+        logging.info(f"handle_task done for task {json.dumps(_redact_task_user(task))}")
     except TaskCanceledException as e:
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
@@ -1803,7 +1811,7 @@ async def handle_task():
         except Exception as e:
             logging.exception(f"[Exception]: {str(e)}")
             pass
-        logging.exception(f"handle_task got exception for task {json.dumps(task)}")
+        logging.exception(f"handle_task got exception for task {json.dumps(_redact_task_user(task))}")
     finally:
         reset_llm_request_context(ctx_token)
         if not task.get("dataflow_id", ""):
