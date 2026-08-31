@@ -100,10 +100,6 @@ class QQBotChannel(Channel):
             self._ws_loop.call_soon_threadsafe(lambda: asyncio.create_task(self._ws_session.close()))
         if self._ws_thread and self._ws_thread.is_alive():
             await asyncio.to_thread(self._ws_thread.join, 5)
-        for task in tuple(self._dispatch_tasks):
-            if not task.done():
-                task.cancel()
-        self._dispatch_tasks.clear()
         self._heartbeat_task = None
         self._task = None
         self._ws_thread = None
@@ -161,23 +157,43 @@ class QQBotChannel(Channel):
             LOGGER.error("[qqbot:%s] send failed", self.account_id, exc_info=True)
 
     async def _run(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                token = await self._get_access_token()
-                gateway_url = await self._get_gateway_url(token)
-                async with aiohttp.ClientSession() as session:
-                    self._ws_session = session
-                    async with session.ws_connect(gateway_url, heartbeat=None) as ws:
-                        LOGGER.info("[qqbot:%s] connected to gateway", self.account_id)
-                        await self._run_ws_session(ws, token)
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                LOGGER.error("[qqbot:%s] gateway loop error", self.account_id, exc_info=True)
-            finally:
-                self._ws_session = None
-            if not self._stop_event.is_set():
-                await asyncio.sleep(3)
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    token = await self._get_access_token()
+                    gateway_url = await self._get_gateway_url(token)
+                    async with aiohttp.ClientSession() as session:
+                        self._ws_session = session
+                        async with session.ws_connect(gateway_url, heartbeat=None) as ws:
+                            LOGGER.info("[qqbot:%s] connected to gateway", self.account_id)
+                            await self._run_ws_session(ws, token)
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    LOGGER.error("[qqbot:%s] gateway loop error", self.account_id, exc_info=True)
+                finally:
+                    self._ws_session = None
+                if not self._stop_event.is_set():
+                    await asyncio.sleep(3)
+        finally:
+            await self._drain_dispatch_tasks()
+
+    async def _drain_dispatch_tasks(self) -> None:
+        """Cancel and await the in-flight dispatches.
+
+        This runs on the websocket loop, on the way out of ``_run`` and before
+        ``_run_ws_thread`` closes that loop. Doing it from ``stop()`` instead
+        would call ``Task.cancel()`` from a different loop after the thread has
+        already been joined, which raises ``RuntimeError: Event loop is closed``
+        and leaves the dispatches pending.
+        """
+        tasks = tuple(self._dispatch_tasks)
+        self._dispatch_tasks.clear()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run_ws_session(self, ws: aiohttp.ClientWebSocketResponse, token: str) -> None:
         heartbeat_interval = 30
