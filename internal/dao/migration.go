@@ -137,18 +137,21 @@ func migrateIngestionTaskSchedulingIndexes(ctx context.Context, db *gorm.DB) err
 		}
 	}
 
-	// Converge any legacy unleased RUNNING/CREATED rows to SCHEDULED so they can be dispatched cleanly
+	// Converge legacy unleased rows that have been stale for 15m; newer rows may still be
+	// in-flight on old workers (which never wrote claim_*), so they must not be hijacked.
+	// Best-effort: a transient lock error must not block startup — reconciler will retry.
+	now := time.Now()
 	if err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("(status = ? OR status = ?) AND (claim_token = '' OR claim_token IS NULL)", common.RUNNING, common.CREATED).
+		Where("(status = ? OR status = ?) AND (claim_token = '' OR claim_token IS NULL) AND (update_time < ? OR update_time IS NULL OR update_time = 0)", common.RUNNING, common.CREATED, now.Add(-15*time.Minute).UnixMilli()).
 		Updates(map[string]interface{}{
 			"status":                 common.SCHEDULED,
-			"scheduled_at":           time.Now().UnixMilli(),
+			"scheduled_at":           now.UnixMilli(),
 			"last_dispatched_at":     int64(0),
 			"claim_token":            "",
 			"claim_expires_at":       int64(0),
 			"lease_recovery_attempt": 0,
 		}).Error; err != nil {
-		return fmt.Errorf("converge legacy unleased rows: %w", err)
+		common.Warn(fmt.Sprintf("converge legacy unleased rows (reconciler will retry): %v", err))
 	}
 
 	return nil

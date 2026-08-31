@@ -95,7 +95,8 @@ const normalizeStatus = (status: string) => {
   // py backend returns string "5"/"1" etc., Go returns enum; normalize once
   if (status === '5') return RunningStatus.SCHEDULE;
   if (status === '1') return RunningStatus.RUNNING;
-  if (status === '3') return RunningStatus.FAIL;
+  if (status === '3') return RunningStatus.DONE;
+  if (status === '4') return RunningStatus.FAIL;
   if (status === '2') return RunningStatus.CANCEL;
   return status as RunningStatus;
 };

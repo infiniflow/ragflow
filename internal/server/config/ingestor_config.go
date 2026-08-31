@@ -71,6 +71,9 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	if heartbeat <= 0 {
 		heartbeat = 3 * time.Second
 	}
+	if heartbeat >= 5*time.Second {
+		return fmt.Errorf("ingestor heartbeat interval %s must be less than 5s (NATS BackOff[0])", heartbeat)
+	}
 	if c.ingestor.ClaimTTL <= 3*heartbeat {
 		return fmt.Errorf("ingestor claim_ttl %s must be greater than three heartbeat intervals (%s)", c.ingestor.ClaimTTL, 3*heartbeat)
 	}

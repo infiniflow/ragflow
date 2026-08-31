@@ -72,7 +72,7 @@ type Ingestor struct {
 	leaseRecoveryMax  int
 
 	// Runtime state
-	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
+	currentTasks  map[string]string // taskID -> claimToken, for Stop-time release
 	tasksMu       sync.RWMutex
 	activeWorkers atomic.Int32 // number of worker goroutines currently in workerLoop
 
@@ -147,7 +147,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		maxConcurrency:    maxConcurrency,
 		supportedDocTypes: supportedTypes,
 		version:           "1.0.0",
-		currentTasks:      make(map[string]struct{}),
+		currentTasks:      make(map[string]string),
 		taskChan:          make(chan *taskpkg.TaskContext, maxConcurrency*2),
 		ShutdownCh:        make(chan struct{}, 1),
 		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
@@ -170,10 +170,14 @@ func (e *Ingestor) ID() string {
 
 // SetLeaseConfig applies the worker lease settings after configuration has
 // been parsed. A lease must outlive at least three heartbeat intervals so a
-// normal scheduling delay cannot be mistaken for a dead worker.
+// normal scheduling delay cannot be mistaken for a dead worker, and heartbeat
+// must be <5s (NATS BackOff[0]=5s) to keep AckWait fresh.
 func (e *Ingestor) SetLeaseConfig(heartbeatInterval, claimTTL time.Duration, maxRecoveryAttempts int) error {
 	if heartbeatInterval <= 0 {
 		return fmt.Errorf("ingestor heartbeat interval must be positive")
+	}
+	if heartbeatInterval >= 5*time.Second {
+		return fmt.Errorf("ingestor heartbeat interval %s must be less than 5s (NATS BackOff[0])", heartbeatInterval)
 	}
 	if claimTTL <= 3*heartbeatInterval {
 		return fmt.Errorf("ingestor claim TTL %s must be greater than three heartbeat intervals (%s)", claimTTL, 3*heartbeatInterval)
@@ -346,46 +350,8 @@ func (e *Ingestor) reconcileTasks(ctx context.Context) {
 		return
 	}
 	now := time.Now()
-	e.convergeCreatedTasks(ctx, now)
 	e.recoverExpiredClaims(ctx, now)
 	e.dispatchScheduledTasks(ctx, now)
-}
-
-func (e *Ingestor) convergeCreatedTasks(ctx context.Context, now time.Time) {
-	lastID := ""
-	pace := time.NewTicker(time.Second / reconcileRate)
-	defer pace.Stop()
-	for {
-		tasks, err := dao.NewIngestionTaskDAO().ListByStatusAfterID(ctx, dao.DB, common.CREATED, lastID, reconcileBatchLimit)
-		if err != nil {
-			common.Warn(fmt.Sprintf("reconciliation: list CREATED tasks: %v", err))
-			return
-		}
-		if len(tasks) == 0 {
-			return
-		}
-		for _, task := range tasks {
-			lastID = task.ID
-			scheduled, err := dao.NewIngestionTaskDAO().Schedule(ctx, dao.DB, task.ID, common.CREATED, now)
-			if err != nil {
-				common.Warn(fmt.Sprintf("reconciliation: schedule CREATED task %s: %v", task.ID, err))
-				continue
-			}
-			if scheduled {
-				if err := e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now); err != nil {
-					common.Warn(fmt.Sprintf("reconciliation: dispatch CREATED task %s: %v", task.ID, err))
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-pace.C:
-				}
-			}
-		}
-		if len(tasks) < reconcileBatchLimit {
-			return
-		}
-	}
 }
 
 func (e *Ingestor) recoverExpiredClaims(ctx context.Context, now time.Time) {
@@ -405,6 +371,22 @@ func (e *Ingestor) recoverExpiredClaims(ctx context.Context, now time.Time) {
 			for _, task := range tasks {
 				lastID = task.ID
 				if status == common.RUNNING {
+					// Legacy unleased RUNNING (empty token) cannot be recovered via lease; schedule directly.
+					if task.ClaimToken == "" {
+						if scheduled, err := dao.NewIngestionTaskDAO().Schedule(ctx, dao.DB, task.ID, common.RUNNING, now); err != nil {
+							common.Warn(fmt.Sprintf("reconciliation: schedule legacy RUNNING %s: %v", task.ID, err))
+						} else if scheduled {
+							if err := e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now); err != nil {
+								common.Warn(fmt.Sprintf("reconciliation: dispatch legacy RUNNING %s: %v", task.ID, err))
+							}
+							select {
+							case <-ctx.Done():
+								return
+							case <-pace.C:
+							}
+						}
+						continue
+					}
 					requeued, poisoned, err := dao.NewIngestionTaskDAO().RecoverExpiredClaim(ctx, dao.DB, task.ID, now, e.leaseRecoveryMax)
 					if err != nil {
 						common.Warn(fmt.Sprintf("reconciliation: recover task %s: %v", task.ID, err))
@@ -616,7 +598,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 
 	// The database lease prevents cross-process execution. This in-process
 	// guard only covers a duplicate delivery racing with the channel send.
-	if !e.claimTask(task.ID) {
+	if !e.claimTask(task.ID, task.ClaimToken) {
 		common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
 			taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
 		if ackErr := handle.Ack(); ackErr != nil {
@@ -824,6 +806,13 @@ func (e *Ingestor) markStopped(ctx context.Context, task *entity.IngestionTask) 
 		return false
 	}
 	if !updated {
+		updated, err = e.finalizeClaim(ctx, task, common.RUNNING, common.STOPPED)
+		if err != nil {
+			common.Error(fmt.Sprintf("mark task %s stopped from running", task.ID), err)
+			return false
+		}
+	}
+	if !updated {
 		return e.settleClaimLoss(ctx, task)
 	}
 	if rc := redis2.Get(); rc != nil {
@@ -855,13 +844,27 @@ func (e *Ingestor) markFailed(ctx context.Context, task *entity.IngestionTask) b
 func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
 	select {
 	case <-ctx.Done():
-		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
-		e.markCancelProgress(task)
-		stopped := e.markStopped(context.Background(), task)
-		if stopped {
-			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
+		// Distinguish user cancel (STOPPING) vs lease loss (RUNNING expired).
+		// Lease loss must not reuse "Task stopped by user." semantics.
+		checkCtx, checkCancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		current, _ := e.ingestionTaskSvc.GetTask(checkCtx, task.ID)
+		isUserCancel := (current != nil && current.Status == common.STOPPING) || (e.cancelCheck != nil && e.cancelCheck(checkCtx, task.ID))
+		checkCancel()
+		if isUserCancel {
+			common.Info(fmt.Sprintf("Task %s cancelled by user", task.ID))
+			e.markCancelProgress(task)
+			stopped := e.markStopped(context.Background(), task)
+			if stopped {
+				e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
+			}
+			return stopped
 		}
-		return stopped
+		common.Info(fmt.Sprintf("Task %s failed after lease loss", task.ID))
+		ok := e.markFailed(context.Background(), task)
+		if ok {
+			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusFail))
+		}
+		return ok
 	default:
 	}
 
@@ -1261,6 +1264,7 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 					}
 					return
 				}
+				// Update local expiry for next error's staleness check (race-free: only heartbeat goroutine writes).
 				taskCtx.IngestionTask.ClaimExpiresAt = time.Now().Add(e.claimTTL).UnixMilli()
 			case <-done:
 				return
@@ -1275,13 +1279,17 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 	}
 }
 
-func (e *Ingestor) claimTask(taskID string) bool {
+func (e *Ingestor) claimTask(taskID string, token ...string) bool {
 	e.tasksMu.Lock()
 	defer e.tasksMu.Unlock()
 	if _, ok := e.currentTasks[taskID]; ok {
 		return false
 	}
-	e.currentTasks[taskID] = struct{}{}
+	tok := ""
+	if len(token) > 0 {
+		tok = token[0]
+	}
+	e.currentTasks[taskID] = tok
 	return true
 }
 
@@ -1374,12 +1382,45 @@ func (e *Ingestor) Stop(ctx context.Context) {
 		common.Info("All tasks completed")
 	case <-ctx.Done():
 		e.tasksMu.RLock()
-		ids := make([]string, 0, len(e.currentTasks))
-		for id := range e.currentTasks {
-			ids = append(ids, id)
+		pending := make(map[string]string, len(e.currentTasks))
+		for id, token := range e.currentTasks {
+			pending[id] = token
 		}
 		e.tasksMu.RUnlock()
-		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight (will be redelivered by broker): %v", len(ids), ids))
+		ids := make([]string, 0, len(pending))
+		for id := range pending {
+			ids = append(ids, id)
+		}
+		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight: %v — releasing leases", len(ids), ids))
+		for id, token := range pending {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if ok, err := e.ingestionTaskSvc.ReleaseClaim(releaseCtx, id, token); err != nil {
+				common.Warn(fmt.Sprintf("Stop: release claim %s: %v", id, err))
+			} else if ok {
+				common.Info(fmt.Sprintf("Stop: released lease for %s", id))
+				e.releaseTask(id)
+			}
+			cancel()
+		}
+		// Drain taskChan: tasks that were claimed but never dequeued
+		for {
+			select {
+			case tc := <-e.taskChan:
+				if tc != nil && tc.IngestionTask != nil {
+					releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					if ok, err := e.ingestionTaskSvc.ReleaseClaim(releaseCtx, tc.IngestionTask.ID, tc.IngestionTask.ClaimToken); err != nil {
+						common.Warn(fmt.Sprintf("Stop: release queued claim %s: %v", tc.IngestionTask.ID, err))
+					} else if ok {
+						common.Info(fmt.Sprintf("Stop: released queued lease for %s", tc.IngestionTask.ID))
+					}
+					cancel()
+					e.releaseTask(tc.IngestionTask.ID)
+				}
+			default:
+				goto drained
+			}
+		}
+	drained:
 	}
 
 	// Signal shutdown completion so the cmd-side select on <-ShutdownCh
