@@ -3400,7 +3400,6 @@ This process aggregates variables from multiple branches into a single variable 
         video: 'Video',
       },
       fields: 'Field',
-      addParser: 'Add Parser',
       rule: 'Rule',
       addRule: 'Add rule',
       group: 'Group',

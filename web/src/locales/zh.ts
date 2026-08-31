@@ -2959,7 +2959,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         video: '视频',
       },
       fields: '字段',
-      addParser: '增加解析器',
       rule: '规则',
       addRule: '增加规则',
       addRegularExpressions: '增加正则表达式',

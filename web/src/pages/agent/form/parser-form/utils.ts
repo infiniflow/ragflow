@@ -1,12 +1,35 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import {
   FileType,
+  FileTypeDefaultModelFieldMap,
   ImageParseMethod,
   initialParserValues,
 } from '../../constant/pipeline';
 
 export function buildFieldNameWithPrefix(name: string, prefix: string) {
   return `${prefix}.${name}`;
+}
+
+export function withDefaultParserModels(
+  formValues: Record<string, any>,
+  defaultModelDictionary: Record<string, string>,
+) {
+  const setups = formValues?.setups;
+  if (!Array.isArray(setups)) {
+    return formValues;
+  }
+
+  return {
+    ...formValues,
+    setups: setups.map((setup) => {
+      const field = FileTypeDefaultModelFieldMap[setup?.fileFormat as FileType];
+      const modelId = field ? defaultModelDictionary[field] : '';
+      if (!modelId || setup?.vlm?.llm_id) {
+        return setup;
+      }
+      return { ...setup, vlm: { ...setup?.vlm, llm_id: modelId } };
+    }),
+  };
 }
 
 export function getInitialParseMethod(fileType: FileType): string {

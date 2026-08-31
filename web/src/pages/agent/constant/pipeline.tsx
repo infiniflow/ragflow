@@ -1,5 +1,6 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { ModelTypeToField } from '@/constants/llm';
 import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
 
@@ -91,6 +92,14 @@ export const InitialOutputFormatMap = {
   [FileType.PowerPoint]: PptOutputFormat.Json,
   [FileType.Video]: VideoOutputFormat.Text,
   [FileType.Audio]: AudioOutputFormat.Text,
+};
+
+// The video parser defaults to the tenant's VLM model and the audio parser to
+// the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
+// type without a configured tenant default keeps its empty model id.
+export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
+  [FileType.Video]: ModelTypeToField.vision,
+  [FileType.Audio]: ModelTypeToField.asr,
 };
 
 export enum ContextGeneratorFieldName {
@@ -255,6 +264,16 @@ export const initialParserValues = {
       output_format: PptOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
+    },
+    {
+      fileFormat: FileType.Video,
+      output_format: VideoOutputFormat.Text,
+      vlm: { llm_id: '' },
+    },
+    {
+      fileFormat: FileType.Audio,
+      output_format: AudioOutputFormat.Text,
+      vlm: { llm_id: '' },
     },
   ],
 };

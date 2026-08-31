@@ -4,22 +4,14 @@ import {
 } from '@/components/originui/select-with-search';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import i18n from '@/locales/config';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useHover } from 'ahooks';
-import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import {
-  useFieldArray,
-  UseFieldArrayRemove,
-  useForm,
-  useFormContext,
-} from 'react-hook-form';
+import { memo, useEffect, useMemo, useRef } from 'react';
+import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
@@ -43,7 +35,11 @@ import {
   HtmlFormFields,
   TextMarkdownFormFields,
 } from './text-html-form-fields';
-import { buildFieldNameWithPrefix, getInitialParseMethod } from './utils';
+import {
+  buildFieldNameWithPrefix,
+  getInitialParseMethod,
+  withDefaultParserModels,
+} from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 import { WordFormFields } from './word-form-fields';
 
@@ -67,7 +63,6 @@ type ParserItemProps = {
   name: string;
   index: number;
   fieldLength: number;
-  remove: UseFieldArrayRemove;
   fileFormatOptions: SelectWithSearchFlagOptionType[];
 };
 
@@ -142,13 +137,10 @@ function ParserItem({
   name,
   index,
   fieldLength,
-  remove,
   fileFormatOptions,
 }: ParserItemProps) {
   const { t } = useTranslation();
   const form = useFormContext<ParserFormSchemaType>();
-  const ref = useRef(null);
-  const isHovering = useHover(ref);
 
   const prefix = `${name}.${index}`;
   const fileFormat = form.watch(`setups.${index}.fileFormat`);
@@ -173,7 +165,7 @@ function ParserItem({
   }, [fileFormat, form, index]);
 
   const values = form.getValues();
-  const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
+  const parserList = values.setups.slice(); // Modifying the parser array will not change the reference.
 
   const filteredFileFormatOptions = useMemo(() => {
     const otherFileFormatList = parserList
@@ -191,20 +183,9 @@ function ParserItem({
       : () => <></>;
 
   return (
-    <section
-      className={cn('space-y-5 py-2.5 rounded-md', {
-        'bg-state-error-5': isHovering,
-      })}
-    >
-      <div className="flex justify-between items-center">
-        <span className="text-text-primary text-sm font-medium">
-          Parser {index + 1}
-        </span>
-        {index > 0 && (
-          <Button variant={'ghost'} onClick={() => remove(index)} ref={ref}>
-            <Trash2 />
-          </Button>
-        )}
+    <section className="space-y-5 py-2.5 rounded-md">
+      <div className="text-text-primary text-sm font-medium">
+        Parser {index + 1}
       </div>
       <RAGFlowFormItem
         name={buildFieldNameWithPrefix(`fileFormat`, prefix)}
@@ -238,7 +219,12 @@ const ParserForm = ({
   externalErrors,
 }: INextOperatorForm) => {
   const { t } = useTranslation();
-  const defaultValues = useFormValues(initialParserValues, node);
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const formValues = useFormValues(initialParserValues, node);
+  const defaultValues = useMemo(
+    () => withDefaultParserModels(formValues, defaultModelDictionary),
+    [formValues, defaultModelDictionary],
+  );
 
   const FileFormatOptions = buildOptions(FileType, t, 'flow.fileFormatOptions');
 
@@ -252,25 +238,10 @@ const ParserForm = ({
   useSyncExternalFormErrors(form, externalErrors);
 
   const name = 'setups';
-  const { fields, remove, append } = useFieldArray({
+  const { fields } = useFieldArray({
     name,
     control: form.control,
   });
-
-  const add = useCallback(() => {
-    append({
-      fileFormat: null,
-      output_format: '',
-      parse_method: '',
-      lang: '',
-      fields: [],
-      vlm: { llm_id: '' },
-      table_result_type: '',
-      markdown_image_response_type: '',
-      remove_header_footer: false,
-      // preprocess: [],
-    });
-  }, [append]);
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
@@ -285,16 +256,10 @@ const ParserForm = ({
               name={name}
               index={index}
               fieldLength={fields.length}
-              remove={remove}
               fileFormatOptions={FileFormatOptions}
             ></ParserItem>
           );
         })}
-        {fields.length < FileFormatOptions.length && (
-          <BlockButton onClick={add} type="button" className="mt-2.5">
-            {t('flow.addParser')}
-          </BlockButton>
-        )}
       </form>
       {!hideOutputs && (
         <div className="p-5">
