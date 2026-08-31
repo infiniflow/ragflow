@@ -1,5 +1,6 @@
 {
   "name": "xAI",
+  "rank": 992,
   "url": {
     "default": "https://api.x.ai/v1"
   },
@@ -13,42 +14,63 @@
   "models": [
     {
       "name": "grok-4",
-      "max_tokens": 256000,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "grok-3",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "grok-3-fast",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "grok-3-mini",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "grok-3-mini-mini-fast",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "grok-2-vision",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "vision"
       ]

@@ -50,7 +50,7 @@ func TestWorkflow_ErrorInSubAgent_ShouldStopNotContinue(t *testing.T) {
 		}
 	}
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "error_stop_test", Description: "5 nodes with middle failure",
 		SubAgents: agents,
 	})
@@ -58,7 +58,7 @@ func TestWorkflow_ErrorInSubAgent_ShouldStopNotContinue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}})
 
 	var gotError bool
@@ -128,7 +128,7 @@ func TestWorkflow_SequentialCancel_ShouldNotTriggerInterruptCheckpoint(t *testin
 	}
 
 	store := newConcurrentStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	opt, cancel := WithCancel()
 	cpID := "cancel_no_checkpoint_test"
 
@@ -335,7 +335,7 @@ func TestRunner_HandleIter_PanicSafety(t *testing.T) {
 	go func() {
 		defer close(done)
 		// This should NOT panic — handleIter has recover()
-		handleIter(false, nil, context.Background(), ai, gen, nil, nil)
+		handleIter(false, nil, t.Context(), ai, gen, nil, nil)
 	}()
 
 	select {
@@ -429,7 +429,7 @@ func TestReAct_MaxIterationExceeded_SkipsAfterAgent(t *testing.T) {
 		Middlewares:   []TypedReActMiddleware[*schema.Message]{afterAgentMW},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("loop test")}})
 
 	var gotMaxIterError bool
@@ -497,7 +497,7 @@ func TestWorkflow_SequentialCancel_StateConsistency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opt, cancel := WithCancel()
 
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("consistency")}}, opt)
@@ -541,7 +541,7 @@ func TestDrainEventsChan_GoroutineLeak(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("leak test")}})
 
 		ch := drainEventsChan(iter)
@@ -579,7 +579,7 @@ func TestWorkflow_Sequential_LastEventWithoutActionIsDropped(t *testing.T) {
 	// Create an agent that returns a message event without any action
 	plainMsgAgent := &plainMessageAgent{name: "plain_msg_agent"}
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "drop_test", Description: "test last event dropping",
 		SubAgents: []Agent{plainMsgAgent},
 	})
@@ -587,7 +587,7 @@ func TestWorkflow_Sequential_LastEventWithoutActionIsDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 
 	var events []*AgentEvent
@@ -650,7 +650,7 @@ func TestWorkflow_Parallel_SharedSessionValuesRace(t *testing.T) {
 		}).WithName(nodeID)
 	}
 
-	wf, err := NewParallel(context.Background(), &ParallelConfig{
+	wf, err := NewParallel(t.Context(), &ParallelConfig{
 		Name: "parallel_race", Description: "test session value race",
 		SubAgents: agents,
 	})
@@ -658,7 +658,7 @@ func TestWorkflow_Parallel_SharedSessionValuesRace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("race test")}})
 	for range drainEventsChan(iter) {
 	}
@@ -721,7 +721,7 @@ func TestCheckpoint_ConcurrentResumeRace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cpID := "concurrent_resume_test"
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{
@@ -753,7 +753,7 @@ func TestCheckpoint_ConcurrentResumeRace(t *testing.T) {
 				Agent:           wf,
 				CheckPointStore: store,
 			})
-			it, err := r.Resume(context.Background(), cpID)
+			it, err := r.Resume(t.Context(), cpID)
 			if err != nil {
 				t.Logf("Tenant %d resume error: %v", id, err)
 				return
@@ -785,7 +785,7 @@ func TestFlow_SetSubAgents_DoesNotPopulateSubAgents(t *testing.T) {
 		Model: &mockModel{},
 	}).WithName("sub1")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	fa := toFlowAgent(ctx, agent)
 	_, err := SetSubAgents(ctx, fa, []Agent{sub1})
 	if err != nil {
@@ -833,7 +833,7 @@ func TestWorkflow_Sequential_CancelRaceInRunSeq(t *testing.T) {
 		agents[i] = NewReActAgent(&ReActConfig[*schema.Message]{Model: model, Tools: []Tool{delayedTool}}).WithName(nodeID)
 	}
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "cancel_race", Description: "cancel race in runSeq",
 		SubAgents: agents,
 	})
@@ -841,7 +841,7 @@ func TestWorkflow_Sequential_CancelRaceInRunSeq(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opt, cancel := WithCancel()
 
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("race")}}, opt)

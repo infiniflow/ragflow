@@ -30,11 +30,26 @@ from test.unit_test.rag.svr.task_executor_refactor.conftest import make_task_con
 class TestGetParser:
     """Tests for get_parser function."""
 
-    @pytest.mark.parametrize("parser_id", [
-        "naive", "general", "table", "paper", "book",
-        "picture", "audio", "email", "presentation", "manual",
-        "laws", "qa", "resume", "one", "tag",
-    ])
+    @pytest.mark.parametrize(
+        "parser_id",
+        [
+            "naive",
+            "general",
+            "table",
+            "paper",
+            "book",
+            "picture",
+            "audio",
+            "email",
+            "presentation",
+            "manual",
+            "laws",
+            "qa",
+            "resume",
+            "one",
+            "tag",
+        ],
+    )
     def test_get_parser_returns_non_none(self, parser_id):
         """Test that get_parser returns non-None for all parser types."""
         parser = get_parser(parser_id)
@@ -43,6 +58,7 @@ class TestGetParser:
     def test_get_parser_kg(self):
         """Test getting kg parser (maps to naive)."""
         from common.constants import ParserType
+
         parser = get_parser(ParserType.KG.value)
         assert parser is not None
 
@@ -73,8 +89,10 @@ class TestRunChunking:
         mock_chunker = MagicMock()
         mock_chunker.chunk = MagicMock(return_value=[])
 
-        with patch("rag.svr.task_executor_refactor.chunk_builder.thread_pool_exec") as mock_thread, \
-             patch("rag.svr.task_executor_refactor.chunk_builder.merge_table_parser_config_from_kb") as mock_merge:
+        with (
+            patch("rag.svr.task_executor_refactor.chunk_builder.thread_pool_exec") as mock_thread,
+            patch("rag.svr.task_executor_refactor.chunk_builder.merge_table_parser_config_from_kb") as mock_merge,
+        ):
             mock_thread.return_value = []
             mock_merge.return_value = {"chunk_token_num": 128}
             await run_chunking(mock_chunker, b"binary", ctx)
@@ -143,9 +161,7 @@ class TestExtractOutline:
         outline_data = [{"title": "Chapter 1", "page": 1}]
         cks = [{"__outline__": outline_data}]
         await extract_outline(cks, ctx)
-        ctx.write_interceptor.intercept.assert_called_once_with(
-            "DocMetadataService.update_document_metadata"
-        )
+        ctx.write_interceptor.intercept.assert_called_once_with("DocMetadataService.update_document_metadata")
 
     @pytest.mark.asyncio
     async def test_extract_outline_persistence_exception(self):

@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -208,7 +207,8 @@ func TestExeSQL_Trino_HappyPath(t *testing.T) {
 		MaxRecords: 100,
 	}).WithExeSQLDialer(dialer)
 
-	out, err := tool.InvokableRun(context.Background(),
+	ctx := t.Context()
+	out, err := tool.InvokableRun(ctx,
 		`{"sql":"SELECT id, name FROM catalog.tiny.users"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)

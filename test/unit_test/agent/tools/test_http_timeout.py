@@ -97,9 +97,5 @@ def _tool_files():
 @pytest.mark.parametrize("path", _tool_files(), ids=lambda p: p.name)
 def test_http_calls_have_timeout(path: Path):
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    missing = [
-        f"{path.name}:{call.lineno}"
-        for call in _iter_request_calls(tree)
-        if not _has_timeout(call)
-    ]
+    missing = [f"{path.name}:{call.lineno}" for call in _iter_request_calls(tree) if not _has_timeout(call)]
     assert not missing, "HTTP request(s) without timeout=: " + ", ".join(missing)

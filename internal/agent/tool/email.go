@@ -18,29 +18,44 @@ package tool
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
 const emailToolName = "email"
 
 const emailToolDescription = "Send an email via SMTP. Returns success/failure status."
 
-// emailParams is the JSON shape the model sends into InvokableRun.
+const (
+	emailDialTimeout    = 10 * time.Second
+	emailSessionTimeout = 30 * time.Second
+)
+
+// emailParams contains both the Python model-call inputs and the Canvas node
+// configuration used to deliver the message. Info exposes only the former.
 type emailParams struct {
-	SMTPHost string   `json:"smtp_host"`
-	SMTPPort int      `json:"smtp_port"`
-	Username string   `json:"username"`
-	Password string   `json:"password"`
-	FromAddr string   `json:"from_addr"`
-	ToAddrs  []string `json:"to_addrs"`
-	Subject  string   `json:"subject"`
-	Body     string   `json:"body"`
+	SMTPServer   string `json:"smtp_server"`
+	SMTPPort     int    `json:"smtp_port"`
+	Email        string `json:"email"`
+	SMTPUsername string `json:"smtp_username"`
+	Password     string `json:"password"`
+	SenderName   string `json:"sender_name"`
+	ToEmail      string `json:"to_email"`
+	CCEmail      string `json:"cc_email"`
+	Content      string `json:"content"`
+	Subject      string `json:"subject"`
 }
 
 // emailEnvelope is what the model sees.
@@ -54,12 +69,23 @@ type emailEnvelope struct {
 // RFC 822 message and submits it via the stdlib net/smtp client. All
 // authentication modes supported by net/smtp.Auth are available
 // (PLAIN, LOGIN, CRAM-MD5) by selecting the appropriate creds.
-type EmailTool struct{}
+type EmailTool struct {
+	defaults emailParams
+}
+
+var _ ToolComponent = (*EmailTool)(nil)
 
 // NewEmailTool returns an EmailTool. There is no shared HTTPHelper
 // (SMTP is not HTTP), so the constructor is the simplest possible.
 func NewEmailTool() *EmailTool {
-	return &EmailTool{}
+	return newEmailTool(emailParams{SMTPPort: 465})
+}
+
+func newEmailTool(defaults emailParams) *EmailTool {
+	if defaults.SMTPPort == 0 {
+		defaults.SMTPPort = 465
+	}
+	return &EmailTool{defaults: defaults}
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -68,58 +94,64 @@ func (e *EmailTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: emailToolName,
 		Desc: emailToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"smtp_host": {
+			"to_email": {
 				Type:     schema.String,
-				Desc:     "SMTP server hostname (e.g. smtp.gmail.com).",
+				Desc:     "The target email address.",
 				Required: true,
 			},
-			"smtp_port": {
-				Type:     schema.Integer,
-				Desc:     "SMTP server port (e.g. 587 for STARTTLS, 465 for implicit TLS).",
-				Required: true,
-			},
-			"username": {
+			"cc_email": {
 				Type:     schema.String,
-				Desc:     "SMTP authentication username. Empty for unauthenticated relay.",
+				Desc:     "Other email addresses to send to, separated by commas.",
 				Required: false,
-			},
-			"password": {
-				Type:     schema.String,
-				Desc:     "SMTP authentication password (or app password for Gmail/Yahoo).",
-				Required: false,
-			},
-			"from_addr": {
-				Type:     schema.String,
-				Desc:     "Sender email address (RFC 5322).",
-				Required: true,
-			},
-			"to_addrs": {
-				Type:     schema.Array,
-				Desc:     "Recipient email addresses.",
-				Required: true,
 			},
 			"subject": {
 				Type:     schema.String,
-				Desc:     "Email subject line.",
-				Required: true,
+				Desc:     "The subject/title of the email.",
+				Required: false,
 			},
-			"body": {
+			"content": {
 				Type:     schema.String,
-				Desc:     "Email body (plain text).",
-				Required: true,
+				Desc:     "The content of the email.",
+				Required: false,
 			},
 		}),
 	}, nil
 }
 
+func (e *EmailTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"to_email": "Recipient email address list.",
+			"cc_email": "Optional CC recipient list.",
+			"content":  "Email body.",
+			"subject":  "Email subject.",
+		},
+		Outputs: map[string]string{
+			"success": "Whether the email was sent successfully.",
+		},
+		InputForm: map[string]any{
+			"to_email": map[string]any{"name": "To ", "type": "line"},
+			"subject":  map[string]any{"name": "Subject", "type": "line", "optional": true},
+			"cc_email": map[string]any{"name": "CC To", "type": "line", "optional": true},
+		},
+	}
+}
+
 // buildEmailMessage composes the RFC 822 wire format: headers + blank
 // line + body. Extracted so tests can verify subject / recipient
 // inclusion without opening a real socket.
-func buildEmailMessage(from string, to []string, subject, body string) []byte {
+func buildEmailMessage(from, senderName string, to, cc []string, subject, body string) []byte {
 	var b strings.Builder
-	b.WriteString("From: " + from + "\r\n")
+	fromHeader := (&mail.Address{
+		Name:    stripEmailHeaderLineBreaks(senderName),
+		Address: stripEmailHeaderLineBreaks(from),
+	}).String()
+	b.WriteString("From: " + fromHeader + "\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
-	b.WriteString("Subject: " + subject + "\r\n")
+	if len(cc) > 0 {
+		b.WriteString("Cc: " + strings.Join(cc, ", ") + "\r\n")
+	}
+	b.WriteString("Subject: " + stripEmailHeaderLineBreaks(subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	b.WriteString("\r\n")
@@ -128,39 +160,184 @@ func buildEmailMessage(from string, to []string, subject, body string) []byte {
 	return []byte(b.String())
 }
 
-// InvokableRun sends the email. We delegate to smtp.SendMail which
-// handles EHLO, STARTTLS, and AUTH transparently when an *smtp.Auth is
-// supplied; with nil auth it sends unauthenticated.
+func stripEmailHeaderLineBreaks(value string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
+}
+
+type emailSender func(ctx context.Context, p emailParams, msg []byte) error
+
+var sendEmail = sendEmailSMTP
+
+// InvokableRun sends the email.
 func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
-	var p emailParams
+	p := e.defaults
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return emailErrJSON(fmt.Errorf("email: parse arguments: %w", err)),
 			fmt.Errorf("email: parse arguments: %w", err)
 	}
+	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	p.ToEmail = runtime.ResolveTemplateForDisplay(p.ToEmail, state)
+	p.CCEmail = runtime.ResolveTemplateForDisplay(p.CCEmail, state)
+	p.Subject = stripEmailHeaderLineBreaks(runtime.ResolveTemplateForDisplay(p.Subject, state))
+	p.Content = runtime.ResolveTemplateForDisplay(p.Content, state)
 	if err := validateEmailParams(&p); err != nil {
 		return emailErrJSON(err), err
 	}
 
-	addr := fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort)
-	msg := buildEmailMessage(p.FromAddr, p.ToAddrs, p.Subject, p.Body)
-
-	var auth smtp.Auth
-	if p.Username != "" {
-		auth = smtp.PlainAuth("", p.Username, p.Password, p.SMTPHost)
+	toRecipients := splitEmailList(p.ToEmail)
+	ccRecipients := splitEmailList(p.CCEmail)
+	if len(toRecipients) == 0 {
+		err := fmt.Errorf("email: to_email is required")
+		return emailErrJSON(err), err
 	}
-
-	if err := smtp.SendMail(addr, auth, p.FromAddr, p.ToAddrs, msg); err != nil {
+	subject := p.Subject
+	if subject == "" {
+		subject = "No Subject"
+	}
+	content := p.Content
+	if content == "" {
+		content = "No content provided"
+	}
+	msg := buildEmailMessage(p.Email, p.SenderName, toRecipients, ccRecipients, subject, content)
+	if err := sendEmail(ctx, p, msg); err != nil {
 		return emailErrJSON(fmt.Errorf("email: send: %w", err)),
 			fmt.Errorf("email: send: %w", err)
 	}
 
-	// Honor context cancellation if the caller passed a deadline. The
-	// underlying smtp.SendMail is blocking, so we check after the call;
-	// a stricter impl would select on ctx.Done() around the call.
 	if err := ctx.Err(); err != nil {
 		return emailErrJSON(err), err
 	}
 	return emailJSON(emailEnvelope{OK: true}), nil
+}
+
+func (e *EmailTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	ok, _ := envelope["ok"].(bool)
+	return map[string]any{"success": ok}
+}
+
+func sendEmailSMTP(ctx context.Context, p emailParams, msg []byte) error {
+	if p.SMTPPort == 465 {
+		return sendEmailSMTPS(ctx, p, msg)
+	}
+	return sendEmailSTARTTLS(ctx, p, msg)
+}
+
+func sendEmailSTARTTLS(ctx context.Context, p emailParams, msg []byte) error {
+	addr := fmt.Sprintf("%s:%d", p.SMTPServer, p.SMTPPort)
+	dialer := &net.Dialer{Timeout: emailDialTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	setEmailDeadline(ctx, conn)
+	stopWatch := watchEmailContext(ctx, conn)
+	defer stopWatch()
+
+	client, err := smtp.NewClient(conn, p.SMTPServer)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return err
+	}
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		return fmt.Errorf("email: SMTP server does not advertise STARTTLS")
+	}
+	if err := client.StartTLS(&tls.Config{ServerName: p.SMTPServer, MinVersion: tls.VersionTLS12}); err != nil {
+		return err
+	}
+	return submitEmail(ctx, client, p, msg)
+}
+
+func sendEmailSMTPS(ctx context.Context, p emailParams, msg []byte) error {
+	addr := fmt.Sprintf("%s:%d", p.SMTPServer, p.SMTPPort)
+	dialer := &net.Dialer{Timeout: emailDialTimeout}
+	rawConn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	setEmailDeadline(ctx, rawConn)
+	stopWatch := watchEmailContext(ctx, rawConn)
+	defer stopWatch()
+
+	conn := tls.Client(rawConn, &tls.Config{ServerName: p.SMTPServer, MinVersion: tls.VersionTLS12})
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = rawConn.Close()
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, p.SMTPServer)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return err
+	}
+	return submitEmail(ctx, client, p, msg)
+}
+
+func submitEmail(ctx context.Context, client *smtp.Client, p emailParams, msg []byte) error {
+	username := p.SMTPUsername
+	if username == "" {
+		username = p.Email
+	}
+	if username != "" && p.Password != "" {
+		if err := client.Auth(smtp.PlainAuth("", username, p.Password, p.SMTPServer)); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(p.Email); err != nil {
+		return err
+	}
+	for _, addr := range emailRecipients(p.ToEmail, p.CCEmail) {
+		if err := client.Rcpt(addr); err != nil {
+			return err
+		}
+	}
+	wc, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := wc.Write(msg); err != nil {
+		_ = wc.Close()
+		return err
+	}
+	if err := wc.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := client.Quit(); err != nil && err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+func setEmailDeadline(ctx context.Context, conn net.Conn) {
+	deadline := time.Now().Add(emailSessionTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = conn.SetDeadline(deadline)
+}
+
+func watchEmailContext(ctx context.Context, conn net.Conn) func() {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now())
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
 }
 
 // validateEmailParams guards against obviously broken inputs. The
@@ -168,18 +345,32 @@ func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 // addresses, but the common case (empty / missing) is caught here.
 func validateEmailParams(p *emailParams) error {
 	switch {
-	case p.SMTPHost == "":
-		return fmt.Errorf("email: smtp_host is required")
+	case p.SMTPServer == "":
+		return fmt.Errorf("email: smtp_server is required")
 	case p.SMTPPort <= 0 || p.SMTPPort > 65535:
 		return fmt.Errorf("email: smtp_port must be in [1, 65535]")
-	case p.FromAddr == "":
-		return fmt.Errorf("email: from_addr is required")
-	case len(p.ToAddrs) == 0:
-		return fmt.Errorf("email: to_addrs is required and must be non-empty")
-	case p.Subject == "":
-		return fmt.Errorf("email: subject is required")
+	case p.Email == "":
+		return fmt.Errorf("email: email is required")
 	}
 	return nil
+}
+
+func emailRecipients(toEmail, ccEmail string) []string {
+	recipients := splitEmailList(toEmail)
+	return append(recipients, splitEmailList(ccEmail)...)
+}
+
+func splitEmailList(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r'
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if recipient := strings.TrimSpace(part); recipient != "" {
+			out = append(out, recipient)
+		}
+	}
+	return out
 }
 
 func emailJSON(env emailEnvelope) string {

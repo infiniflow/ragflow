@@ -1,0 +1,16 @@
+{
+ "id": "token__text_backtick",
+ "component": "TokenChunker",
+ "notes": "Backtick-wrapped newline on the text path takes the _split_text_by_pattern branch, which ignores chunk_token_size entirely. Complements token__text_default_delim, which takes the bare-delimiter branch.",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "`\n`"
+  ]
+ },
+ "input": {
+  "name": "t",
+  "output_format": "text",
+  "text": "first sentence here\nsecond sentence here\nthird sentence here"
+ }
+}

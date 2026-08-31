@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"sync"
@@ -31,11 +32,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service/kg"
+	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 
-	"github.com/google/uuid"
 	"github.com/kaptinlin/jsonrepair"
 	"go.uber.org/zap"
 )
@@ -66,8 +66,8 @@ Requirements:
 4. The missing_information should only be filled when insufficient, otherwise empty array.
 `
 
-const multiQueriesGenTemplate = `You are a query optimization expert. 
-The user's original query failed to retrieve sufficient information; 
+const multiQueriesGenTemplate = `You are a query optimization expert.
+The user's original query failed to retrieve sufficient information;
 please generate multiple complementary improved questions and corresponding queries.
 
 Original query:
@@ -102,8 +102,8 @@ Requirements:
 1. Questions array contains 1-3 questions and corresponding queries.
 2. Each question length is between 5-200 characters.
 3. Each query length is between 1-5 keywords.
-4. Each query MUST be in the same language as the retrieved content in. 
-5. DO NOT generate question and query that is similar to the original query. 
+4. Each query MUST be in the same language as the retrieved content in.
+5. DO NOT generate question and query that is similar to the original query.
 6. Reasoning explains the generation strategy.
 `
 
@@ -139,7 +139,7 @@ type DeepResearcher struct {
 	PromptConfig    map[string]interface{}
 	KBRetrieve      KBRetrieveFunc
 	InternetEnabled bool
-	TavilyAPIKey    string
+	WebSearch       *webSearchProviderConfig
 
 	// Fields needed for KG retrieval (mirrors async_chat.go usage).
 	DocEngine engine.DocEngine
@@ -168,7 +168,7 @@ func NewDeepResearcher(
 		PromptConfig:    promptConfig,
 		KBRetrieve:      kbRetrieve,
 		InternetEnabled: internetEnabled,
-		TavilyAPIKey:    mapStringValue(promptConfig, "tavily_api_key"),
+		WebSearch:       resolveWebSearchProvider(promptConfig),
 		DocEngine:       docEngine,
 		KbIDs:           kbIDs,
 		TenantIDs:       tenantIDs,
@@ -226,13 +226,19 @@ func (dr *DeepResearcher) _research(
 		return "", nil
 	}
 
+	// Stop the recursion quickly once the request is canceled so a
+	// cancellation drains the tree instead of doing more retrieval work.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	if callback != nil {
 		callback(fmt.Sprintf("Searching by `%s`...", query))
 	}
 
 	// 1. Retrieve information (KB + optional web)
 	st := time.Now()
-	kbinfos, err := dr._retrieve_information(ctx, query)
+	kbinfos, err := dr.retrieveInformation(ctx, query)
 	if err != nil {
 		return "", err
 	}
@@ -319,29 +325,28 @@ func (dr *DeepResearcher) _research(
 		}(i, qp)
 	}
 
-	// Wait with context cancellation support.
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return retContent, ctx.Err()
+	if err := waitForDeepResearchWorkers(ctx, &wg); err != nil {
+		return retContent, err
 	}
 
 	// 7. Join results
 	return strings.Join(results, "\n"), nil
 }
 
+func waitForDeepResearchWorkers(ctx context.Context, workers *sync.WaitGroup) error {
+	// Sub-research goroutines invoke the progress callback, which
+	// writes to the caller's channel; do not orphan them. Draining
+	// here guarantees no callback fires after Research returns.
+	workers.Wait()
+	return ctx.Err()
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Retrieval (KB + optional Web)
 // ──────────────────────────────────────────────────────────────────────
 
-// _retrieve_information does KB + optional web retrieval.
-func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query string) (map[string]interface{}, error) {
+// retrieveInformation does KB + optional web retrieval.
+func (dr *DeepResearcher) retrieveInformation(ctx context.Context, query string) (map[string]interface{}, error) {
 	kbinfos := map[string]interface{}{
 		"total":    int64(0),
 		"chunks":   []map[string]interface{}{},
@@ -367,17 +372,17 @@ func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query strin
 		}
 	}
 
-	// 2. Web retrieval (Tavily)
-	if dr.InternetEnabled && dr.TavilyAPIKey != "" {
-		tavRes, err := dr.tavilyRetrieve(ctx, query)
+	// 2. Web retrieval
+	if dr.InternetEnabled && dr.WebSearch != nil {
+		webRes, err := dr.retrieveWebSearch(ctx, dr.WebSearch, query)
 		if err != nil {
 			common.Warn("DeepResearcher: web retrieval error", zap.Error(err))
-		} else if tavRes != nil {
-			if chunks, ok := tavRes["chunks"].([]map[string]interface{}); ok {
+		} else if webRes != nil {
+			if chunks, ok := webRes["chunks"].([]map[string]interface{}); ok {
 				existing, _ := kbinfos["chunks"].([]map[string]interface{})
 				kbinfos["chunks"] = append(existing, chunks...)
 			}
-			if aggs, ok := tavRes["doc_aggs"].([]interface{}); ok {
+			if aggs, ok := webRes["doc_aggs"].([]interface{}); ok {
 				existing, _ := kbinfos["doc_aggs"].([]interface{})
 				kbinfos["doc_aggs"] = append(existing, aggs...)
 			}
@@ -386,7 +391,7 @@ func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query strin
 
 	// 3. Knowledge graph retrieval
 	if useKG, _ := dr.PromptConfig["use_kg"].(bool); useKG && dr.ChatModel != nil && len(dr.KbIDs) > 0 {
-		kgPipeline := kg.NewPipeline(dr.DocEngine, dr.KbIDs, dr.TenantIDs, query)
+		kgPipeline := graph.NewPipeline(dr.DocEngine, dr.KbIDs, dr.TenantIDs, query)
 		kgPipeline.SetChatModel(dr.ChatModel)
 		if dr.EmbModel != nil {
 			kgPipeline.SetEmbModel(dr.EmbModel)
@@ -410,10 +415,10 @@ func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query strin
 }
 
 // tavilyRetrieve calls the Tavily Search API.
-func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, query string) (map[string]interface{}, error) {
+func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query string) (map[string]interface{}, error) {
 	reqBody := map[string]interface{}{
 		"query":        query,
-		"api_key":      dr.TavilyAPIKey,
+		"api_key":      apiKey,
 		"search_depth": "advanced",
 		"max_results":  6,
 	}
@@ -459,7 +464,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, query string) (map
 	chunks := make([]map[string]interface{}, 0, len(apiResp.Results))
 	aggs := make([]interface{}, 0, len(apiResp.Results))
 	for _, r := range apiResp.Results {
-		id := strings.ReplaceAll(uuid.New().String(), "-", "")
+		id := utility.GenerateToken()
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            id,
 			"content_ltks":        tokenizeText(r.Content),
@@ -580,11 +585,12 @@ func (dr *DeepResearcher) genJSON(
 	result interface{},
 ) error {
 	maxRetry := 2
-	var lastAns, lastErr string
+	var lastAns string
+	var lastErr error
 
 	for attempt := 0; attempt < maxRetry; attempt++ {
 		userPrompt := "Output:\n"
-		if attempt > 0 && lastAns != "" && lastErr != "" {
+		if attempt > 0 && lastAns != "" && lastErr != nil {
 			// Append correction to user message on retry
 			userPrompt += fmt.Sprintf(
 				"\nGenerated JSON is as following:\n%s\nBut exception while loading:\n%s\nPlease reconsider and correct it.",
@@ -605,14 +611,14 @@ func (dr *DeepResearcher) genJSON(
 			repaired = resp
 		}
 		if err := json.Unmarshal([]byte(repaired), result); err != nil {
-			lastErr = err.Error()
+			lastErr = err
 			common.Warn("genJSON: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))
 			continue
 		}
 		return nil
 	}
-	return fmt.Errorf("genJSON: failed after %d attempts: %s", maxRetry, lastErr)
+	return fmt.Errorf("genJSON: failed after %d attempts: %w", maxRetry, lastErr)
 }
 
 // sufficiencyCheck asks the LLM whether retrieved content is sufficient.
@@ -671,7 +677,7 @@ func (dr *DeepResearcher) chatOnce(
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
 	resp, err := dr.ChatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, dr.ChatModel.APIConfig, cfg,
+		ctx, modelName, msgs, dr.ChatModel.APIConfig, cfg, nil,
 	)
 	if err != nil {
 		return "", err
@@ -682,14 +688,14 @@ func (dr *DeepResearcher) chatOnce(
 	return *resp.Answer, nil
 }
 
-// cleanLLMResponse strips think tags, markdown fences, and trailing backticks.
+// cleanLLMResponse strips think tags, Markdown fences, and trailing backticks.
 var thinkTagRe = regexp.MustCompile(`(?s)^.*?</think>`)
 var trailingCommaRe = regexp.MustCompile(`,\s*([}\]])`)
 var cleanResponseRe = regexp.MustCompile(`(?s)(^.*?</think>|` + "```json\\n" + `|` + "```\\n*$" + `)`)
 var trailingBacktickRe = regexp.MustCompile("```\\n*$")
 
 func cleanLLMResponse(raw string) string {
-	// Strip think tags, markdown fences
+	// Strip think tags, Markdown fences
 	raw = cleanResponseRe.ReplaceAllString(raw, "")
 
 	// Also handle trailing ```` in case any remain after the regex pass
@@ -831,16 +837,6 @@ func getMapString(m map[string]interface{}, keys ...string) string {
 			if s, ok := v.(string); ok {
 				return s
 			}
-		}
-	}
-	return ""
-}
-
-// mapStringValue extracts a string value from a map by key.
-func mapStringValue(m map[string]interface{}, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
 		}
 	}
 	return ""

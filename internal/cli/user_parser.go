@@ -129,8 +129,6 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
-	case TokenConfigs:
-		return p.parseAPIListConfigs()
 	case TokenDatasets:
 		return p.parseAPIListDatasets()
 	case TokenDataset:
@@ -153,6 +151,8 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListAllModels()
 	case TokenIngestion:
 		return p.parseAPIListIngestionTasks()
+	case TokenSyncLogs:
+		return p.parseAPIListSyncLogs()
 	case TokenDefault:
 		return p.parseAPIListDefaultModels()
 	case TokenAvailable:
@@ -166,17 +166,6 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
-}
-
-// LIST CONFIGS;
-func (p *Parser) parseAPIListConfigs() (*Command, error) {
-	p.nextToken()
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return NewCommand("api_list_configs"), nil
 }
 
 func (p *Parser) parseAPIListDatasets() (*Command, error) {
@@ -207,6 +196,8 @@ func (p *Parser) parseAPIListDatasetCommands() (*Command, error) {
 		return p.parseAPIListDatasetFiles(datasetID)
 	case TokenIngestion:
 		return p.parseAPIListDatasetIngestionTasks(datasetID)
+	case TokenSyncLogs:
+		return p.parseAPIListDatasetSyncLogs(datasetID)
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -253,6 +244,94 @@ func (p *Parser) parseAPIListDatasetIngestionTasks(datasetName string) (*Command
 	cmd := NewCommand("api_list_ingestion_tasks")
 	cmd.Params["dataset_name"] = datasetName
 	return cmd, nil
+}
+
+// LIST SYNC_LOGS;
+// LIST SYNC_LOGS FROM 'dataset_id'
+// LIST SYNC_LOGS [FROM 'dataset_id'] WITH PAGE 2 PAGE_SIZE 50
+func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
+	p.nextToken() // consume SYNC_LOGS
+
+	cmd := NewCommand("api_list_sync_logs")
+
+	if p.curToken.Type == TokenFrom {
+		p.nextToken()
+		datasetID, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["dataset_id"] = datasetID
+		p.nextToken() // move past the dataset id
+	}
+
+	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+		return nil, err
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// LIST DATASET 'dataset_name' SYNC_LOGS [WITH PAGE 2 PAGE_SIZE 50];
+func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, error) {
+	p.nextToken() // consume SYNC_LOGS
+
+	cmd := NewCommand("api_list_sync_logs")
+	cmd.Params["dataset_name"] = datasetName
+
+	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+		return nil, err
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseSyncLogsWithOptions parses the optional WITH clause of the sync logs
+// listing commands. Only PAGE and PAGE_SIZE are accepted, both as integers,
+// mirroring the search command's space-separated WITH syntax.
+func (p *Parser) parseSyncLogsWithOptions(cmd *Command) error {
+	if p.curToken.Type != TokenWith && !(p.curToken.Type == TokenIdentifier && strings.EqualFold(p.curToken.Value, "with")) {
+		return nil
+	}
+	p.nextToken() // consume WITH
+
+	for p.curToken.Type != TokenEOF && p.curToken.Type != TokenSemicolon {
+		if p.curToken.Type == TokenComma {
+			return fmt.Errorf("syntax error: WITH options must be space-separated, not comma-separated")
+		}
+		if p.curToken.Type != TokenIdentifier {
+			break
+		}
+		paramName := strings.ToLower(p.curToken.Value)
+		p.nextToken()
+
+		if p.curToken.Type != TokenInteger {
+			if p.curToken.Type == TokenEOF || p.curToken.Type == TokenSemicolon {
+				return fmt.Errorf("WITH option %q is missing a value", paramName)
+			}
+			return fmt.Errorf("WITH option %q must be an integer, got %s", paramName, tokenTypeDescription(p.curToken.Type, p.curToken))
+		}
+		value, err := p.parseNumber()
+		if err != nil {
+			return err
+		}
+		p.nextToken()
+
+		switch paramName {
+		case "page", "page_size":
+			cmd.Params[paramName] = value
+		default:
+			return fmt.Errorf("unknown WITH option %q", paramName)
+		}
+	}
+	return nil
 }
 
 func (p *Parser) parseAPIListAgents() (*Command, error) {
@@ -2697,10 +2776,17 @@ func (p *Parser) parseAPIDisable() (*Command, error) {
 }
 
 // region MODEL commands
-// CHAT 'model@instance@provider' 'hello world'
+// CHAT WITH 'model@instance@provider' MESSAGE 'hello world'
 // CHAT WITH 'model@instance@provider' MESSAGE 'hello world' 'who are you' IMAGE 'url1' 'file0' VIDEO "url2.mov" "file1" FILE "url" "path file2" AUDIO "file.wav"
 func (p *Parser) parseAPIChat() (*Command, error) {
 	p.nextToken() // consume CHAT
+
+	// Redirect "chat completion[s]" to the standalone chat completions parser.
+	if p.curToken.Type == TokenIdentifier &&
+		(strings.EqualFold(p.curToken.Value, "completion") || strings.EqualFold(p.curToken.Value, "completions")) {
+		p.nextToken() // consume completion/completions
+		return p.parseChatCompletionsBody()
+	}
 
 	var err error
 	var modelNameOrID string = ""
@@ -3757,6 +3843,149 @@ optionsLoop:
 	}
 
 	return cmd, nil
+}
+
+//	CHAT COMPLETIONS <question>
+//	                 [chat_id <string>] [session <string>] [llm <string>]
+
+// parseChatCompletionsBody parses the question and options of a CHAT COMPLETIONS
+// command. The leading keyword(s) must already have been consumed by the caller.
+func (p *Parser) parseChatCompletionsBody() (*Command, error) {
+
+	if p.curToken.Type == TokenDash {
+		dashCount := 0
+		for p.curToken.Type == TokenDash {
+			dashCount++
+			p.nextToken()
+		}
+		if dashCount > 0 && p.curToken.Type == TokenIdentifier {
+			switch strings.ToLower(p.curToken.Value) {
+			case "h", "help":
+				return NewCommand("chat completions help"), nil
+			}
+		}
+		return nil, fmt.Errorf("CHAT COMPLETIONS: only -h/--help takes no args; otherwise expected question")
+	}
+
+	cmd := NewCommand("chat completions")
+
+	// Defaults
+	cmd.Params["chat_id"] = ""
+	cmd.Params["temperature"] = 0.0
+	cmd.Params["max_tokens"] = 0
+	cmd.Params["stream"] = false
+
+	// Track which options were explicitly set (distinguishes from defaults).
+	cmd.Params["_set"] = map[string]bool{}
+
+	// Required positional: <question>
+	question, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("CHAT COMPLETIONS: expected question: %w", err)
+	}
+	cmd.Params["question"] = question
+	p.nextToken()
+
+	// Optional named options
+	handleOption := func(name string) error {
+		switch name {
+		case "chat_id", "session", "llm", "system":
+			v, err := p.parseQuotedString()
+			if err != nil {
+				return fmt.Errorf("CHAT COMPLETIONS %s: expected quoted string, got %s", name, p.curToken.Value)
+			}
+			cmd.Params[name] = v
+			p.nextToken()
+			markSet(cmd, name)
+		case "temperature", "top_p", "frequency_penalty", "presence_penalty":
+			v, err := p.parseFloat()
+			if err != nil {
+				return fmt.Errorf("CHAT COMPLETIONS %s: expected number, got %s", name, p.curToken.Value)
+			}
+			cmd.Params[name] = v
+			p.nextToken()
+			markSet(cmd, name)
+		case "max_tokens":
+			v, err := p.parseNumber()
+			if err != nil {
+				return fmt.Errorf("CHAT COMPLETIONS max_tokens: expected integer, got %s", p.curToken.Value)
+			}
+			cmd.Params["max_tokens"] = v
+			p.nextToken()
+			markSet(cmd, "max_tokens")
+		case "stream", "pass_all_history", "legacy":
+			v, err := p.parseBool()
+			if err != nil {
+				return fmt.Errorf("CHAT COMPLETIONS %s: expected true|false, got %s", name, p.curToken.Value)
+			}
+			cmd.Params[name] = v
+			markSet(cmd, name)
+		case "history":
+			raw, err := p.parseQuotedString()
+			if err != nil {
+				return fmt.Errorf("CHAT COMPLETIONS history: expected quoted string, got %s", p.curToken.Value)
+			}
+			cmd.Params["history_raw"] = raw
+			p.nextToken()
+		case "history_delimiter":
+			v, err := p.parseQuotedString()
+			if err != nil {
+				return fmt.Errorf("CHAT COMPLETIONS history_delimiter: expected quoted string, got %s", p.curToken.Value)
+			}
+			cmd.Params["history_delimiter"] = v
+			p.nextToken()
+		default:
+			return fmt.Errorf("CHAT COMPLETIONS: unknown option %q (valid: chat_id, session, llm, system, history, history_delimiter, temperature, max_tokens, stream, top_p, frequency_penalty, presence_penalty, pass_all_history, legacy)", name)
+		}
+		return nil
+	}
+
+	// Named options, any order, until ';'.
+optionsLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenSemicolon:
+			p.nextToken()
+			break optionsLoop
+		case TokenEOF:
+			break optionsLoop
+
+		case TokenIdentifier, TokenQuotedString:
+			name := p.curToken.Value
+			if p.curToken.Type == TokenQuotedString {
+				name = strings.Trim(name, "'\"")
+			}
+			p.nextToken()
+			if err := handleOption(name); err != nil {
+				return nil, err
+			}
+
+		default:
+			if !isKeyword(p.curToken.Type) {
+				return nil, fmt.Errorf("CHAT COMPLETIONS: unexpected token %q in option list (valid options: chat_id, session, llm, system, history, history_delimiter, temperature, max_tokens, stream, top_p, frequency_penalty, presence_penalty, pass_all_history, legacy)", p.curToken.Value)
+			}
+			name := p.curToken.Value
+			p.nextToken()
+			if err := handleOption(name); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return cmd, nil
+}
+
+func markSet(cmd *Command, name string) {
+	if s, ok := cmd.Params["_set"].(map[string]bool); ok {
+		s[name] = true
+	}
+}
+
+func isSet(cmd *Command, name string) bool {
+	if s, ok := cmd.Params["_set"].(map[string]bool); ok {
+		return s[name]
+	}
+	return false
 }
 
 // parseJSONLiteral consumes a TokenQuotedString whose payload is a JSON

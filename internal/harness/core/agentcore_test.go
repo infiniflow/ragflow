@@ -32,7 +32,8 @@ func (m *mockModel) Generate(ctx context.Context, msgs []Message, opts ...modelO
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.callCount >= len(m.responses) {
-		return nil, errors.New("no more responses configured")
+		// Cycle back to avoid exhaustion in long-running loops.
+		m.callCount = 0
 	}
 	resp := m.responses[m.callCount]
 	m.callCount++

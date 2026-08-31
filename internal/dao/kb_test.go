@@ -73,12 +73,13 @@ func TestKnowledgebaseDAO_DecreaseDocumentNum(t *testing.T) {
 
 	testKnowledgebase(t, db, "kb-1", 5, 100, 50)
 
-	err := dao.DecreaseDocumentNum("kb-1", 1, 20, 10)
+	ctx := t.Context()
+	err := dao.DecreaseDocumentNum(ctx, db, "kb-1", 1, 20, 10)
 	if err != nil {
 		t.Fatalf("DecreaseDocumentNum failed: %v", err)
 	}
 
-	kb, err := dao.GetByID("kb-1")
+	kb, err := dao.GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("GetByID failed: %v", err)
 	}
@@ -98,14 +99,16 @@ func TestKnowledgebaseDAO_DecreaseDocumentNum_ZeroDecrement(t *testing.T) {
 	pushDB(t, db)
 	dao := NewKnowledgebaseDAO()
 
+	ctx := t.Context()
+
 	testKnowledgebase(t, db, "kb-2", 3, 60, 15)
 
-	err := dao.DecreaseDocumentNum("kb-2", 0, 0, 0)
+	err := dao.DecreaseDocumentNum(ctx, db, "kb-2", 0, 0, 0)
 	if err != nil {
 		t.Fatalf("DecreaseDocumentNum failed: %v", err)
 	}
 
-	kb, err := dao.GetByID("kb-2")
+	kb, err := dao.GetByID(ctx, db, "kb-2")
 	if err != nil {
 		t.Fatalf("GetByID failed: %v", err)
 	}

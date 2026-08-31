@@ -1,0 +1,13 @@
+{
+  "name": "OpenAI-API-Compatible",
+  "rank": 985,
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
+  },
+  "class": "local",
+  "models": []
+}

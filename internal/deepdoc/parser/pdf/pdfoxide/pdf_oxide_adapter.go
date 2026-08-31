@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	pdfoxide "github.com/yfedoseev/pdf_oxide/go"
+
+	pdfsync "ragflow/internal/deepdoc/parser/pdf/pdfsync"
 )
 
 // ── pdf_oxide-based types ──────────────────────────────────────────
@@ -64,18 +66,26 @@ type RenderResult struct {
 
 // Open opens a PDF file from a file path.
 func Open(path string) (*Document, error) {
-	doc, err := pdfoxide.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("pdfplumber: open %s: %w", path, err)
+	var doc *pdfoxide.PdfDocument
+	var oerr error
+	pdfsync.With(func() {
+		doc, oerr = pdfoxide.Open(path)
+	})
+	if oerr != nil {
+		return nil, fmt.Errorf("pdfplumber: open %s: %w", path, oerr)
 	}
 	return &Document{Inner: doc}, nil
 }
 
 // OpenBytes opens a PDF from raw bytes in memory.
 func OpenBytes(data []byte) (*Document, error) {
-	doc, err := pdfoxide.OpenFromBytes(data)
-	if err != nil {
-		return nil, fmt.Errorf("pdfplumber: open from bytes: %w", err)
+	var doc *pdfoxide.PdfDocument
+	var oerr error
+	pdfsync.With(func() {
+		doc, oerr = pdfoxide.OpenFromBytes(data)
+	})
+	if oerr != nil {
+		return nil, fmt.Errorf("pdfplumber: open from bytes: %w", oerr)
 	}
 	return &Document{Inner: doc}, nil
 }
@@ -83,7 +93,9 @@ func OpenBytes(data []byte) (*Document, error) {
 // Close releases the document handle.
 func (d *Document) Close() {
 	if d.Inner != nil {
-		d.Inner.Close()
+		pdfsync.With(func() {
+			d.Inner.Close()
+		})
 		d.Inner = nil
 	}
 }
@@ -93,7 +105,15 @@ func (d *Document) PageCount() (int, error) {
 	if d.Inner == nil {
 		return 0, fmt.Errorf("pdfplumber: document is closed")
 	}
-	return d.Inner.PageCount()
+	var n int
+	var perr error
+	pdfsync.With(func() {
+		n, perr = d.Inner.PageCount()
+	})
+	if perr != nil {
+		return 0, perr
+	}
+	return n, nil
 }
 
 // PageSize returns the pre-rotation page dimensions from pdf_oxide in PDF
@@ -104,78 +124,94 @@ func (d *Document) PageSize(pageIdx int) (width, height float64, err error) {
 	if d.Inner == nil {
 		return 0, 0, fmt.Errorf("pdfplumber: document is closed")
 	}
-	info, err := d.Inner.PageInfo(pageIdx)
-	if err != nil {
-		return 0, 0, err
-	}
-	return float64(info.Width), float64(info.Height), nil
+	pdfsync.With(func() {
+		info, e := d.Inner.PageInfo(pageIdx)
+		if e != nil {
+			err = e
+			return
+		}
+		width, height = float64(info.Width), float64(info.Height)
+	})
+	return
 }
 
 // GetPageChars returns all characters on a page (0-indexed).
-func (d *Document) GetPageChars(pageIdx int) ([]char, error) {
+//
+// The whole body runs under pdfsync.Mu so the native ExtractChars / PageInfo
+// calls never interleave with pdfium (the two bindings share one PDFium
+// instance). Note it calls d.Inner.PageCount() directly rather than the
+// guarded Document.PageCount, because this method already holds the lock and
+// sync.Mutex is not reentrant.
+func (d *Document) GetPageChars(pageIdx int) (chars []char, err error) {
 	if d.Inner == nil {
 		return nil, fmt.Errorf("pdfplumber: document is closed")
 	}
-	n, err := d.PageCount()
-	if err != nil {
-		return nil, fmt.Errorf("pdfplumber: page count: %w", err)
-	}
-	if pageIdx < 0 || pageIdx >= n {
-		return nil, fmt.Errorf("pdfplumber: page index %d out of range (pages: %d)", pageIdx, n)
-	}
-	raw, err := d.Inner.ExtractChars(pageIdx)
-	if err != nil {
-		return nil, fmt.Errorf("pdfplumber: extract chars page %d: %w", pageIdx, err)
-	}
-
-	// pdf_oxide returns Y in PDF coordinate system (origin bottom-left, Y↑).
-	// Python pdfplumber internally flips to top-left origin (Y↓), matching
-	// "top" = distance from page top.  We replicate that here so that
-	// sortByPageThenY produces top-to-bottom reading order.
-	info, err := d.Inner.PageInfo(pageIdx)
-	if err != nil {
-		return nil, fmt.Errorf("pdfplumber: page info %d: %w", pageIdx, err)
-	}
-	// Page height: use CropBox (matches pdfplumber's page.height).
-	// pdf_oxide bbox: [baseline, baseline + font_size] — no descent
-	// below baseline.  pdfplumber bbox: [baseline - descent, baseline
-	// + ascent].  Both have height = font_size, but the Y origin
-	// differs.  We keep the raw pdf_oxide bbox and sort by Bottom
-	// (= pageHeight - c.Y) in groupCharsToLines so all chars on the
-	// same baseline share the same sort key regardless of font size.
-	pageHeight := float64(info.CropBox.Height)
-	if pageHeight <= 0 {
-		pageHeight = float64(info.Height) // fallback
-	}
-
-	chars := make([]char, len(raw))
-	for i, c := range raw {
-		x0 := float64(c.X)
-		fs := float64(c.FontSize)
-		top := pageHeight - float64(c.Y) - float64(c.Height)
-		w := float64(c.Width)
-		h := float64(c.Height)
-		chars[i] = char{
-			Text:             string(c.Char),
-			Fontname:         c.FontName,
-			Size:             fs,
-			X0:               x0,
-			X1:               x0 + w,
-			Top:              top,
-			Bottom:           top + h,
-			Width:            w,
-			Height:           h,
-			Doctop:           top,
-			Matrix:           [6]float64{fs, 0, 0, fs, x0, top},
-			Upright:          true,
-			StrokingColor:    "",
-			NonStrokingColor: "",
-			Ncs:              "",
-			Adv:              fs * 0.5,
-			PageNumber:       pageIdx + 1,
+	pdfsync.With(func() {
+		n, e := d.Inner.PageCount()
+		if e != nil {
+			err = fmt.Errorf("pdfplumber: page count: %w", e)
+			return
 		}
-	}
-	return chars, nil
+		if pageIdx < 0 || pageIdx >= n {
+			err = fmt.Errorf("pdfplumber: page index %d out of range (pages: %d)", pageIdx, n)
+			return
+		}
+		raw, e := d.Inner.ExtractChars(pageIdx)
+		if e != nil {
+			err = fmt.Errorf("pdfplumber: extract chars page %d: %w", pageIdx, e)
+			return
+		}
+
+		// pdf_oxide returns Y in PDF coordinate system (origin bottom-left, Y↑).
+		// Python pdfplumber internally flips to top-left origin (Y↓), matching
+		// "top" = distance from page top.  We replicate that here so that
+		// FinalReadingOrderMerge produces top-to-bottom reading order.
+		info, e := d.Inner.PageInfo(pageIdx)
+		if e != nil {
+			err = fmt.Errorf("pdfplumber: page info %d: %w", pageIdx, e)
+			return
+		}
+		// Page height: use CropBox (matches pdfplumber's page.height).
+		// pdf_oxide bbox: [baseline, baseline + font_size] — no descent
+		// below baseline.  pdfplumber bbox: [baseline - descent, baseline
+		// + ascent].  Both have height = font_size, but the Y origin
+		// differs.  We keep the raw pdf_oxide bbox and sort by Bottom
+		// (= pageHeight - c.Y) in groupCharsToLines so all chars on the
+		// same baseline share the same sort key regardless of font size.
+		pageHeight := float64(info.CropBox.Height)
+		if pageHeight <= 0 {
+			pageHeight = float64(info.Height) // fallback
+		}
+
+		chars = make([]char, len(raw))
+		for i, c := range raw {
+			x0 := float64(c.X)
+			fs := float64(c.FontSize)
+			top := pageHeight - float64(c.Y) - float64(c.Height)
+			w := float64(c.Width)
+			h := float64(c.Height)
+			chars[i] = char{
+				Text:             string(c.Char),
+				Fontname:         c.FontName,
+				Size:             fs,
+				X0:               x0,
+				X1:               x0 + w,
+				Top:              top,
+				Bottom:           top + h,
+				Width:            w,
+				Height:           h,
+				Doctop:           top,
+				Matrix:           [6]float64{fs, 0, 0, fs, x0, top},
+				Upright:          true,
+				StrokingColor:    "",
+				NonStrokingColor: "",
+				Ncs:              "",
+				Adv:              fs * 0.5,
+				PageNumber:       pageIdx + 1,
+			}
+		}
+	})
+	return
 }
 
 // GetDedupePageChars returns deduplicated characters on a page (0-indexed).
@@ -286,13 +322,18 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (*RenderResult, error)
 	if len(pdfData) == 0 {
 		return nil, fmt.Errorf("pdfplumber: empty PDF data for rendering")
 	}
-	doc, err := pdfoxide.OpenFromBytes(pdfData)
-	if err != nil {
-		return nil, fmt.Errorf("pdfplumber: open for render: %w", err)
-	}
-	defer doc.Close()
-
-	return renderPageFromDoc(doc, pageIdx, dpi)
+	var res *RenderResult
+	var rerr error
+	pdfsync.With(func() {
+		doc, e := pdfoxide.OpenFromBytes(pdfData)
+		if e != nil {
+			rerr = fmt.Errorf("pdfplumber: open for render: %w", e)
+			return
+		}
+		defer doc.Close()
+		res, rerr = renderPageFromDoc(doc, pageIdx, dpi)
+	})
+	return res, rerr
 }
 
 // RenderPage renders a single page using the already-open document.
@@ -302,7 +343,12 @@ func (d *Document) RenderPage(pageIdx int, dpi float64) (*RenderResult, error) {
 	if d.Inner == nil {
 		return nil, fmt.Errorf("pdfplumber: document is closed")
 	}
-	return renderPageFromDoc(d.Inner, pageIdx, dpi)
+	var res *RenderResult
+	var rerr error
+	pdfsync.With(func() {
+		res, rerr = renderPageFromDoc(d.Inner, pageIdx, dpi)
+	})
+	return res, rerr
 }
 
 // renderPageFromDoc is the shared rendering core: calls RenderPageRaw and

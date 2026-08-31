@@ -6,6 +6,6 @@
 //   - ForkWithContext: skill tools are loaded with context injection
 //
 // Skills can be loaded from:
-//   - FileSystemBackend: read skill definitions from markdown files
+//   - FileSystemBackend: read skill definitions from Markdown files
 //   - Embedded content: inline skill definitions
 package skill

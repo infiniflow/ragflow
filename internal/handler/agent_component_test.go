@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
@@ -24,8 +25,10 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	_ "ragflow/internal/agent/component" // registers the production factory
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -47,8 +50,7 @@ func componentCtx(t *testing.T, method, path, body string) (*gin.Context, *httpt
 }
 
 // beginCanvas returns a UserCanvas whose DSL has a single Begin
-// component with both an input_form and a params block. Used for
-// happy-path tests.
+// component with a params block. Used for happy-path tests.
 func beginCanvas() *entity.UserCanvas {
 	return &entity.UserCanvas{
 		ID: "c1",
@@ -59,9 +61,9 @@ func beginCanvas() *entity.UserCanvas {
 						"component_name": "Begin",
 						"params": map[string]any{
 							"mode": "Manual",
-						},
-						"input_form": map[string]any{
-							"query": map[string]any{"type": "string"},
+							"inputs": map[string]any{
+								"query": map[string]any{"type": "string"},
+							},
 						},
 					},
 				},
@@ -99,6 +101,122 @@ func TestGetComponentInputForm_HappyPath(t *testing.T) {
 	}
 	if q["type"] != "string" {
 		t.Errorf("data.query.type = %v, want string", q["type"])
+	}
+}
+
+func TestGetComponentInputForm_ExeSQLDynamicInputForm(t *testing.T) {
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"exesql:0": map[string]any{
+					"obj": map[string]any{
+						"component_name": "ExeSQL",
+						"params": map[string]any{
+							"database": "demo",
+							"username": "root",
+							"host":     "127.0.0.1",
+							"port":     float64(3306),
+							"password": "secret",
+							"top_n":    float64(50),
+						},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/exesql:0/input-form", "")
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "exesql:0"},
+	}
+	h.GetComponentInputForm(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Code != 0 {
+		t.Fatalf("code = %d, want 0; body=%s", env.Code, w.Body.String())
+	}
+	sql, ok := env.Data["sql"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data.sql = %v, want a map", env.Data["sql"])
+	}
+	if sql["name"] != "SQL" {
+		t.Errorf("data.sql.name = %v, want SQL", sql["name"])
+	}
+	if sql["type"] != "line" {
+		t.Errorf("data.sql.type = %v, want line", sql["type"])
+	}
+}
+
+func TestGetComponentInputForm_BrowserDynamicInputForm(t *testing.T) {
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"Browser:FlatWolvesTry": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Browser",
+						"params": map[string]any{
+							"llm_id":  "gpt-4o@OpenAI",
+							"prompts": "{sys.query}",
+						},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/Browser:FlatWolvesTry/input-form", "")
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "Browser:FlatWolvesTry"},
+	}
+	h.GetComponentInputForm(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Code != 0 {
+		t.Fatalf("code = %d, want 0; body=%s", env.Code, w.Body.String())
+	}
+	prompts, ok := env.Data["prompts"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data.prompts = %v, want a map", env.Data["prompts"])
+	}
+	if prompts["name"] != "Prompts" {
+		t.Errorf("data.prompts.name = %v, want Prompts", prompts["name"])
+	}
+	if prompts["type"] != "paragraph" {
+		t.Errorf("data.prompts.type = %v, want paragraph", prompts["type"])
+	}
+	uploadSources, ok := env.Data["upload_sources"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data.upload_sources = %v, want a map", env.Data["upload_sources"])
+	}
+	if uploadSources["name"] != "Upload sources" {
+		t.Errorf("data.upload_sources.name = %v, want Upload sources", uploadSources["name"])
+	}
+	if uploadSources["type"] != "line" {
+		t.Errorf("data.upload_sources.type = %v, want line", uploadSources["type"])
 	}
 }
 
@@ -150,7 +268,7 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 				"answer": map[string]any{
 					"obj": map[string]any{
 						"component_name": "Answer",
-						// no input_form
+						// no params.inputs
 					},
 				},
 			},
@@ -169,8 +287,8 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 	if code != 102 {
 		t.Errorf("code = %d, want 102; msg=%q", code, msg)
 	}
-	if !strings.Contains(msg, "no input_form") {
-		t.Errorf("msg = %q, want 'no input_form'", msg)
+	if !strings.Contains(msg, "no params.inputs") {
+		t.Errorf("msg = %q, want 'no params.inputs'", msg)
 	}
 }
 
@@ -207,6 +325,115 @@ func TestDebugComponent_HappyPath_Begin(t *testing.T) {
 	}
 	if env.Data["query"] != "hello world" {
 		t.Errorf("data.query = %v, want 'hello world'", env.Data["query"])
+	}
+}
+
+type sysEchoComponent struct{}
+
+func (s *sysEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	state, _, err := agentruntime.GetStateFromContext[*agentruntime.CanvasState](ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"query":     state.Sys["query"],
+		"tenant_id": state.Sys["tenant_id"],
+	}, nil
+}
+
+func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
+	origFactory := agentruntime.DefaultFactory()
+	agentruntime.SetDefaultFactory(func(name string, _ map[string]any) (agentruntime.Component, error) {
+		if name != "Probe" {
+			return nil, errors.New("unexpected component name: " + name)
+		}
+		return &sysEchoComponent{}, nil
+	})
+	t.Cleanup(func() { agentruntime.SetDefaultFactory(origFactory) })
+
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"probe": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Probe",
+						"params":         map[string]any{},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	body := `{"params":{"sys.query":{"value":"hello sys"}}}`
+	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "probe"},
+	}
+	h.DebugComponent(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Data["query"] != "hello sys" {
+		t.Fatalf("data.query = %v, want 'hello sys'", env.Data["query"])
+	}
+}
+
+func TestDebugComponent_RejectsSysTenantIDOverride(t *testing.T) {
+	origFactory := agentruntime.DefaultFactory()
+	agentruntime.SetDefaultFactory(func(name string, _ map[string]any) (agentruntime.Component, error) {
+		if name != "Probe" {
+			return nil, errors.New("unexpected component name: " + name)
+		}
+		return &sysEchoComponent{}, nil
+	})
+	t.Cleanup(func() { agentruntime.SetDefaultFactory(origFactory) })
+
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"probe": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Probe",
+						"params":         map[string]any{},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	body := `{"params":{"sys.query":{"value":"hello sys"},"sys.tenant_id":{"value":"attacker-tenant"}}}`
+	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "probe"},
+	}
+	h.DebugComponent(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Data["tenant_id"] != "u-1" {
+		t.Fatalf("data.tenant_id = %v, want u-1", env.Data["tenant_id"])
 	}
 }
 

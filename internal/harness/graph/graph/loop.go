@@ -115,7 +115,7 @@ type loopInterruptState struct {
 // shouldQuit is the termination predicate (called after each iteration).
 func NewLoopNodeFunc(
 	key string,
-	sub *CompiledGraph,
+	sub *compiledGraph,
 	shouldQuit LoopCondition,
 	opts ...LoopOption,
 ) (types.NodeFunc, error) {
@@ -143,7 +143,7 @@ func NewLoopNodeFunc(
 func runLoop(
 	ctx context.Context,
 	key string,
-	sub *CompiledGraph,
+	sub *compiledGraph,
 	input interface{},
 	shouldQuit LoopCondition,
 	options *loopOptions,
@@ -159,7 +159,7 @@ func runLoop(
 		if snap.CurrentInput != nil {
 			var decoded interface{}
 			if err := json.Unmarshal(snap.CurrentInput, &decoded); err != nil {
-				return nil, fmt.Errorf("%w: decode current input: %v", ErrLoopResumeStateInvalid, err)
+				return nil, fmt.Errorf("%w: decode current input: %w", ErrLoopResumeStateInvalid, err)
 			}
 			current = decoded
 		} else {

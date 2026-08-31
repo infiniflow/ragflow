@@ -50,9 +50,7 @@ class OCREndpoint(ls.LitAPI):
 
         operator = operator.strip().lower()
         if operator not in ("det", "rec"):
-            raise ValueError(
-                f"Invalid or missing operator '{operator}' (must be 'det' or 'rec')"
-            )
+            raise ValueError(f"Invalid or missing operator '{operator}' (must be 'det' or 'rec')")
 
         return operator, data
 

@@ -1,4 +1,4 @@
-package parser
+package pdf
 
 import (
 	"image"
@@ -13,7 +13,7 @@ import (
 var renderFn = fallbackRender
 
 // renderPageToImage renders a page at 216 DPI for downstream DLA/TSR/OCR.
-func renderPageToImage(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
+func RenderPageToImage(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
 	return renderFn(engine, pageNum)
 }
 
@@ -25,7 +25,10 @@ func fallbackRender(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
 	}
 	// Guard against typed-nil (e.g. (*image.RGBA)(nil) returned as non-nil
 	// interface).  The plain img==nil check misses that case.
-	if img == nil || reflect.ValueOf(img).IsNil() {
+	if img == nil {
+		return nil, ErrNoPDFData
+	}
+	if rv := reflect.ValueOf(img); rv.Kind() == reflect.Ptr && rv.IsNil() {
 		return nil, ErrNoPDFData
 	}
 	return img, nil

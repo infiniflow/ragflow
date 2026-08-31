@@ -88,10 +88,7 @@ class WhatsAppChannel(Channel):
             ws_base = f"wss://{base_url.removeprefix('https://')}"
         else:
             ws_base = base_url
-        return (
-            f"{ws_base}/whatsapp/{self._session_key()}/events/ws"
-            f"?after={self._event_cursor}"
-        )
+        return f"{ws_base}/whatsapp/{self._session_key()}/events/ws?after={self._event_cursor}"
 
     def _gateway_headers(self) -> dict[str, str]:
         token = str(self.account.gateway_token or "").strip()
@@ -129,9 +126,7 @@ class WhatsAppChannel(Channel):
                 return {}
             content_type = resp.headers.get("content-type", "")
             if "application/json" not in content_type.lower():
-                raise RuntimeError(
-                    f"unexpected response content-type: {content_type or 'unknown'}, response: {text[:200]}"
-                )
+                raise RuntimeError(f"unexpected response content-type: {content_type or 'unknown'}, response: {text[:200]}")
             try:
                 return await resp.json()
             except Exception as ex:
@@ -370,12 +365,7 @@ class WhatsAppChannel(Channel):
 
 
 def _build(account_id: str, cfg: dict) -> Channel:
-    gateway_base_url = str(
-        cfg.get("gateway_base_url")
-        or cfg.get("gateway_url")
-        or cfg.get("control_url")
-        or _default_gateway_base_url()
-    )
+    gateway_base_url = str(cfg.get("gateway_base_url") or cfg.get("gateway_url") or cfg.get("control_url") or _default_gateway_base_url())
     gateway_token = str(cfg.get("gateway_token") or cfg.get("token") or "")
     session_key = str(cfg.get("session_key") or cfg.get("session_id") or account_id)
     timeout_secs = int(cfg.get("timeout_secs") or WHATSAPP_DEFAULT_TIMEOUT_SECS)

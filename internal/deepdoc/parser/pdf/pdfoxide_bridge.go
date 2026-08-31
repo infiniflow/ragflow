@@ -1,6 +1,6 @@
 //go:build cgo
 
-package parser
+package pdf
 
 import (
 	"image"
@@ -11,8 +11,8 @@ import (
 )
 
 // pdfoxideEngine adapts pdfoxide.Engine to the pdf.PDFEngine interface.
-type pdfoxideEngine struct {
-	inner *pdfoxide.Engine
+type PDFOxideEngine struct {
+	Inner *pdfoxide.Engine
 }
 
 // NewEngine returns a pdf.PDFEngine backed by pdf_oxide.
@@ -21,15 +21,15 @@ func NewEngine(pdfBytes []byte) (pdf.PDFEngine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &pdfoxideEngine{inner: eng}, nil
+	return &PDFOxideEngine{Inner: eng}, nil
 }
 
-func (e *pdfoxideEngine) RawData() []byte         { return e.inner.RawData() }
-func (e *pdfoxideEngine) PageCount() (int, error) { return e.inner.PageCount() }
-func (e *pdfoxideEngine) Close() error            { return e.inner.Close() }
+func (e *PDFOxideEngine) RawData() []byte         { return e.Inner.RawData() }
+func (e *PDFOxideEngine) PageCount() (int, error) { return e.Inner.PageCount() }
+func (e *PDFOxideEngine) Close() error            { return e.Inner.Close() }
 
-func (e *pdfoxideEngine) Outlines() ([]pdf.Outline, error) {
-	ol := pdfium.ExtractOutlines(e.inner.RawData())
+func (e *PDFOxideEngine) Outlines() ([]pdf.Outline, error) {
+	ol := pdfium.ExtractOutlines(e.Inner.RawData())
 	result := make([]pdf.Outline, len(ol))
 	for i, o := range ol {
 		result[i] = pdf.Outline{Title: o.Title, Level: o.Level, PageNumber: o.PageNumber}
@@ -37,16 +37,16 @@ func (e *pdfoxideEngine) Outlines() ([]pdf.Outline, error) {
 	return result, nil
 }
 
-func (e *pdfoxideEngine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
-	return e.inner.RenderPage(pageNum, dpi)
+func (e *PDFOxideEngine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
+	return e.Inner.RenderPage(pageNum, dpi)
 }
 
-func (e *pdfoxideEngine) RenderPageImage(pageNum int, dpi float64) (image.Image, error) {
-	return e.inner.RenderPageImage(pageNum, dpi)
+func (e *PDFOxideEngine) RenderPageImage(pageNum int, dpi float64) (image.Image, error) {
+	return e.Inner.RenderPageImage(pageNum, dpi)
 }
 
-func (e *pdfoxideEngine) ExtractChars(pageNum int) ([]pdf.TextChar, error) {
-	chars, err := e.inner.ExtractChars(pageNum)
+func (e *PDFOxideEngine) ExtractChars(pageNum int) ([]pdf.TextChar, error) {
+	chars, err := e.Inner.ExtractChars(pageNum)
 	if err != nil {
 		return nil, err
 	}

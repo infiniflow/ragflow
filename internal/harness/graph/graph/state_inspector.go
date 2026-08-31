@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ragflow/internal/harness/graph/channels"
+	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/types"
 )
@@ -45,7 +46,7 @@ type StateUpdate struct {
 }
 
 // StateInspector provides state inspection and manipulation for compiled graphs.
-// Implemented by CompiledGraph and CompiledStateGraph.
+// Implemented by compiledGraph and CompiledStateGraph.
 type StateInspector interface {
 	// GetState retrieves the state at the given config.
 	// When config contains only thread_id, returns the latest state.
@@ -66,17 +67,21 @@ type StateInspector interface {
 	ForkThread(ctx context.Context, sourceThreadID, newThreadID string, sourceCheckpointID string) (*types.RunnableConfig, error)
 }
 
-// Ensure CompiledGraph implements StateInspector.
-var _ StateInspector = (*CompiledGraph)(nil)
+// Ensure compiledGraph implements StateInspector.
+var _ StateInspector = (*compiledGraph)(nil)
 
 // GetState retrieves the graph state at the given configuration point.
-func (cg *CompiledGraph) GetState(ctx context.Context, config *types.RunnableConfig) (*StateSnapshot, error) {
+func (cg *compiledGraph) GetState(ctx context.Context, config *types.RunnableConfig) (*StateSnapshot, error) {
 	if cg.checkpointer == nil {
 		return nil, fmt.Errorf("checkpointer is required for GetState, configure with WithCheckpointer during Compile")
 	}
 
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
+	}
 	cpConfig := buildCheckpointerConfig(config)
-	cpData, err := cg.checkpointer.Get(ctx, cpConfig)
+	cpData, err := cp.Get(ctx, cpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint: %w", err)
 	}
@@ -87,7 +92,9 @@ func (cg *CompiledGraph) GetState(ctx context.Context, config *types.RunnableCon
 	// Build channel registry from graph channels and restore from checkpoint data.
 	registry := channels.NewRegistry()
 	for name, ch := range cg.graph.GetChannels() {
-		registry.Register(name, ch.Copy())
+		if chImpl, ok := ch.(channels.Channel); ok {
+			registry.Register(name, chImpl.Copy())
+		}
 	}
 	filtered := make(map[string]interface{})
 	for key, val := range cpData {
@@ -117,13 +124,17 @@ func (cg *CompiledGraph) GetState(ctx context.Context, config *types.RunnableCon
 }
 
 // GetStateHistory returns the sequence of state snapshots for the thread.
-func (cg *CompiledGraph) GetStateHistory(ctx context.Context, config *types.RunnableConfig, limit int, before *types.RunnableConfig) ([]*StateSnapshot, error) {
+func (cg *compiledGraph) GetStateHistory(ctx context.Context, config *types.RunnableConfig, limit int, before *types.RunnableConfig) ([]*StateSnapshot, error) {
 	if cg.checkpointer == nil {
 		return nil, fmt.Errorf("checkpointer is required for GetStateHistory")
 	}
 
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
+	}
 	cpConfig := buildCheckpointerConfig(config)
-	entries, err := cg.checkpointer.List(ctx, cpConfig, limit)
+	entries, err := cp.List(ctx, cpConfig, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list checkpoints: %w", err)
 	}
@@ -169,17 +180,21 @@ func (cg *CompiledGraph) GetStateHistory(ctx context.Context, config *types.Runn
 }
 
 // UpdateState applies state updates at the given checkpoint/thread and creates a new checkpoint.
-func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.RunnableConfig, update *StateUpdate) (*types.RunnableConfig, error) {
+func (cg *compiledGraph) UpdateState(ctx context.Context, config *types.RunnableConfig, update *StateUpdate) (*types.RunnableConfig, error) {
 	if cg.checkpointer == nil {
 		return nil, fmt.Errorf("checkpointer is required for UpdateState")
 	}
 
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
+	}
 	// 1. Get the current checkpoint at the target config.
 	cpConfig := buildCheckpointerConfig(config)
 	if update.CheckID != "" {
 		cpConfig[constants.ConfigKeyCheckpointID] = update.CheckID
 	}
-	cpData, err := cg.checkpointer.Get(ctx, cpConfig)
+	cpData, err := cp.Get(ctx, cpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint for update: %w", err)
 	}
@@ -215,7 +230,7 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 		"parent_checkpoint_id":          parentID,
 		constants.ConfigKeyCheckpointID: "",
 	}
-	if err := cg.checkpointer.Put(ctx, newConfig, cpData); err != nil {
+	if err := cp.Put(ctx, newConfig, cpData); err != nil {
 		return nil, fmt.Errorf("failed to save updated checkpoint: %w", err)
 	}
 
@@ -223,7 +238,7 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 	listCfg := map[string]interface{}{
 		constants.ConfigKeyThreadID: newThreadID,
 	}
-	entries, err := cg.checkpointer.List(ctx, listCfg, 1)
+	entries, err := cp.List(ctx, listCfg, 1)
 	if err == nil && len(entries) > 0 {
 		newCPID, _ := entries[0][constants.ConfigKeyCheckpointID].(string)
 		result := types.NewRunnableConfig()
@@ -245,6 +260,16 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 }
 
 // ---- helpers ----
+
+// getCheckpointer performs a safe type assertion on the stored checkpointer.
+// Returns a BaseCheckpointer or a descriptive error if the cast fails.
+func (cg *compiledGraph) getCheckpointer() (checkpoint.BaseCheckpointer, error) {
+	cp, ok := cg.checkpointer.(checkpoint.BaseCheckpointer)
+	if !ok {
+		return nil, fmt.Errorf("checkpointer is not a BaseCheckpointer (got %T)", cg.checkpointer)
+	}
+	return cp, nil
+}
 
 // buildCheckpointerConfig builds a checkpointer config from a RunnableConfig.
 func buildCheckpointerConfig(config *types.RunnableConfig) map[string]interface{} {
@@ -277,7 +302,7 @@ func extractMeta(cpData map[string]interface{}) map[string]interface{} {
 
 // determineNextFromCheckpoint reads the checkpoint and checkpoint data
 // to determine which nodes would run next.
-func (cg *CompiledGraph) determineNextFromCheckpoint(cpData map[string]interface{}) []string {
+func (cg *compiledGraph) determineNextFromCheckpoint(cpData map[string]interface{}) []string {
 	// Return nil because the stored __last_completed_node__ is already
 	// finished, not pending. Full edge replay is not yet implemented.
 	return nil
@@ -287,19 +312,19 @@ func (cg *CompiledGraph) determineNextFromCheckpoint(cpData map[string]interface
 
 var _ StateInspector = (*CompiledStateGraph)(nil)
 
-// GetState delegates to the underlying CompiledGraph.
+// GetState delegates to the underlying compiledGraph.
 func (csg *CompiledStateGraph) GetState(ctx context.Context, config *types.RunnableConfig) (*StateSnapshot, error) {
-	return csg.CompiledGraph.GetState(ctx, config)
+	return csg.compiledGraph.GetState(ctx, config)
 }
 
-// GetStateHistory delegates to the underlying CompiledGraph.
+// GetStateHistory delegates to the underlying compiledGraph.
 func (csg *CompiledStateGraph) GetStateHistory(ctx context.Context, config *types.RunnableConfig, limit int, before *types.RunnableConfig) ([]*StateSnapshot, error) {
-	return csg.CompiledGraph.GetStateHistory(ctx, config, limit, before)
+	return csg.compiledGraph.GetStateHistory(ctx, config, limit, before)
 }
 
-// UpdateState delegates to the underlying CompiledGraph.
+// UpdateState delegates to the underlying compiledGraph.
 func (csg *CompiledStateGraph) UpdateState(ctx context.Context, config *types.RunnableConfig, update *StateUpdate) (*types.RunnableConfig, error) {
-	return csg.CompiledGraph.UpdateState(ctx, config, update)
+	return csg.compiledGraph.UpdateState(ctx, config, update)
 }
 
 // ---- Task type used in StateSnapshot ----
@@ -328,11 +353,16 @@ func (e *CheckpointConflictError) Error() string {
 // state is a copy of the given checkpoint. Returns the RunnableConfig
 // for the new thread.
 //
-// To use: invoke on a CompiledGraph with a checkpointer configured.
+// To use: invoke on a compiledGraph with a checkpointer configured.
 // sourceCheckpointID: empty = latest checkpoint in source thread.
-func (cg *CompiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThreadID string, sourceCheckpointID string) (*types.RunnableConfig, error) {
+func (cg *compiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThreadID string, sourceCheckpointID string) (*types.RunnableConfig, error) {
 	if cg.checkpointer == nil {
 		return nil, fmt.Errorf("checkpointer is required for ForkThread")
+	}
+
+	cp, err := cg.getCheckpointer()
+	if err != nil {
+		return nil, err
 	}
 
 	// 1. Read source checkpoint.
@@ -342,7 +372,7 @@ func (cg *CompiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThre
 	if sourceCheckpointID != "" {
 		cpConfig[constants.ConfigKeyCheckpointID] = sourceCheckpointID
 	}
-	cpData, err := cg.checkpointer.Get(ctx, cpConfig)
+	cpData, err := cp.Get(ctx, cpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source checkpoint: %w", err)
 	}
@@ -354,12 +384,12 @@ func (cg *CompiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThre
 	newConfig := map[string]interface{}{
 		constants.ConfigKeyThreadID: newThreadID,
 	}
-	if err := cg.checkpointer.Put(ctx, newConfig, cpData); err != nil {
+	if err := cp.Put(ctx, newConfig, cpData); err != nil {
 		return nil, fmt.Errorf("failed to write forked checkpoint: %w", err)
 	}
 
 	// 3. Return config pointing to the new thread.
-	entries, err := cg.checkpointer.List(ctx, newConfig, 1)
+	entries, err := cp.List(ctx, newConfig, 1)
 	if err != nil || len(entries) == 0 {
 		return &types.RunnableConfig{
 			Configurable: map[string]interface{}{

@@ -1,8 +1,8 @@
-package parser
+package pdf
 
 import (
-	"context"
 	"image"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -13,20 +13,39 @@ import (
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
+// ---- test helpers ----
+
+func newTestParser() *Parser {
+	return &Parser{Config: pdf.DefaultParserConfig()}
+}
+
+func newMockDocAnalyzer(healthy bool, boxes []pdf.OCRBox, texts []pdf.OCRText) *MockDocAnalyzer {
+	return &MockDocAnalyzer{
+		Healthy:  healthy,
+		OCRBoxes: boxes,
+		OCRTexts: texts,
+	}
+}
+
+func newSimpleMockDocAnalyzer() *MockDocAnalyzer {
+	return &MockDocAnalyzer{Healthy: true}
+}
+
 // ── OCR fallback ──────────────────────────────────────────────────────
 
 func TestOCR_Fallback(t *testing.T) {
+	p := newTestParser()
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 
 	t.Run("nil image", func(t *testing.T) {
-		if got := ocrDetectAndRecognize(context.Background(), nil, &MockDocAnalyzer{Healthy: true}, 0, "garbled page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), nil, &MockDocAnalyzer{Healthy: true}, 0, "garbled page"); got != nil {
 			t.Error("nil image → nil")
 		}
 	})
 
 	t.Run("detect returns no boxes", func(t *testing.T) {
 		mock := &MockDocAnalyzer{Healthy: true, OCRBoxes: nil}
-		if got := ocrDetectAndRecognize(context.Background(), dummyImg, mock, 0, "garbled page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page"); got != nil {
 			t.Error("no det boxes → nil")
 		}
 	})
@@ -37,7 +56,7 @@ func TestOCR_Fallback(t *testing.T) {
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{{Text: "Hello", Confidence: 0.9}},
 		}
-		got := ocrDetectAndRecognize(context.Background(), dummyImg, mock, 0, "garbled page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page")
 		if len(got) != 1 {
 			t.Fatalf("expected 1 pdf.TextChar, got %d", len(got))
 		}
@@ -52,7 +71,7 @@ func TestOCR_Fallback(t *testing.T) {
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{{Text: "", Confidence: 0.1}},
 		}
-		got := ocrDetectAndRecognize(context.Background(), dummyImg, mock, 0, "garbled page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page")
 		if len(got) != 0 {
 			t.Error("empty rec text → empty result")
 		}
@@ -64,17 +83,18 @@ func TestOCR_Fallback(t *testing.T) {
 // ── OCR scan page ──────────────────────────────────────────────────────
 
 func TestOCR_ScanPage(t *testing.T) {
+	p := newTestParser()
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 
 	t.Run("nil image", func(t *testing.T) {
-		if got := ocrDetectAndRecognize(context.Background(), nil, &MockDocAnalyzer{Healthy: true}, 0, "scan page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), nil, &MockDocAnalyzer{Healthy: true}, 0, "scan page"); got != nil {
 			t.Error("nil image → nil")
 		}
 	})
 
 	t.Run("detect returns no boxes", func(t *testing.T) {
 		mock := &MockDocAnalyzer{Healthy: true, OCRBoxes: nil}
-		if got := ocrDetectAndRecognize(context.Background(), dummyImg, mock, 0, "scan page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page"); got != nil {
 			t.Error("no det boxes → nil")
 		}
 	})
@@ -88,7 +108,7 @@ func TestOCR_ScanPage(t *testing.T) {
 			},
 			OCRTexts: []pdf.OCRText{{Text: "Hello", Confidence: 0.9}, {Text: "World", Confidence: 0.8}},
 		}
-		got := ocrDetectAndRecognize(context.Background(), dummyImg, mock, 0, "scan page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page")
 		if len(got) < 1 {
 			t.Error("expected at least 1 pdf.TextChar")
 		}
@@ -100,84 +120,10 @@ func TestOCR_ScanPage(t *testing.T) {
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{},
 		}
-		got := ocrDetectAndRecognize(context.Background(), dummyImg, mock, 0, "scan page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page")
 		if len(got) != 0 {
 			t.Error("no rec text → empty")
 		}
-	})
-}
-
-// ── OCR table cell ─────────────────────────────────────────────────────
-
-func TestOCR_TableCell(t *testing.T) {
-	t.Run("fill single empty cell", func(t *testing.T) {
-		cells := []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""},
-			{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "已有"},
-		}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{{Text: "识别结果", Confidence: 0.9}}}
-		dummy := image.NewRGBA(image.Rect(0, 0, 200, 50))
-
-		ocrTableCells(context.Background(), cells, dummy, mock)
-
-		if cells[0].Text != "识别结果" {
-			t.Errorf("empty cell not filled: %q", cells[0].Text)
-		}
-		if cells[1].Text != "已有" {
-			t.Errorf("filled cell changed: %q", cells[1].Text)
-		}
-	})
-
-	t.Run("all cells already filled — no OCR", func(t *testing.T) {
-		cells := []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A"},
-			{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "B"},
-		}
-		ocrTableCells(context.Background(), cells, nil, nil) // should not panic
-		if cells[0].Text != "A" || cells[1].Text != "B" {
-			t.Error("filled cells should not change")
-		}
-	})
-
-	t.Run("empty cells list", func(t *testing.T) {
-		ocrTableCells(context.Background(), nil, nil, nil) // should not panic
-		ocrTableCells(context.Background(), []pdf.TSRCell{}, nil, nil)
-	})
-
-	t.Run("no DeepDoc — skip", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""}}
-		ocrTableCells(context.Background(), cells, nil, nil)
-		if cells[0].Text != "" {
-			t.Error("without DeepDoc, cell should stay empty")
-		}
-	})
-
-	t.Run("no cropped image — skip", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""}}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{{Text: "x", Confidence: 0.5}}}
-		ocrTableCells(context.Background(), cells, nil, mock)
-		if cells[0].Text != "" {
-			t.Error("without image, cell should stay empty")
-		}
-	})
-
-	t.Run("OCR returns empty string", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""}}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{}}
-		dummy := image.NewRGBA(image.Rect(0, 0, 100, 50))
-		ocrTableCells(context.Background(), cells, dummy, mock)
-		if cells[0].Text != "" {
-			t.Error("empty OCR result → cell stays empty")
-		}
-	})
-
-	t.Run("cell out of image bounds", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 500, Y0: 500, X1: 600, Y1: 600, Text: ""}}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{{Text: "out of bounds", Confidence: 0.9}}}
-		dummy := image.NewRGBA(image.Rect(0, 0, 100, 100))
-		// Should not panic — gracefully degrade
-		ocrTableCells(context.Background(), cells, dummy, mock)
-		t.Logf("out-of-bounds cell: text=%q", cells[0].Text)
 	})
 }
 
@@ -195,7 +141,7 @@ func garbledSample() []pdf.TextChar {
 	return chars
 }
 
-// ── OCR fallback integration through Parse ─────────────────────────────
+// ── OCR fallback integration through Parse ──────────────────────────────
 
 func TestOCR_FallbackIntegration(t *testing.T) {
 	// ocrFallback logic is tested via TestOCR_fallback.
@@ -207,15 +153,16 @@ func TestOCR_FallbackIntegration(t *testing.T) {
 
 func TestOCR_FallbackIntegration_NoDeepDoc(t *testing.T) {
 	chars := garbledSample()
-	mockEng := &mockEngine{chars: map[int][]pdf.TextChar{0: chars}, pageCount: 1}
+	mockEng := &MockEngine{Chars: map[int][]pdf.TextChar{0: chars}, NumPages: 1}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
 
 	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), mockEng)
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(t.Context(), mockEng, mockDLA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("garbled chars: %d sections", len(result.Sections))
+	t.Logf("garbled Chars: %d sections", len(result.Sections))
 }
 
 func TestNoDeepDoc_PdfOxideUnmapped_KeepsChars(t *testing.T) {
@@ -241,9 +188,10 @@ func TestNoDeepDoc_PdfOxideUnmapped_KeepsChars(t *testing.T) {
 	chars[28] = pdf.TextChar{Text: "*", FontName: "SimSun", X0: 194, X1: 202, Top: 100, Bottom: 112}
 	chars[29] = pdf.TextChar{Text: "用", FontName: "SimSun", X0: 202, X1: 210, Top: 100, Bottom: 112}
 
-	mockEng := &mockEngine{chars: map[int][]pdf.TextChar{0: chars}, pageCount: 1}
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), mockEng)
+	mockEng := &MockEngine{Chars: map[int][]pdf.TextChar{0: chars}, NumPages: 1}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
+	result, err := p.ParseRaw(t.Context(), mockEng, mockDLA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +227,7 @@ func TestIsGarbledPage(t *testing.T) {
 	})
 	t.Run("pdf oxide unmapped + CJK — not garbled", func(t *testing.T) {
 		// ### unmapped glyphs + real CJK text (no subset fonts).
-		// isScanNoise returns false (≥2 consecutive CJK chars: "护理全科").
+		// isScanNoise returns false (≥2 consecutive CJK Chars: "护理全科").
 		chars := []pdf.TextChar{
 			{Text: "和", PageNumber: 0}, {Text: "蔘", PageNumber: 0},
 			{Text: "语", PageNumber: 0}, {Text: "言", PageNumber: 0},
@@ -305,6 +253,7 @@ func TestIsGarbledPage(t *testing.T) {
 }
 
 func TestOCR_Fallback_PUAGarbled(t *testing.T) {
+	p := newTestParser()
 	pua := make([]pdf.TextChar, 50)
 	for i := range pua {
 		pua[i] = pdf.TextChar{Text: string(rune(0xE000 + i%10)), PageNumber: 0}
@@ -315,20 +264,21 @@ func TestOCR_Fallback_PUAGarbled(t *testing.T) {
 		OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 		OCRTexts: []pdf.OCRText{{Text: "PUA OCR text", Confidence: 0.9}},
 	}
-	got := ocrDetectAndRecognize(context.Background(), dummyImg, mock, 0, "garbled page")
+	got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page")
 	if len(got) != 1 || got[0].Text != "PUA OCR text" {
 		t.Errorf("PUA garbled should trigger OCR, got %v", got)
 	}
 }
 
-// ── ocrMergeChars ─────────────────────────────────────────────────────
+// ── ocrMergeChars ──────────────────────────────────────────────────────
 
 func TestOCR_MergeChars(t *testing.T) {
+	p := newTestParser()
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 600, 600))
 
 	t.Run("nil image", func(t *testing.T) {
 		chars := []pdf.TextChar{{X0: 10, Top: 10, X1: 20, Bottom: 30, Text: "A", PageNumber: 0}}
-		if boxes := ocrMergeChars(context.Background(), nil, chars, &MockDocAnalyzer{Healthy: true}, 0); boxes != nil {
+		if boxes := p.ocrMergeChars(t.Context(), nil, chars, &MockDocAnalyzer{Healthy: true}, 0); boxes != nil {
 			t.Error("nil image → nil")
 		}
 	})
@@ -336,7 +286,7 @@ func TestOCR_MergeChars(t *testing.T) {
 	t.Run("detect returns no boxes", func(t *testing.T) {
 		mock := &MockDocAnalyzer{Healthy: true, OCRBoxes: []pdf.OCRBox{}}
 		chars := []pdf.TextChar{{X0: 10, Top: 10, X1: 20, Bottom: 30, Text: "A", PageNumber: 0}}
-		if boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0); boxes != nil {
+		if boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0); boxes != nil {
 			t.Error("no detect boxes → nil")
 		}
 	})
@@ -348,7 +298,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "Hello OCR", Confidence: 0.9}},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 30, Top: 10, Bottom: 30, Text: "Hello", PageNumber: 0}}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}
@@ -365,7 +315,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "OCR", Confidence: 0.9}},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 20, Top: 10, Bottom: 20, Text: "A", PageNumber: 0}}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box (OCR), got %d", len(boxes))
 		}
@@ -381,7 +331,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			OCRTexts: []pdf.OCRText{},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 20, Top: 10, Bottom: 20, Text: "A", PageNumber: 0}}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 0 {
 			t.Fatalf("expected 0 boxes (empty OCR), got %d", len(boxes))
 		}
@@ -400,7 +350,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 30, Top: 10, Bottom: 30, Text: "Hello", PageNumber: 0}}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 2 {
 			t.Fatalf("expected 2 boxes, got %d", len(boxes))
 		}
@@ -428,7 +378,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{X0: 70, X1: 90, Top: 110, Bottom: 130, Text: "c", PageNumber: 0},
 			{X0: 10, X1: 30, Top: 10, Bottom: 30, Text: "a", PageNumber: 0},
 		}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 2 {
 			t.Fatalf("expected 2 detect boxes, got %d", len(boxes))
 		}
@@ -455,7 +405,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{X0: 10, X1: 30, Top: 30, Bottom: 50, Text: "A", PageNumber: 0},
 			{X0: 40, X1: 60, Top: 20, Bottom: 120, Text: "B", PageNumber: 0},
 		}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}
@@ -478,7 +428,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{X0: 30, X1: 40, Top: 10, Bottom: 20, Text: "", PageNumber: 0},
 			{X0: 50, X1: 60, Top: 10, Bottom: 20, Text: "a", PageNumber: 0},
 		}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}
@@ -500,7 +450,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{Text: "d", X0: 10, X1: 20, Top: 10, Bottom: 25, PageNumber: 0},
 			{Text: "o", X0: 21, X1: 30, Top: 10, Bottom: 25, PageNumber: 0},
 		}
-		boxes := ocrMergeChars(context.Background(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}
@@ -511,8 +461,10 @@ func TestOCR_MergeChars(t *testing.T) {
 	})
 }
 
-// TestTableSectionCaptionInHTML verifies mergeCaptions prepends table
-// caption text before the HTML table, matching Python's caption handling.
+// TestTableSectionCaptionInHTML verifies mergeCaptions retains a table
+// caption by injecting it as a <caption> element INSIDE the table's HTML
+// (matching Python's __html_table), instead of dropping it or emitting
+// malformed pre-table text. The standalone caption section is removed.
 
 func TestTableSectionCaptionInHTML(t *testing.T) {
 	// Simulate pipeline order: extractTableAndReplace → boxesToSections → mergeCaptions
@@ -539,12 +491,21 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 		Text:       "表1: 交通工具等级",
 	})
 
-	// Step 2: mergeCaptions prepends caption before HTML
+	// Step 2: mergeCaptions injects caption as a <caption> element inside <table>
 	figures := pdf.CollectFigures(sections)
 	sections = tbl.MergeCaptions(sections, figures)
 
-	if !strings.HasPrefix(sections[0].Text, "表1: 交通工具等级<table>") {
-		t.Errorf("expected caption before table HTML, got %q", sections[0].Text)
+	got := sections[0].Text
+	if !strings.Contains(got, "<caption>表1: 交通工具等级</caption>") {
+		t.Errorf("expected a <caption> element inside the table HTML, got %q", got)
+	}
+	// <caption> must be a proper child of <table>, immediately after <table>.
+	if i := strings.Index(got, "<table>"); i < 0 || !strings.Contains(got[i:i+len("<table><caption>")], "<caption>") {
+		t.Errorf("expected <caption> immediately after <table>, got %q", got)
+	}
+	// The standalone caption section must be removed (no raw pre-table text).
+	if strings.HasPrefix(got, "表1: 交通工具等级<table") {
+		t.Errorf("caption must be a <caption> child of <table>, not pre-table text, got %q", got)
 	}
 }
 
@@ -552,23 +513,73 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 // text boxes that are mostly OUTSIDE the cell, even with cellIsEmpty=true.
 // The 0.3 threshold should not match a wide box that barely touches a
 // narrow cell — this would cause body text to leak into table cells.
-// TestParser_ConcurrentSafety verifies that Parser.Parse() is safe for
+// TestParser_ConcurrentSafety verifies that Parser.ParseRaw() is safe for
 // concurrent use. 8 goroutines each call Parse 5 times on the same Parser
 // instance. Run with -race.
 func TestParser_ConcurrentSafety(t *testing.T) {
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: false})
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
 
 	var wg sync.WaitGroup
 	n := 8
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 5 {
-				eng := &mockEngine{pageCount: 2}
-				_, _ = p.Parse(context.Background(), eng)
+				eng := &MockEngine{NumPages: 2}
+				if _, err := p.ParseRaw(t.Context(), eng, mockDLA); err != nil {
+					t.Errorf("ParseRaw: %v", err)
+				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
+}
+
+func TestParseRaw_PageDimensions(t *testing.T) {
+	// ParseResult must carry per-page PDF-point dimensions so downstream
+	// consumers get PDF-point values directly without a zoom map.
+	eng := &MockEngine{NumPages: 1, Chars: map[int][]pdf.TextChar{
+		0: {{Text: "page0", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+	}}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	cfg := pdf.DefaultParserConfig()
+	cfg.Zoom = 3
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(t.Context(), eng, mockDLA)
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	if result.PageHeight == nil {
+		t.Fatal("PageHeight map should be initialized")
+	}
+	if result.PageWidth == nil {
+		t.Fatal("PageWidth map should be initialized")
+	}
+}
+
+func TestParseRaw_ZeroZoom_NoNaN(t *testing.T) {
+	// Zoom=0 should not produce NaN coordinates.
+	eng := &MockEngine{NumPages: 1, Chars: map[int][]pdf.TextChar{
+		0: {{Text: "test", X0: 100, X1: 200, Top: 100, Bottom: 120}},
+	}}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+	cfg := pdf.DefaultParserConfig()
+	cfg.Zoom = 0
+	p := NewParser(cfg)
+	result, err := p.ParseRaw(t.Context(), eng, mockDLA)
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	foundPosition := false
+	for _, s := range result.Sections {
+		for _, pos := range s.Positions {
+			foundPosition = true
+			if math.IsNaN(pos.Left) || math.IsNaN(pos.Top) {
+				t.Error("Zoom=0 produced NaN coordinates")
+			}
+		}
+	}
+	if !foundPosition {
+		t.Fatal("expected at least one position to validate")
+	}
 }

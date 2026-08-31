@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/harness/core/schema"
-	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // SubAgentNodeOption configures a SubAgentNode.
@@ -30,11 +30,11 @@ type SubAgentNodeOption func(*SubAgentNodeConfig)
 // SubAgentNodeConfig holds configuration for the sub-agent node.
 type SubAgentNodeConfig struct {
 	// InputMapping maps state field paths to agent input fields.
-	// Format: graph.FieldMapping{From: "state_field", To: "agent_input_field"}
-	InputMapping []graph.FieldMapping
+	// Format: types.FieldMapping{From: "state_field", To: "agent_input_field"}
+	InputMapping []types.FieldMapping
 	// OutputMapping maps agent output fields to state field paths.
-	// Format: graph.FieldMapping{From: "agent_output_field", To: "state_field"}
-	OutputMapping []graph.FieldMapping
+	// Format: types.FieldMapping{From: "agent_output_field", To: "state_field"}
+	OutputMapping []types.FieldMapping
 	// InputExtractor extracts the AgentInput from the graph state.
 	// If nil, the entire state is passed as the input messages.
 	InputExtractor func(ctx context.Context, state interface{}) (*AgentInput, error)
@@ -49,7 +49,7 @@ type SubAgentNodeConfig struct {
 // The 'from' path is in the graph state, 'to' path is in the agent's input.
 func WithSubAgentInput(from, to string) SubAgentNodeOption {
 	return func(cfg *SubAgentNodeConfig) {
-		cfg.InputMapping = append(cfg.InputMapping, graph.FieldMapping{From: from, To: to})
+		cfg.InputMapping = append(cfg.InputMapping, types.FieldMapping{From: from, To: to})
 	}
 }
 
@@ -57,7 +57,7 @@ func WithSubAgentInput(from, to string) SubAgentNodeOption {
 // The 'from' path is in the agent's output, 'to' path is in the graph state.
 func WithSubAgentOutput(from, to string) SubAgentNodeOption {
 	return func(cfg *SubAgentNodeConfig) {
-		cfg.OutputMapping = append(cfg.OutputMapping, graph.FieldMapping{From: from, To: to})
+		cfg.OutputMapping = append(cfg.OutputMapping, types.FieldMapping{From: from, To: to})
 	}
 }
 

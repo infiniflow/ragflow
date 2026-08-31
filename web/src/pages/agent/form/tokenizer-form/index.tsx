@@ -1,4 +1,5 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { Form } from '@/components/ui/form';
@@ -14,6 +15,7 @@ import {
   TokenizerFields,
   TokenizerSearchMethod,
 } from '../../constant';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -31,7 +33,12 @@ export const FormSchema = z.object({
 
 export type TokenizerFormSchemaType = z.infer<typeof FormSchema>;
 
-const TokenizerForm = ({ node }: INextOperatorForm) => {
+const TokenizerForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+  externalErrors,
+}: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialTokenizerValues, node);
 
@@ -52,7 +59,10 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
     mode: 'onChange',
   });
 
+  useSyncExternalFormErrors(form, externalErrors);
+
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -81,9 +91,11 @@ const TokenizerForm = ({ node }: INextOperatorForm) => {
           {(field) => <SelectWithSearch options={FieldsOptions} {...field} />}
         </RAGFlowFormItem>
       </FormWrapper>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

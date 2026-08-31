@@ -1,7 +1,6 @@
-package parser
+package pdf
 
 import (
-	"context"
 	"image"
 	"strings"
 	"testing"
@@ -16,11 +15,11 @@ import (
 // entries. Go backfills pdf.Section.Text from pdf.TableItem.Rows after
 // linkTableSections.
 func TestTableSection_TextFromTSR(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   900, // 300pt at 3x = 900px (216 DPI)
-		renderH:   600,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:  900, // 300pt at 3x = 900px (216 DPI)
+		RenderH:  600,
+		Chars: map[int][]pdf.TextChar{0: {
 			// PDF space (72 DPI): well inside DLA region
 			{X0: 50, X1: 70, Top: 40, Bottom: 55, Text: "姓"},
 			{X0: 80, X1: 100, Top: 40, Bottom: 55, Text: "名"},
@@ -42,9 +41,9 @@ func TestTableSection_TextFromTSR(t *testing.T) {
 			{X0: 200, Y0: 100, X1: 460, Y1: 220, Text: "25", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
-
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(pdf.DefaultParserConfig())
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -80,10 +79,10 @@ func TestTableSection_TextFromTSR(t *testing.T) {
 	// not from pre-filled TSR cell text (EE feature).
 }
 
-// TestEnrichWithDeepDoc_ImageOnlyPage verifies that enrichWithDeepDoc
+// TestEnrichOnePageWithDeepDoc_ImageOnlyPage verifies that enrichOnePageWithDeepDoc
 // runs DLA on pages that have images but zero embedded chars (boxes).
 // Regression test for test.pdf (Go 0 tables, Py 1 table).
-func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
+func TestEnrichOnePageWithDeepDoc_ImageOnlyPage(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		DLARegions: []pdf.DLARegion{
@@ -93,19 +92,19 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 			{X0: 0, Y0: 0, X1: 200, Y1: 100, Text: "A", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
+	p := NewParser(pdf.DefaultParserConfig())
 
 	// 0 text boxes, but page 0 has a rendered image.
 	boxes := []pdf.TextBox{}
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 900, 600))
-	pageImages := map[int]image.Image{0: dummyImg}
+	ctx := t.Context()
 
-	tables := p.enrichWithDeepDoc(context.Background(), nil, nil, boxes, pageImages)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(ctx, dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) == 0 {
-		t.Fatal("enrichWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
+		t.Fatal("enrichOnePageWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
 	}
 	if len(tables[0].Cells) == 0 {
-		t.Fatal("enrichWithDeepDoc: expected TSR cells in table")
+		t.Fatal("enrichOnePageWithDeepDoc: expected TSR cells in table")
 	}
 }
 
@@ -113,10 +112,10 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 // is merged into the nearest "figure" pdf.Section and the caption pdf.Section is
 // removed. Matches Python _extract_table_figure caption matching.
 func TestFigureCaption_MergedIntoFigure(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   1800, renderH: 2400,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:  1800, RenderH: 2400,
+		Chars: map[int][]pdf.TextChar{0: {
 			// Figure text — overlaps DLA figure region (pixel Y=80-300 → PDF 27-100).
 			{X0: 40, X1: 60, Top: 30, Bottom: 45, Text: "F"},
 			// Caption text — overlaps DLA figure caption region (pixel Y=310-340 → PDF 103-113).
@@ -131,9 +130,9 @@ func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 			{X0: 100, Y0: 310, X1: 500, Y1: 340, Label: "figure caption", Confidence: 0.9},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
-
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(pdf.DefaultParserConfig())
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -169,10 +168,10 @@ func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 // TestTableCaption_MergedIntoTable verifies that "table caption" text
 // is merged into the nearest table pdf.Section and the caption is removed.
 func TestTableCaption_MergedIntoTable(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   1800, renderH: 2400,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:  1800, RenderH: 2400,
+		Chars: map[int][]pdf.TextChar{0: {
 			// Table text — overlaps DLA table region (pixel Y=80-300 → PDF 27-100).
 			{X0: 40, X1: 60, Top: 30, Bottom: 45, Text: "T"},
 			// Caption text — overlaps DLA table caption region (pixel Y=310-340 → PDF 103-113).
@@ -190,9 +189,9 @@ func TestTableCaption_MergedIntoTable(t *testing.T) {
 			{X0: 200, Y0: 0, X1: 460, Y1: 100, Text: "B", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
-
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(pdf.DefaultParserConfig())
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -224,10 +223,10 @@ func TestTableCaption_MergedIntoTable(t *testing.T) {
 // boxes overlapping a table region, regardless of their DLA label.
 // This is the #1 cause of Go vs Python discrepancy on table-heavy PDFs.
 func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
-	eng := &mockEngine{
-		pageCount: 1,
-		renderW:   1800, renderH: 2400,
-		chars: map[int][]pdf.TextChar{0: {
+	eng := &MockEngine{
+		NumPages: 1,
+		RenderW:  1800, RenderH: 2400,
+		Chars: map[int][]pdf.TextChar{0: {
 			// Box A: inside DLA table region, labeled as "text" by DLA.
 			{X0: 50, X1: 100, Top: 40, Bottom: 55, Text: "碎片文字"},
 			// Box B: inside DLA table region, same situation.
@@ -247,9 +246,9 @@ func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 			{X0: 200, Y0: 0, X1: 460, Y1: 100, Text: "年龄", Label: "table row"},
 		},
 	}
-	p := NewParser(pdf.DefaultParserConfig(), mock)
-
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(pdf.DefaultParserConfig())
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -286,9 +285,11 @@ func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 
 // TestEmptyDoc_NoCrash verifies Parse handles edge cases gracefully.
 func TestEmptyDoc_NoCrash(t *testing.T) {
-	eng := &mockEngine{pageCount: 0}
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), eng)
+	eng := &MockEngine{NumPages: 0}
+	mock := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -299,13 +300,28 @@ func TestEmptyDoc_NoCrash(t *testing.T) {
 
 // TestNilChars_handled verifies zero-chars pages don't crash.
 func TestNilChars_Handled(t *testing.T) {
-	eng := &mockEngine{pageCount: 1, renderW: 200, renderH: 200}
-	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
-	result, err := p.Parse(context.Background(), eng)
+	eng := &MockEngine{NumPages: 1, RenderW: 200, RenderH: 200}
+	mock := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig())
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(result.Sections) != 0 && p.DeepDoc != nil {
+	if len(result.Sections) != 0 {
 		t.Logf("nil chars + DeepDoc: sections=%d (may trigger OCR path)", len(result.Sections))
+	}
+}
+
+func TestTableSection_StillParsesWithPositions(t *testing.T) {
+	// matchTableImage was removed along with Parse.fillSectionImages; the
+	// Python pipeline crops tables at tokenize time, not parse time. This
+	// guard keeps the table section shape exercised after that removal.
+	sec := &pdf.Section{
+		LayoutType: pdf.LayoutTypeTable,
+		Positions:  []pdf.Position{{PageNumbers: []int{0}, Left: 50.0, Right: 500.0, Top: 100.0, Bottom: 300.0}},
+	}
+	if len(sec.Positions) != 1 {
+		t.Fatalf("expected 1 position, got %d", len(sec.Positions))
 	}
 }

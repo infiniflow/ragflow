@@ -16,10 +16,14 @@
   "models": [
     {
       "name": "deepseek-v4-pro",
-      "max_tokens": 1048576,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -27,10 +31,14 @@
     },
     {
       "name": "deepseek-v4-flash",
-      "max_tokens": 1048576,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -38,10 +46,14 @@
     },
     {
       "name": "deepseek-v3.2",
-      "max_tokens": 163840,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": false,
         "clear_thinking": true
@@ -49,10 +61,14 @@
     },
     {
       "name": "deepseek-v3.1-terminus",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": false,
         "clear_thinking": true
@@ -60,17 +76,25 @@
     },
     {
       "name": "DeepSeek-V3",
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-r1-250528",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-r1-250528",
+      "content_length": 131072,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -78,10 +102,14 @@
     },
     {
       "name": "qwen3-235b-a22b",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -89,10 +117,14 @@
     },
     {
       "name": "qwen3-32b",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -100,10 +132,14 @@
     },
     {
       "name": "qwen3-30b-a3b",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -111,10 +147,14 @@
     },
     {
       "name": "kimi-k2.6",
-      "max_tokens": 262144,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -122,17 +162,25 @@
     },
     {
       "name": "longcat-flash-chat",
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "glm-5",
-      "max_tokens": 202752,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -140,10 +188,14 @@
     },
     {
       "name": "glm-5.1",
-      "max_tokens": 202752,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -151,18 +203,23 @@
     },
     {
       "name": "qwen2.5-vl-72b",
-      "max_tokens": 49152,
+      "content_length": 32768,
+      "max_output": 4096,
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "bge-m3",
       "max_tokens": 8000,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 32
     },
     {
       "name": "bge-reranker-v2-m3",

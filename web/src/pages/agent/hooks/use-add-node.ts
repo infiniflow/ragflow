@@ -1,4 +1,5 @@
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
+import { pickByBackend } from '@/utils/backend-variant';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { t } from 'i18next';
@@ -16,13 +17,14 @@ import {
   initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
+  initialCompilationValues,
   initialCrawlerValues,
   initialDataOperationsValues,
   initialDocGeneratorValues,
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
-  initialExtractorValues,
+  getInitialExtractorValues,
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
@@ -30,12 +32,16 @@ import {
   initialIterationStartValues,
   initialIterationValues,
   initialKeenableValues,
+  initialYouComValues,
   initialListOperationsValues,
   initialLoopValues,
   initialMessageValues,
   initialNoteValues,
   initialParserValues,
   initialPubMedValues,
+  initialBGPTValues,
+  initialQueritContentsValues,
+  initialQueritValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSearXNGValues,
@@ -143,6 +149,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
+      [Operator.BGPT]: initialBGPTValues,
       [Operator.ArXiv]: initialArXivValues,
       [Operator.Google]: initialGoogleValues,
       [Operator.Bing]: initialBingValues,
@@ -164,7 +171,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.QueritContents]: initialQueritContentsValues,
+      [Operator.QueritSearch]: initialQueritValues,
       [Operator.KeenableSearch]: initialKeenableValues,
+      [Operator.YouComSearch]: initialYouComValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
@@ -175,11 +185,20 @@ export const useInitializeOperatorParams = () => {
       [Operator.TokenChunker]: initialTokenChunkerValues,
       [Operator.TitleChunker]: initialTitleChunkerValues,
       [Operator.Extractor]: {
-        ...initialExtractorValues,
+        ...getInitialExtractorValues(),
         llm_id: llmId,
-        sys_prompt: t('flow.prompts.system.summary'),
-        prompts: t('flow.prompts.user.summary'),
+        // sys_prompt/prompts belong to the Python extractor form. The Go
+        // form seeds summary.system_prompt itself, and the Go extractor
+        // falls back to a built-in prompt when it is empty.
+        ...pickByBackend({
+          go: {},
+          python: {
+            sys_prompt: t('flow.prompts.system.summary'),
+            prompts: t('flow.prompts.user.summary'),
+          },
+        }),
       },
+      [Operator.Compiler]: { ...initialCompilationValues, llm_id: llmId },
       [Operator.DataOperations]: initialDataOperationsValues,
       [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,

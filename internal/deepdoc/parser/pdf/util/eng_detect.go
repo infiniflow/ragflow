@@ -66,45 +66,48 @@ func FullTextFromChars(pageChars map[int][]pdf.TextChar) string {
 	return sb.String()
 }
 
-// DetectEnglish detects whether a PDF is primarily English by per-page
-// majority vote, matching Python's is_english logic in __images__
-// (pdf_parser.py:1519-1526).
-//
-// Each page: sample up to 100 character texts via sampler, join into one
-// string, check if there is a run of 30+ consecutive ASCII characters
-// (letters, digits, spaces, punctuation).  Pages with such a run vote
-// "English".  Returns true when a strict majority of pages vote yes.
-//
-// totalPages is the denominator (len(self.page_images) in Python), including
-// image-only pages that have zero chars.  This matches Python's behavior
-// where empty pages dilute the majority.
-func DetectEnglish(pageChars map[int][]pdf.TextChar, totalPages int, sample pdf.SampleFunc) bool {
-	if totalPages == 0 || len(pageChars) == 0 {
+// DetectEnglishPage reports whether one page contains a run of 30+
+// consecutive ASCII-printable characters in a random sample of up to 100
+// extracted character texts.
+func DetectEnglishPage(chars []pdf.TextChar, sample pdf.SampleFunc) bool {
+	if len(chars) == 0 {
 		return false
 	}
 	if sample == nil {
 		sample = DefaultSampleChars
 	}
-	pagesWithSeq := 0
 
-	for _, chars := range pageChars {
-		if len(chars) == 0 {
-			continue
-		}
-		sampleText := sample(chars, 100)
-		run := 0
-		for _, r := range sampleText {
-			if IsASCIIPrintable(r) {
-				run++
-				if run >= 30 {
-					pagesWithSeq++
-					break
-				}
-			} else {
-				run = 0
+	sampleText := sample(chars, 100)
+	run := 0
+	for _, r := range sampleText {
+		if IsASCIIPrintable(r) {
+			run++
+			if run >= 30 {
+				return true
 			}
+		} else {
+			run = 0
 		}
 	}
+	return false
+}
 
+// DetectEnglish detects whether a PDF is primarily English by per-page
+// majority vote, matching Python's is_english logic in __images__
+// (pdf_parser.py:1519-1526).
+//
+// Each page votes via DetectEnglishPage. Returns true when a strict majority
+// of pages vote yes. totalPages remains the denominator so image-only pages
+// still dilute the majority, matching Python behavior.
+func DetectEnglish(pageChars map[int][]pdf.TextChar, totalPages int, sample pdf.SampleFunc) bool {
+	if totalPages == 0 || len(pageChars) == 0 {
+		return false
+	}
+	pagesWithSeq := 0
+	for _, chars := range pageChars {
+		if DetectEnglishPage(chars, sample) {
+			pagesWithSeq++
+		}
+	}
 	return pagesWithSeq > totalPages/2
 }

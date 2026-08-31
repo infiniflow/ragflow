@@ -7,16 +7,30 @@ import (
 	"testing"
 )
 
+// ---- test helpers ----
+
+func newTestTextBox(page int, x0, x1, top, bottom float64, text string) pdf.TextBox {
+	return pdf.TextBox{
+		PageNumber: page,
+		X0:         x0,
+		X1:         x1,
+		Top:        top,
+		Bottom:     bottom,
+		Text:       text,
+	}
+}
+
 func TestAssignColumn(t *testing.T) {
 	boxes := []pdf.TextBox{
-		{PageNumber: 0, X0: 50, Text: "col0-left"},
-		{PageNumber: 0, X0: 55, Text: "col0-mid"},
-		{PageNumber: 0, X0: 400, Text: "col1"},
-		{PageNumber: 1, X0: 50, Text: "pg1-col0"},
+		{PageNumber: 0, X0: 50, X1: 250, Text: "col0-left"},
+		{PageNumber: 0, X0: 55, X1: 250, Text: "col0-mid"},
+		{PageNumber: 0, X0: 400, X1: 600, Text: "col1"},
+		{PageNumber: 0, X0: 410, X1: 610, Text: "col1-b"},
+		{PageNumber: 1, X0: 50, X1: 250, Text: "pg1-col0"},
 	}
-	result := AssignColumn(boxes, 3)
-	if len(result) != 4 {
-		t.Fatal("expected 4 boxes")
+	result := AssignColumn(boxes)
+	if len(result) != 5 {
+		t.Fatal("expected 5 boxes")
 	}
 	if result[0].ColID != result[1].ColID {
 		t.Error("boxes 0 and 1 (close x0) should be same column")
@@ -32,7 +46,7 @@ func TestTextMerge(t *testing.T) {
 		{PageNumber: 0, ColID: 0, X0: 252, X1: 550, Top: 100, Bottom: 112, Text: "右半", LayoutType: "text", LayoutNo: "1"},
 	}
 	meanH := map[int]float64{0: 12}
-	result := TextMerge(boxes, meanH, 3)
+	result := TextMerge(boxes, meanH)
 	if len(result) != 1 {
 		t.Errorf("expected 1 merged box, got %d", len(result))
 	}
@@ -44,7 +58,7 @@ func TestTextMergeNoMerge_DiffLayout(t *testing.T) {
 		{PageNumber: 0, ColID: 0, X0: 252, X1: 550, Top: 100, Bottom: 112, Text: "table", LayoutType: "table", LayoutNo: "2"},
 	}
 	meanH := map[int]float64{0: 12}
-	result := TextMerge(boxes, meanH, 3)
+	result := TextMerge(boxes, meanH)
 	if len(result) != 2 {
 		t.Error("table and text should not merge")
 	}
@@ -87,9 +101,6 @@ func TestDefaultConfig(t *testing.T) {
 	cfg := pdf.DefaultParserConfig()
 	if cfg.Zoom != 3 {
 		t.Error("default zoom should be 3")
-	}
-	if cfg.ToPage != -1 {
-		t.Error("default to_page should be -1")
 	}
 }
 
@@ -233,7 +244,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 
 		if len(result) != 1 {
 			t.Errorf("expected 1 merged box, got %d", len(result))
@@ -259,7 +270,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 
 		if len(result) != 1 {
 			t.Errorf("expected 1 merged box (ASCII comma ',' should override period anti), got %d", len(result))
@@ -282,7 +293,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 		if len(result) != 1 {
 			t.Errorf("expected 1 merged box (next line starts with '，'), got %d", len(result))
 		}
@@ -304,7 +315,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 		if len(result) != 1 {
 			t.Errorf("expected 1 merged box (next line starts with '。'), got %d", len(result))
 		}
@@ -329,7 +340,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 		// Default merge — no anti, no detach, same layoutno, close gap.
 		if len(result) != 1 {
 			t.Errorf("expected 1 merged box (default merge when no anti/detach), got %d", len(result))
@@ -352,7 +363,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 50}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 		// Even with '。' concat char, boxes are detached horizontally.
 		if len(result) != 2 {
 			t.Errorf("expected 2 boxes (horizontally detached), got %d", len(result))
@@ -375,7 +386,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 		// Gap 200-112=88 > 12*1.5=18 — anti triggers.
 		if len(result) != 2 {
 			t.Errorf("expected 2 boxes (large vertical gap), got %d", len(result))
@@ -398,7 +409,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12}
 		meanW := map[int]float64{0: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, true)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, map[int]bool{0: true})
 		// When isEnglish=true, endsWith ".!?" is anti — don't merge.
 		if len(result) != 2 {
 			t.Errorf("expected 2 boxes (english period anti), got %d", len(result))
@@ -421,7 +432,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		meanH := map[int]float64{0: 12, 1: 12}
 		meanW := map[int]float64{0: 200, 1: 200}
 
-		result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+		result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 		// Different pages — NaiveVerticalMerge groups by page.
 		if len(result) != 2 {
 			t.Errorf("expected 2 boxes (different pages), got %d", len(result))
@@ -429,11 +440,11 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 	})
 
 	t.Run("empty boxes", func(t *testing.T) {
-		result := NaiveVerticalMerge(nil, nil, nil, false)
+		result := NaiveVerticalMerge(nil, nil, nil, nil)
 		if len(result) != 0 {
 			t.Error("expected empty result for nil input")
 		}
-		result = NaiveVerticalMerge([]pdf.TextBox{}, nil, nil, false)
+		result = NaiveVerticalMerge([]pdf.TextBox{}, nil, nil, nil)
 		if len(result) != 0 {
 			t.Error("expected empty result for empty input")
 		}
@@ -443,7 +454,7 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		boxes := []pdf.TextBox{
 			{PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "only", LayoutNo: "1"},
 		}
-		result := NaiveVerticalMerge(boxes, nil, nil, false)
+		result := NaiveVerticalMerge(boxes, nil, nil, nil)
 		if len(result) != 1 {
 			t.Error("single box should be returned as-is")
 		}
@@ -465,7 +476,7 @@ func TestNaiveVerticalMerge_BottomShrink(t *testing.T) {
 	mh := map[int]float64{0: 50} // threshold = 50 * 1.5 = 75
 	mw := map[int]float64{0: 5}
 
-	result := NaiveVerticalMerge(boxes, mh, mw, false)
+	result := NaiveVerticalMerge(boxes, mh, mw, nil)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 merged box, got %d", len(result))
@@ -484,7 +495,7 @@ func TestNaiveVerticalMerge(t *testing.T) {
 	}
 	meanH := map[int]float64{0: 12}
 	meanW := map[int]float64{0: 5}
-	result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+	result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 	if len(result) != 1 {
 		t.Errorf("expected 1 merged box, got %d: %v", len(result), result)
 	}
@@ -500,8 +511,415 @@ func TestNaiveVerticalMergeNonMerge(t *testing.T) {
 	}
 	meanH := map[int]float64{0: 12}
 	meanW := map[int]float64{0: 5}
-	result := NaiveVerticalMerge(boxes, meanH, meanW, false)
+	result := NaiveVerticalMerge(boxes, meanH, meanW, nil)
 	if len(result) != 2 {
 		t.Errorf("expected 2 separate boxes (large gap), got %d", len(result))
+	}
+}
+
+func TestNaiveVerticalMerge_CenteredTitlePreservesPageOrder(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, X0: 250, X1: 450, Top: 50, Bottom: 70, Text: "Document Title", LayoutNo: "title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, X0: 50, X1: 650, Top: 100, Bottom: 112, Text: "First paragraph.", LayoutNo: "body"},
+		{PageNumber: 0, X0: 50, X1: 650, Top: 200, Bottom: 212, Text: "Second paragraph.", LayoutNo: "body"},
+	}
+
+	boxes = AssignColumn(boxes)
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, map[int]bool{0: true})
+
+	want := []string{"Document Title", "First paragraph.", "Second paragraph."}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
+		}
+	}
+}
+
+// TestNaiveVerticalMerge_MultiColumnOrder guards against the multi-column
+// reading-order regression: after AssignColumn assigns ColID, the final
+// reading order must be column-major (all of column 0, then all of column 1),
+// NOT interleaved by vertical (Top) position. The merge must never cross
+// columns.
+//
+// With interleaved tops (col0 at 100/300/500, col1 at 150/250/350/450) and
+// large enough vertical gaps that nothing merges, the old code (sort by
+// Top→X0 across the whole page) produced col0/col1 interleaving; the fix
+// buckets by ColID first so column 0 fully precedes column 1.
+func TestNaiveVerticalMerge_MultiColumnOrder(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "L0-a", LayoutNo: "1"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 150, Bottom: 162, Text: "R0-a", LayoutNo: "1"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 250, Bottom: 262, Text: "R0-b", LayoutNo: "1"},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 300, Bottom: 312, Text: "L0-b", LayoutNo: "1"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 350, Bottom: 362, Text: "R0-c", LayoutNo: "1"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 450, Bottom: 462, Text: "R0-d", LayoutNo: "1"},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 500, Bottom: 512, Text: "L0-c", LayoutNo: "1"},
+	}
+	meanH := map[int]float64{0: 12}
+	meanW := map[int]float64{0: 5}
+
+	merged := NaiveVerticalMerge(boxes, meanH, meanW, nil)
+	// Gaps are ~100–200 (>> 12*1.5=18), so nothing merges: 7 boxes out.
+	if len(merged) != 7 {
+		t.Fatalf("expected 7 separate boxes, got %d", len(merged))
+	}
+
+	// All column-0 boxes must precede all column-1 boxes.
+	seenCol1 := false
+	for _, b := range merged {
+		switch b.ColID {
+		case 0:
+			if seenCol1 {
+				t.Errorf("column 0 box %q appears after a column 1 box — reading order is not column-major", b.Text)
+			}
+		case 1:
+			seenCol1 = true
+		default:
+			t.Errorf("unexpected ColID %d", b.ColID)
+		}
+	}
+
+	// Within each column, order must be top→bottom.
+	col0Tops := []float64{}
+	col1Tops := []float64{}
+	for _, b := range merged {
+		if b.ColID == 0 {
+			col0Tops = append(col0Tops, b.Top)
+		} else {
+			col1Tops = append(col1Tops, b.Top)
+		}
+	}
+	for i := 1; i < len(col0Tops); i++ {
+		if col0Tops[i] < col0Tops[i-1] {
+			t.Errorf("column 0 not sorted top→bottom: %v", col0Tops)
+		}
+	}
+	for i := 1; i < len(col1Tops); i++ {
+		if col1Tops[i] < col1Tops[i-1] {
+			t.Errorf("column 1 not sorted top→bottom: %v", col1Tops)
+		}
+	}
+}
+
+func TestNaiveVerticalMerge_LeadingTitlePreservesMultiColumnOrder(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 2, X0: 250, X1: 450, Top: 50, Bottom: 70, Text: "Document Title", LayoutNo: "title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "L0-a", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 300, Bottom: 312, Text: "L0-b", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 150, Bottom: 162, Text: "R0-a", LayoutNo: "right"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 250, Bottom: 262, Text: "R0-b", LayoutNo: "right"},
+	}
+
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, nil)
+	want := []string{"Document Title", "L0-a", "L0-b", "R0-a", "R0-b"}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
+		}
+	}
+}
+
+func TestNaiveVerticalMerge_DoesNotPromoteColumnTitlePastEarlierBody(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "Left body", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 150, Bottom: 162, Text: "Right heading", LayoutNo: "right-title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 200, Bottom: 212, Text: "Right body", LayoutNo: "right"},
+	}
+
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, nil)
+	want := []string{"Left body", "Right heading", "Right body"}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
+		}
+	}
+}
+
+func TestNaiveVerticalMerge_DoesNotPromoteTitlesFromBodyColumns(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 50, Bottom: 62, Text: "Left heading", LayoutNo: "left-title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "Left body", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 60, Bottom: 72, Text: "Right heading", LayoutNo: "right-title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 120, Bottom: 132, Text: "Right body", LayoutNo: "right"},
+	}
+
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, nil)
+	want := []string{"Left heading", "Left body", "Right heading", "Right body"}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
+		}
+	}
+}
+
+func TestFinalReadingOrderMerge_ColumnMajor(t *testing.T) {
+	// Same interleaved scenario as the pipeline test, but at the
+	// FinalReadingOrderMerge level: column must dominate vertical position.
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 0, Top: 100, Text: "L0-a"},
+		{PageNumber: 0, ColID: 1, Top: 150, Text: "R0-a"},
+		{PageNumber: 0, ColID: 1, Top: 250, Text: "R0-b"},
+		{PageNumber: 0, ColID: 0, Top: 300, Text: "L0-b"},
+	}
+	result := FinalReadingOrderMerge(boxes)
+	want := []string{"L0-a", "L0-b", "R0-a", "R0-b"}
+	for i, w := range want {
+		if result[i].Text != w {
+			t.Errorf("position %d: want %q, got %q", i, w, result[i].Text)
+		}
+	}
+}
+
+// ---- Tests for refactored helper functions ----
+
+func TestGroupBoxesByPage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 1, Text: "page1-box1"},
+		{PageNumber: 0, Text: "page0-box1"},
+		{PageNumber: 0, Text: "page0-box2"},
+		{PageNumber: 2, Text: "page2-box1"},
+		{PageNumber: 1, Text: "page1-box2"},
+	}
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
+
+	if len(sortedPages) != 3 {
+		t.Errorf("expected 3 unique pages, got %d", len(sortedPages))
+	}
+	if sortedPages[0] != 0 || sortedPages[1] != 1 || sortedPages[2] != 2 {
+		t.Errorf("pages should be sorted [0,1,2], got %v", sortedPages)
+	}
+	if len(pageGroups[0]) != 2 {
+		t.Errorf("page 0 should have 2 boxes, got %d", len(pageGroups[0]))
+	}
+	if len(pageGroups[1]) != 2 {
+		t.Errorf("page 1 should have 2 boxes, got %d", len(pageGroups[1]))
+	}
+	if len(pageGroups[2]) != 1 {
+		t.Errorf("page 2 should have 1 box, got %d", len(pageGroups[2]))
+	}
+	if boxes[pageGroups[0][0]].Text != "page0-box1" {
+		t.Errorf("first page0 box index incorrect")
+	}
+}
+
+func TestGroupBoxesByPage_Empty(t *testing.T) {
+	pageGroups, sortedPages := groupBoxesByPage(nil)
+	if len(pageGroups) != 0 || len(sortedPages) != 0 {
+		t.Error("empty input should return empty result")
+	}
+
+	pageGroups, sortedPages = groupBoxesByPage([]pdf.TextBox{})
+	if len(pageGroups) != 0 || len(sortedPages) != 0 {
+		t.Error("empty input should return empty result")
+	}
+}
+
+func TestGroupBoxesByPage_SinglePage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 5, Text: "box1"},
+		{PageNumber: 5, Text: "box2"},
+	}
+	pageGroups, sortedPages := groupBoxesByPage(boxes)
+	if len(sortedPages) != 1 || sortedPages[0] != 5 {
+		t.Errorf("expected single page 5, got %v", sortedPages)
+	}
+	if len(pageGroups[5]) != 2 {
+		t.Errorf("page 5 should have 2 boxes, got %d", len(pageGroups[5]))
+	}
+}
+
+func TestShouldMergeBoxes(t *testing.T) {
+	t.Run("should merge - basic case", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "前一句",
+			LayoutNo: "1",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, X0: 50, X1: 250, Top: 114, Bottom: 126,
+			Text:     "后一句",
+			LayoutNo: "1",
+		}
+		if !shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should merge basic case")
+		}
+	})
+
+	t.Run("should NOT merge - different layoutNo", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "2", Top: 114, Bottom: 126, X0: 50, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge different layoutNo")
+		}
+	})
+
+	t.Run("should NOT merge - gap too large", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 200, Bottom: 212, X0: 50, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge large gap")
+		}
+	})
+
+	t.Run("should NOT merge - overlap too small", func(t *testing.T) {
+		prev := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 100}
+		curr := &pdf.TextBox{PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 200, X1: 250}
+		if shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should not merge small overlap")
+		}
+	})
+
+	t.Run("should merge - comma override period anti", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250,
+			Text: "前一句。",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 50, X1: 250,
+			Text: ", 续句",
+		}
+		if !shouldMergeBoxes(prev, curr, 12, 200, false) {
+			t.Error("should merge when comma overrides period anti")
+		}
+	})
+
+	t.Run("should NOT merge - english period anti", func(t *testing.T) {
+		prev := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 100, Bottom: 112, X0: 50, X1: 250,
+			Text: "End of sentence.",
+		}
+		curr := &pdf.TextBox{
+			PageNumber: 0, LayoutNo: "1", Top: 114, Bottom: 126, X0: 50, X1: 250,
+			Text: "Next sentence",
+		}
+		if shouldMergeBoxes(prev, curr, 12, 200, true) {
+			t.Error("should not merge english period anti")
+		}
+	})
+}
+
+func TestMergeTwoBoxes(t *testing.T) {
+	prev := pdf.TextBox{
+		PageNumber: 0, X0: 50, X1: 200, Top: 100, Bottom: 112,
+		Text:     "第一行",
+		LayoutNo: "1",
+	}
+	curr := pdf.TextBox{
+		PageNumber: 0, X0: 60, X1: 250, Top: 114, Bottom: 130,
+		Text:     "第二行",
+		LayoutNo: "1",
+	}
+
+	result := mergeTwoBoxes(prev, curr)
+
+	expectedText := "第一行 第二行"
+	if result.Text != expectedText {
+		t.Errorf("expected text %q, got %q", expectedText, result.Text)
+	}
+	if result.X0 != 50 {
+		t.Errorf("expected X0 50, got %f", result.X0)
+	}
+	if result.X1 != 250 {
+		t.Errorf("expected X1 250, got %f", result.X1)
+	}
+	if result.Bottom != 130 {
+		t.Errorf("expected Bottom 130, got %f", result.Bottom)
+	}
+	if result.LayoutNo != "1" {
+		t.Errorf("expected LayoutNo preserved")
+	}
+}
+
+func TestMergeTwoBoxes_TrimWhitespace(t *testing.T) {
+	prev := pdf.TextBox{Text: "  first line  "}
+	curr := pdf.TextBox{Text: "  second line  "}
+
+	result := mergeTwoBoxes(prev, curr)
+
+	if result.Text != "first line second line" {
+		t.Errorf("text should be trimmed and joined, got %q", result.Text)
+	}
+}
+
+func TestProcessPageBoxes(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 114, Bottom: 126,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 merged box, got %d", len(result))
+	}
+	if !strings.Contains(result[0].Text, "第一句") || !strings.Contains(result[0].Text, "第二句") {
+		t.Errorf("merged text should contain both parts, got %q", result[0].Text)
+	}
+}
+
+func TestProcessPageBoxes_WhitespaceBox(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 113, Bottom: 115,
+			Text:     "   ",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 116, Bottom: 128,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 1 {
+		t.Errorf("expected 1 merged box, got %d", len(result))
+	}
+}
+
+func TestProcessPageBoxes_NoMerge(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 100, Bottom: 112,
+			Text:     "第一句。",
+			LayoutNo: "1",
+		},
+		{
+			PageNumber: 0, X0: 50, X1: 250, Top: 200, Bottom: 212,
+			Text:     "第二句",
+			LayoutNo: "1",
+		},
+	}
+
+	result := processPageBoxes(boxes, 12, 200, false)
+
+	if len(result) != 2 {
+		t.Errorf("expected 2 boxes, got %d", len(result))
 	}
 }

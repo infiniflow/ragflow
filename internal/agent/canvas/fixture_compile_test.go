@@ -1,7 +1,6 @@
 package canvas
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -85,7 +84,8 @@ func TestAllFixture_NormalizeAndCompile(t *testing.T) {
 			Upstream:   stringSliceFromAny(comp["upstream"]),
 		}
 	}
-	cc, err := Compile(context.Background(), c)
+	ctx := t.Context()
+	cc, err := Compile(ctx, c)
 	if err != nil {
 		t.Fatalf("Compile(all.json): %v", err)
 	}

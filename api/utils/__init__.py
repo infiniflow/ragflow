@@ -21,7 +21,6 @@ def from_dict_hook(in_dict: dict):
         if in_dict["module"] is None:
             return in_dict["data"]
         else:
-            return getattr(importlib.import_module(
-                in_dict["module"]), in_dict["type"])(**in_dict["data"])
+            return getattr(importlib.import_module(in_dict["module"]), in_dict["type"])(**in_dict["data"])
     else:
         return in_dict

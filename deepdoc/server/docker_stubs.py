@@ -32,15 +32,20 @@ def write(path: str, content: str) -> None:
 # Real deepdoc/__init__.py calls beartype_this_package() which requires
 # the beartype library.
 
-write("deepdoc/__init__.py", """
+write(
+    "deepdoc/__init__.py",
+    """
 # Minimal deepdoc __init__ for Docker — avoids beartype dependency.
-""")
+""",
+)
 
 # Real deepdoc/vision/__init__.py imports pdfplumber and
 # AscendLayoutRecognizer (requires ais_bench).  The Docker server only
 # needs the four ONNX-based classes below.
 
-write("deepdoc/vision/__init__.py", """
+write(
+    "deepdoc/vision/__init__.py",
+    """
 # Minimal deepdoc.vision __init__ for Docker — avoids pdfplumber and Ascend imports.
 from .ocr import OCR
 from .recognizer import Recognizer
@@ -48,13 +53,16 @@ from .layout_recognizer import LayoutRecognizer4YOLOv10 as LayoutRecognizer
 from .table_structure_recognizer import TableStructureRecognizer
 
 __all__ = ["OCR", "Recognizer", "LayoutRecognizer", "TableStructureRecognizer"]
-""")
+""",
+)
 
 # ── common ─────────────────────────────────────────────────────────────
 # Real common.settings imports rag.utils.es_conn and other database/storage
 # connectors.  The server only needs PARALLEL_DEVICES for OCR.
 
-write("common/__init__.py", """
+write(
+    "common/__init__.py",
+    """
 # Stub common.__init__ for Docker deepdoc service.
 import os
 
@@ -64,12 +72,15 @@ class _Settings:
 
 
 settings = _Settings()
-""")
+""",
+)
 
 # Real common.file_utils derives the project base from __file__.  In
 # Docker the project root is always /app.
 
-write("common/file_utils.py", """
+write(
+    "common/file_utils.py",
+    """
 # Stub common.file_utils for Docker deepdoc service.
 import os
 
@@ -83,14 +94,17 @@ def get_project_base_directory(*args):
     if args:
         return os.path.join(_PROJECT_BASE, *args)
     return _PROJECT_BASE
-""")
+""",
+)
 
 # Real common.misc_utils imports 15+ modules.  The server only calls
 # pip_install_torch() inside load_model()'s cuda_is_available() guard.
 # On CPU-only images torch is not installed, so the try/except silently
 # returns False and onnxruntime falls back to CPUExecutionProvider.
 
-write("common/misc_utils.py", """
+write(
+    "common/misc_utils.py",
+    """
 # Stub common.misc_utils for Docker deepdoc service.
 
 
@@ -99,13 +113,17 @@ def pip_install_torch(*args, **kwargs):
         import torch  # noqa: F401
     except ImportError:
         pass
-""")
+""",
+)
 
 # ── rag ────────────────────────────────────────────────────────────────
 
-write("rag/__init__.py", """
+write(
+    "rag/__init__.py",
+    """
 # Stub rag package for Docker deepdoc service.
-""")
+""",
+)
 
 # table_structure_recognizer.py imports rag_tokenizer at module level.
 # Its tokenize/tag methods are only called from blockType() /
@@ -113,7 +131,9 @@ write("rag/__init__.py", """
 # __call__() path.  The stub exists solely to satisfy the module-level
 # import; its methods are never called at server runtime.
 
-write("rag/nlp/__init__.py", """
+write(
+    "rag/nlp/__init__.py",
+    """
 # Stub rag.nlp module for Docker deepdoc service.
 # Provides minimal rag_tokenizer to satisfy table_structure_recognizer import.
 
@@ -127,14 +147,17 @@ class _StubTokenizer:
 
 
 rag_tokenizer = _StubTokenizer()
-""")
+""",
+)
 
 # operators.py imports ensure_pil_image at module level and calls it in
 # NormalizeImage.__call__ / ToCHWImage.__call__ (OCR text detection path).
 # The real rag.utils.lazy_image imports concat_img from rag.nlp, pulling
 # in the entire NLP stack.
 
-write("rag/utils/lazy_image.py", """
+write(
+    "rag/utils/lazy_image.py",
+    """
 # Stub rag.utils.lazy_image for Docker.
 from PIL import Image
 
@@ -143,7 +166,8 @@ def ensure_pil_image(img):
     if isinstance(img, Image.Image):
         return img
     return None
-""")
+""",
+)
 
 
 if __name__ == "__main__":

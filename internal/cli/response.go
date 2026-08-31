@@ -19,6 +19,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/entity/models"
 	"strings"
 )
 
@@ -128,18 +129,14 @@ func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
 	table := make([]map[string]interface{}, 0)
-	if orderRaw, ok := r.Data["_order"]; ok {
-		if orderSlice, ok := orderRaw.([]interface{}); ok {
-			for _, keyRaw := range orderSlice {
-				key := fmt.Sprintf("%v", keyRaw)
-				if value, exists := r.Data[key]; exists {
-					table = append(table, map[string]interface{}{
-						"Metric": key,
-						"Value":  value,
-					})
-				}
-			}
+	for key, value := range r.Data {
+		if _, ok := value.([]interface{}); ok {
+			continue
 		}
+		table = append(table, map[string]interface{}{
+			"Metric": key,
+			"Value":  value,
+		})
 	}
 	return table
 }
@@ -208,6 +205,42 @@ func (r *ListDocumentsResponse) PrintOut() {
 		table := make([]map[string]interface{}, 0)
 		for _, doc := range docs {
 			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type ListSyncLogsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListSyncLogsResponse) Type() string {
+	return "list_sync_logs"
+}
+
+func (r *ListSyncLogsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListSyncLogsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListSyncLogsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		logs := r.Data["logs"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, log := range logs {
+			table = append(table, log.(map[string]interface{}))
 		}
 		PrintTableSimpleByFormat(table, r.OutputFormat)
 	} else {
@@ -533,10 +566,11 @@ func (r *MessageResponse) PrintOut() {
 }
 
 type NonStreamResponse struct {
-	Code             int    `json:"code"`
-	ReasoningContent string `json:"reasoning_content"`
-	Answer           string `json:"answer"`
-	Message          string `json:"message"`
+	Code             int                `json:"code"`
+	ReasoningContent string             `json:"reasoning_content"`
+	Answer           string             `json:"answer"`
+	Message          string             `json:"message"`
+	Usage            *models.TokenUsage `json:"usage"`
 	Duration         float64
 	OutputFormat     OutputFormat
 }
@@ -559,6 +593,10 @@ func (r *NonStreamResponse) PrintOut() {
 			fmt.Printf("Thinking: %s\n", r.ReasoningContent)
 		}
 		fmt.Printf("Answer: %s\n", r.Answer)
+		if r.Usage != nil {
+			fmt.Printf("Input tokens: %v\n", r.Usage.PromptTokens)
+			fmt.Printf("Output tokens: %v\n", r.Usage.CompletionTokens)
+		}
 		fmt.Printf("Time: %f\n", r.Duration)
 	} else {
 		fmt.Println("ERROR")
@@ -980,9 +1018,11 @@ func getChunkID(c map[string]interface{}) string {
 }
 
 func chunkContent(c map[string]interface{}) string {
-	if v, ok := c["content"]; ok {
-		s := fmt.Sprint(v)
-		return strings.TrimSpace(s)
+	for _, key := range []string{"content_with_weight", "content"} {
+		if v, ok := c[key]; ok {
+			s := fmt.Sprint(v)
+			return strings.TrimSpace(s)
+		}
 	}
 	return ""
 }
@@ -1013,22 +1053,13 @@ func (r *UserIndexResponse) PrintOut() {
 	}
 
 	summaryTable := r.orderedMetricTable()
-	indexColumns := []string{"index", "health", "status", "docs.count", "dataset.size", "store.size"}
 	indexTable := make([]map[string]interface{}, 0)
 	indicesRaw, hasIndices := r.Data["indices"]
 	if hasIndices {
 		if indices, ok := indicesRaw.([]interface{}); ok {
 			for _, idx := range indices {
 				if m, ok := idx.(map[string]interface{}); ok {
-					orderedRow := make(map[string]interface{})
-					for _, col := range indexColumns {
-						if v, exists := m[col]; exists {
-							orderedRow[col] = v
-						} else {
-							orderedRow[col] = ""
-						}
-					}
-					indexTable = append(indexTable, orderedRow)
+					indexTable = append(indexTable, m)
 				}
 			}
 		}
@@ -1058,7 +1089,7 @@ func (r *UserIndexResponse) PrintOut() {
 	if len(indexTable) > 0 {
 		fmt.Println()
 		fmt.Println("Index Details:")
-		PrintTableSimpleByFormatWithOrder(indexTable, indexColumns, r.OutputFormat)
+		PrintTableSimpleByFormat(indexTable, r.OutputFormat)
 	} else if hasIndices {
 		fmt.Println()
 		fmt.Println("No indices found for this user.")
@@ -1081,22 +1112,13 @@ func (r *UserStorageResponse) PrintOut() {
 	}
 
 	summaryTable := r.orderedMetricTable()
-	fileColumns := []string{"name", "size"}
 	fileTable := make([]map[string]interface{}, 0)
 	filesRaw, hasFiles := r.Data["files"]
 	if hasFiles {
 		if files, ok := filesRaw.([]interface{}); ok {
 			for _, f := range files {
 				if m, ok := f.(map[string]interface{}); ok {
-					orderedRow := make(map[string]interface{})
-					for _, col := range fileColumns {
-						if v, exists := m[col]; exists {
-							orderedRow[col] = v
-						} else {
-							orderedRow[col] = ""
-						}
-					}
-					fileTable = append(fileTable, orderedRow)
+					fileTable = append(fileTable, m)
 				}
 			}
 		}
@@ -1126,7 +1148,7 @@ func (r *UserStorageResponse) PrintOut() {
 	if len(fileTable) > 0 {
 		fmt.Println()
 		fmt.Println("Files（Top 10）:")
-		PrintTableSimpleByFormatWithOrder(fileTable, fileColumns, r.OutputFormat)
+		PrintTableSimpleByFormat(fileTable, r.OutputFormat)
 	} else if hasFiles {
 		fmt.Println()
 		fmt.Println("No files found for this user.")
@@ -1168,7 +1190,7 @@ func (r *UserQuotaResponse) PrintOut() {
 		}
 	}
 	if len(summaryTable) > 0 {
-		PrintTableSimpleByFormatWithOrder(summaryTable, []string{"Metric", "Used", "Limit"}, r.OutputFormat)
+		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
 	}
 }
 
@@ -1178,11 +1200,7 @@ type OrderedCommonResponse struct {
 
 func (r *OrderedCommonResponse) PrintOut() {
 	if r.Code == 0 {
-		if colNames, cleanData, ok := ExtractColumnsAndCleanData(r.Data); ok {
-			PrintTableSimpleByFormatWithOrder(cleanData, colNames, r.OutputFormat)
-		} else {
-			PrintTableSimpleByFormat(r.Data, r.OutputFormat)
-		}
+		PrintTableSimpleByFormat(r.Data, r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -1195,17 +1213,8 @@ type OrderedCommonDataResponse struct {
 
 func (r *OrderedCommonDataResponse) PrintOut() {
 	if r.Code == 0 {
-		if table := r.orderedMetricTable(); len(table) > 0 {
-			PrintTableSimpleByFormat(table, r.OutputFormat)
-		} else {
-			table := make([]map[string]interface{}, 0)
-			for key, value := range r.Data {
-				elem := map[string]interface{}{
-					"field": key,
-					"value": value,
-				}
-				table = append(table, elem)
-			}
+		table := r.orderedMetricTable()
+		if len(table) > 0 {
 			PrintTableSimpleByFormat(table, r.OutputFormat)
 		}
 	} else {
@@ -1237,23 +1246,14 @@ func (r *QuotaSummaryResponse) PrintOut() {
 		return
 	}
 
-	sections := []struct {
-		key     string
-		title   string
-		columns []string
-	}{
-		{"storage", "Storage", []string{"Plan", "Users", "Avg Used", "Limit", "Avg Usage"}},
-		{"apps", "Apps", []string{"Plan", "Avg Used", "Limit", "Avg Usage"}},
-		{"api", "API Requests", []string{"Plan", "Tokens", "Limit/min"}},
-	}
+	sections := []string{"storage", "apps", "api"}
 
-	for i, section := range sections {
+	for i, key := range sections {
 		if i > 0 {
 			fmt.Println()
 		}
-		fmt.Printf("--- %s ---\n", section.title)
 
-		rowsRaw, ok := r.Data[section.key]
+		rowsRaw, ok := r.Data[key]
 		if !ok {
 			fmt.Println("No data")
 			continue
@@ -1268,18 +1268,66 @@ func (r *QuotaSummaryResponse) PrintOut() {
 		table := make([]map[string]interface{}, 0, len(rows))
 		for _, row := range rows {
 			if m, ok := row.(map[string]interface{}); ok {
-				orderedRow := make(map[string]interface{})
-				for _, col := range section.columns {
-					if v, exists := m[col]; exists {
-						orderedRow[col] = v
-					} else {
-						orderedRow[col] = ""
-					}
-				}
-				table = append(table, orderedRow)
+				table = append(table, m)
 			}
 		}
 
-		PrintTableSimpleByFormatWithOrder(table, section.columns, r.OutputFormat)
+		PrintTableSimpleByFormat(table, r.OutputFormat)
 	}
+}
+
+// ChatCompletionsResponse represents the RAGFlow-internal response from
+// POST /api/v1/chat/completions (non-OpenAI format).
+//
+// JSON shape:
+//
+//	{"code":0,"data":{"answer":"...","reference":...},"message":""}
+type ChatCompletionsResponse struct {
+	Code         int                 `json:"code"`
+	Data         *chatCompletionData `json:"data"`
+	Message      string              `json:"message"`
+	Duration     float64             `json:"-"`
+	OutputFormat OutputFormat        `json:"-"`
+	// raw HTTP body for "raw" output.
+	raw []byte
+	// streamed skips the "Answer:" line in PrintOut to avoid duplication
+	// (used by the streaming path which prints chunk-by-chunk).
+	streamed bool
+}
+
+type chatCompletionData struct {
+	Answer    string          `json:"answer"`
+	Reference json.RawMessage `json:"reference,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	SessionID string          `json:"session_id,omitempty"`
+	ChatID    string          `json:"chat_id,omitempty"`
+}
+
+func (r *ChatCompletionsResponse) Type() string                   { return "chat_completions" }
+func (r *ChatCompletionsResponse) TimeCost() float64              { return r.Duration }
+func (r *ChatCompletionsResponse) SetOutputFormat(f OutputFormat) { r.OutputFormat = f }
+
+func (r *ChatCompletionsResponse) PrintOut() {
+	if r.OutputFormat == "raw" && r.raw != nil {
+		fmt.Println(string(r.raw))
+		return
+	}
+	if r.Code != 0 {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		return
+	}
+	if r.Data == nil {
+		fmt.Println("(no data)")
+		return
+	}
+	if !r.streamed {
+		if r.Data.Answer != "" {
+			fmt.Printf("Answer: %s\n", r.Data.Answer)
+		}
+	}
+	if r.Data != nil && len(r.Data.Reference) > 0 {
+		printReferenceChunks(r.Data.Reference)
+	}
+	fmt.Printf("Time: %f\n", r.Duration)
 }

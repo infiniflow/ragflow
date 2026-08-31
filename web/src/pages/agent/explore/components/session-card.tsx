@@ -28,7 +28,7 @@ export function SessionCard({
       onClick={onClick}
       className={cn(
         'cursor-pointer hover:shadow-md transition-shadow',
-        selected && 'bg-bg-card',
+        selected && 'border-accent-primary bg-accent-primary/10',
       )}
     >
       <CardContent className="p-3 flex justify-between items-center gap-2 group">

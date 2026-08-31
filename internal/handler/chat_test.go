@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +25,7 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -69,41 +68,6 @@ func createChatHandlerTestChat(t *testing.T, db *gorm.DB, id, tenantID string) {
 	}
 	if err := db.Create(chat).Error; err != nil {
 		t.Fatalf("failed to create chat: %v", err)
-	}
-}
-
-func TestChatMindMapHandlerSuccess(t *testing.T) {
-	llm := &fakeChatLLM{response: "# Product\n## Features\n### Search"}
-	chunks := &mockChunkService{retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-		return &service.RetrievalTestResponse{
-			Chunks: []map[string]interface{}{{"content_with_weight": "Hybrid search combines vector and keyword retrieval."}},
-		}, nil
-	}}
-	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, nil, llm, chunks)
-	c, w := setupGinContextWithUser("POST", "/api/v1/chat/mindmap", `{"question":"What is search?","kb_ids":["kb-1"]}`)
-
-	h.MindMap(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
-	}
-	data := resp["data"].(map[string]interface{})
-	if data["id"] != "Product" {
-		t.Fatalf("mindmap root = %v, want Product", data["id"])
-	}
-	if chunks.LastReq == nil || len(chunks.LastReq.Datasets) != 1 || chunks.LastReq.Datasets[0] != "kb-1" {
-		t.Fatalf("retrieval datasets = %+v, want [kb-1]", chunks.LastReq)
-	}
-	if llm.lastTenantID != "user-1" || len(llm.lastMessages) != 2 || !strings.Contains(llm.lastMessages[0].Content, "Hybrid search combines") {
-		t.Fatalf("unexpected LLM call: tenant=%q messages=%v", llm.lastTenantID, llm.lastMessages)
 	}
 }
 
@@ -231,7 +195,62 @@ func TestUpdateChatHandlerRejectsNonOwner(t *testing.T) {
 	if resp["data"] != false {
 		t.Fatalf("expected data=false, got %v", resp["data"])
 	}
-	if resp["message"] != "No authorization." {
+	if resp["message"] != "no authorization" {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
+
+func TestGetChatHandlerRejectsNonOwner(t *testing.T) {
+	db := setupChatHandlerTestDB(t)
+	createChatHandlerTestChat(t, db, "chat-1", "tenant-2")
+
+	h := NewChatHandler(service.NewChatService(), service.NewUserService())
+	c, w := setupGinContextWithUser("GET", "/api/v1/chats/chat-1", "")
+	c.Params = []gin.Param{{Key: "chat_id", Value: "chat-1"}}
+
+	h.GetChat(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeAuthenticationError) {
+		t.Fatalf("expected auth error code 109, got %v", resp["code"])
+	}
+	if resp["data"] != false {
+		t.Fatalf("expected data=false, got %v", resp["data"])
+	}
+	if resp["message"] != "no authorization" {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
+
+func TestDeleteChatHandlerRejectsNonOwner(t *testing.T) {
+	db := setupChatHandlerTestDB(t)
+	createChatHandlerTestChat(t, db, "chat-1", "tenant-2")
+
+	h := NewChatHandler(service.NewChatService(), service.NewUserService())
+	c, w := setupGinContextWithUser("DELETE", "/api/v1/chats/chat-1", "")
+	c.Params = []gin.Param{{Key: "chat_id", Value: "chat-1"}}
+
+	h.DeleteChat(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeAuthenticationError) {
+		t.Fatalf("expected auth error code 109, got %v", resp["code"])
+	}
+	if resp["message"] != "no authorization" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }

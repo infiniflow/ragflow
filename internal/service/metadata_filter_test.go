@@ -174,6 +174,20 @@ func TestApplyMetaFilter_NotEqualsAlias(t *testing.T) {
 	}
 }
 
+func TestApplyMetaFilter_MultiValueNegativeOperators(t *testing.T) {
+	metas := common.MetaData{"tags": {"a": {"doc1"}, "b": {"doc1"}}}
+	tests := []MetaFilterCondition{
+		{Key: "tags", Value: "a", Op: "≠"},
+		{Key: "tags", Value: "a", Op: "not in"},
+	}
+	for _, condition := range tests {
+		result := ApplyMetaFilter(metas, []MetaFilterCondition{condition}, "and")
+		if len(result) != 1 || result[0] != "doc1" {
+			t.Errorf("operator %q fallback result = %v, want [doc1]", condition.Op, result)
+		}
+	}
+}
+
 func TestApplyMetaFilter_GreaterThan(t *testing.T) {
 	metas := common.MetaData{"score": {"85": {"doc1"}, "70": {"doc2"}}}
 	filters := []MetaFilterCondition{{Key: "score", Value: "80", Op: ">"}}

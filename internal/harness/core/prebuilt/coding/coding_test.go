@@ -61,7 +61,7 @@ func TestNewCodingAgent_Basic(t *testing.T) {
 		t.Fatal("expected non-nil agent")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("fix this code")})
 
@@ -105,7 +105,7 @@ func TestNewCodingAgent_WithShell(t *testing.T) {
 		t.Fatal("expected non-nil agent")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("build")})
 
@@ -159,7 +159,7 @@ func TestNewCodingAgent_WithSubAgents(t *testing.T) {
 		t.Fatal("expected non-nil agent")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("research and code")})
 
@@ -218,12 +218,12 @@ func TestShellAllowList(t *testing.T) {
 				return "ok", nil
 			}
 
-			wrapped, err := mw.WrapToolInvoke(context.Background(), ep, &core.ToolContext{Name: "execute"})
+			wrapped, err := mw.WrapToolInvoke(t.Context(), ep, &core.ToolContext{Name: "execute"})
 			if err != nil {
 				t.Fatalf("WrapToolInvoke error: %v", err)
 			}
 
-			result, err := wrapped(context.Background(), tt.command)
+			result, err := wrapped(t.Context(), tt.command)
 			if err != nil {
 				t.Fatalf("invoke error: %v", err)
 			}
@@ -248,12 +248,12 @@ func TestShellAllowList_Passthrough(t *testing.T) {
 		return "ok", nil
 	}
 
-	wrapped, err := mw.WrapToolInvoke(context.Background(), ep, &core.ToolContext{Name: "execute"})
+	wrapped, err := mw.WrapToolInvoke(t.Context(), ep, &core.ToolContext{Name: "execute"})
 	if err != nil {
 		t.Fatalf("WrapToolInvoke error: %v", err)
 	}
 
-	_, err = wrapped(context.Background(), "rm -rf /")
+	_, err = wrapped(t.Context(), "rm -rf /")
 	if err != nil {
 		t.Fatalf("invoke error: %v", err)
 	}

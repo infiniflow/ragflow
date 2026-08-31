@@ -1,30 +1,48 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import ast
 import json
+import os
 import re
 import subprocess
 import sys
+import tokenize
 from pathlib import Path
 
 import yaml
 
-
 MERGE_PATTERNS = ("<<<<<<< ", "=======\n", ">>>>>>> ")
+
+# Printable ASCII (0x20-0x7E) plus newline — matches the regex used by the
+# historical check_comment_ascii.py.
+_PRINTABLE_ASCII = re.compile(r"^[\n -~]*\Z")
 
 
 def _read_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def _staged_paths() -> list[Path]:
+# Binary fixtures (OLE2/.msg, PDF, images, …) contain NUL bytes. The
+# text-fixing hooks below must never rewrite them: line-ending or
+# trailing-newline normalization corrupts binary files byte-for-byte
+# (e.g. a .msg fixture was previously mangled by the mixed-line-ending
+# and end-of-file fixers). Skip any file that contains a NUL byte.
+def _is_binary(data: bytes) -> bool:
+    return b"\x00" in data
+
+
+def _git_paths(*args: str) -> list[Path]:
     proc = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+        ["git", *args, "-z"],
         check=True,
         capture_output=True,
-        text=True,
     )
-    return [Path(line) for line in proc.stdout.splitlines() if line]
+    return [Path(os.fsdecode(raw_path)) for raw_path in proc.stdout.split(b"\0") if raw_path]
+
+
+def _staged_paths() -> list[Path]:
+    return _git_paths("diff", "--cached", "--name-only", "--diff-filter=ACMR")
 
 
 def _report(errors: list[str]) -> int:
@@ -42,7 +60,7 @@ def check_json(paths: list[Path], fix: bool = False) -> int:
             continue
         try:
             json.loads(path.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
             errors.append(f"invalid json: {path}: {exc}")
     return _report(errors)
 
@@ -54,7 +72,7 @@ def check_yaml(paths: list[Path], fix: bool = False) -> int:
             continue
         try:
             yaml.safe_load(path.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
             errors.append(f"invalid yaml: {path}: {exc}")
     return _report(errors)
 
@@ -65,6 +83,8 @@ def check_eof(paths: list[Path], fix: bool = False) -> int:
         if not path.is_file():
             continue
         data = _read_bytes(path)
+        if _is_binary(data):
+            continue
         if data and not data.endswith(b"\n"):
             if fix:
                 with path.open("ab") as f:
@@ -84,8 +104,17 @@ def check_trailing_whitespace(paths: list[Path], fix: bool = False) -> int:
         if not path.is_file():
             continue
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
+            data = _read_bytes(path)
+        except OSError:
+            continue
+        if _is_binary(data):
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            # Not valid UTF-8 (and not NUL-binary): skip rather than silently
+            # dropping bytes with errors="ignore", which would corrupt the
+            # file when run with fix=True.
             continue
         if not text:
             continue
@@ -110,6 +139,8 @@ def check_mixed_line_endings(paths: list[Path], fix: bool = False) -> int:
         if not path.is_file():
             continue
         data = _read_bytes(path)
+        if _is_binary(data):
+            continue
         has_crlf = b"\r\n" in data
         has_lf = b"\n" in data.replace(b"\r\n", b"")
         if has_crlf and has_lf:
@@ -126,7 +157,18 @@ def check_merge_conflicts(paths: list[Path], fix: bool = False) -> int:
     for path in paths:
         if not path.is_file():
             continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        try:
+            data = _read_bytes(path)
+        except OSError:
+            continue
+        if _is_binary(data):
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            # Not valid UTF-8: skip rather than risking a false positive from
+            # bytes mangled by errors="ignore".
+            continue
         if all(pattern in text for pattern in MERGE_PATTERNS):
             errors.append(f"merge conflict markers: {path}")
     return _report(errors)
@@ -141,20 +183,61 @@ def check_symlinks(paths: list[Path], fix: bool = False) -> int:
 
 
 def check_case_conflicts(_: list[Path], fix: bool = False) -> int:
-    proc = subprocess.run(
-        ["git", "ls-files"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
     seen: dict[str, str] = {}
     errors: list[str] = []
-    for path in proc.stdout.splitlines():
+    for raw_path in _git_paths("ls-files"):
+        path = str(raw_path)
         lowered = path.lower()
         other = seen.get(lowered)
         if other and other != path:
             errors.append(f"case conflict: {other} <-> {path}")
         seen[lowered] = path
+    return _report(errors)
+
+
+def check_comment_ascii(paths: list[Path], fix: bool = False) -> int:
+    """Ensure Python comments and docstrings contain only ASCII characters.
+
+    Ported from the legacy check_comment_ascii.py. The fix flag is accepted
+    for signature consistency but no auto-fix exists — non-ASCII comments
+    must be rewritten by hand.
+    """
+    errors: list[str] = []
+    for path in paths:
+        if path.suffix != ".py" or not path.is_file():
+            continue
+        # A common comment begins with `#`
+        try:
+            with tokenize.open(path) as fp:
+                for tk in tokenize.generate_tokens(fp.readline):
+                    if tk.type == tokenize.COMMENT and not _PRINTABLE_ASCII.fullmatch(tk.string):
+                        errors.append(f"non-ASCII comment: {path}:{tk.start[0]}: {tk.string}")
+        except (OSError, SyntaxError, UnicodeDecodeError, tokenize.TokenError):
+            # Skip files that can't be tokenised (binary, bad encoding decl,
+            # syntax errors). Other tools (e.g. ruff) handle those separately.
+            pass
+
+        # A docstring begins and ends with `'''` (or `"""`)
+        try:
+            source = path.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            # AsyncFunctionDef is included alongside FunctionDef so that
+            # `async def` docstrings are also validated; without it, a
+            # non-ASCII docstring on an async function would slip past
+            # the scan silently.
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
+                continue
+            doc = ast.get_docstring(node)
+            if not doc or _PRINTABLE_ASCII.fullmatch(doc):
+                continue
+            first_line = doc.splitlines()[0] if doc.splitlines() else doc
+            errors.append(f"non-ASCII docstring: {path}:{node.lineno}: {first_line}")
     return _report(errors)
 
 
@@ -167,6 +250,7 @@ CHECKS = {
     "merge-conflict": check_merge_conflicts,
     "symlinks": check_symlinks,
     "case-conflict": check_case_conflicts,
+    "comment-ascii": check_comment_ascii,
 }
 
 

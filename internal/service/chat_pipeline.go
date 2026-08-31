@@ -26,7 +26,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service/kg"
+	"ragflow/internal/service/file"
+	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"regexp"
 	"sort"
@@ -38,6 +39,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// Fields defined by the chat-completions message schema. Stored messages also
+// carry RAGFlow bookkeeping such as id, created_at, doc_ids, and conversationId,
+// which strict providers reject.
+var llmMessageFields = [...]string{"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"}
+
 // ChatPipelineService is the shared RAG chat pipeline engine used by both
 // the OpenAI-compatible endpoint (/api/v1/openai/<chat_id>/chat/completions)
 // and the regular chat completion endpoint (/api/v1/chat/completions).
@@ -48,7 +54,7 @@ import (
 type ChatPipelineService struct {
 	ModelProviderSvc *ModelProviderService
 	MetadataSvc      *MetadataService
-	KbService        *KnowledgebaseService
+	kbDAO            *dao.KnowledgebaseDAO
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
@@ -56,7 +62,7 @@ func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
 		ModelProviderSvc: NewModelProviderService(),
 		MetadataSvc:      NewMetadataService(),
-		KbService:        NewKnowledgebaseService(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -124,12 +130,12 @@ type AsyncChatResult struct {
 //	│                                                       │
 //	│  reasoning=true?                                      │
 //	│   YES → DeepResearcher (recursive, maxDepth=3)        │
-//	│         each layer: KB → Web(Tavily) → KG(use_kg)     │
+//	│         each layer: KB → Web search → KG(use_kg)      │
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
 //	│         TOC enhance → child chunk retrieval →         │
-//	│         Tavily web search → KG retrieval (prepend)    │
+//	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
 //	│    kbPrompt (build knowledge blocks)                  │
@@ -151,6 +157,7 @@ type AsyncChatResult struct {
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -167,21 +174,28 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
-		return nil, fmt.Errorf("The last content of this conversation is not from user.")
+		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
+	hasKBs := false
+	for _, raw := range chat.KBIDs {
+		if id, ok := raw.(string); ok && id != "" {
+			hasKBs = true
+			break
+		}
+	}
 	useWebSearch := s.shouldUseWebSearch(chat, kwargs["internet"])
 	if useWebSearch {
 		common.Debug("web_search",
-			zap.Bool("kb", len(chat.KBIDs) > 0),
-			zap.Bool("tavily", chat.PromptConfig != nil && chat.PromptConfig["tavily_api_key"] != "" && chat.PromptConfig["tavily_api_key"] != nil),
+			zap.Bool("kb", hasKBs),
+			zap.Bool("configured", resolveWebSearchProvider(chat.PromptConfig) != nil),
 			zap.Any("internet", kwargs["internet"]),
 			zap.Bool("enabled", useWebSearch))
 	}
 
-	if len(chat.KBIDs) == 0 && !useWebSearch {
-		return s.AsyncChatSolo(ctx, chat, messages, stream)
+	if !hasKBs && !useWebSearch {
+		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -196,7 +210,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 2: Resolve LLM Model Config + max_tokens ===
 		common.Info("Phase 2: Resolve LLM Model Config + max_tokens")
 		timer.Enter(common.PhaseCheckLLM)
-		llmModelConfig, _, _, _, err := s.getLLMModelConfig(chat)
+		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -206,8 +220,10 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		modelMaxTokens := 8192
 		if llmModelConfig != nil {
-			if mt, ok := llmModelConfig["max_tokens"].(float64); ok {
-				modelMaxTokens = int(mt)
+			// Treat max_tokens=0 as unset (default 8192) — mirrors
+			// PR #16413 Python fix: model_extra.get("max_tokens") or 8192
+			if mt, ok := llmModelConfig["max_tokens"].(int); ok && mt > 0 {
+				modelMaxTokens = mt
 			}
 		}
 		timer.Exit(common.PhaseCheckLLM)
@@ -235,7 +251,14 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 4: Bind Models (embedding, rerank, chat, TTS) + ToolCall ===
 		common.Info("Phase 4: Bind Models (embedding, rerank, chat, TTS)")
 		timer.Enter(common.PhaseBindModels)
-		kbs, embModel, rerankModel, chatModel, ttsModel := s.getModels(ctx, chat)
+		kbs, embModel, rerankModel, chatModel, ttsModel, err := s.getModels(ctx, chat)
+		if err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
+			}
+			return
+		}
 
 		// Toolcall binding
 		if toolcallSession, hasSession := kwargs["toolcall_session"]; hasSession && toolcallSession != nil {
@@ -298,10 +321,12 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Parse file attachments from the last message.
 		// Split text-file URLs (joined with "\n\n") and image URLs.
-		// Chat model: images → imageAttachments (multimodal conversion).
-		// Image2text model: images → imageFiles (raw URLs).
+		// Vision (image2text) model: images → imageFiles for the multimodal
+		// conversion below. Text-only chat model: images are dropped —
+		// sending image content blocks makes such providers reject the
+		// request (e.g. Zhipu GLM error 1210: messages.content.type only
+		// allows 'text').
 		var textAttachmentsList []string
-		var imageAttachments []string
 		var imageFiles []string
 		// Joined text attachments (appended to system prompt).
 		var attachments string
@@ -314,15 +339,20 @@ func (s *ChatPipelineService) AsyncChat(
 					modelType = mt
 				}
 			}
-			if modelType == "chat" {
-				textAttachmentsList, imageAttachments = splitFileAttachments(files, false)
+			if modelType == "image2text" {
+				textAttachmentsList, imageFiles = splitFileAttachments(ctx, userID, files, true)
 			} else {
-				textAttachmentsList, imageFiles = splitFileAttachments(files, true)
+				var droppedImages []string
+				textAttachmentsList, droppedImages = splitFileAttachments(ctx, userID, files, false)
+				if len(droppedImages) > 0 {
+					common.Warn("AsyncChat: dropping image attachments for text-only chat model",
+						zap.String("llm_id", chat.LLMID),
+						zap.Int("dropped_images", len(droppedImages)))
+				}
 			}
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			common.Debug("Resolved attachments",
 				zap.Strings("text_attachments_list", textAttachmentsList),
-				zap.Strings("image_attachments", imageAttachments),
 				zap.Strings("image_files", imageFiles),
 				zap.String("attachments", attachments))
 		}
@@ -330,7 +360,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
-		fieldMap, fmErr := s.KbService.GetFieldMap(kbIDStrings(kbs))
+		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
 			fieldMap = nil
@@ -385,7 +415,7 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 					}
 					kbinfos := map[string]interface{}{"chunks": chunks}
-					s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
 				out <- AsyncChatResult{
@@ -534,10 +564,10 @@ func (s *ChatPipelineService) AsyncChat(
 				var flattedMeta common.MetaData
 				var mErr error
 				if s.MetadataSvc != nil {
-					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(kbIDs)
+					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 				}
 				if mErr == nil {
-					if filtered, ok := ApplyMetaDataFilter(
+					if filtered, _ := ApplyMetaDataFilter(
 						ctx,
 						*chat.MetaDataFilter,
 						flattedMeta,
@@ -545,7 +575,7 @@ func (s *ChatPipelineService) AsyncChat(
 						chatModel,
 						docIDs,
 						kbIDs,
-					); ok {
+					); filtered != nil {
 						common.Debug("meta_data_filter applied",
 							zap.Int("filtered_count", len(filtered)),
 							zap.Int("pre_filter_count", len(docIDs)))
@@ -588,13 +618,17 @@ func (s *ChatPipelineService) AsyncChat(
 			"doc_aggs": []interface{}{},
 		}
 		var knowledges []string
+		rerankCandidatesCount := int(chat.RerankCandidatesCount)
+		if rerankCandidatesCount <= 0 {
+			rerankCandidatesCount = 64
+		}
 
 		// When hasKnowledgeParam is true, runs (mutually exclusive):
 		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.
 		//   b) Otherwise: standard retrieval, then:
 		//      - TOC enhancement (if toc_enhance is enabled).
 		//      - Child chunk retrieval.
-		//      - Tavily web search (if internet is enabled).
+		//      - Web search provider (if internet is enabled).
 		//      - Knowledge graph retrieval (if use_kg is enabled).
 		// Populates kbinfos (chunks + doc_aggs) and knowledges.
 		// When false, the entire block is skipped.
@@ -611,13 +645,14 @@ func (s *ChatPipelineService) AsyncChat(
 					// KB retrieval callback for the deep researcher
 					kbRetrieve := func(ctx context.Context, q string) (*nlp.RetrievalResult, error) {
 						return retSvc.Retrieval(ctx, &nlp.RetrievalRequest{
-							Question:       q,
-							TenantIDs:      tenantIDs,
-							KbIDs:          kbIDs,
-							DocIDs:         docIDs,
-							Page:           1,
-							PageSize:       int(chat.TopN),
-							EmbeddingModel: embModel,
+							Question:              q,
+							TenantIDs:             tenantIDs,
+							KbIDs:                 kbIDs,
+							DocIDs:                docIDs,
+							Page:                  1,
+							PageSize:              int(chat.TopN),
+							RerankCandidatesCount: &rerankCandidatesCount,
+							EmbeddingModel:        embModel,
 						})
 					}
 
@@ -633,31 +668,7 @@ func (s *ChatPipelineService) AsyncChat(
 					)
 					question := strings.Join(questions, " ")
 
-					drErr := dr.Research(ctx, kbinfos, question, question, func(msg string) {
-						switch {
-						case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "<retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "</retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						default:
-							out <- AsyncChatResult{
-								Answer:      msg,
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						}
-					})
+					drErr := dr.Research(ctx, kbinfos, question, question, s.deepResearchProgressCallback(ctx, out))
 					if drErr != nil {
 						common.Warn("DeepResearcher failed", zap.Error(drErr))
 					} else {
@@ -671,7 +682,7 @@ func (s *ChatPipelineService) AsyncChat(
 				searchQuestion := strings.Join(questions, " ")
 				if embModel != nil {
 					// Retrieval
-					rankFeature := s.MetadataSvc.LabelQuestion(searchQuestion, kbs)
+					rankFeature := s.MetadataSvc.LabelQuestion(ctx, searchQuestion, kbs)
 					{
 						tenantIDs := make([]string, 0)
 						kbIDs := make([]string, 0)
@@ -696,7 +707,8 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:                 docIDs,
 							Page:                   1,
 							PageSize:               topN,
-							Top:                    &top,
+							RerankCandidatesCount:  &rerankCandidatesCount,
+							KNNTopK:                &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,
 							RankFeature:            &rankFeature,
@@ -754,21 +766,21 @@ func (s *ChatPipelineService) AsyncChat(
 					kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
 				}
 
-				// Web search via Tavily
+				// Web search
 				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-					tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-					tavResult, tavErr := s.tavilyRetrieve(ctx, tavilyKey, searchQuestion)
-					if tavErr != nil {
-						common.Warn("Tavily web search failed", zap.Error(tavErr))
+					provider := resolveWebSearchProvider(chat.PromptConfig)
+					webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
+					if webErr != nil {
+						common.Warn("Web search failed", zap.Error(webErr))
 					} else {
 						// Extend chunks and doc_aggs with web search results.
 						if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-							if newChunks, ok := tavResult["chunks"].([]map[string]interface{}); ok {
+							if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
 								kbinfos["chunks"] = append(existingChunks, newChunks...)
 							}
 						}
 						if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-							if newAggs, ok := tavResult["doc_aggs"].([]interface{}); ok {
+							if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
 								kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
 							}
 						}
@@ -779,7 +791,7 @@ func (s *ChatPipelineService) AsyncChat(
 				if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
 					kgIDs := kbIDStrings(kbs)
 					if len(kgIDs) > 0 {
-						kgPipeline := kg.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
+						kgPipeline := graph.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
 						kgPipeline.SetChatModel(chatModel)
 						if embModel != nil {
 							kgPipeline.SetEmbModel(embModel)
@@ -808,7 +820,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Enrich chunks with document metadata AFTER all retrieval adds.
 		// Request values (kwargs) take precedence over config values.
 		if includeRefMeta, metadataFields := s.resolveReferenceMetadata(promptConfig, kwargs); includeRefMeta {
-			s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+			s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 		}
 		timer.Exit(common.PhaseRetrieval)
 
@@ -827,12 +839,31 @@ func (s *ChatPipelineService) AsyncChat(
 		// return the user-configured fallback message (if set).
 		// If empty_response is not configured, fall through to the LLM call
 		// with an empty knowledge context.
-		if len(knowledges) == 0 {
+		//
+		// EXCEPTION: when the user attached files to their message, the
+		// attachment text provides context that should be sent to the LLM
+		// even if KB retrieval returned nothing. In that case we skip the
+		// early return and fall through to the normal LLM call where
+		// attachments are appended to the system prompt.
+		//
+		// Two results are yielded (mirroring Python dialog_service.py):
+		//   1. Final=false — carries the answer text so streaming consumers
+		//      actually display the fallback message.
+		//   2. Final=true   — closes the stream with the same full answer plus
+		//      the reference/prompt. Python yields the full answer again in the
+		//      final event (dialog_service.py:807); consumers that only look at
+		//      the final event (e.g. the OpenAI-compatible endpoint) would
+		//      otherwise see an empty reply.
+		if len(knowledges) == 0 && attachments == "" {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
+				out <- AsyncChatResult{
+					Answer:    emptyResp,
+					Reference: map[string]interface{}{},
+				}
 				out <- AsyncChatResult{
 					Answer:      emptyResp,
 					Reference:   kbinfos,
-					AudioBinary: s.synthesizeTTS(ttsModel, emptyResp),
+					AudioBinary: s.synthesizeTTS(ctx, ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
 					Final:       true,
 				}
@@ -902,14 +933,13 @@ func (s *ChatPipelineService) AsyncChat(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			llmMessages = append(llmMessages, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			llmMessages = append(llmMessages, llmMessage)
 		}
 
 		// Fit messages within token budget.
@@ -919,16 +949,15 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Int("used_token_count", usedTokenCount),
 			zap.Int("msg_count", len(llmMessages)))
 
-		// Multimodal conversion
-		allImages := make([]string, 0, len(imageAttachments)+len(imageFiles))
-		allImages = append(allImages, imageAttachments...)
-		allImages = append(allImages, imageFiles...)
-		if len(llmMessages) >= 2 && len(allImages) > 0 {
+		// Multimodal conversion. imageFiles is only populated for
+		// vision-capable (image2text) models; text-only chat models never
+		// reach this with images.
+		if len(llmMessages) >= 2 && len(imageFiles) > 0 {
 			lastIdx := len(llmMessages) - 1
 			if role, _ := llmMessages[lastIdx]["role"].(string); role == "user" {
 				if converted, err := common.ConvertLastUserMsgToMultimodal(
 					llmMessages[lastIdx],
-					allImages,
+					imageFiles,
 					factoryName,
 				); err == nil {
 					llmMessages[lastIdx] = converted
@@ -951,17 +980,15 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		// Adjust max_tokens so the LLM has room within the total budget.
-		if chat.LLMSetting != nil {
-			if mt, ok := chat.LLMSetting["max_tokens"].(float64); ok {
-				original := int(mt)
-				adjusted := original
-				if adjusted > modelMaxTokens-usedTokenCount {
-					adjusted = modelMaxTokens - usedTokenCount
-				}
-				chat.LLMSetting["max_tokens"] = float64(adjusted)
-				common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
+		chatCfg := BuildChatConfig(chat, kwargs)
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
 			}
+			return
+		} else if ok {
+			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
 		}
 
 		// === Phase 11: Drive LLM + Decorate Answer ===
@@ -972,7 +999,7 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("stream", stream),
 			zap.Int("llm_messages_count", len(llmMessages)))
 		timer.Enter(common.PhaseGenerateAnswer)
-		chatDriver := s.buildChatDriver(chat, chatModel)
+		chatDriver := s.buildChatDriver(ctx, chat, chatModel)
 		if chatDriver == nil {
 			out <- AsyncChatResult{
 				Answer: "**ERROR**: No chat model available for this chat.",
@@ -1022,10 +1049,7 @@ func (s *ChatPipelineService) AsyncChat(
 		if stream {
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
-			var fullReasoning string
-			thinkState := &thinkStreamState{}
-
-			chatCfg := BuildChatConfig(chat, nil)
+			thinkState := &ThinkStreamState{}
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1082,7 +1106,7 @@ func (s *ChatPipelineService) AsyncChat(
 							out <- AsyncChatResult{
 								Answer:      text,
 								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ttsModel, text),
+								AudioBinary: s.synthesizeTTS(ctx, ttsModel, text),
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 							}
@@ -1091,13 +1115,10 @@ func (s *ChatPipelineService) AsyncChat(
 					})
 			} else {
 				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
-					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
+					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
-							fullReasoning += *reason
-							kind, output := processThinkDelta(thinkState, *reason, 16)
-							if kind == "marker" && output == "<think>" {
-								// <think> marker — emit StartToThink
+							if thinkState.EnterReasoning() {
 								out <- AsyncChatResult{
 									Answer:       "",
 									Reference:    map[string]interface{}{},
@@ -1106,8 +1127,35 @@ func (s *ChatPipelineService) AsyncChat(
 									Final:        false,
 									StartToThink: true,
 								}
-							} else if kind == "marker" && output == "</think>" {
-								// </think> marker — emit EndToThink
+							}
+							deltas := NextThinkDelta(thinkState, *reason, 16)
+							for _, d := range deltas {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
+									fullAnswer += d.Value
+									out <- AsyncChatResult{
+										Answer:      d.Value,
+										Reference:   map[string]interface{}{},
+										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+									}
+								}
+							}
+						}
+						if isContentDelta(answer) {
+							if thinkState.ExitReasoning() {
+								for _, d := range FlushRemaining(thinkState) {
+									if d.Kind == ThinkDeltaText && d.Value != "" {
+										fullAnswer += d.Value
+										out <- AsyncChatResult{
+											Answer:      d.Value,
+											Reference:   map[string]interface{}{},
+											AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+											CreatedAt:   float64(time.Now().Unix()),
+											Final:       false,
+										}
+									}
+								}
 								out <- AsyncChatResult{
 									Answer:      "",
 									Reference:   map[string]interface{}{},
@@ -1116,28 +1164,19 @@ func (s *ChatPipelineService) AsyncChat(
 									Final:       false,
 									EndToThink:  true,
 								}
-							} else if kind == "text" && output != "" {
-								// Route reasoning text to Reasoning field.
-								// TTS is nil — chain-of-thought is not narrated.
-								out <- AsyncChatResult{
-									Reasoning: output,
-									Reference: map[string]interface{}{},
-									// TTS only narrates user-visible answer text.
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-								}
 							}
-						}
-						if isContentDelta(answer) {
 							fullAnswer += *answer
-							out <- AsyncChatResult{
-								Answer:    *answer,
-								Reference: map[string]interface{}{},
-								// Per-delta TTS for incremental audio playback.
-								AudioBinary: s.synthesizeTTS(ttsModel, *answer),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
+							deltas := BufferAnswerDelta(thinkState, *answer, 16)
+							for _, d := range deltas {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
+									out <- AsyncChatResult{
+										Answer:      d.Value,
+										Reference:   map[string]interface{}{},
+										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+									}
+								}
 							}
 						}
 						return nil
@@ -1152,21 +1191,35 @@ func (s *ChatPipelineService) AsyncChat(
 				return
 			}
 
-			// Flush remaining think stream buffer.
-			// If the LLM ended mid-think, emit remaining reasoning +
-			// implicit close marker.
-			remainingText, remainingMarker := flushThinkStream(thinkState)
-			if remainingText != "" {
-				// Flushed text belongs in Reasoning, not Answer.
-				out <- AsyncChatResult{
-					Reasoning:   remainingText,
-					Reference:   map[string]interface{}{},
-					AudioBinary: nil,
-					CreatedAt:   float64(time.Now().Unix()),
-					Final:       false,
+			// Flush remaining state matching Python's final flush order
+			// (dialog_service.py:1601-1612): think_buffer → marker → answer_buffer → pending_after_close
+			// Python has no Reasoning field — all text is Answer.
+			hadThinkClose := false
+			for _, d := range FlushRemaining(thinkState) {
+				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
+					out <- AsyncChatResult{
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
+					}
+				} else if d.Kind == ThinkDeltaText && d.Value != "" {
+					out <- AsyncChatResult{
+						Answer:      d.Value,
+						Reference:   map[string]interface{}{},
+						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+					}
 				}
 			}
-			if remainingMarker == "</think>" {
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
 				out <- AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
@@ -1178,7 +1231,9 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 
 			// Decorate and yield the final answer.
-			visibleAnswer := s.extractVisibleAnswer(fullReasoning + fullAnswer)
+			// Python uses state.full_text (raw text with <think> tags) as input
+			// to _extract_visible_answer → decorate_answer (dialog_service.py:914-920).
+			visibleAnswer := s.extractVisibleAnswer(thinkState.fullText)
 
 			// Pass nil for ttsModel — audio was already produced per-delta.
 			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
@@ -1190,14 +1245,12 @@ func (s *ChatPipelineService) AsyncChat(
 			// Non-streaming: get the answer synchronously.
 			var answer string
 			var err error
-			chatCfg := BuildChatConfig(chat, nil)
-
 			// Tool routing: use tool-loop when tools are bound.
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
 			} else {
 				resp, respErr := chatDriver.ModelDriver.ChatWithMessages(
-					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
+					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
 				)
 				if respErr != nil {
 					err = respErr
@@ -1235,13 +1288,41 @@ func (s *ChatPipelineService) AsyncChat(
 	return out, nil
 }
 
+// deepResearchProgressCallback builds the progress callback handed to
+// DeepResearcher.Research. Progress deltas are non-essential: once the
+// consumer is gone (ctx canceled) they are dropped instead of blocking, so
+// parallel sub-research goroutines can drain before Research returns and
+// the pipeline goroutine closes the channel.
+func (s *ChatPipelineService) deepResearchProgressCallback(ctx context.Context, out chan<- AsyncChatResult) func(string) {
+	return func(msg string) {
+		answer := msg
+		switch {
+		case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
+			answer = "<retrieving>"
+		case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
+			answer = "</retrieving>"
+		}
+		select {
+		case out <- AsyncChatResult{
+			Answer:      answer,
+			Reference:   map[string]interface{}{},
+			AudioBinary: nil,
+			Final:       false,
+		}:
+		case <-ctx.Done():
+		}
+	}
+}
+
 // AsyncChatSolo is the LLM-only chat path (no KBs, no web search).
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
 	ctx context.Context,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
+	config map[string]interface{},
 ) (<-chan AsyncChatResult, error) {
 
 	out := make(chan AsyncChatResult, 16)
@@ -1261,7 +1342,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 1b. Resolve LLM model config (needed early for model_type dispatch).
-		llmModelConfig, _, _, _, err := s.getLLMModelConfig(chat)
+		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		factoryName := ""
 		if err == nil && llmModelConfig != nil {
 			factoryName, _ = llmModelConfig["llm_factory"].(string)
@@ -1270,7 +1351,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
 
-		// 2. Process file attachments (chat → data URIs, image2text → raw URLs).
+		// 2. Process file attachments. Only vision-capable (image2text)
+		// models receive image content; text-only chat models reject image
+		// blocks at the provider (e.g. Zhipu GLM error 1210:
+		// messages.content.type only allows 'text'), so their image
+		// attachments are dropped here.
 		attachmentsStr := ""
 		var imageFiles []string
 		modelType := "chat"
@@ -1282,12 +1367,18 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(files)
+				var images []string
+				attachmentsStr, images = s.splitChatAttachments(ctx, userID, files)
 				if isImage2Text {
-					imageFiles = s.extractRawImageURLs(files)
+					imageFiles = images
 				} else {
-					imageFiles = s.extractImageFiles(files)
+					common.Debug("AsyncChatSolo: dropping image attachments for text-only chat model",
+						zap.String("llm_id", chat.LLMID))
 				}
+				common.Info("AsyncChatSolo: file attachments resolved",
+					zap.Bool("vision_model", isImage2Text),
+					zap.Int("image_files", len(imageFiles)),
+					zap.Int("text_attachment_bytes", len(attachmentsStr)))
 			}
 		}
 
@@ -1298,14 +1389,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			msg = append(msg, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			msg = append(msg, llmMessage)
 		}
 		// Append text attachments to the last user message (no separator).
 		if attachmentsStr != "" && len(msg) > 0 {
@@ -1315,7 +1405,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1330,7 +1420,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
 				ttsDriver, ttsName, ttsConfig, _, ttsErr := s.ModelProviderSvc.GetTenantDefaultModelByType(
-					chat.TenantID, entity.ModelTypeTTS,
+					ctx, chat.TenantID, entity.ModelTypeTTS,
 				)
 				if ttsErr != nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
@@ -1363,27 +1453,22 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					content = converted["content"]
 				}
 			}
-			chatMessages = append(chatMessages, modelModule.Message{
-				Role:    role,
-				Content: content,
-			})
+			m["content"] = content
+			chatMessages = append(chatMessages, modelMessageFromMap(m))
 		}
 
 		// 7. Drive the LLM: stream (per-delta with think markers) or non-stream (one-shot).
 		if stream {
 			var fullAnswer string
-			var fullReasoning string
-			thinkState := &thinkStreamState{}
-			chatCfg := BuildChatConfig(chat, nil)
+			thinkState := &ThinkStreamState{}
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
+
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
-				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
+				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
-						fullReasoning += *reason
-						kind, output := processThinkDelta(thinkState, *reason, 16)
-						if kind == "marker" && output == "<think>" {
-							// Start thinking.
+						if thinkState.EnterReasoning() {
 							out <- AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
@@ -1392,8 +1477,35 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								Final:        false,
 								StartToThink: true,
 							}
-						} else if kind == "marker" && output == "</think>" {
-							// End thinking.
+						}
+						deltas := NextThinkDelta(thinkState, *reason, 16)
+						for _, d := range deltas {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
+								fullAnswer += d.Value
+								out <- AsyncChatResult{
+									Answer:      d.Value,
+									Reference:   map[string]interface{}{},
+									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+								}
+							}
+						}
+					}
+					if isContentDelta(answer) {
+						if thinkState.ExitReasoning() {
+							for _, d := range FlushRemaining(thinkState) {
+								if d.Kind == ThinkDeltaText && d.Value != "" {
+									fullAnswer += d.Value
+									out <- AsyncChatResult{
+										Answer:      d.Value,
+										Reference:   map[string]interface{}{},
+										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+										CreatedAt:   float64(time.Now().Unix()),
+										Final:       false,
+									}
+								}
+							}
 							out <- AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
@@ -1402,25 +1514,19 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								Final:       false,
 								EndToThink:  true,
 							}
-						} else if kind == "text" && output != "" {
-							// Reasoning text with per-delta TTS.
-							out <- AsyncChatResult{
-								Reasoning:   output,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ttsModel, output),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-							}
 						}
-					}
-					if isContentDelta(answer) {
 						fullAnswer += *answer
-						out <- AsyncChatResult{
-							Answer:      *answer,
-							Reference:   map[string]interface{}{},
-							AudioBinary: s.synthesizeTTS(ttsModel, *answer),
-							CreatedAt:   float64(time.Now().Unix()),
-							Final:       false,
+						deltas := BufferAnswerDelta(thinkState, *answer, 16)
+						for _, d := range deltas {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
+								out <- AsyncChatResult{
+									Answer:      d.Value,
+									Reference:   map[string]interface{}{},
+									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+									CreatedAt:   float64(time.Now().Unix()),
+									Final:       false,
+								}
+							}
 						}
 					}
 					return nil
@@ -1434,18 +1540,32 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
-			// Flush any remaining think buffer.
-			remainingText, remainingMarker := flushThinkStream(thinkState)
-			if remainingText != "" {
-				out <- AsyncChatResult{
-					Reasoning:   remainingText,
-					Reference:   map[string]interface{}{},
-					AudioBinary: s.synthesizeTTS(ttsModel, remainingText),
-					CreatedAt:   float64(time.Now().Unix()),
-					Final:       false,
+			hadThinkClose := false
+			for _, d := range FlushRemaining(thinkState) {
+				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
+					hadThinkClose = true
+					out <- AsyncChatResult{
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
+					}
+				} else if d.Kind == ThinkDeltaText && d.Value != "" {
+					out <- AsyncChatResult{
+						Answer:      d.Value,
+						Reference:   map[string]interface{}{},
+						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+					}
 				}
 			}
-			if remainingMarker == "</think>" {
+			// Close reasoning if the stream ended while still in reasoning mode
+			// (e.g. model returned only reasoning chunks with no content delta).
+			// Skip when FlushRemaining already emitted a </think> marker.
+			if !hadThinkClose && thinkState.ExitReasoning() {
 				out <- AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
@@ -1455,12 +1575,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					EndToThink:  true,
 				}
 			}
-			// Final aggregate: re-attach reasoning wrapper for non-streaming consumers.
-			finalAnswer := fullAnswer
-			if fullReasoning != "" {
-				finalAnswer = "<think>" + fullReasoning + "</think>" + fullAnswer
+			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)
+			if finalAnswer == "" {
+				finalAnswer = fullAnswer
 			}
-			// Raw answer, no decorate_answer. AudioBinary=nil (per-delta TTS already emitted).
 			out <- AsyncChatResult{
 				Answer:      finalAnswer,
 				Reference:   map[string]interface{}{},
@@ -1470,10 +1588,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		} else {
 			// Non-streaming: one-shot call.
-			chatCfg := BuildChatConfig(chat, nil)
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 			resp, err := chatModel.ModelDriver.ChatWithMessages(
-				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
+				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
 			)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
@@ -1500,7 +1618,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			out <- AsyncChatResult{
 				Answer:      answer,
 				Reference:   map[string]interface{}{},
-				AudioBinary: s.synthesizeTTS(ttsModel, answer),
+				AudioBinary: s.synthesizeTTS(ctx, ttsModel, answer),
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
 			}
@@ -1510,88 +1628,71 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	return out, nil
 }
 
-// extractImageFiles extracts data-URI image attachments from the files list.
-// Mirrors Python split_file_attachments raw mode.
-func (s *ChatPipelineService) extractImageFiles(files interface{}) []string {
+// splitChatAttachments resolves the last message's file attachments into
+// text content (entries joined by "\n\n") and image data URIs, reading
+// each blob from storage at most once.
+//
+//   - File-dict mode (the chat UI's upload_info flow): FileService.
+//     GetFileContents fetches the blobs; non-visual files are parsed to
+//     text, visual files come back as base64 data URIs.
+//   - String mode (pre-resolved content): data:-prefixed entries become
+//     images; the remaining non-empty entries become text.
+//
+// Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
+// returned data URIs directly.
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, userID string, files interface{}) (string, []string) {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
-		// Use raw=false to get base64 data URIs for images.
-		_, images, err := fileSvc.GetFileContents(fileDicts, false)
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
-			common.Warn("GetFileContents failed in extractImageFiles",
+			common.Warn("GetFileContents failed in splitChatAttachments",
 				zap.Error(err))
-			return nil
+			return "", nil
 		}
-		return images
+		if len(texts) == 0 {
+			return "", images
+		}
+		return strings.Join(texts, "\n\n"), images
 	}
 
-	// ── String fallback ──
+	// ── String mode ──
+	var texts []string
 	var images []string
 	switch v := files.(type) {
 	case []string:
 		for _, f := range v {
+			if f = strings.TrimSpace(f); f == "" {
+				continue
+			}
 			if strings.HasPrefix(f, "data:") {
 				images = append(images, f)
+			} else {
+				texts = append(texts, f)
 			}
 		}
 	case []interface{}:
 		for _, f := range v {
-			if s, ok := f.(string); ok && strings.HasPrefix(s, "data:") {
-				images = append(images, s)
+			str, ok := f.(string)
+			if !ok {
+				continue
+			}
+			if str = strings.TrimSpace(str); str == "" {
+				continue
+			}
+			if strings.HasPrefix(str, "data:") {
+				images = append(images, str)
+			} else {
+				texts = append(texts, str)
 			}
 		}
 	}
-	return images
-}
-
-// extractRawImageURLs extracts image references as raw URLs/data-URIs from
-// the string-mode files list, WITHOUT fetching blobs and WITHOUT filtering
-// to data: prefixes. Used for image2text models that expect URLs in the
-// multimodal content (matches Python's `image_files` from
-// `split_file_attachments(files, raw=True)` at
-// dialog_service.py:371-392).
-//
-// The downstream ConvertLastUserMsgToMultimodal calls parseDataURIOrB64
-// (multimodal.go:63-92) which correctly handles all three forms:
-//   - data: URI → base64 source
-//   - http:// or https:// URL → URL source
-//   - raw base64 → base64 source (default media type)
-//
-// File-dict mode is a known limitation: returns empty for now. A future
-// FileService.GetFileURLsForChat (mirror of GetFileContents with
-// raw=true) would be needed to fully cover the file-dict + image2text
-// combination. The Python equivalent has the same limitation
-// (split_file_attachments calls FileService.get_files which doesn't
-// fetch blobs in raw mode).
-func (s *ChatPipelineService) extractRawImageURLs(files interface{}) []string {
-	if fileDicts, ok := parseFileDicts(files); ok {
-		_ = fileDicts // see file-dict limitation comment above
-		common.Debug("AsyncChatSolo: file-dict + image2text not yet supported; image refs dropped",
-			zap.Int("file_dict_count", len(fileDicts)))
-		return nil
+	if len(texts) == 0 {
+		return "", images
 	}
-
-	// String-mode: return all entries as-is. The downstream
-	// ConvertLastUserMsgToMultimodal + parseDataURIOrB64 will
-	// dispatch on prefix (data: → base64, http(s): → url, else →
-	// raw base64).
-	var urls []string
-	switch v := files.(type) {
-	case []string:
-		for _, f := range v {
-			if f != "" {
-				urls = append(urls, f)
-			}
-		}
-	case []interface{}:
-		for _, f := range v {
-			if s, ok := f.(string); ok && s != "" {
-				urls = append(urls, s)
-			}
-		}
-	}
-	return urls
+	return strings.Join(texts, "\n\n"), images
 }
 
 // ---------------------------------------------------------------------------
@@ -1655,7 +1756,7 @@ func normalizeInternetFlag(v interface{}) *bool {
 
 // shouldUseWebSearch returns true if web search should be enabled.
 // Mirrors Python's _should_use_web_search (dialog_service.py:122-126):
-// Tavily key must be present on chat.PromptConfig AND the internet
+// A web search provider must be configured on chat.PromptConfig AND the internet
 // flag must normalize to explicit true.
 //
 // The second parameter takes the raw internet value (typically
@@ -1665,8 +1766,7 @@ func (s *ChatPipelineService) shouldUseWebSearch(chat *entity.Chat, internet int
 	if chat.PromptConfig == nil {
 		return false
 	}
-	tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-	if tavilyKey == "" {
+	if resolveWebSearchProvider(chat.PromptConfig) == nil {
 		return false
 	}
 	normalized := normalizeInternetFlag(internet)
@@ -1766,45 +1866,73 @@ func tokenizeText(text string) string {
 }
 
 // getLLMModelConfig resolves the LLM model configuration for the chat.
-// Mirrors Python's three-branch resolver at dialog_service.py:552-561:
+// Mirrors Python's three-branch resolver at dialog_service.py:552-561,
+// extended so the tenant-default branch also probes vision capability:
 //
 //	if chat.llm_id:
 //	    if "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
 //	    else:                                            → CHAT
-//	else:                                                → tenant default CHAT
+//	else:                                                → tenant default
+//	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
-// The returned `cfg` map's "model_type" field carries the chosen type
-// so downstream code (e.g. the multimodal-conversion guard in AsyncChat
-// at async_chat.go:632) can skip chat-only logic for image2text dialogs.
-func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
+// The returned `cfg` map's "model_type" field carries the chosen type.
+// Downstream code gates image attachments on it: only image2text
+// (vision-capable) models receive image content blocks; text-only chat
+// models reject them at the provider (e.g. Zhipu GLM error 1210:
+// messages.content.type only allows 'text').
+func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
-		return s.buildLLMModelConfig(
-			s.ModelProviderSvc.GetTenantDefaultModelByType(chat.TenantID, entity.ModelTypeChat),
+		cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
+			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
 		)
+		if err != nil {
+			return nil, "", "", "", err
+		}
+		// Probe the default model's enrolled types so a vision-capable
+		// default dispatches as image2text (same rule as the explicit-LLM
+		// branches below).
+		if ref, refErr := s.ModelProviderSvc.GetTenantDefaultModelRef(ctx, chat.TenantID, entity.ModelTypeChat); refErr == nil {
+			cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, ref)
+		}
+		return cfg, modelName, factoryName, baseURL, nil
 	}
 
 	// Branches 1/2: explicit LLM. Probe model types and pick IMAGE2TEXT
 	// when the LLM is registered as such, otherwise CHAT.
+	modelTypeStr := s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
 	modelType := entity.ModelTypeChat
-	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.GetModelTypeByName(chat.TenantID, chat.LLMID); mtErr == nil {
-		for _, mt := range modelTypes {
-			if mt == entity.ModelTypeImage2Text {
-				modelType = entity.ModelTypeImage2Text
-				modelTypeStr = "image2text"
-				break
-			}
-		}
+	if modelTypeStr == "image2text" {
+		modelType = entity.ModelTypeImage2Text
 	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.GetModelConfigFromProviderInstance(chat.TenantID, modelType, chat.LLMID),
+		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
 	)
 	if err != nil {
 		return nil, "", "", "", err
 	}
 	cfg["model_type"] = modelTypeStr
 	return cfg, modelName, factoryName, baseURL, nil
+}
+
+// resolveChatModelType probes the enrolled model types for llmRef and
+// returns "image2text" when the model is vision-capable (enrolled with an
+// image2text / "vision" type), "chat" otherwise. Probe failures are
+// conservative: they yield "chat", which drops image attachments instead
+// of risking a provider-side rejection.
+func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
+	modelTypes, err := s.ModelProviderSvc.ResolveModelType(ctx, tenantID, llmRef)
+	if err != nil {
+		return "chat"
+	}
+	for _, mt := range modelTypes {
+		// ModelType is a bitmask: a model enrolled as chat+image2text
+		// reports a combined value, so test membership, not equality.
+		if mt.Has(entity.ModelTypeImage2Text) {
+			return "image2text"
+		}
+	}
+	return "chat"
 }
 
 // buildLLMModelConfig collapses the (driver, modelName, apiConfig,
@@ -1847,6 +1975,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
 	*modelModule.ChatModel, // TTS model
+	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
 
@@ -1861,7 +1990,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var kbs []*entity.Knowledgebase
 	if len(kbIDs) > 0 {
 		var err error
-		kbs, err = kbDAO.GetByIDs(kbIDs)
+		kbs, err = kbDAO.GetByIDs(ctx, dao.DB, kbIDs)
 		if err != nil {
 			common.Warn("Failed to get KBs by IDs; retrieval may be incomplete",
 				zap.Strings("kbIDs", kbIDs), zap.Error(err))
@@ -1871,32 +2000,27 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		// All KBs must share the same embedding model.
-		embdIDs := make(map[string]bool)
-		for _, kb := range kbs {
-			if kb.EmbdID != "" {
-				embdIDs[kb.EmbdID] = true
-			}
+		if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
+			return nil, nil, nil, nil, nil, err
 		}
-		if len(embdIDs) > 1 {
-			// Multiple embedding models across KBs — error.
-			common.Warn("Knowledge bases use different embedding models")
-		}
-		if len(embdIDs) == 1 {
-			for embdID := range embdIDs {
-				embdTenantID := kbs[0].TenantID
-				driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
-					embdTenantID, entity.ModelTypeEmbedding, embdID,
-				)
-				if err == nil {
-					embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-				}
+		if kbs[0].EmbdID != "" {
+			embdTenantID := kbs[0].TenantID
+			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
+				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
+			)
+			if err != nil {
+				common.Warn("Failed to get embedding model for chat retrieval",
+					zap.String("embdID", kbs[0].EmbdID),
+					zap.String("tenantID", embdTenantID),
+					zap.Error(err))
+				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
+			embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 		}
 	}
 
 	// Chat model.
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
@@ -1905,8 +2029,8 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
-			chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
+		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
+			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
 			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig)
@@ -1918,7 +2042,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
 			ttsDriver, ttsName, ttsConfig, _, err := s.ModelProviderSvc.GetTenantDefaultModelByType(
-				chat.TenantID, entity.ModelTypeTTS,
+				ctx, chat.TenantID, entity.ModelTypeTTS,
 			)
 			if err == nil {
 				ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
@@ -1926,7 +2050,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 	}
 
-	return kbs, embModel, rerankModel, chatModel, ttsModel
+	return kbs, embModel, rerankModel, chatModel, ttsModel, nil
 }
 
 // lastUserQuestion returns the content of the most recent user message in
@@ -1969,51 +2093,6 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 	return ""
 }
 
-// processFileAttachments extracts text content from file attachments.
-// Mirrors Python's split_file_attachments (dialog_service.py:371-392)
-// in raw=false mode: returns text attachments joined by "\n\n",
-// filtering out data-URI image attachments.
-//
-// When files are file dicts (Python-compatible format), calls
-// FileService.GetFileContents to fetch actual blobs from storage.
-func (s *ChatPipelineService) processFileAttachments(files interface{}) string {
-	// ── File-dict mode ──
-	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
-		texts, _, err := fileSvc.GetFileContents(fileDicts, false)
-		if err != nil {
-			common.Warn("GetFileContents failed in processFileAttachments",
-				zap.Error(err))
-			return ""
-		}
-		if len(texts) == 0 {
-			return ""
-		}
-		return strings.Join(texts, "\n\n")
-	}
-
-	// ── String fallback ──
-	var texts []string
-	switch v := files.(type) {
-	case []string:
-		for _, f := range v {
-			if s := strings.TrimSpace(f); s != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	case []interface{}:
-		for _, f := range v {
-			if s, ok := f.(string); ok && strings.TrimSpace(s) != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	}
-	if len(texts) == 0 {
-		return ""
-	}
-	return strings.Join(texts, "\n\n")
-}
-
 // splitFileAttachments mirrors Python's `split_file_attachments` at
 // dialog_service.py:371-392. It separates `messages[-1]["files"]`
 // into text-file content and image attachments.
@@ -2022,8 +2101,8 @@ func (s *ChatPipelineService) processFileAttachments(files interface{}) string {
 //
 //  1. File-dict mode: When `files` is `[]map[string]interface{}` (each dict
 //     with keys "id", "created_by", "mime_type", "name"), the method calls
-//     FileService.GetFileContents to fetch actual file blobs from
-//     storage, mirroring Python's FileService.get_files().
+//     FileService.GetFileContents to fetch actual file blobs from storage;
+//     images come back as base64 data URIs.
 //
 //  2. String-fallback mode: When `files` is `[]string` or `[]interface{}` of
 //     strings (pre-resolved content), the method does simple string splitting:
@@ -2031,11 +2110,13 @@ func (s *ChatPipelineService) processFileAttachments(files interface{}) string {
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(ctx context.Context, userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
-		texts, images, err := fileSvc.GetFileContents(fileDicts, raw)
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))
@@ -2159,7 +2240,7 @@ func cleanTTSText(text string) string {
 
 // synthesizeTTS calls the TTS model to convert text to audio.
 // Mirrors dialog_service.py:1426-1432.
-func (s *ChatPipelineService) synthesizeTTS(ttsModel *modelModule.ChatModel, text string) interface{} {
+func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.ChatModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
 	}
@@ -2168,7 +2249,7 @@ func (s *ChatPipelineService) synthesizeTTS(ttsModel *modelModule.ChatModel, tex
 		return nil
 	}
 	ttsResp, err := ttsModel.ModelDriver.AudioSpeech(
-		ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"},
+		ctx, ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"}, nil,
 	)
 	if err != nil {
 		common.Warn("TTS synthesis failed", zap.Error(err))
@@ -2259,7 +2340,7 @@ func (s *ChatPipelineService) resolveReferenceMetadata(promptConfig map[string]i
 // enrichChunksWithMetadata enriches chunk records in kbinfos with document-level
 // metadata. Mirrors Python's enrich_chunks_with_document_metadata() in
 // api/utils/reference_metadata_utils.py.
-func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interface{}, tenantID string, fields []string) {
+func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbinfos map[string]interface{}, tenantID string, fields []string) {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 	if !ok || len(chunksRaw) == 0 {
 		return
@@ -2271,7 +2352,7 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interf
 		return
 	}
 
-	s.MetadataSvc.EnrichChunksWithDocMetadata(chunks, tenantID, fields)
+	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
 // kbPrompt builds knowledge prompt blocks from retrieved chunks.
@@ -2288,7 +2369,7 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 	}
 	contents := make([]chunkContent, 0, len(chunksRaw))
 	for _, ck := range chunksRaw {
-		c := getMapString(ck, "content", "content_with_weight")
+		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
 		}
@@ -2298,7 +2379,7 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 	usedTokenCount := 0
 	chunksNum := 0
 	for _, cc := range contents {
-		usedTokenCount += kg.NumTokensFromString(cc.content)
+		usedTokenCount += graph.NumTokensFromString(cc.content)
 		chunksNum++
 		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
 			common.Warn("Not all the retrieval into prompt",
@@ -2315,7 +2396,7 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 	var result []string
 	for i := 0; i < chunksNum; i++ {
 		ck := chunksRaw[i]
-		c := getMapString(ck, "content", "content_with_weight")
+		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
 		}
@@ -2358,38 +2439,81 @@ func (s *ChatPipelineService) formatPrompt(template string, kwargs map[string]in
 
 // messageFitIn trims messages to fit within a token budget.
 // Mirrors Python's message_fit_in() in rag/prompts/generator.py.
+//
+// Strategy:
+//  1. If everything fits → return as-is.
+//  2. Keep all system messages + the last user/assistant message.
+//  3. If still too large, trim content proportionally:
+//     - System dominates (>80%) → preserve last message first.
+//     - Otherwise → preserve system first.
 func (s *ChatPipelineService) messageFitIn(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
-	totalTokens := 0
-	var result []map[string]interface{}
-
-	// Always keep the system message first.
-	if len(messages) > 0 {
-		if role, _ := messages[0]["role"].(string); role == "system" {
-			if content, ok := messages[0]["content"].(string); ok {
-				sysTokens := kg.NumTokensFromString(content)
-				if sysTokens <= maxTokens {
-					totalTokens = sysTokens
-					result = append(result, messages[0])
-				}
-			}
-		}
+	if maxTokens <= 0 {
+		maxTokens = 8192
 	}
 
-	// Add user/assistant messages from the end, working backwards.
-	rest := messages[1:]
-	for i := len(rest) - 1; i >= 0; i-- {
-		m := rest[i]
-		content, _ := m["content"].(string)
-		tokens := kg.NumTokensFromString(content)
-		if totalTokens+tokens > maxTokens {
-			break
-		}
-		totalTokens += tokens
-		// Prepend to maintain order.
-		result = append([]map[string]interface{}{m}, result...)
+	// Step 1: everything fits.
+	totalTokens := s.countAllTokens(messages)
+	if totalTokens < maxTokens {
+		return totalTokens, messages
 	}
 
-	return totalTokens, result
+	// Step 2: keep all system messages + the last message.
+	result := make([]map[string]interface{}, 0)
+	for _, m := range messages {
+		if role, _ := m["role"].(string); role == "system" {
+			result = append(result, m)
+		}
+	}
+	if len(messages) > 1 {
+		result = append(result, messages[len(messages)-1])
+	}
+
+	totalTokens = s.countAllTokens(result)
+	if totalTokens < maxTokens {
+		return totalTokens, result
+	}
+
+	// Step 3: trim content to fit.
+	ll := graph.NumTokensFromString(s.stringContent(result[0]))
+	ll2 := graph.NumTokensFromString(s.stringContent(result[len(result)-1]))
+	total := ll + ll2
+	if total <= 0 {
+		return 0, result
+	}
+
+	if len(result) == 1 {
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), maxTokens)
+		return s.countAllTokens(result), result
+	}
+
+	if float64(ll)/float64(total) > 0.8 {
+		preservedLast := min(ll2, maxTokens)
+		result[len(result)-1]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), preservedLast)
+		remaining := max(0, maxTokens-preservedLast)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), remaining)
+	} else {
+		preservedSystem := min(ll, maxTokens)
+		result[0]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[0]), preservedSystem)
+		remaining := max(0, maxTokens-preservedSystem)
+		result[len(result)-1]["content"] = graph.TrimContentToTokenLimit(s.stringContent(result[len(result)-1]), remaining)
+	}
+
+	return s.countAllTokens(result), result
+}
+
+// countAllTokens returns the total token count across all messages.
+func (s *ChatPipelineService) countAllTokens(messages []map[string]interface{}) int {
+	total := 0
+	for _, m := range messages {
+		total += graph.NumTokensFromString(s.stringContent(m))
+	}
+	return total
+}
+
+// stringContent extracts the "content" string from a message map, or "".
+func (s *ChatPipelineService) stringContent(m map[string]interface{}) string {
+	c, _ := m["content"].(string)
+	return c
 }
 
 // buildChatMessages converts the internal message representation to
@@ -2401,21 +2525,46 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	}
 	for _, m := range messages {
 		role, _ := m["role"].(string)
-		content := m["content"]
-		if role == "" || content == nil {
+		if role == "" {
 			continue
 		}
-		result = append(result, modelModule.Message{Role: role, Content: content})
+		result = append(result, modelMessageFromMap(m))
 	}
 	return result
 }
 
+func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
+	normalized := make(map[string]interface{}, len(llmMessageFields))
+	for _, field := range llmMessageFields {
+		if value, ok := message[field]; ok {
+			normalized[field] = value
+		}
+	}
+	return normalized
+}
+
+func modelMessageFromMap(message map[string]interface{}) modelModule.Message {
+	msg := modelModule.Message{Role: stringFromMap(message, "role"), Content: message["content"], Name: message["name"], FunctionCall: message["function_call"], Refusal: message["refusal"], Audio: message["audio"]}
+	msg.ToolCallID, _ = message["tool_call_id"].(string)
+	switch toolCalls := message["tool_calls"].(type) {
+	case []map[string]interface{}:
+		msg.ToolCalls = toolCalls
+	case []interface{}:
+		for _, toolCall := range toolCalls {
+			if value, ok := toolCall.(map[string]interface{}); ok {
+				msg.ToolCalls = append(msg.ToolCalls, value)
+			}
+		}
+	}
+	return msg
+}
+
 // buildChatDriver creates a ChatModel wrapper from the chat.
-func (s *ChatPipelineService) buildChatDriver(chat *entity.Chat, chatModel *modelModule.ChatModel) *modelModule.ChatModel {
+func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.Chat, chatModel *modelModule.ChatModel) *modelModule.ChatModel {
 	if chatModel != nil {
 		return chatModel
 	}
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 	if err != nil {
 		return nil
 	}
@@ -2514,9 +2663,9 @@ type embeddingModelEmbedder struct {
 	embModel *modelModule.EmbeddingModel
 }
 
-func (e *embeddingModelEmbedder) Encode(texts []string) ([][]float64, error) {
+func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(e.embModel.ModelName, texts, e.embModel.APIConfig, config)
+	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2600,7 +2749,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 				if allVec {
 					embedder := &embeddingModelEmbedder{embModel: embModel}
-					if decorated, cited := InsertCitations(ans, NewSourcedChunks(chunksRaw), embedder, chunkVectors); len(cited) > 0 {
+					if decorated, cited := InsertCitations(ctx, ans, NewSourcedChunks(chunksRaw), embedder, chunkVectors); len(cited) > 0 {
 						ans = decorated
 						citationIdx = make(map[int]struct{})
 						for _, ci := range cited {
@@ -2686,7 +2835,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 				newChunks = append(newChunks, newChunk)
 			}
-			refs["chunks"] = newChunks
+			refs["chunks"] = chunksFormat(newChunks)
 		}
 	}
 
@@ -2704,7 +2853,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	// token-count / token-speed lines that the existing OpenAI endpoint
 	// already exposes. Total wall-clock is rounded to ms.
 	totalMs := timer.Total().Seconds() * 1000
-	tkNum := kg.NumTokensFromString(think + ans)
+	tkNum := graph.NumTokensFromString(think + ans)
 
 	prompt += fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " "))
 
@@ -2715,7 +2864,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	}
 
 	// TTS synthesis for the final answer.
-	audioBinary := s.synthesizeTTS(ttsModel, think+ans)
+	audioBinary := s.synthesizeTTS(ctx, ttsModel, think+ans)
 
 	// Langfuse generation end observation.
 	if langfuseTraceID != "" {
@@ -2753,10 +2902,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
@@ -2781,25 +2930,8 @@ func langfuseExtractTimeElapsed(prompt string) string {
 }
 
 // extractVisibleAnswer mirrors Python's _extract_visible_answer.
-// It preserves <think> wrappers and strips stray think tags.
 func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
-	if !strings.Contains(text, "</think>") {
-		text = strings.ReplaceAll(text, "<think>", "")
-		text = strings.ReplaceAll(text, "</think>", "")
-		return text
-	}
-	idx := strings.LastIndex(text, "</think>")
-	thought := text[:idx]
-	answer := text[idx+len("</think>"):]
-	thought = strings.ReplaceAll(thought, "<think>", "")
-	thought = strings.ReplaceAll(thought, "</think>", "")
-	thought = strings.TrimSpace(thought)
-	answer = strings.ReplaceAll(answer, "<think>", "")
-	answer = strings.ReplaceAll(answer, "</think>", "")
-	if thought == "" {
-		return answer
-	}
-	return "<think>" + thought + "</think>" + answer
+	return ExtractVisibleAnswer(text)
 }
 
 // citationPrompt returns the citation instruction prompt.
@@ -2807,124 +2939,6 @@ func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 func citationPrompt() string {
 	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
 		"(where N is the chunk number) after each sentence where the information from that chunk is used."
-}
-
-// ---------------------------------------------------------------------------
-// Think-marker streaming — mirrors Python's _stream_with_think_delta.
-// ---------------------------------------------------------------------------
-
-// thinkStreamState tracks accumulated reasoning text and emits deltas.
-type thinkStreamState struct {
-	fullText      string
-	lastIdx       int
-	endsWithThink bool
-	inThink       bool
-	buffer        string
-	postThinkText string
-}
-
-// nextThinkDelta computes the next delta to emit from the accumulated text.
-// Mirrors _next_think_delta in dialog_service.py:1460-1487.
-func nextThinkDelta(state *thinkStreamState) string {
-	full := state.fullText
-	if full == "" || len(full) <= state.lastIdx {
-		return ""
-	}
-	delta := full[state.lastIdx:]
-
-	if strings.HasPrefix(delta, "<think>") {
-		state.lastIdx += len("<think>")
-		return "<think>"
-	}
-	if idx := strings.Index(delta, "<think>"); idx > 0 {
-		state.lastIdx += idx
-		return delta[:idx]
-	}
-	if strings.HasSuffix(delta, "</think>") {
-		state.endsWithThink = true
-	} else if state.endsWithThink {
-		state.endsWithThink = false
-		remainder := delta
-		if idx := strings.Index(delta, "</think>"); idx >= 0 {
-			remainder = delta[idx+len("</think>"):]
-		}
-		if remainder != "" {
-			state.postThinkText = remainder
-		}
-		state.lastIdx = len(full)
-		return "</think>"
-	}
-
-	state.lastIdx = len(full)
-	if strings.HasSuffix(full, "</think>") {
-		state.lastIdx -= len("</think>")
-	}
-	return strings.ReplaceAll(strings.ReplaceAll(delta, "<think>", ""), "</think>", "")
-}
-
-// processThinkDelta updates the state with a new delta and returns what to emit.
-// Returns the kind of emission: "marker" for think tags, "text" for content, "" for nothing.
-func processThinkDelta(state *thinkStreamState, delta string, minTokens int) (kind string, output string) {
-	if delta == "" {
-		return "", ""
-	}
-	state.fullText += delta
-	d := nextThinkDelta(state)
-	if d == "" {
-		return "", ""
-	}
-	if d == "<think>" {
-		if state.inThink {
-			return "", ""
-		}
-		if state.buffer != "" {
-			kind, out := "text", state.buffer
-			state.buffer = ""
-			state.inThink = true
-			return kind, out
-		}
-		state.inThink = true
-		return "marker", "<think>"
-	}
-	if d == "</think>" {
-		if !state.inThink {
-			return "", ""
-		}
-		state.inThink = false
-		if state.postThinkText != "" {
-			state.buffer += state.postThinkText
-			state.postThinkText = ""
-		}
-		return "marker", "</think>"
-	}
-	state.buffer += d
-	if kg.NumTokensFromString(state.buffer) < minTokens {
-		return "", ""
-	}
-	out := state.buffer
-	state.buffer = ""
-	return "text", out
-}
-
-// flushThinkStream flushes any remaining buffered text from the think stream.
-func flushThinkStream(state *thinkStreamState) (text string, marker string) {
-	if state.buffer != "" {
-		text = state.buffer
-		state.buffer = ""
-	}
-	if state.postThinkText != "" {
-		if text != "" {
-			text += state.postThinkText
-		} else {
-			text = state.postThinkText
-		}
-		state.postThinkText = ""
-	}
-	if state.endsWithThink {
-		marker = "</think>"
-		state.endsWithThink = false
-	}
-	return text, marker
 }
 
 // -----------------------------------------------------------------------
@@ -2959,8 +2973,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:
@@ -3135,6 +3149,23 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
+//
+// StructuredQuery is the exported narrow entrypoint for the agentic-search
+// structured_query tool: translate a natural-language question to SQL over the
+// given tabular KBs and return the answer + reference chunks. It forwards to the
+// internal useSQL with quote=false (the agent tool returns the answer directly,
+// not a cited natural-language response).
+func (s *ChatPipelineService) StructuredQuery(
+	ctx context.Context,
+	chat *entity.Chat,
+	kbs []*entity.Knowledgebase,
+	question string,
+	chatModel *modelModule.ChatModel,
+	fieldMap map[string]interface{},
+) (ans map[string]interface{}, err error) {
+	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
+}
+
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -3418,7 +3449,7 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	case "oceanbase":
+	case "oceanbase", "seekdb":
 		sysPrompt = oceanbaseSQLSysPrompt
 		bullets := strings.Builder{}
 		for _, n := range names {
@@ -3526,7 +3557,7 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 // OpenSearch share the direct-column template. expectedCol is
 // "docnm" for Infinity or "docnm_kwd" for everything else.
 func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3555,7 +3586,7 @@ func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, e
 // buildExecutionErrorRepairPrompt returns the engine-specific user
 // prompt for the execution-error repair flow.
 func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3608,7 +3639,7 @@ func chatForSQL(
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
 	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, chatModel.APIConfig, cfg,
+		ctx, modelName, msgs, chatModel.APIConfig, cfg, nil,
 	)
 	if err != nil {
 		return "", err
@@ -3702,7 +3733,7 @@ func removeRedundantSpaces(s string) string {
 // dialog_service.py:1309. Matches `T13:24:55|` or `T13:24:55.123Z|`.
 var isoTimestampCellRe = regexp.MustCompile(`T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|`)
 
-// stripISOTimestamps removes ISO-8601 timestamps that end a markdown
+// stripISOTimestamps removes ISO-8601 timestamps that end a Markdown
 // table cell. Operates on the full joined rows string (not per-cell).
 func stripISOTimestamps(rows string) string {
 	return isoTimestampCellRe.ReplaceAllString(rows, "|")
@@ -4113,7 +4144,7 @@ func (s *ChatPipelineService) buildSQLReference(
 				"count":    d["count"],
 			})
 		}
-		ref["chunks"] = chunks
+		ref["chunks"] = chunksFormat(chunks)
 		ref["doc_aggs"] = docAggs
 		return answer, ref
 	}
@@ -4122,7 +4153,7 @@ func (s *ChatPipelineService) buildSQLReference(
 	if isAggregateSQL(originalSQL) {
 		chunks, docAggs := s.fetchAggregateChunks(ctx, docEngine, tableName, originalSQL, expectedCol, kbIDs)
 		if len(chunks) > 0 {
-			ref["chunks"] = chunks
+			ref["chunks"] = chunksFormat(chunks)
 			ref["doc_aggs"] = docAggs
 		}
 		return answer, ref
@@ -4179,14 +4210,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := dialog.LLMSetting["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
@@ -4219,14 +4250,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := config["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := config["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(config["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := config["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(config["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := config["do_sample"].(bool); ok {
@@ -4255,6 +4286,64 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	return cfg
 }
 
+func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
+	if usedTokenCount >= modelMaxTokens {
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+	}
+	if cfg == nil || cfg.MaxTokens == nil {
+		return 0, false, nil
+	}
+	adjusted := *cfg.MaxTokens
+	if adjusted <= 0 {
+		cfg.MaxTokens = nil
+		return 0, false, nil
+	}
+	remainingTokens := modelMaxTokens - usedTokenCount
+	if adjusted > remainingTokens {
+		adjusted = remainingTokens
+	}
+	cfg.MaxTokens = &adjusted
+	return adjusted, true, nil
+}
+
+func chatConfigPositiveInt(value interface{}) (int, bool) {
+	v, ok := chatConfigInt(value)
+	if !ok || v <= 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+func chatConfigInt(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+func chatConfigFloat(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
 func kbIDStrings(kbs []*entity.Knowledgebase) []string {
 	if len(kbs) == 0 {
 		return nil
@@ -4272,4 +4361,39 @@ func kbIDStrings(kbs []*entity.Knowledgebase) []string {
 		return nil
 	}
 	return out
+}
+
+// chunksFormat normalizes raw chunk maps to the frontend-expected field names.
+// Mirrors Python's chunks_format in rag/prompts/generator.py:41-65.
+func chunksFormat(chunksRaw []map[string]interface{}) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(chunksRaw))
+	for _, chunk := range chunksRaw {
+		formatted := map[string]interface{}{
+			"id":                getChunkValue(chunk, "chunk_id", "id"),
+			"content":           getChunkValue(chunk, "content", "content_with_weight"),
+			"document_id":       getChunkValue(chunk, "doc_id", "document_id"),
+			"document_name":     getChunkValue(chunk, "docnm_kwd", "document_name"),
+			"dataset_id":        getChunkValue(chunk, "kb_id", "dataset_id"),
+			"image_id":          getChunkValue(chunk, "image_id", "img_id"),
+			"positions":         getChunkValue(chunk, "positions", "position_int"),
+			"url":               chunk["url"],
+			"similarity":        chunk["similarity"],
+			"vector_similarity": chunk["vector_similarity"],
+			"term_similarity":   chunk["term_similarity"],
+			"row_id":            chunk["row_id"],
+			"doc_type":          getChunkValue(chunk, "doc_type_kwd", "doc_type"),
+			"document_metadata": chunk["document_metadata"],
+		}
+		result = append(result, formatted)
+	}
+	return result
+}
+
+// getChunkValue returns the first non-nil value from a chunk map, trying k1 first then k2.
+// Mirrors Python's get_value helper in rag/prompts/generator.py:37-38.
+func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
+	if v, ok := chunk[k1]; ok && v != nil {
+		return v
+	}
+	return chunk[k2]
 }

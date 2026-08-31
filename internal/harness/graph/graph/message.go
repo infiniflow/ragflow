@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/types"
@@ -147,7 +148,7 @@ func AddMessagesReducer(existing interface{}, updates interface{}) (interface{},
 // MessageGraph is a graph specialized for message-based workflows.
 // It automatically manages a messages channel with the AddMessages reducer.
 type MessageGraph struct {
-	graph           *StateGraph
+	graph           *stateGraph
 	messagesChannel string
 }
 
@@ -158,20 +159,20 @@ func NewMessageGraph() *MessageGraph {
 		"messages": []any{},
 	}
 
-	g := NewStateGraph(stateSchema)
+	sg := NewStateGraph(stateSchema).(*stateGraph)
 
 	// Register the messages channel so GetMessages works
 	messagesChannel := "messages"
-	g.AddChannel(messagesChannel, channels.NewLastValue([]*Message{}))
+	sg.AddChannel(messagesChannel, channels.NewLastValue([]*Message{}))
 
 	return &MessageGraph{
-		graph:           g,
+		graph:           sg,
 		messagesChannel: messagesChannel,
 	}
 }
 
 // AddNode adds a node to the message graph.
-func (g *MessageGraph) AddNode(name string, action types.NodeFunc) *Node {
+func (g *MessageGraph) AddNode(name string, action types.NodeFunc) *types.Node {
 	return g.graph.AddNode(name, action)
 }
 
@@ -191,7 +192,7 @@ func (g *MessageGraph) SetEntryPoint(node string) error {
 }
 
 // Build returns a compiled message graph.
-func (g *MessageGraph) Build() (*CompiledGraph, error) {
+func (g *MessageGraph) Build() (types.CompiledGraph, error) {
 	return g.graph.Compile()
 }
 
@@ -398,14 +399,7 @@ func (f *MessagesFilter) Filter(msgs []*Message) []*Message {
 	for _, msg := range msgs {
 		// Check role filter
 		if len(f.roles) > 0 {
-			match := false
-			for _, role := range f.roles {
-				if msg.Role == role {
-					match = true
-					break
-				}
-			}
-			if !match {
+			if !slices.Contains(f.roles, msg.Role) {
 				continue
 			}
 		}

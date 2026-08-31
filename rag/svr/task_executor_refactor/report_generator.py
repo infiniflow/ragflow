@@ -83,10 +83,7 @@ class ComparisonReport:
         if self.total_keys == 0:
             return f"Task {self.task_id}: No keys to compare"
         match_rate = (self.matched_keys / self.total_keys) * 100
-        return (
-            f"Task {self.task_id}: {self.matched_keys}/{self.total_keys} "
-            f"keys matched ({match_rate:.1f}%)"
-        )
+        return f"Task {self.task_id}: {self.matched_keys}/{self.total_keys} keys matched ({match_rate:.1f}%)"
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization.

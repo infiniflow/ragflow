@@ -72,6 +72,9 @@ export type IManageModalProps = {
   isShowValueSwitch?: boolean;
   isVerticalShowValue?: boolean;
   builtInMetadata?: IBuiltInMetadataItem[];
+  // Skip the dataset metadata config API on save; the result is only handed
+  // to the caller via `success` (e.g. syncing into an agent node form).
+  isLocalSave?: boolean;
   success?: (data: any) => void;
   secondTitle?: ReactNode;
   testId?: string;
@@ -98,7 +101,7 @@ export interface IManageValuesProps {
   onSave: (data: IMetaDataTableData) => void;
   addUpdateValue: (
     key: string,
-    originalValue: string | undefined,
+    originalValue: string,
     newValue: string | string[],
     type?: MetadataValueType,
   ) => void;

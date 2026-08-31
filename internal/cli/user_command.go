@@ -18,6 +18,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -29,15 +30,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"ragflow/internal/common"
-	"ragflow/internal/ingestion"
-	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
-	"regexp"
 	"strings"
 	"time"
 )
 
-// Show server version to show RAGFlow server version
+// APIShowVersionCommand show RAGFlow server version
 // Returns benchmark result map if iterations > 1, otherwise prints status
 func (c *CLI) APIShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
@@ -71,160 +71,6 @@ func (c *CLI) APIShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 
 	return &result, nil
-}
-
-func (c *CLI) ListConfigs(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-	// Get iterations from command params (for benchmark)
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-
-	if iterations > 1 {
-		// Benchmark mode: multiple iterations
-		return httpClient.RequestWithIterations("GET", "/system/configs", "web", nil, nil, iterations)
-	}
-
-	// Single mode
-	resp, err := httpClient.Request("GET", "/system/configs", "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list configs: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list configs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var response CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &response); err != nil {
-		return nil, fmt.Errorf("list configs failed: invalid JSON (%w)", err)
-	}
-
-	var result CommonResponse
-	result.Code = 0
-	result.Data, err = GetConfigs(&response.Data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list configs: %w", err)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-func GetConfigs(config *map[string]interface{}) ([]map[string]interface{}, error) {
-	if config == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	result := []map[string]interface{}{}
-	{
-		redisHost := GetHost(config, "Redis", "Host", "Port")
-		result = append(result, map[string]interface{}{
-			"key":   "redis_host",
-			"value": redisHost})
-	}
-	{
-		if docEngine, ok := (*config)["DocEngine"].(map[string]interface{}); ok {
-			engineType, _ := docEngine["Type"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "doc_engine",
-				"value": engineType})
-			if engineType == "elasticsearch" {
-				esCfg, _ := docEngine["ES"].(map[string]interface{})
-				esHost, _ := esCfg["Hosts"].(string)
-				result = append(result, map[string]interface{}{
-					"key":   "elasticsearch_host",
-					"value": esHost})
-			} else if engineType == "Infinity" {
-				infinityCfg, _ := docEngine["Infinity"].(map[string]interface{})
-				infinityHost, _ := infinityCfg["URI"]
-				result = append(result, map[string]interface{}{
-					"key":   "infinity_host",
-					"value": infinityHost})
-			} else {
-				return nil, fmt.Errorf("unknown doc engine: %s", engineType)
-			}
-		}
-	}
-	{
-		if logConfig, ok := (*config)["Log"].(map[string]interface{}); ok {
-			level, _ := logConfig["Level"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "log_level",
-				"value": level})
-		}
-	}
-	{
-		if databaseConfig, ok := (*config)["Database"].(map[string]interface{}); ok {
-			driver, _ := databaseConfig["Driver"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "database",
-				"value": driver})
-			driverAddr, _ := databaseConfig["Host"].(string)
-			driverPort, _ := databaseConfig["Port"].(float64)
-			driverHost := fmt.Sprintf("%s:%0.f", driverAddr, driverPort)
-			result = append(result, map[string]interface{}{
-				"key":   "database_host",
-				"value": driverHost})
-		}
-	}
-	{
-		if language, ok := (*config)["Language"].(map[string]interface{}); ok {
-			result = append(result, map[string]interface{}{
-				"key":   "language",
-				"value": language})
-		}
-	}
-	{
-		if adminConfig, ok := (*config)["Admin"].(map[string]interface{}); ok {
-			adminAddr, _ := adminConfig["Host"].(string)
-			adminPort, _ := adminConfig["Port"].(float64)
-			adminHost := fmt.Sprintf("%s:%0.f", adminAddr, adminPort)
-			result = append(result, map[string]interface{}{
-				"key":   "admin",
-				"value": adminHost})
-		}
-	}
-	{
-		if storageEngineConfig, ok := (*config)["StorageEngine"].(map[string]interface{}); ok {
-			engineType, _ := storageEngineConfig["Type"].(string)
-			result = append(result, map[string]interface{}{
-				"key":   "storage_engine",
-				"value": engineType})
-			if engineType == "minio" {
-				minioCfg, _ := storageEngineConfig["Minio"].(map[string]interface{})
-				miniHost, _ := minioCfg["Host"].(string)
-				result = append(result, map[string]interface{}{
-					"key":   "minio_host",
-					"value": miniHost})
-			} else {
-				return nil, fmt.Errorf("unknown storage engine: %s", engineType)
-			}
-		}
-	}
-	return result, nil
-}
-
-func GetHost(config *map[string]interface{}, serverType, address, port string) string {
-	if config == nil {
-		return ""
-	}
-
-	result := ""
-
-	if redis, ok := (*config)[serverType].(map[string]interface{}); ok {
-		serverAddr, hostOk := redis[address].(string)
-		serverPort, portOk := redis[port].(float64)
-
-		if hostOk && portOk {
-			result = fmt.Sprintf("%s:%.0f", serverAddr, serverPort)
-		}
-	}
-
-	return result
 }
 
 func (c *CLI) APISetLogLevelCommand(cmd *Command) (ResponseIf, error) {
@@ -2128,7 +1974,7 @@ func (c *CLI) APIChatToModelCommand(cmd *Command) (ResponseIf, error) {
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := "/chat/completions"
+	url := "/chat/to_model"
 
 	payload := map[string]interface{}{
 		"messages": formattedMessages,
@@ -3549,10 +3395,7 @@ func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	fileType := utility.GetFileType(filename)
-	config := map[string]string{
-		"lib_type": "office_oxide",
-	}
-	fileParser, err := parser.GetParser(fileType, config)
+	fileParser, err := parser.GetParser(fileType)
 	if err != nil {
 		return nil, err
 	}
@@ -3562,8 +3405,10 @@ func (c *CLI) APIParseLocalFileCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
 	}
 
-	if err = fileParser.Parse(filename, fileContent); err != nil {
-		return nil, formatRequestError("parse local file", err)
+	ctx := context.Background()
+	parseResult := fileParser.ParseWithResult(ctx, filename, fileContent)
+	if parseResult.Err != nil {
+		return nil, formatRequestError("parse local file", parseResult.Err)
 	}
 
 	var result SimpleResponse
@@ -3620,6 +3465,76 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonResponse(resp, "list ingestion tasks")
+}
+
+// APIListSyncLogsCommand lists sync logs (user mode).
+// LIST SYNC_LOGS; lists the sync logs of all datasets.
+// LIST SYNC_LOGS FROM 'dataset_id'; and LIST DATASET 'dataset_name' SYNC_LOGS;
+// restrict the listing to one dataset.
+func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetID := ""
+	if rawID, ok := cmd.Params["dataset_id"].(string); ok {
+		datasetID = strings.TrimSpace(rawID)
+	}
+	if datasetName, ok := cmd.Params["dataset_name"].(string); ok && datasetName != "" {
+		id, err := c.getDatasetID(datasetName)
+		if err != nil {
+			return nil, err
+		}
+		datasetID = id
+	}
+
+	url := "/connectors/sync_logs"
+	query := netUrl.Values{}
+	if datasetID != "" {
+		query.Set("dataset_id", datasetID)
+	}
+	page, hasPage := cmd.Params["page"].(int)
+	pageSize, hasPageSize := cmd.Params["page_size"].(int)
+	switch {
+	case hasPage && hasPageSize:
+		query.Set("page", fmt.Sprintf("%d", page))
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	case hasPage:
+		query.Set("page", fmt.Sprintf("%d", page))
+	case hasPageSize:
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	default:
+		// No pagination requested: ask the API for every matching row.
+		query.Set("page_size", "0")
+	}
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sync logs: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list sync logs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListSyncLogsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list sync logs failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
 }
 
 // APIShowLogLevelCommand sets the log level for the system.
@@ -3774,13 +3689,17 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 	if !ok {
 		return nil, fmt.Errorf("filename not provided")
 	}
-	dslFilename, ok := cmd.Params["dsl"].(string)
+	optionsFilename, ok := cmd.Params["dsl"].(string)
 	if !ok {
-		return nil, fmt.Errorf("dsl not provided")
+		return nil, fmt.Errorf("chunk options file not provided")
 	}
-	dsl, err := os.ReadFile(dslFilename)
+	optionsRaw, err := os.ReadFile(optionsFilename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+		return nil, fmt.Errorf("failed to read chunk options file: %w", err)
+	}
+	options, err := parseChunkOptions(optionsRaw)
+	if err != nil {
+		return nil, err
 	}
 
 	explain, ok := cmd.Params["explain"].(bool)
@@ -3788,19 +3707,11 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 		explain = false
 	}
 
-	engine := ingestion.NewChunkEngine()
-	plan, err := engine.Compile(string(dsl))
-	if err != nil {
-		return nil, fmt.Errorf("compile failed: %w", err)
-	}
-
 	if explain {
-
-		explanation, err := engine.Explain(plan)
+		explanation, err := explainChunkOptions(options)
 		if err != nil {
 			return nil, fmt.Errorf("explain error: %w", err)
 		}
-
 		result.Message = explanation
 	} else {
 		fileToChunking, err := os.ReadFile(filename)
@@ -3808,7 +3719,7 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 			return nil, fmt.Errorf("failed to read file: %w", err)
 		}
 
-		chunkContext, err := engine.Execute(plan, string(fileToChunking))
+		chunkContext, err := chunk.Run(string(fileToChunking), options)
 		if err != nil {
 			return nil, fmt.Errorf("chunking error: %w", err)
 		}
@@ -3824,6 +3735,22 @@ func (c *CLI) DevChunkCommand(cmd *Command) (ResponseIf, error) {
 	result.Code = 0
 	result.Message = fmt.Sprintf("Success to chunk %s", filename)
 	return &result, nil
+}
+
+func parseChunkOptions(raw []byte) (chunk.ChunkOptions, error) {
+	var options chunk.ChunkOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return options, fmt.Errorf("failed to parse chunk options file: %w", err)
+	}
+	return options, nil
+}
+
+func explainChunkOptions(options chunk.ChunkOptions) (string, error) {
+	formatted, err := json.MarshalIndent(options, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(formatted), nil
 }
 
 // APIOpenaiChatCommand dispatches the parsed OPENAI_CHAT command to either a
@@ -4133,8 +4060,6 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 
 	fullContent = strings.TrimLeft(fullContent, "\n\r")
 	fullReason = strings.TrimLeft(fullReason, "\n\r")
-	fullContent = stripThinkTags(fullContent)
-	fullReason = stripThinkTags(fullReason)
 	return &OpenAIChatResponse{
 		Duration:  resp.Duration,
 		Reasoning: fullReason,
@@ -4147,8 +4072,187 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 	}, nil
 }
 
-// stripThinkTags removes <think>…</think> wrappers from a streamed answer
-func stripThinkTags(s string) string {
-	var thinkTagRE = regexp.MustCompile(`(?s)<think>.*?</think>`)
-	return thinkTagRE.ReplaceAllString(s, "")
+// ChatCompletions dispatches the parsed CHAT COMPLETIONS command to
+// POST /api/v1/chat/completions.
+func (c *CLI) ChatCompletions(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("CHAT COMPLETIONS is only allowed in USER mode")
+	}
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	body, err := buildChatCompletionsRequestBody(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	url := "/chat/completions"
+
+	stream, _ := cmd.Params["stream"].(bool)
+	if stream {
+		return c.streamChatCompletions(url, body)
+	}
+	return c.oneshotChatCompletions(url, body)
+}
+
+// buildChatCompletionsRequestBody assembles the JSON payload for
+// POST /api/v1/chat/completions.
+//
+// When system or history is provided, a `messages` array is built;
+// otherwise just `question` is sent and the server normalizes it.
+func buildChatCompletionsRequestBody(cmd *Command) (map[string]interface{}, error) {
+	chatID, _ := cmd.Params["chat_id"].(string)
+	question, _ := cmd.Params["question"].(string)
+	stream, _ := cmd.Params["stream"].(bool)
+
+	body := map[string]interface{}{
+		"chat_id": chatID,
+		"stream":  stream,
+	}
+
+	// Optional session_id
+	if v, ok := cmd.Params["session"].(string); ok && v != "" {
+		body["session_id"] = v
+	}
+
+	// Optional llm_id
+	if v, ok := cmd.Params["llm"].(string); ok && v != "" {
+		body["llm_id"] = v
+	}
+
+	// Build messages from system + history when provided; otherwise send question.
+	system, hasSystem := cmd.Params["system"].(string)
+	historyRaw, hasHistory := cmd.Params["history_raw"].(string)
+
+	if hasSystem || hasHistory {
+		messages := make([]map[string]interface{}, 0, 4)
+		if hasSystem && system != "" {
+			messages = append(messages, map[string]interface{}{"role": "system", "content": system})
+		}
+		if hasHistory && historyRaw != "" {
+			delimiter, _ := cmd.Params["history_delimiter"].(string)
+			turns, err := parseHistory(historyRaw, delimiter)
+			if err != nil {
+				return nil, fmt.Errorf("CHAT COMPLETIONS history: %w", err)
+			}
+			for _, t := range turns {
+				messages = append(messages, map[string]interface{}{
+					"role":    t["role"],
+					"content": t["content"],
+				})
+			}
+		}
+		messages = append(messages, map[string]interface{}{"role": "user", "content": question})
+		body["messages"] = messages
+	} else {
+		body["question"] = question
+	}
+
+	// Optional flags — only emit when explicitly set
+	if isSet(cmd, "pass_all_history") && cmd.Params["pass_all_history"].(bool) {
+		body["pass_all_history_messages"] = true
+	}
+	if isSet(cmd, "legacy") && cmd.Params["legacy"].(bool) {
+		body["legacy"] = true
+	}
+
+	// Generation params — only emit when explicitly set
+	if isSet(cmd, "temperature") {
+		body["temperature"] = cmd.Params["temperature"]
+	}
+	if isSet(cmd, "max_tokens") {
+		body["max_tokens"] = cmd.Params["max_tokens"]
+	}
+	if isSet(cmd, "top_p") {
+		body["top_p"] = cmd.Params["top_p"]
+	}
+	if isSet(cmd, "frequency_penalty") {
+		body["frequency_penalty"] = cmd.Params["frequency_penalty"]
+	}
+	if isSet(cmd, "presence_penalty") {
+		body["presence_penalty"] = cmd.Params["presence_penalty"]
+	}
+
+	return body, nil
+}
+
+// oneshotChatCompletions performs a non-streaming POST and returns a
+// ChatCompletionsResponse parsed from the RAGFlow-internal JSON envelope.
+func (c *CLI) oneshotChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	resp, err := httpClient.Request("POST", url, "web", nil, body)
+	if err != nil {
+		return nil, fmt.Errorf("chat completions request: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return &ChatCompletionsResponse{
+			Code:    resp.StatusCode,
+			Message: string(resp.Body),
+			raw:     resp.Body,
+		}, nil
+	}
+	out := &ChatCompletionsResponse{
+		Duration: resp.Duration,
+		raw:      resp.Body,
+	}
+	// RAGFlow returns {code, data: {answer, reference, ...}, message}.
+	var envelope struct {
+		Code    int                 `json:"code"`
+		Message string              `json:"message"`
+		Data    *chatCompletionData `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body, &envelope); err != nil {
+		return nil, fmt.Errorf("chat completions: invalid response JSON: %w", err)
+	}
+	out.Code = envelope.Code
+	out.Message = envelope.Message
+	out.Data = envelope.Data
+	return out, nil
+}
+
+// streamChatCompletions performs a streaming POST and collects SSE chunks.
+func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	reader, err := httpClient.RequestStream("POST", url, "web", nil, body)
+	if err != nil {
+		return nil, fmt.Errorf("chat completions stream: %w", err)
+	}
+	defer reader.Close()
+
+	start := time.Now()
+	scanner := bufio.NewScanner(reader)
+	var fullContent string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data:")
+		payload = strings.TrimSpace(payload)
+		if payload == "[DONE]" {
+			continue
+		}
+		var chunk struct {
+			Code    int                `json:"code"`
+			Message string             `json:"message"`
+			Data    chatCompletionData `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			continue
+		}
+		if chunk.Data.Answer != "" {
+			fullContent += chunk.Data.Answer
+		}
+	}
+
+	fullContent = strings.TrimLeft(fullContent, "\n\r")
+	return &ChatCompletionsResponse{
+		Duration: time.Since(start).Seconds(),
+		Data: &chatCompletionData{
+			Answer: fullContent,
+		},
+		streamed: true,
+	}, nil
 }

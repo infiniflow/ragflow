@@ -40,8 +40,7 @@ class SwitchParam(ComponentParamBase):
         """
         self.conditions = []
         self.end_cpn_ids = []
-        self.operators = ['contains', 'not contains', 'start with', 'end with', 'empty', 'not empty', '=', '≠', '>',
-                          '<', '≥', '≤']
+        self.operators = ["contains", "not contains", "start with", "end with", "empty", "not empty", "=", "≠", ">", "<", "≥", "≤"]
 
     def check(self):
         self.check_empty(self.conditions, "[Switch] conditions")
@@ -51,12 +50,8 @@ class SwitchParam(ComponentParamBase):
         self.check_empty(self.end_cpn_ids, "[Switch] the ELSE/Other destination can not be empty.")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "urls": {
-                "name": "URLs",
-                "type": "line"
-            }
-        }
+        return {"urls": {"name": "URLs", "type": "line"}}
+
 
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
@@ -137,7 +132,7 @@ class Switch(ComponentBase, ABC):
             except Exception:
                 return True if input <= value else False
 
-        raise ValueError(f'Not supported operator: {operator}')
+        raise ValueError(f"Not supported operator: {operator}")
 
     def thoughts(self) -> str:
         return "I’m weighing a few options and will pick the next step shortly."

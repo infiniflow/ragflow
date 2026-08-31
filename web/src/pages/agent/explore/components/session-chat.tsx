@@ -8,7 +8,7 @@ import { MessageType } from '@/constants/chat';
 import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
-import { IMessage } from '@/interfaces/database/chat';
+import { IMessage, IReferenceObject } from '@/interfaces/database/chat';
 import DebugContent from '@/pages/agent/debug-content';
 import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { BeginQuery } from '@/pages/agent/interface';
@@ -50,12 +50,24 @@ export function SessionChat({ session }: SessionChatProps) {
     beginInputs,
     shouldShowParameterDialog,
     setDerivedMessages,
+    streamSessionId,
+    requestedSessionId,
+    reapplyStreamedAnswer,
   } = useSendSessionMessage();
 
   const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
   });
+  // An in-flight stream only renders a loading state on the session it
+  // belongs to, not on whichever session the user switched to. Before the
+  // first SSE frame arrives the frame-carried session id is unknown, so
+  // fall back to the session the request was sent to; only when neither
+  // is known is the stream treated as belonging to the displayed session.
+  const streamOwnerSessionId = streamSessionId ?? requestedSessionId;
+  const isStreamingActiveSession =
+    sendLoading &&
+    (streamOwnerSessionId ? streamOwnerSessionId === sessionId : true);
   const hasActiveSession = Boolean(
     sessionId || isNew || hasLocalMessageRef.current,
   );
@@ -93,6 +105,24 @@ export function SessionChat({ session }: SessionChatProps) {
       setDerivedMessages(messages as IMessage[]);
     }
   }, [session?.id, session?.message, sessionId, setDerivedMessages]);
+
+  // Hydrating persisted messages replaces the streamed view, and the
+  // persisted list cannot contain the answer that is still being
+  // generated. When a stream owned by this session is in flight, ask the
+  // send-message hook to re-apply the streamed answer on top of the
+  // hydrated history — its replay effect only re-runs when a new frame
+  // arrives, which can take a long time or never happen (the stream may
+  // have finished while another session was displayed).
+  useEffect(() => {
+    if (isStreamingActiveSession) {
+      reapplyStreamedAnswer();
+    }
+  }, [
+    session?.message,
+    sessionId,
+    isStreamingActiveSession,
+    reapplyStreamedAnswer,
+  ]);
 
   useEffect(() => {
     if (!sessionId && !isNew && !hasLocalMessageRef.current && !sendLoading) {
@@ -141,7 +171,7 @@ export function SessionChat({ session }: SessionChatProps) {
                     <MessageItem
                       loading={
                         message.role === MessageType.Assistant &&
-                        sendLoading &&
+                        isStreamingActiveSession &&
                         derivedMessages.length - 1 === i
                       }
                       key={buildMessageUuidWithRole(message)}
@@ -149,11 +179,17 @@ export function SessionChat({ session }: SessionChatProps) {
                       nickname={userInfo.nickname}
                       avatar={userInfo.avatar}
                       avatarDialog={canvasInfo?.avatar || ''}
-                      reference={findReferenceByMessageId(message.id)}
+                      reference={
+                        findReferenceByMessageId(message.id) ||
+                        (session?.reference?.[
+                          Math.floor((i - 1) / 2)
+                        ] as unknown as IReferenceObject) ||
+                        {}
+                      }
                       clickDocumentButton={clickDocumentButton}
                       index={i}
                       showLikeButton={false}
-                      sendLoading={sendLoading}
+                      sendLoading={isStreamingActiveSession}
                       showLog={false}
                     >
                       {hasUserFillUpInputs &&
@@ -189,6 +225,10 @@ export function SessionChat({ session }: SessionChatProps) {
           </div>
         )}
         <section className="p-4">
+          {/* The SSE stream and its message state are shared by every
+              session of this canvas, so the input stays disabled while any
+              session is streaming: a second concurrent stream would
+              interleave its frames into the same answer list. */}
           <NextMessageInput
             value={value}
             sendLoading={sendLoading}

@@ -145,9 +145,9 @@ func randomStringFromAlphabet(alphabet string, length int) (string, error) {
 		return "", fmt.Errorf("random string length must be positive")
 	}
 	out := make([]byte, length)
-	max := big.NewInt(int64(len(alphabet)))
+	maxInt := big.NewInt(int64(len(alphabet)))
 	for i := 0; i < length; i++ {
-		n, err := rand.Int(rand.Reader, max)
+		n, err := rand.Int(rand.Reader, maxInt)
 		if err != nil {
 			return "", fmt.Errorf("failed to read random byte: %w", err)
 		}

@@ -29,6 +29,7 @@ _GOOD_CREDS = {
 # _strip_html
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.p3
 def test_strip_html_removes_tags_and_script():
     html = "<html><body><script>evil()</script><p>Hello <b>world</b></p></body></html>"
@@ -44,6 +45,7 @@ def test_strip_html_empty_returns_empty():
 # ---------------------------------------------------------------------------
 # load_credentials
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p2
 def test_load_credentials_missing_fields_raises():
@@ -89,6 +91,7 @@ def test_load_credentials_msal_failure_raises():
 # ---------------------------------------------------------------------------
 # validate_connector_settings
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p2
 def test_validate_without_credentials_raises():
@@ -170,6 +173,7 @@ def test_validate_5xx_raises_unexpected():
 # Checkpoint helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.p2
 def test_build_dummy_checkpoint():
     connector = OutlookConnector()
@@ -189,6 +193,7 @@ def test_validate_checkpoint_json_invalid_returns_dummy():
 # ---------------------------------------------------------------------------
 # _list_user_ids
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p2
 def test_list_user_ids_returns_configured_ids():
@@ -224,11 +229,10 @@ def test_list_user_ids_paginates_when_unset():
 # _iter_documents (via poll_source)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.p1
 def test_poll_source_yields_messages():
-    connector = OutlookConnector(
-        batch_size=10, user_ids=["alice@example.com"]
-    )
+    connector = OutlookConnector(batch_size=10, user_ids=["alice@example.com"])
     connector._access_token = "tok"
 
     delta_resp = MagicMock(ok=True)
@@ -240,12 +244,8 @@ def test_poll_source_yields_messages():
                 "body": {"contentType": "text", "content": "Body text"},
                 "receivedDateTime": "2026-05-20T10:00:00Z",
                 "webLink": "https://outlook.office.com/mail/1",
-                "from": {
-                    "emailAddress": {"name": "Bob", "address": "bob@example.com"}
-                },
-                "toRecipients": [
-                    {"emailAddress": {"address": "alice@example.com"}}
-                ],
+                "from": {"emailAddress": {"name": "Bob", "address": "bob@example.com"}},
+                "toRecipients": [{"emailAddress": {"address": "alice@example.com"}}],
                 "ccRecipients": [],
                 "hasAttachments": False,
                 "conversationId": "conv-1",
@@ -268,9 +268,7 @@ def test_poll_source_yields_messages():
 
 @pytest.mark.p2
 def test_poll_source_filters_old_messages():
-    connector = OutlookConnector(
-        batch_size=10, user_ids=["alice@example.com"]
-    )
+    connector = OutlookConnector(batch_size=10, user_ids=["alice@example.com"])
     connector._access_token = "tok"
 
     delta_resp = MagicMock(ok=True)
@@ -293,9 +291,7 @@ def test_poll_source_filters_old_messages():
 
 @pytest.mark.p2
 def test_poll_source_skips_removed_messages():
-    connector = OutlookConnector(
-        batch_size=10, user_ids=["alice@example.com"]
-    )
+    connector = OutlookConnector(batch_size=10, user_ids=["alice@example.com"])
     connector._access_token = "tok"
 
     delta_resp = MagicMock(ok=True)
@@ -320,9 +316,7 @@ def test_poll_source_skips_removed_messages():
 
 @pytest.mark.p2
 def test_poll_source_html_body_is_stripped():
-    connector = OutlookConnector(
-        batch_size=10, user_ids=["alice@example.com"]
-    )
+    connector = OutlookConnector(batch_size=10, user_ids=["alice@example.com"])
     connector._access_token = "tok"
 
     delta_resp = MagicMock(ok=True)
@@ -351,6 +345,7 @@ def test_poll_source_html_body_is_stripped():
 # ---------------------------------------------------------------------------
 # Non-2xx Graph responses must raise (no silent partial syncs)
 # ---------------------------------------------------------------------------
+
 
 def _ok(json_value):
     resp = MagicMock(ok=True, status_code=200)
@@ -399,6 +394,7 @@ def test_list_user_ids_raises_on_http_error():
 # retrieve_all_slim_docs_perm_sync: yields list[SlimDocument] for prune
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.p1
 def test_retrieve_slim_docs_yields_slimdocument_batches():
     """The prune collector calls file_list.extend(batch) and reads `.id` on
@@ -407,13 +403,15 @@ def test_retrieve_slim_docs_yields_slimdocument_batches():
     connector = OutlookConnector(batch_size=2, user_ids=["alice@example.com"])
     connector._access_token = "tok"
 
-    delta_resp = _ok({
-        "value": [
-            {"id": "m1", "subject": "a"},
-            {"id": "m2", "subject": "b"},
-            {"id": "m3", "subject": "c"},
-        ],
-    })
+    delta_resp = _ok(
+        {
+            "value": [
+                {"id": "m1", "subject": "a"},
+                {"id": "m2", "subject": "b"},
+                {"id": "m3", "subject": "c"},
+            ],
+        }
+    )
 
     with patch.object(connector, "_get", return_value=delta_resp):
         batches = list(connector.retrieve_all_slim_docs_perm_sync())
@@ -430,12 +428,14 @@ def test_retrieve_slim_docs_skips_removed():
     connector = OutlookConnector(batch_size=10, user_ids=["alice@example.com"])
     connector._access_token = "tok"
 
-    delta_resp = _ok({
-        "value": [
-            {"id": "del", "@removed": {"reason": "deleted"}},
-            {"id": "keep", "subject": "kept"},
-        ],
-    })
+    delta_resp = _ok(
+        {
+            "value": [
+                {"id": "del", "@removed": {"reason": "deleted"}},
+                {"id": "keep", "subject": "kept"},
+            ],
+        }
+    )
     with patch.object(connector, "_get", return_value=delta_resp):
         batches = list(connector.retrieve_all_slim_docs_perm_sync())
     flat = [item for batch in batches for item in batch]
@@ -461,6 +461,7 @@ def test_retrieve_slim_docs_requires_credentials():
 # ---------------------------------------------------------------------------
 # load_from_checkpoint: resumes from delta_links
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p1
 def test_load_from_checkpoint_uses_persisted_delta_link():
@@ -489,6 +490,7 @@ def test_load_from_checkpoint_uses_persisted_delta_link():
 # ---------------------------------------------------------------------------
 # _redact: keep debugging hint, drop PII
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p3
 def test_redact_email_masks_local_and_domain():

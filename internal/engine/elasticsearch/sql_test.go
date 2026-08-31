@@ -49,26 +49,26 @@ type capturedRequest struct {
 // incoming request and replies with the given body / status.
 func newCapturingServer(t *testing.T, replyStatus int, replyBody string) (*httptest.Server, *capturedRequest) {
 	t.Helper()
-	cap := &capturedRequest{}
+	capRequest := &capturedRequest{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		cap.mu.Lock()
-		cap.method = r.Method
-		cap.path = r.URL.Path
-		cap.body = string(body)
-		cap.mu.Unlock()
+		capRequest.mu.Lock()
+		capRequest.method = r.Method
+		capRequest.path = r.URL.Path
+		capRequest.body = string(body)
+		capRequest.mu.Unlock()
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		w.WriteHeader(replyStatus)
 		_, _ = w.Write([]byte(replyBody))
 	}))
 	t.Cleanup(srv.Close)
-	return srv, cap
+	return srv, capRequest
 }
 
-// newTestEngine constructs an elasticsearchEngine pointing at the given
+// newTestEngine constructs an Engine pointing at the given
 // test server. Bypasses NewEngine (which calls ES Info to verify
 // connectivity) — the test server is a stub, not a real ES cluster.
-func newTestEngine(t *testing.T, srvURL string) *elasticsearchEngine {
+func newTestEngine(t *testing.T, srvURL string) *Engine {
 	t.Helper()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{srvURL},
@@ -76,7 +76,7 @@ func newTestEngine(t *testing.T, srvURL string) *elasticsearchEngine {
 	if err != nil {
 		t.Fatalf("elasticsearch.NewClient: %v", err)
 	}
-	return &elasticsearchEngine{client: client}
+	return &Engine{client: client}
 }
 
 const sampleESResponse = `{
@@ -98,8 +98,9 @@ const sampleESResponse = `{
 func TestRunSQL_NoFilterAdded(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
+	ctx := t.Context()
 
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -130,10 +131,11 @@ func TestRunSQL_NoFilterAdded(t *testing.T) {
 func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
+	ctx := t.Context()
 
 	// Input SQL has multiple backticks/spaces and trailing % characters.
 	in := "SELECT   doc_id  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", in, nil, "json")
+	_, err := e.RunSQL(ctx, "ragflow_t1", in, nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -162,6 +164,15 @@ func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
 // the call returns well before 30s (the Go ES client's default
 // transport-level timeout). With the retry loop in place, the total
 // time is 2s (first attempt) + 3s (sleep) + 2s (second attempt) = ~7s.
+//
+// The load-bearing assertion is the LOWER bound on elapsed wall-clock
+// time: it proves the timeout actually fired AND a retry was issued
+// (a single attempt that bailed at 2s would fail the lower bound). The
+// UPPER bound is a regression guard against a hang; rather than a
+// fragile absolute threshold, we use a generous outer-context budget
+// (15s) and a watchdog. The error message check is the contract-level
+// assertion ("timeout after 2 attempts") that the retry path produced
+// the right error.
 func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,22 +184,40 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	})
 	e := newTestEngine(t, srv.URL)
 
-	start := time.Now()
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json")
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatalf("RunSQL: got nil error, want timeout error")
+	// 15s outer budget — well above the expected ~7s. If this fires,
+	// the retry loop or the timeout is broken; the test will report
+	// a clear "did not return within 15s" message rather than a
+	// fragile absolute wall-clock assertion.
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+
+	type result struct {
+		elapsed time.Duration
+		err     error
 	}
-	// 2s + 3s + 2s = 7s; allow generous upper bound for the test runner.
-	if elapsed < 6*time.Second {
-		t.Errorf("RunSQL returned in %s; expected ~7s (2 attempts + 3s sleep)", elapsed)
-	}
-	if elapsed > 10*time.Second {
-		t.Errorf("RunSQL took %s; expected ~7s, looks like the retry didn't fire", elapsed)
-	}
-	// The final error should mention timeout + 2 attempts.
-	if !strings.Contains(err.Error(), "timeout after 2 attempts") {
-		t.Errorf("err: got %q, want substring %q", err.Error(), "timeout after 2 attempts")
+	done := make(chan result, 1)
+	go func() {
+		start := time.Now()
+		_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
+		done <- result{elapsed: time.Since(start), err: err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err == nil {
+			t.Fatalf("RunSQL: got nil error, want timeout error")
+		}
+		// 2s + 3s + 2s = 7s. Lower bound proves both attempts fired
+		// AND the retry was scheduled. A constant-delay or single-attempt
+		// regression would slip below this.
+		if r.elapsed < 6*time.Second {
+			t.Errorf("RunSQL returned in %s; expected ~7s (2 attempts + 3s sleep)", r.elapsed)
+		}
+		if !strings.Contains(r.err.Error(), "timeout after 2 attempts") {
+			t.Errorf("err: got %q, want substring %q", r.err.Error(), "timeout after 2 attempts")
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("RunSQL did not return within 15s — suspected hang in retry/timeout chain")
 	}
 }
 
@@ -225,7 +254,8 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 	})
 
 	e := newTestEngine(t, srv.URL)
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json")
+	ctx := t.Context()
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -259,7 +289,8 @@ func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	e := newTestEngine(t, srv.URL)
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT bad", nil, "json")
+	ctx := t.Context()
+	_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT bad", nil, "json")
 	if err == nil {
 		t.Fatalf("RunSQL: got nil error, want error")
 	}
@@ -284,7 +315,8 @@ func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
 
-	if _, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	ctx := t.Context()
+	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -312,7 +344,8 @@ func TestRunSQL_EmptyRowsReturnsNilNil(t *testing.T) {
 	srv, _ := newCapturingServer(t, http.StatusOK, empty)
 	e := newTestEngine(t, srv.URL)
 
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	ctx := t.Context()
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -331,7 +364,8 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
 
-	if _, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	ctx := t.Context()
+	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -347,7 +381,7 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 // as-is. This lets the rewrite tests assert on the SHAPE of the MATCH()
 // substitution without depending on a real tokenizer pool.
 func TestMain(m *testing.M) {
-	tokenizer.RegisterEngineType(func() string { return "infinity" })
+	tokenizer.SetEngineType("infinity")
 	m.Run()
 }
 

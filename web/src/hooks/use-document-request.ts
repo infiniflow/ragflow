@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 
 import message from '@/components/ui/message';
@@ -9,12 +25,14 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
+import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -27,8 +45,14 @@ import kbService, {
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
+import dayjs from 'dayjs';
 import { get } from 'lodash';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
@@ -37,27 +61,45 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
 } from './route-hook';
 import { KnowledgeApiAction } from './use-knowledge-request';
+import { DocumentApiAction, DocumentKeys } from './document-query-keys';
 
-export const enum DocumentApiAction {
-  UploadDocument = 'uploadDocument',
-  FetchDocumentList = 'fetchDocumentList',
-  UpdateDocumentStatus = 'updateDocumentStatus',
-  RunDocumentByIds = 'runDocumentByIds',
-  RemoveDocument = 'removeDocument',
-  SaveDocumentName = 'saveDocumentName',
-  SetDocumentParser = 'setDocumentParser',
-  SetDocumentMeta = 'setDocumentMeta',
-  FetchDocumentFilter = 'fetchDocumentFilter',
-  CreateDocument = 'createDocument',
-  FetchDocumentThumbnails = 'fetchDocumentThumbnails',
-  ParseDocument = 'parseDocument',
+export { DocumentApiAction, DocumentKeys } from './document-query-keys';
+
+export const enum DocumentStructureApiAction {
+  FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
+  DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
 }
+
+const documentIngestInFlight = new Map<string, Promise<unknown>>();
+
+export const DocumentStructureKeys = {
+  graph: (datasetId: string, documentId: string) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+    ] as const,
+  graphWithKeywords: (
+    datasetId: string,
+    documentId: string,
+    keywords: string,
+  ) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+      keywords,
+    ] as const,
+};
 
 export const useUploadDocument = () => {
   const queryClient = useQueryClient();
@@ -90,8 +132,12 @@ export const useUploadDocument = () => {
         const code = get(ret, 'code');
 
         if (code === 0 || code === 500) {
-          queryClient.invalidateQueries({
-            queryKey: [DocumentApiAction.FetchDocumentList],
+          // Await the refetch so the fresh list (including the just-uploaded
+          // documents) reaches the cache before callers optimistically mark
+          // them RUNNING. Otherwise the late refetch lands after the
+          // optimistic update, overwrites it, and polling never starts.
+          await queryClient.invalidateQueries({
+            queryKey: DocumentKeys.all(),
           });
         }
         return ret;
@@ -123,24 +169,18 @@ export const useFetchDocumentList = (loop = true) => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
-  const [docs, setDocs] = useState<IDocumentInfo[]>([]);
-
-  const isLoop = useMemo(() => {
-    return loop && docs.some((doc) => doc.run === RunningStatus.RUNNING);
-  }, [docs, loop]);
 
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
   }>({
-    queryKey: [
-      DocumentApiAction.FetchDocumentList,
-      debouncedSearchString,
-      pagination,
-      filterValue,
-    ],
+    queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
     initialData: { docs: [], total: 0 },
-    refetchInterval: isLoop ? 5000 : false,
+    refetchInterval: (query) =>
+      loop &&
+      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
+        ? 5000
+        : false,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       let run = [] as any;
@@ -173,7 +213,7 @@ export const useFetchDocumentList = (loop = true) => {
       );
       if (ret.data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [DocumentApiAction.FetchDocumentFilter],
+          queryKey: DocumentKeys.allFilters(),
         });
         return ret.data.data;
       }
@@ -184,9 +224,6 @@ export const useFetchDocumentList = (loop = true) => {
       };
     },
   });
-  useMemo(() => {
-    setDocs(data.docs);
-  }, [data.docs]);
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
       setPagination({ page: 1 });
@@ -214,6 +251,42 @@ export const useFetchDocumentList = (loop = true) => {
   };
 };
 
+export const useFetchDocumentsByIds = (
+  ids: string[],
+  options?: { enabled?: boolean; refetchInterval?: number | false },
+) => {
+  const { id: datasetId } = useParams();
+  const { enabled, refetchInterval } = options ?? {};
+
+  const { data, isFetching: loading } = useQuery<{
+    docs: IDocumentInfo[];
+    total: number;
+  }>({
+    queryKey: DocumentKeys.byIds(ids),
+    enabled: (enabled ?? true) && ids.length > 0 && !!datasetId,
+    refetchInterval,
+    initialData: { docs: [], total: 0 },
+    queryFn: async () => {
+      const ret = await listDocument(
+        {
+          id: datasetId,
+          page: 1,
+          page_size: ids.length,
+        },
+        {
+          ids,
+        },
+      );
+      if (ret.data.code === 0) {
+        return ret.data.data;
+      }
+      return { docs: [], total: 0 };
+    },
+  });
+
+  return { documents: data.docs, loading };
+};
+
 // get document filter
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
@@ -226,11 +299,7 @@ export const useGetDocumentFilter = (): {
   const [open, setOpen] = useState<number>(0);
   const datasetId = knowledgeId || id;
   const { data } = useQuery({
-    queryKey: [
-      DocumentApiAction.FetchDocumentFilter,
-      debouncedSearchString,
-      knowledgeId,
-    ],
+    queryKey: DocumentKeys.filter(debouncedSearchString, knowledgeId),
     queryFn: async () => {
       if (!datasetId) {
         return;
@@ -285,7 +354,7 @@ export const useSetDocumentStatus = () => {
       if (data.code === 0) {
         message.success(i18n.t('message.modified'));
         queryClient.invalidateQueries({
-          queryKey: [DocumentApiAction.FetchDocumentList],
+          queryKey: DocumentKeys.all(),
         });
       }
       return data;
@@ -314,9 +383,37 @@ export const useRunDocument = () => {
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
     }) => {
-      queryClient.invalidateQueries({
-        queryKey: [DocumentApiAction.FetchDocumentList],
-      });
+      if (run === 1) {
+        const documentIdSet = new Set(documentIds);
+        queryClient.setQueriesData<{
+          docs: IDocumentInfo[];
+          total: number;
+        }>({ queryKey: DocumentKeys.all() }, (current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            docs: current.docs.map((doc) =>
+              documentIdSet.has(doc.id)
+                ? {
+                    ...doc,
+                    run: RunningStatus.RUNNING,
+                    progress: 0,
+                    process_duration: 0,
+                    process_begin_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+                    progress_msg: '',
+                  }
+                : doc,
+            ),
+          };
+        });
+      }
+      if (run !== 1) {
+        queryClient.invalidateQueries({
+          queryKey: DocumentKeys.all(),
+        });
+      }
       const ret = await kbService.documentIngest({
         doc_ids: documentIds,
         run,
@@ -324,17 +421,61 @@ export const useRunDocument = () => {
       });
       const code = get(ret, 'data.code');
       if (code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: [DocumentApiAction.FetchDocumentList],
-        });
+        // For a start request, keep the optimistic running state until the
+        // polling query observes the worker's state. Invalidating here can
+        // immediately fetch the pre-worker "not started" row and disable
+        // polling again.
+        if (run !== 1) {
+          queryClient.invalidateQueries({
+            queryKey: DocumentKeys.all(),
+          });
+        }
         message.success(i18n.t('message.operated'));
+      } else {
+        queryClient.invalidateQueries({
+          queryKey: DocumentKeys.all(),
+        });
       }
 
       return code;
     },
+    onError: () => {
+      queryClient.invalidateQueries({
+        queryKey: DocumentKeys.all(),
+      });
+    },
   });
 
-  return { runDocumentByIds: mutateAsync, loading, data };
+  const runDocumentByIds = useCallback(
+    (params: {
+      documentIds: string[];
+      run: number;
+      option?: { delete: boolean; apply_kb: boolean };
+    }) => {
+      const key = JSON.stringify({
+        documentIds: [...params.documentIds].sort(),
+        run: params.run,
+        option: params.option || null,
+      });
+      const existingRequest = documentIngestInFlight.get(key);
+      if (existingRequest) {
+        return existingRequest;
+      }
+
+      const request = mutateAsync(params);
+      documentIngestInFlight.set(key, request);
+      const clearRequest = () => {
+        if (documentIngestInFlight.get(key) === request) {
+          documentIngestInFlight.delete(key);
+        }
+      };
+      void request.then(clearRequest, clearRequest);
+      return request;
+    },
+    [mutateAsync],
+  );
+
+  return { runDocumentByIds, loading, data };
 };
 
 export const useRemoveDocument = () => {
@@ -352,7 +493,7 @@ export const useRemoveDocument = () => {
       if (data.code === 0) {
         message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({
-          queryKey: [DocumentApiAction.FetchDocumentList],
+          queryKey: DocumentKeys.all(),
         });
       }
       return data.code;
@@ -386,7 +527,7 @@ export const useSaveDocumentName = () => {
       if (data.code === 0) {
         message.success(i18n.t('message.renamed'));
         queryClient.invalidateQueries({
-          queryKey: [DocumentApiAction.FetchDocumentList],
+          queryKey: DocumentKeys.all(),
         });
       }
       return data.code;
@@ -420,11 +561,10 @@ export const useSetDocumentParser = () => {
     }) => {
       // Build update payload
       const updateData: Record<string, unknown> = {};
-      if (parserId) {
-        updateData.chunk_method = parserId;
-      }
       if (pipelineId) {
         updateData.pipeline_id = pipelineId;
+      } else if (parserId) {
+        updateData.chunk_method = parserId;
       }
 
       if (parserConfig) {
@@ -438,7 +578,7 @@ export const useSetDocumentParser = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [DocumentApiAction.FetchDocumentList],
+          queryKey: DocumentKeys.all(),
         });
 
         message.success(i18n.t('message.modified'));
@@ -448,6 +588,71 @@ export const useSetDocumentParser = () => {
   });
 
   return { setDocumentParser: mutateAsync, data, loading };
+};
+
+/**
+ * Go-backend variant of useSetDocumentParser. The Go document endpoint takes
+ * `parser_id` (instead of the legacy `chunk_method`) and expects the
+ * pipeline-shaped parser_config (keyed by operator id) to be sent as-is.
+ * Keep it parallel to the Python version — the original hook stays untouched
+ * and can be dropped once the Python backend is retired.
+ */
+export const useSetDocumentPipelineParser = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.SetDocumentParser, 'pipeline'],
+    mutationFn: async ({
+      parserId,
+      pipelineId,
+      parseType,
+      documentId,
+      datasetId,
+      parserConfig,
+    }: {
+      parserId: string;
+      pipelineId: string;
+      parseType?: number;
+      documentId: string;
+      datasetId: string;
+      parserConfig?: IChangeParserConfigRequestBody;
+    }) => {
+      const updateData: Record<string, unknown> = {
+        parser_id: parserId,
+        pipeline_id: pipelineId,
+      };
+
+      if (parseType !== undefined) {
+        updateData.parse_type = parseType;
+      }
+
+      if (parserConfig) {
+        updateData.parser_config = isPipelineParserConfig(parserConfig)
+          ? parserConfig
+          : extractParserConfigExt(parserConfig);
+      }
+
+      const { data } = await changeDocumentParser(
+        datasetId,
+        documentId,
+        updateData,
+      );
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: DocumentKeys.all(),
+        });
+
+        message.success(i18n.t('message.modified'));
+      }
+      return data.code;
+    },
+  });
+
+  return { setDocumentPipelineParser: mutateAsync, data, loading };
 };
 
 export const useSetDocumentMeta = () => {
@@ -468,7 +673,7 @@ export const useSetDocumentMeta = () => {
 
         if (data?.code === 0) {
           queryClient.invalidateQueries({
-            queryKey: [DocumentApiAction.FetchDocumentList],
+            queryKey: DocumentKeys.all(),
           });
 
           message.success(i18n.t('message.modified'));
@@ -502,7 +707,7 @@ export const useCreateDocument = () => {
       if (data.code === 0) {
         if (page === 1) {
           queryClient.invalidateQueries({
-            queryKey: [DocumentApiAction.FetchDocumentList],
+            queryKey: DocumentKeys.all(),
           });
         } else {
           setPaginationParams(); // fetch document list
@@ -552,7 +757,7 @@ export const useGetChunkHighlights = (
 export const useFetchDocumentThumbnailsByIds = () => {
   const [ids, setDocumentIds] = useState<string[]>([]);
   const { data } = useQuery<Record<string, string>>({
-    queryKey: [DocumentApiAction.FetchDocumentThumbnails, ids],
+    queryKey: DocumentKeys.thumbnails(ids),
     enabled: ids.length > 0,
     initialData: {},
     queryFn: async () => {
@@ -566,3 +771,81 @@ export const useFetchDocumentThumbnailsByIds = () => {
 
   return { data, setDocumentIds };
 };
+
+export function useFetchDocumentStructureGraphById(
+  datasetId: string,
+  documentId: string,
+  keywords?: string,
+) {
+  const enabled = !!datasetId && !!documentId;
+  const trimmedKeywords = keywords?.trim();
+
+  const {
+    data,
+    isFetching: loading,
+    isPlaceholderData,
+  } = useQuery<IStructureGraphResponse | null>({
+    queryKey: trimmedKeywords
+      ? DocumentStructureKeys.graphWithKeywords(
+          datasetId,
+          documentId,
+          trimmedKeywords,
+        )
+      : DocumentStructureKeys.graph(datasetId, documentId),
+    enabled,
+    initialData: null,
+    gcTime: 0,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const { data } = await documentStructureService.getDocumentStructureGraph(
+        datasetId,
+        documentId,
+        trimmedKeywords,
+      );
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading, isPlaceholderData };
+}
+
+export function useFetchDocumentStructureGraph(keywords?: string) {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const { data, loading } = useFetchDocumentStructureGraphById(
+    datasetId,
+    documentId,
+    keywords,
+  );
+
+  return { data, loading };
+}
+
+export function useDeleteDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentStructureApiAction.DeleteDocumentStructureGraph],
+    mutationFn: async (templateId: string) => {
+      const { data } =
+        await documentStructureService.deleteDocumentStructureGraph(
+          datasetId,
+          documentId,
+          templateId,
+        );
+      if (data.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { deleteDocumentStructureGraph: mutateAsync, loading, data };
+}

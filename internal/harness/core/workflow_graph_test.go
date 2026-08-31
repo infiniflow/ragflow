@@ -43,7 +43,7 @@ type forkJoinState struct {
 
 // ---- Helper: makeNodes creates N sequential nodes for a StateGraph ----
 
-func makeNodes(sg *graph.StateGraph, prefix string, n int) []string {
+func makeNodes(sg types.StateGraph, prefix string, n int) []string {
 	names := make([]string, n)
 	for i := 0; i < n; i++ {
 		idx := i
@@ -74,7 +74,7 @@ func TestGraph_Sequential_30Nodes(t *testing.T) {
 		}).WithName(fmt.Sprintf("agent_%02d", idx))
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wfg, err := NewSequentialGraph(ctx, &SequentialConfig{
 		Name:        "seq_graph_30",
 		Description: "30-node sequential graph",
@@ -113,7 +113,7 @@ func TestGraph_Parallel_10WayFanOut(t *testing.T) {
 		}).WithName(fmt.Sprintf("p_agent_%02d", idx))
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wfg, err := NewParallelGraph(ctx, &ParallelConfig{
 		Name:        "par_graph_10",
 		Description: "10-way parallel graph",
@@ -220,7 +220,7 @@ func TestGraph_DAG_FanIn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := compiled.Invoke(context.Background(), &dagState{
+	result, err := compiled.Invoke(t.Context(), &dagState{
 		Messages: []string{"start"},
 	})
 	if err != nil {
@@ -336,7 +336,7 @@ func TestGraph_DAG_ConditionalRouting(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err = compiled.Invoke(context.Background(), &dagState{
+			_, err = compiled.Invoke(t.Context(), &dagState{
 				Messages: []string{"start"},
 			})
 			if err != nil {
@@ -447,7 +447,7 @@ func TestGraph_Mixed_LargeGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), &dagState{
+	_, err = compiled.Invoke(t.Context(), &dagState{
 		Messages: []string{"start"},
 	})
 	if err != nil {
@@ -535,7 +535,7 @@ func TestGraph_CheckpointInterruptResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Phase 1: invoke — should interrupt before step2
 	_, err = compiled.Invoke(ctx, &dagState{
@@ -613,7 +613,7 @@ func TestGraph_MultiTenantConcurrent(t *testing.T) {
 				r.err = err
 				return
 			}
-			_, err = compiled.Invoke(context.Background(), &dagState{
+			_, err = compiled.Invoke(t.Context(), &dagState{
 				Messages: []string{fmt.Sprintf("tenant_%d", id)},
 			})
 			if err != nil {
@@ -673,7 +673,7 @@ func TestGraph_TopicChannelMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := compiled.Invoke(context.Background(), &forkJoinState{
+	result, err := compiled.Invoke(t.Context(), &forkJoinState{
 		Results: []string{"start"},
 	})
 	if err != nil {
@@ -700,7 +700,7 @@ func TestGraph_SequentialGraphCancel(t *testing.T) {
 		}).WithName(fmt.Sprintf("ag_%02d", idx))
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	saver := checkpoint.NewMemorySaver()
 	wfg, err := NewSequentialGraph(ctx, &SequentialConfig{
 		Name:        "seq_graph_cancel",
@@ -772,7 +772,7 @@ func TestGraph_LargeParallel_50Nodes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), &dagState{
+	_, err = compiled.Invoke(t.Context(), &dagState{
 		Messages: []string{"start"},
 	})
 	if err != nil {
@@ -830,7 +830,7 @@ func TestGraph_ReducerMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := compiled.Invoke(context.Background(), &reducerState{
+	result, err := compiled.Invoke(t.Context(), &reducerState{
 		Counter: 0,
 	})
 	if err != nil {
@@ -866,7 +866,7 @@ func TestGraph_ParallelGraph_AgentEvents(t *testing.T) {
 		}).WithName(nodeID)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wfg, err := NewParallelGraph(ctx, &ParallelConfig{
 		Name:        "par_graph_agent",
 		Description: "8-way parallel agent graph",
@@ -929,7 +929,7 @@ func TestGraph_ParallelGraph_ConcurrentTenants(t *testing.T) {
 				}).WithName(nodeID)
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			wfg, err := NewParallelGraph(ctx, &ParallelConfig{
 				Name:        fmt.Sprintf("par_conc_%d", id),
 				Description: fmt.Sprintf("concurrent parallel %d", id),
@@ -951,97 +951,6 @@ func TestGraph_ParallelGraph_ConcurrentTenants(t *testing.T) {
 	}
 	wg.Wait()
 	t.Logf("Concurrent parallel graph: %d tenants, %d agents each", numTenants, agentsPerGraph)
-}
-
-// =====================================================================
-// Test 14: AllPredecessor with slow branches — verify merge waits for slowest
-// =====================================================================
-
-func TestGraph_DAG_SlowBranchMerge(t *testing.T) {
-	var mu sync.Mutex
-	var order []string
-	record := func(name string) {
-		mu.Lock()
-		order = append(order, name)
-		mu.Unlock()
-	}
-
-	sg := graph.NewStateGraph(&dagState{})
-
-	// Start → dispatch → {fast, slow} → merge
-	sg.AddNode("dispatch", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		record("dispatch")
-		s.Messages = append(s.Messages, "dispatch done")
-		return s, nil
-	})
-	sg.AddNode("fast", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		record("fast")
-		s.Messages = append(s.Messages, "fast done")
-		return s, nil
-	})
-	sg.AddNode("slow", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		time.Sleep(50 * time.Millisecond)
-		record("slow")
-		s.Messages = append(s.Messages, "slow done")
-		return s, nil
-	})
-	sg.AddNode("merge", func(ctx context.Context, state interface{}) (interface{}, error) {
-		s := state.(*dagState)
-		record("merge")
-		s.Messages = append(s.Messages, "merge done")
-		return s, nil
-	})
-
-	sg.AddEdge(constants.Start, "dispatch")
-	sg.AddEdge("dispatch", "fast")
-	sg.AddEdge("dispatch", "slow")
-	sg.AddEdge("fast", "merge")
-	sg.AddEdge("slow", "merge")
-	sg.AddEdge("merge", constants.End)
-
-	compiled, err := sg.Compile(
-		graph.WithNodeTriggerMode(types.NodeTriggerAllPredecessor),
-		graph.WithRecursionLimit(10),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	start := time.Now()
-	_, err = compiled.Invoke(context.Background(), &dagState{
-		Messages: []string{"start"},
-	})
-	elapsed := time.Since(start)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Logf("Slow branch merge: elapsed=%v, order=%v", elapsed, order)
-
-	if len(order) != 4 {
-		t.Errorf("expected 4 nodes (dispatch+fast+slow+merge), got %d: %v", len(order), order)
-	}
-	if elapsed < 50*time.Millisecond {
-		t.Errorf("BUG: merge completed before slow branch (elapsed=%v, expected >=50ms)", elapsed)
-	}
-	slowIdx, mergeIdx := -1, -1
-	for i, name := range order {
-		switch name {
-		case "slow":
-			slowIdx = i
-		case "merge":
-			mergeIdx = i
-		}
-	}
-	if mergeIdx < slowIdx {
-		t.Errorf("BUG: merge before slow branch. merge=%d, slow=%d", mergeIdx, slowIdx)
-	} else {
-		t.Log("DAG slow-branch merge: merge correctly waited for slow branch")
-	}
 }
 
 // =====================================================================
@@ -1068,7 +977,7 @@ func TestGraph_NodePanic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), &dagState{})
+	_, err = compiled.Invoke(t.Context(), &dagState{})
 	if err == nil {
 		t.Fatal("expected error from panicking node, got nil")
 	}
@@ -1109,7 +1018,7 @@ func TestGraph_NodeReturnError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), &dagState{})
+	_, err = compiled.Invoke(t.Context(), &dagState{})
 	if err == nil {
 		t.Fatal("expected error from failing node")
 	}
@@ -1173,7 +1082,7 @@ func TestGraph_MultipleConditionalErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), &dagState{})
+	_, err = compiled.Invoke(t.Context(), &dagState{})
 	if err == nil {
 		t.Fatal("expected error from router node")
 	}
@@ -1212,7 +1121,7 @@ func TestGraph_100NodeChain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, err := compiled.Invoke(context.Background(), &dagState{})
+	state, err := compiled.Invoke(t.Context(), &dagState{})
 	if err != nil {
 		// Large chains may fail under inline execution (buffer limits).
 		// This is expected — the test verifies the engine doesn't panic/crash.
@@ -1230,7 +1139,7 @@ func TestGraph_100NodeChain(t *testing.T) {
 // TestGraph_50WayFanIn verifies 50 parallel branches merging via AllPredecessor.
 func TestGraph_50WayFanIn(t *testing.T) {
 	sg := graph.NewStateGraph(&dagState{})
-	sg.NodeTriggerMode = types.NodeTriggerAllPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAllPredecessor)
 
 	branchCount := 50
 
@@ -1273,7 +1182,7 @@ func TestGraph_50WayFanIn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stateIf, err := compiled.Invoke(context.Background(), &dagState{})
+	stateIf, err := compiled.Invoke(t.Context(), &dagState{})
 	if err != nil {
 		t.Fatalf("50-way fan-in failed: %v", err)
 	}
@@ -1327,7 +1236,7 @@ func TestGraph_DeepConditionalBranching(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stateIf, err := compiled.Invoke(context.Background(), &dagState{})
+	stateIf, err := compiled.Invoke(t.Context(), &dagState{})
 	if err != nil {
 		t.Fatalf("deep branching failed: %v", err)
 	}

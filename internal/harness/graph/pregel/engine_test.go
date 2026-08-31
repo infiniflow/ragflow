@@ -7,15 +7,16 @@ import (
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
-func newTestGraph(t *testing.T) *graph.StateGraph {
+func newTestGraph(t *testing.T) types.StateGraph {
 	t.Helper()
 	sg := newSimpleGraph(t)
 	return sg
 }
 
-func newSimpleGraph(t *testing.T) *graph.StateGraph {
+func newSimpleGraph(t *testing.T) types.StateGraph {
 	t.Helper()
 	sg := graph.NewStateGraph(map[string]any{"value": ""})
 	// Register a channel so the engine can write output
@@ -60,6 +61,27 @@ func TestNewEngine(t *testing.T) {
 	}
 	if engine.recursionLimit != 10 {
 		t.Errorf("expected recursionLimit = 10, got %d", engine.recursionLimit)
+	}
+}
+
+func TestEngine_TaskConstructionPreservesNodeRetryPolicy(t *testing.T) {
+	policy := &types.RetryPolicy{MaxAttempts: 1}
+	sg := graph.NewStateGraph(map[string]any{"value": ""})
+	node := sg.AddNodeWithOptions("work", func(_ context.Context, state any) (any, error) {
+		return state, nil
+	}, types.NodeOptions{RetryPolicy: policy})
+	engine := NewEngine(sg)
+
+	tests := map[string]*Task{
+		"execution":  engine.createTask(node, nil, nil, nil),
+		"inspection": engine.createTaskInfo(node, nil, nil, nil),
+	}
+	for name, task := range tests {
+		t.Run(name, func(t *testing.T) {
+			if task.RetryPolicy != policy {
+				t.Fatalf("RetryPolicy = %p, want %p", task.RetryPolicy, policy)
+			}
+		})
 	}
 }
 

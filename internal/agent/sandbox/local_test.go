@@ -17,10 +17,10 @@
 package sandbox
 
 import (
-	"context"
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +42,8 @@ func newLocalForTest(t *testing.T) *LocalProvider {
 		maxArtifactBytes: 10 << 20,
 		instances:        map[string]string{},
 	}
-	if err := p.Initialize(context.Background()); err != nil {
+	ctx := t.Context()
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	return p
@@ -107,7 +108,8 @@ func TestLocal_Initialize_CreatesWorkDir(t *testing.T) {
 	}
 	t.Setenv("LOCAL_WORK_DIR", workDir)
 	p := newLocalProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	ctx := t.Context()
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	info, err := os.Stat(workDir)
@@ -121,7 +123,8 @@ func TestLocal_Initialize_CreatesWorkDir(t *testing.T) {
 
 func TestLocal_CreateInstance_CreatesArtifactsDir(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
@@ -140,7 +143,8 @@ func TestLocal_CreateInstance_CreatesArtifactsDir(t *testing.T) {
 
 func TestLocal_CreateInstance_RejectsBadLanguage(t *testing.T) {
 	p := newLocalForTest(t)
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	ctx := t.Context()
+	if _, err := p.CreateInstance(ctx, "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -148,17 +152,18 @@ func TestLocal_CreateInstance_RejectsBadLanguage(t *testing.T) {
 func TestLocal_AllOps_BeforeInit(t *testing.T) {
 	t.Parallel()
 	p := &LocalProvider{}
+	ctx := t.Context()
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderLocal}
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(ctx, "python"); err == nil {
 		t.Errorf("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil {
 		t.Errorf("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(ctx, inst); err == nil {
 		t.Errorf("DestroyInstance before init: got nil error, want one")
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck before init: got nil error, want one")
 	}
 }
@@ -172,15 +177,16 @@ func TestLocal_ExecuteCode_Python_RoundTrip(t *testing.T) {
 		t.Skip("python3 not on PATH — skipping local subprocess test")
 	}
 	p := newLocalForTest(t)
+	ctx := t.Context()
 	p.pythonBin = pythonPath
-	inst, err := p.CreateInstance(context.Background(), "python")
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	defer p.DestroyInstance(context.Background(), inst)
+	defer p.DestroyInstance(ctx, inst)
 
 	code := "def main(): return {'value': 7, 'type': 'json'}"
-	result, err := p.ExecuteCode(context.Background(), inst, code, "python", 10, nil)
+	result, err := p.ExecuteCode(ctx, inst, code, "python", 10, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
@@ -197,7 +203,7 @@ func TestLocal_ExecuteCode_Python_RoundTrip(t *testing.T) {
 func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 	p := newLocalForTest(t)
 	p.initialized = true
-
+	ctx := t.Context()
 	cases := []struct {
 		name string
 		fn   func() error
@@ -206,7 +212,7 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "empty instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: ""}, "x", "python", 5, nil)
 				return err
 			},
@@ -215,7 +221,7 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unsupported language",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "ruby", 5, nil)
 				return err
 			},
@@ -224,7 +230,7 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too small",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 0, nil)
 				return err
 			},
@@ -246,50 +252,53 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 
 func TestLocal_DestroyInstance_RemovesDir(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
 	dir := filepath.Join(p.workDir, inst.InstanceID)
-	if _, err := os.Stat(dir); err != nil {
+	if _, err = os.Stat(dir); err != nil {
 		t.Fatalf("instance dir not created: %v", err)
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err != nil {
+	if err = p.DestroyInstance(ctx, inst); err != nil {
 		t.Errorf("DestroyInstance: %v", err)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+	if _, err = os.Stat(dir); !os.IsNotExist(err) {
 		t.Errorf("instance dir still exists after destroy: %v", err)
 	}
 	// Idempotent: second call should be a no-op.
-	if err := p.DestroyInstance(context.Background(), inst); err != nil {
+	if err = p.DestroyInstance(ctx, inst); err != nil {
 		t.Errorf("DestroyInstance (idempotent): %v", err)
 	}
 }
 
 func TestLocal_HealthCheck(t *testing.T) {
 	p := newLocalForTest(t)
-	if err := p.HealthCheck(context.Background()); err != nil {
+	ctx := t.Context()
+	if err := p.HealthCheck(ctx); err != nil {
 		t.Errorf("HealthCheck: %v", err)
 	}
-	// Removing the work dir should make HealthCheck fail.
+	// Removing the work dir should make health check fail.
 	if err := os.RemoveAll(p.workDir); err != nil {
 		t.Fatalf("remove work dir: %v", err)
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck after remove: got nil error, want one")
 	}
 }
 
 func TestLocal_CollectArtifacts_RejectsBadExtension(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	defer p.DestroyInstance(context.Background(), inst)
+	defer p.DestroyInstance(ctx, inst)
 	// Drop an unsupported extension into the artifacts dir.
 	artDir := filepath.Join(p.workDir, inst.InstanceID, "artifacts")
-	if err := os.WriteFile(filepath.Join(artDir, "evil.exe"), []byte("x"), 0o600); err != nil {
+	if err = os.WriteFile(filepath.Join(artDir, "evil.exe"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write artifact: %v", err)
 	}
 	_, err = p.collectArtifacts(p.workDir + "/" + inst.InstanceID)
@@ -303,13 +312,14 @@ func TestLocal_CollectArtifacts_RejectsBadExtension(t *testing.T) {
 
 func TestLocal_CollectArtifacts_AllowsCSVRoundTrip(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	defer p.DestroyInstance(context.Background(), inst)
+	defer p.DestroyInstance(ctx, inst)
 	artDir := filepath.Join(p.workDir, inst.InstanceID, "artifacts")
-	if err := os.WriteFile(filepath.Join(artDir, "out.csv"), []byte("a,b\n1,2\n"), 0o600); err != nil {
+	if err = os.WriteFile(filepath.Join(artDir, "out.csv"), []byte("a,b\n1,2\n"), 0o600); err != nil {
 		t.Fatalf("write artifact: %v", err)
 	}
 	artifacts, err := p.collectArtifacts(p.workDir + "/" + inst.InstanceID)
@@ -366,25 +376,25 @@ func TestStatusFromExitCode(t *testing.T) {
 }
 
 func TestEnvOr(t *testing.T) {
-	t.Setenv("RAGFLOW_TEST_ENVOR", "x")
-	if got := envOr("RAGFLOW_TEST_ENVOR", "fallback"); got != "x" {
+	t.Setenv(common.EnvRAGFlowTestEnvOr, "x")
+	if got := envOr(common.EnvRAGFlowTestEnvOr, "fallback"); got != "x" {
 		t.Errorf("got %q, want x", got)
 	}
-	if got := envOr("RAGFLOW_TEST_ENVOR_UNSET", "fallback"); got != "fallback" {
+	if got := envOr(common.EnvRAGFlowTestEnvOrUnset, "fallback"); got != "fallback" {
 		t.Errorf("got %q, want fallback", got)
 	}
 }
 
 func TestEnvIntOr(t *testing.T) {
-	t.Setenv("RAGFLOW_TEST_ENVINTOR", "42")
-	if got := envIntOr("RAGFLOW_TEST_ENVINTOR", 10); got != 42 {
+	t.Setenv(common.EnvRAGFlowTestEnvIntOr, "42")
+	if got := envIntOr(common.EnvRAGFlowTestEnvIntOr, 10); got != 42 {
 		t.Errorf("got %d, want 42", got)
 	}
-	if got := envIntOr("RAGFLOW_TEST_ENVINTOR_UNSET", 10); got != 10 {
+	if got := envIntOr(common.EnvRAGFlowTestEnvIntOrUnset, 10); got != 10 {
 		t.Errorf("got %d, want 10", got)
 	}
-	t.Setenv("RAGFLOW_TEST_ENVINTOR", "garbage")
-	if got := envIntOr("RAGFLOW_TEST_ENVINTOR", 10); got != 10 {
+	t.Setenv(common.EnvRAGFlowTestEnvIntOr, "garbage")
+	if got := envIntOr(common.EnvRAGFlowTestEnvIntOr, 10); got != 10 {
 		t.Errorf("garbage value: got %d, want fallback 10", got)
 	}
 }
@@ -392,7 +402,7 @@ func TestEnvIntOr(t *testing.T) {
 // findBinary searches PATH for a binary. Used by tests that
 // skip on missing runtime dependencies.
 func findBinary(name string) (string, error) {
-	paths := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))
+	paths := strings.Split(common.GetEnv(common.EnvPath), string(os.PathListSeparator))
 	for _, dir := range paths {
 		candidate := filepath.Join(dir, name)
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {

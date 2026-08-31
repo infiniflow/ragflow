@@ -18,7 +18,12 @@ package service
 
 import (
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestNewSourcedChunks_Empty(t *testing.T) {
@@ -221,6 +226,86 @@ func TestSourcedChunk_ZeroValue(t *testing.T) {
 	}
 }
 
+func TestChunkTypesDecrementChunkStats(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	previousDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previousDB })
+
+	status := string(entity.StatusValid)
+	if err = dao.DB.Create(&entity.Knowledgebase{
+		ID:           "kb-1",
+		TenantID:     "tenant-1",
+		Name:         "kb-1",
+		EmbdID:       "embed",
+		Permission:   string(entity.TenantPermissionMe),
+		CreatedBy:    "user-1",
+		ParserConfig: entity.JSONMap{},
+		TokenNum:     20,
+		ChunkNum:     5,
+		Status:       &status,
+	}).Error; err != nil {
+		t.Fatalf("create kb: %v", err)
+	}
+	if err = dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     string(entity.ParserTypeNaive),
+		ParserConfig: entity.JSONMap{},
+		SourceType:   string(entity.FileSourceLocal),
+		Type:         "txt",
+		CreatedBy:    "user-1",
+		TokenNum:     10,
+		ChunkNum:     3,
+		Suffix:       ".txt",
+		Status:       &status,
+	}).Error; err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	svc := &ChunkService{}
+	if err = svc.decrementChunkStats("doc-1", "kb-1", 0, 2, 0); err != nil {
+		t.Fatalf("decrementChunkStats() error = %v", err)
+	}
+
+	var doc entity.Document
+	if err = dao.DB.First(&doc, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	if doc.TokenNum != 10 || doc.ChunkNum != 1 {
+		t.Fatalf("document stats token=%d chunk=%d, want token=10 chunk=1", doc.TokenNum, doc.ChunkNum)
+	}
+	var kb entity.Knowledgebase
+	if err = dao.DB.First(&kb, "id = ?", "kb-1").Error; err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	if kb.TokenNum != 20 || kb.ChunkNum != 3 {
+		t.Fatalf("knowledgebase stats token=%d chunk=%d, want token=20 chunk=3", kb.TokenNum, kb.ChunkNum)
+	}
+
+	if err = svc.decrementChunkStats("doc-1", "kb-1", 30, 30, -1); err != nil {
+		t.Fatalf("decrementChunkStats() clamp error = %v", err)
+	}
+	if err = dao.DB.First(&doc, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("get doc after clamp: %v", err)
+	}
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.ProcessDuration != 0 {
+		t.Fatalf("document clamped stats token=%d chunk=%d duration=%v, want zeros", doc.TokenNum, doc.ChunkNum, doc.ProcessDuration)
+	}
+	if err = dao.DB.First(&kb, "id = ?", "kb-1").Error; err != nil {
+		t.Fatalf("get kb after clamp: %v", err)
+	}
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("knowledgebase clamped stats token=%d chunk=%d, want zeros", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
 func TestNewSourcedChunks_RoundTrip(t *testing.T) {
 	original := []SourcedChunk{{
 		ID:               "id1",
@@ -392,5 +477,31 @@ func TestApplyCommonChunkMapping(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Error("result should be empty for unhandled field")
+	}
+}
+
+func TestChunkDocRunText(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+	cases := []struct {
+		name string
+		run  *string
+		want interface{}
+	}{
+		{name: "nil returns nil", run: nil, want: nil},
+		{name: "0 UNSTART", run: strPtr("0"), want: "UNSTART"},
+		{name: "1 RUNNING", run: strPtr("1"), want: "RUNNING"},
+		{name: "2 CANCEL", run: strPtr("2"), want: "CANCEL"},
+		{name: "3 DONE", run: strPtr("3"), want: "DONE"},
+		{name: "4 FAIL", run: strPtr("4"), want: "FAIL"},
+		{name: "5 SCHEDULE", run: strPtr("5"), want: "SCHEDULE"},
+		{name: "unknown returns raw", run: strPtr("999"), want: "999"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ChunkDocRunText(tc.run)
+			if got != tc.want {
+				t.Fatalf("chunkDocRunText(%v) = %v, want %v", tc.run, got, tc.want)
+			}
+		})
 	}
 }

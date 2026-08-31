@@ -31,9 +31,9 @@ const (
 type ServerType string
 
 const (
-	ServerTypeAPI           ServerType = "api_server"     // API server
-	ServerTypeIngestion     ServerType = "ingestor"       // Ingestion server
-	ServerTypeDataCollector ServerType = "data_collector" // Data collection server
+	ServerTypeAPI        ServerType = "api_server"  // API server
+	ServerTypeIngestion  ServerType = "ingestor"    // Ingestion server
+	ServerTypeFileSyncer ServerType = "file_syncer" // File syncer server
 )
 
 type BaseMessage struct {
