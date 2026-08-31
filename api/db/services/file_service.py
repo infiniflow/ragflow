@@ -43,6 +43,7 @@ from common.constants import MAXIMUM_PAGE_NUMBER, FileSource, ParserType, TaskSt
 from common.misc_utils import get_uuid
 from common.ssrf_guard import assert_url_is_safe
 from rag.llm.cv_model import GptV4
+from rag.nlp.delim import DEFAULT_DELIMITER
 
 
 class FileService(CommonService):
@@ -710,7 +711,7 @@ class FileService(CommonService):
             pass
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
-        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": layout_recognize or "Plain Text"}
+        parser_config = {"chunk_token_num": 16096, "delimiter": DEFAULT_DELIMITER, "layout_recognize": layout_recognize or "Plain Text"}
         kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": MAXIMUM_PAGE_NUMBER, "tenant_id": current_user.id if current_user else tenant_id}
         file_type = filename_type(filename)
         if img_base64 and file_type == FileType.VISUAL.value:

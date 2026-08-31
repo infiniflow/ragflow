@@ -32,6 +32,7 @@ from common.token_utils import num_tokens_from_string
 # Re-exported below for backwards compatibility; the canonical parser lives
 # in ``rag.nlp.delim``.
 from rag.nlp.delim import (
+    DEFAULT_DELIMITER,
     compile_delimiter_pattern,
     has_wrapped_delimiter,
     normalize_text_newlines,
@@ -1394,7 +1395,7 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
     return out
 
 
-def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split sections into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not sections:
         return []
@@ -1457,7 +1458,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     return _apply_overlap_unconditional(cks, overlapped_percent)
 
 
-def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split texts (with images) into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not texts or len(texts) != len(images):
         return [], []
@@ -1813,7 +1814,7 @@ def _merge_cks(cks, chunk_token_num, has_custom):
 def naive_merge_docx(
     sections,
     chunk_token_num=128,
-    delimiter="\n。；！？",
+    delimiter=DEFAULT_DELIMITER,
     table_context_size=0,
     image_context_size=0,
 ):

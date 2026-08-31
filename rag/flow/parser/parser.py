@@ -38,6 +38,7 @@ from api.db.joint_services.tenant_model_service import (
 )
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from rag.nlp.delim import DEFAULT_DELIMITER
 from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
@@ -1135,7 +1136,7 @@ class Parser(ProcessBase):
             name,
             blob,
             conf.get("chunk_token_num", 128),
-            conf.get("delimiter", "\n!?;。；！？"),
+            conf.get("delimiter", DEFAULT_DELIMITER),
             keep_delimiters=True,
         )
         if conf.get("output_format") == "json":

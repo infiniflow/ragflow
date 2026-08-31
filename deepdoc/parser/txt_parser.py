@@ -20,6 +20,7 @@ import re
 from deepdoc.parser.utils import get_text
 from rag.nlp import MergeStrategy, merge_paragraphs
 from rag.nlp.delim import (
+    DEFAULT_DELIMITER,
     compile_delimiter_pattern,
     normalize_text_newlines,
     parse_delimiter_field,
@@ -27,12 +28,12 @@ from rag.nlp.delim import (
 
 
 class RAGFlowTxtParser:
-    def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？", keep_delimiters=False):
+    def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, keep_delimiters=False):
         txt = get_text(fnm, binary)
         return self.parser_txt(txt, chunk_token_num, delimiter, keep_delimiters)
 
     @classmethod
-    def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？", keep_delimiters=False):
+    def parser_txt(cls, txt, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, keep_delimiters=False):
         if not isinstance(txt, str):
             raise TypeError("txt type should be str!")
         txt = normalize_text_newlines(txt)
