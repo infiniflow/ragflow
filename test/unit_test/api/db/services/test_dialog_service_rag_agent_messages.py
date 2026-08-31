@@ -88,6 +88,7 @@ class _RecordingChatModel:
     """Records the message list rag_agent() hands to the provider."""
 
     def __init__(self):
+        self.is_tools = True
         self.model_config = {"model_type": "chat", "llm_factory": "OpenAI"}
         self.mdl = None
         self.sent_messages = None
@@ -121,6 +122,43 @@ def _drive_rag_agent(monkeypatch, messages):
     events = asyncio.run(_run())
     assert events, "rag_agent must yield an answer event"
     return chat_mdl
+
+
+@pytest.mark.p2
+def test_rag_agent_falls_back_to_retrieval_when_model_has_no_tools(monkeypatch):
+    """Reasoning must not bypass KB retrieval for models without tool support."""
+
+    class _NoToolsChatModel(_RecordingChatModel):
+        def __init__(self):
+            super().__init__()
+            self.is_tools = False
+
+    chat_mdl = _NoToolsChatModel()
+    fallback_calls = []
+
+    async def _fallback(_dialog, _messages, stream=True, **_kwargs):
+        fallback_calls.append((stream, _kwargs))
+        yield {"answer": "retrieved answer", "reference": {"chunks": [{"doc_id": "doc-1"}]}}
+
+    monkeypatch.setattr(dialog_service, "get_models", lambda _dialog, **_kw: ([_KB], None, None, chat_mdl, None))
+    monkeypatch.setattr(dialog_service, "async_chat", _fallback)
+
+    async def _run():
+        return [
+            event
+            async for event in dialog_service.rag_agent(
+                _DIALOG,
+                [{"role": "user", "content": "What is RAGFlow?"}],
+                False,
+                reasoning="2",
+                doc_ids=["doc-1"],
+            )
+        ]
+
+    events = asyncio.run(_run())
+
+    assert fallback_calls == [(False, {"reasoning": "2", "doc_ids": "doc-1"})]
+    assert events[0]["answer"] == "retrieved answer"
 
 
 @pytest.mark.p2

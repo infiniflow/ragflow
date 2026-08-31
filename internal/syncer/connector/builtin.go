@@ -42,6 +42,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "oci_storage", NewOCIStorageConnector)
 	registerBuiltIn(registry, "zendesk", NewZendeskConnector)
 	registerBuiltIn(registry, "azure_blob", NewAzureBlobStorageConnector)
+	registerBuiltIn(registry, "airtable", NewAirtableConnector)
 	registerBuiltIn(registry, "r2", NewR2Connector)
 	registerBuiltIn(registry, "s3", NewS3Connector)
 	registerBuiltIn(registry, "s3_compatible", NewS3CompatibleConnector)
