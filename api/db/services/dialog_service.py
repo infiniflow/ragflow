@@ -1990,6 +1990,13 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         web_search=create_web_search_provider(prompt_config) if use_web_search else None,
         meta_data_filter=dialog.meta_data_filter,
         doc_scope=doc_scope,
+        # Forward the dialog's configured system prompt so the agentic
+        # reasoning path honours it too (#18833). The non-reasoning path
+        # (async_chat) already applies it directly; without this
+        # user_defined_prompts arg, the RAGTools.sys_prompt() router
+        # prompt is the only system content the outer model sees and the
+        # operator's domain instructions are silently dropped.
+        user_defined_prompts=prompt_config,
         empty_response=prompt_config.get("empty_response", ""),
         do_refer=False,
         thinking_mode=thinking_mode,

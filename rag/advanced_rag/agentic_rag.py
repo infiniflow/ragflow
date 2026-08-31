@@ -320,8 +320,21 @@ class RAGTools:
             if self.has_unstructured()
             else ""
         )
+        # Honor the dialog's configured system prompt on the agentic
+        # reasoning path too. The non-reasoning path (async_chat) already
+        # passes dialog.prompt_config["system"] through; on the reasoning
+        # path we previously dropped it because RAGTools was constructed
+        # without user_defined_prompts (#18833). Prepending the user
+        # system prompt here keeps the router's tool-selection policy
+        # authoritative while making the operator's domain-specific
+        # instructions visible to the outer model.
+        user_system = ""
+        if isinstance(self.user_defined_prompts, dict):
+            user_system = (self.user_defined_prompts.get("system") or "").strip()
+        prefix = f"{user_system}\n\n" if user_system else ""
         return (
-            "You are a smart agent. For any question that needs "
+            prefix
+            + "You are a smart agent. For any question that needs "
             "evidence from the knowledge bases or the web, call the `rag` tool "
             "with a self-contained question — it runs the full search-and-answer "
             "pipeline and returns a cited answer.\n"
