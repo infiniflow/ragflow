@@ -498,7 +498,12 @@ class PaddleOCRParser(RAGFlowPdfParser):
         url = self._local_endpoint(config.base_url)
         headers: dict[str, str] = {"Content-Type": "application/json", "Client-Platform": "ragflow"}
         if config.access_token:
-            headers["Authorization"] = f"Bearer {config.access_token}"
+            # A bearer token on a plaintext connection is readable by anyone on
+            # the path, so drop it instead of leaking it.
+            if url.lower().startswith("https://"):
+                headers["Authorization"] = f"Bearer {config.access_token}"
+            else:
+                self.logger.warning("[PaddleOCR] access token not sent: the endpoint is not HTTPS")
 
         self.logger.info(f"[PaddleOCR] local request: {url}")
         if callback:
@@ -552,7 +557,10 @@ class PaddleOCRParser(RAGFlowPdfParser):
         # Prepare headers
         headers: dict[str, str] = {"Client-Platform": "ragflow"}
         if config.access_token:
-            headers["Authorization"] = f"Bearer {config.access_token}"
+            if config.base_url.strip().lower().startswith("https://"):
+                headers["Authorization"] = f"Bearer {config.access_token}"
+            else:
+                self.logger.warning("[PaddleOCR] access token not sent: the endpoint is not HTTPS")
 
         jobs_url = f"{config.base_url.rstrip('/')}/api/v2/ocr/jobs"
         deadline = time.monotonic() + config.request_timeout
