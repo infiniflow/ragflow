@@ -319,7 +319,11 @@ func TestAsanaOpenSyncAdvancesAcrossProjects(t *testing.T) {
 			asanaSetEnvelope(out, projects, "")
 		case "tasks":
 			if query.Get("project") == "p1" {
-				asanaSetEnvelope(out, []asanaTask{}, "")
+				if query.Get("offset") == "" {
+					asanaSetEnvelope(out, []asanaTask{}, "empty_page")
+				} else {
+					asanaSetEnvelope(out, []asanaTask{}, "")
+				}
 			} else {
 				asanaSetEnvelope(out, []asanaTask{asanaTestTask("t2", "Task Two", "2026-01-02T00:00:00Z")}, "")
 			}
@@ -516,6 +520,52 @@ func TestAsanaOpenPruneStreamsAndDeduplicates(t *testing.T) {
 	}
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("prune final NextBatch = %v, want io.EOF", err)
+	}
+}
+
+func TestAsanaOpenPruneAdvancesAcrossEmptyTaskPages(t *testing.T) {
+	projects := []asanaProject{
+		asanaTestProject("p1", "Project One", "team_1"),
+		asanaTestProject("p2", "Project Two", "team_1"),
+	}
+	connector := asanaTestConnector(t, func(ctx context.Context, apiPath string, query url.Values, out any) error {
+		switch apiPath {
+		case "projects":
+			asanaSetEnvelope(out, projects, "")
+		case "tasks":
+			if query.Get("project") == "p1" {
+				if query.Get("offset") == "" {
+					asanaSetEnvelope(out, []asanaTask{}, "empty_page")
+				} else {
+					asanaSetEnvelope(out, []asanaTask{}, "")
+				}
+			} else {
+				asanaSetEnvelope(out, []asanaTask{asanaTestTask("t2", "Task Two", "2026-01-02T00:00:00Z")}, "")
+			}
+		case "attachments":
+			asanaSetEnvelope(out, []asanaAttachment{}, "")
+		default:
+			if strings.HasPrefix(apiPath, "tasks/") && strings.HasSuffix(apiPath, "/stories") {
+				asanaSetEnvelope(out, []asanaStory{}, "")
+				return nil
+			}
+			return fmt.Errorf("unexpected path %q", apiPath)
+		}
+		return nil
+	})
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "asana:t2" {
+		t.Fatalf("documents = %#v, want t2 only", batch.Documents)
+	}
+	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("final NextBatch = %v, want io.EOF", err)
 	}
 }
 

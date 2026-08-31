@@ -346,7 +346,7 @@ func (c *AsanaConnector) doAsanaJSON(ctx context.Context, apiPath string, query 
 				}
 			} else {
 				if int64(len(body)) > asanaMaxJSONResponseSize {
-					return fmt.Errorf("Asana API response exceeds maximum size of %d bytes", asanaMaxJSONResponseSize)
+					return fmt.Errorf("asana API response exceeds maximum size of %d bytes", asanaMaxJSONResponseSize)
 				}
 				if err := json.Unmarshal(body, out); err != nil {
 					return err
@@ -814,11 +814,13 @@ func (s *asanaSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			if err != nil {
 				return SyncBatch{}, err
 			}
-			if len(s.taskBuffer) == 0 && nextPage == "" {
-				s.projectIdx++
-				s.pageOffset = ""
-				s.taskBuffer = nil
-				s.taskPageDone = false
+			if len(s.taskBuffer) == 0 {
+				if nextPage == "" {
+					s.projectIdx++
+					s.pageOffset = ""
+					s.taskBuffer = nil
+					s.taskPageDone = false
+				}
 				continue
 			}
 		}
@@ -1044,11 +1046,13 @@ func (s *asanaPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 			if err != nil {
 				return PruneBatch{}, err
 			}
-			if len(s.taskBuffer) == 0 && next == "" {
-				s.projectIdx++
-				s.pageOffset = ""
-				s.taskBuffer = nil
-				s.taskPageDone = false
+			if len(s.taskBuffer) == 0 {
+				if next == "" {
+					s.projectIdx++
+					s.pageOffset = ""
+					s.taskBuffer = nil
+					s.taskPageDone = false
+				}
 				continue
 			}
 		}
