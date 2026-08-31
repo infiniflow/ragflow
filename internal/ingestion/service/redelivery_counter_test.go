@@ -79,7 +79,7 @@ func assertCountersAppliedOnce(t *testing.T, db *gorm.DB, kbID, docID string) {
 }
 
 func rcMsg(taskID, docID, kbID string) *entity.IngestionTask {
-	return &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID, Status: common.RUNNING}
+	return &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID, Status: common.RUNNING, ClaimToken: testutil.TestClaimToken}
 }
 
 // TestRunTask_RedeliveryOfCompletedTaskCountsOnce: the first delivery fully
@@ -106,7 +106,7 @@ func TestRunTask_RedeliveryOfCompletedTaskCountsOnce(t *testing.T) {
 }
 
 // TestRunTask_RedeliveryAfterIncompleteRunCountsOnce: the crash/nack window. A
-// prior run applied the counters but died before MarkCompleted, so the task is
+// prior run applied the counters but died before claim finalization, so the task is
 // left RUNNING and the broker redelivers it; the redelivery re-runs and
 // completes, and the counters must not be applied twice.
 func TestRunTask_RedeliveryAfterIncompleteRunCountsOnce(t *testing.T) {
@@ -119,7 +119,7 @@ func TestRunTask_RedeliveryAfterIncompleteRunCountsOnce(t *testing.T) {
 	ingestor.runDocumentTask = applyResult(ingestor, docID, kbID)
 
 	// Prior run: counters applied, but the task never completed (crash before
-	// MarkCompleted) - the task row is left RUNNING, so the broker redelivers.
+	// finalization) - the task row is left RUNNING, so the broker redelivers.
 	applyResult(ingestor, docID, kbID)(context.Background(), nil)
 
 	// Redelivery of the still-RUNNING task: re-runs and completes.

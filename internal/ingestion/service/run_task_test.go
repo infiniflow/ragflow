@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -11,10 +12,9 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-// TestRunTask_ContextCancelledBeforeCheckpoint: a cancelled context makes
-// runTask return true (terminal: durably recorded cancel) immediately, without
-// bumping the checkpoint or calling runDocumentTask. The task status is
-// transitioned to STOPPED so it does not stay RUNNING forever.
+// TestRunTask_ContextCancelledBeforeCheckpoint: a user-requested STOPPING task
+// with a cancelled worker context is finalized as STOPPED without bumping the
+// checkpoint or calling runDocumentTask.
 func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -29,6 +29,9 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := ingestor.ingestionTaskSvc.RequestStop(t.Context(), taskID); err != nil {
+		t.Fatalf("request stop: %v", err)
+	}
 	cancel()
 
 	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
@@ -87,7 +90,7 @@ func TestRunTask_CorruptedRunCountSkipped(t *testing.T) {
 	}
 
 	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -121,7 +124,7 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	}
 
 	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -192,7 +195,7 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 	}
 
 	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -233,7 +236,7 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 	}
 
 	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -273,7 +276,7 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 	}
 
 	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -304,7 +307,7 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	}
 
 	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -318,5 +321,40 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	}
 	if task.Status != common.COMPLETED {
 		t.Fatalf("task status = %s, want COMPLETED", task.Status)
+	}
+}
+
+// TestRunTask_LostClaimCannotFinalize verifies that a worker which no longer
+// owns the lease cannot overwrite the current owner's task state after its
+// pipeline finishes. Removing the claim-token predicate from finalization
+// would incorrectly turn this task COMPLETED.
+func TestRunTask_LostClaimCannotFinalize(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"claim_token":      "current-owner",
+		"claim_expires_at": time.Now().Add(time.Minute).UnixMilli(),
+	}).Error; err != nil {
+		t.Fatalf("set current lease: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error { return nil }
+
+	if terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: "stale-owner",
+	}); terminal {
+		t.Fatal("lost claim must not be treated as terminal")
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING || task.ClaimToken != "current-owner" {
+		t.Fatalf("lost worker changed task to status=%q token=%q", task.Status, task.ClaimToken)
 	}
 }

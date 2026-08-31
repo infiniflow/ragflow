@@ -13,16 +13,25 @@ import (
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/service"
+
+	"gorm.io/gorm"
 )
 
 func newFakeHandle(taskID, taskType string) *fakeTaskHandle {
 	return &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: taskType}}
 }
 
+func scheduleIngestionTask(t *testing.T, db *gorm.DB, taskID string) {
+	t.Helper()
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("schedule task %s: %v", taskID, err)
+	}
+}
+
 // TestProcessMessage_MemoryTaskDispatches verifies that a task_type="memory"
 // message (with a NATS payload) is dispatched to the shared worker pool as a
 // TaskKindMemory context rather than being acked-skipped as a non-ingestion
-// task. It must NOT touch the ingestion state machine (no StartRunning).
+// task. It must NOT touch the ingestion state machine (no TryClaim).
 func TestProcessMessage_MemoryTaskDispatches(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -189,7 +198,7 @@ func TestProcessMessage_NonIngestionTaskAcks(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_TaskNotFoundAcks: when StartRunning returns
+// TestProcessMessage_TaskNotFoundAcks: when TryClaim returns
 // ErrTaskNotFound the message is acked and skipped.
 func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
@@ -197,7 +206,7 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	defer cleanup()
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
-	// No task seeded in DB — StartRunning returns ErrTaskNotFound.
+	// No task seeded in DB — TryClaim returns ErrTaskNotFound.
 	handle := newFakeHandle("no-such-task", common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
@@ -217,7 +226,7 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	// Mark the document as a finished parse: a non-RUNNING run status and
-	// non-zero counters that StartRunning would clobber to "1"/0.
+	// non-zero counters that TryClaim would clobber to "1"/0.
 	finishedRun := "3"
 	if err := db.Model(&entity.Document{}).Where("id = ?", docID).
 		Updates(map[string]interface{}{
@@ -266,6 +275,7 @@ func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	scheduleIngestionTask(t, db, taskID)
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Pre-claim the task so processMessage sees a claim conflict.
@@ -290,6 +300,7 @@ func TestProcessMessage_ClaimSucceedsEnqueues(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	scheduleIngestionTask(t, db, taskID)
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
@@ -320,6 +331,7 @@ func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	scheduleIngestionTask(t, db, taskID)
 
 	// maxConcurrency=2 → channel cap=4. Fill it completely.
 	ingestor := newUnitIngestor("test", 2, []string{"pdf"})
@@ -373,21 +385,21 @@ func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 
 // TestProcessMessage_ShutdownRaceMarksStopped: shutdown winning the race
 // against the taskChan send must not leave the task in non-terminal RUNNING
-// with no in-flight worker. StartRunning has already flipped the task to
+// with no in-flight worker. TryClaim has already flipped the task to
 // RUNNING, so the ctx.Done branch finalizes it as STOPPED (user-retryable)
 // with a detached timeout, and leaves the message unsettled — the broker
 // redelivers it and the terminal status ack-skips.
-func TestProcessMessage_ShutdownRaceMarksStopped(t *testing.T) {
+func TestProcessMessage_ShutdownRaceReleasesClaim(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
-	// SeedTestData creates the task RUNNING; reset to CREATED so the race
-	// below is the real one: processMessage's StartRunning flips it RUNNING
+	// SeedTestData creates the task RUNNING; reset to SCHEDULED so the race
+	// below is the real one: processMessage's TryClaim flips it RUNNING
 	// and then blocks on the full channel.
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
-		Update("status", common.CREATED).Error; err != nil {
-		t.Fatalf("reset task to CREATED: %v", err)
+		Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("reset task to SCHEDULED: %v", err)
 	}
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"}) // channel cap = 2
@@ -402,7 +414,7 @@ func TestProcessMessage_ShutdownRaceMarksStopped(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait until StartRunning flipped the task RUNNING and processMessage
+	// Wait until TryClaim flipped the task RUNNING and processMessage
 	// is blocked on the full channel.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -429,20 +441,20 @@ func TestProcessMessage_ShutdownRaceMarksStopped(t *testing.T) {
 	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if task.Status != common.STOPPED {
-		t.Fatalf("task status = %q, want %q (shutdown race must not strand a RUNNING row)", task.Status, common.STOPPED)
+	if task.Status != common.SCHEDULED || task.ClaimToken != "" {
+		t.Fatalf("task after shutdown = status=%q token=%q, want SCHEDULED without claim", task.Status, task.ClaimToken)
 	}
-	// Message unsettled: on redelivery the STOPPED status ack-skips it.
+	// Message remains unsettled so redelivery can claim the SCHEDULED task.
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack (unsettled for redelivery), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 
-// TestProcessMessage_StartRunningErrorNacks: when StartRunning returns a
+// TestProcessMessage_TryClaimErrorNacks: when TryClaim returns a
 // non-ErrTaskNotFound error (e.g. a DB blip), processMessage nacks the
 // message for redelivery instead of killing the consumer (B2 fix). The
 // consume loop's resilience relies on this never being a fatal return.
-func TestProcessMessage_StartRunningErrorNacks(t *testing.T) {
+func TestProcessMessage_TryClaimErrorNacks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()

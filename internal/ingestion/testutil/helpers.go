@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -104,6 +105,8 @@ type testDataConfig struct {
 	docName    string
 	docType    string
 }
+
+const TestClaimToken = "test-claim"
 
 // WithTenantID sets the tenant ID for test data.
 func WithTenantID(id string) TestDataOption {
@@ -209,11 +212,13 @@ func SeedTestData(t *testing.T, db *gorm.DB, opts ...TestDataOption) (string, st
 
 	// Create IngestionTask
 	if err := db.Create(&entity.IngestionTask{
-		ID:         cfg.taskID,
-		UserID:     "u1",
-		DocumentID: cfg.docID,
-		DatasetID:  cfg.kbID,
-		Status:     common.RUNNING,
+		ID:             cfg.taskID,
+		UserID:         "u1",
+		DocumentID:     cfg.docID,
+		DatasetID:      cfg.kbID,
+		Status:         common.RUNNING,
+		ClaimToken:     TestClaimToken,
+		ClaimExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	}).Error; err != nil {
 		t.Fatalf("create ingestion task: %v", err)
 	}

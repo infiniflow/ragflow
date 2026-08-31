@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/dao"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -103,7 +104,7 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			UserID:     userID,
 			DatasetID:  datasetID,
 			Schema:     nil,
-			Status:     common.CREATED,
+			Status:     common.SCHEDULED,
 		}
 		task, err = s.CreateAndEnqueue(ctx, task)
 		if err != nil {
@@ -200,50 +201,65 @@ func (s *IngestionTaskService) ListAllForAdmin(ctx context.Context) ([]map[strin
 	return showTasks, nil
 }
 
-func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+// TryClaim starts a scheduled task only when this worker wins its database
+// lease. A false claimed result is a normal redelivery/race outcome.
+func (s *IngestionTaskService) TryClaim(ctx context.Context, taskID string, ttl time.Duration) (*entity.IngestionTask, bool, error) {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	switch task.Status {
-	case common.CREATED:
-		task, err = s.transition(ctx, taskID, common.RUNNING)
-		if err != nil {
-			return nil, err
-		}
-		// The task just started running: mirror it to the document so its
-		// run status and progress counters reflect real processing, not
-		// just API acceptance. Best-effort - a DB blip here must not fail
-		// the task transition and trigger a redelivery loop. run uses the
-		// document's numeric TaskStatus enum ("1"), not the task's string
-		// status label.
-		if err = s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
-			"run":              string(entity.TaskStatusRunning),
-			"progress":         float64(0),
-			"chunk_num":        int64(0),
-			"token_num":        int64(0),
-			"process_begin_at": time.Now(),
-			"progress_msg":     "",
-		}); err != nil {
-			common.Warn(fmt.Sprintf("StartRunning: mark document %s running for task %s: %v", task.DocumentID, taskID, err))
-		}
-		return task, nil
-	case common.STOPPING:
-		task, err = s.transition(ctx, taskID, common.STOPPED)
-		if err != nil {
-			return nil, err
-		}
-		// The stop is finalized here without a worker (e.g. MQ redelivery of
-		// a task that was nacked before execution), so the Redis cancel flag
-		// that RequestStop set would otherwise leak until TTL and cancel the
-		// next run of this task at the worker's pre-start check.
-		clearCancelFlag(ctx, taskID)
-		return task, nil
-	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
-		return task, nil
-	default:
-		return task, fmt.Errorf("task %s has unsupported status %s", taskID, task.Status)
+	if task.Status != common.SCHEDULED {
+		return task, false, nil
 	}
+
+	now := time.Now()
+	token := utility.GenerateUUID()
+	claimed, err := s.ingestionTaskDAO.TryClaim(ctx, dao.DB, taskID, token, now, ttl)
+	if err != nil || !claimed {
+		return task, claimed, err
+	}
+	task.Status = common.RUNNING
+	task.ClaimToken = token
+	task.ClaimExpiresAt = now.Add(ttl).UnixMilli()
+	if err = s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
+		"run":              string(entity.TaskStatusRunning),
+		"progress":         float64(0),
+		"chunk_num":        int64(0),
+		"token_num":        int64(0),
+		"process_begin_at": now,
+		"progress_msg":     "",
+	}); err != nil {
+		common.Warn(fmt.Sprintf("TryClaim: mark document %s running for task %s: %v", task.DocumentID, taskID, err))
+	}
+	return task, true, nil
+}
+
+// FinalizeClaim writes a terminal status only when the supplied token still
+// owns the task in fromStatus.
+func (s *IngestionTaskService) FinalizeClaim(ctx context.Context, taskID, token, fromStatus, toStatus string) (bool, error) {
+	return s.ingestionTaskDAO.FinalizeClaim(ctx, dao.DB, taskID, token, fromStatus, toStatus)
+}
+
+// TouchClaim extends a live worker lease. A false result means the worker lost
+// ownership; callers must stop work without writing further task state.
+func (s *IngestionTaskService) TouchClaim(ctx context.Context, taskID, token string, ttl time.Duration) (bool, error) {
+	return s.ingestionTaskDAO.TouchClaim(ctx, dao.DB, taskID, token, time.Now(), ttl)
+}
+
+// ReleaseClaim returns a task to SCHEDULED only while the worker still owns
+// its lease. It is used when shutdown wins before a claimed task reaches a
+// worker, so the next delivery can claim it normally.
+func (s *IngestionTaskService) ReleaseClaim(ctx context.Context, taskID, token string) (bool, error) {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return false, err
+	}
+	released, err := s.ingestionTaskDAO.ReleaseClaim(ctx, dao.DB, taskID, token)
+	if err != nil || !released {
+		return released, err
+	}
+	s.markDocumentScheduled(ctx, task.DocumentID, taskID)
+	return true, nil
 }
 
 func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
@@ -252,7 +268,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		return nil, err
 	}
 	switch task.Status {
-	case common.CREATED:
+	case common.SCHEDULED:
 		return s.transition(ctx, taskID, common.STOPPED)
 	case common.RUNNING:
 		task, err = s.transition(ctx, taskID, common.STOPPING)
@@ -269,45 +285,6 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	default:
 		return task, nil
 	}
-}
-
-func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string) error {
-	task, err := s.GetTask(ctx, taskID)
-	if err != nil {
-		return err
-	}
-	if task.Status == common.COMPLETED || task.Status == common.STOPPED || task.Status == common.FAILED {
-		return nil // already terminal, idempotent — mirrors MarkStopped
-	}
-	_, err = s.transition(ctx, taskID, common.COMPLETED)
-	return err
-}
-
-func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID string) error {
-	task, err := s.GetTask(ctx, taskID)
-	if err != nil {
-		return err
-	}
-	if task.Status == common.FAILED || task.Status == common.COMPLETED || task.Status == common.STOPPED {
-		return nil // already terminal, idempotent — mirrors MarkStopped
-	}
-	_, err = s.transition(ctx, taskID, common.FAILED)
-	return err
-}
-
-// MarkStopped transitions the task from STOPPING to STOPPED (terminal).
-// Idempotent: returns nil if the task is already in a terminal state
-// (STOPPED, COMPLETED, or FAILED).
-func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) error {
-	task, err := s.GetTask(ctx, taskID)
-	if err != nil {
-		return err
-	}
-	if task.Status == common.STOPPED || task.Status == common.COMPLETED || task.Status == common.FAILED {
-		return nil
-	}
-	_, err = s.transition(ctx, taskID, common.STOPPED)
-	return err
 }
 
 func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID *string) (*dao.TaskInfo, error) {
@@ -327,20 +304,16 @@ func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*ent
 
 func validateTransition(from, to string) error {
 	switch from {
-	case common.CREATED:
+	case common.SCHEDULED:
 		if to == common.RUNNING || to == common.STOPPED {
 			return nil
 		}
 	case common.RUNNING:
-		if to == common.STOPPING || to == common.COMPLETED || to == common.FAILED {
+		if to == common.STOPPING {
 			return nil
 		}
 	case common.STOPPING:
 		if to == common.STOPPED {
-			return nil
-		}
-	case common.FAILED, common.STOPPED:
-		if to == common.CREATED {
 			return nil
 		}
 	}
@@ -384,6 +357,7 @@ func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to
 }
 
 func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
+	now := time.Now()
 	existing, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
 	if err != nil {
 		return nil, err
@@ -391,54 +365,42 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	if existing != nil {
 		switch existing.Status {
 		case common.FAILED, common.STOPPED:
-			originalStatus := existing.Status
-			existing, err = s.transition(ctx, existing.ID, common.CREATED)
+			scheduled, err := s.ingestionTaskDAO.Schedule(ctx, dao.DB, existing.ID, existing.Status, now)
 			if err != nil {
 				return nil, err
 			}
+			if !scheduled {
+				return nil, s.newTaskStatusConflictError(ctx, existing.ID, existing.Status, common.SCHEDULED)
+			}
+			existing.Status = common.SCHEDULED
+			existing.ScheduledAt = now.UnixMilli()
+			existing.LastDispatchedAt = 0
+			existing.ClaimToken = ""
+			existing.ClaimExpiresAt = 0
+			s.markDocumentScheduled(ctx, existing.DocumentID, existing.ID)
 			// The previous run is terminal, so any leftover Redis cancel flag
 			// is stale: a genuine cancel of the new run can only come through
 			// RequestStop once the task is RUNNING again. Clear it so the
 			// re-queued task is not cancelled at the worker's pre-start check.
 			clearCancelFlag(ctx, existing.ID)
-			if err = s.enqueueTask(existing.ID); err != nil {
-				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
-					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
-				}
-				return nil, err
-			}
+			s.dispatchScheduledTask(ctx, existing.ID, now)
 			return existing, nil
 		default:
 			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
 		}
 	}
+	task.Status = common.SCHEDULED
+	task.ScheduledAt = now.UnixMilli()
+	task.LastDispatchedAt = 0
+	task.ClaimToken = ""
+	task.ClaimExpiresAt = 0
 	created, err := s.ingestionTaskDAO.Create(ctx, dao.DB, task)
 	if err != nil {
 		return nil, err
 	}
-	if err = s.enqueueTask(created.ID); err != nil {
-		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
-			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", created.ID, err, rollbackErr)
-		}
-		return nil, err
-	}
+	s.markDocumentScheduled(ctx, created.DocumentID, created.ID)
+	s.dispatchScheduledTask(ctx, created.ID, now)
 	return created, nil
-}
-
-func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, status)
-	if err != nil {
-		return err
-	}
-	if !updated {
-		return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
-	}
-	return nil
-}
-
-func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID string) error {
-	_, err := s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, nil)
-	return err
 }
 
 // clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that
@@ -458,13 +420,28 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 	return s.taskPublisher.PublishTaskMessage("tasks.RAGFLOW", taskMessage)
 }
 
-// EnqueueByID re-publishes the wake-up message for an existing task without
-// touching its status. Used by ingestor startup reconciliation to redeliver
-// CREATED orphans; duplicate delivery is made safe at the consumer level
-// (StartRunning CAS + in-process claim guard), not by broker dedup — see
-// NatsEngine.PublishTask for why publish-time MsgID dedup is harmful here.
-func (s *IngestionTaskService) EnqueueByID(taskID string) error {
-	return s.enqueueTask(taskID)
+func (s *IngestionTaskService) dispatchScheduledTask(ctx context.Context, taskID string, now time.Time) {
+	if err := s.DispatchScheduledTask(ctx, taskID, now); err != nil {
+		common.Warn(fmt.Sprintf("dispatch scheduled task %s: %v", taskID, err))
+	}
+}
+
+// DispatchScheduledTask publishes a persisted scheduling intent and records
+// the successful dispatch only while it remains SCHEDULED.
+func (s *IngestionTaskService) DispatchScheduledTask(ctx context.Context, taskID string, now time.Time) error {
+	if err := s.enqueueTask(taskID); err != nil {
+		return err
+	}
+	_, err := s.ingestionTaskDAO.MarkDispatched(ctx, dao.DB, taskID, now)
+	return err
+}
+
+func (s *IngestionTaskService) markDocumentScheduled(ctx context.Context, documentID, taskID string) {
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
+		"run": string(entity.TaskStatusSchedule),
+	}); err != nil {
+		common.Warn(fmt.Sprintf("mark document %s scheduled for task %s: %v", documentID, taskID, err))
+	}
 }
 
 // UpdateComponentTotal records the number of components in the task's DSL

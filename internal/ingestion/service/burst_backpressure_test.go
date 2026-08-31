@@ -21,7 +21,7 @@
 //  NACKing the message when taskChan is full. The NATS consumer is configured
 //  with MaxDeliver: 16 and NO dead-letter subject (internal/engine/nats/nats.go),
 //  so a message NACKed 16 times is permanently dropped. By that point
-//  StartRunning has already flipped the task (and its document) to RUNNING in
+//  TryClaim has already flipped the task (and its document) to RUNNING in
 //  the DB, and the ingestor has no scan-and-re-enqueue path on completion — so
 //  the dropped document is stuck in RUNNING forever.
 //
@@ -209,7 +209,7 @@ func TestFetchBudget_NeverExceedsChannelCapacity(t *testing.T) {
 }
 
 // seedBurstTasks creates one tenant/kb plus N (document, ingestion_task) pairs
-// in CREATED status, mirroring how CreateAndEnqueue publishes a message for a
+// in SCHEDULED status, mirroring how CreateAndEnqueue publishes a message for a
 // freshly-created task. Returns the ingestion task IDs.
 func seedBurstTasks(t *testing.T, db *gorm.DB, n int) []string {
 	t.Helper()
@@ -236,7 +236,7 @@ func seedBurstTasks(t *testing.T, db *gorm.DB, n int) []string {
 			t.Fatalf("create doc %s: %v", docID, err)
 		}
 		if err := db.Create(&entity.IngestionTask{
-			ID: taskID, UserID: "u1", DocumentID: docID, DatasetID: kbID, Status: common.CREATED,
+			ID: taskID, UserID: "u1", DocumentID: docID, DatasetID: kbID, Status: common.SCHEDULED,
 		}).Error; err != nil {
 			t.Fatalf("create ingestion task %s: %v", taskID, err)
 		}

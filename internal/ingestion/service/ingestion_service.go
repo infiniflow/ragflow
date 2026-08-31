@@ -51,7 +51,10 @@ import (
 // ack-skipped by the claim guard — acking the only in-flight copy, so a worker
 // crash afterwards would lose the delivery (downgraded to the 15min
 // reconciliation backstop instead of automatic redelivery).
-const defaultHeartbeatInterval = 2 * time.Second
+const (
+	defaultHeartbeatInterval = 2 * time.Second
+	defaultClaimTTL          = 15 * time.Second
+)
 
 type Ingestor struct {
 	id     string
@@ -64,6 +67,7 @@ type Ingestor struct {
 	supportedDocTypes []string
 	version           string
 	heartbeatInterval time.Duration
+	claimTTL          time.Duration
 
 	// Runtime state
 	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
@@ -147,6 +151,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
 		docState:          newDocStateUpdater(),
 		heartbeatInterval: defaultHeartbeatInterval,
+		claimTTL:          defaultClaimTTL,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
@@ -199,20 +204,14 @@ func (e *Ingestor) start() error {
 	e.workerWg.Add(1)
 	go e.consumeLoop()
 
-	// Startup reconciliation heals tasks orphaned by a previous process
-	// crash (RUNNING stuck mid-run, CREATED never delivered). It runs off
-	// the caller's goroutine so Start is not blocked by the DB scan; it is
-	// joined by Stop via workerWg. It runs concurrently with consumeLoop:
-	// the CAS in StartRunning (CREATED→RUNNING) and markFailed
-	// (RUNNING→FAILED) handles the race where a stale row is both
-	// reconciled and redelivered, and pagination handles >500 orphans
-	// without stranding tasks. Keeping it async avoids delaying consumer
-	// liveness; a synchronous scan before consumeLoop would add startup
-	// latency with no stronger correctness.
+	// Reconciliation is lifecycle-owned and runs alongside consumption. It
+	// converges old CREATED rows, redrives SCHEDULED intents, and recovers
+	// expired leases; duplicate publishes are harmless because TryClaim is the
+	// cross-process execution gate.
 	e.workerWg.Add(1)
 	go func() {
 		defer e.workerWg.Done()
-		e.reconcileStartupTasks()
+		e.runReconciler()
 	}()
 	return nil
 }
@@ -296,80 +295,135 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 	e.kcConcurrency = n
 }
 
-// Startup reconciliation thresholds: how long a CREATED task must sit
-// without being picked up before the startup scan treats it as an orphan
-// of a previous process (judged by create_time, never updated after creation).
 const (
-	reconcileCreatedStaleAfter = 5 * time.Minute
-	reconcileBatchLimit        = 500
-	reconcileOverallTimeout    = 5 * time.Minute
+	reconcileBatchLimit      = 500
+	reconcileInterval        = 15 * time.Second
+	reconcileRate            = 100
+	maxLeaseRecoveryAttempts = 3
 )
 
-// reconcileStartupTasks heals CREATED tasks orphaned by a previous process
-// crash (never consumed for 5min) by re-publishing via EnqueueByID.
-// Republishes are safe without broker-side dedup: the CREATED→RUNNING
-// transition in StartRunning is a CAS, and the in-process claim guard
-// ack-skips a second copy while a worker holds the task. (JetStream MsgID
-// dedup is intentionally NOT used - see NatsEngine.PublishTask: it would
-// swallow the retry republish of a task_id reused across runs, stranding
-// the row in CREATED.)
-//
-// RUNNING orphans are intentionally NOT touched here; recovery relies on
-// NATS redelivery (BackOff/InProgress) and the knowledge-compile style
-// lease would be the proper fix for long tasks, not a startup 15m→FAILED.
-// Errors are logged and skipped per task; the next restart re-runs the scan.
-// reconcileStartupTasks scans and heals orphaned rows. It carries no
-// WaitGroup bookkeeping of its own: start() wraps it with workerWg Add/Done,
-// and tests invoke it synchronously.
-func (e *Ingestor) reconcileStartupTasks() {
-	// Bounded by the ingestor's own lifetime: Stop cancels e.ctx, which
-	// aborts an in-flight scan instead of letting workerWg.Wait() linger.
-	ctx, cancel := context.WithTimeout(e.ctx, reconcileOverallTimeout)
-	defer cancel()
+func (e *Ingestor) runReconciler() {
+	e.reconcileTasks(e.ctx)
+	ticker := time.NewTicker(reconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			e.reconcileTasks(e.ctx)
+		}
+	}
+}
 
+// reconcileTasks is one idempotent recovery pass. Each scan uses a keyset
+// cursor and advances it from the fetched row even when publishing fails.
+func (e *Ingestor) reconcileTasks(ctx context.Context) {
 	if dao.DB == nil {
-		common.Warn("startup reconciliation skipped: DB not initialized")
+		common.Warn("reconciliation skipped: DB not initialized")
 		return
 	}
+	now := time.Now()
+	e.convergeCreatedTasks(ctx, now)
+	e.recoverExpiredClaims(ctx, now)
+	e.dispatchScheduledTasks(ctx, now)
+}
 
-	// CREATED orphans are re-published without a status change, so a
-	// drain-style loop (as used for RUNNING) would revisit the same head
-	// batch forever. Use offset pagination to walk the stale snapshot.
-	// The CREATED→RUNNING CAS in StartRunning and the in-process claim
-	// guard make concurrent races with consumeLoop safe: duplicate
-	// deliveries are ack-skipped while a worker holds the claim.
-	createdThreshold := time.Now().Add(-reconcileCreatedStaleAfter)
-	for offset := 0; ; offset += reconcileBatchLimit {
-		if ctx.Err() != nil {
+func (e *Ingestor) convergeCreatedTasks(ctx context.Context, now time.Time) {
+	lastID := ""
+	for {
+		tasks, err := dao.NewIngestionTaskDAO().ListByStatusAfterID(ctx, dao.DB, common.CREATED, lastID, reconcileBatchLimit)
+		if err != nil {
+			common.Warn(fmt.Sprintf("reconciliation: list CREATED tasks: %v", err))
 			return
 		}
-		// ListStaleByStatus does not support offset; query with offset
-		// directly to paginate the immutable CREATED snapshot.
-		var created []*entity.IngestionTask
-		q := dao.DB.WithContext(ctx).
-			Where("status IN ?", []string{common.CREATED}).
-			Where("create_time < ?", createdThreshold.UnixMilli()).
-			Order("create_time ASC").
-			Offset(offset).Limit(reconcileBatchLimit)
-		if err := q.Find(&created).Error; err != nil {
-			common.Warn(fmt.Sprintf("startup reconciliation: list CREATED orphans: %v", err))
+		if len(tasks) == 0 {
 			return
 		}
-		if len(created) == 0 {
-			break
-		}
-		for _, task := range created {
-			if ctx.Err() != nil {
-				return
-			}
-			if err := e.ingestionTaskSvc.EnqueueByID(task.ID); err != nil {
-				common.Warn(fmt.Sprintf("startup reconciliation: re-enqueue CREATED task %s: %v", task.ID, err))
+		for _, task := range tasks {
+			lastID = task.ID
+			scheduled, err := dao.NewIngestionTaskDAO().Schedule(ctx, dao.DB, task.ID, common.CREATED, now)
+			if err != nil {
+				common.Warn(fmt.Sprintf("reconciliation: schedule CREATED task %s: %v", task.ID, err))
 				continue
 			}
-			common.Info(fmt.Sprintf("startup reconciliation: orphaned CREATED task %s re-enqueued", task.ID))
+			if scheduled {
+				e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now)
+			}
 		}
-		if len(created) < reconcileBatchLimit {
-			break
+		if len(tasks) < reconcileBatchLimit {
+			return
+		}
+	}
+}
+
+func (e *Ingestor) recoverExpiredClaims(ctx context.Context, now time.Time) {
+	for _, status := range []string{common.RUNNING, common.STOPPING} {
+		lastID := ""
+		for {
+			tasks, err := dao.NewIngestionTaskDAO().ListExpiredClaims(ctx, dao.DB, []string{status}, now, lastID, reconcileBatchLimit)
+			if err != nil {
+				common.Warn(fmt.Sprintf("reconciliation: list expired %s claims: %v", status, err))
+				break
+			}
+			if len(tasks) == 0 {
+				break
+			}
+			for _, task := range tasks {
+				lastID = task.ID
+				if status == common.RUNNING {
+					requeued, poisoned, err := dao.NewIngestionTaskDAO().RecoverExpiredClaim(ctx, dao.DB, task.ID, now, maxLeaseRecoveryAttempts)
+					if err != nil {
+						common.Warn(fmt.Sprintf("reconciliation: recover task %s: %v", task.ID, err))
+						continue
+					}
+					if requeued {
+						e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now)
+					}
+					if poisoned {
+						common.Warn(fmt.Sprintf("task %s failed after repeated lease expiry", task.ID))
+						e.markPoisonProgress(ctx, task)
+						e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+					}
+					continue
+				}
+				if _, err := dao.NewIngestionTaskDAO().StopExpiredClaim(ctx, dao.DB, task.ID, now); err != nil {
+					common.Warn(fmt.Sprintf("reconciliation: stop expired task %s: %v", task.ID, err))
+				}
+			}
+			if len(tasks) < reconcileBatchLimit {
+				break
+			}
+		}
+	}
+}
+
+func (e *Ingestor) dispatchScheduledTasks(ctx context.Context, now time.Time) {
+	lastDispatchedAt, lastID := int64(0), ""
+	pace := time.NewTicker(time.Second / reconcileRate)
+	defer pace.Stop()
+	for {
+		tasks, err := dao.NewIngestionTaskDAO().ListScheduledForDispatch(ctx, dao.DB, now, lastDispatchedAt, lastID, reconcileBatchLimit)
+		if err != nil {
+			common.Warn(fmt.Sprintf("reconciliation: list SCHEDULED tasks: %v", err))
+			return
+		}
+		if len(tasks) == 0 {
+			return
+		}
+		for _, task := range tasks {
+			lastDispatchedAt, lastID = task.LastDispatchedAt, task.ID
+			if err := e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now); err != nil {
+				common.Warn(fmt.Sprintf("reconciliation: dispatch task %s: %v", task.ID, err))
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-pace.C:
+			}
+		}
+		if len(tasks) < reconcileBatchLimit {
+			return
 		}
 	}
 }
@@ -486,7 +540,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
-	task, err := e.ingestionTaskSvc.StartRunning(e.ctx, taskMessage.TaskID)
+	task, claimed, err := e.ingestionTaskSvc.TryClaim(e.ctx, taskMessage.TaskID, defaultClaimTTL)
 	if err != nil {
 		if errors.Is(err, common.ErrTaskNotFound) {
 			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
@@ -498,7 +552,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		// Recoverable activation failure (e.g. a DB blip): nack for
 		// redelivery instead of dropping the message or killing the
 		// consumer.
-		common.Error(fmt.Sprintf("error setting task %s to running", taskMessage.TaskID), err)
+		common.Error(fmt.Sprintf("error claiming task %s", taskMessage.TaskID), err)
 		if nackErr := handle.Nack(); nackErr != nil {
 			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
 		}
@@ -512,36 +566,25 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
-	switch task.Status {
-	case common.COMPLETED, common.STOPPED, common.FAILED:
-		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
-		if ackErr := handle.Ack(); ackErr != nil {
-			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
-		}
-		return
-	case common.RUNNING:
-		// Guard against MQ redelivery: if another worker in this
-		// process is already processing this task, ack the redelivered
-		// message and skip instead of scheduling it again.
-		if !e.claimTask(task.ID) {
-			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
-				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
-			if ackErr := handle.Ack(); ackErr != nil {
-				common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), ackErr)
-			}
-			return
-		}
-		claimedTaskID = task.ID
-	default:
-		// Unreachable given StartRunning normalizes every status to
-		// RUNNING/COMPLETED/STOPPED/FAILED, but defensive: ack-skip an
-		// unknown status instead of enqueuing it for execution.
-		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
+	if !claimed {
+		common.Info(fmt.Sprintf("task %s is not claimable in status %s, ack-skip", taskMessage.TaskID, task.Status))
 		if ackErr := handle.Ack(); ackErr != nil {
 			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
 		}
 		return
 	}
+
+	// The database lease prevents cross-process execution. This in-process
+	// guard only covers a duplicate delivery racing with the channel send.
+	if !e.claimTask(task.ID) {
+		common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
+			taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
+		if ackErr := handle.Ack(); ackErr != nil {
+			common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), ackErr)
+		}
+		return
+	}
+	claimedTaskID = task.ID
 
 	// Construct TaskContext and carry the MQ handle so the worker can
 	// Ack/Nack when the task reaches a terminal status.
@@ -551,7 +594,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	// Push to the task channel. Use a blocking send so backpressure is
 	// applied at the consumer: the consume loop waits for a free worker slot
 	// instead of dropping the message. Dropping on backpressure is unsafe
-	// because StartRunning (above) has already flipped the task — and its
+	// because TryClaim (above) has already flipped the task — and its
 	// document — to RUNNING in the DB, and there is no scan-and-re-enqueue
 	// path on completion. A Nack that exceeds the broker's MaxDeliver (16,
 	// with no dead-letter in nats.go) would permanently lose the task and
@@ -566,20 +609,17 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
 	case <-e.ctx.Done():
-		// Shutdown won the race after StartRunning already flipped the task
-		// to RUNNING: finalize it as STOPPED so the row cannot linger in
-		// non-terminal RUNNING with no in-flight worker (the user can
-		// retry). If the DB write itself fails, the startup reconciliation
-		// scan is the backstop. The message is left unsettled - on
-		// redelivery the terminal STOPPED status ack-skips it. Both paths
-		// run with a detached 2s timeout so shutdown is not slowed by a
-		// stalled DB.
-		stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// Shutdown won before a worker began. Return the lease to SCHEDULED;
+		// this is neither a user stop nor a terminal task outcome, so the
+		// redelivered message can be claimed by the next ingestor.
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if e.markStopped(stopCtx, task.ID) {
-			common.Info(fmt.Sprintf("Ingestor shutting down; task %s finalized as STOPPED", task.ID))
+		if released, err := e.ingestionTaskSvc.ReleaseClaim(releaseCtx, task.ID, task.ClaimToken); err != nil {
+			common.Warn(fmt.Sprintf("Ingestor shutting down; release task %s: %v", task.ID, err))
+		} else if released {
+			common.Info(fmt.Sprintf("Ingestor shutting down; task %s returned to SCHEDULED", task.ID))
 		} else {
-			common.Warn(fmt.Sprintf("Ingestor shutting down; task %s left RUNNING (startup reconciliation will finalize it)", task.ID))
+			common.Warn(fmt.Sprintf("Ingestor shutting down; task %s lease was already lost", task.ID))
 		}
 		return
 	}
@@ -708,6 +748,7 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 	// can stop only this task without affecting the whole Ingestor.
 	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
 	taskCtx.Ctx = perTaskCtx
+	taskCtx.Cancel = perTaskCancel
 	cancelDone := make(chan struct{})
 	pollExited := make(chan struct{})
 	go func() {
@@ -732,45 +773,38 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 	})
 }
 
-// markStopped transitions the task to STOPPED (terminal). It first calls
-// RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
-// STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
-// so that a future retry of the same task does not immediately re-cancel.
-// The caller's context is detached before touching the DB: markStopped runs
-// on failure/cancel/shutdown paths whose context is typically already
-// cancelled, and a contaminated context would make the terminal write fail
-// exactly when it matters most.
-func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if _, err := e.ingestionTaskSvc.RequestStop(ctx, taskID); err != nil {
-		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
+// markStopped accepts a user-requested STOPPING task only while this worker
+// still owns its claim. RequestStop itself owns RUNNING → STOPPING; a worker
+// must never perform that transition because it may already have lost its
+// lease to another process.
+func (e *Ingestor) markStopped(ctx context.Context, task *entity.IngestionTask) bool {
+	updated, err := e.finalizeClaim(ctx, task, common.STOPPING, common.STOPPED)
+	if err != nil {
+		common.Error(fmt.Sprintf("mark task %s stopped", task.ID), err)
 		return false
 	}
-	if err := e.ingestionTaskSvc.MarkStopped(ctx, taskID); err != nil {
-		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
-		return false
+	if !updated {
+		return e.settleClaimLoss(ctx, task)
 	}
 	if rc := redis2.Get(); rc != nil {
-		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
-			rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
-			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
+		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", task.ID), func() error {
+			rc.Delete(ctx, fmt.Sprintf("%s-cancel", task.ID))
+			return nil
 		})
 	}
 	return true
 }
 
-// markFailed persists FAILED status for the task and reports whether the
-// terminal status was durably written, so the caller can decide Ack vs Nack.
-// The caller's context is detached before touching the DB (see markStopped):
-// failure paths usually carry an already-cancelled context, and losing the
-// FAILED write would turn a settled task into a redelivery loop.
-func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID); uErr != nil {
-		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
+// markFailed persists FAILED only for the current lease owner. A false CAS
+// result is a lost claim, not a terminal outcome for this worker.
+func (e *Ingestor) markFailed(ctx context.Context, task *entity.IngestionTask) bool {
+	updated, err := e.finalizeClaim(ctx, task, common.RUNNING, common.FAILED)
+	if err != nil {
+		common.Error(fmt.Sprintf("mark task %s failed", task.ID), err)
 		return false
+	}
+	if !updated {
+		return e.settleClaimLoss(ctx, task)
 	}
 	return true
 }
@@ -783,7 +817,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
-		stopped := e.markStopped(context.Background(), task.ID)
+		stopped := e.markStopped(context.Background(), task)
 		if stopped {
 			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
 		}
@@ -799,7 +833,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	defer dbCancel()
 	if err := e.ingestionTaskSvc.IncrementRunCount(dbCtx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
-		ok := e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task)
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
 		}
@@ -812,7 +846,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	resumeCheckpoint, checkpointErr := checkpointExists(dbCtx, task.ID)
 	if checkpointErr != nil {
 		common.Error(fmt.Sprintf("Failed to check checkpoint for task %s", task.ID), checkpointErr)
-		ok := e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task)
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
 		}
@@ -821,7 +855,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	if !resumeCheckpoint {
 		if err := e.ingestionTaskSvc.ClearComponentProgress(dbCtx, task.ID); err != nil {
 			common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
-			ok := e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task)
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
 			}
@@ -849,7 +883,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
-			stopped := e.markStopped(ctx, task.ID)
+			stopped := e.markStopped(ctx, task)
 			if stopped {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
 			}
@@ -858,22 +892,22 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTimeoutProgress(task)
-			ok := e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task)
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
 			}
 			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		ok := e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task)
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
 		}
 		return ok
 	}
 
-	if err := e.completeTask(ctx, task.ID); err != nil {
-		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
+	if !e.completeTask(ctx, task) {
+		common.Warn(fmt.Sprintf("Task %s completion lost its claim or failed to persist", task.ID))
 		return false
 	}
 
@@ -881,64 +915,47 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	return true
 }
 
-// completeTask persists the task's terminal status after a successful pipeline.
-// MarkCompleted is retried with backoff for transient (DB) failures only. A
-// terminal transition failure - the task is no longer RUNNING because a
-// concurrent stop (or another worker) moved it - is NOT retried: the pipeline
-// already did the work, so completeOrSettle settles the task to its actual
-// terminal state and the caller Acks instead of redelivering.
-func (e *Ingestor) completeTask(ctx context.Context, taskID string) error {
-	_, err := backoff.Retry(ctx, func() (struct{}, error) {
-		return struct{}{}, e.completeOrSettle(ctx, taskID)
-	}, backoff.WithMaxTries(3))
-	return err
-}
-
-// completeOrSettle marks the task COMPLETED, or - if the transition is
-// terminally invalid because the task is no longer RUNNING - settles it to its
-// actual terminal state. Returns nil once the task is in any terminal state;
-// returns a non-terminal (transient) error only for retry-worthy DB failures.
-func (e *Ingestor) completeOrSettle(ctx context.Context, taskID string) error {
-	if err := e.ingestionTaskSvc.MarkCompleted(ctx, taskID); err != nil {
-		if isTerminalTransitionError(err) {
-			return e.settleToTerminal(ctx, taskID)
-		}
-		return err
-	}
-	return nil
-}
-
-// isTerminalTransitionError reports whether err is a state-machine transition
-// failure - an invalid transition or a lost optimistic CAS - meaning the task's
-// status moved on and MarkCompleted will never succeed as-is. Not retry-worthy;
-// the caller settles by the task's current status.
-func isTerminalTransitionError(err error) bool {
-	var ite *servicepkg.InvalidTaskTransitionError
-	var tce *servicepkg.TaskStatusConflictError
-	return errors.As(err, &ite) || errors.As(err, &tce)
-}
-
-// settleToTerminal finalizes a task whose MarkCompleted failed because it was
-// no longer RUNNING. STOPPING is moved to STOPPED via markStopped (which also
-// clears the Redis cancel flag so a future retry does not immediately
-// re-cancel); already-terminal states (COMPLETED/STOPPED/FAILED) need no
-// action. An unexpected status returns an error so the caller nacks and
-// redelivery settles it.
-func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
-	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
+// completeTask records completion only when this worker still owns the live
+// RUNNING claim. Transient database errors are retried; a zero-row CAS is
+// resolved from the current durable state without granting the stale worker
+// authority to write anything.
+func (e *Ingestor) completeTask(ctx context.Context, task *entity.IngestionTask) bool {
+	updated, err := e.finalizeClaim(ctx, task, common.RUNNING, common.COMPLETED)
 	if err != nil {
-		return err
+		common.Error(fmt.Sprintf("complete task %s", task.ID), err)
+		return false
 	}
-	switch task.Status {
+	if updated {
+		return true
+	}
+	return e.settleClaimLoss(ctx, task)
+}
+
+func (e *Ingestor) finalizeClaim(ctx context.Context, task *entity.IngestionTask, fromStatus, toStatus string) (bool, error) {
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return backoff.Retry(dbCtx, func() (bool, error) {
+		return e.ingestionTaskSvc.FinalizeClaim(dbCtx, task.ID, task.ClaimToken, fromStatus, toStatus)
+	}, backoff.WithMaxTries(3))
+}
+
+// settleClaimLoss returns true only if another actor has already persisted a
+// terminal state, or if the same token can finalize a user-requested stop.
+func (e *Ingestor) settleClaimLoss(ctx context.Context, task *entity.IngestionTask) bool {
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	current, err := e.ingestionTaskSvc.GetTask(dbCtx, task.ID)
+	if err != nil {
+		common.Error(fmt.Sprintf("load task %s after claim CAS miss", task.ID), err)
+		return false
+	}
+	switch current.Status {
 	case common.STOPPING:
-		if !e.markStopped(ctx, taskID) {
-			return fmt.Errorf("task %s: settle to STOPPED failed", taskID)
-		}
-		return nil
+		return e.markStopped(ctx, task)
 	case common.COMPLETED, common.STOPPED, common.FAILED:
-		return nil
+		return true
 	default:
-		return fmt.Errorf("task %s in unexpected status %s after transition failure", taskID, task.Status)
+		return false
 	}
 }
 
@@ -960,7 +977,7 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 			// redelivery. The broker's redelivery limit handles deterministic
 			// poison messages.
 			common.Error(fmt.Sprintf("task %s panicked: %v", taskCtx.IngestionTask.ID, r), fmt.Errorf("%v", r))
-			e.markFailed(ctx, taskCtx.IngestionTask.ID)
+			e.markFailed(ctx, taskCtx.IngestionTask)
 			terminal = false
 		}
 		// Settlement authority is the DB, not the in-memory bool (BP1).
@@ -1112,6 +1129,25 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
 }
 
+// markPoisonProgress surfaces a bounded lease-recovery failure to the user.
+// It is only called after RecoverExpiredClaim durably changed the task to
+// FAILED, so a duplicate reconciler cannot overwrite a live worker's document.
+func (e *Ingestor) markPoisonProgress(ctx context.Context, task *entity.IngestionTask) {
+	svc := documentpkg.NewDocumentService()
+	doc, err := svc.GetDocumentByID(ctx, task.DocumentID)
+	if err != nil {
+		common.Error(fmt.Sprintf("markPoisonProgress: load document %s: %v", task.DocumentID, err), err)
+		return
+	}
+	message := "\nFailed after repeated lease expiry."
+	if doc.ProgressMsg != nil {
+		message = *doc.ProgressMsg + message
+	}
+	if err := svc.UpdateRunProgress(ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), message); err != nil {
+		common.Error(fmt.Sprintf("markPoisonProgress: update document %s: %v", task.DocumentID, err), err)
+	}
+}
+
 // claimTask registers a worker claim on a task ID. Returns false if another
 // worker has already claimed it (e.g. MQ redelivery), true on first claim.
 // startHeartbeat launches a goroutine that calls Handle.InProgress every
@@ -1121,7 +1157,7 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 // same message. Returns a no-op stop when there is no handle or no interval
 // (standalone/test path).
 func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
-	if taskCtx.Handle == nil || e.heartbeatInterval <= 0 {
+	if e.heartbeatInterval <= 0 || (taskCtx.Handle == nil && taskCtx.IngestionTask.ClaimToken == "") {
 		return func() {}
 	}
 	var wg sync.WaitGroup
@@ -1134,9 +1170,34 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 		for {
 			select {
 			case <-ticker.C:
-				if err := taskCtx.Handle.InProgress(); err != nil {
-					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.IngestionTask.ID), err)
+				if taskCtx.Handle != nil {
+					if err := taskCtx.Handle.InProgress(); err != nil {
+						common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.IngestionTask.ID), err)
+					}
 				}
+				if taskCtx.IngestionTask.ClaimToken == "" {
+					continue
+				}
+				leaseCtx, cancel := context.WithTimeout(context.WithoutCancel(taskCtx.Ctx), 5*time.Second)
+				alive, err := e.ingestionTaskSvc.TouchClaim(leaseCtx, taskCtx.IngestionTask.ID, taskCtx.IngestionTask.ClaimToken, e.claimTTL)
+				cancel()
+				if err != nil {
+					common.Error(fmt.Sprintf("touch claim for task %s", taskCtx.IngestionTask.ID), err)
+					if taskCtx.IngestionTask.ClaimExpiresAt <= time.Now().UnixMilli() && taskCtx.Cancel != nil {
+						common.Warn(fmt.Sprintf("task %s lease expired while touch was failing", taskCtx.IngestionTask.ID))
+						taskCtx.Cancel()
+						return
+					}
+					continue
+				}
+				if !alive {
+					common.Warn(fmt.Sprintf("task %s lost its claim", taskCtx.IngestionTask.ID))
+					if taskCtx.Cancel != nil {
+						taskCtx.Cancel()
+					}
+					return
+				}
+				taskCtx.IngestionTask.ClaimExpiresAt = time.Now().Add(e.claimTTL).UnixMilli()
 			case <-done:
 				return
 			case <-taskCtx.Ctx.Done():

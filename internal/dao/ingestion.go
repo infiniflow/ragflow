@@ -70,6 +70,134 @@ func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm
 	return result.RowsAffected == 1, nil
 }
 
+// Schedule records a fresh durable dispatch intent while clearing state that
+// belonged to a previous run.
+func (dao *IngestionTaskDAO) Schedule(ctx context.Context, db *gorm.DB, taskID, fromStatus string, now time.Time) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ?", taskID, fromStatus).
+		Updates(map[string]interface{}{
+			"status":                 common.SCHEDULED,
+			"scheduled_at":           now.UnixMilli(),
+			"last_dispatched_at":     int64(0),
+			"claim_token":            "",
+			"claim_expires_at":       int64(0),
+			"lease_recovery_attempt": 0,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// TryClaim atomically assigns a scheduled task to one worker. A false result
+// without an error means another worker has already claimed it or the task is
+// no longer scheduled.
+func (dao *IngestionTaskDAO) TryClaim(ctx context.Context, db *gorm.DB, taskID, token string, now time.Time, ttl time.Duration) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ?", taskID, common.SCHEDULED).
+		Updates(map[string]interface{}{
+			"status":           common.RUNNING,
+			"claim_token":      token,
+			"claim_expires_at": now.Add(ttl).UnixMilli(),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// TouchClaim extends a live claim. A false result without an error means the
+// caller no longer owns a non-expired running task.
+func (dao *IngestionTaskDAO) TouchClaim(ctx context.Context, db *gorm.DB, taskID, token string, now time.Time, ttl time.Duration) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ? AND claim_token = ? AND claim_token <> '' AND claim_expires_at > ?", taskID, common.RUNNING, token, now.UnixMilli()).
+		Update("claim_expires_at", now.Add(ttl).UnixMilli())
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// ReleaseExpiredClaim makes a task available for another worker after its
+// running lease has expired.
+func (dao *IngestionTaskDAO) ReleaseExpiredClaim(ctx context.Context, db *gorm.DB, taskID string, now time.Time) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ? AND claim_expires_at <= ?", taskID, common.RUNNING, now.UnixMilli()).
+		Updates(map[string]interface{}{
+			"status":           common.SCHEDULED,
+			"claim_token":      "",
+			"claim_expires_at": int64(0),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// RecoverExpiredClaim requeues an expired RUNNING lease until maxAttempts is
+// reached. The next expired lease is terminally failed. Both paths are CAS
+// updates so concurrent reconcilers cannot consume the same recovery budget.
+func (dao *IngestionTaskDAO) RecoverExpiredClaim(ctx context.Context, db *gorm.DB, taskID string, now time.Time, maxAttempts int) (requeued, poisoned bool, err error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ? AND claim_expires_at <= ? AND lease_recovery_attempt < ?", taskID, common.RUNNING, now.UnixMilli(), maxAttempts).
+		Updates(map[string]interface{}{
+			"status":                 common.SCHEDULED,
+			"claim_token":            "",
+			"claim_expires_at":       int64(0),
+			"lease_recovery_attempt": gorm.Expr("lease_recovery_attempt + 1"),
+		})
+	if result.Error != nil {
+		return false, false, result.Error
+	}
+	if result.RowsAffected == 1 {
+		return true, false, nil
+	}
+
+	result = db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ? AND claim_expires_at <= ? AND lease_recovery_attempt >= ?", taskID, common.RUNNING, now.UnixMilli(), maxAttempts).
+		Updates(map[string]interface{}{
+			"status":           common.FAILED,
+			"claim_token":      "",
+			"claim_expires_at": int64(0),
+		})
+	if result.Error != nil {
+		return false, false, result.Error
+	}
+	return false, result.RowsAffected == 1, nil
+}
+
+// ReleaseClaim gives up a live claim before execution begins or after the
+// owner aborts. Only the current owner may make the task schedulable again.
+func (dao *IngestionTaskDAO) ReleaseClaim(ctx context.Context, db *gorm.DB, taskID, token string) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ? AND claim_token = ? AND claim_token <> ''", taskID, common.RUNNING, token).
+		Updates(map[string]interface{}{
+			"status":           common.SCHEDULED,
+			"claim_token":      "",
+			"claim_expires_at": int64(0),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// FinalizeClaim applies a terminal transition only for the worker that still
+// owns the task in the expected status.
+func (dao *IngestionTaskDAO) FinalizeClaim(ctx context.Context, db *gorm.DB, taskID, token, fromStatus, toStatus string) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ? AND claim_token = ? AND claim_token <> ''", taskID, fromStatus, token).
+		Updates(map[string]interface{}{
+			"status":           toStatus,
+			"claim_token":      "",
+			"claim_expires_at": int64(0),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // UpdateComponentTotal records the number of components in the task's DSL
 // graph. It is the authoritative denominator for progress percentage.
 func (dao *IngestionTaskDAO) UpdateComponentTotal(ctx context.Context, db *gorm.DB, taskID string, total int) error {
@@ -121,7 +249,7 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 
 	taskStatus := tasks[0].Status
 	switch taskStatus {
-	case common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
+	case common.SCHEDULED, common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
 		// ingestion_task_log no longer carries file references (the old
 		// checkpoint JSON column was dropped in favor of typed columns), so
 		// there are no task-level files to delete here.
@@ -221,6 +349,78 @@ func (dao *IngestionTaskDAO) ListStaleByStatus(ctx context.Context, db *gorm.DB,
 	var tasks []*entity.IngestionTask
 	err := query.Find(&tasks).Error
 	return tasks, err
+}
+
+// ListScheduledForDispatch returns one keyset page of scheduled tasks whose
+// last dispatch attempt is older than dispatchedBefore. The caller advances
+// the cursor from each returned row even when publishing that row fails.
+func (dao *IngestionTaskDAO) ListScheduledForDispatch(ctx context.Context, db *gorm.DB, dispatchedBefore time.Time, lastDispatchedAt int64, lastID string, limit int) ([]*entity.IngestionTask, error) {
+	query := db.WithContext(ctx).
+		Where("status = ? AND last_dispatched_at < ?", common.SCHEDULED, dispatchedBefore.UnixMilli())
+	if lastDispatchedAt != 0 || lastID != "" {
+		query = query.Where("(last_dispatched_at > ?) OR (last_dispatched_at = ? AND id > ?)", lastDispatchedAt, lastDispatchedAt, lastID)
+	}
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	var tasks []*entity.IngestionTask
+	err := query.Order("last_dispatched_at ASC, id ASC").Find(&tasks).Error
+	return tasks, err
+}
+
+// ListByStatusAfterID returns a stable keyset page for state convergence work.
+func (dao *IngestionTaskDAO) ListByStatusAfterID(ctx context.Context, db *gorm.DB, status, lastID string, limit int) ([]*entity.IngestionTask, error) {
+	query := db.WithContext(ctx).Where("status = ?", status)
+	if lastID != "" {
+		query = query.Where("id > ?", lastID)
+	}
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	var tasks []*entity.IngestionTask
+	return tasks, query.Order("id ASC").Find(&tasks).Error
+}
+
+// ListExpiredClaims returns leased tasks whose owner can no longer renew.
+func (dao *IngestionTaskDAO) ListExpiredClaims(ctx context.Context, db *gorm.DB, statuses []string, now time.Time, lastID string, limit int) ([]*entity.IngestionTask, error) {
+	query := db.WithContext(ctx).
+		Where("status IN ? AND claim_expires_at <= ?", statuses, now.UnixMilli())
+	if lastID != "" {
+		query = query.Where("id > ?", lastID)
+	}
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	var tasks []*entity.IngestionTask
+	return tasks, query.Order("id ASC").Find(&tasks).Error
+}
+
+// StopExpiredClaim finalizes a stop request after its worker lease expires.
+func (dao *IngestionTaskDAO) StopExpiredClaim(ctx context.Context, db *gorm.DB, taskID string, now time.Time) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ? AND claim_expires_at <= ?", taskID, common.STOPPING, now.UnixMilli()).
+		Updates(map[string]interface{}{
+			"status":           common.STOPPED,
+			"claim_token":      "",
+			"claim_expires_at": int64(0),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// MarkDispatched records a successful broker publish while the task remains
+// scheduled. A false result is harmless: a worker may have claimed or stopped
+// the task after the publish completed.
+func (dao *IngestionTaskDAO) MarkDispatched(ctx context.Context, db *gorm.DB, taskID string, dispatchedAt time.Time) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ? AND status = ?", taskID, common.SCHEDULED).
+		Update("last_dispatched_at", dispatchedAt.UnixMilli())
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a

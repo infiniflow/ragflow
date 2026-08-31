@@ -71,11 +71,10 @@ func seedAgedTask(t *testing.T, db *gorm.DB, id, docID, status string, age time.
 	}
 }
 
-// TestStartupReconciliation drives the startup scan: stale CREATED orphans
-// are re-published for consumption, stale RUNNING orphans are intentionally
-// left untouched (recovery relies on NATS redelivery, not startup FAILED;
-// see ingestion_service.go reconcileStartupTasks), and fresh rows are left alone.
-func TestStartupReconciliation(t *testing.T) {
+// TestReconcileTasks converges every old CREATED row to SCHEDULED, releases
+// expired RUNNING leases, and publishes each resulting dispatch intent. This
+// protects rolling upgrades where old writers left CREATED rows behind.
+func TestReconcileTasks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -90,7 +89,7 @@ func TestStartupReconciliation(t *testing.T) {
 	recorder := &enqueueRecorder{}
 	ingestor.ingestionTaskSvc.SetTaskPublisher(recorder)
 
-	ingestor.reconcileStartupTasks()
+	ingestor.reconcileTasks(t.Context())
 
 	statusOf := func(id string) string {
 		t.Helper()
@@ -101,29 +100,64 @@ func TestStartupReconciliation(t *testing.T) {
 		return task.Status
 	}
 
-	// RUNNING orphans are intentionally left untouched (NATS redelivery path).
-	if got := statusOf("task-run-stale"); got != common.RUNNING {
-		t.Fatalf("stale RUNNING task status = %q, want %q (should be left for NATS redelivery)", got, common.RUNNING)
+	for _, id := range []string{"task-run-stale", "task-run-fresh", "task-created-stale", "task-created-fresh"} {
+		if got := statusOf(id); got != common.SCHEDULED {
+			t.Fatalf("task %s status = %q, want SCHEDULED", id, got)
+		}
 	}
-	// Fresh RUNNING row belongs to a live worker — untouched.
-	if got := statusOf("task-run-fresh"); got != common.RUNNING {
-		t.Fatalf("fresh RUNNING task status = %q, want %q", got, common.RUNNING)
-	}
-	// CREATED orphans are only re-published; their status stays CREATED so
-	// the normal consume path (StartRunning) owns the transition.
-	if got := statusOf("task-created-stale"); got != common.CREATED {
-		t.Fatalf("stale CREATED task status = %q, want %q", got, common.CREATED)
-	}
-	if got := statusOf("task-created-fresh"); got != common.CREATED {
-		t.Fatalf("fresh CREATED task status = %q, want %q", got, common.CREATED)
+	if got := statusOf("task-completed-old"); got != common.COMPLETED {
+		t.Fatalf("completed task status = %q, want COMPLETED", got)
 	}
 
-	// Exactly the stale CREATED task was re-enqueued — fresh CREATED rows
-	// still have their original message in flight, and terminal rows are
-	// never resurrected by the scan.
+	// The reconciliation pass publishes every runnable task and never revives
+	// terminal rows.
 	published := recorder.published()
-	if len(published) != 1 || published[0] != "task-created-stale" {
-		t.Fatalf("re-enqueued tasks = %v, want [task-created-stale]", published)
+	if len(published) != 4 {
+		t.Fatalf("re-enqueued tasks = %v, want four runnable tasks", published)
+	}
+}
+
+// TestRecoverExpiredClaimsMarksPoisonDocument verifies that the recovery cap
+// turns the next expired lease into a terminal task failure and surfaces the
+// reason on its document instead of publishing another wake-up message.
+func TestRecoverExpiredClaimsMarksPoisonDocument(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"claim_expires_at":       time.Now().Add(-time.Second).UnixMilli(),
+		"lease_recovery_attempt": maxLeaseRecoveryAttempts,
+	}).Error; err != nil {
+		t.Fatalf("expire task at recovery cap: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	recorder := &enqueueRecorder{}
+	ingestor.ingestionTaskSvc.SetTaskPublisher(recorder)
+	ingestor.recoverExpiredClaims(t.Context(), time.Now())
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want FAILED", task.Status)
+	}
+	if published := recorder.published(); len(published) != 0 {
+		t.Fatalf("poison task was republished: %v", published)
+	}
+
+	var document entity.Document
+	if err := db.Where("id = ?", docID).First(&document).Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if document.Run == nil || *document.Run != string(entity.TaskStatusFail) || document.Progress != -1 {
+		t.Fatalf("document state = run:%v progress:%v, want FAIL/-1", document.Run, document.Progress)
+	}
+	if document.ProgressMsg == nil || !strings.Contains(*document.ProgressMsg, "Failed after repeated lease expiry") {
+		t.Fatalf("document progress message = %v, want poison reason", document.ProgressMsg)
 	}
 }
 
@@ -164,7 +198,7 @@ func TestExecuteTask_MarkFailedAfterCtxCancelAcks(t *testing.T) {
 	defer parentCancel()
 	handle := &fakeTaskHandle{}
 	taskCtx := taskpkg.NewTaskContextForScheduling(parentCtx, &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 	taskCtx.Handle = handle
 

@@ -34,7 +34,7 @@ func (f *fakeTaskHandle) InProgress() error              { f.inProgress.Add(1); 
 func newAckTaskCtx(ctx context.Context, taskID, docID string, handle *fakeTaskHandle) *taskpkg.TaskContext {
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		ctx,
-		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
+		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken},
 	)
 	taskCtx.Handle = handle
 	return taskCtx
@@ -108,10 +108,9 @@ func TestExecuteTask_AcksMessageOnFailure(t *testing.T) {
 	}
 }
 
-// TestExecuteTask_AcksMessageOnContextCancel: a task with a cancelled context
-// (e.g. Redis cancel flag or Ingestor shutdown) is now terminal — the cancel
-// is durably recorded (progress=-1, run=CANCEL) and the message is Acked to
-// prevent indefinite redeliveries of an already-cancelled task.
+// TestExecuteTask_AcksMessageOnContextCancel: a user-requested stop leaves the
+// task STOPPING before its worker context is cancelled; the owning worker then
+// writes STOPPED and acks the message.
 func TestExecuteTask_AcksMessageOnContextCancel(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -130,6 +129,9 @@ func TestExecuteTask_AcksMessageOnContextCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := ingestor.ingestionTaskSvc.RequestStop(t.Context(), taskID); err != nil {
+		t.Fatalf("request stop: %v", err)
+	}
 	cancel()
 
 	handle := &fakeTaskHandle{}
@@ -187,7 +189,7 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 
 	close(proceed) // release the long task — only after confirming heartbeats
 
-	// Poll for Ack completion (executeTask must finish MarkCompleted + Ack).
+	// Poll for Ack completion (executeTask must finalize the claim + Ack).
 	deadline := time.Now().Add(2 * time.Second)
 	for handle.acks.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
@@ -400,7 +402,7 @@ func TestSettleMessage_DBTruthOverridesBodyReturn(t *testing.T) {
 	// recovery where markFailed succeeded: the task is terminal (FAILED)
 	// but the body signals non-terminal.
 	body := func(ctx context.Context) bool {
-		ingestor.markFailed(ctx, taskID)
+		ingestor.markFailed(ctx, taskCtx.IngestionTask)
 		return false
 	}
 

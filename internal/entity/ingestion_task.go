@@ -17,12 +17,17 @@
 package entity
 
 type IngestionTask struct {
-	ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	UserID     string  `gorm:"column:user_id;size:32;not null" json:"user_id"`
-	DocumentID string  `gorm:"column:document_id;size:32;not null;uniqueIndex:idx_ingestion_task_document_id" json:"document_id"`
-	DatasetID  string  `gorm:"column:dataset_id;size:32;not null" json:"dataset_id"`
-	Schema     JSONMap `gorm:"column:schema;type:longtext" json:"schema"`
-	Status     string  `gorm:"column:status;size:32;not null;" json:"status"`
+	ID                   string  `gorm:"column:id;primaryKey;size:32;index:idx_ingestion_task_scheduled,priority:3;index:idx_ingestion_task_claim_expiry,priority:3" json:"id"`
+	UserID               string  `gorm:"column:user_id;size:32;not null" json:"user_id"`
+	DocumentID           string  `gorm:"column:document_id;size:32;not null;uniqueIndex:idx_ingestion_task_document_id" json:"document_id"`
+	DatasetID            string  `gorm:"column:dataset_id;size:32;not null" json:"dataset_id"`
+	Schema               JSONMap `gorm:"column:schema;type:longtext" json:"schema"`
+	Status               string  `gorm:"column:status;size:32;not null;index:idx_ingestion_task_scheduled,priority:1;index:idx_ingestion_task_claim_expiry,priority:1" json:"status"`
+	ScheduledAt          int64   `gorm:"column:scheduled_at;not null;default:0" json:"scheduled_at"`
+	LastDispatchedAt     int64   `gorm:"column:last_dispatched_at;not null;default:0;index:idx_ingestion_task_scheduled,priority:2" json:"last_dispatched_at"`
+	ClaimToken           string  `gorm:"column:claim_token;size:64;not null;default:''" json:"claim_token"`
+	ClaimExpiresAt       int64   `gorm:"column:claim_expires_at;not null;default:0;index:idx_ingestion_task_claim_expiry,priority:2" json:"claim_expires_at"`
+	LeaseRecoveryAttempt int     `gorm:"column:lease_recovery_attempt;not null;default:0" json:"lease_recovery_attempt"`
 	// ComponentTotal is the number of components in the task's DSL graph.
 	// It is the authoritative denominator for progress percentage so the
 	// frontend does not have to count DSL nodes itself. Written once the

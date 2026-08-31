@@ -1266,8 +1266,8 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	if ingestionTask.UserID != "user-1" {
 		t.Fatalf("ingestion task user id = %q, want %q", ingestionTask.UserID, "user-1")
 	}
-	if ingestionTask.Status != common.CREATED {
-		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.CREATED)
+	if ingestionTask.Status != common.SCHEDULED {
+		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.SCHEDULED)
 	}
 
 	tasks, err := svc.taskDAO.GetByDocID(ctx, db, "doc-1")

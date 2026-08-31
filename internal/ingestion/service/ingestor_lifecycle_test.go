@@ -125,7 +125,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 		return nil
 	}
 
-	// Seed the task RUNNING so runTask's MarkCompleted path is valid.
+	// Seed a live RUNNING claim so the worker can finalize it.
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
 		Update("status", common.RUNNING).Error; err != nil {
 		t.Fatalf("set task RUNNING: %v", err)

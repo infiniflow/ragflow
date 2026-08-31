@@ -198,9 +198,9 @@ func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 	}
 }
 
-// insertTestIngestionTask inserts a test IngestionTask row with CREATED status.
+// insertTestIngestionTask inserts a test IngestionTask row with SCHEDULED status.
 func insertTestIngestionTask(t *testing.T, id, userID, docID, datasetID string) {
-	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.CREATED)
+	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.SCHEDULED)
 }
 
 // insertTestIngestionTaskWithStatus inserts a test IngestionTask with a specific status.

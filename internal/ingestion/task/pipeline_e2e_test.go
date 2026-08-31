@@ -316,10 +316,11 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 				}
 			}
 
-			// Verify final task status can be marked completed
+			// Verify the current lease owner can finalize the task.
 			ingestSvc := service.NewIngestionTaskService()
-			if err = ingestSvc.MarkCompleted(ctx, taskID); err != nil {
-				t.Fatalf("MarkCompleted failed: %v", err)
+			finalized, err := ingestSvc.FinalizeClaim(ctx, taskID, testutil.TestClaimToken, common.RUNNING, common.COMPLETED)
+			if err != nil || !finalized {
+				t.Fatalf("FinalizeClaim = %v, %v; want true, nil", finalized, err)
 			}
 
 			finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)

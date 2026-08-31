@@ -44,6 +44,9 @@ const (
 // IngestionTask nil.
 type TaskContext struct {
 	Ctx context.Context
+	// Cancel stops the execution context when this worker loses its database
+	// lease. It is installed by the worker immediately before execution.
+	Cancel context.CancelFunc
 
 	// Kind selects the execution path: TaskKindIngestion or TaskKindMemory.
 	Kind TaskKind

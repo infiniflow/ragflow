@@ -47,7 +47,7 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
-		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
+		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken},
 	)
 
 	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
@@ -171,7 +171,7 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
-		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
+		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken},
 	)
 
 	ctx := t.Context()
@@ -223,7 +223,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
-		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
+		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken},
 	)
 	ctx := t.Context()
 	ingestor.executeTask(ctx, taskCtx)

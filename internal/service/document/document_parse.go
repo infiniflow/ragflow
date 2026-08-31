@@ -21,10 +21,10 @@ import (
 // StartParseDocuments starts parsing a document via the DSL ingestion
 // pipeline. It optionally clears prior results (RerunWithDelete), applies
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
-// The document run status is NOT set here; service.IngestionTaskService.StartRunning
-// sets it to RUNNING when the worker picks up the task and transitions it from
-// CREATED. Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
-// can reuse the same start-parse flow.
+// The task service marks the document SCHEDULED when it persists the dispatch
+// intent, then RUNNING only after a worker obtains the database claim. Extracted
+// from Ingest so other entry points (e.g. ChunkService.Parse) can reuse the
+// same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
@@ -358,7 +358,7 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 	if doc.Run != nil {
 		docRun = *doc.Run
 	}
-	inFlight := task != nil && (task.Status == common.CREATED || task.Status == common.RUNNING || task.Status == common.STOPPING)
+	inFlight := task != nil && (task.Status == common.SCHEDULED || task.Status == common.RUNNING || task.Status == common.STOPPING)
 	if docRun != string(entity.TaskStatusRunning) && docRun != string(entity.TaskStatusCancel) && !inFlight {
 		return errParseNotRunning
 	}

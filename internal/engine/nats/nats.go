@@ -118,7 +118,7 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 	// strands the task in CREATED with no message behind it — unreachable
 	// by any consumer and un-reparsable ("already exists, status: CREATED").
 	// Duplicate delivery is instead made safe at the consumer level:
-	// StartRunning's CREATED→RUNNING CAS plus the in-process claim guard
+	// TryClaim's SCHEDULED→RUNNING lease CAS plus the in-process claim guard
 	// ack-skip any second copy (see Ingestor.processMessage).
 	ack, err := n.jetStream.Publish(ctx, subject, payload)
 	if err != nil {
