@@ -98,6 +98,9 @@ class RAGFlow:
     def list_datasets(
         self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, ids: list[str] | None = None, name: str | None = None
     ) -> list[DataSet]:
+        if id and ids:
+            raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
+
         res = self.get(
             "/datasets",
             {
