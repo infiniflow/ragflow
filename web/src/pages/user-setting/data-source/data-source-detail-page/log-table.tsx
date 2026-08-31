@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
+import { RunningStatusMap } from '@/constants/knowledge';
 import { RunningStatus } from '@/pages/dataset/dataset/constant';
 import { Routes } from '@/routes';
 import { formatDate } from '@/utils/date';
@@ -91,32 +91,30 @@ const TaskCountdown = ({ row, now }: { row: IDataSourceLog; now: number }) => {
   );
 };
 
+const normalizeStatus = (status: string) => {
+  // py backend returns string "5"/"1" etc., Go returns enum; normalize once
+  if (status === '5') return RunningStatus.SCHEDULE;
+  if (status === '1') return RunningStatus.RUNNING;
+  if (status === '3') return RunningStatus.FAIL;
+  if (status === '2') return RunningStatus.CANCEL;
+  return status as RunningStatus;
+};
+
 const getSummary = (row: IDataSourceLog, now: number) => {
-  if (
-    row.status === RunningStatus.SCHEDULE ||
-    row.status === RunningStatusOld.SCHEDULE
-  ) {
+  const status = normalizeStatus(row.status);
+  if (status === RunningStatus.SCHEDULE) {
     return <TaskCountdown row={row} now={now} />;
   }
 
-  if (
-    row.status === RunningStatus.RUNNING ||
-    row.status === RunningStatusOld.RUNNING
-  ) {
+  if (status === RunningStatus.RUNNING) {
     return row.task_type === 'prune' ? 'Prune in progress' : 'Sync in progress';
   }
 
-  if (
-    row.status === RunningStatus.FAIL ||
-    row.status === RunningStatusOld.FAIL
-  ) {
+  if (status === RunningStatus.FAIL) {
     return row.error_msg || 'Task failed';
   }
 
-  if (
-    row.status === RunningStatus.CANCEL ||
-    row.status === RunningStatusOld.CANCEL
-  ) {
+  if (status === RunningStatus.CANCEL) {
     return '';
   }
 

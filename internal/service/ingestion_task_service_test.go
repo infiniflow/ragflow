@@ -438,13 +438,12 @@ func TestIngestionTaskServiceCreateAndEnqueueKeepsNewTaskScheduledOnPublishFailu
 	svc.taskPublisher = publisher
 
 	ctx := t.Context()
-	task, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
+	if _, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
 		DocumentID: "doc-1",
 		UserID:     "user-1",
 		DatasetID:  "kb-1",
 		Status:     common.CREATED,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("CreateAndEnqueue: %v", err)
 	}
 	task, getErr := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-1")

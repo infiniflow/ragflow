@@ -84,6 +84,24 @@ func migrateIngestionTaskSchedulingIndexes(ctx context.Context, db *gorm.DB) err
 		return nil
 	}
 
+	// Explicitly ensure scheduling columns exist on ingestion_task for existing installations
+	// before creating indexes, in case GORM AutoMigrate encountered an index error and aborted column creation.
+	columns := []struct {
+		name string
+		def  string
+	}{
+		{name: "scheduled_at", def: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "last_dispatched_at", def: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "claim_token", def: "VARCHAR(64) NOT NULL DEFAULT ''"},
+		{name: "claim_expires_at", def: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "lease_recovery_attempt", def: "INT NOT NULL DEFAULT 0"},
+	}
+	for _, col := range columns {
+		if err := addColumnIfNotExists(ctx, db, "ingestion_task", col.name, col.def); err != nil {
+			return fmt.Errorf("failed to add column %s to ingestion_task: %w", col.name, err)
+		}
+	}
+
 	indexes := []struct {
 		name string
 		ddl  string
@@ -102,7 +120,7 @@ func migrateIngestionTaskSchedulingIndexes(ctx context.Context, db *gorm.DB) err
 		var count int64
 		if err := db.WithContext(ctx).Raw(`
 			SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-			WHERE TABLE_NAME = ? AND INDEX_NAME = ?
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
 		`, "ingestion_task", index.name).Scan(&count).Error; err != nil {
 			return err
 		}

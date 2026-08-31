@@ -47,27 +47,24 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	c.ingestor.ClaimTTL = 15 * time.Second
 	c.ingestor.MaxLeaseRecoveryAttempts = 3
 
-	if !v.IsSet("ingestor") {
-		return nil
-	}
-	sub := v.Sub("ingestor")
-	if sub == nil {
-		return nil
-	}
+	if v.IsSet("ingestor") {
+		sub := v.Sub("ingestor")
+		if sub != nil {
+			if sub.IsSet("max_concurrent_workers") {
+				c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
+			}
 
-	if sub.IsSet("max_concurrent_workers") {
-		c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
-	}
+			if sub.IsSet("compiler_pool_size") {
+				c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
+			}
 
-	if sub.IsSet("compiler_pool_size") {
-		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
-	}
-
-	if sub.IsSet("claim_ttl") {
-		c.ingestor.ClaimTTL = sub.GetDuration("claim_ttl")
-	}
-	if sub.IsSet("max_lease_recovery_attempts") {
-		c.ingestor.MaxLeaseRecoveryAttempts = sub.GetInt("max_lease_recovery_attempts")
+			if sub.IsSet("claim_ttl") {
+				c.ingestor.ClaimTTL = sub.GetDuration("claim_ttl")
+			}
+			if sub.IsSet("max_lease_recovery_attempts") {
+				c.ingestor.MaxLeaseRecoveryAttempts = sub.GetInt("max_lease_recovery_attempts")
+			}
+		}
 	}
 
 	heartbeat := c.general.HeartbeatInterval
