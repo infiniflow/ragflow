@@ -26,6 +26,11 @@ import (
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
+// pptxOpenFromBytes is a test seam mirroring officeOxide.OpenFromBytes.
+// Not safe for concurrent use with t.Parallel() — tests must save/restore
+// it sequentially.
+var pptxOpenFromBytes = officeOxide.OpenFromBytes
+
 // PPTXParser parses both .pptx (OOXML) and .ppt (OLE binary)
 // files via the office_oxide backend. The format field controls
 // the container format passed to OpenFromBytes — "pptx" for
@@ -95,7 +100,13 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	method := strings.ToLower(strings.TrimSpace(p.ParseMethod))
 	switch method {
 	case "tcadp":
-		return parsePresentationWithTCADP(ctx,
+		// TCADP file_type is intentionally derived from the parser's
+		// configured family (p.format == "pptx" → "PPTX", "ppt" → "PPT"),
+		// not from magic-byte sniffing. The pipeline routes purely on
+		// extension → parser family, and TCADP reconstructs by family.
+		// The OLE fallback below therefore only applies to the local
+		// office_oxide path.
+		return parseWithTCADP(ctx,
 			filename, data, strings.ToUpper(p.format),
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
@@ -107,7 +118,27 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// PDF-specific methods like "paddleocr" / "mineru" are
 		// meaningless for PPTX; treat as default path.
 	}
-	doc, err := officeOxide.OpenFromBytes(data, p.format)
+	// office_oxide's OpenFromBytes takes the container format as given
+	// and does no magic-byte detection, so a legacy .ppt uploaded with a
+	// .pptx extension would be parsed as ZIP/OOXML and fail. Sniff the
+	// real container and pass the matching format so mislabeled files
+	// still parse (mirrors the magic-byte correction office_oxide::Open
+	// performs on file paths).
+	// File["format"] in the success case reflects effFormat, i.e. the
+	// real container ("ppt" for OLE fallback, "pptx" for OOXML fallback),
+	// not just the extension.
+	effFormat := p.format
+	switch officeContainer(data) {
+	case "ole":
+		if effFormat == "pptx" {
+			effFormat = "ppt"
+		}
+	case "ooxml":
+		if effFormat == "ppt" {
+			effFormat = "pptx"
+		}
+	}
+	doc, err := pptxOpenFromBytes(data, effFormat)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("presentation open: %w", err)}
 	}
@@ -138,7 +169,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	return ParseResult{
 		OutputFormat: "json",
-		File:         map[string]any{"name": filename, "format": p.format},
+		File:         map[string]any{"name": filename, "format": effFormat},
 		JSON:         items,
 	}
 }

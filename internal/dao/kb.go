@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"strconv"
@@ -57,6 +58,50 @@ func IsDuplicateKeyErr(err error) bool {
 // NewKnowledgebaseDAO create knowledge base DAO
 func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 	return &KnowledgebaseDAO{}
+}
+
+// EmbeddingBaseName resolves a knowledge base's embedding model reference to
+// the bare model name (e.g. "BAAI/bge-m3") used to decide whether datasets
+// can be selected and searched together. tenant_embd_id — or embd_id itself
+// when it stores a raw tenant_model id — is resolved through tenant_model;
+// legacy composite "model@instance@provider" values are reduced with
+// common.BaseModelName. An id that no longer resolves falls back to the
+// composite base name when embd_id holds one, otherwise to the id itself so
+// only exact matches group together.
+func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
+	raw := strings.TrimSpace(kb.EmbdID)
+	id := ""
+	if kb.TenantEmbdID != nil {
+		id = strings.TrimSpace(*kb.TenantEmbdID)
+	}
+	if id == "" && raw != "" && !strings.Contains(raw, "@") {
+		id = raw
+	}
+	if id == "" {
+		return common.BaseModelName(raw)
+	}
+	if cache != nil {
+		if cached, ok := cache[id]; ok {
+			return cached
+		}
+	}
+	base := ""
+	if db != nil {
+		if model, err := NewTenantModelDAO().GetByID(ctx, db, id); err == nil && model != nil {
+			base = strings.TrimSpace(model.ModelName)
+		}
+	}
+	if base == "" {
+		if raw != "" && raw != id {
+			base = common.BaseModelName(raw)
+		} else {
+			base = id
+		}
+	}
+	if cache != nil {
+		cache[id] = base
+	}
+	return base
 }
 
 // Create creates a new knowledge base record

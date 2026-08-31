@@ -14,10 +14,6 @@
 //  limitations under the License.
 //
 
-// cancel.go implements the cross-process cancel signal for ordinary Agent
-// sessions. A canvas run polls Redis for "{sessionID}-cancel"; when the HTTP
-// handler sets the key, the watcher cancels the same context used by the
-// workflow.
 package canvas
 
 import (
@@ -38,8 +34,8 @@ const cancelKeySuffix = "-cancel"
 func cancelKey(sessionID string) string { return sessionID + cancelKeySuffix }
 
 // cancelPollInterval is the gap between Redis Get polls. 500ms keeps
-// cancel latency p99 ≤ 500ms while staying cheap (one GET every half-
-// second per active run). Tunable later if a tenant needs lower latency.
+// cancel latency p99 ≤ 500ms while staying cheap (one GET every half-second per active run).
+// Tunable later if a tenant needs lower latency.
 const cancelPollInterval = 500 * time.Millisecond
 
 // RequestCancelTTL is the lifetime of the cancel flag in Redis. Long
@@ -62,7 +58,7 @@ var cancelClientFn = func() (*redis.Client, error) {
 	return c, nil
 }
 
-// WatchCancel blocks until either ctx is cancelled or the Redis
+// WatchCancel blocks until either ctx is canceled or the Redis
 // "{sessionID}-cancel" key contains a non-empty value. When fired, it calls
 // onCancel exactly once and returns. Polling interval is fixed
 // at 500ms (see plan §4.9 — revised 2026-06-03 from 1s to 500ms).

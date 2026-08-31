@@ -97,7 +97,10 @@ function AgentChatBox() {
   return (
     <>
       <section className="flex flex-1 flex-col px-5 min-h-0 pb-4">
-        <div className="flex-1 overflow-auto" ref={messageContainerRef}>
+        <div
+          className="flex-1 overflow-auto min-h-0"
+          ref={messageContainerRef}
+        >
           <div>
             {!sendLoading && <div data-testid="agent-run-idle" />}
             {/* <Spin spinning={sendLoading}> */}
@@ -118,7 +121,7 @@ function AgentChatBox() {
                   clickDocumentButton={clickDocumentButton}
                   index={i}
                   showLikeButton={false}
-                  sendLoading={sendLoading}
+                  sendLoading={sendLoading && derivedMessages.length - 1 === i}
                 >
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 === i && (

@@ -19,7 +19,8 @@ type CompilationTemplateCardProps = {
   onDelete: (id: string) => void;
 };
 
-const CompilerIcon = FlowTypeConfig[FlowType.Compiler].icon;
+const CompilerConfig = FlowTypeConfig[FlowType.Compiler];
+const CompilerIcon = CompilerConfig.icon;
 
 export function CompilationTemplateCard({
   data,
@@ -52,7 +53,7 @@ export function CompilationTemplateCard({
             </TruncatedText>
 
             <Button variant="ghost" size="sm">
-              <CompilerIcon />
+              <CompilerIcon style={{ color: CompilerConfig.color }} />
             </Button>
 
             <CompilationTemplateDropdown data={data} onDelete={onDelete}>

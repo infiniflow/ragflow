@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Collapse } from '@/components/collapse';
 import MarkdownEditor from '@/components/markdown-editor';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
@@ -36,7 +52,7 @@ export function BlueprintSection({
       <Collapse
         defaultOpen
         title={
-          <h3 className="text-base font-medium">{t('setting.blueprints')}</h3>
+          <h3 className="text-base font-medium">{t('knowledgeCompilation.blueprints')}</h3>
         }
       >
         <div className="space-y-4">
@@ -50,14 +66,14 @@ export function BlueprintSection({
           <div className="space-y-4">
             <RAGFlowFormItem
               name={instructionPath}
-              label={t('setting.instruction')}
+              label={t('knowledgeCompilation.instruction')}
             >
               <Textarea rows={8} resize={'vertical'} />
             </RAGFlowFormItem>
 
             <RAGFlowFormItem
               name={examplePath}
-              label={t('setting.example')}
+              label={t('knowledgeCompilation.example')}
               className="flex h-[50vh] min-h-0 flex-col"
               valueClassName="flex-1 min-h-0"
             >

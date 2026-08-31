@@ -61,7 +61,10 @@ type KnowledgeCompileDataset struct {
 	// ErrorMsg is the most recent failure/retry diagnostic. It is TEXT with no
 	// DDL default (MySQL 8.0.13+ rejects a literal default on TEXT, Error 1101);
 	// the application always writes it explicitly when set.
-	ErrorMsg string `gorm:"column:error_msg;type:text;not null" json:"error_msg"`
+	ErrorMsg     string  `gorm:"column:error_msg;type:text;not null" json:"error_msg"`
+	Progress     float64 `gorm:"column:progress;not null;default:0" json:"progress"`
+	CurrentPhase string  `gorm:"column:current_phase;size:64;not null;default:''" json:"current_phase"`
+	ProgressMsg  string  `gorm:"column:progress_msg;type:text;not null" json:"progress_msg"`
 	// LastCompletedAt records the last time the backlog drained to empty.
 	LastCompletedAt *time.Time `gorm:"column:last_completed_at;default:null" json:"last_completed_at"`
 	CreatedAt       time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`

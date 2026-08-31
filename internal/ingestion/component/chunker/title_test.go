@@ -106,7 +106,7 @@ func TestTitleChunker_InvokeEmptyInput(t *testing.T) {
 }
 
 // TestTitleChunker_Headings_ASCII is the golden-file parity check
-// for the markdown detector: a # heading + body + ## subheading + body
+// for the Markdown detector: a # heading + body + ## subheading + body
 // is recognized at least one chunked partition boundary.
 //
 // Note: the title strategy is dispatched to the underlying strategy
@@ -149,7 +149,7 @@ func TestTitleChunker_Headings_ASCII(t *testing.T) {
 }
 
 // TestTitleChunker_NoHeadings_FallsBack feeds plain text without any
-// markdown heading; the chunker should still produce a chunk
+// Markdown heading; the chunker should still produce a chunk
 // containing the body text (single chunk fallback).
 func TestTitleChunker_NoHeadings_FallsBack(t *testing.T) {
 	c, err := NewTitleChunker(map[string]any{

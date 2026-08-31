@@ -326,7 +326,7 @@ func TestReplicateUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	// Rerank IS implemented; with empty documents it short-circuits (no error).
 	// Pass non-empty docs + nil modelName to trigger model-name validation.
-	if _, err := m.Rerank(ctx, nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	// Balance IS a stub → "no such method"

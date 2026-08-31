@@ -70,7 +70,7 @@ type codeExecArgs struct {
 // shape mirrors the Python tool's `content` / `_ERROR` / `actual_type`
 // fields so downstream nodes can pattern-match unchanged. Artifacts and
 // Attachments are surfaced for the model and downstream component
-// consumption (e.g. Message component's artifact markdown formatter).
+// consumption (e.g. Message component's artifact Markdown formatter).
 type codeExecResult struct {
 	Content     string           `json:"content,omitempty"`
 	ActualType  string           `json:"actual_type,omitempty"`
@@ -184,7 +184,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 //     surface it as `_ARTIFACTS` to match the Python envelope).
 //   - Metadata["attachments"] → Attachments (rendered into
 //     downstream Markdown by Message via the same path the Agent
-//     tool artifact markdown uses).
+//     tool artifact Markdown uses).
 //
 // Artifacts / Attachments with the wrong element type (anything
 // other than map[string]any) are silently dropped with a log

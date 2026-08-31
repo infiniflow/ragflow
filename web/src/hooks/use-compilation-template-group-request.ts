@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 import {
@@ -14,14 +30,9 @@ import {
 } from '@/services/compilation-template-group-service';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDebounce } from 'ahooks';
 import { useCallback, useMemo } from 'react';
 import { useParams } from 'react-router';
 
-import {
-  useGetPaginationWithRouter,
-  useHandleSearchChange,
-} from './logic-hooks';
 import { AgentApiAction } from './use-agent-request';
 
 export const enum CompilationTemplateGroupApiAction {
@@ -33,11 +44,6 @@ export const enum CompilationTemplateGroupApiAction {
 }
 
 export const CompilationTemplateGroupKeys = {
-  list: (keywords?: string, page?: number, pageSize?: number) =>
-    [
-      CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups,
-      { keywords, page, pageSize },
-    ] as const,
   detail: (id?: string) =>
     [
       CompilationTemplateGroupApiAction.FetchCompilationTemplateGroup,
@@ -45,60 +51,6 @@ export const CompilationTemplateGroupKeys = {
     ] as const,
   all: () =>
     [CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups] as const,
-};
-
-export const useFetchCompilationTemplateGroupsByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
-  const { pagination, setPagination } = useGetPaginationWithRouter();
-  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-
-  const { data, isFetching: loading } = useQuery<{
-    groups: ICompilationTemplateGroup[];
-    total: number;
-  }>({
-    queryKey: CompilationTemplateGroupKeys.list(
-      debouncedSearchString,
-      pagination.current,
-      pagination.pageSize,
-    ),
-    initialData: {
-      groups: [],
-      total: 0,
-    },
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await compilationTemplateGroupService.listGroups(
-        {
-          params: {
-            keywords: debouncedSearchString,
-            page: pagination.current,
-            page_size: pagination.pageSize,
-          },
-        },
-        true,
-      );
-
-      return {
-        groups: (data?.data?.groups ?? []) as ICompilationTemplateGroup[],
-        total: data?.data?.total ?? 0,
-      };
-    },
-  });
-
-  const currentPagination = useMemo(
-    () => ({ ...pagination, total: data?.total ?? 0 }),
-    [pagination, data?.total],
-  );
-
-  return {
-    groups: data?.groups ?? [],
-    total: data?.total ?? 0,
-    searchString,
-    handleInputChange,
-    pagination: currentPagination,
-    setPagination,
-    loading,
-  };
 };
 
 export const useFetchCompilationTemplateGroup = () => {

@@ -671,12 +671,12 @@ func replicateKeys(m map[string]interface{}) []string {
 }
 
 // Embed turns a list of texts into embedding vectors via Replicate's
-func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
@@ -688,7 +688,7 @@ func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []s
 		return nil, err
 	}
 
-	input, err := replicateEmbedInput(texts)
+	input, err := replicateEmbedInput(request.Texts)
 	if err != nil {
 		return nil, err
 	}
@@ -708,7 +708,7 @@ func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []s
 		return nil, fmt.Errorf("replicate: prediction ended with status %q", prediction.Status)
 	}
 
-	return replicateEmbedOutputToVectors(prediction.Output, len(texts))
+	return replicateEmbedOutputToVectors(prediction.Output, len(request.Texts))
 }
 
 // replicateRerankInput shapes the request body
@@ -762,11 +762,12 @@ func replicateScoresFromInterface(arr []interface{}, n int) ([]float64, error) {
 }
 
 // Rerank scores a query against a list of documents
-func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

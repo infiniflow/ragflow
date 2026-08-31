@@ -44,16 +44,44 @@ type fakeStreamLLM struct {
 	err    error
 }
 
-func (f *fakeStreamLLM) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
+func (f *fakeStreamLLM) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
 	if f.err != nil {
-		return nil, f.err
+		return nil, nil, f.err
 	}
 	ch := make(chan string, len(f.chunks)+1)
 	for _, c := range f.chunks {
 		ch <- c
 	}
 	close(ch)
-	return ch, nil
+	errCh := make(chan error, 1)
+	close(errCh)
+	return ch, errCh, nil
+}
+
+// capturingStreamLLM records the ChatConfig actually handed to the LLM.
+type capturingStreamLLM struct {
+	fakeStreamLLM
+	gotConfig *modelModule.ChatConfig
+}
+
+func (c *capturingStreamLLM) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
+	c.gotConfig = config
+	return c.fakeStreamLLM.ChatStream(ctx, messages, config)
+}
+
+// asyncErrStreamLLM returns answer deltas, then reports an async driver error.
+type asyncErrStreamLLM struct {
+	fakeStreamLLM
+}
+
+func (a *asyncErrStreamLLM) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
+	ch := make(chan string, 1)
+	ch <- "partial"
+	close(ch)
+	errCh := make(chan error, 1)
+	errCh <- fmt.Errorf("API request failed with status 400: invalid temperature")
+	close(errCh)
+	return ch, errCh, nil
 }
 
 // ---- AskService tests ----
@@ -165,6 +193,97 @@ func TestAskService_LLMError(t *testing.T) {
 	}
 }
 
+func TestAskService_TemperatureFromLLMSetting(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"},
+		},
+		DocAggs: []map[string]interface{}{},
+	}}
+	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
+	svc := NewAskService(ret, nil, 0, 0)
+
+	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+		"llm_setting": map[string]interface{}{
+			"temperature":         0.6,
+			"temperature_enabled": true,
+		},
+	})
+	deltas := collect(svc.StreamWithOptions(context.Background(), llm, "user1", "test", []string{"kb1"}, opts))
+
+	var hasFinal bool
+	for _, d := range deltas {
+		if d.Kind == AskDeltaFinal {
+			hasFinal = true
+		}
+	}
+	if !hasFinal {
+		t.Fatalf("expected final delta, got %+v", deltas)
+	}
+	if llm.gotConfig == nil || llm.gotConfig.Temperature == nil || *llm.gotConfig.Temperature != 0.6 {
+		t.Errorf("expected configured temperature 0.6, got %+v", llm.gotConfig)
+	}
+}
+
+func TestAskService_TemperatureDisabledUsesDefault(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"},
+		},
+		DocAggs: []map[string]interface{}{},
+	}}
+	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
+	svc := NewAskService(ret, nil, 0, 0)
+
+	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+		"llm_setting": map[string]interface{}{
+			"temperature":         0.6,
+			"temperature_enabled": false,
+		},
+	})
+	deltas := collect(svc.StreamWithOptions(context.Background(), llm, "user1", "test", []string{"kb1"}, opts))
+
+	var hasFinal bool
+	for _, d := range deltas {
+		if d.Kind == AskDeltaFinal {
+			hasFinal = true
+		}
+	}
+	if !hasFinal {
+		t.Fatalf("expected final delta, got %+v", deltas)
+	}
+	if llm.gotConfig == nil || llm.gotConfig.Temperature == nil || *llm.gotConfig.Temperature != 0.1 {
+		t.Errorf("expected default temperature 0.1 when disabled, got %+v", llm.gotConfig)
+	}
+}
+
+func TestAskService_TemperatureMissingUsesLLMSettingDefaults(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"},
+		},
+		DocAggs: []map[string]interface{}{},
+	}}
+	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
+	svc := NewAskService(ret, nil, 0, 0)
+
+	// Flag enabled but value absent (and a completely absent flag) must
+	// substitute the Python LLM_SETTING_DEFAULTS, matching resolve_llm_setting.
+	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+		"llm_setting": map[string]interface{}{
+			"temperature_enabled": true,
+		},
+	})
+	collect(svc.StreamWithOptions(context.Background(), llm, "user1", "test", []string{"kb1"}, opts))
+
+	if llm.gotConfig == nil || llm.gotConfig.Temperature == nil || *llm.gotConfig.Temperature != DefaultAskTemperature {
+		t.Errorf("expected LLM_SETTING_DEFAULTS temperature %v, got %+v", DefaultAskTemperature, llm.gotConfig)
+	}
+	if llm.gotConfig.TopP == nil || *llm.gotConfig.TopP != DefaultAskTopP {
+		t.Errorf("expected LLM_SETTING_DEFAULTS top_p %v, got %+v", DefaultAskTopP, llm.gotConfig)
+	}
+}
+
 func TestExtractChunkVectors_Empty(t *testing.T) {
 	if got := ExtractChunkVectors(nil); got != nil {
 		t.Errorf("expected nil for nil input, got %v", got)
@@ -246,4 +365,47 @@ func TestAskService_ContextCancel(t *testing.T) {
 	deltas := collect(svc.Stream(ctx, llm, "user1", "test", []string{"kb1"}))
 	// Should get no deltas (or very few) since context is cancelled.
 	_ = deltas
+}
+
+func TestAskService_AsyncLLMErrorSurfaces(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"},
+		},
+		DocAggs: []map[string]interface{}{},
+	}}
+	llm := &asyncErrStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"partial"}}}
+	svc := NewAskService(ret, nil, 0, 0)
+	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+
+	var errDelta *AskDelta
+	for i := range deltas {
+		if deltas[i].Kind == AskDeltaError {
+			errDelta = &deltas[i]
+			break
+		}
+	}
+	if errDelta == nil {
+		t.Fatalf("expected error delta, got %+v", deltas)
+	}
+	if !strings.Contains(errDelta.Value, "invalid temperature") {
+		t.Errorf("expected real driver error surfaced, got %q", errDelta.Value)
+	}
+}
+
+func TestAskService_LLMErrorValueIsRealError(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "chunk"},
+		},
+	}}
+	llm := &fakeStreamLLM{err: fmt.Errorf("provider name missing in model name: gpt-4o")}
+	svc := NewAskService(ret, nil, 0, 0)
+	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	if len(deltas) < 1 || deltas[0].Kind != AskDeltaError {
+		t.Fatalf("expected error delta, got %+v", deltas)
+	}
+	if !strings.Contains(deltas[0].Value, "provider name missing in model name") {
+		t.Errorf("expected real sync error surfaced, got %q", deltas[0].Value)
+	}
 }

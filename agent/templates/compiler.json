@@ -7,6 +7,7 @@
         "params": {
           "compilation_template_group_id": "",
           "llm_id": "",
+          "plan": false,
           "outputs": {
             "chunks": {
               "type": "Array<Object>",
@@ -104,7 +105,7 @@
             },
             "image": {
               "order_index": 2,
-              "output_format": "text",
+              "output_format": "json",
               "parse_method": "ocr",
               "suffix": [
                 "jpg",
@@ -298,7 +299,7 @@
               },
               {
                 "fileFormat": "image",
-                "output_format": "text",
+                "output_format": "json",
                 "parse_method": "ocr"
               },
               {
@@ -411,6 +412,7 @@
           "form": {
             "compilation_template_group_id": "",
             "llm_id": "",
+            "plan": false,
             "outputs": {
               "chunks": {
                 "type": "Array<Object>",

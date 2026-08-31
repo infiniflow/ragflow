@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -76,6 +75,7 @@ func TestPubMed_BuildURL(t *testing.T) {
 }
 
 func TestPubMed_InvokableRunParsesXML(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	var esearchHits, efetchHits int32
@@ -123,7 +123,7 @@ func TestPubMed_InvokableRunParsesXML(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tool := NewPubMedToolWithDefaults(helper, pubmedParams{TopN: 3, Email: "tester@example.com"})
-	out, err := tool.InvokableRun(context.Background(), `{"query":"ragflow"}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -168,6 +168,7 @@ func TestPubMed_InvokableRunParsesXML(t *testing.T) {
 }
 
 func TestPubMed_InvokableRunEmptyResults(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +179,7 @@ func TestPubMed_InvokableRunEmptyResults(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tool := NewPubMedToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(), `{"query":"missing"}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"missing"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -192,10 +193,11 @@ func TestPubMed_InvokableRunEmptyResults(t *testing.T) {
 }
 
 func TestPubMed_InvokableRunEmptyQuery(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	tool := NewPubMedTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty): %v", err)
 	}
@@ -206,10 +208,11 @@ func TestPubMed_InvokableRunEmptyQuery(t *testing.T) {
 }
 
 func TestPubMed_InfoOnlyExposesQuery(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	tool := NewPubMedTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -258,6 +261,7 @@ func TestPubMed_BuildByNameAcceptsNodeParams(t *testing.T) {
 }
 
 func TestPubMed_ComponentReferencesAndOutputs(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	pubmed := NewPubMedTool()
@@ -268,7 +272,7 @@ func TestPubMed_ComponentReferencesAndOutputs(t *testing.T) {
 	envelope := map[string]any{"results": []any{map[string]any{
 		"title": "Paper", "url": "https://pubmed.ncbi.nlm.nih.gov/1", "content": "Title: Paper\nAbstract: Evidence.",
 	}}}
-	chunks, docAggs := pubmed.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := pubmed.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["document_name"] != "Paper" {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

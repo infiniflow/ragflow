@@ -58,8 +58,35 @@ func TestRegistryRefsMatchList(t *testing.T) {
 	if len(refs) != 2 {
 		t.Fatalf("len(Refs()) = %d, want 2", len(refs))
 	}
-	if refs[0] != "book" || refs[1] != "general" {
-		t.Fatalf("refs = %#v, want sorted builtin refs", refs)
+	if refs[0] != "general" || refs[1] != "book" {
+		t.Fatalf("refs = %#v, want Python-compatible builtin order", refs)
+	}
+}
+
+func TestRegistryCanonicalOrderAppendsUnknownTemplates(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	for _, id := range []string{"email", "book", "general", "qa", "manual", "table", "paper", "laws", "presentation", "picture", "one", "audio", "custom"} {
+		mustWrite("ingestion_pipeline_"+id+".json", `{"title":{"en":"`+id+`"},"dsl":{"components":{}}}`)
+	}
+
+	r, err := NewRegistryFromDir(dir)
+	if err != nil {
+		t.Fatalf("NewRegistryFromDir: %v", err)
+	}
+	want := []string{"general", "qa", "manual", "table", "paper", "book", "laws", "presentation", "picture", "one", "audio", "email", "custom"}
+	if got := r.Refs(); len(got) != len(want) {
+		t.Fatalf("Refs() length = %d, want %d (%#v)", len(got), len(want), want)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("Refs()[%d] = %q, want %q; full order %#v", i, got[i], want[i], got)
+			}
+		}
 	}
 }
 
@@ -88,7 +115,6 @@ func TestRegistryVsHardcodedList(t *testing.T) {
 		"picture":      true,
 		"presentation": true,
 		"qa":           true,
-		"resume":       true,
 		"table":        true,
 	}
 	for h := range hardcoded {

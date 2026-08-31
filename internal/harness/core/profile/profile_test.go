@@ -110,7 +110,7 @@ func TestNewAgent_Basic(t *testing.T) {
 		},
 	})
 
-	agent, err := NewAgent(context.Background(), &AgentConfig{
+	agent, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec: "test:m1",
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func TestNewAgent_Basic(t *testing.T) {
 
 	// Run and check output.
 	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
-	iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	iter := runner.Run(t.Context(), []*schema.Message{schema.UserMessage("hi")})
 	var final string
 	for {
 		ev, ok := iter.Next()
@@ -160,7 +160,7 @@ func TestNewAgent_WithHarness(t *testing.T) {
 		MaxIterations:    15,
 	})
 
-	agent, err := NewAgent(context.Background(), &AgentConfig{
+	agent, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec:          "test:m1",
 		HarnessProfileName: "research",
 	})
@@ -169,7 +169,7 @@ func TestNewAgent_WithHarness(t *testing.T) {
 	}
 	// Verify the system prompt was set correctly by running a query.
 	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
-	iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("test")})
+	iter := runner.Run(t.Context(), []*schema.Message{schema.UserMessage("test")})
 	for {
 		ev, ok := iter.Next()
 		if !ok {
@@ -198,7 +198,7 @@ func TestNewAgent_UserOverrides(t *testing.T) {
 		MaxIterations:    5,
 	})
 
-	agent, err := NewAgent(context.Background(), &AgentConfig{
+	agent, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec:          "test:m1",
 		HarnessProfileName: "chat",
 		Instruction:        StrPtr("User instruction."),
@@ -209,7 +209,7 @@ func TestNewAgent_UserOverrides(t *testing.T) {
 	}
 	// Just verify no error - user instruction takes precedence.
 	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
-	iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("t")})
+	iter := runner.Run(t.Context(), []*schema.Message{schema.UserMessage("t")})
 	for {
 		ev, ok := iter.Next()
 		if !ok {
@@ -245,7 +245,7 @@ func TestNewAgent_WithSubAgents(t *testing.T) {
 		},
 	}
 
-	agent, err := NewAgent(context.Background(), &AgentConfig{
+	agent, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec:          "test:m1",
 		HarnessProfileName: "agentic",
 		SubAgentSpecs:      []subagent.SubAgentSpec{subSpec},
@@ -263,7 +263,7 @@ func TestNewAgent_WithSubAgents(t *testing.T) {
 func TestNewAgent_ProviderNotFound(t *testing.T) {
 	defer resetRegistries()
 
-	_, err := NewAgent(context.Background(), &AgentConfig{
+	_, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec: "nonexistent:model",
 	})
 	if err == nil {
@@ -276,7 +276,7 @@ func TestNewAgent_ProviderNotFound(t *testing.T) {
 func TestNewAgent_InvalidSpec(t *testing.T) {
 	defer resetRegistries()
 
-	_, err := NewAgent(context.Background(), &AgentConfig{
+	_, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec: "bad",
 	})
 	if err == nil {
@@ -369,7 +369,7 @@ func TestDualTrack(t *testing.T) {
 		},
 	})
 
-	agent, err := NewAgent(context.Background(), &AgentConfig{
+	agent, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec:          "dual:test-model",
 		HarnessProfileName: "coding",
 		Tools:              []core.Tool{&simpleTool{name: "t1"}},
@@ -402,7 +402,7 @@ func TestDescriptionOverride(t *testing.T) {
 	})
 
 	searchTool := &simpleTool{name: "search", desc: "Original description"}
-	_, err := NewAgent(context.Background(), &AgentConfig{
+	_, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec:          "test:m1",
 		HarnessProfileName: "overrider",
 		Tools:              []core.Tool{searchTool},
@@ -431,7 +431,7 @@ func TestProviderOpts(t *testing.T) {
 		},
 	})
 
-	_, err := NewAgent(context.Background(), &AgentConfig{
+	_, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec: "opts-test:m1",
 		ProviderOpts: map[string]any{
 			"temperature": 0.2,
@@ -468,7 +468,7 @@ func TestInitModelError(t *testing.T) {
 		},
 	})
 
-	_, err := NewAgent(context.Background(), &AgentConfig{
+	_, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec: "faulty:x",
 	})
 	if err == nil {
@@ -496,7 +496,7 @@ func TestExcludedToolNames(t *testing.T) {
 		ExcludedToolNames: []string{"dangerous_tool"},
 	})
 
-	agent, err := NewAgent(context.Background(), &AgentConfig{
+	agent, err := NewAgent(t.Context(), &AgentConfig{
 		ModelSpec:          "test:m1",
 		HarnessProfileName: "limited",
 		Tools: []core.Tool{

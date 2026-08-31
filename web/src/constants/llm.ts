@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 export enum ModelStatus {
   Active = 'active',
   Inactive = 'inactive',
@@ -28,6 +44,7 @@ export enum LLMFactory {
   NVIDIA = 'NVIDIA',
   LMStudio = 'LM-Studio',
   OpenAiAPICompatible = 'OpenAI-API-Compatible',
+  MWS = 'MWS',
   Cohere = 'Cohere',
   LeptonAI = 'LeptonAI',
   TogetherAI = 'TogetherAI',
@@ -68,7 +85,7 @@ export enum LLMFactory {
   MinerU = 'MinerU',
   MinerUNet = 'MinerU.Net',
   PaddleOCR = 'PaddleOCR',
-  PaddleOCRNet = 'PaddleOCR.Net',
+  PaddleOCRLocal = 'PaddleOCR.local',
   OpenDataLoader = 'OpenDataLoader',
   SoMark = 'SoMark',
   N1n = 'n1n',
@@ -89,6 +106,7 @@ export enum LLMFactory {
   FunASR = 'FunASR',
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
+  Synthorai = 'Synthorai',
 }
 
 // Please lowercase the file name
@@ -157,7 +175,7 @@ export const IconMap = {
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.MinerUNet]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
-  [LLMFactory.PaddleOCRNet]: 'paddleocr',
+  [LLMFactory.PaddleOCRLocal]: 'paddleocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
@@ -177,6 +195,8 @@ export const IconMap = {
   [LLMFactory.FunASR]: 'funasr',
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
+  [LLMFactory.Synthorai]: 'synthorai',
+  [LLMFactory.MWS]: 'mws',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -201,12 +221,16 @@ export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
+  [LLMFactory.Synthorai]: 'https://synthorai.io',
+  [LLMFactory.MWS]:
+    'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
-  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
-  [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
+  [LLMFactory.TongYiQianWen]:
+    'https://bailian.console.aliyun.com/?tab=model#/api-key',
+  [LLMFactory.ZhipuAI]: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
@@ -282,7 +306,7 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
-  [LLMFactory.PaddleOCRNet]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCRLocal]: 'https://www.paddleocr.ai/latest/',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
 };

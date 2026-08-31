@@ -38,7 +38,7 @@ export function CreateDirectoryDialog({
     <Modal
       open={open}
       onOpenChange={handleOpenChange}
-      title={t('knowledgeDetails.createDirectoryFolder')}
+      title={t('knowledgeCompilation.createDirectoryFolder')}
       onOk={handleOk}
       onCancel={onCancel}
       confirmLoading={loading}

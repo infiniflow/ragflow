@@ -26,17 +26,16 @@ from quart import request
 
 from api.apps import login_required
 from api.apps.services import structure_graph_common as sgc
-from api.db.joint_services.tenant_model_service import (
-    split_model_name,
-    resolve_model_config,
-    get_tenant_default_model_by_type,
-)
 from api.db.db_models import Document, Task
+from api.db.joint_services.tenant_model_service import (
+    get_tenant_default_model_by_type,
+    resolve_model_config,
+)
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -49,8 +48,8 @@ from api.utils.api_utils import (
     get_result,
     server_error_response,
 )
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
@@ -58,14 +57,13 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, meta_filter
+from common.metadata_utils import convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
 from rag.app.tag import label_question
 from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
-
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
@@ -125,13 +123,7 @@ def _map_doc(doc):
         "token_num": "token_count",
         "parser_id": "chunk_method",
     }
-    run_mapping = {
-        "0": "UNSTART",
-        "1": "RUNNING",
-        "2": "CANCEL",
-        "3": "DONE",
-        "4": "FAIL",
-    }
+    run_mapping = {status.value: status.name for status in TaskStatus}
     renamed_doc = {}
     for key, value in doc.to_dict().items():
         renamed_doc[key_mapping.get(key, key)] = value
@@ -342,9 +334,9 @@ async def retrieval_test(tenant_id):
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
-    if len(embd_nms) != 1:
-        return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
+    embd_err = validate_dataset_embedding_models(kbs)
+    if embd_err:
+        return get_result(message=embd_err, code=RetCode.DATA_ERROR)
     if "question" not in req:
         return get_error_data_result("`question` is required.")
     page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
@@ -366,8 +358,12 @@ async def retrieval_test(tenant_id):
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
-            metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-            doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+            doc_ids = filter_doc_ids_by_metadata(
+                kb_ids,
+                convert_conditions(metadata_condition),
+                metadata_condition.get("logic", "and"),
+                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            )
             if not doc_ids and metadata_condition.get("conditions"):
                 return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
             if metadata_condition and not doc_ids:
@@ -376,9 +372,32 @@ async def retrieval_test(tenant_id):
             doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    top = int(req.get("top_k", 1024))
-    if top <= 0:
-        return get_error_data_result("`top_k` must be greater than 0")
+    if "top_k" in req:
+        logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
+    knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
+    try:
+        knn_top_k = int(req.get(knn_top_k_parameter, 1024))
+    except (TypeError, ValueError):
+        return get_error_data_result(f"`{knn_top_k_parameter}` should be an integer")
+    if knn_top_k <= 0:
+        return get_error_data_result(f"`{knn_top_k_parameter}` must be greater than 0")
+    try:
+        knn_num_candidates = int(req.get("knn_num_candidates", max(2048, knn_top_k)))
+    except (TypeError, ValueError):
+        return get_error_data_result("`knn_num_candidates` should be an integer")
+    if knn_num_candidates < knn_top_k:
+        return get_error_data_result("`knn_num_candidates` must be greater than or equal to `knn_top_k`")
+    try:
+        rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
+    except (TypeError, ValueError):
+        return get_error_data_result("`rerank_candidates_count` should be an integer")
+    if rerank_candidates_count <= 0:
+        return get_error_data_result("`rerank_candidates_count` must be greater than 0")
+    if rerank_candidates_count < page * size:
+        return get_error_data_result(f"`rerank_candidates_count` must be at least `page` multiplied by `page_size` ({page * size})")
+    include_knowledge_compilation = req.get("include_knowledge_compilation", True)
+    if not isinstance(include_knowledge_compilation, bool):
+        return get_error_data_result("`include_knowledge_compilation` should be a boolean")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False
@@ -417,11 +436,14 @@ async def retrieval_test(tenant_id):
             size,
             similarity_threshold,
             vector_similarity_weight,
-            top,
-            doc_ids,
+            doc_ids=doc_ids,
+            knn_top_k=knn_top_k,
+            knn_num_candidates=knn_num_candidates,
             rerank_mdl=rerank_mdl,
             highlight=highlight,
             rank_feature=label_question(question, kbs),
+            must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
+            rerank_candidates_count=rerank_candidates_count,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -478,6 +500,10 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
     question = req.get("keywords", "")
     chunk_ids = _get_query_id_list(req, "chunk_ids")
+    try:
+        validate_rest_api_ids(chunk_ids, "chunk_ids")
+    except ValueError as e:
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     query = {
         "doc_ids": [document_id],
         "page": page,
@@ -601,9 +627,9 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     migration doesn't drop their data on the floor. Empty templates
     (zero entities AND zero relations) are filtered out.
     """
-    from rag.nlp import search
     from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
     from api.db.services.compilation_template_service import CompilationTemplateService
+    from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -737,7 +763,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             scope = {"doc_id": [document_id], "compile_kwd": [compile_kwd_val], "must_not": {"exists": "compilation_template_ids"}}
         return {"template_id": bucket_id, "template_name": bucket_name, "kind": bucket_kind}, scope
 
-    # ── keywords mode: global KNN → the top-1 entity's focused subgraph ──
+    # ── keywords mode: name matching/KNN → matched entities' subgraph ──
     if keywords:
         try:
             embd_id = DocumentService.get_embd_id(document_id)
@@ -851,7 +877,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     for tid in configured_ids:
         if tid in grouped and tid not in ordered_ids:
             ordered_ids.append(tid)
-    for bucket_id in grouped.keys():
+    for bucket_id in grouped:
         if bucket_id not in ordered_ids:
             ordered_ids.append(bucket_id)
 

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { CardContainer } from '@/components/card-container';
 import {
   ConfirmDeleteDialog,
@@ -8,6 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { pick } from 'lodash';
 import {
@@ -29,8 +46,15 @@ import { useEditMcp } from './use-edit-mcp';
 import { useImportMcp } from './use-import-mcp';
 
 export default function McpServer() {
-  const { data, setPagination, searchString, handleInputChange, pagination } =
-    useListMcpServer();
+  const {
+    data,
+    setPagination,
+    searchString,
+    handleInputChange,
+    pagination,
+    loading: listLoading,
+  } = useListMcpServer();
+  useGoToPreviousPageOnEmpty(data.mcp_servers?.length, listLoading);
   const { editVisible, showEditModal, hideEditModal, handleOk, id, loading } =
     useEditMcp();
   const {
@@ -39,6 +63,7 @@ export default function McpServer() {
     handleDelete,
     handleExportMcp,
     handleSelectAll,
+    resetSelection,
   } = useBulkOperateMCP(data.mcp_servers);
   const { t } = useTranslation();
   const {
@@ -60,7 +85,8 @@ export default function McpServer() {
 
   const switchSelectionMode = useCallback(() => {
     setSelectionMode((prev) => !prev);
-  }, []);
+    resetSelection();
+  }, [resetSelection]);
 
   return (
     <ProfileSettingWrapperCard

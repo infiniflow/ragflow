@@ -19,6 +19,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import queue
 import re
@@ -28,7 +29,6 @@ from abc import ABC
 from datetime import datetime
 from time import mktime
 from typing import Annotated, Literal
-import logging
 from urllib.parse import urlencode
 from wsgiref.handlers import format_date_time
 
@@ -41,6 +41,9 @@ from pydantic import BaseModel, conint
 from common.http_client import sync_request
 from common.token_utils import num_tokens_from_string
 from rag.utils.url_utils import ensure_v1
+from rag.llm.key_utils import _resolve_provider_credentials
+
+logger = logging.getLogger(__name__)
 
 
 class ServeReferenceAudio(BaseModel):
@@ -144,7 +147,10 @@ class FishAudioTTS(Base):
     def __init__(self, key, model_name, base_url="https://api.fish.audio/v1/tts"):
         if not base_url:
             base_url = "https://api.fish.audio/v1/tts"
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         self.headers = {
             "api-key": key.get("fish_audio_ak"),
             "content-type": "application/msgpack",
@@ -253,7 +259,10 @@ class SparkTTS(Base):
     STATUS_LAST_FRAME = 2
 
     def __init__(self, key, model_name, base_url=""):
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         self.APPID = key.get("spark_app_id", "xxxxxxx")
         self.APISecret = key.get("spark_api_secret", "xxxxxxx")
         self.APIKey = key.get("spark_api_key", "xxxxxx")
@@ -371,6 +380,8 @@ class OllamaTTS(HTTPBasedTTS):
 
 
 class GPUStackTTS(HTTPBasedTTS):
+    """GPUStack text-to-speech adapter."""
+
     _FACTORY_NAME = "GPUStack"
 
     def __init__(self, key, model_name, **kwargs):
@@ -378,6 +389,8 @@ class GPUStackTTS(HTTPBasedTTS):
         super().__init__(key, model_name, base_url)
         # Add accept header
         self.headers["accept"] = "application/json"
+        self.default_voice = os.environ.get("GPUSTACK_TTS_VOICE", "aiden")
+        logger.info("GPUStack TTS initialized for model %s", self.model_name)
 
     def _process_response(self, response):
         # Use chunk_size=1024 for processing response
@@ -386,10 +399,33 @@ class GPUStackTTS(HTTPBasedTTS):
                 yield chunk
 
     def tts(self, text, voice="Chinese Female", stream=True):
+        """Generate speech through GPUStack without logging input text."""
         text = self.normalize_text(text)
-        payload = self._build_payload(text, voice)
-        response = self._send_request("/v1/audio/speech", payload, stream=stream)
-        return self._process_response(response)
+        voice_value = (voice or self.default_voice).strip()
+        voice_aliases = {
+            "chinese female": self.default_voice,
+            "chinese_female": self.default_voice,
+            "alloy": self.default_voice,
+        }
+        selected_voice = voice_aliases.get(voice_value.lower(), voice_value)
+        logger.info("GPUStack TTS request started for model %s with voice %s", self.model_name, selected_voice)
+        payload = self._build_payload(text, selected_voice)
+        try:
+            response = self._send_request("/audio/speech", payload, stream=stream)
+            logger.info("GPUStack TTS response received for model %s with status %s", self.model_name, response.status_code)
+        except Exception:
+            logger.warning("GPUStack TTS request failed for model %s before audio streaming", self.model_name)
+            raise
+        return self._process_response_with_logging(response)
+
+    def _process_response_with_logging(self, response):
+        """Stream GPUStack audio and log completion only after it is consumed."""
+        try:
+            yield from self._process_response(response)
+            logger.info("GPUStack TTS audio stream completed for model %s with status %s", self.model_name, response.status_code)
+        except Exception:
+            logger.warning("GPUStack TTS audio stream failed for model %s with status %s", self.model_name, getattr(response, "status_code", "unknown"))
+            raise
 
 
 class SILICONFLOWTTS(HTTPBasedTTS):

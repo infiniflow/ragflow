@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
 import { DataFlowSelect } from '@/components/data-pipeline-select';
 import { ParseTypeItem } from '@/components/parse-type-form-field';
@@ -15,6 +31,7 @@ import { ParseType } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback } from 'react';
+import { FieldErrors, useFormState } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
   IDocumentPipelineDialogProps,
@@ -46,6 +63,7 @@ export function DocumentPipelineDialog({
     activeTab,
     setActiveTab,
     handleOperatorValuesChange,
+    operatorValues,
     showOperatorTabs,
     buildSubmitData,
   } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
@@ -60,6 +78,22 @@ export function DocumentPipelineDialog({
     [buildSubmitData, hideModal, onOk],
   );
 
+  const onInvalid = useCallback(
+    (errors: FieldErrors) => {
+      // Surface the first failing operator tab so its field errors are visible.
+      const firstOperatorId = Object.keys(errors?.parser_config ?? {})[0];
+      if (firstOperatorId) {
+        setActiveTab(firstOperatorId);
+      }
+    },
+    [setActiveTab],
+  );
+
+  const { errors } = useFormState({
+    control: form.control,
+    name: 'parser_config',
+  });
+
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[50vw] text-text-primary">
@@ -69,7 +103,7 @@ export function DocumentPipelineDialog({
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit)}
+            onSubmit={form.handleSubmit(onSubmit, onInvalid)}
             className="space-y-6 max-h-[70vh] overflow-auto -mx-6 px-10 py-5"
             id={FormId}
           >
@@ -85,9 +119,15 @@ export function DocumentPipelineDialog({
             {showOperatorTabs && (
               <PipelineOperatorTabs
                 nodes={operatorNodes}
-                value={activeTab}
-                onValueChange={setActiveTab}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
                 onOperatorValuesChange={handleOperatorValuesChange}
+                operatorValues={operatorValues}
+                operatorFormErrors={
+                  errors.parser_config as
+                    | Record<string, FieldErrors | undefined>
+                    | undefined
+                }
               />
             )}
           </form>

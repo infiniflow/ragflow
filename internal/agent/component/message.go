@@ -21,7 +21,7 @@
 // and (optionally) emits the result as a single SSE chunk.
 //
 // Capabilities:
-//   - output_format rendering (html / markdown / plain) via render.go
+//   - output_format rendering (html / Markdown / plain) via render.go
 //   - auto_play → TTS engine dispatch via internal/agent/audio
 //   - download extraction from inputs (the {doc_id, filename,
 //     mime_type} walk from Python's _extract_downloads)

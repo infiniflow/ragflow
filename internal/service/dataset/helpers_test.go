@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -393,5 +394,59 @@ func TestNormalizeMetadataConfigFields_TrimsKey(t *testing.T) {
 	}
 	if result[0]["key"] != "my_field" {
 		t.Errorf("expected trimmed key 'my_field', got %v", result[0]["key"])
+	}
+}
+
+func TestPreserveDatasetParserConfigMetadata_FallsBackWhenIncomingNotMap(t *testing.T) {
+	existing := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled":           true,
+			"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
+			"built_in_metadata": []any{},
+		},
+	}
+	cases := map[string]interface{}{
+		"null":  nil,
+		"array": []any{},
+	}
+	for name, incomingMetadata := range cases {
+		t.Run(name, func(t *testing.T) {
+			incoming := map[string]interface{}{"metadata": incomingMetadata}
+			got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+			meta, ok := got["metadata"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected existing modular metadata preserved, got %#v", got["metadata"])
+			}
+			fields, ok := meta["metadata"].([]any)
+			if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "existing_field" {
+				t.Fatalf("expected existing_field preserved, got %#v", meta["metadata"])
+			}
+		})
+	}
+}
+
+func TestPreserveDatasetParserConfigMetadata_UsesValidIncomingMap(t *testing.T) {
+	existing := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled":           false,
+			"metadata":          []any{},
+			"built_in_metadata": []any{},
+		},
+	}
+	incoming := map[string]interface{}{
+		"metadata": map[string]any{
+			"enabled":           true,
+			"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
+			"built_in_metadata": []any{},
+		},
+	}
+	got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+	meta, ok := got["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected modular metadata map, got %#v", got["metadata"])
+	}
+	fields, ok := meta["metadata"].([]any)
+	if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "incoming_field" {
+		t.Fatalf("expected incoming_field to be used, got %#v", meta["metadata"])
 	}
 }

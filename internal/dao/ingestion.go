@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -195,6 +196,33 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 	return tasks[0], nil
 }
 
+// ListStaleByStatus returns tasks in the given statuses whose timestamp column
+// is older than the threshold, for ingestor startup reconciliation. timeColumn
+// selects which staleness clock applies: "update_time" for RUNNING orphans
+// (frozen at the moment the previous process claimed them) or "create_time"
+// for CREATED orphans (never picked up). Results are ordered oldest first and
+// capped at limit when limit > 0.
+func (dao *IngestionTaskDAO) ListStaleByStatus(ctx context.Context, db *gorm.DB, statuses []string, timeColumn string, olderThan time.Time, limit int) ([]*entity.IngestionTask, error) {
+	switch timeColumn {
+	case "create_time", "update_time":
+	default:
+		return nil, fmt.Errorf("unsupported staleness column %q", timeColumn)
+	}
+	if len(statuses) == 0 {
+		return []*entity.IngestionTask{}, nil
+	}
+	query := db.WithContext(ctx).
+		Where("status IN ?", statuses).
+		Where(timeColumn+" < ?", olderThan.UnixMilli()).
+		Order(timeColumn + " ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	var tasks []*entity.IngestionTask
+	err := query.Find(&tasks).Error
+	return tasks, err
+}
+
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a
 // terminal state (COMPLETED, STOPPED, FAILED) or still queued (CREATED).
 // RUNNING and STOPPING tasks are NOT deleted because an in-flight worker
@@ -308,5 +336,25 @@ func (dao *IngestionTaskLogDAO) GetLogByLogID(ctx context.Context, db *gorm.DB, 
 
 func (dao *IngestionTaskLogDAO) DeleteByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
 	result := db.WithContext(ctx).Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteComponentLogsByTaskID removes component lifecycle rows from a new run
+// while preserving checkpoint rows such as run_count for task history.
+func (dao *IngestionTaskLogDAO) DeleteComponentLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
+	var logs []*entity.IngestionTaskLog
+	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Find(&logs).Error; err != nil {
+		return 0, err
+	}
+	ids := make([]int, 0, len(logs))
+	for _, log := range logs {
+		if log != nil && len(log.Checkpoint) == 0 {
+			ids = append(ids, log.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := db.WithContext(ctx).Unscoped().Where("id IN ?", ids).Delete(&entity.IngestionTaskLog{})
 	return result.RowsAffected, result.Error
 }

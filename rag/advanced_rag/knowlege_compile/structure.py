@@ -720,6 +720,7 @@ def _struct_to_doc_storage_doc(
     payload: dict,
     compile_kwd: str,
     doc_id: str,
+    doc_name: str,
     chunk_ids: list[str],
     vec,
     kind: str,
@@ -772,6 +773,7 @@ def _struct_to_doc_storage_doc(
         "knowledge_graph_kwd": kind,
         "scope_kwd": scope,
         "doc_id": doc_id_str,
+        "docnm_kwd": doc_name,
         "source_chunk_ids": list(chunk_ids or []),
         "content_ltks": content_ltks,
         "content_sm_ltks": content_sm_ltks,
@@ -827,6 +829,7 @@ async def _struct_process_batch(
     chat_mdl,
     embd_mdl,
     doc_id: str,
+    doc_name: str,
     language: str,
     callback,
     semaphore,
@@ -895,6 +898,7 @@ async def _struct_process_batch(
                 payload,
                 autotype,
                 doc_id,
+                doc_name,
                 _struct_payload_chunk_ids(payload, payload_chunk_ids),
                 vec,
                 kind,
@@ -923,6 +927,7 @@ async def compile_structure_from_text(
     chat_mdl,
     embd_mdl,
     doc_id: str,
+    doc_name: str = "",
     language: str = "en",
     callback=None,
     max_workers: int = 10,
@@ -1003,6 +1008,7 @@ async def compile_structure_from_text(
             chat_mdl=chat_mdl,
             embd_mdl=embd_mdl,
             doc_id=doc_id,
+            doc_name=doc_name,
             language=language,
             callback=callback,
             semaphore=None,
@@ -1309,6 +1315,7 @@ def _struct_rebuild_doc_storage_doc(
         payload=payload,
         compile_kwd=base_doc.get("compile_kwd"),
         doc_id=base_doc.get("doc_id"),
+        doc_name=base_doc.get("docnm_kwd") or "",
         chunk_ids=chunk_ids,
         vec=vec,
         kind=kind,
@@ -1686,6 +1693,7 @@ async def _struct_doc_storage_dedup_batch(
         "knowledge_graph_kwd",
         "compile_kwd",
         "doc_id",
+        "docnm_kwd",
         "from_entity_kwd",
         "to_entity_kwd",
         "compilation_template_ids",
@@ -1907,6 +1915,7 @@ async def _struct_doc_storage_dedup_batch(
             "knowledge_graph_kwd",
             "compile_kwd",
             "doc_id",
+            "docnm_kwd",
             "from_entity_kwd",
             "to_entity_kwd",
             "compilation_template_ids",
@@ -2293,6 +2302,7 @@ async def cleanup_timeline_isolated_entities(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compilation_template_id: str | None = None,
 ) -> int:
     """Remove timeline entity rows that are not used by any relation.
@@ -2363,6 +2373,7 @@ async def cleanup_timeline_isolated_entities(
         tenant_id,
         kb_id,
         doc_id,
+        doc_name,
         "timeline",
         compilation_template_id,
     )
@@ -2374,6 +2385,7 @@ async def _struct_upsert_graph_json(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> None:
@@ -2388,6 +2400,7 @@ async def _struct_upsert_graph_json(
         "compile_kwd": compile_kwd,
         "knowledge_graph_kwd": "graph",
         "doc_id": doc_id,
+        "docnm_kwd": doc_name,
         "kb_id": kb_id,
         "available_int": 0,
     }
@@ -2411,6 +2424,7 @@ async def _struct_upsert_tree_graph_rows(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     embedding_model,
     compilation_template_id: str | None = None,
 ) -> None:
@@ -2441,6 +2455,7 @@ async def _struct_upsert_tree_graph_rows(
                     payload=payload,
                     compile_kwd="tree",
                     doc_id=doc_id,
+                    doc_name=doc_name,
                     chunk_ids=source_chunk_ids,
                     vec=vector,
                     kind=kind,
@@ -2467,6 +2482,7 @@ async def rebuild_structure_graph_json(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> dict:
@@ -2484,6 +2500,7 @@ async def rebuild_structure_graph_json(
         tenant_id,
         kb_id,
         doc_id,
+        doc_name,
         compile_kwd,
         compilation_template_id,
     )
@@ -2999,6 +3016,7 @@ async def merge_compiled_structures(
     doc_storage_waiter: Callable[[], Awaitable[None]] | None = None,
     doc_storage_releaser: Callable[[], Awaitable[None]] | None = None,
     merge_scope: str = MERGE_SCOPE_DOC,
+    doc_name: str = "",
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
     inserting them into ES.
@@ -3144,6 +3162,7 @@ async def merge_compiled_structures(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 compile_kwd,
                 compilation_template_id=template_id or None,
             )

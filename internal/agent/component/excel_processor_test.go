@@ -32,7 +32,7 @@ import (
 func excelCtx(t *testing.T) context.Context {
 	t.Helper()
 	state := canvas.NewCanvasState("run-xlsx", "task-xlsx")
-	return canvas.WithState(context.Background(), state)
+	return canvas.WithState(t.Context(), state)
 }
 
 // TestExcelProcessor_WriteThenRead: write a 2x2 grid, then read it

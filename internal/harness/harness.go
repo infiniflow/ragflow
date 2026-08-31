@@ -51,7 +51,7 @@
 //	})
 //
 // For more examples and documentation, visit:
-// https://ragflow/internal/harness
+// https://github.com/infiniflow/ragflow/tree/main/internal/harness
 package harness
 
 import (

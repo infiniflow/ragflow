@@ -125,7 +125,6 @@ class _FakeClient:
 def _build_provider(sandbox: _FakeSandbox, monkeypatch) -> tuple[TenkiProvider, _FakeClient]:
     provider = TenkiProvider()
     provider.api_key = "tk_test"
-    provider.project_id = "proj-1"
     provider.timeout = 30
     provider.max_output_bytes = 1024 * 1024
     provider.max_artifacts = 20
@@ -227,7 +226,7 @@ def test_tenki_provider_create_passes_project_and_outbound(monkeypatch):
 
     provider.create_instance("python")
 
-    assert client.create_kwargs["project_id"] == "proj-1"
+    assert "project_id" not in client.create_kwargs
     assert client.create_kwargs["allow_outbound"] is True
     assert client.create_kwargs["image"] == "my-image"
     assert client.create_kwargs["cpu_cores"] == 4
@@ -237,12 +236,12 @@ def test_tenki_provider_config_schema_and_validation():
     schema = TenkiProvider.get_config_schema()
     assert schema["api_key"]["required"] is True
     assert schema["api_key"]["secret"] is True
-    assert schema["project_id"]["required"] is True
+    assert "project_id" not in schema
 
     provider = TenkiProvider()
-    ok, _ = provider.validate_config({"api_key": "tk", "project_id": "p", "timeout": 30, "max_lifetime": 3600, "max_output_bytes": 1024, "max_artifacts": 5, "max_artifact_bytes": 1024})
+    ok, _ = provider.validate_config({"api_key": "tk", "timeout": 30, "max_lifetime": 3600, "max_output_bytes": 1024, "max_artifacts": 5, "max_artifact_bytes": 1024})
     assert ok is True
-    bad, msg = provider.validate_config({"api_key": "", "project_id": "p"})
+    bad, msg = provider.validate_config({"api_key": ""})
     assert bad is False
     assert "API key" in msg
 
@@ -262,7 +261,7 @@ def test_tenki_provider_initialize_maps_auth_error(monkeypatch):
     monkeypatch.setattr(provider, "_create_client", lambda: _UnauthorizedClient())
 
     with pytest.raises(SandboxProviderConfigError, match="authentication failed"):
-        provider.initialize({"api_key": "tk_bad", "project_id": "proj-1"})
+        provider.initialize({"api_key": "tk_bad"})
 
 
 def test_tenki_provider_instances_are_independent(monkeypatch):
@@ -277,7 +276,6 @@ def test_tenki_provider_instances_are_independent(monkeypatch):
 
     provider = TenkiProvider()
     provider.api_key = "tk_test"
-    provider.project_id = "proj-1"
     provider.timeout = 30
     provider._initialized = True
     provider._client = _MultiClient(None)

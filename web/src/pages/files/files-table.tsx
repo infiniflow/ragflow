@@ -52,7 +52,7 @@ import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
-import { isGoDatasetBackend } from '../../utils/api-proxy-scheme';
+import { useIsGoBackend } from '../../utils/backend-variant';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -102,13 +102,13 @@ export function FilesTable({
     fileRenameLoading,
   } = useRenameCurrentFile();
 
-  // Check if skills feature is enabled (only in hybrid or go mode)
-  const isSkillsEnabled = useMemo(() => isGoDatasetBackend(), []);
+  // Skills are only served by the Go backend
+  const isSkillsEnabled = useIsGoBackend();
 
   // Sort files with skills folder first, then by time
-  // Filter out skills folder if not in hybrid/go mode
-  const { sortedFiles, hiddenCount } = useMemo(() => {
-    if (!files) return { sortedFiles: [] as IFile[], hiddenCount: 0 };
+  // Filter out the skills folder on the Python backend
+  const sortedFiles = useMemo(() => {
+    if (!files) return [];
 
     // Filter out skills folder if feature is disabled
     const filteredFiles = isSkillsEnabled
@@ -119,7 +119,7 @@ export function FilesTable({
           return !isSkills;
         });
 
-    const sorted = [...filteredFiles].sort((a, b) => {
+    return [...filteredFiles].sort((a, b) => {
       const aIsSkills =
         isFolderType(a.type) && a.name.toLowerCase() === 'skills';
       const bIsSkills =
@@ -132,14 +132,7 @@ export function FilesTable({
       // Then sort by create_time desc (newest first)
       return (b.create_time || 0) - (a.create_time || 0);
     });
-
-    return { sortedFiles: sorted, hiddenCount: files.length - filteredFiles.length };
   }, [files, isSkillsEnabled]);
-
-  // Keep the displayed total consistent with the rows actually shown:
-  // client-side filtered rows (e.g. the skills folder when the feature is
-  // disabled) are still included in the server-side total.
-  const displayTotal = Math.max((total ?? 0) - hiddenCount, 0);
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -287,6 +280,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
+            setRowSelection={setRowSelection}
           />
         );
       },
@@ -329,7 +323,7 @@ export function FilesTable({
       rowSelection,
       pagination: currentPagination,
     },
-    rowCount: displayTotal,
+    rowCount: total ?? 0,
     debugTable: true,
   });
 
@@ -393,7 +387,7 @@ export function FilesTable({
       <footer className="flex items-center justify-end pb-5 mt-4">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
-          total={displayTotal}
+          total={total}
           onChange={(page, pageSize) => {
             setPagination({ page, pageSize });
           }}
@@ -414,6 +408,7 @@ export function FilesTable({
           onOk={onFileRenameOk}
           initialName={initialFileName}
           loading={fileRenameLoading}
+          forbidSlash
         ></RenameDialog>
       )}
     </>

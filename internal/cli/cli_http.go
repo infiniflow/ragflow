@@ -484,6 +484,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIStopIngestionCommand(cmd)
 	case "api_list_ingestion_tasks":
 		return c.APIListIngestionTasks(cmd)
+	case "api_list_sync_logs":
+		return c.APIListSyncLogsCommand(cmd)
 	case "api_remove_task":
 		return c.APIRemoveTaskCommand(cmd)
 	case "user_parse_local_file_command":

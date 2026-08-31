@@ -26,7 +26,7 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "PresentationChunker:HappyHillsGlow"
+                    "PageChunker:HappyHillsGlow"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -96,12 +96,12 @@
                     "Extractor:AutoExtractDefault"
                 ]
             },
-            "PresentationChunker:HappyHillsGlow": {
+            "PageChunker:HappyHillsGlow": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
-                    "component_name": "PresentationChunker",
+                    "component_name": "PageChunker",
                     "params": {
                         "outputs": {
                             "chunks": {
@@ -117,7 +117,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "PresentationChunker:HappyHillsGlow"
+                    "PageChunker:HappyHillsGlow"
                 ],
                 "downstream": [
                     "Tokenizer:TallTreesDance"
@@ -125,20 +125,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0,
-                        "tag_file_id": "",
-                        "enable_metadata": 0,
-                        "metadata": []
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -156,15 +161,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-PresentationChunker:HappyHillsGlowend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-PageChunker:HappyHillsGlowend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "PresentationChunker:HappyHillsGlow",
+                    "target": "PageChunker:HappyHillsGlow",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__PresentationChunker:HappyHillsGlowstart-Extractor:AutoExtractDefaultend",
-                    "source": "PresentationChunker:HappyHillsGlow",
+                    "id": "xy-edge__PageChunker:HappyHillsGlowstart-Extractor:AutoExtractDefaultend",
+                    "source": "PageChunker:HappyHillsGlow",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -266,10 +271,10 @@
                                 }
                             }
                         },
-                        "label": "PresentationChunker",
+                        "label": "PageChunker",
                         "name": "Presentation Chunker_0"
                     },
-                    "id": "PresentationChunker:HappyHillsGlow",
+                    "id": "PageChunker:HappyHillsGlow",
                     "measured": {
                         "height": 74,
                         "width": 200

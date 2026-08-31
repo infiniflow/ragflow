@@ -52,12 +52,12 @@ var imageExtensions = map[string]bool{
 
 // PictureParser handles image files for OCR and VLM description.
 // Mirrors the configuration from setups["picture"]:
-//   - vlm.llm_id  →  VLMModelID (IMAGE2TEXT model for describe)
+//   - VLMModelID ← setup parse_method (non-"ocr"), vlm.llm_id, or top-level llm_id (in order)
 //   - output_format
 //   - image_context_size
 //   - layout_recognize  →  ("@PaddleOCR:model_name" or empty)
 type PictureParser struct {
-	VLMModelID       string // vlm.llm_id — the IMAGE2TEXT model
+	VLMModelID       string // per-call IMAGE2TEXT model reference (parse_method / vlm.llm_id / llm_id)
 	OutputFormat     string
 	ImageContextSize int    // default 0
 	LayoutRecognize  string // layout_recognize (e.g. "@PaddleOCR")
@@ -70,14 +70,22 @@ func NewPictureParser() *PictureParser {
 }
 
 // ConfigureFromSetup reads picture-specific configuration from the
-// parser setup map. Extracts vlm.llm_id, output_format,
+// parser setup map. Extracts the per-call IMAGE2TEXT model reference
+// (parse_method non-"ocr" > vlm.llm_id > llm_id), output_format,
 // image_context_size, layout_recognize, and video_prompt.
 func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if vlm, ok := setup["vlm"].(map[string]any); ok {
+	if pm, ok := setup["parse_method"].(string); ok && pm != "" && !strings.EqualFold(pm, "ocr") {
+		p.VLMModelID = pm
+	} else if vlm, ok := setup["vlm"].(map[string]any); ok {
 		if llmID, ok := vlm["llm_id"].(string); ok && llmID != "" {
+			p.VLMModelID = llmID
+		}
+	}
+	if p.VLMModelID == "" {
+		if llmID, ok := setup["llm_id"].(string); ok && llmID != "" {
 			p.VLMModelID = llmID
 		}
 	}
@@ -121,9 +129,12 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 
 	// OutputFormat, VLMModelID, ImageContextSize, and LayoutRecognize
 	// are consumed by maybeDispatchImage at the component layer.
+	// Image family only allows json (schema/parser.go, Python parser.py),
+	// so default empty to json. Strict: explicit text is kept as-is
+	// and will be rejected by the dispatch whitelist.
 	outFmt := p.OutputFormat
 	if outFmt == "" {
-		outFmt = "text"
+		outFmt = "json"
 	}
 
 	return ParseResult{

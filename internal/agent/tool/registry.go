@@ -55,6 +55,7 @@ var registry = map[string]Factory{
 	"pubmed":                     buildPubMedTool,
 	"qweather":                   noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
 	"querit":                     buildQueritTool,
+	"querit_contents":            buildQueritContentsTool,
 	"querit_search":              buildQueritTool,
 	"retrieval":                  buildRetrievalTool,
 	"search_my_dataset":          buildRetrievalTool,
@@ -78,6 +79,7 @@ var canvasToolNames = map[string]string{
 	"codeexec":       "code_exec",
 	"googlescholar":  "google_scholar",
 	"keenablesearch": "keenable",
+	"queritcontents": "querit_contents",
 	"queritsearch":   "querit_search",
 	"tavilyextract":  "tavily_extract",
 	"tavilysearch":   "tavily",
@@ -393,7 +395,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := retrievalArgs{}
 	for key := range params {
 		switch key {
-		case "dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold",
+		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
 			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
@@ -423,6 +425,13 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	}
 	if v, ok := intParam(params, "top_n"); ok {
 		defaults.TopN = v
+	}
+	if raw, exists := params["rerank_candidates_count"]; exists {
+		value, ok := strictInt(raw)
+		if !ok || value <= 0 {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires positive integer node-level param rerank_candidates_count")
+		}
+		defaults.RerankCandidatesCount = value
 	}
 	if raw, exists := params["top_k"]; exists {
 		value, ok := strictInt(raw)
@@ -655,6 +664,42 @@ func buildQueritTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q has invalid node-level param time_range", "querit_search")
 	}
 	return newQueritTool(nil, nil, defaults, nil), nil
+}
+
+func buildQueritContentsTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := queritContentsParams{}
+	if value, exists := params["api_key"]; exists {
+		apiKey, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", queritContentsToolName)
+		}
+		defaults.APIKey = apiKey
+	}
+	if value, exists := params["urls"]; exists {
+		defaults.URLs = value
+	}
+	if value, exists := params["format"]; exists {
+		format, valid := value.(string)
+		if !valid || (format != "text" && format != "markdown" && format != "html") {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported format %q", queritContentsToolName, format)
+		}
+		defaults.Format = format
+	}
+	if value, exists := params["crawl_timeout"]; exists {
+		crawlTimeout, valid := strictInt(value)
+		if !valid || crawlTimeout < 1 || crawlTimeout > 60 {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param crawl_timeout within [1, 60]", queritContentsToolName)
+		}
+		defaults.CrawlTimeout = crawlTimeout
+	}
+	if value, exists := params["extras_meta"]; exists {
+		extrasMeta, valid := value.(bool)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param extras_meta", queritContentsToolName)
+		}
+		defaults.ExtrasMeta = extrasMeta
+	}
+	return newQueritContentsTool(nil, nil, defaults, nil), nil
 }
 
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {

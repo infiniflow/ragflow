@@ -19,7 +19,7 @@ export function parseWikiLinkHref(
 
   // Prefer the artifact/{datasetId}/{pageType}/{slug} form.
   const artifactMatch = normalized.match(
-    /(?:^|\/)artifact\/[^/]+\/(entity|concept|topic)\/([^/\s"']+)/,
+    /(?:^|\/)artifact\/[^/]+\/(entity|concept|topic)\/([^\s"']+)/,
   );
   if (artifactMatch) {
     return {
@@ -30,7 +30,7 @@ export function parseWikiLinkHref(
 
   // Fallback to a plain {pageType}/{slug} form.
   const simpleMatch = normalized.match(
-    /(?:^|\/)(entity|concept|topic)\/([^/\s"']+)/,
+    /(?:^|\/)(entity|concept|topic)\/([^\s"']+)/,
   );
   if (simpleMatch) {
     return {

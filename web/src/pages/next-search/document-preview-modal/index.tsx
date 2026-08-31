@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import DocumentPreview from '@/components/document-preview';
 import { FileIcon } from '@/components/icon-font';
 import { Modal } from '@/components/ui/modal/modal';
@@ -41,6 +57,7 @@ const PdfDrawer = ({
   const fileType = documentName ? getFileExtensionRegex(documentName) : '';
   const isWebPage = !fileType && !!chunk.document_url;
   const url = isWebPage ? (chunk.document_url as string) : getDocumentUrl();
+  const positions = Array.isArray(chunk.positions) ? chunk.positions : [];
   return (
     <Modal
       title={
@@ -72,6 +89,7 @@ const PdfDrawer = ({
         highlights={highlights}
         setWidthAndHeight={setWidthAndHeight}
         url={url}
+        positions={positions}
       ></DocumentPreview>
     </Modal>
   );

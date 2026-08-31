@@ -73,7 +73,6 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
     _stub(monkeypatch, "quart", Response=lambda *a, **k: SimpleNamespace(headers=SimpleNamespace(add_header=lambda *aa, **kk: None)), request=SimpleNamespace())
     _stub(monkeypatch, "api.apps", AUTH_BETA="beta", login_required=lambda *_a, **_k: lambda func: func, __path__=[])
     _stub(monkeypatch, "api.apps.restful_apis", __path__=[])
-    _stub(monkeypatch, "api.apps.restful_apis._generation_params", resolve_llm_setting=lambda s: s or {"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4})
     _stub(monkeypatch, "agent.canvas", Canvas=lambda *a, **k: SimpleNamespace(get_component_input_form=lambda _n: {}, get_prologue=lambda: "", get_mode=lambda: "agent"))
     _stub(monkeypatch, "api.db.db_models", APIToken=SimpleNamespace(query=lambda **_k: [SimpleNamespace(tenant_id="attacker-tenant")]))
     _stub(monkeypatch, "api.db.services.api_service", API4ConversationService=SimpleNamespace())
@@ -83,7 +82,12 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
     _stub(monkeypatch, "api.db.services.dialog_service", DialogService=SimpleNamespace(), async_ask=lambda *_a, **_k: None, gen_mindmap=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.db.services.doc_metadata_service", DocMetadataService=SimpleNamespace())
     _stub(monkeypatch, "api.db.services.knowledgebase_service", KnowledgebaseService=SimpleNamespace())
-    _stub(monkeypatch, "api.db.services.llm_service", LLMBundle=SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=SimpleNamespace(),
+        resolve_llm_setting=lambda s: s or {"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4},
+    )
     _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.db.services.search_service", SearchService=SimpleNamespace())
     _stub(

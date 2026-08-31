@@ -383,6 +383,11 @@ func ParseSSEStreamTolerant[T any](r io.Reader, onEvent func(event T) error) (do
 
 // ParseListModel Parse model list. Empty/whitespace IDs are skipped so
 // upstream typos do not surface as blank entries in the UI.
+//
+// Entries the catalog cannot type fall back to name-based inference
+// (InferModelTypes), mirroring Python's
+// OpenAIAPICompatible._format_model_list (rag/llm/model_meta.py) so remote
+// entries never surface type-less.
 func ParseListModel(modelList ModelList) []ListModelResponse {
 	var models []ListModelResponse
 	pm := GetProviderManager()
@@ -405,12 +410,22 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
-			modelResponse.Dimensions = modelEntity.Dimensions
 		}
 
+		// The provider-list merge treats remote entries as authoritative
+		// (internal/handler/providers.go) and the instance save path
+		// persists whatever types this list carries, so a catalog miss
+		// must not leave ModelTypes empty — the UI renders type-less
+		// models with an LLM-only badge. Infer types from the model name
+		// (vision models like qwen-vl-plus keep their VLM tag even before
+		// the catalog knows them); InferModelTypes always returns at
+		// least ["chat"].
+		if len(modelResponse.ModelTypes) == 0 {
+			modelResponse.ModelTypes = InferModelTypes(modelName)
+		}
 		models = append(models, modelResponse)
 	}
-	return models
+	return FillMissingModelTypes(models)
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool
@@ -435,7 +450,7 @@ func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 2 * 60 * time.Second
+	t.ResponseHeaderTimeout = 5 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
 
 	var rt http.RoundTripper = t
@@ -517,6 +532,10 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 			reqBody["top_p"] = *cfg.TopP
 		}
 
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
+		}
+
 		if cfg.Stop != nil {
 			reqBody["stop"] = *cfg.Stop
 		}
@@ -549,11 +568,23 @@ func buildChatMessages(messages []Message) []map[string]any {
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.Name != nil {
+			apiMsg["name"] = msg.Name
+		}
 		if msg.ToolCallID != "" {
 			apiMsg["tool_call_id"] = msg.ToolCallID
 		}
 		if len(msg.ToolCalls) > 0 {
 			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		if msg.FunctionCall != nil {
+			apiMsg["function_call"] = msg.FunctionCall
+		}
+		if msg.Refusal != nil {
+			apiMsg["refusal"] = msg.Refusal
+		}
+		if msg.Audio != nil {
+			apiMsg["audio"] = msg.Audio
 		}
 		apiMessages[i] = apiMsg
 	}

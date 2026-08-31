@@ -30,7 +30,7 @@ import (
 
 // WikiQueryTool is the wiki_query agent tool (Python harness/tools/exploration.py
 // wiki_query). It hybrid-searches the compiled wiki/artifact pages of the bound
-// datasets and returns each page's rendered markdown as a chunk, narrowed by
+// datasets and returns each page's rendered Markdown as a chunk, narrowed by
 // keywords. Input keeps query + keywords so the LLM's tool schema matches the
 // other search tools.
 //

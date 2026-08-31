@@ -26,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.26.4">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -57,19 +57,19 @@
 <details open>
 <summary><b>📕 جدول المحتويات</b></summary>
 
-- 💡 [ما هو RAGFlow؟](#-what-is-ragflow)
-- 🎮 [ابدأ](#-get-started)
-- 📌 [آخر التحديثات](#-latest-updates)
-- 🌟 [الميزات الرئيسية](#-key-features)
-- 🔎 [بنية النظام](#-system-architecture)
-- 🎬 [الاستضافة الذاتية](#-self-hosting)
-- 🔧 [التكوينات](#-configurations)
-- 🔧 [إنشاء صورة Docker](#-build-a-docker-image)
-- 🔨 [إطلاق الخدمة من المصدر للتطوير](#-launch-service-from-source-for-development)
-- 📚 [التوثيق](#-documentation)
+- 💡 [ما هو RAGFlow؟](#-ما-هو-ragflow)
+- 🎮 [ابدأ](#-ابدأ)
+- 📌 [آخر التحديثات](#-آخر-التحديثات)
+- 🌟 [الميزات الرئيسية](#-الميزات-الرئيسية)
+- 🔎 [بنية النظام](#-هندسة-النظام)
+- 🎬 [الاستضافة الذاتية](#-الاستضافة-الذاتية)
+- 🔧 [التكوينات](#-التكوينات)
+- 🔧 [إنشاء صورة Docker](#-أنشئ-صورة-docker)
+- 🔨 [إطلاق الخدمة من المصدر للتطوير](#-إطلاق-الخدمة-من-المصدر-للتطوير)
+- 📚 [التوثيق](#-التوثيق)
 - 📜 [Roadmap](#-roadmap)
-- 🏄 [المجتمع](#-community)
-- 🙌 [مساهمة](#-contributing)
+- 🏄 [المجتمع](#-المجتمع)
+- 🙌 [مساهمة](#-المساهمة)
 
 </details>
 
@@ -194,12 +194,12 @@
 > جميع الصور Docker مصممة لمنصات x86. لا نعرض حاليًا صور Docker لـ ARM64.
 > إذا كنت تستخدم نظامًا أساسيًا ARM64، فاتبع [هذا الدليل](https://ragflow.io/docs/dev/build_docker_image) لإنشاء صورة Docker متوافقة مع نظامك.
 
-> يقوم الأمر أدناه بتنزيل إصدار `v0.26.4` من الصورة RAGFlow Docker. راجع الجدول التالي للحصول على أوصاف لإصدارات RAGFlow المختلفة. لتنزيل إصدار RAGFlow مختلف عن `v0.26.4`، قم بتحديث المتغير `RAGFLOW_IMAGE` وفقًا لذلك في **docker/.env** قبل استخدام `docker compose` لبدء تشغيل الخادم.
+> يقوم الأمر أدناه بتنزيل إصدار `v0.27.1` من الصورة RAGFlow Docker. راجع الجدول التالي للحصول على أوصاف لإصدارات RAGFlow المختلفة. لتنزيل إصدار RAGFlow مختلف عن `v0.27.1`، قم بتحديث المتغير `RAGFLOW_IMAGE` وفقًا لذلك في **docker/.env** قبل استخدام `docker compose` لبدء تشغيل الخادم.
 
 ```bash
    cd ragflow/docker
 
-   git checkout v0.26.4
+   git checkout v0.27.1
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
 

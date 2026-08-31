@@ -38,6 +38,10 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if req.Size != nil {
 		pageSize = *req.Size
 	}
+	rerankCandidatesCount := 64
+	if req.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *req.RerankCandidatesCount
+	}
 	useKG := false
 	if req.UseKG != nil {
 		useKG = *req.UseKG
@@ -50,14 +54,20 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if req.VectorSimilarityWeight != nil {
 		vectorSimilarityWeight = *req.VectorSimilarityWeight
 	}
-	topK := 1024
-	if req.TopK != nil {
-		topK = *req.TopK
+	knnTopK := 1024
+	if req.KNNTopK != nil {
+		knnTopK = *req.KNNTopK
+	} else if req.TopK != nil {
+		knnTopK = *req.TopK
 	}
-	if topK < 1 {
-		topK = 1
-	} else if topK > 2048 {
-		topK = 2048
+	if knnTopK < 1 {
+		knnTopK = 1
+	} else if knnTopK > 2048 {
+		knnTopK = 2048
+	}
+	knnNumCandidates := 2048
+	if req.KNNNumCandidates != nil {
+		knnNumCandidates = *req.KNNNumCandidates
 	}
 	keyword := false
 	if req.Keyword != nil {
@@ -102,7 +112,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	// Check if all kbs have the same embedding model
-	if err := service.ValidateDatasetEmbeddingModels(kbRecords); err != nil {
+	if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
 		return nil, err
 	}
 
@@ -127,6 +137,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
+			rerankCandidatesCount = 100
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
 			}
@@ -137,12 +148,15 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 				vectorSimilarityWeight = scVSW
 			}
 			if scTopK, ok := searchConfig["top_k"].(float64); ok {
-				topK = int(scTopK)
-				if topK < 1 {
-					topK = 1
-				} else if topK > 2048 {
-					topK = 2048
+				knnTopK = int(scTopK)
+				if knnTopK < 1 {
+					knnTopK = 1
+				} else if knnTopK > 2048 {
+					knnTopK = 2048
 				}
+			}
+			if scRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
+				rerankCandidatesCount = scRerankCandidatesCount
 			}
 			if scUseKG, ok := searchConfig["use_kg"].(bool); ok {
 				useKG = scUseKG
@@ -167,6 +181,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			return nil, fmt.Errorf("invalid search_id")
 		}
 	}
+	knnNumCandidates = max(knnNumCandidates, knnTopK)
 
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var chatModelForFilter *modelModule.ChatModel
@@ -263,12 +278,18 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		DocIDs:                 docIDs,
 		Page:                   page,
 		PageSize:               pageSize,
-		Top:                    &topK,
+		RerankCandidatesCount:  &rerankCandidatesCount,
+		KNNTopK:                &knnTopK,
+		KNNNumCandidates:       &knnNumCandidates,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		RerankModel:            rerankModel,
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
+		Highlight:              req.Highlight,
+	}
+	if req.IncludeCompiledChunks != nil && !*req.IncludeCompiledChunks {
+		retrievalReq.Filter = map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
 	}
 
 	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)

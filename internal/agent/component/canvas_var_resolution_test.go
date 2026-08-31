@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -38,7 +37,7 @@ func TestLLM_Invoke_ResolvesTemplateRefs(t *testing.T) {
 		SystemPrompt: "Use the following context:",
 		UserPrompt:   "What does {{retrieval:0@content}} say?",
 	})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	_, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -64,7 +63,7 @@ func TestLLM_Invoke_NoState_LeavesPromptsUnchanged(t *testing.T) {
 		ModelID:    "echo",
 		UserPrompt: "What does {{retrieval:0@content}} say?",
 	})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -89,7 +88,7 @@ func TestLLM_Invoke_UnresolvedRef_LeavesPromptIntact(t *testing.T) {
 		ModelID:    "echo",
 		UserPrompt: "Use {{retrieval:0@content}} please",
 	})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	_, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke should not error on unresolved ref: %v", err)

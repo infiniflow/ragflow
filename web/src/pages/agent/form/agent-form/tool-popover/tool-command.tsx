@@ -23,6 +23,7 @@ const Menus = [
     list: [
       Operator.TavilySearch,
       Operator.TavilyExtract,
+      Operator.QueritContents,
       Operator.QueritSearch,
       Operator.Google,
       // Operator.Bing,
@@ -30,6 +31,7 @@ const Menus = [
       Operator.Wikipedia,
       Operator.SearXNG,
       Operator.KeenableSearch,
+      Operator.YouComSearch,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,

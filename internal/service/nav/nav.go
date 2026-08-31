@@ -27,14 +27,16 @@ import (
 	"sync"
 )
 
-// NavNode mirrors Python's _nav_item (dataset_api_service.py).
+// NavNode mirrors Python's _nav_item (dataset_api_service.py). The JSON field
+// names are snake_case to match the frontend DatasetNavNode contract and the
+// Python GET /navigation payload exactly.
 type NavNode struct {
-	Name        string // name
-	Description string // content_with_weight payload description
-	DocCount    int    // doc_count_int (cluster) or 1 (leaf)
-	Type        string // "cluster" | "doc"
-	DocID       string // leaf doc_id; empty for cluster
-	HasChildren bool   // is_cluster
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	DocCount    int    `json:"doc_count"`
+	Type        string `json:"type"`
+	DocID       string `json:"doc_id,omitempty"`
+	HasChildren bool   `json:"has_children"`
 }
 
 // NavHit is one KNN hit on a nav row.
@@ -53,6 +55,20 @@ type UpsertDocInput struct {
 	DocID    string
 	Summary  string    // document summary text (tree product or page_index summary)
 	Embedd   []float32 // optional precomputed embedding
+}
+
+// NavMergeLLM summarizes or merges nav text via an LLM. It mirrors the Python
+// dataset_nav._llm_merge/_llm_create_summary calls. Keeping it a small interface
+// (rather than depending on the agent chat layer) lets the nlp package wire the
+// production chat invoker without an import cycle; nil disables LLM behavior and
+// the implementation falls back to deterministic naming.
+type NavMergeLLM interface {
+	// Merge returns a merged cluster description for one or more source texts
+	// (temperature 0.1, mirroring Python _llm_merge).
+	Merge(ctx context.Context, tenantID string, texts []string) (string, error)
+	// CreateSummary returns a short cluster name + summary for a source text
+	// (mirroring Python _llm_create_summary). Return name="" to fall back.
+	CreateSummary(ctx context.Context, tenantID string, text string) (name, summary string, err error)
 }
 
 // NavService is the single read/write entrypoint for a dataset's navigation

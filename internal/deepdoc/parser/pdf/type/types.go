@@ -44,6 +44,8 @@ const (
 	LayoutTypeHeader      = doctype.LayoutTypeHeader
 	DLALabelFigureCaption = doctype.DLALabelFigureCaption
 	DLALabelTableCaption  = doctype.DLALabelTableCaption
+
+	GarbageLayoutScoreThreshold = doctype.GarbageLayoutScoreThreshold
 )
 
 // ── Re-export functions and variables ──────────────────────────────────────
@@ -52,4 +54,5 @@ var (
 	CollectFigures      = doctype.CollectFigures
 	DefaultParserConfig = doctype.DefaultParserConfig
 	IsCJK               = doctype.IsCJK
+	GarbageLayoutTypes  = doctype.GarbageLayoutTypes
 )

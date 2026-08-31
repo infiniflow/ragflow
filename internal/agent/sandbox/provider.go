@@ -69,6 +69,10 @@ const (
 	// ProviderTenki runs each execution in a disposable Tenki
 	// microVM (TenkiCloud Go SDK). Matches Python's TenkiProvider.
 	ProviderTenki ProviderType = "tenki"
+
+	// ProviderUCloudAgentSandbox runs each execution in a disposable
+	// UCloud Agent Sandbox using UCloud's native Go SDK.
+	ProviderUCloudAgentSandbox ProviderType = "ucloud_agent_sandbox"
 )
 
 // ErrE2BProviderNotImplemented is returned when an operator configures

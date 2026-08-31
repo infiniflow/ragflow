@@ -14,7 +14,8 @@ import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
 } from '../hooks/use-send-shared-message';
-import { buildMessageItemReference } from '../utils';
+import { useMessageReferences } from '../hooks/use-message-references';
+import { EmptyReference } from '../utils';
 
 const ChatContainer = () => {
   const {
@@ -42,6 +43,8 @@ const ChatContainer = () => {
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
 
+  const messageReferences = useMessageReferences(derivedMessages, undefined);
+
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
       changeLanguageAsync(locale, { persist: false });
@@ -60,6 +63,7 @@ const ChatContainer = () => {
         title={chatInfo.title}
         avatar={chatInfo.avatar}
         handleReset={removeAllMessagesExceptFirst}
+        hideReset={sendLoading}
       >
         <div className="flex flex-1 flex-col p-2.5 h-[90vh] m-3">
           <div
@@ -77,19 +81,14 @@ const ChatContainer = () => {
                     avatarDialog={avatarDialogSrc}
                     item={message}
                     nickname="You"
-                    reference={buildMessageItemReference(
-                      {
-                        messages: derivedMessages,
-                        reference: [],
-                      },
-                      message,
-                    )}
+                    reference={messageReferences.get(message) ?? EmptyReference}
                     loading={
                       message.role === MessageType.Assistant &&
                       sendLoading &&
                       derivedMessages?.length - 1 === i
                     }
                     index={i}
+                    isLast={i === derivedMessages.length - 1}
                     clickDocumentButton={clickDocumentButton}
                     showLikeButton={false}
                     showLoudspeaker={false}

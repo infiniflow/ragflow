@@ -25,11 +25,12 @@ import (
 // TestStubSynth_EmptyEngine: an empty engine returns
 // ErrTTSEngineNotConfigured (the deferred-state sentinel).
 func TestStubSynth_EmptyEngine(t *testing.T) {
+	ctx := t.Context()
 	// Ensure the stub is installed (in case a previous test
 	// registered a different one).
 	SetSynthesizer(nil)
 	synth := GetSynthesizer()
-	_, err := synth.Synthesize(context.Background(), SynthesizeRequest{
+	_, err := synth.Synthesize(ctx, SynthesizeRequest{
 		Engine: EngineEmpty,
 		Text:   "hi",
 	})
@@ -41,9 +42,10 @@ func TestStubSynth_EmptyEngine(t *testing.T) {
 // TestStubSynth_UnknownEngine: a non-empty unknown engine
 // returns ErrTTSUnsupportedEngine.
 func TestStubSynth_UnknownEngine(t *testing.T) {
+	ctx := t.Context()
 	SetSynthesizer(nil)
 	synth := GetSynthesizer()
-	_, err := synth.Synthesize(context.Background(), SynthesizeRequest{
+	_, err := synth.Synthesize(ctx, SynthesizeRequest{
 		Engine: Engine("unknown-engine"),
 		Text:   "hi",
 	})
@@ -55,6 +57,7 @@ func TestStubSynth_UnknownEngine(t *testing.T) {
 // TestSetSynthesizer_Roundtrip: a custom synthesizer set via
 // SetSynthesizer is returned by GetSynthesizer.
 func TestSetSynthesizer_Roundtrip(t *testing.T) {
+	ctx := t.Context()
 	var called bool
 	custom := &fakeSynth{called: &called}
 	SetSynthesizer(custom)
@@ -63,7 +66,7 @@ func TestSetSynthesizer_Roundtrip(t *testing.T) {
 	if got != custom {
 		t.Fatalf("synthesizer not registered")
 	}
-	resp, err := got.Synthesize(context.Background(), SynthesizeRequest{
+	resp, err := got.Synthesize(ctx, SynthesizeRequest{
 		Engine: EngineGTTS,
 		Text:   "hi",
 	})

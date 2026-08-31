@@ -18,9 +18,9 @@
 //
 // The TXT writer is the trivial plain-text path: header / footer /
 // timestamp are wrapped as plain text lines around the body. No
-// encoding negotiation (UTF-8 only); no markdown stripping
-// (downstream tools that don't understand markdown can consume TXT
-// when the source content is markdown-flavoured — the writer does
+// encoding negotiation (UTF-8 only); no Markdown stripping
+// (downstream tools that don't understand Markdown can consume TXT
+// when the source content is Markdown-flavored — the writer does
 // not rewrite the body).
 
 package io

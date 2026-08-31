@@ -15,9 +15,6 @@ from deepdoc.vision.ocr import OCR
 
 logger = logging.getLogger(__name__)
 
-# Confidence fill value — OSS recognize_batch does not return confidence scores.
-_CONFIDENCE_FILL = 1.0
-
 
 class OCRAdapter:
     """Calls OCR.detect() and OCR.recognize_batch(), converts to wire format."""
@@ -83,10 +80,12 @@ class OCRAdapter:
 
         img = self._decode_bgr(image_data)
 
-        # OCR.recognize_batch() returns List[str]; single cropped image → list of 1 image
-        texts = self._ocr.recognize_batch([img])
+        # OCR.recognize_batch_with_score() returns List[(text, score)] so the
+        # client can do score-based layer-2 rotation selection. The score is
+        # the real recognition confidence (previously a constant 1.0 fill).
+        scored = self._ocr.recognize_batch_with_score([img])
 
-        items = [[text, _CONFIDENCE_FILL] for text in texts]
+        items = [[text, score] for text, score in scored]
 
         # 4-level nesting matching Go [][][][]any:
         # batch → page → items list → pair [text, confidence]

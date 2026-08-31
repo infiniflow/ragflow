@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -130,7 +129,7 @@ func TestLLM_Invoke_HistoryWindow_PrependsFromState(t *testing.T) {
 		UserPrompt:               "now",
 		MessageHistoryWindowSize: window,
 	})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	_, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -166,7 +165,7 @@ func TestLLM_Invoke_HistoryWindow_DoesNotDuplicateCurrentUser(t *testing.T) {
 		UserPrompt:               "now",
 		MessageHistoryWindowSize: 5,
 	})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	if _, err := c.Invoke(ctx, nil, map[string]any{}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -200,7 +199,7 @@ func TestLLM_Invoke_HistoryWindow_ZeroIsNoop(t *testing.T) {
 		UserPrompt: "now",
 		// MessageHistoryWindowSize: 0 (default)
 	})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	_, _ = c.Invoke(ctx, nil, map[string]any{})
 	if len(stub.captured.Messages) != 1 {
 		t.Errorf("expected only 1 message (no history), got %d", len(stub.captured.Messages))
@@ -260,7 +259,7 @@ func TestBuildAgentInputMessagesIncludesPriorConversation(t *testing.T) {
 	state.AppendHistory("user", "第 8 章下面的第一个副标题是什么？")
 	state.AppendHistory("assistant", map[string]any{"content": "第一个是解析器工厂。"})
 	state.AppendCurrentUser("第二个呢？")
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	messages := buildAgentInputMessages(ctx, AgentParam{
 		SystemPrompt:             "请根据知识库回答。",
@@ -291,7 +290,7 @@ func TestBuildAgentInputMessagesUsesConversationTurnWindow(t *testing.T) {
 	state.AppendHistory("user", "recent question")
 	state.AppendHistory("assistant", "recent answer")
 	state.AppendCurrentUser("current question")
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	messages := buildAgentInputMessages(ctx, AgentParam{
 		UserPrompt:               "current question",
@@ -310,7 +309,7 @@ func TestBuildAgentInputMessagesZeroWindowDisablesHistory(t *testing.T) {
 	state.AppendHistory("user", "ignored question")
 	state.AppendHistory("assistant", "ignored answer")
 	state.AppendCurrentUser("current question")
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	messages := buildAgentInputMessages(ctx, AgentParam{UserPrompt: "current question"})
 	if len(messages) != 1 || messages[0].Content != "current question" {
@@ -322,7 +321,7 @@ func TestBuildAgentInputMessagesReplacesTrailingUserLikePython(t *testing.T) {
 	state := runtime.NewCanvasState("run-agent-trailing-user", "task-agent-trailing-user")
 	state.AppendHistory("user", "unanswered previous input")
 	state.AppendCurrentUser("current question")
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	messages := buildAgentInputMessages(ctx, AgentParam{
 		UserPrompt:               "current question",

@@ -140,12 +140,12 @@ type siliconflowEmbeddingResponse struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	// Per-request input cap: resolved from the provider capability (batch_size
@@ -156,7 +156,7 @@ func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts [
 		modelNameStr = *modelName
 	}
 	maxBatch := GetEmbeddingBatchSize(modelNameStr)
-	if len(texts) > maxBatch {
+	if len(request.Texts) > maxBatch {
 		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", maxBatch)
 	}
 
@@ -174,7 +174,7 @@ func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts [
 
 	reqBody := map[string]interface{}{
 		"model": modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -413,11 +413,12 @@ type SiliconflowRerankRequest struct {
 }
 
 // Rerank calculates similarity scores between query and documents
-func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

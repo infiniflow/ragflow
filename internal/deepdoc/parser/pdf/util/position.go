@@ -45,7 +45,7 @@ func ExtractPositions(text string) []pdf.Position {
 
 		// Parse page range
 		var pageNums []int
-		for _, p := range strings.Split(parts[0], "-") {
+		for p := range strings.SplitSeq(parts[0], "-") {
 			n, err := strconv.Atoi(p)
 			if err != nil {
 				slog.Warn("ExtractPositions: invalid page number in tag", "tag", tag, "part", p, "err", err)

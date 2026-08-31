@@ -1,7 +1,6 @@
 package pdf
 
 import (
-	"context"
 	"image"
 	"strings"
 	"testing"
@@ -43,8 +42,8 @@ func TestTableSection_TextFromTSR(t *testing.T) {
 		},
 	}
 	p := NewParser(pdf.DefaultParserConfig())
-
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -98,8 +97,9 @@ func TestEnrichOnePageWithDeepDoc_ImageOnlyPage(t *testing.T) {
 	// 0 text boxes, but page 0 has a rendered image.
 	boxes := []pdf.TextBox{}
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 900, 600))
+	ctx := t.Context()
 
-	_, tables, _ := p.enrichOnePageWithDeepDoc(context.Background(), dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(ctx, dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) == 0 {
 		t.Fatal("enrichOnePageWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
 	}
@@ -131,8 +131,8 @@ func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 		},
 	}
 	p := NewParser(pdf.DefaultParserConfig())
-
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -190,8 +190,8 @@ func TestTableCaption_MergedIntoTable(t *testing.T) {
 		},
 	}
 	p := NewParser(pdf.DefaultParserConfig())
-
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -247,8 +247,8 @@ func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 		},
 	}
 	p := NewParser(pdf.DefaultParserConfig())
-
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -288,7 +288,8 @@ func TestEmptyDoc_NoCrash(t *testing.T) {
 	eng := &MockEngine{NumPages: 0}
 	mock := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -302,7 +303,8 @@ func TestNilChars_Handled(t *testing.T) {
 	eng := &MockEngine{NumPages: 1, RenderW: 200, RenderH: 200}
 	mock := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	ctx := t.Context()
+	result, err := p.ParseRaw(ctx, eng, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

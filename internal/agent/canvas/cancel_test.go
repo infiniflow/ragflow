@@ -77,8 +77,9 @@ func TestWatchCancel_FiresAfterRequest(t *testing.T) {
 }
 
 func TestWatchCancel_StopsOnContextCancel(t *testing.T) {
+	ctx := t.Context()
 	withCancelClient(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 
 	sessionID := "session_test_ctx"
 	done := make(chan struct{})
@@ -102,8 +103,9 @@ func TestWatchCancel_StopsOnContextCancel(t *testing.T) {
 }
 
 func TestWatchCancel_OnCancelNotInvokedForEmptyKey(t *testing.T) {
+	ctx := t.Context()
 	withCancelClient(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	invoked := atomic.Int32{}
@@ -132,8 +134,7 @@ func TestRequestCancel_EmptyValueStillFires(t *testing.T) {
 	// we rely on RequestCancel to always set "x" so this test is just
 	// a sanity check that the value round-trips.
 	mr := withCancelClient(t)
-	ctx := context.Background()
-
+	ctx := t.Context()
 	if err := RequestCancel(ctx, "session_value"); err != nil {
 		t.Fatalf("RequestCancel: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestRequestCancel_EmptyValueStillFires(t *testing.T) {
 
 func TestCancelRequested(t *testing.T) {
 	withCancelClient(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	requested, err := CancelRequested(ctx, "session-check")
 	if err != nil || requested {

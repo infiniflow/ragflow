@@ -72,3 +72,26 @@ func TestMergeCaptions_EuclideanDistance(t *testing.T) {
 		t.Errorf("figure Text should contain caption 'close', got %q", result[0].Text)
 	}
 }
+
+// TestMergeCaptions_FigureCaptionNoTargetKept locks the production behavior
+// change flagged as untested in review: a figure caption with NO nearby figure
+// section is KEPT as its own section. A pure-image figure has no text section
+// to merge into, so removing the caption (the old behavior) would silently drop
+// caption text that Python keeps (07_mixed_content 'Figure 1/2').
+func TestMergeCaptions_FigureCaptionNoTargetKept(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "Figure 2: system architecture overview", LayoutType: "figure caption",
+			Positions: []pdf.Position{{PageNumbers: []int{0, 0}, Left: 40, Right: 160, Top: 300, Bottom: 315}}},
+	}
+	figures := pdf.CollectFigures(sections) // empty: no "figure" section present
+	result := MergeCaptions(sections, figures)
+	if len(result) != 1 {
+		t.Fatalf("figure caption with no parent must be kept, got %d sections", len(result))
+	}
+	if result[0].LayoutType != "figure caption" {
+		t.Errorf("expected figure caption kept as its own section, got LayoutType %q", result[0].LayoutType)
+	}
+	if result[0].Text != "Figure 2: system architecture overview" {
+		t.Errorf("caption text must be preserved, got %q", result[0].Text)
+	}
+}

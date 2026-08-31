@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   forwardRef,
@@ -141,6 +157,7 @@ export interface DynamicFormRef {
   submit: () => void;
   isDirty: () => boolean;
   getValues: (name?: string) => any;
+  getFilteredValues: () => any;
   reset: (values?: any) => void;
   trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
@@ -500,7 +517,6 @@ export const RenderField = ({
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
-            console.log('multi select value', fieldProps);
             const finalFieldProps = {
               ...fieldProps,
               onValueChange: (value: string[]) => {
@@ -515,10 +531,6 @@ export const RenderField = ({
                 variant="inverted"
                 maxCount={100}
                 {...finalFieldProps}
-                // onValueChange={(data) => {
-                //   console.log(data);
-                //   field.onChange?.(data);
-                // }}
                 options={field.options as MultiSelectOptionType[]}
                 disabled={field.disabled}
               />
@@ -745,7 +757,6 @@ const DynamicForm = {
               combinedErrors[key] = combinedErrors[key][0];
             }
           }
-          console.log('combinedErrors', combinedErrors);
           return {
             values: Object.keys(combinedErrors).length ? {} : data,
             errors: combinedErrors,
@@ -845,6 +856,7 @@ const DynamicForm = {
           },
           isDirty: () => form.formState.isDirty,
           getValues: form.getValues,
+          getFilteredValues: () => filterActiveValues(form.getValues()),
           reset: (values?: T) => {
             if (values) {
               form.reset(values);
@@ -969,30 +981,17 @@ const DynamicForm = {
           (async () => {
             try {
               const beValid = await form.trigger();
-              console.log('form valid', beValid, form);
-              // if (beValid) {
-              //   form.handleSubmit(async (values) => {
-              //     console.log('form values', values);
-              //     submitFunc?.(values);
-              //   })();
-              // }
 
               if (beValid && submitFunc) {
                 form.handleSubmit(async (values) => {
                   const filteredValues = (form as any).filterActiveValues
                     ? (form as any).filterActiveValues(values)
                     : values;
-                  console.log(
-                    'filtered form values in saving button',
-                    filteredValues,
-                  );
                   submitFunc(filteredValues);
                 })();
               }
             } catch (e) {
               console.error(e);
-            } finally {
-              console.log('form submit3');
             }
           })();
         }}

@@ -2,7 +2,10 @@ package nlp
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -302,6 +305,101 @@ func TestNavService_ListClusters_FiltersRoot(t *testing.T) {
 	}
 }
 
+// TestNavNode_JSONShape_SnakeCase locks the REST contract: the frontend
+// DatasetNavNode and Python GET /navigation both use snake_case keys. If the
+// Go field names leaked (Name/Description/DocCount...) the frontend tree would
+// read undefined fields and render empty.
+func TestNavNode_JSONShape_SnakeCase(t *testing.T) {
+	n := nav.NavNode{Name: "cluster_x", Description: "d", DocCount: 3, Type: "cluster", HasChildren: true}
+	b, err := json.Marshal(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"name", "description", "doc_count", "type", "has_children"} {
+		if _, ok := m[want]; !ok {
+			t.Errorf("NavNode JSON missing snake_case key %q; got %s", want, b)
+		}
+	}
+	for _, bad := range []string{"Name", "Description", "DocCount", "HasChildren"} {
+		if _, ok := m[bad]; ok {
+			t.Errorf("NavNode JSON leaked PascalCase key %q; got %s", bad, b)
+		}
+	}
+}
+
+// TestNavNamingHelpers_Readable verifies the nav display-name helpers produce
+// human-readable names (mirroring Python _clean_title/_fallback_title/
+// _readable_cluster_name) instead of raw ids.
+func TestNavNamingHelpers_Readable(t *testing.T) {
+	if cleanTitle("  hello   world  ") != "hello world" {
+		t.Errorf("cleanTitle = %q, want %q", cleanTitle("  hello   world  "), "hello world")
+	}
+	// fallbackTitle takes the first non-empty line and strips Markdown markers.
+	if got := fallbackTitle("a b c d e f g h"); got != "a b c d e f g h" {
+		t.Errorf("fallbackTitle = %q, want the first line", got)
+	}
+	if got := fallbackTitle("**何进诛阉与董后之废**\n\nbody text"); got != "何进诛阉与董后之废" {
+		t.Errorf("fallbackTitle = %q, want the stripped markdown title", got)
+	}
+	if got := fallbackTitle(""); got != "Cluster" {
+		t.Errorf("fallbackTitle('') = %q, want Cluster", got)
+	}
+	name := readableClusterName("何进诛阉", "seed-text")
+	if !strings.HasPrefix(name, "何进诛阉 ") {
+		t.Errorf("readableClusterName = %q, want prefix %q", name, "何进诛阉 ")
+	}
+}
+
+// TestNavNamingHelpers_RawIDDetection verifies meaningless ids are detected so
+// nodeFromRow can fall back to a readable title.
+func TestNavNamingHelpers_RawIDDetection(t *testing.T) {
+	for _, raw := range []string{"d3778ef9c0f5495fa4bdadc00a5bf15c", "cluster_abc12345", ""} {
+		if !graphIsRawID(raw) {
+			t.Errorf("graphIsRawID(%q) = false, want true", raw)
+		}
+	}
+	for _, ok := range []string{"何进诛阉", "NVIDIA financial performance 8738e200"} {
+		if graphIsRawID(ok) {
+			t.Errorf("graphIsRawID(%q) = true, want false", ok)
+		}
+	}
+}
+
+// TestNodeFromRow_ReadableName verifies nodeFromRow falls back to a readable
+// title derived from the payload description when title_kwd is a raw id.
+func TestNodeFromRow_ReadableName(t *testing.T) {
+	ns := &NavService{}
+	row := map[string]interface{}{
+		"title_kwd":           "d3778ef9c0f5495fa4bdadc00a5bf15c",
+		"doc_id":              "d3778ef9c0f5495fa4bdadc00a5bf15c",
+		"type_kwd":            "nav_doc",
+		"doc_count_int":       1,
+		"content_with_weight": `{"type":"nav_doc","description":"刘备三战黄巾军与何进诛阉之议\nsecond line"}`,
+	}
+	node := ns.nodeFromRow(row, "doc")
+	if node.Name == "" || node.Name == "d3778ef9c0f5495fa4bdadc00a5bf15c" {
+		t.Fatalf("nodeFromRow name = %q, want readable fallback", node.Name)
+	}
+	if node.DocID != "d3778ef9c0f5495fa4bdadc00a5bf15c" {
+		t.Errorf("nodeFromRow DocID = %q, want the raw doc id preserved", node.DocID)
+	}
+	// A cluster row keeps its stored key verbatim (it is the child-lookup
+	// parent_kwd), even when it looks like a raw id (review Major).
+	clusterRow := map[string]interface{}{
+		"title_kwd":     "cluster_abc12345",
+		"type_kwd":      "nav_cluster",
+		"doc_count_int": 2,
+	}
+	cluster := ns.nodeFromRow(clusterRow, "cluster")
+	if cluster.Name != "cluster_abc12345" {
+		t.Errorf("cluster key = %q, want it kept verbatim as the parent_kwd lookup key", cluster.Name)
+	}
+}
+
 // TestNavService_Search_ReturnsHit asserts acceptance #5.
 func TestNavService_Search_ReturnsHit(t *testing.T) {
 	eng := newMemNavEngine()
@@ -352,15 +450,21 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Exactly one nav_doc (for d2) sits under the cluster; d1 is the cluster.
-	if total != 1 || len(children) != 1 {
-		t.Fatalf("expected 1 child under cluster, got total=%d len=%d", total, len(children))
+	// Every doc upserted under the cluster emits a nav_doc leaf (Python
+	// upsert_dataset_nav_doc), so d1 (which created the cluster) and d2 (which
+	// merged in) both sit under it: two nav_docs total.
+	if total != 2 || len(children) != 2 {
+		t.Fatalf("expected 2 children under cluster, got total=%d len=%d", total, len(children))
 	}
-	if children[0].DocID != "d2" {
-		t.Errorf("child doc_id = %q, want d2", children[0].DocID)
+	gotIDs := map[string]bool{}
+	for _, c := range children {
+		gotIDs[c.DocID] = true
+		if c.Type != "doc" {
+			t.Errorf("child type = %q, want doc", c.Type)
+		}
 	}
-	if children[0].Type != "doc" {
-		t.Errorf("child type = %q, want doc", children[0].Type)
+	if !gotIDs["d1"] || !gotIDs["d2"] {
+		t.Errorf("expected nav_docs for both d1 and d2, got %v", gotIDs)
 	}
 }
 
@@ -385,6 +489,168 @@ func TestNavService_NavDocDepth(t *testing.T) {
 	}
 }
 
+// TestNavService_RemoveDoc_CascadesToEmptyCluster covers A3: after removing a
+// doc, a cluster left with no docs and no children is pruned (cleanupEmptyCluster),
+// and the doc is dropped from its parent cluster's doc_ids_kwd.
+func TestNavService_RemoveDoc_CascadesToEmptyCluster(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	// d1 creates a root cluster (name derived from its summary hash).
+	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d1"); err != nil {
+		t.Fatal(err)
+	}
+	// The nav_doc is gone, and the root cluster (now empty) is pruned.
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_doc" && row["doc_id"] == "d1" {
+			t.Error("nav_doc for d1 should have been removed")
+		}
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] != "" {
+			t.Error("root cluster should have been pruned when empty")
+		}
+	}
+}
+
+// TestNavService_MaybeSplitCluster_SplitsOverfull covers A2: a cluster with more
+// than maxDocsPerCluster direct docs is split into two siblings. The overfull
+// state is seeded directly (InsertChunks) rather than via UpsertDoc, because
+// UpsertDoc triggers the split during seeding once the count crosses the
+// threshold — the manual split trigger here must act on an already-overfull,
+// not-yet-split cluster.
+func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	clusterName := "root_cluster"
+	// Seed the overfull cluster directly: one nav_cluster (parent=root sentinel,
+	// depth 1) carrying 55 nav_doc children.
+	idx := sTestNavIndex(ns)
+	rows := []map[string]interface{}{
+		{
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      "nav_cluster",
+			"title_kwd":     clusterName,
+			"parent_kwd":    navRootParent,
+			"depth_int":     1,
+			"doc_count_int": 55, // over the maxDocsPerCluster=50 threshold
+			"doc_ids_kwd":   []string{},
+		},
+	}
+	for i := 0; i < 55; i++ {
+		rows = append(rows, map[string]interface{}{
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      "nav_doc",
+			"title_kwd":     fmt.Sprintf("d%02d", i),
+			"parent_kwd":    clusterName,
+			"depth_int":     2,
+			"doc_id":        fmt.Sprintf("d%02d", i),
+			"doc_count_int": 1,
+		})
+	}
+	if _, err := eng.InsertChunks(context.Background(), rows, idx, "kb1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err != nil {
+		t.Fatal(err)
+	}
+	splitA := clusterName + ":A"
+	splitB := clusterName + ":B"
+	foundA, foundB := false, false
+	var countA, countB int
+	var idsA, idsB []string
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == splitA {
+			foundA = true
+			countA = intValAny(row["doc_count_int"])
+			idsA = firstStringSlice(row["doc_ids_kwd"])
+		}
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == splitB {
+			foundB = true
+			countB = intValAny(row["doc_count_int"])
+			idsB = firstStringSlice(row["doc_ids_kwd"])
+		}
+	}
+	if !foundA || !foundB {
+		t.Errorf("split clusters :A / :B missing (A=%v B=%v)", foundA, foundB)
+	}
+	// Review issue 5: the split clusters must inherit the aggregate doc count so
+	// they stay searchable and support deletion bookkeeping — they must not be
+	// empty shells.
+	if countA == 0 && countB == 0 {
+		t.Errorf("split clusters must carry aggregate doc_count_int (A=%d B=%d)", countA, countB)
+	}
+	if countA+countB != 55 {
+		t.Errorf("split clusters must preserve all 55 docs (A=%d B=%d)", countA, countB)
+	}
+	if len(idsA)+len(idsB) != 55 {
+		t.Errorf("split clusters must preserve all 55 doc ids (A=%v B=%v)", idsA, idsB)
+	}
+	// Review issue 5/6: every child must be reparented under :A or :B, and the
+	// original cluster must be gone (not left orphaned).
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_doc" {
+			p, _ := row["parent_kwd"].(string)
+			if p != splitA && p != splitB {
+				t.Errorf("nav_doc %v left orphaned under parent %q", row["title_kwd"], p)
+			}
+		}
+	}
+	origGone := true
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == clusterName {
+			origGone = false
+		}
+	}
+	if !origGone {
+		t.Error("original cluster should have been deleted after split")
+	}
+	// A production nav_doc has doc_id but no doc_ids_kwd. Removing one after a
+	// split must update the replacement cluster that inherited its membership.
+	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d00"); err != nil {
+		t.Fatalf("RemoveDoc after split: %v", err)
+	}
+	var remainingCount, remainingIDs int
+	for _, row := range eng.rows {
+		if row["type_kwd"] != "nav_cluster" {
+			continue
+		}
+		remainingCount += intValAny(row["doc_count_int"])
+		for _, id := range firstStringSlice(row["doc_ids_kwd"]) {
+			if id == "d00" {
+				t.Errorf("removed doc d00 still present in split cluster membership")
+			}
+			remainingIDs++
+		}
+	}
+	if remainingCount != 54 || remainingIDs != 54 {
+		t.Errorf("RemoveDoc after split must update count and membership: count=%d ids=%d", remainingCount, remainingIDs)
+	}
+}
+
+// sTestNavIndex returns the nav index name for a test NavService (tenant "t1").
+func sTestNavIndex(ns *NavService) string {
+	return "ragflow_t1"
+}
+
 func navUpsertInput(tenant, kb, doc, summary string) nav.UpsertDocInput {
 	return nav.UpsertDocInput{TenantID: tenant, KbID: kb, DocID: doc, Summary: summary}
+}
+
+// intValAny coerces a stored integer value (int/int64/float64) from the mem
+// engine row into an int for assertions.
+func intValAny(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	}
+	return 0
 }

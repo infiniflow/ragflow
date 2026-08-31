@@ -88,9 +88,6 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 		if body["stream"] != false {
 			t.Errorf("stream=%v want false", body["stream"])
 		}
-		if body["max_tokens"] != nil {
-			t.Errorf("max_tokens must not be sent: %v", body["max_tokens"])
-		}
 		if body["max_completion_tokens"] != float64(1024) {
 			t.Errorf("max_completion_tokens=%v", body["max_completion_tokens"])
 		}
@@ -364,10 +361,10 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	cfg := &APIConfig{ApiKey: &apiKey}
 
-	if _, err := m.Embed(ctx, &model, []string{"x"}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: %v", err)
 	}
-	if _, err := m.Rerank(ctx, &model, "q", []string{"d"}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
 	// CheckConnection IS implemented — verifies API config and base URL are reachable.

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { IconMap, LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
 import Icon from '@ant-design/icons';
@@ -6,23 +22,6 @@ import { memo, useMemo } from 'react';
 import { IconFontFill } from './icon-font';
 import { RAGFlowAvatar } from './ragflow-avatar';
 import { useIsDarkTheme } from './theme-provider';
-
-// const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
-//   const list = requireContext.keys().map((key) => {
-//     const name = key.replace(/\.\/(.*)\.\w+$/, '$1');
-//     return { name, value: requireContext(key) };
-//   });
-//   return list;
-// };
-
-// let routeList: { name: string; value: string }[] = [];
-
-// try {
-//   routeList = importAll(require.context('@/assets/svg', true, /\.svg$/));
-// } catch (error) {
-//   console.warn(error);
-//   routeList = [];
-// }
 
 const svgModules = import.meta.glob('@/assets/svg/**/*.svg', {
   eager: true,
@@ -36,6 +35,9 @@ const routeList: { name: string; value: string }[] = Object.entries(
   // @ts-ignore
   return { name, value: module.default || module };
 });
+
+export const hasSvgIcon = (name: string) =>
+  routeList.some((item) => item.name === name);
 
 interface IProps extends IconComponentProps {
   name: string;
@@ -86,7 +88,7 @@ const svgIcons = [
   LLMFactory.MinerU,
   LLMFactory.MinerUNet,
   LLMFactory.PaddleOCR,
-  LLMFactory.PaddleOCRNet,
+  LLMFactory.PaddleOCRLocal,
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
   LLMFactory.Avian,
@@ -110,6 +112,8 @@ const svgIcons = [
   LLMFactory.FunASR,
   LLMFactory.AIMLAPI,
   LLMFactory.GreenPT,
+  LLMFactory.Synthorai,
+  LLMFactory.MWS,
 ];
 
 export const LlmIcon = ({

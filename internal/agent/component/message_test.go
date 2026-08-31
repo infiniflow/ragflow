@@ -32,7 +32,7 @@ func TestMessage_ResolveTemplate(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["query"] = "world"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "hello {{sys.query}}",
@@ -57,7 +57,7 @@ func TestMessage_ResolveListReferenceAsJSON(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-list", "task-list")
 	state.SetVar("list_0", "result", []any{"user: 1"})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "{{list_0@result}}",
@@ -78,7 +78,7 @@ func TestMessage_Stream(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Sys["query"] = "alice"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	ch, err := c.Stream(ctx, nil, map[string]any{
 		"text":   "hi",
@@ -107,7 +107,7 @@ func TestMessage_Stream(t *testing.T) {
 func TestMessage_NoTemplate(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-3", "task-3")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{"text": "no refs here", "stream": false})
 	if err != nil {
@@ -121,7 +121,7 @@ func TestMessage_NoTemplate(t *testing.T) {
 func TestMessage_RuntimeContentInput(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-4", "task-4")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{"content": "from upstream", "stream": false})
 	if err != nil {
@@ -135,7 +135,7 @@ func TestMessage_RuntimeContentInput(t *testing.T) {
 func TestMessage_EmitsAgentMessage(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-emit", "task-emit")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
 		if contentDelta != "" {
@@ -164,7 +164,7 @@ func TestMessage_EmitsAgentMessage(t *testing.T) {
 func TestMessage_EmitsDirectCanvasMessage(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-direct", "task-direct")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var direct []string
 	var agent []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
@@ -198,7 +198,7 @@ func TestMessage_NormalTemplateEmitsOnlyRenderedMessage(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-normal-template", "task-normal-template")
 	state.Sys["query"] = "world"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var direct []string
 	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
 		direct = append(direct, content)
@@ -224,7 +224,7 @@ func TestMessage_NormalTemplateEmitsOnlyRenderedMessage(t *testing.T) {
 func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-skip", "task-skip")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
 		if contentDelta != "" {
@@ -261,7 +261,7 @@ func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 func TestMessage_EmitsContentDifferentFromAgentStream(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-distinct", "task-distinct")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
 		if contentDelta != "" {
@@ -301,7 +301,7 @@ func TestMessage_ConsumesDeferredAgentStream(t *testing.T) {
 			return map[string]any{"content": "hello world"}, nil
 		},
 	})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
 		if content != "" {
@@ -331,7 +331,7 @@ func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
 			return map[string]any{"content": "answer"}, nil
 		},
 	})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var events []string
 	ctx = runtime.WithCanvasMessageEventEmitter(ctx, func(content string, startToThink, endToThink bool) {
 		switch {
@@ -361,7 +361,7 @@ func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 			return map[string]any{"content": "grounded answer [ID:1]"}, nil
 		},
 	})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var streamed []string
 	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
 		streamed = append(streamed, content)
@@ -385,7 +385,7 @@ func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 func TestMessage_FormalizedContentFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"formalized_content": "retrieved answer",
@@ -403,7 +403,7 @@ func TestMessage_FormalizedContentFallback(t *testing.T) {
 func TestMessage_SingleStringFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-6", "task-6")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"value":         "single upstream text",

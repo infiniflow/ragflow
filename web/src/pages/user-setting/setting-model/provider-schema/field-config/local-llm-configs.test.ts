@@ -36,3 +36,46 @@ describe('FunASR local provider configuration', () => {
     });
   });
 });
+
+describe('MWS provider configuration', () => {
+  it('uses dynamic model discovery', () => {
+    expect(LIST_MODEL_PROVIDERS.has(LLMFactory.MWS)).toBe(true);
+  });
+
+  it('requires a project API URL and Token', () => {
+    const config = LocalLlmConfigs[LLMFactory.MWS];
+
+    expect(config).toMatchObject({
+      llmFactory: LLMFactory.MWS,
+      title: 'MWS',
+      docLink:
+        'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
+    });
+    expect(
+      config.fields.find((field) => field.name === 'instance_name'),
+    ).toMatchObject({ label: 'instanceName', required: true });
+    expect(
+      config.fields.find((field) => field.name === 'base_url'),
+    ).toMatchObject({ label: 'mwsApiUrl', required: true });
+    expect(
+      config.fields.find((field) => field.name === 'api_key'),
+    ).toMatchObject({ label: 'mwsToken', required: true });
+    expect(
+      config.fields.some((field) => field.name === 'provider_order'),
+    ).toBe(false);
+
+    expect(
+      config.submitTransform?.({
+        instance_name: 'mws-project',
+        base_url: 'https://gpt.mwsapis.ru/projects/demo',
+        api_key: 'token',
+        model_info: [],
+      }),
+    ).toMatchObject({
+      instance_name: 'mws-project',
+      llm_factory: LLMFactory.MWS,
+      base_url: 'https://gpt.mwsapis.ru/projects/demo',
+      api_key: 'token',
+    });
+  });
+});

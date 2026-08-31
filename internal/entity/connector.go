@@ -105,21 +105,21 @@ func (Connector2Kb) TableName() string {
 
 // SyncLogs sync logs model
 type SyncLogs struct {
-	ID                   string     `gorm:"column:id;primaryKey;size:32" json:"id"`
-	ConnectorID          string     `gorm:"column:connector_id;size:32;index" json:"connector_id"`
-	TaskType             string     `gorm:"column:task_type;size:32;not null;default:sync;index" json:"task_type"`
-	Status               string     `gorm:"column:status;size:128;not null;index" json:"status"`
-	FromBeginning        *string    `gorm:"column:from_beginning;size:1" json:"from_beginning,omitempty"`
-	NewDocsIndexed       int64      `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
-	TotalDocsIndexed     int64      `gorm:"column:total_docs_indexed;default:0" json:"total_docs_indexed"`
-	DocsRemovedFromIndex int64      `gorm:"column:docs_removed_from_index;default:0" json:"docs_removed_from_index"`
-	ErrorMsg             string     `gorm:"column:error_msg;type:longtext;not null" json:"error_msg"`
-	ErrorCount           int64      `gorm:"column:error_count;default:0" json:"error_count"`
-	FullExceptionTrace   *string    `gorm:"column:full_exception_trace;type:longtext" json:"full_exception_trace,omitempty"`
-	TimeStarted          *time.Time `gorm:"column:time_started;index" json:"time_started,omitempty"`
-	PollRangeStart       *time.Time `gorm:"column:poll_range_start;index" json:"poll_range_start,omitempty"`
-	PollRangeEnd         *time.Time `gorm:"column:poll_range_end;index" json:"poll_range_end,omitempty"`
-	KbID                 string     `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`
+	ID                   string        `gorm:"column:id;primaryKey;size:32" json:"id"`
+	ConnectorID          string        `gorm:"column:connector_id;size:32;index" json:"connector_id"`
+	TaskType             string        `gorm:"column:task_type;size:32;not null;default:sync;index" json:"task_type"`
+	Status               string        `gorm:"column:status;size:128;not null;index" json:"status"`
+	FromBeginning        *string       `gorm:"column:from_beginning;size:1" json:"from_beginning,omitempty"`
+	NewDocsIndexed       int64         `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
+	TotalDocsIndexed     int64         `gorm:"column:total_docs_indexed;default:0" json:"total_docs_indexed"`
+	DocsRemovedFromIndex int64         `gorm:"column:docs_removed_from_index;default:0" json:"docs_removed_from_index"`
+	ErrorMsg             string        `gorm:"column:error_msg;type:longtext;not null" json:"error_msg"`
+	ErrorCount           int64         `gorm:"column:error_count;default:0" json:"error_count"`
+	FullExceptionTrace   *string       `gorm:"column:full_exception_trace;type:longtext" json:"full_exception_trace,omitempty"`
+	TimeStarted          *time.Time    `gorm:"column:time_started;index" json:"time_started,omitempty"`
+	PollRangeStart       *FlexibleTime `gorm:"column:poll_range_start;type:varchar(255);index" json:"poll_range_start,omitempty"`
+	PollRangeEnd         *FlexibleTime `gorm:"column:poll_range_end;type:varchar(255);index" json:"poll_range_end,omitempty"`
+	KbID                 string        `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`
 	BaseModel
 }
 

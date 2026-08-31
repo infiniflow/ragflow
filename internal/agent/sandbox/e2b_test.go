@@ -79,7 +79,7 @@ func TestE2BProvider_Initialize_MissingCreds(t *testing.T) {
 		t.Setenv(k, "")
 	}
 	p := newE2BProviderFromEnv()
-	err := p.Initialize(context.Background())
+	err := p.Initialize(t.Context())
 	if err == nil {
 		t.Fatalf("Initialize with no creds: got nil error, want one")
 	}
@@ -98,7 +98,7 @@ func TestE2BProvider_Initialize_WithAPIKey(t *testing.T) {
 		t.Skip("E2B_API_KEY not set — skipping network-dependent init check")
 	}
 	p := newE2BProviderFromEnv()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
@@ -117,18 +117,19 @@ func TestE2BProvider_AllOps_BeforeInit(t *testing.T) {
 	t.Parallel()
 	p := newE2BProviderFromEnv()
 	// Do NOT call Initialize.
+	ctx := t.Context()
 
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderE2B}
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(ctx, "python"); err == nil {
 		t.Errorf("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil {
 		t.Errorf("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(ctx, inst); err == nil {
 		t.Errorf("DestroyInstance before init: got nil error, want one")
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck before init: got nil error, want one")
 	}
 }
@@ -140,6 +141,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 	// — this lets us test the input-validation paths without
 	// hitting the e2b control plane.
 	p.initialized = true
+	ctx := t.Context()
 
 	cases := []struct {
 		name string
@@ -149,7 +151,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "empty instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: ""}, "x", "python", 5, nil)
 				return err
 			},
@@ -158,7 +160,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "nil instance",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					nil, "x", "python", 5, nil)
 				return err
 			},
@@ -167,7 +169,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unsupported language",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "ruby", 5, nil)
 				return err
 			},
@@ -176,7 +178,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too small",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 0, nil)
 				return err
 			},
@@ -185,7 +187,7 @@ func TestE2BProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too large",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 1000, nil)
 				return err
 			},
@@ -209,7 +211,8 @@ func TestE2BProvider_CreateInstance_UnsupportedLanguage(t *testing.T) {
 	t.Parallel()
 	p := newE2BProviderFromEnv()
 	p.initialized = true
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	ctx := t.Context()
+	if _, err := p.CreateInstance(ctx, "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -218,10 +221,11 @@ func TestE2BProvider_DestroyInstance_EmptyID(t *testing.T) {
 	t.Parallel()
 	p := newE2BProviderFromEnv()
 	p.initialized = true
-	if err := p.DestroyInstance(context.Background(), &SandboxInstance{InstanceID: ""}); err == nil {
+	ctx := t.Context()
+	if err := p.DestroyInstance(ctx, &SandboxInstance{InstanceID: ""}); err == nil {
 		t.Errorf("DestroyInstance(empty id): got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), nil); err == nil {
+	if err := p.DestroyInstance(ctx, nil); err == nil {
 		t.Errorf("DestroyInstance(nil): got nil error, want one")
 	}
 }
@@ -270,7 +274,7 @@ func TestE2BProvider_FullE2E_SkipWithoutKey(t *testing.T) {
 		t.Skip("E2B_API_KEY not set — skipping full E2E test (real network call)")
 	}
 	p := newE2BProviderFromEnv()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
@@ -318,7 +322,8 @@ func TestE2BProvider_AccessTokenFallback(t *testing.T) {
 	// Initialize should NOT fail with "E2B_API_KEY or
 	// E2B_ACCESS_TOKEN is required". The error we'd see is the
 	// SDK's auth error, which is what we want.
-	err := p.Initialize(context.Background())
+	ctx := t.Context()
+	err := p.Initialize(ctx)
 	if err == nil {
 		t.Skip("Initialize succeeded — env-var fallback accepted; skipping further checks")
 	}

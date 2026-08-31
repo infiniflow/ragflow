@@ -93,11 +93,24 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 		select {
 		case <-e.workerPool:
 			defer func() { e.workerPool <- struct{}{} }()
-		case <-ctx.Done():
+		case <-task.Context.Done():
 			resultCh <- &asyncTaskResult{
 				TaskID: task.ID,
 				Name:   task.Name,
-				Err:    ctx.Err(),
+				Err:    task.Context.Err(),
+			}
+			return
+		}
+		// Synchronize with Cancel: another cancelled task may release a worker slot
+		// before this queued task is cancelled.
+		e.mu.Lock()
+		taskErr := task.Context.Err()
+		e.mu.Unlock()
+		if taskErr != nil {
+			resultCh <- &asyncTaskResult{
+				TaskID: task.ID,
+				Name:   task.Name,
+				Err:    taskErr,
 			}
 			return
 		}
@@ -180,44 +193,10 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 
 // ExecuteWithRetry executes a task with retry logic.
 func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn func(context.Context) (any, error), retryConfig *RetryConfig) <-chan *asyncTaskResult {
-	resultCh := make(chan *asyncTaskResult, 1)
-
-	taskCtx, cancel := context.WithCancel(ctx)
-	task := &asyncTask{
-		ID:      uuid.New().String(),
-		Name:    name,
-		Context: taskCtx,
-		Cancel:  cancel,
-	}
-
-	e.mu.Lock()
-	e.activeTasks[task.ID] = task
-	e.mu.Unlock()
-
-	go func() {
-		defer close(resultCh)
-
-		executor := NewRetryExecutor(retryConfig.Policy)
-
-		startTime := time.Now()
-		output, err := executor.Execute(task.Context, name, fn)
-
-		result := &asyncTaskResult{
-			TaskID:   task.ID,
-			Name:     name,
-			Output:   output,
-			Err:      err,
-			Duration: time.Since(startTime),
-		}
-
-		e.mu.Lock()
-		delete(e.activeTasks, task.ID)
-		e.mu.Unlock()
-
-		resultCh <- result
-	}()
-
-	return resultCh
+	executor := NewRetryExecutor(retryConfig.Policy)
+	return e.Execute(ctx, name, func(taskCtx context.Context) (any, error) {
+		return executor.Execute(taskCtx, name, fn)
+	})
 }
 
 // Cancel cancels all active tasks by invoking their cancel functions.

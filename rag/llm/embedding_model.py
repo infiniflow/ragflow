@@ -33,6 +33,7 @@ from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
 import base64
@@ -266,7 +267,12 @@ class OpenAIEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        # extra_body is forwarded verbatim to the provider. \`drop_params\` is
+        # an OpenRouter-specific convention; Together AI (and any strict
+        # OpenAI-compatible provider) rejects it with HTTP 400
+        # "Unrecognized request arguments supplied: drop_params". Send only
+        # fields that every OpenAI-compatible provider accepts.
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float")
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
@@ -316,6 +322,12 @@ def _resolve_azure_credentials(key):
     return key, "2024-02-01"
 
 
+def _normalize_azure_endpoint(base_url):
+    if not base_url:
+        return base_url
+    return base_url.strip().rstrip("/")
+
+
 class AzureEmbed(OpenAIEmbed):
     _FACTORY_NAME = "Azure-OpenAI"
 
@@ -323,7 +335,7 @@ class AzureEmbed(OpenAIEmbed):
         from openai.lib.azure import AzureOpenAI
 
         api_key, api_version = _resolve_azure_credentials(key)
-        self.base_url = ensure_v1(kwargs["base_url"])
+        self.base_url = _normalize_azure_endpoint(kwargs["base_url"])
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
 
         self.model_name = model_name
@@ -664,6 +676,10 @@ class BedrockEmbed(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+        from botocore import UNSIGNED
+        from botocore.awsrequest import AWSRequest
+        from botocore.config import Config
+        from botocore.utils import validate_region_name
 
         # `key` protocol (backend stores as JSON string in `api_key`):
         # - Must decode into a dict.
@@ -671,7 +687,8 @@ class BedrockEmbed(Base):
         # - Supported auth modes:
         #   - "access_key_secret": requires `bedrock_ak` + `bedrock_sk`.
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
-        #   - else: treated as "assume_role" (default AWS credential chain).
+        #   - "assume_role": uses the default AWS credential chain.
+        #   - "bedrock_api_key": uses a request-scoped Bearer token.
         key = json.loads(key)
         mode = key.get("auth_mode")
         if not mode:
@@ -679,12 +696,29 @@ class BedrockEmbed(Base):
             raise ValueError("Bedrock auth_mode must be provided in the key")
 
         self.bedrock_region = key.get("bedrock_region")
+        if not self.bedrock_region:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_region_name(self.bedrock_region)
 
         self.model_name = model_name
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
-        if mode == "access_key_secret":
+        if mode == "bedrock_api_key":
+            api_key = key.get("bedrock_api_key")
+            if not api_key:
+                raise ValueError("Bedrock API key must be provided")
+            self.client = boto3.client(
+                service_name="bedrock-runtime",
+                region_name=self.bedrock_region,
+                config=Config(signature_version=UNSIGNED),
+            )
+
+            def add_bearer_token(request: AWSRequest, **_kwargs: object) -> None:
+                request.headers["Authorization"] = f"Bearer {api_key}"
+
+            self.client.meta.events.register("before-sign.bedrock-runtime.*", add_bearer_token)
+        elif mode == "access_key_secret":
             self.bedrock_ak = key.get("bedrock_ak")
             self.bedrock_sk = key.get("bedrock_sk")
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
@@ -700,8 +734,10 @@ class BedrockEmbed(Base):
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
-        else:  # assume_role
+        elif mode == "assume_role":
             self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
+        else:
+            raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
     def _extract_vector(self, model_response):
         # Titan returns {"embedding": [...]}; Cohere returns {"embeddings": [[...]]}.
@@ -880,6 +916,41 @@ class OpenAI_APIEmbed(OpenAIEmbed):
         self.model_name = model_name.split("___")[0]
 
 
+class MWSEmbed(OpenAIEmbed):
+    """MWS embedding adapter with the exact documented request body."""
+
+    _FACTORY_NAME = "MWS"
+
+    def __init__(self, key, model_name, base_url):
+        """Initialize embedding access for an MWS project and deployment."""
+        self.api_key = require_mws_token(key)
+        self.base_url = mws_api_url(base_url, "openai/v1/embeddings")
+        self.model_name = model_name.split("___")[0]
+
+    def _call(self, batch):
+        """Embed a batch and restore vectors to their original input order."""
+        response = requests.post(
+            self.base_url,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"},
+            json={"model": self.model_name, "input": batch},
+            timeout=30,
+        )
+        _raise_model_exception_if_failed(response)
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list) or len(data) != len(batch):
+            count = len(data) if isinstance(data, list) else 0
+            raise ValueError(f"MWS returned {count} embeddings for {len(batch)} inputs")
+
+        embeddings = [None] * len(batch)
+        for item in data:
+            index = item.get("index") if isinstance(item, dict) else None
+            if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(batch) or embeddings[index] is not None:
+                raise ValueError(f"unexpected MWS embedding index: {index}")
+            embeddings[index] = item["embedding"]
+        return embeddings, total_token_count_from_response(payload)
+
+
 class GreenPTEmbed(OpenAIEmbed):
     """GreenPT OpenAI-compatible embedding adapter."""
 
@@ -1056,10 +1127,17 @@ class BaiduYiyanEmbed(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
 
-        key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = qianfan.Embedding(ak=ak, sk=sk)
+        try:
+            key_obj = json.loads(key)
+        except (json.JSONDecodeError, TypeError):
+            key_obj = key
+        if isinstance(key_obj, dict):
+            ak = key_obj.get("yiyan_ak", "")
+            sk = key_obj.get("yiyan_sk", "")
+            self.client = qianfan.Embedding(ak=ak, sk=sk)
+        else:
+            # adapt to one-line api_key
+            self.client = qianfan.Embedding(access_token=key_obj)
         self.model_name = model_name
 
     def encode(self, texts: list, batch_size=16):
@@ -1077,7 +1155,7 @@ class BaiduYiyanEmbed(Base):
         try:
             res = self.client.do(model=self.model_name, texts=[text]).body
             return (
-                np.array([r["embedding"] for r in res["data"]]),
+                np.array(res["data"][0]["embedding"]),
                 total_token_count_from_response(res),
             )
         except Exception as _e:

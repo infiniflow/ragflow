@@ -539,8 +539,11 @@ def test_parse_pdf_consumes_vision_model_kwarg(monkeypatch, tmp_path):
     _patch_render(m, p, 2)
     pdf = tmp_path / "x.pdf"
     pdf.write_bytes(b"%PDF-1.4 minimal")
-    p.parse_pdf(str(pdf), vision_model="VM")
+    p.parse_pdf(str(pdf), vision_model="VM", lang="Japanese")
     assert p.vision_model == "VM"  # popped from kwargs into self, not forwarded to _call_ocr
+    assert p.language == "Japanese"
+    p.parse_pdf(str(pdf), vision_model="VM", lang="")
+    assert p.language == "English"
 
 
 def test_describe_image_passes_pil_image_not_bytes(monkeypatch):
@@ -562,10 +565,11 @@ def test_describe_image_passes_pil_image_not_bytes(monkeypatch):
     pic = ModuleType("rag.app.picture")
     pic.vision_llm_chunk = lambda binary, vision_model, prompt=None, callback=None: (captured.update(kind=type(binary).__name__), "a white square")[1]
     gen = ModuleType("rag.prompts.generator")
-    gen.vision_llm_figure_describe_prompt = lambda: "describe"
+    gen.vision_llm_figure_describe_prompt = lambda language: (captured.update(language=language), "describe")[1]
     monkeypatch.setitem(_sys.modules, "rag.app.picture", pic)
     monkeypatch.setitem(_sys.modules, "rag.prompts.generator", gen)
 
     out = p._describe_image("@@1\t0\t0\t40\t40##")
     assert out == "a white square"
     assert captured["kind"] == "Image"  # PIL Image, not 'bytes'
+    assert captured["language"] == "English"

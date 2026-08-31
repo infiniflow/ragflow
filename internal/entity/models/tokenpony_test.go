@@ -472,7 +472,7 @@ func TestTokenPonyEmbedReturnsNoSuchMethod(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	model := "x"
-	_, err := newTokenPonyForTest("http://unused").Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := newTokenPonyForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: want 'no such method', got %v", err)
 	}

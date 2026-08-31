@@ -4,87 +4,20 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"ragflow/internal/common"
 	"strings"
-
-	models "ragflow/internal/entity/models"
 )
 
+// parsePDFWithTCADP sends PDF binary data to the TCADP cloud reconstruction
+// service. Thin wrapper over the shared parseWithTCADP core — env-fallbacks
+// and request construction live there.
 func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseResult {
-	if len(data) == 0 {
-		return emptyPDFResult(filename)
-	}
-	baseURL := strings.TrimSpace(parser.TCADPAPIServer)
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIServerURL))
-	}
-	if baseURL == "" {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver or TCADP_APISERVER")}
-	}
-	apiKey := strings.TrimSpace(parser.TCADPAPIKey)
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIKey))
-	}
-	requestBody := map[string]any{
-		"file_type":              "PDF",
-		"file_base64":            base64.StdEncoding.EncodeToString(data),
-		"file_start_page_number": 1,
-		"file_end_page_number":   1000,
-		"config": map[string]any{
-			"TableResultType":           parser.TCADPTableResultType,
-			"MarkdownImageResponseType": parser.TCADPMarkdownImageResponseType,
-		},
-	}
-	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(false), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP submit: %w", err)}
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP read submit: %w", err)}
-	}
-	if resp.StatusCode >= 300 {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP HTTP %d: %s", resp.StatusCode, string(raw))}
-	}
-	var payload struct {
-		DocumentRecognizeResultURL string `json:"DocumentRecognizeResultUrl"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP decode submit: %w", err)}
-	}
-	if payload.DocumentRecognizeResultURL == "" {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP returned no DocumentRecognizeResultUrl")}
-	}
-	downloadReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, payload.DocumentRecognizeResultURL, nil)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP download request: %w", err)}
-	}
-	if auth := bearer(apiKey); auth != "" {
-		downloadReq.Header.Set("Authorization", auth)
-	}
-	downloadResp, err := models.NewDriverHTTPClient(false).Do(downloadReq)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP download: %w", err)}
-	}
-	defer downloadResp.Body.Close()
-	zipBytes, err := io.ReadAll(downloadResp.Body)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP read zip: %w", err)}
-	}
-	if downloadResp.StatusCode >= 300 {
-		return ParseResult{Err: fmt.Errorf("parser: TCADP download HTTP %d: %s", downloadResp.StatusCode, string(zipBytes))}
-	}
-	items, pageCount, err := tcadpItemsFromZip(zipBytes)
-	if err != nil {
-		return ParseResult{Err: err}
-	}
-	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
+	return parseWithTCADP(context.Background(), filename, data, "PDF",
+		parser.TCADPAPIServer, parser.TCADPAPIKey,
+		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType,
+		parser.OutputFormat)
 }
 
 func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, int, error) {

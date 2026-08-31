@@ -36,7 +36,7 @@ type DOCXFigure struct {
 	Image        string `json:"image"`         // base64-encoded image bytes
 	ContextAbove string `json:"context_above"` // text before the image block
 	ContextBelow string `json:"context_below"` // text after the image block
-	Marker       string `json:"marker"`        // substring to locate image position in markdown
+	Marker       string `json:"marker"`        // substring to locate image position in Markdown
 }
 
 // --- office_oxide IR types (local copy, independent of deepdoc) ---
@@ -349,7 +349,7 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 
 		// Marker: text of the immediately preceding flat block,
 		// used by the vision dispatcher to locate the image position
-		// in the rendered markdown for inline insertion.
+		// in the rendered Markdown for inline insertion.
 		for j := i - 1; j >= 0; j-- {
 			if flat[j].text != "" {
 				fig.Marker = flat[j].text

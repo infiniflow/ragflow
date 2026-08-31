@@ -162,10 +162,12 @@ type Model struct {
 	Name          string         `json:"name"`
 	ContentLength *int           `json:"content_length"`
 	MaxOutput     *int           `json:"max_output"`
+	MaxTokens     *int           `json:"max_tokens"`
 	ModelTypes    []string       `json:"model_types"`
 	Thinking      *ModelThinking `json:"thinking"`
 	Tools         *ModelTools    `json:"tools"`
 	Class         *string        `json:"class"`
+	URL           string         `json:"url"`
 	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
 	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
 	Dimensions    []int          `json:"dimensions"`
@@ -526,6 +528,9 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
+		}
+		if model.MaxTokens != nil {
+			modelData["max_tokens"] = *model.MaxTokens
 		}
 		if model.BatchSize != nil {
 			modelData["batch_size"] = *model.BatchSize

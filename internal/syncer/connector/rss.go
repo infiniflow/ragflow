@@ -117,7 +117,11 @@ func (c *RSSConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncS
 		}
 		documents = append(documents, entry.toSourceDocument(c.feedURL))
 	}
-	return &rssSyncSession{documents: documents, batchSize: c.batchSize}, nil
+	session := &rssSyncSession{documents: documents, batchSize: c.batchSize}
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // OpenPrune opens one complete RSS prune snapshot session.
@@ -131,6 +135,13 @@ func (c *RSSConnector) OpenPrune(ctx context.Context, request PruneRequest) (Pru
 		documents = append(documents, SlimDocument{SourceID: entry.sourceID()})
 	}
 	return &rssPruneSession{documents: documents, batchSize: c.batchSize}, nil
+}
+
+// ValidateConnectorSetting validates RSS settings from an unsaved config.
+func (c *RSSConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
 }
 
 // loadEntries fetches and parses the configured feed.
@@ -192,7 +203,8 @@ func (s *rssSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	if end > len(s.documents) {
 		end = len(s.documents)
 	}
-	batch := SyncBatch{Documents: s.documents[s.index:end]}
+	batchDocuments := s.documents[s.index:end]
+	batch := SyncBatch{Documents: batchDocuments, Checkpoint: rssSyncCheckpoint(batchDocuments[len(batchDocuments)-1])}
 	s.index = end
 	return batch, nil
 }
@@ -200,6 +212,34 @@ func (s *rssSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 // Close closes the RSS sync session.
 func (s *rssSyncSession) Close() error {
 	return nil
+}
+
+// applyResume advances past the last committed RSS document when retrying a task.
+func (s *rssSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	if sourceID == "" {
+		return fmt.Errorf("rss sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	for index, doc := range s.documents {
+		if doc.SourceID == sourceID {
+			s.index = index + 1
+			return nil
+		}
+	}
+	return fmt.Errorf("rss resume anchor %q was not found in the current feed: %w", sourceID, ErrSyncResumeInvalid)
+}
+
+// rssSyncCheckpoint returns a resume point after a committed RSS document.
+func rssSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {
+	updatedAt := doc.UpdatedAt
+	return &SyncCheckpoint{
+		Cursor:    doc.SourceID,
+		SourceID:  doc.SourceID,
+		UpdatedAt: &updatedAt,
+	}
 }
 
 type rssPruneSession struct {

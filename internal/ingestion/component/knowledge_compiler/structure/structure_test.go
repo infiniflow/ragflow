@@ -678,9 +678,23 @@ func TestLLMMergeDeciderDecideBatchEmpty(t *testing.T) {
 func TestLLMMergeDeciderDecideBatchSplitsByTokenBudget(t *testing.T) {
 	chat := &graphChat{}
 	d := NewLLMMergeDecider(chat, "llm1", hashEmbedder{dim: 8}, 0.99)
+	submittedBatches := 0
+	submittedChunks := 0
+	d.SetSubmitter(func(ctx context.Context, jobs []func() error) error {
+		submittedBatches++
+		submittedChunks = len(jobs)
+		for _, job := range jobs {
+			if err := job(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	// Tiny model budget → one pair per sub-batch (exercises the split path).
-	// 20 * (1-0.15) = 17 token budget, well under each ~40-token pair.
-	d.SetMaxBatchTokens(20)
+	// Combined budget = 20 * 0.6 = 12 tokens, well under each ~40-token pair's
+	// (input+output) estimate. Output budget disabled (0) → combined-budget-only
+	// batching.
+	d.SetMaxBatchTokens(20, 0)
 
 	alpha := common.Product{
 		ID:      "row-alpha",
@@ -710,6 +724,9 @@ func TestLLMMergeDeciderDecideBatchSplitsByTokenBudget(t *testing.T) {
 	// Budget=1 → one LLM call per pair.
 	if chat.mergeCalls != before+3 {
 		t.Errorf("token-split DecideBatch made %d LLM calls, want 3", chat.mergeCalls-before)
+	}
+	if submittedBatches != 1 || submittedChunks != 3 {
+		t.Fatalf("token-split DecideBatch submitted %d batches/%d chunks, want one batch containing all chunks", submittedBatches, submittedChunks)
 	}
 	if len(results) != 3 {
 		t.Fatalf("want 3 results, got %d", len(results))

@@ -46,6 +46,7 @@ func cacheSize(r *stagehandRuntime) int {
 func TestStagehandRuntime_ValidatesRequiredFields(t *testing.T) {
 	r := newStagehandRuntime(time.Hour, 0, time.Minute) // TTL large → no sweeper interference
 	t.Cleanup(func() { _ = r.Close() })
+	ctx := t.Context()
 
 	cases := []struct {
 		name string
@@ -58,7 +59,7 @@ func TestStagehandRuntime_ValidatesRequiredFields(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := r.RunTask(context.Background(), tc.req)
+			_, err := r.RunTask(ctx, tc.req)
 			if err == nil {
 				t.Fatalf("expected error for %s, got nil", tc.name)
 			}
@@ -535,7 +536,8 @@ func TestStagehandRuntime_SetDefaultStagehandInvoker(t *testing.T) {
 	if got == nil {
 		t.Fatal("getDefaultStagehandInvoker returned nil after swap")
 	}
-	out, err := got.RunTask(context.Background(), RunTaskRequest{Instruction: "x", ModelName: "m", APIKey: "k"})
+	ctx := t.Context()
+	out, err := got.RunTask(ctx, RunTaskRequest{Instruction: "x", ModelName: "m", APIKey: "k"})
 	if err != nil {
 		t.Fatalf("RunTask: %v", err)
 	}

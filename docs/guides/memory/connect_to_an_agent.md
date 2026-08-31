@@ -22,7 +22,6 @@ A memory must be connected to an Agent before historical messages can be written
 
 ![Write agent messages to memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/write_agent_messages_to_memory.jpg)
 
-![Save to memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/save_to_memory.png)
 
 ### Let an Agent Retrieve from Memory
 
@@ -33,6 +32,5 @@ A memory must be connected to an Agent before historical messages can be written
 5. Connect the retrieval result to a subsequent large language model or answer component, so that the Agent can use the retrieved historical context.
 6. Save and run a test, and check whether the answer correctly references historical memories.
 
-![Retrieve from memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieve_from_memory.PNG)
 
 ![Let an agent retrieve from memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/let_an_agent_retrieve_from_memory.jpg)

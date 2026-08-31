@@ -214,10 +214,11 @@ func buildRawMessage(
 		"agent_id":     msg.AgentID,
 		"session_id":   msg.SessionID,
 		"content":      content,
-		"valid_at":     time.Now().UTC().Format("2006-01-02 15:04:05"),
-		"invalid_at":   nil,
-		"forget_at":    nil,
-		"status":       true,
+		// valid_at is stamped as server-local wall clock, not UTC.
+		"valid_at":   memoryNow().Format(memoryTimeLayout),
+		"invalid_at": nil,
+		"forget_at":  nil,
+		"status":     true,
 	}
 }
 
@@ -261,7 +262,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		return err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, contents, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: contents}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return err
 	}
@@ -377,7 +378,7 @@ func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageI
 	if err != nil {
 		return fmt.Errorf("marshal memory task message: %w", err)
 	}
-	if err := mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
+	if err = mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
 		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil

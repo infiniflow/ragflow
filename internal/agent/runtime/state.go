@@ -95,7 +95,7 @@ func NewCanvasState(runID, sessionID string) *CanvasState {
 	return s
 }
 
-// EnsureSysDate fills sys.date with the current UTC timestamp when it
+// EnsureSysDate fills sys.date with the current local timestamp when it
 // is missing or blank. Python canvas initializes the same variable with
 // "%Y-%m-%d %H:%M:%S"; keep that wire format for DSL compatibility.
 func (s *CanvasState) EnsureSysDate() {
@@ -110,7 +110,7 @@ func (s *CanvasState) EnsureSysDate() {
 	if v, ok := s.Sys["date"]; ok && strings.TrimSpace(fmt.Sprint(v)) != "" {
 		return
 	}
-	s.Sys["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
+	s.Sys["date"] = time.Now().Format("2006-01-02 15:04:05")
 }
 
 // init registers CanvasState with eino's internal type registry so

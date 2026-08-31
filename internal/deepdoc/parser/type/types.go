@@ -38,12 +38,12 @@ type ParseResult struct {
 	DLARegions []DLAPageRegions
 
 	// Engine is the native PDF backend used to lazily crop section
-	// images on demand (e.g. for markdown figure embeds or downstream
+	// images on demand (e.g. for Markdown figure embeds or downstream
 	// chunk-time cropping). It is populated by ParseRaw and carries
 	// ownership of the engine: Parse does NOT close the engine, so the
 	// caller must release it via Close once the result is fully
 	// serialized. The JSON parse path closes it immediately after
-	// serialization; the markdown path crops figure images first, then
+	// serialization; the Markdown path crops figure images first, then
 	// closes. Close is idempotent and safe to call on a nil result.
 	Engine PDFEngine
 }
@@ -95,10 +95,22 @@ type TextBox struct {
 	Top, Bottom float64
 	Text        string
 	PageNumber  int
-	LayoutType  string
-	LayoutNo    string
-	ColID       int
-	R           int
+	// Pages carries the full set of page numbers a box spans, when it is a
+	// single logical region split across consecutive pages (e.g. a table
+	// merged across pages by MergeTablesAcrossPages). When non-empty it
+	// overrides PageNumber for page-span computation in BoxesToSections, so a
+	// cross-page merged table records every page it occupies (not just the
+	// anchor page).
+	Pages      []int
+	LayoutType string
+	LayoutNo   string
+	ColID      int
+	R          int
+	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
+	// ocrMergeChars), as opposed to one built from embedded PDF chars
+	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
+	// so char-path digital PDFs are never silently de-duplicated.
+	IsOCR bool
 	// Post-TSR table annotation fields (Python: R/H/C/SP tags)
 	RTop, RBott   float64
 	HTop, HBott   float64
@@ -165,6 +177,10 @@ type TableItem struct {
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// Page is the 0-based page index this table was detected on. It is set
+	// by the pipeline and used by parity/replay harnesses to map replay
+	// intermediates (which are keyed by page) back onto the correct table.
+	Page int
 }
 
 // TSRCell represents one table cell from TSR.
@@ -172,6 +188,11 @@ type TSRCell struct {
 	X0, Y0, X1, Y1 float64
 	Text           string
 	Label          string
+	// Score is the TSR detection confidence. Python's layouts_cleanup keeps
+	// the higher-score line when two structure lines overlap (recognizer.py:141),
+	// so the production table assembly needs it to de-duplicate rows/columns
+	// the same way Python does.
+	Score float64
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {
@@ -212,7 +233,6 @@ type ParserConfig struct {
 	AutoRotateTables   *bool
 	SeparateTablesFigs bool
 	SortByTop          bool
-	SkipOCR            bool
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
@@ -251,6 +271,20 @@ const (
 	DLALabelTableCaption  = "table caption"
 )
 
+// GarbageLayoutScoreThreshold is the minimum confidence a garbage-layout
+// region must reach to survive; below it the region is dropped. Mirrors
+// Python's garbage gate in LayoutRecognizer (deepdoc/vision/layout_recognizer.py:97).
+const GarbageLayoutScoreThreshold = 0.4
+
+// GarbageLayoutTypes are layout types dropped when their confidence is below
+// GarbageLayoutScoreThreshold. Mirrors Python's self.garbage_layouts
+// = ["footer", "header", "reference"].
+var GarbageLayoutTypes = map[string]bool{
+	LayoutTypeFooter:    true,
+	LayoutTypeHeader:    true,
+	LayoutTypeReference: true,
+}
+
 // ── Interfaces ────────────────────────────────────────────────────────────
 
 // DocAnalyzer abstracts DeepDoc vision operations.
@@ -260,6 +294,22 @@ type DocAnalyzer interface {
 	OCRDetect(ctx context.Context, cropped image.Image) ([]OCRBox, error)
 	OCRRecognize(ctx context.Context, cropped image.Image) ([]OCRText, error)
 	Health() bool
+}
+
+// NativeDocAnalyzerFactory, when set, supplies the local in-process DeepDoc
+// backend. The native backend (internal/deepdoc/parser/pdf/inference/
+// native_analyzer) registers itself here from its Register at process start;
+// the parser package then reads it without ever importing onnxruntime. It is
+// nil in builds/tests that do not opt into the native backend. The setter lives
+// in this dependency-free type package (rather than in the parser) so the
+// native backend implementation can register itself without importing the
+// parser, which would otherwise create a parser -> pdf -> native_analyzer ->
+// parser import cycle.
+var NativeDocAnalyzerFactory func() (DocAnalyzer, bool)
+
+// SetNativeDocAnalyzerFactory registers the in-process DeepDoc analyzer.
+func SetNativeDocAnalyzerFactory(f func() (DocAnalyzer, bool)) {
+	NativeDocAnalyzerFactory = f
 }
 
 // ── Outline ────────────────────────────────────────────────────────────

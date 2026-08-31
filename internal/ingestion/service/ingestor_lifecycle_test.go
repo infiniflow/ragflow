@@ -34,7 +34,7 @@ import (
 // pool and activeWorkers would exceed concurrency after the second call.
 func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 	const concurrency int32 = 3
-	ingestor := NewIngestor("test-idempotent", concurrency, nil)
+	ingestor := newUnitIngestor("test-idempotent", concurrency, nil)
 
 	ingestor.startWorkerPool()
 	// Wait for all workers to enter their loop (they block on the select
@@ -66,7 +66,7 @@ func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 // for all worker goroutines to exit without hanging.
 func TestStop_GracefulShutdown(t *testing.T) {
 	const concurrency int32 = 2
-	ingestor := NewIngestor("test-shutdown", concurrency, nil)
+	ingestor := newUnitIngestor("test-shutdown", concurrency, nil)
 
 	// Start workers; they will block on the task channel since nothing is pushed.
 	ingestor.startWorkerPool()
@@ -91,7 +91,7 @@ func TestStop_GracefulShutdown(t *testing.T) {
 // Stop. Without this, the admin graceful-shutdown path is dead (cmd blocks
 // forever on the receive).
 func TestStop_ClosesShutdownCh(t *testing.T) {
-	ingestor := NewIngestor("test-shutdown-ch", 1, nil)
+	ingestor := newUnitIngestor("test-shutdown-ch", 1, nil)
 	ingestor.Stop(context.Background())
 	select {
 	case <-ingestor.ShutdownCh:
@@ -112,7 +112,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	const concurrency int32 = 1
-	ingestor := NewIngestor("test-stuck", concurrency, []string{"pdf"})
+	ingestor := newUnitIngestor("test-stuck", concurrency, []string{"pdf"})
 	ingestor.startWorkerPool()
 
 	// runDocumentTask blocks on release and ignores ctx, simulating a
@@ -168,7 +168,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 // long DB query). Without BP3, the initial cancelCheck call runs
 // synchronously and pollCancel cannot observe done until it returns.
 func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 
 	// Block cancelCheck until released — simulate a stuck DB call.
 	blocking := make(chan struct{})
@@ -220,7 +220,7 @@ func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
 	const concurrency int32 = 2
-	ing := NewIngestor("test-start-fullpath", concurrency, nil)
+	ing := newUnitIngestor("test-start-fullpath", concurrency, nil)
 	t.Cleanup(func() { ing.Stop(context.Background()) })
 
 	done := make(chan error, 1)

@@ -92,15 +92,3 @@ export const GenericApiKeyConfig: ProviderConfig = {
     };
   },
 };
-
-/**
- * List of factories supporting base_url (used for the generic ApiKey modal)
- */
-export const FACTORIES_WITH_BASE_URL = [
-  LLMFactory.OpenAI,
-  LLMFactory.AzureOpenAI,
-  LLMFactory.TongYiQianWen,
-  LLMFactory.MiniMax,
-  LLMFactory.SILICONFLOW,
-  LLMFactory.TencentHunYuan,
-];

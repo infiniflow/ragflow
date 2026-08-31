@@ -365,10 +365,10 @@ func TestAvianUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	a := newAvianForTest("http://unused")
 	model := "deepseek/deepseek-v3.2"
 
-	if _, err := a.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := a.Rerank(ctx, &model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
 	if _, err := a.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {

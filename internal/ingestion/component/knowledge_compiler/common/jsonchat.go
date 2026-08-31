@@ -49,6 +49,10 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 		maxRetries = retryMax[0]
 	}
 	req.JSONMode = true
+	// GenJSON owns retries for both transport failures and malformed JSON. Tell
+	// the production ChatInvoker to make exactly one provider request per outer
+	// GenJSON attempt, avoiding multiplicative nested retries.
+	req.DisableRetry = true
 	var lastErr error
 	delay := jsonRetryDelay
 	for attempt := 0; attempt <= maxRetries; attempt++ {

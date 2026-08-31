@@ -18,18 +18,15 @@ package parser
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
 	"log/slog"
-	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"time"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -310,24 +307,44 @@ func emptyPDFResult(filename string) ParseResult {
 	}
 }
 
-func deepDocAnalyzerFromEnv() deepdoctype.DocAnalyzer {
-	baseURL := strings.TrimSpace(common.GetEnv(common.EnvDeepDocURL))
-	if baseURL == "" {
-		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
+// deepDocAnalyzerFromEnv resolves the configured DeepDoc analyzer. It is a thin
+// wrapper over resolveDocAnalyzer that feeds the registered in-process factory
+// (production is in-process only). The factory itself is owned by the
+// dependency-free deepdoctype package so the native backend can register
+// without the parser importing onnxruntime.
+func deepDocAnalyzerFromEnv() (deepdoctype.DocAnalyzer, error) {
+	return resolveDocAnalyzer(deepdoctype.NativeDocAnalyzerFactory)
+}
+
+// resolveDocAnalyzer applies the DeepDoc backend policy:
+//   - the in-process factory is the ONLY production backend; it is used
+//     directly when registered (serving),
+//   - if it is unavailable it returns an error so parsing fails loudly
+//     instead of silently producing empty layout/table/OCR results.
+//
+// The external Python HTTP service (formerly selected via DEEPDOC_URL) has
+// been removed entirely from both the production path and the test suite, so
+// production is in-process only.
+//
+// It takes its inputs explicitly (the factory) rather than reading
+// globals, so the policy is unit-testable in isolation. It never returns a
+// mock: if no backend is available it returns an error (MockDocAnalyzer is
+// test-only infrastructure and must never sit in this production path).
+func resolveDocAnalyzer(factory func() (deepdoctype.DocAnalyzer, bool)) (deepdoctype.DocAnalyzer, error) {
+	if factory != nil {
+		if a, ok := factory(); ok {
+			return a, nil
+		}
 	}
-	client, err := inference.NewClient(baseURL)
-	if err != nil {
-		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
-	}
-	if !client.Health() {
-		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
-	}
-	// Wrap with Redis-backed cache (1h TTL) so repeated
-	// DLA/TSR/OCR inference on the same image is served from
-	// Redis instead of re-hitting the DeepDoc HTTP service. The
-	// wrapper is a no-op when Redis is not configured (see
-	// internal/deepdoc/parser/pdf/inference/cache.go).
-	return inference.NewDocAnalyzerCache(client, inference.DefaultCacheTTL)
+	return nil, fmt.Errorf("deepdoc: no in-process DeepDoc backend available: build with -tags cgo and provide ORT + models")
+}
+
+// GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
+// single production entry point now that the external HTTP service is no longer
+// a backend. Callers outside the parser package (e.g. standalone image OCR in
+// the ingestion component) use this instead of constructing a client.
+func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
+	return deepDocAnalyzerFromEnv()
 }
 
 func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) ParseResult {
@@ -345,6 +362,8 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
 	applyPDFPostProcess(&processed, opts)
+	defer processed.Close()
+	cropMediaSections(&processed)
 
 	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
@@ -363,12 +382,9 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		}
 		normalizePDFDocType(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
-			items[i]["image"] = "data:image/png;base64," + img
+			items[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
 	}
-	// JSON is consumed by the chunker, which re-acquires the source PDF
-	// and crops image/table sections on demand. Release the engine now.
-	processed.Close()
 	return ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
@@ -391,11 +407,8 @@ func pdfParseResultToMarkdownWithOptions(filename string, parsed *deepdoctype.Pa
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
 	applyPDFPostProcess(&processed, opts)
-	// Markdown embeds figure images inline, so crop figures here while
-	// the engine is still alive. The chunker path crops image/table
-	// chunks on demand instead.
-	cropMarkdownFigures(&processed)
-	processed.Close()
+	defer processed.Close()
+	cropMediaSections(&processed)
 
 	return ParseResult{
 		OutputFormat: "markdown",
@@ -440,66 +453,38 @@ func firstPageNumber(raw any) int {
 	}
 }
 
-func inlinePNGDataURL(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	if strings.HasPrefix(raw, "data:image/") {
-		return raw
-	}
-	if _, err := base64.StdEncoding.DecodeString(raw); err != nil {
-		return raw
-	}
-	return "data:image/png;base64," + raw
-}
-
 func sectionsToMarkdown(sections []deepdoctype.Section) string {
-	var b strings.Builder
-	for _, section := range sections {
-		layoutType := strings.TrimSpace(section.LayoutType)
-		if layoutType == deepdoctype.LayoutTypeTitle {
-			b.WriteString("\n## ")
-		}
-		if layoutType == deepdoctype.LayoutTypeFigure && section.Image != "" {
-			b.WriteString("\n![Image](")
-			b.WriteString(inlinePNGDataURL(section.Image))
-			b.WriteString(")")
-			continue
-		}
-		b.WriteString(section.Text)
-		b.WriteByte('\n')
-	}
-	return b.String()
+	return pdflayout.SectionsToMarkdown(sections)
 }
 
-// cropMarkdownFigures crops inline images for figure sections so the
-// markdown output can embed them. It mirrors the figure branch of the
-// former Parse.fillSectionImages, but runs only for the markdown path
-// (the JSON path defers cropping to the chunker). The engine is read
-// from result.Engine; callers must Close the result afterwards.
-func cropMarkdownFigures(result *deepdoctype.ParseResult) {
+// cropMediaSections crops figure and table sections from rendered PDF page
+// images while the engine is still alive, populating sec.Image.
+// It is used by both the JSON and Markdown serialization paths.
+func cropMediaSections(result *deepdoctype.ParseResult) {
 	engine := result.Engine
 	if engine == nil || len(result.PageHeight) == 0 {
 		return
 	}
-	// Render each page at most once across all figures. A PDF can have many
-	// figures on the same page, so a cache shared across the section loop
-	// avoids re-rendering the page for every figure.
+	// Render each page at most once across all media sections. A PDF can have many
+	// figures/tables on the same page, so a cache shared across the section loop
+	// avoids re-rendering the page for every section.
 	//
-	// result.Sections is ordered by page, so once we advance to a figure whose
-	// minimum page is P, no later figure references a page < P. We therefore
+	// result.Sections is ordered by page, so once we advance to a section whose
+	// minimum page is P, no later section references a page < P. We therefore
 	// keep only a sliding window of page images: pages strictly below the
-	// current figure's minimum page are evicted. This bounds memory to the
-	// current figure's page span (typically one page, a few at most for a
-	// cross-page figure) instead of caching the whole PDF.
+	// current section's minimum page are evicted. This bounds memory to the
+	// current section's page span (typically one page, a few at most for a
+	// cross-page section) instead of caching the whole PDF.
 	pageCache := make(map[int]image.Image)
+	var lastMinPage = -1
+	sectionsOrdered := true
 	renderPage := func(pn int) image.Image {
 		if img, ok := pageCache[pn]; ok {
 			return img
 		}
 		img, err := deepdocpdf.RenderPageToImage(engine, pn)
 		if err != nil || img == nil {
-			slog.Warn("cropMarkdownFigures: render failed, skipping figure",
+			slog.Warn("cropMediaSections: render failed, skipping section",
 				"page", pn, "err", err)
 			pageCache[pn] = nil
 			return nil
@@ -510,13 +495,19 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 
 	for i := range result.Sections {
 		sec := &result.Sections[i]
-		if sec.LayoutType != deepdoctype.LayoutTypeFigure {
+		if strings.TrimSpace(sec.Image) != "" {
+			continue
+		}
+		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&
+			sec.LayoutType != deepdoctype.LayoutTypeTable &&
+			strings.TrimSpace(sec.LayoutType) != "image" &&
+			sec.DocTypeKwd != "image" && sec.DocTypeKwd != "table" {
 			continue
 		}
 		if len(sec.Positions) == 0 {
 			continue
 		}
-		// Minimum page this figure touches; used both to prune stale cache
+		// Minimum page this section touches; used both to prune stale cache
 		// entries and to bound the window.
 		minPage := -1
 		pages := make(map[int]struct{})
@@ -528,18 +519,28 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 				}
 			}
 		}
-		// Evict page images that no later figure can reference (all future
-		// figures start at page >= minPage).
-		for pn := range pageCache {
-			if pn < minPage {
-				delete(pageCache, pn)
+		if lastMinPage >= 0 && minPage < lastMinPage {
+			if sectionsOrdered {
+				slog.Warn("cropMediaSections: sections out of page order; disabling page cache eviction",
+					"min_page", minPage, "last_min_page", lastMinPage)
+			}
+			sectionsOrdered = false
+		}
+		lastMinPage = minPage
+		// Evict page images that no later section can reference (all future
+		// sections start at page >= minPage).
+		if sectionsOrdered {
+			for pn := range pageCache {
+				if pn < minPage {
+					delete(pageCache, pn)
+				}
 			}
 		}
 		// Collect every distinct page this section spans so CropSectionByDLA
 		// can crop and vertically concatenate each page (mirroring Python's
-		// cropout multi-page branch). Single-page figures still render exactly
+		// cropout multi-page branch). Single-page sections still render exactly
 		// one page, and the pageCache above guarantees a page is rendered at
-		// most once even when several figures share it.
+		// most once even when several sections share it.
 		single := make(map[int]image.Image, len(pages))
 		for pn := range pages {
 			if img := renderPage(pn); img != nil {
@@ -549,9 +550,17 @@ func cropMarkdownFigures(result *deepdoctype.ParseResult) {
 		if len(single) == 0 {
 			continue
 		}
-		if dla := util.CropSectionByDLA(*sec, result.DLARegions, single); dla != "" {
-			sec.Image = dla
-			continue
+		if sec.LayoutType == deepdoctype.LayoutTypeFigure {
+			if dla := util.CropSectionByDLA(*sec, result.DLARegions, single); dla != "" {
+				sec.Image = dla
+				continue
+			}
+		}
+		if len(sec.Positions) > 0 {
+			if img := util.CropSectionPositions(sec.Positions, single, deepdoctype.DlaScale); img != "" {
+				sec.Image = img
+				continue
+			}
 		}
 		sec.Image = util.CropSectionImage(sec.PositionTag, single, deepdoctype.DlaScale)
 	}
@@ -673,7 +682,11 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
-	parsed, err := parseFn(ctx, data, deepDocAnalyzerFromEnv())
+	analyzer, aerr := deepDocAnalyzerFromEnv()
+	if aerr != nil {
+		return ParseResult{Err: aerr}
+	}
+	parsed, err := parseFn(ctx, data, analyzer)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
@@ -688,7 +701,7 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	}
 	for i := range res.JSON {
 		if img, _ := res.JSON[i]["image"].(string); img != "" {
-			res.JSON[i]["image"] = inlinePNGDataURL(img)
+			res.JSON[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
 	}
 	return res

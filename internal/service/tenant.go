@@ -526,10 +526,9 @@ func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defau
 		return nil, nil, nil, false, err
 	}
 
-	// Check if the model exists and is active. The tenant_model row is the
-	// source of truth here — providers with an empty factory catalog (e.g.
-	// OpenAI-API-Compatible, whose models are user-defined) cannot be
-	// validated against the catalog. Mirrors Python's _get_model_info.
+	// Check if the model exists and is active. Model type validity is
+	// enforced on the save path against the tenant_model record, so models
+	// added online that are absent from the static catalog still resolve.
 	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {

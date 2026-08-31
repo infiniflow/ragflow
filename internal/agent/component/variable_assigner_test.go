@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -28,7 +27,7 @@ import (
 func TestVariableAssigner_Append(t *testing.T) {
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{
@@ -62,7 +61,7 @@ func TestVariableAssigner_Overwrite(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Outputs["cpn_0"] = map[string]any{"x": "old"}
 	state.Outputs["cpn_1"] = map[string]any{"y": "fresh"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{
@@ -88,7 +87,7 @@ func TestVariableAssigner_Overwrite(t *testing.T) {
 func TestVariableAssigner_DivideByZero(t *testing.T) {
 	state := canvas.NewCanvasState("run-3", "task-3")
 	state.Outputs["cpn_0"] = map[string]any{"n": 6.0}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{
@@ -133,7 +132,7 @@ func TestVariableAssigner_Clear(t *testing.T) {
 		"c": map[string]any{"k": "v"},
 		"d": 42,
 	}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "cpn_0@a", "operator": "clear", "parameter": "x"},
@@ -166,7 +165,7 @@ func TestVariableAssigner_Clear(t *testing.T) {
 func TestVariableAssigner_Arithmetic(t *testing.T) {
 	state := canvas.NewCanvasState("run-5", "task-5")
 	state.Outputs["cpn_0"] = map[string]any{"n": 10.0}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "cpn_0@n", "operator": "+=", "parameter": 5},
@@ -191,7 +190,7 @@ func TestVariableAssigner_Arithmetic(t *testing.T) {
 func TestVariableAssigner_RemoveFirstLast(t *testing.T) {
 	state := canvas.NewCanvasState("run-6", "task-6")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{"a", "b", "c", "d"}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "cpn_0@xs", "operator": "remove_first", "parameter": "x"},
@@ -219,7 +218,7 @@ func TestVariableAssigner_RemoveFirstLast(t *testing.T) {
 // TestVariableAssigner_SysTarget: variable="sys.x" → state.Sys is written.
 func TestVariableAssigner_SysTarget(t *testing.T) {
 	state := canvas.NewCanvasState("run-7", "task-7")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "sys.x", "operator": "set", "parameter": "hello"},

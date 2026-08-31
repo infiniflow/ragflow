@@ -14,150 +14,375 @@ import (
 )
 
 // ---- Column assignment ----
-
-// AssignColumn groups boxes into columns on each page by KMeans x0 clustering
-// with silhouette score selection, matching Python's _assign_column().
 //
-// Python: pdf_parser.py:739 _assign_column()
-func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
+// AssignColumn is implemented in combined_column.go (gap + KMeans hybrid).
+
+// ---- Text merge (horizontal) ----
+
+// DedupIdenticalText collapses boxes whose text is byte-identical on the SAME
+// page AND whose Y bands are pairwise DISJOINT, keeping the first
+// (reading-order) occurrence. OCR repeatedly detects the same text at disjoint
+// Y positions (09_crosspage_paragraph detects each paragraph 14-18x per page);
+// Python's downstream merge collapses these, so Go must too or the replay
+// output duplicates every paragraph. Boxes that OVERLAP in Y are kept: multiple
+// columns / adjacent lines on one page legitimately share text (e.g.
+// eval_three_wide has 3 columns at the same Y). Different pages keep their own
+// copies (a cross-page paragraph appears once per page).
+//
+// A same-text group is treated as a pseudo-duplicate only when it forms a
+// REGULAR rolling-stride CHAIN of at least pseudoDupChainMin boxes (same X,
+// pairwise disjoint Y, gaps > 4x height). Shorter groups (2-4 copies, e.g. the
+// identical template rows of eval_two_wide_gutter / eval_two_indented_first_para)
+// are real document content — distinct physical lines that happen to share
+// text — and are kept verbatim.
+const pseudoDupChainMin = 5
+
+func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
+	type key struct {
+		page int
+		text string
+	}
+	groups := make(map[key][]int, len(boxes))
+	for i, b := range boxes {
+		// Only OCR boxes are de-duplicated: char-path digital-PDF boxes may
+		// legitimately repeat the same text (clauses, headings) and must be
+		// kept verbatim — dropping them would silently lose content.
+		if !b.IsOCR {
+			continue
+		}
+		t := strings.TrimSpace(b.Text)
+		if t == "" {
+			continue
+		}
+		groups[key{b.PageNumber, t}] = append(groups[key{b.PageNumber, t}], i)
+	}
+
+	drop := make(map[int]bool, len(boxes))
+	for _, idxs := range groups {
+		// A pseudo-duplicate needs a rolling-stride CHAIN of at least
+		// pseudoDupChainMin detections. Isolated pairs / short groups of
+		// identical text are real repeated lines and must be kept (e.g. the
+		// eval_two_* template rows detected 2-4x, where dropping any copy
+		// loses a real line).
+		if len(idxs) < pseudoDupChainMin {
+			continue
+		}
+		// Short identical texts (e.g. the repeated keyword 'Transformer' in
+		// 16_dense_cjk) are real document content, not OCR paragraph
+		// duplicates — only paragraphs (>= 20 runes) are collapsed.
+		if utf8.RuneCountInString(strings.TrimSpace(boxes[idxs[0]].Text)) < 20 {
+			continue
+		}
+		// OCR pseudo-duplicate: the same text detected repeatedly at disjoint
+		// Y positions of the SAME X location, separated by MORE than 4x the box
+		// height (a rolling-stride re-detection). Adjacent identical rows
+		// (~1x height apart, e.g. eval_two_narrow_gutter) and different columns
+		// are real content and are kept.
+		gapThreshold := 4 * (boxes[idxs[0]].Bottom - boxes[idxs[0]].Top)
+		if gapThreshold <= 0 {
+			continue
+		}
+		hasOverlapY := false
+		allOverlapX := true
+		allGapOK := true
+		for a := 0; a < len(idxs) && !hasOverlapY; a++ {
+			for c := a + 1; c < len(idxs); c++ {
+				ba, bc := boxes[idxs[a]], boxes[idxs[c]]
+				if ba.Bottom > bc.Top && bc.Bottom > ba.Top {
+					hasOverlapY = true
+				}
+				if bc.X1 <= ba.X0 || ba.X1 <= bc.X0 {
+					allOverlapX = false
+				}
+				gap := ba.Top - bc.Top
+				if gap < 0 {
+					gap = -gap
+				}
+				if gap <= gapThreshold {
+					allGapOK = false
+				}
+			}
+		}
+		if !hasOverlapY && allOverlapX && allGapOK {
+			for _, idx := range idxs[1:] {
+				drop[idx] = true
+			}
+		}
+	}
+
+	out := boxes[:0]
+	for i, b := range boxes {
+		if drop[i] {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// DedupSubstringOverlaps collapses a box whose text is a CONTIGUOUS SUBSTRING
+// of another same-page box AND is geometrically contained in that box (X AND Y
+// inside), keeping the longer box. OCR detects both a full paragraph and its
+// middle fragment at the same location (e.g. 01_english_simple: full paragraph
+// y=(105,166) plus fragment "language models. When a user asks..." y=(119,132));
+// Python drops the fragment, Go must too or the merged paragraph repeats it. A
+// substring box at a disjoint Y OR X (different column, e.g.
+// eval_two_wide_gutter) is kept — a real repeated heading or another column's
+// text is legal. The containment test is bound to the substring box (not just
+// the shorter-height box) so a physically taller box whose short text is a
+// substring of a neighbour is never silently dropped.
+//
+// The substring comparison is whitespace-insensitive: ocrMergeChars fills line
+// fragments with char-layer text that preserves the PDF's original spaces
+// ("- name: SSL_CERT_FILE", "⽂章 中 提到") while the containing paragraph OCR
+// box carries the recognizer's joined text ("-name: SSL_CERT_FILE",
+// "⽂章中提到"). Byte-wise matching would miss the fragment relation and the
+// inner box survives to NaiveVerticalMerge, which concatenates it into the
+// paragraph — duplicating text (the ocr_real text gaps: plugin-daemon,
+// RAG分词, 三国人物). Geometry (boxInsideTolerant) remains the actual
+// containment proof; whitespace normalization only makes the fragment check
+// robust to the char-vs-OCR space divergence.
+func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
+	drop := make([]bool, len(boxes))
+	// Precompute the whitespace-normalized text once per box. The inner loop
+	// compares every OCR pair, so recomputing norm there would make the O(n²)
+	// loop O(n²·len) in the worst case (a large scan document hits ~3k boxes).
+	norm := make([]string, len(boxes))
+	for i, b := range boxes {
+		if b.IsOCR {
+			norm[i] = dedupNormText(strings.TrimSpace(b.Text))
+		}
+	}
+	for i := range boxes {
+		if drop[i] {
+			continue
+		}
+		// Only OCR-vs-OCR pairs are collapsed (see DedupIdenticalText): a
+		// char-path box is never treated as a fragment of another.
+		if !boxes[i].IsOCR {
+			continue
+		}
+		ai := strings.TrimSpace(boxes[i].Text)
+		if ai == "" {
+			continue
+		}
+		for j := range boxes {
+			if i == j || drop[j] || boxes[i].PageNumber != boxes[j].PageNumber || !boxes[j].IsOCR {
+				continue
+			}
+			aj := strings.TrimSpace(boxes[j].Text)
+			if aj == "" || ai == aj {
+				continue
+			}
+			ni, nj := norm[i], norm[j]
+			// Never collapse a substring across columns. OCR double-detection
+			// fragments always share the SAME column as their container; a
+			// substring in a DIFFERENT column (e.g. the opposite column of a
+			// two-column page whose wide OCR box spans the gutter, or a left
+			// column short line whose text happens to be a substring of a right
+			// column paragraph) is independent document text and must be kept.
+			// ColID is assigned by AssignColumn, which now runs before dedup;
+			// boxes without column info (ColID==0, the single-column default, or
+			// unset) keep the original geometry-only behaviour so legacy tests
+			// and single-column docs are unaffected.
+			if boxes[i].ColID != boxes[j].ColID {
+				continue
+			}
+			// Collapse only when the SUBSTRING-text box is geometrically CONTAINED
+			// in the text-containing box. Binding the geometry to the actual
+			// substring (not merely the shorter-height box) avoids silently
+			// dropping a physically taller box whose short text happens to be a
+			// substring of a neighbour — OCR double-detection fragments are always
+			// the smaller, contained box, so the taller container is kept.
+			if len(ni) >= len(nj) && strings.Contains(ni, nj) {
+				// j's text is a substring of i's -> drop j only if j sits inside i.
+				if boxInsideTolerant(boxes[j], boxes[i]) {
+					drop[j] = true
+				}
+			} else if len(nj) > len(ni) && strings.Contains(nj, ni) {
+				// i's text is a substring of j's -> drop i only if i sits inside j.
+				if boxInsideTolerant(boxes[i], boxes[j]) {
+					drop[i] = true
+					break
+				}
+			}
+		}
+	}
+	out := boxes[:0]
+	for i, b := range boxes {
+		if drop[i] {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// dedupNormText strips all whitespace for substring comparison. Spaces are the
+// only divergence between the char-derived fragment text and the OCR box text,
+// and whitespace carries no content identity here — the containment geometry is
+// the real proof (see DedupSubstringOverlaps).
+func dedupNormText(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// FilterWatermarkBoxes drops single-character ASCII boxes whose text repeats
+// verbatim many times on the SAME page. This targets the "tiled watermark on a
+// rotated glyph string" pattern reported in #18145:
+//
+//   - Resume / template PDFs plant a watermark string (e.g. "ce1a60…ZH1c56f")
+//     repeated diagonally across the page. The string is rotated so each
+//     glyph fails the layout line-overlap check and ends up in its own
+//     single-character box.
+//   - Naive chunker then interleaves those garbage boxes into every chunk.
+//
+// This runs at the POST-PROCESS level (after char→box and OCR→box have both
+// converged into the same `[]pdf.TextBox` slice), so it covers both the
+// direct-text and OCR-merge code paths that the issue reproduces. An earlier
+// attempt to filter at the char-stage in `CharsToBoxes` was a dead branch
+// for the OCR-merge path and operated at the wrong granularity (multi-char
+// tokens), per the review on PR #18308.
+//
+// Scope is intentionally tight so legitimate content is never dropped:
+//
+//   - Only boxes whose Text is exactly one ASCII letter or digit, classified
+//     against raw Text (no normalization). This excludes multi-token
+//     repetition (e.g. repeated SKU "ABC123"), CJK glyphs (always ≥3 UTF-8
+//     bytes → len>1), punctuation, and whitespace.
+//   - Promoted only if the box's text appears ≥ watermarkBoxesMinOccurrences
+//     times on the page. A real "Q" or "1" appears at most once per page
+//     outside a watermark tiling.
+//   - Page-local, so a watermark on page 3 cannot affect page 1. This also
+//     keeps the O(n) cost bounded by page size.
+//
+// CJK is unconstrained: a single box's bytes may be ≥1 even when the rune
+// count is 1, so `len(box.Text) == 1` already excludes CJK fonts (which are
+// typically 3 bytes per glyph). A box that 姓名 — the canonical Chinese name
+// field — survives verbatim even when the rest of the document is contaminated.
+func FilterWatermarkBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
-
-	pageGroups, sortedPages := groupBoxesByPage(boxes)
-
-	result := make([]pdf.TextBox, len(boxes))
-	copy(result, boxes)
-
-	// Step A: per-page best k using silhouette score.
-	pageCols := make(map[int]int)
-	for _, pg := range sortedPages {
-		indices := pageGroups[pg]
-		determineBestKForPage(boxes, result, indices, pg, pageCols)
+	// Pass 1: per-page count of single-char ASCII boxes. Use the raw
+	// box.Text for both classification and the promotion key so no
+	// normalization collapses distinct bytes.
+	type key struct {
+		page int
+		text string
 	}
-
-	// Step B: assign col_id per page using per-page best k.
-	// Labels are remapped by centroid x-order: leftmost column → 0.
-	for _, pg := range sortedPages {
-		indices := pageGroups[pg]
-		assignColIDsForPage(boxes, result, indices, pg, pageCols)
-	}
-
-	return result
-}
-
-// determineBestKForPage finds the best number of clusters (k) for a page using silhouette score
-func determineBestKForPage(boxes, result []pdf.TextBox, indices []int, pg int, pageCols map[int]int) {
-	n := len(indices)
-	if n < 2 {
-		pageCols[pg] = 1
-		for _, idx := range indices {
-			result[idx].ColID = 0
+	counts := make(map[key]int, len(boxes))
+	for _, b := range boxes {
+		if !isSingleAsciiAlnum(b.Text) {
+			continue
 		}
-		return
+		counts[key{b.PageNumber, b.Text}]++
 	}
-
-	x0s, minX0, maxX1 := extractX0Values(boxes, indices)
-	pageWidth := maxX1 - minX0
-	indentTol := pageWidth * 0.12
-	applyIndentTolerance(x0s, minX0, indentTol)
-
-	bestK, _ := findBestK(x0s, n)
-	pageCols[pg] = bestK
-}
-
-// extractX0Values extracts x0 coordinates from boxes on a page and finds minX0 and maxX1
-func extractX0Values(boxes []pdf.TextBox, indices []int) (x0s []float64, minX0 float64, maxX1 float64) {
-	n := len(indices)
-	x0s = make([]float64, n)
-	minX0 = math.MaxFloat64
-	maxX1 = 0.0
-	for i, idx := range indices {
-		x0s[i] = boxes[idx].X0
-		if x0s[i] < minX0 {
-			minX0 = x0s[i]
-		}
-		if boxes[idx].X1 > maxX1 {
-			maxX1 = boxes[idx].X1
+	// Promote any (page, text) that meets the watermark threshold.
+	promoted := make(map[key]struct{}, len(counts))
+	for k, n := range counts {
+		if n >= watermarkBoxesMinOccurrences {
+			promoted[k] = struct{}{}
 		}
 	}
-	return x0s, minX0, maxX1
+	if len(promoted) == 0 {
+		return boxes
+	}
+	// Pass 2: drop boxes whose (page, text) was promoted.
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for _, b := range boxes {
+		if isSingleAsciiAlnum(b.Text) {
+			if _, drop := promoted[key{b.PageNumber, b.Text}]; drop {
+				continue
+			}
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
-// applyIndentTolerance adjusts x0 values that are close to minX0 to improve clustering
-func applyIndentTolerance(x0s []float64, minX0, indentTol float64) {
-	for i := range x0s {
-		if math.Abs(x0s[i]-minX0) < indentTol {
-			x0s[i] = minX0
+// watermarkBoxesMinOccurrences is the per-page repetition threshold for a
+// single-char ASCII box to be considered a watermark glyph. Legitimate short
+// content ("1.", "Q.", "A.") rarely appears more than once per page outside
+// of dense content (table rows, list items), and even there the same label
+// rarely reaches this threshold. A watermark tile places the same glyph at
+// 10+ x-intercepts across the page, so the threshold is set conservatively
+// above that floor to keep false-positive rate negligible.
+const watermarkBoxesMinOccurrences = 4
+
+// isSingleAsciiAlnum reports whether s is exactly one ASCII letter or digit
+// (no whitespace, no CJK, no punctuation, no multibyte UTF-8). Used by
+// FilterWatermarkBoxes to limit the watermark signal to the rotated-glyph
+// shape rather than the broader "any short token" case, which would
+// collide with repeated SKUs and part numbers.
+func isSingleAsciiAlnum(s string) bool {
+	if len(s) != 1 {
+		return false
+	}
+	c := s[0]
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c >= 'a' && c <= 'z':
+		return true
+	case c >= '0' && c <= '9':
+		return true
+	}
+	return false
+}
+
+// dedupYTolerancePt tolerates a small Y-boundary overshoot of an OCR
+// double-detection fragment's BOTTOM edge (and the height-match slack for the
+// top-overshoot case, see boxInsideTolerant). Such fragments sit on the SAME
+// text line as their container but their detected Y bounds jitter by ~0.5-2pt
+// of detection noise (observed on Rag Flow Usage / 三国人物); strict Y
+// containment then misses them and the duplicate text leaks into the output
+// after TextMerge. We only relax Y (never X) and only inside
+// DedupSubstringOverlaps, where the text-substring precondition already proves
+// the box is an OCR duplicate — so a few points of Y noise must not keep it.
+const dedupYTolerancePt = 3.0
+
+// boxInsideTolerant reports whether inner is contained within outer: X is
+// strict, inner's bottom may extend up to dedupYTolerancePt past outer's
+// bottom, and inner's top may overshoot only when the two boxes are the SAME
+// text line (their heights match within dedupYTolerancePt). It confirms an OCR
+// substring fragment sits inside the box whose text contains it — not merely
+// sharing a Y band at a different column, nor poking out horizontally beyond
+// the container. Requiring horizontal containment stops a whitespace-
+// normalized substring match from dropping a box that extends past the
+// container's X range (e.g. an adjacent-column line whose text happens to be a
+// substring of the paragraph's). The top-overshoot height-match requirement is
+// what tells a same-line double-detection fragment (Rag Flow Usage's
+// "toseeyou again", top 0.5pt above its line) apart from an ADJACENT line
+// whose top rises past the container but whose height differs (eval_one_
+// indented_block's indented line, top 1pt above a two-line container — kept).
+func boxInsideTolerant(inner, outer pdf.TextBox) bool {
+	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
+		return false
+	}
+	if inner.Top < outer.Top-dedupYTolerancePt {
+		return false
+	}
+	if inner.Top < outer.Top {
+		// Top overshoot: only tolerable when the fragment is the SAME line as
+		// the container — i.e. the two heights match within the tolerance. An
+		// adjacent line that pokes above the container is taller/shorter in
+		// height, so it is kept.
+		if math.Abs((inner.Bottom-inner.Top)-(outer.Bottom-outer.Top)) > dedupYTolerancePt {
+			return false
 		}
 	}
+	if inner.Bottom > outer.Bottom+dedupYTolerancePt {
+		return false
+	}
+	return true
 }
-
-// findBestK tries k from 1 to min(4, n) and returns the k with the best silhouette score
-func findBestK(x0s []float64, n int) (bestK int, bestScore float64) {
-	maxTry := min(4, n)
-	if maxTry < 2 {
-		maxTry = 1
-	}
-	bestK, bestScore = 1, -1.0
-
-	for k := 1; k <= maxTry; k++ {
-		labels, _ := util.KMeans1D(x0s, k)
-		var score float64
-		if k > 1 {
-			score = util.Silhouette1D(x0s, labels)
-		}
-		// score = 0 for k=1; score = -1 if silhouette undefined.
-		if score > bestScore {
-			bestScore = score
-			bestK = k
-		}
-	}
-	return bestK, bestScore
-}
-
-// assignColIDsForPage assigns column IDs to boxes on a page using the best k
-func assignColIDsForPage(boxes, result []pdf.TextBox, indices []int, pg int, pageCols map[int]int) {
-	if len(indices) == 0 {
-		return
-	}
-	k := pageCols[pg]
-	if len(indices) < k {
-		k = 1
-	}
-
-	x0s := make([]float64, len(indices))
-	for i, idx := range indices {
-		x0s[i] = boxes[idx].X0
-	}
-
-	labels, centroids := util.KMeans1D(x0s, k)
-	remap := remapLabelsByCentroidOrder(centroids)
-
-	for i, idx := range indices {
-		result[idx].ColID = remap[labels[i]]
-	}
-}
-
-// remapLabelsByCentroidOrder remaps cluster labels so leftmost column = 0
-func remapLabelsByCentroidOrder(centroids []float64) map[int]int {
-	type clPair struct {
-		center float64
-		label  int
-	}
-	var pairs []clPair
-	for lbl, c := range centroids {
-		pairs = append(pairs, clPair{c, lbl})
-	}
-	sort.Slice(pairs, func(i, j int) bool { return pairs[i].center < pairs[j].center })
-	remap := make(map[int]int, len(centroids))
-	for newL, p := range pairs {
-		remap[p.label] = newL
-	}
-	return remap
-}
-
-// ---- Text merge (horizontal) ----
 
 // TextMerge horizontally merges adjacent boxes at similar vertical positions.
 //
@@ -225,7 +450,17 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 		}
 
 		mh := medianHeights[pg]
-		if mh <= 0 {
+		if pageEnglish[pg] {
+			// Python: for is_english documents chars are cleared so
+			// mean_height becomes 0 and _naive_vertical_merge skips every
+			// pair (gap > 0). Mirror that for English pages DIRECTLY — do not
+			// fall back to the (positive) char-derived median height, or real
+			// English pages would still merge and 'linexxx' rows (eval_*)
+			// concatenate into one giant line. The old guard `if mh <= 0`
+			// never fired for real pages because their char-derived median
+			// height is always positive.
+			mh = 0
+		} else if mh <= 0 {
 			mh = util.MedianHeight(bxs)
 		}
 		mw := medianWidths[pg]

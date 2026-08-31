@@ -13,14 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for list_datasets() honoring include_parsing_status (#16855).
+"""Regression tests for list_datasets() honoring include_parsing_status (#16855, #17595).
 
 The ``ListDatasetReq`` model declares ``include_parsing_status: bool = False``,
 but ``dataset_api_service.list_datasets`` historically ignored the flag and
 returned no parsing-status counts. These tests lock in the contract that
 ``include_parsing_status`` controls whether
 ``DocumentService.get_parsing_status_by_kb_ids`` is invoked and whether the
-result is attached to each kb record.
+counts are merged into each kb record.
+
+Per the HTTP API and Python SDK references, the counts belong at the *top level*
+of each dataset record (``done_count``, ``fail_count``, ...), not under a nested
+``parsing_status`` object (#17595).
 """
 
 import importlib.util
@@ -31,7 +35,6 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 
 pytestmark = pytest.mark.p2
 
@@ -63,8 +66,8 @@ def _identity_remap(source_data, key_aliases=None):
     """Identity stand-in for ``remap_dictionary_keys``.
 
     The real helper only renames a few keys (e.g. ``chunk_num`` -> ``chunk_count``)
-    and otherwise copies through. For these tests we only care that
-    ``parsing_status`` is preserved on the output record, so identity is enough.
+    and otherwise copies through. For these tests we only care that the parsing
+    status counts are preserved on the output record, so identity is enough.
     """
     if key_aliases is None:
         return dict(source_data)
@@ -79,6 +82,9 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     get_list_mock = MagicMock(return_value=(list(kbs), len(kbs)))
     get_accessible_ids_mock = MagicMock(return_value={kb["id"] for kb in kbs})
 
+    _stub(monkeypatch, "api.apps", __path__=[])
+    _stub(monkeypatch, "api.apps.services", __path__=[])
+    _stub(monkeypatch, "api.apps.services.structure_graph_common")
     _stub(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
@@ -94,6 +100,8 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
         PipelineTaskType=SimpleNamespace(),
         StatusEnum=SimpleNamespace(),
+        TaskStatus=SimpleNamespace(SCHEDULE="schedule", RUNNING="running", CANCEL="cancel"),
+        RetCode=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(
@@ -104,7 +112,10 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     _stub(
         monkeypatch,
         "api.db.db_models",
+        Connector2Kb=SimpleNamespace(kb_id="kb_id"),
+        Document=SimpleNamespace(kb_id="kb_id"),
         File=SimpleNamespace(),
+        SyncLogs=SimpleNamespace(kb_id="kb_id"),
     )
     _stub(
         monkeypatch,
@@ -137,6 +148,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         monkeypatch,
         "api.db.services.connector_service",
         Connector2KbService=SimpleNamespace(),
+        SyncLogsService=SimpleNamespace(),
     )
     _stub(
         monkeypatch,
@@ -172,10 +184,13 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         thread_pool_exec=MagicMock(),
         thread_pool_exec_long_time=MagicMock(),
     )
+    _stub(monkeypatch, "rag.advanced_rag", __path__=[])
+    _stub(monkeypatch, "rag.advanced_rag.knowlege_compile", __path__=[])
     _stub(
         monkeypatch,
         "rag.advanced_rag.knowlege_compile.wiki",
         WIKI_PAGE_COMPILE_KWD="wiki",
+        _chunk_hash=lambda content: "stub-hash",
     )
 
     repo_root = Path(__file__).resolve().parents[5]
@@ -187,6 +202,23 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     return module, parsing_status_mock, get_list_mock
 
 
+#: Fields ``DocumentService.get_parsing_status_by_kb_ids`` reports, as documented
+#: for the List Datasets endpoint.
+_PARSING_STATUS_FIELDS = (
+    "unstart_count",
+    "running_count",
+    "cancel_count",
+    "done_count",
+    "fail_count",
+)
+
+
+def _assert_no_counts(record, context=""):
+    assert "parsing_status" not in record, context
+    for field in _PARSING_STATUS_FIELDS:
+        assert field not in record, f"{field} {context}"
+
+
 def _stub_kbs():
     return [
         {"id": "kb-a", "tenant_id": "tenant-1", "name": "Alpha", "embedding_model": "emb-a"},
@@ -195,7 +227,7 @@ def _stub_kbs():
 
 
 def test_list_datasets_without_include_parsing_status_does_not_call_helper(monkeypatch):
-    """No flag → no helper call, no parsing_status on response."""
+    """No flag → no helper call, no counts on response."""
     module, parsing_status_mock, get_list_mock = _load_list_datasets_module(
         monkeypatch,
         kbs=_stub_kbs(),
@@ -208,13 +240,13 @@ def test_list_datasets_without_include_parsing_status_does_not_call_helper(monke
     assert payload["total"] == 2
     assert len(payload["data"]) == 2
     for record in payload["data"]:
-        assert "parsing_status" not in record
+        _assert_no_counts(record)
     parsing_status_mock.assert_not_called()
     get_list_mock.assert_called_once()
 
 
 def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypatch):
-    """Flag True → helper called once with the kb ids, counts attached."""
+    """Flag True → helper called once with the kb ids, counts merged at top level."""
     status_by_kb = {
         "kb-a": {
             "unstart_count": 3,
@@ -244,10 +276,11 @@ def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypa
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
-    assert "parsing_status" in payload["data"][0]
     by_id = {r["id"]: r for r in payload["data"]}
-    assert by_id["kb-a"]["parsing_status"] == status_by_kb["kb-a"]
-    assert by_id["kb-b"]["parsing_status"] == status_by_kb["kb-b"]
+    for kb_id, counts in status_by_kb.items():
+        assert "parsing_status" not in by_id[kb_id]
+        for field, value in counts.items():
+            assert by_id[kb_id][field] == value
 
 
 def test_list_datasets_with_include_parsing_status_string_true(monkeypatch):
@@ -268,6 +301,7 @@ def test_list_datasets_with_include_parsing_status_string_true(monkeypatch):
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
+    assert payload["data"][0]["done_count"] == 1
 
 
 def test_list_datasets_with_ids_filters_query_once(monkeypatch):
@@ -304,7 +338,7 @@ def test_list_datasets_with_include_parsing_status_false_skips_helper(monkeypatc
 
     assert ok is True
     for record in payload["data"]:
-        assert "parsing_status" not in record
+        _assert_no_counts(record)
     parsing_status_mock.assert_not_called()
 
 
@@ -324,7 +358,7 @@ def test_list_datasets_with_include_parsing_status_string_false_skips_helper(mon
         )
         assert ok is True, falsy
         for record in payload["data"]:
-            assert "parsing_status" not in record, falsy
+            _assert_no_counts(record, falsy)
         parsing_status_mock.assert_not_called()
 
 
@@ -346,8 +380,8 @@ def test_list_datasets_with_empty_kb_list_skips_helper_even_when_flag_true(monke
     parsing_status_mock.assert_not_called()
 
 
-def test_list_datasets_with_include_parsing_status_missing_kb_gets_empty_dict(monkeypatch):
-    """If the helper omits a kb_id, the response record gets an empty dict."""
+def test_list_datasets_with_include_parsing_status_missing_kb_gets_no_counts(monkeypatch):
+    """If the helper omits a kb_id, the response record simply carries no counts."""
     module, parsing_status_mock, _ = _load_list_datasets_module(
         monkeypatch,
         kbs=_stub_kbs(),
@@ -363,6 +397,121 @@ def test_list_datasets_with_include_parsing_status_missing_kb_gets_empty_dict(mo
 
     assert ok is True
     by_id = {r["id"]: r for r in payload["data"]}
-    assert by_id["kb-a"]["parsing_status"]["unstart_count"] == 1
-    assert by_id["kb-b"]["parsing_status"] == {}
+    assert by_id["kb-a"]["unstart_count"] == 1
+    _assert_no_counts(by_id["kb-b"])
     parsing_status_mock.assert_called_once()
+
+
+def test_string_list_decodes_legacy_json_and_native_arrays(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    assert module._string_list('["doc_1", "doc_2"]') == ["doc_1", "doc_2"]
+    assert module._string_list(["doc_1", "doc_2", "doc_1"]) == ["doc_1", "doc_2"]
+    assert module._string_list("doc_1###doc_2") == ["doc_1", "doc_2"]
+
+
+def test_wiki_alteration_treats_wiki_template_as_eligible(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+    _stub(
+        monkeypatch,
+        "api.db.services.compilation_template_service",
+        CompilationTemplateService=SimpleNamespace(
+            get_saved=lambda template_id, tenant_id: {
+                "id": template_id,
+                "kind": "wiki",
+                "config": {"kind": "wiki"},
+            }
+        ),
+    )
+    _stub(monkeypatch, "rag.svr", __path__=[])
+    _stub(monkeypatch, "rag.svr.task_executor_refactor", __path__=[])
+    _stub(
+        monkeypatch,
+        "rag.svr.task_executor_refactor.chunk_post_processor",
+        _parser_config_compilation_template_ids=lambda parser_config, tenant_id: parser_config.get("compilation_template_ids", []),
+    )
+
+    docs = [
+        {
+            "id": "doc-wiki",
+            "status": "1",
+            "parser_config": {"compilation_template_ids": ["template-wiki"]},
+        }
+    ]
+
+    assert module._eligible_doc_ids_for_kind(docs, "tenant-1", "wiki") == {"doc-wiki"}
+
+
+@pytest.mark.asyncio
+async def test_wiki_chunk_alteration_uses_full_successful_state(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    previous = {
+        "chunk-changed": {"doc_id": "doc-existing", "hash": "old"},
+        "chunk-deleted": {"doc_id": "doc-existing", "hash": "same"},
+        "chunk-template-off": {"doc_id": "doc-template-off", "hash": "same"},
+        "chunk-removed-doc": {"doc_id": "doc-removed", "hash": "same"},
+    }
+    current = {
+        "chunk-changed": {"doc_id": "doc-existing", "hash": "new"},
+        "chunk-new-existing": {"doc_id": "doc-existing", "hash": "same"},
+        "chunk-new-document": {"doc_id": "doc-new", "hash": "same"},
+    }
+
+    async def _load_state(tenant_id, dataset_id):
+        return previous
+
+    async def _scan_state(tenant_id, dataset_id, doc_ids):
+        assert doc_ids == {"doc-existing", "doc-new"}
+        return current
+
+    def _compare_states(old, new):
+        old_ids = set(old)
+        new_ids = set(new)
+        common = old_ids & new_ids
+        return {
+            "new_chunk_ids": new_ids - old_ids,
+            "changed_chunk_ids": {chunk_id for chunk_id in common if old[chunk_id]["hash"] != new[chunk_id]["hash"]},
+            "deleted_chunk_ids": old_ids - new_ids,
+            "unchanged_chunk_ids": {chunk_id for chunk_id in common if old[chunk_id]["hash"] == new[chunk_id]["hash"]},
+        }
+
+    _stub(
+        monkeypatch,
+        "rag.advanced_rag.knowlege_compile.wiki",
+        _wiki_compare_chunk_states=_compare_states,
+        _wiki_load_active_map_state=_load_state,
+        _wiki_scan_current_chunk_state=_scan_state,
+    )
+
+    result = await module._wiki_chunk_alteration(
+        "tenant-1",
+        "kb-1",
+        {"doc-existing", "doc-new"},
+        {"doc-existing", "doc-template-off", "doc-removed"},
+    )
+
+    assert result == {
+        "changed": 1,
+        "changed_doc_ids": ["doc-existing"],
+    }
+
+    membership = module._alteration_result(
+        {"doc-existing", "doc-new"},
+        {"doc-existing", "doc-template-off", "doc-removed"},
+        {"doc-existing", "doc-new"},
+    )
+    assert membership["removed_doc_ids"] == ["doc-removed", "doc-template-off"]
+    assert membership["newly_uploaded_doc_ids"] == ["doc-new"]

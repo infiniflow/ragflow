@@ -10,6 +10,7 @@ import { SearchInput } from '@/components/ui/input';
 import { IArtifact } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
+import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CreateDirectoryDialog } from '../create-directory-dialog';
@@ -32,12 +33,15 @@ export function WikiNavBar({
     scrollRef,
     searchString,
     selectedTopic,
-    topics,
+    selectedTopicPath,
+    visibleTopics,
+    showArtifacts,
     artifacts,
     loading,
     hasMore,
     handleSearchChange,
     handleSelectTopic,
+    handleSelectTopicPath,
     handleBackToTopics,
     handleScroll,
   } = useWikiNavigation();
@@ -49,6 +53,10 @@ export function WikiNavBar({
     hideModal: handleHideCreateDialog,
     handleOk: handleCreateOk,
   } = useCreateDirectory();
+
+  const selectedTopicSegments = selectedTopicPath
+    ? selectedTopicPath.split('/').filter(Boolean)
+    : [];
 
   return (
     <div className="size-full flex flex-col gap-3">
@@ -71,19 +79,31 @@ export function WikiNavBar({
                       : 'text-text-primary cursor-default',
                   )}
                 >
-                  {t('knowledgeDetails.topics')}
+                  {t('knowledgeCompilation.topics')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
-              {selectedTopic && (
-                <>
+              {selectedTopicSegments.map((segment, index) => (
+                <Fragment key={`${segment}-${index}`}>
                   <BreadcrumbSeparator />
                   <BreadcrumbItem>
-                    <BreadcrumbLink className="text-text-primary text-sm cursor-default">
-                      {selectedTopic.title}
+                    <BreadcrumbLink
+                      onClick={() =>
+                        handleSelectTopicPath(
+                          selectedTopicSegments.slice(0, index + 1).join('/'),
+                        )
+                      }
+                      className={cn(
+                        'text-sm',
+                        index === selectedTopicSegments.length - 1
+                          ? 'text-text-primary cursor-default'
+                          : 'text-text-secondary cursor-pointer',
+                      )}
+                    >
+                      {segment}
                     </BreadcrumbLink>
                   </BreadcrumbItem>
-                </>
-              )}
+                </Fragment>
+              ))}
             </BreadcrumbList>
           </Breadcrumb>
           {!selectedTopic && (
@@ -110,7 +130,7 @@ export function WikiNavBar({
         className="flex-1 min-h-0 overflow-y-auto pb-3"
         onScroll={handleScroll}
       >
-        {selectedTopic ? (
+        {showArtifacts ? (
           <WikiArtifactList
             artifacts={artifacts}
             selectedArtifact={selectedArtifact}
@@ -120,7 +140,7 @@ export function WikiNavBar({
           />
         ) : (
           <WikiTopicList
-            topics={topics}
+            topics={visibleTopics}
             loading={loading}
             hasMore={hasMore}
             onSelectTopic={handleSelectTopic}

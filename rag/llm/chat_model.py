@@ -24,6 +24,7 @@ from abc import ABC
 from copy import deepcopy
 from urllib.parse import urljoin
 
+import aiohttp
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
@@ -36,9 +37,12 @@ from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
+
+logger = logging.getLogger(__name__)
 
 
 class LLMErrorCode(StrEnum):
@@ -95,10 +99,9 @@ ALLOWED_GEN_CONF_KEYS = frozenset(
     }
 )
 
-# LiteLLM additionally understands reasoning-control parameters that the
-# model-family policies may inject into `gen_conf` (e.g. `thinking` for
-# Anthropic / Kimi reasoning models, `enable_thinking` for Qwen models,
-# `reasoning_effort` for OpenAI o-series).
+# LiteLLM additionally understands reasoning-control parameters that must
+# survive configuration cleaning until model-family policies are applied at
+# the final request-construction boundary.
 LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
     {
         "thinking",
@@ -117,11 +120,13 @@ def _apply_model_family_policies(
     gen_conf: dict | None = None,
     request_kwargs: dict | None = None,
 ):
+    """Normalize reasoning controls for a model/provider without mutating inputs."""
     model_name_lower = (model_name or "").lower()
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
     def _thinking_type():
+        """Return the normalized explicit thinking mode, if one was supplied."""
         val = sanitized_gen_conf.get("thinking")
         if isinstance(val, dict):
             val = val.get("type")
@@ -135,14 +140,26 @@ def _apply_model_family_policies(
         return None
 
     def _pop_thinking_controls():
+        """Remove generic controls after translating them to provider payloads."""
         sanitized_gen_conf.pop("thinking", None)
         sanitized_gen_conf.pop("enable_thinking", None)
 
     def _merge_extra_body(target: dict, extra: dict) -> None:
+        """Merge top-level request body fields."""
         body = target.get("extra_body")
         if not isinstance(body, dict):
             body = {}
         body.update(extra)
+        target["extra_body"] = body
+
+    def _merge_qwen_chat_template_kwargs(target: dict, enable_thinking: bool) -> None:
+        """Set Qwen thinking without replacing other chat-template options."""
+        body = target.get("extra_body")
+        body = dict(body) if isinstance(body, dict) else {}
+        template_kwargs = body.get("chat_template_kwargs")
+        template_kwargs = dict(template_kwargs) if isinstance(template_kwargs, dict) else {}
+        template_kwargs["enable_thinking"] = enable_thinking
+        body["chat_template_kwargs"] = template_kwargs
         target["extra_body"] = body
 
     thinking_type = _thinking_type()
@@ -150,9 +167,10 @@ def _apply_model_family_policies(
     # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
         _pop_thinking_controls()
-        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # -preview variants (e.g. qwen3.8-max-preview) and the flagship
+        # reasoning model qwen3.8-2.4t-a95b only accept
         # enable_thinking=True; the API rejects any other value.
-        if "-preview" in model_name_lower:
+        if "-preview" in model_name_lower or "2.4t-a95b" in model_name_lower:
             enable_thinking = True
         else:
             enable_thinking = thinking_type == "enabled" if thinking_type else False
@@ -162,13 +180,26 @@ def _apply_model_family_policies(
         }:
             sanitized_gen_conf["enable_thinking"] = enable_thinking
         else:
-            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
+            target = sanitized_gen_conf if backend == "litellm" else sanitized_kwargs
+            _merge_qwen_chat_template_kwargs(target, enable_thinking)
+            logger.debug(
+                "Applied Qwen3 thinking policy: backend=%s provider=%s enable_thinking=%s payload_path=%s",
+                backend,
+                provider,
+                enable_thinking,
+                "extra_body.chat_template_kwargs.enable_thinking",
+            )
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
-        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
+        if provider == SupportedLiteLLMProvider.DeepSeek:
+            _pop_thinking_controls()
+            sanitized_gen_conf.pop("reasoning_effort", None)
+            sanitized_kwargs.pop("reasoning_effort", None)
+            _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type or "disabled"}})
+        elif provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
@@ -541,6 +572,23 @@ class Base(ABC):
 
                     logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
+                    # Terminal-tool short-circuit (mirror of the streaming
+                    # variant at the top of this file): a terminal tool already
+                    # produces the final answer, so return its result instead of
+                    # feeding it back for another LLM round. Without this the
+                    # non-streaming react loop keeps re-invoking `rag` every
+                    # round (Q654 spun 17 tree passes → 15 min). `rag` is always
+                    # terminal, so default to {"rag"} even if a probe wrapper
+                    # dropped the configured terminal_tools.
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info("[Tool loop] The %s tool produced the final answer — done.", name)
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                ans += out
+                            self.last_usage = dict(agg_usage)
+                            return ans, tk_count
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
@@ -1069,6 +1117,137 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class MWSChat(Base):
+    """MWS Chat Completions adapter with a documentation-only request body."""
+
+    _FACTORY_NAME = "MWS"
+    _ROLES = {"system", "user", "assistant"}
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        """Initialize chat access for an MWS project and model deployment."""
+        token = require_mws_token(key)
+        self.chat_url = mws_api_url(base_url, "openai/v1/chat/completions")
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        }
+        super().__init__(
+            token,
+            model_name.split("___")[0],
+            mws_api_url(base_url, "openai/v1"),
+            **kwargs,
+        )
+
+    def _clean_conf(self, gen_conf):
+        """Keep only generation parameters documented by the MWS API."""
+        gen_conf = gen_conf or {}
+        cleaned = {}
+        if gen_conf.get("temperature") is not None:
+            cleaned["temperature"] = gen_conf["temperature"]
+        max_tokens = gen_conf.get("max_completion_tokens")
+        if max_tokens is None:
+            max_tokens = gen_conf.get("max_tokens")
+        if max_tokens is not None:
+            cleaned["max_completion_tokens"] = max_tokens
+        return cleaned
+
+    def _request_body(self, history, gen_conf, *, stream):
+        """Build a strict MWS chat request from RAGFlow messages and options."""
+        messages = []
+        for message in history:
+            role = message.get("role") if isinstance(message, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if role not in self._ROLES or not isinstance(content, str):
+                raise ValueError("MWS chat messages must contain only a system, user, or assistant role and string content")
+            messages.append({"role": role, "content": content})
+        if not messages:
+            raise ValueError("MWS chat messages are required")
+
+        body = {"model": self.model_name, "messages": messages}
+        body.update(self._clean_conf(gen_conf))
+        if stream:
+            body["stream"] = True
+            body["stream_options"] = {"include_usage": True}
+        return body
+
+    async def _post_json(self, body):
+        """Send a non-streaming MWS chat request and decode its JSON response."""
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+                return await response.json()
+
+    async def _async_chat(self, history, gen_conf, **kwargs):
+        """Return one complete MWS chat answer together with its token usage."""
+        payload = await self._post_json(self._request_body(history, gen_conf, stream=False))
+        self.last_usage = usage_from_response(payload)
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("MWS chat response does not contain choices")
+        choice = choices[0]
+        message = choice.get("message") if isinstance(choice, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str):
+            raise ValueError("MWS chat response does not contain message content")
+        answer = content.strip()
+        if choice.get("finish_reason") == "length":
+            answer = self._length_stop(answer)
+        return answer, total_token_count_from_response(payload)
+
+    async def _async_chat_streamly(self, history, gen_conf, **kwargs):
+        """Yield MWS SSE content chunks and attach usage to the final chunk."""
+        body = self._request_body(history, gen_conf, stream=True)
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
+        pending_content = None
+        estimated_tokens = 0
+        reported_tokens = 0
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    event = json.loads(data)
+                    usage = usage_from_response(event)
+                    if usage["total_tokens"]:
+                        self.last_usage = usage
+                        reported_tokens = usage["total_tokens"]
+
+                    choices = event.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta") if isinstance(choice, dict) else None
+                    content = delta.get("content") if isinstance(delta, dict) else None
+                    if not isinstance(content, str) or not content:
+                        continue
+                    if choice.get("finish_reason") == "length":
+                        content = self._length_stop(content)
+                    if pending_content is not None:
+                        yield pending_content, 0
+                    pending_content = content
+                    estimated_tokens += num_tokens_from_string(content)
+
+        yield pending_content or "", reported_tokens or estimated_tokens
+
+
 class Xiaomi(Base):
     _FACTORY_NAME = "Xiaomi"
 
@@ -1196,10 +1375,17 @@ class BaiduYiyanChat(Base):
 
         import qianfan
 
-        key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = qianfan.ChatCompletion(ak=ak, sk=sk)
+        try:
+            key_obj = json.loads(key)
+        except (json.JSONDecodeError, TypeError):
+            key_obj = key
+        if isinstance(key_obj, dict):
+            ak = key_obj.get("yiyan_ak", "")
+            sk = key_obj.get("yiyan_sk", "")
+            self.client = qianfan.ChatCompletion(ak=ak, sk=sk)
+        else:
+            # adapt to one-line api_key
+            self.client = qianfan.ChatCompletion(access_token=key_obj)
         self.model_name = model_name.lower()
 
     def _clean_conf(self, gen_conf):
@@ -1632,6 +1818,23 @@ class _StreamSanitizer:
         return out
 
 
+class SynthoraiChat(Base):
+    """Synthorai OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. Synthorai is a hosted
+    gateway on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the Synthorai API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "Synthorai"
+
+    _BASE_URL = "https://synthorai.io/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1735,12 +1938,8 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            gen_conf=gen_conf,
-        )
+        """Copy and filter generation settings before final request construction."""
+        gen_conf = deepcopy(gen_conf) if gen_conf else {}
 
         deepseek_max_tokens = None
         if self.provider == SupportedLiteLLMProvider.DeepSeek:
@@ -1784,6 +1983,7 @@ class LiteLLMBase(ABC):
         return text
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        """Send one non-streaming LiteLLM chat request with normalized settings."""
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
@@ -1791,12 +1991,6 @@ class LiteLLMBase(ABC):
 
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
         gen_conf = self._clean_conf(gen_conf)
-        _, kwargs = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            request_kwargs=kwargs,
-        )
 
         completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
@@ -2274,16 +2468,17 @@ class LiteLLMBase(ABC):
                     # Terminal-tool short-circuit: a terminal tool already
                     # produces the final answer, so stream its result and stop
                     # instead of feeding it back for another LLM round.
-                    _terminal = getattr(self, "terminal_tools", None)
-                    if _terminal:
-                        for tc, name, args, result, err in results:
-                            if name in _terminal and not err:
-                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
-                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-                                if out:
-                                    yield out
-                                yield total_tokens
-                                return
+                    # `rag` is always terminal (dialog_service sets terminal_tools,
+                    # but a probe wrapper may drop it, so default to {"rag"}).
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                yield out
+                            yield total_tokens
+                            return
 
                     history = self._append_history_batch(
                         history,
@@ -2333,11 +2528,19 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
+        """Build the final LiteLLM arguments and apply model policies exactly once."""
+        kwargs, policy_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            gen_conf=kwargs,
+        )
         completion_args = {
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
             **kwargs,
+            **policy_request_kwargs,
         }
         if self.provider == SupportedLiteLLMProvider.Nvidia:
             completion_args["num_retries"] = 0
@@ -2365,10 +2568,13 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
-        if self.provider in FACTORY_DEFAULT_BASE_URL:
+        # OpenRouter is handled separately below because it may add routing
+        # metadata without replacing model-specific fields in extra_body.
+        if self.provider in FACTORY_DEFAULT_BASE_URL and self.provider != SupportedLiteLLMProvider.OpenRouter:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
+            from botocore.utils import validate_region_name
 
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
@@ -2380,6 +2586,9 @@ class LiteLLMBase(ABC):
                 raise ValueError("Bedrock auth_mode must be provided in the key")
 
             bedrock_region = bedrock_key.get("bedrock_region")
+            if not bedrock_region:
+                raise ValueError("Bedrock region must be provided in the key")
+            validate_region_name(bedrock_region)
 
             if mode == "access_key_secret":
                 completion_args.update({"aws_region_name": bedrock_region})
@@ -2394,10 +2603,23 @@ class LiteLLMBase(ABC):
                 completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
                 completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
                 completion_args.update({"aws_session_token": creds["SessionToken"]})
-            else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
+            elif mode == "assume_role":
                 completion_args.update({"aws_region_name": bedrock_region})
+            elif mode == "bedrock_api_key":
+                api_key = bedrock_key.get("bedrock_api_key")
+                if not api_key:
+                    raise ValueError("Bedrock API key must be provided")
+                completion_args.update(
+                    {
+                        "api_key": api_key,
+                        "aws_region_name": bedrock_region,
+                    }
+                )
+            else:
+                raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            completion_args["api_base"] = self.base_url
             if self.provider_order:
 
                 def _to_order_list(x):
@@ -2409,13 +2631,13 @@ class LiteLLMBase(ABC):
                         return [str(s).strip() for s in x if str(s).strip()]
                     return []
 
-                extra_body = {}
-                provider_cfg = {}
-                provider_order = _to_order_list(self.provider_order)
-                provider_cfg["order"] = provider_order
-                provider_cfg["allow_fallbacks"] = False
-                extra_body["provider"] = provider_cfg
-                completion_args.update({"extra_body": extra_body})
+                extra_body = completion_args.get("extra_body")
+                extra_body = dict(extra_body) if isinstance(extra_body, dict) else {}
+                extra_body["provider"] = {
+                    "order": _to_order_list(self.provider_order),
+                    "allow_fallbacks": False,
+                }
+                completion_args["extra_body"] = extra_body
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
             completion_args.update(
                 {

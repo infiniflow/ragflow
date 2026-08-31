@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	rfcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/tokenizer"
 )
@@ -51,6 +52,18 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	var products []common.Product
 	if err := buildTree(ctx, deps, llmID, tenantID, docID, inputs.Chunks, treeOrder, taskPrompt, param, &products); err != nil {
 		return common.Outputs{}, err
+	}
+
+	// Project the RAPTOR tree onto the {entities, relations} structure-graph
+	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
+	// plus a compact graph blob (knowledge_graph_kwd="graph"), so the
+	// document-structure /structure/graph endpoint can serve the tree. A failure
+	// here must not abort the whole tree compile — the summary nodes are already
+	// valid on their own — so it is best-effort and surfaced as a log.
+	if graphProds, err := buildTreeGraph(ctx, deps, docID, products); err != nil {
+		log.Printf("tree: graph projection failed (best-effort, continuing): %v", err)
+	} else {
+		products = append(products, graphProds...)
 	}
 
 	out := common.Outputs{
@@ -357,9 +370,12 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 		}
 		content := resp.Content
 		// Strip reasoning preamble up to the final thinking close tag
-		// (Python: re.sub(r"^.*</think>", "", response, DOTALL)).
-		if i := strings.LastIndex(content, "</think>"); i >= 0 {
-			content = content[i+len("</think>"):]
+		// (Python: re.sub(r"^.*</think>", "", response, DOTALL)). The
+		// else-if keeps the vendor-specific </think:6124c78e> fallback
+		// active only when no standard </think> is present, preserving
+		// the original control flow.
+		if strings.Contains(content, "</think>") {
+			content = rfcommon.StripThinkTrailing(content)
 		} else if i := strings.LastIndex(content, "</think:6124c78e>"); i >= 0 {
 			content = content[i+len("</think:6124c78e>"):]
 		}

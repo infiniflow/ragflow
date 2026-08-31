@@ -178,6 +178,58 @@ func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 	}
 }
 
+// TestProcessChunksForPipeline_MetadataMapAggregated pins the normal contract:
+// ck["metadata"] produced by the Extractor (the merge of enable_metadata +
+// field_name="metadata") is a map[string]any and is aggregated into the
+// returned doc-level metadata.
+func TestProcessChunksForPipeline_MetadataMapAggregated(t *testing.T) {
+	chunks := []map[string]any{
+		{"text": "hello", "metadata": map[string]any{"category": "finance", "region": "east"}},
+	}
+	metadata, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	if metadata["category"] != "finance" {
+		t.Errorf("category = %v, want finance", metadata["category"])
+	}
+	if metadata["region"] != "east" {
+		t.Errorf("region = %v, want east", metadata["region"])
+	}
+	// The consumed metadata key must not leak onto the persisted chunk.
+	if _, exists := chunks[0]["metadata"]; exists {
+		t.Error("metadata key should be removed from the chunk after aggregation")
+	}
+}
+
+// TestProcessChunksForPipeline_MetadataNonMapDropped pins the strict contract:
+// ck["metadata"] is Extractor-owned and always a map[string]any. A non-map
+// value (e.g. a JSON string, as field_name="metadata" used to emit before the
+// extractor unified to map) is a contract violation — it is dropped with a
+// warning, never guess-parsed, so an upstream bug surfaces instead of silently
+// producing document metadata.
+func TestProcessChunksForPipeline_MetadataNonMapDropped(t *testing.T) {
+	for name, value := range map[string]any{
+		"json_string": `{"category":"finance","region":"east"}`,
+		"fenced":      "```json\n{\"category\":\"law\"}\n```",
+		"not_json":    "this is not json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			chunks := []map[string]any{{"text": "hello", "metadata": value}}
+			metadata, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+			if err != nil {
+				t.Fatalf("ProcessChunksForPipeline: %v", err)
+			}
+			if len(metadata) != 0 {
+				t.Errorf("metadata = %v, want empty (non-map metadata dropped)", metadata)
+			}
+			if _, exists := chunks[0]["metadata"]; exists {
+				t.Error("metadata key should be removed from the chunk after aggregation")
+			}
+		})
+	}
+}
+
 func TestProcessChunksForPipeline_KeywordsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "keywords": "kw1,kw2;kw3"}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
@@ -343,5 +395,69 @@ func TestProcessChunkPositions_NoPositions(t *testing.T) {
 	}
 	if _, exists := chunk["_pdf_positions"]; exists {
 		t.Error("_pdf_positions must be pruned even when positions is missing")
+	}
+}
+
+// TestCleanupConsumedChunkFields_ImportantKwdMultiDelimiter pins the executor
+// fallback's important_kwd materialization. When the Tokenizer component did
+// NOT pre-produce important_kwd, the executor falls back to
+// utility.SplitKeywords, which splits on the full delimiter set
+// (ASCII + CJK comma/semicolon/ideographic-comma/newline) and DROPS empty
+// parts. This is intentionally different from the Tokenizer component path
+// (internal/ingestion/component/tokenizer.go:690), which splits on the ENGLISH
+// COMMA ONLY and PRESERVES empty elements to match the DSL
+// (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`).
+//
+// The two layers deliberately diverge: the component aligns to the DSL keyword
+// contract ("delimited by ENGLISH COMMA"); the executor fallback mirrors
+// Python task_executor.run_dataflow:879 and tolerates mixed delimiters from
+// older upstream producers. Neither side should be "unified" to the other —
+// changing one without the other silently breaks the documented parity
+// boundary. The component-side half of this contract is locked by
+// TestTokenizerComponent_ImportantKwd_CommaOnly in the component package.
+func TestCleanupConsumedChunkFields_ImportantKwdMultiDelimiter(t *testing.T) {
+	ck := map[string]any{"text": "hello", "keywords": "kw1,kw2;kw3，kw4"}
+
+	cleanupConsumedChunkFields(ck)
+
+	kwd, ok := ck["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", ck["important_kwd"])
+	}
+	// Executor fallback splits on comma/semicolon/CJK-comma and drops empties:
+	// "kw1,kw2;kw3，kw4" -> ["kw1","kw2","kw3","kw4"], NOT the component's
+	// ["kw1","kw2;kw3，kw4"].
+	want := []string{"kw1", "kw2", "kw3", "kw4"}
+	if len(kwd) != len(want) {
+		t.Fatalf("executor important_kwd = %v, want %v (multi-delimiter, empties dropped)", kwd, want)
+	}
+	for i := range want {
+		if kwd[i] != want[i] {
+			t.Errorf("executor important_kwd[%d] = %q, want %q", i, kwd[i], want[i])
+		}
+	}
+	if _, exists := ck["keywords"]; exists {
+		t.Error("keywords source field should be consumed/removed")
+	}
+}
+
+// TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts documents that the
+// executor fallback drops empty parts (e.g. the middle empty token in
+// "a,,b"), diverging from the component path which PRESERVES it as ["a","","b"].
+// Together with the component CommaOnly test this locks the intentional
+// divergence: same input, different important_kwd arrays per layer.
+func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
+	ck := map[string]any{"text": "hello", "keywords": "a,,b"}
+
+	cleanupConsumedChunkFields(ck)
+
+	kwd, ok := ck["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", ck["important_kwd"])
+	}
+	// Executor drops the empty middle part: ["a","b"], NOT ["a","","b"].
+	want := []string{"a", "b"}
+	if len(kwd) != len(want) || kwd[0] != "a" || kwd[1] != "b" {
+		t.Fatalf("executor important_kwd = %v, want %v (empty parts dropped)", kwd, want)
 	}
 }

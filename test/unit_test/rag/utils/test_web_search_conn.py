@@ -47,6 +47,24 @@ def test_create_web_search_provider_uses_selected_querit_config(monkeypatch):
     assert created_with == ["querit-test"]
 
 
+def test_create_web_search_provider_uses_selected_serply_config(monkeypatch):
+    created_with = []
+    provider = object()
+
+    monkeypatch.setattr(web_search_conn, "Serply", lambda api_key: created_with.append(api_key) or provider)
+
+    result = web_search_conn.create_web_search_provider(
+        {
+            "web_search_provider": "serply",
+            "serply_api_key": "serply-test",
+            "tavily_api_key": "tvly-test",
+        }
+    )
+
+    assert result is provider
+    assert created_with == ["serply-test"]
+
+
 def test_create_web_search_provider_trims_selected_key(monkeypatch):
     created_with = []
     provider = object()
@@ -70,11 +88,21 @@ def test_create_web_search_provider_requires_key_for_selected_provider():
     assert web_search_conn.create_web_search_provider({"web_search_provider": "tavily"}) is None
     assert web_search_conn.create_web_search_provider({"web_search_provider": "querit"}) is None
     assert web_search_conn.create_web_search_provider({"tavily_api_key": "   "}) is None
+    assert web_search_conn.create_web_search_provider({"web_search_provider": "serply"}) is None
     assert (
         web_search_conn.create_web_search_provider(
             {
                 "web_search_provider": "querit",
                 "querit_api_key": "   ",
+            }
+        )
+        is None
+    )
+    assert (
+        web_search_conn.create_web_search_provider(
+            {
+                "web_search_provider": "serply",
+                "serply_api_key": "   ",
             }
         )
         is None
@@ -92,6 +120,14 @@ def test_has_web_search_provider_follows_selected_provider():
             "tavily_api_key": "tvly-test",
         }
     )
+    assert web_search_conn.has_web_search_provider({"web_search_provider": "serply", "serply_api_key": "serply-test"})
+    assert not web_search_conn.has_web_search_provider(
+        {
+            "web_search_provider": "serply",
+            "serply_api_key": "",
+            "tavily_api_key": "tvly-test",
+        }
+    )
     assert not web_search_conn.has_web_search_provider(
         {
             "web_search_provider": "unsupported",
@@ -99,3 +135,47 @@ def test_has_web_search_provider_follows_selected_provider():
             "tavily_api_key": "tvly-test",
         }
     )
+
+
+def test_create_web_search_provider_selects_youcom_without_a_key(monkeypatch):
+    """You.com is the only provider usable with no credentials at all."""
+    created_with = []
+    provider = object()
+
+    monkeypatch.setattr(web_search_conn, "YouCom", lambda api_key: created_with.append(api_key) or provider)
+
+    result = web_search_conn.create_web_search_provider({"web_search_provider": "youcom"})
+
+    assert result is provider
+    assert created_with == [""]
+
+
+def test_create_web_search_provider_passes_the_optional_youcom_key(monkeypatch):
+    created_with = []
+    provider = object()
+
+    monkeypatch.setattr(web_search_conn, "YouCom", lambda api_key: created_with.append(api_key) or provider)
+
+    result = web_search_conn.create_web_search_provider(
+        {
+            "web_search_provider": "youcom",
+            "youcom_api_key": "  ydc-test  ",
+            "tavily_api_key": "tvly-test",
+        }
+    )
+
+    assert result is provider
+    assert created_with == ["ydc-test"]
+
+
+def test_has_web_search_provider_is_true_for_keyless_youcom():
+    assert web_search_conn.has_web_search_provider({"web_search_provider": "youcom"})
+    assert web_search_conn.has_web_search_provider({"web_search_provider": "youcom", "youcom_api_key": ""})
+    assert web_search_conn.has_web_search_provider({"web_search_provider": "youcom", "youcom_api_key": "ydc-test"})
+
+
+def test_keyless_carve_out_does_not_relax_keyed_providers():
+    """The You.com carve-out must not make any other provider key-optional."""
+    for provider in ("tavily", "querit", "serply"):
+        assert not web_search_conn.has_web_search_provider({"web_search_provider": provider})
+        assert web_search_conn.create_web_search_provider({"web_search_provider": provider}) is None

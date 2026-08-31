@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"image"
 	"os"
 	"path/filepath"
@@ -49,7 +48,7 @@ func TestParse_PdfiumRender(t *testing.T) {
 	t.Setenv("BATCH_SKIP_DEEPDOC", "1")
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
+	result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

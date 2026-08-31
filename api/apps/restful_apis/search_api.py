@@ -31,7 +31,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 
 
 def _full_text_weight(vector_similarity_weight):
@@ -83,6 +83,11 @@ def list_searches():
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", "true").lower() != "false"
     owner_ids = request.args.getlist("owner_ids")
+
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as e:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
 
     try:
         if not owner_ids:

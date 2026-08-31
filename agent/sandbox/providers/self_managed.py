@@ -25,11 +25,11 @@ import base64
 import os
 import time
 import uuid
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 import requests
 
-from .base import SandboxProvider, SandboxInstance, ExecutionResult
+from .base import ExecutionResult, SandboxInstance, SandboxProvider
 
 
 class SelfManagedProvider(SandboxProvider):
@@ -45,9 +45,10 @@ class SelfManagedProvider(SandboxProvider):
         self.timeout: int = 30
         self.max_retries: int = 3
         self.pool_size: int = 3
+        self.api_token: str = ""
         self._initialized: bool = False
 
-    def initialize(self, config: Dict[str, Any]) -> bool:
+    def initialize(self, config: dict[str, Any]) -> bool:
         """
         Initialize the provider with configuration.
 
@@ -56,7 +57,9 @@ class SelfManagedProvider(SandboxProvider):
                 - endpoint: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
                 - timeout: Request timeout in seconds (default: 30)
                 - max_retries: Maximum retry attempts (default: 3)
-                - pool_size: Container pool size for info (default: 10)
+                - pool_size: Container pool size for info (default: 3)
+                - api_token: Shared secret for the executor manager API
+                  (falls back to SANDBOX_EXECUTOR_MANAGER_API_TOKEN env var)
 
         Returns:
             True if initialization successful, False otherwise
@@ -65,6 +68,9 @@ class SelfManagedProvider(SandboxProvider):
         self.timeout = config.get("timeout", 30)
         self.max_retries = config.get("max_retries", 3)
         self.pool_size = config.get("executor_manager_pool_size", config.get("pool_size", 3))
+        # Shared-secret token authenticating RAGFlow towards the executor
+        # manager. Explicit config wins over the environment variable.
+        self.api_token = str(config.get("api_token") or os.getenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "") or "").strip()
 
         # Validate endpoint is accessible
         if not self.health_check():
@@ -111,7 +117,7 @@ class SelfManagedProvider(SandboxProvider):
             },
         )
 
-    def execute_code(self, instance_id: str, code: str, language: str, timeout: int = 10, arguments: Optional[Dict[str, Any]] = None) -> ExecutionResult:
+    def execute_code(self, instance_id: str, code: str, language: str, timeout: int = 10, arguments: dict[str, Any] | None = None) -> ExecutionResult:
         """
         Execute code in the sandbox.
 
@@ -142,10 +148,14 @@ class SelfManagedProvider(SandboxProvider):
         url = f"{self.endpoint}/run"
         exec_timeout = timeout or self.timeout
 
+        headers = {"Content-Type": "application/json"}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+
         start_time = time.time()
 
         try:
-            response = requests.post(url, json=payload, timeout=exec_timeout, headers={"Content-Type": "application/json"})
+            response = requests.post(url, json=payload, timeout=exec_timeout, headers=headers)
 
             execution_time = time.time() - start_time
 
@@ -178,7 +188,7 @@ class SelfManagedProvider(SandboxProvider):
             raise TimeoutError(f"Execution timed out after {exec_timeout} seconds")
 
         except requests.RequestException as e:
-            raise RuntimeError(f"HTTP request failed: {str(e)}")
+            raise RuntimeError(f"HTTP request failed: {e!s}")
 
     def destroy_instance(self, instance_id: str) -> bool:
         """
@@ -212,7 +222,7 @@ class SelfManagedProvider(SandboxProvider):
         except Exception:
             return False
 
-    def get_supported_languages(self) -> List[str]:
+    def get_supported_languages(self) -> list[str]:
         """
         Get list of supported programming languages.
 
@@ -222,7 +232,7 @@ class SelfManagedProvider(SandboxProvider):
         return ["python", "nodejs", "javascript"]
 
     @staticmethod
-    def get_config_schema() -> Dict[str, Dict]:
+    def get_config_schema() -> dict[str, dict]:
         """
         Return configuration schema for self-managed provider.
 
@@ -237,6 +247,17 @@ class SelfManagedProvider(SandboxProvider):
                 "placeholder": "http://sandbox-executor-manager:9385",
                 "default": "http://sandbox-executor-manager:9385",
                 "description": "HTTP endpoint used by RAGFlow to call sandbox-executor-manager.",
+                "scope": "runtime",
+                "readonly": False,
+            },
+            "api_token": {
+                "type": "string",
+                "required": False,
+                "label": "Executor Manager API Token",
+                "secret": True,
+                "placeholder": "Optional; defaults to SANDBOX_EXECUTOR_MANAGER_API_TOKEN",
+                "default": "",
+                "description": "Shared secret authenticating RAGFlow to sandbox-executor-manager. Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on the executor-manager side.",
                 "scope": "runtime",
                 "readonly": False,
             },
@@ -318,6 +339,15 @@ class SelfManagedProvider(SandboxProvider):
                 "scope": "deployment",
                 "readonly": True,
             },
+            "container_network": {
+                "type": "string",
+                "required": False,
+                "label": "Container Network",
+                "default": os.getenv("SANDBOX_CONTAINER_NETWORK", "none"),
+                "description": "Docker network attached to sandbox containers. Defaults to 'none' (no external network access); set to 'bridge' only if sandboxed code needs outbound network.",
+                "scope": "deployment",
+                "readonly": True,
+            },
             "sandbox_timeout": {
                 "type": "string",
                 "required": False,
@@ -350,7 +380,7 @@ class SelfManagedProvider(SandboxProvider):
         else:
             return language
 
-    def validate_config(self, config: dict) -> tuple[bool, Optional[str]]:
+    def validate_config(self, config: dict) -> tuple[bool, str | None]:
         """
         Validate self-managed provider configuration.
 

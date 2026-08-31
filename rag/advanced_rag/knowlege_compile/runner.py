@@ -194,6 +194,7 @@ async def _upsert_dataset_nav_from_page_index(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     progress_cb: Callable[..., None],
     cancel_check: Callable[[], bool],
 ) -> None:
@@ -215,6 +216,7 @@ async def _upsert_dataset_nav_from_page_index(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 "page_index",
                 compilation_template_id=template_id,
             )
@@ -224,6 +226,7 @@ async def _upsert_dataset_nav_from_page_index(
                     tenant_id,
                     kb_id,
                     doc_id,
+                    doc_name,
                     "timeline",
                     compilation_template_id=template_id,
                 )
@@ -277,6 +280,7 @@ async def run_structure_compile_over_batches(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     language: str,
     chunk_batches: AsyncIterator[list[dict]],
     progress_cb: Callable[..., None],
@@ -375,6 +379,7 @@ async def run_structure_compile_over_batches(
                     doc_storage_waiter=_wait_for_doc_storage,
                     doc_storage_releaser=_release_doc_storage,
                     merge_scope=merge_scope_by_tid[template_id],
+                    doc_name=doc_name,
                 )
             finally:
                 if not doc_storage_released:
@@ -408,6 +413,7 @@ async def run_structure_compile_over_batches(
             compile_chat_mdl,
             embedding_model,
             doc_id,
+            doc_name=doc_name,
             language=language,
             callback=progress_cb,
             max_workers=3,
@@ -604,6 +610,7 @@ async def run_structure_compile_over_batches(
         tenant_id=tenant_id,
         kb_id=kb_id,
         doc_id=doc_id,
+        doc_name=doc_name,
         progress_cb=progress_cb,
         cancel_check=cancel_check,
     )
@@ -618,6 +625,7 @@ async def run_structure_compile_over_batches(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 compilation_template_id=template_id,
             )
         except Exception:

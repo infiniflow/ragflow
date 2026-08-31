@@ -24,11 +24,12 @@
   - Citation anchor is the source chunk id (``source_chunk_ids`` list per item), not
     a byte position. The LLM is prompted to tag each extracted item with the
     ``[CHUNK_ID …]`` of the chunk it came from.
-  - Resume: per-chunk extracts are persisted to ES under
+  - Cache: per-chunk extraction versions are persisted to ES under
     ``compile_kwd="wiki_map_extract"`` with ``available_int=0`` and no vector
     / token-list fields, so retrievers ignore them but downstream phases can
-    fetch them by ``doc_id`` + ``source_chunk_ids``. Re-running MAP for the same
-    ``doc_id`` skips chunks that already have an extract row.
+    fetch them by ``doc_id`` + ``source_chunk_ids`` + ``chunk_hash_kwd``.
+    Historical versions are retained so reverted chunk content can reuse its
+    earlier extraction.
 
 Public entry: ``wiki_map_from_chunks``.
 """
@@ -37,6 +38,7 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from typing import Callable, Optional
 from urllib.parse import urlsplit
 from common.misc_utils import thread_pool_exec
@@ -86,8 +88,47 @@ from .structure import (
 # ---------------------------------------------------------------------------
 
 WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
+WIKI_MAP_STATE_COMPILE_KWD = "wiki_map_state"
+WIKI_MAP_STATE_META_COMPILE_KWD = "wiki_map_state_meta"
 DEFAULT_WIKI_MAP_WORKERS = 20
 DEFAULT_WIKI_MAP_TIMEOUT = 600
+
+
+async def _wiki_disabled_doc_ids(kb_id: str) -> set[str]:
+    """Return disabled documents so cached MAP rows cannot re-enter a build."""
+    from api.db.services.document_service import DocumentService
+
+    disabled = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+    return _wiki_doc_ids(disabled)
+
+
+def _wiki_doc_ids(value) -> set[str]:
+    """Normalize a scalar or list-valued document-id field."""
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        value = value.strip()
+        return {value} if value else set()
+    if isinstance(value, (list, tuple, set)):
+        result: set[str] = set()
+        for item in value:
+            result.update(_wiki_doc_ids(item))
+        return result
+    value = str(value).strip()
+    return {value} if value else set()
+
+
+def _wiki_compare_chunk_states(previous: dict[str, dict], current: dict[str, dict]) -> dict[str, set[str]]:
+    """Return the chunk-level delta between two successful Wiki states."""
+    previous_ids = set(previous)
+    current_ids = set(current)
+    common_ids = previous_ids & current_ids
+    return {
+        "new_chunk_ids": current_ids - previous_ids,
+        "changed_chunk_ids": {chunk_id for chunk_id in common_ids if previous[chunk_id].get("hash") != current[chunk_id].get("hash")},
+        "deleted_chunk_ids": previous_ids - current_ids,
+        "unchanged_chunk_ids": {chunk_id for chunk_id in common_ids if previous[chunk_id].get("hash") == current[chunk_id].get("hash")},
+    }
 
 
 WIKI_MAP_SYSTEM = (
@@ -591,6 +632,11 @@ def _wiki_resolve_chunk_ids(
     per_chunk: dict[str, dict] = {real_id: _wiki_empty_extract() for real_id in label_to_id.values()}
     merged = _wiki_empty_extract()
     merged["topics"] = list(extract.get("topics") or [])
+    # MAP topics are batch-level strings and carry no source_chunk_id.  Store
+    # them with every chunk version in the batch so a later cache hit or state
+    # reload preserves the same topic pool; downstream deduplicates them.
+    for chunk_extract in per_chunk.values():
+        chunk_extract["topics"] = list(merged["topics"])
 
     dropped = 0
     dropped_identifier = 0
@@ -660,7 +706,10 @@ def _wiki_build_resume_doc(
     content_with_weight = json.dumps(per_chunk_extract, ensure_ascii=False)
     doc_id_str = str(doc_id)
     return {
-        "id": _stable_row_id(content_with_weight, doc_id_str, chunk_id),
+        # A MAP row is an immutable cache version.  Keeping the hash in the
+        # identity lets A -> B -> A reuse the first extraction instead of
+        # replacing it when B is compiled.
+        "id": _stable_row_id(WIKI_MAP_COMPILE_KWD, doc_id_str, chunk_id, chunk_hash),
         "doc_id": doc_id_str,
         "compile_kwd": WIKI_MAP_COMPILE_KWD,
         "source_chunk_ids": [chunk_id],
@@ -670,104 +719,71 @@ def _wiki_build_resume_doc(
     }
 
 
-async def _wiki_load_resume_map(
-    doc_id: str,
+async def _wiki_load_map_versions(
+    doc_ids: str | set[str],
     tenant_id: str,
     kb_id: str,
-) -> dict[str, str]:
-    """Query ES for chunks that already have a wiki_map_extract row for
-    this doc. Returns ``{chunk_id → chunk_hash}``.
-
-    ``chunk_hash`` may be empty for legacy rows that predate the field —
-    callers treat empty as "definitely re-MAP" (no hash to compare).
-    """
+    requested_versions: Optional[dict[str, str]] = None,
+) -> dict[str, dict[str, dict]]:
+    """Load historical MAP versions as ``chunk_id -> hash -> extract``."""
     from common import settings
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    condition = {
-        "compile_kwd": [WIKI_MAP_COMPILE_KWD],
-        "doc_id": [str(doc_id)],
-    }
-    select_fields = ["id", "source_chunk_ids", "chunk_hash_kwd"]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            select_fields,
-            [],
-            condition,
-            [],
-            OrderByExpr(),
-            0,
-            10000,
-            index,
-            [kb_id],
-        )
-        field_map = settings.docStoreConn.get_fields(res, select_fields)
-    except Exception:
-        logging.exception("wiki_map: failed to query resume map; will re-extract all chunks")
-        return {}
-
-    seen: dict[str, str] = {}
-    for row in field_map.values():
-        src = row.get("source_chunk_ids") or []
-        hh = row.get("chunk_hash_kwd")
-        if not isinstance(hh, str):
-            hh = ""
-        if isinstance(src, list):
-            for cid in src:
-                if isinstance(cid, str) and cid:
-                    # First-write-wins is fine: if a doc has two rows for
-                    # the same chunk_id (legacy / dirty state), we treat
-                    # the first as the canonical and let the changed-hash
-                    # path or the deletion sweep clean it up later.
-                    seen.setdefault(cid, hh)
-    return seen
-
-
-async def _wiki_delete_map_rows(
-    doc_id: str,
-    chunk_ids: list[str],
-    tenant_id: str,
-    kb_id: str,
-) -> int:
-    """Delete ``wiki_map_extract`` rows for ``(doc_id, chunk_id)`` pairs.
-
-    Used by the incremental MAP path:
-      * stale rows whose chunk content has changed → re-extracted next.
-      * rows whose chunk_id is gone from the doc (chunk deleted upstream).
-
-    Returns the number of distinct ``chunk_ids`` we attempted to drop;
-    the backend may delete more (e.g. duplicate rows) — we don't try to
-    track that precisely.
-    """
-    if not chunk_ids:
-        return 0
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    condition = {
-        "compile_kwd": [WIKI_MAP_COMPILE_KWD],
-        "doc_id": [str(doc_id)],
-        "source_chunk_ids": list(chunk_ids),
-    }
-    try:
-        await thread_pool_exec(
-            settings.docStoreConn.delete,
-            condition,
-            index,
-            kb_id,
-        )
-    except Exception:
-        logging.exception(
-            "wiki_map: failed to delete %d stale extract row(s) for doc %s",
-            len(chunk_ids),
-            doc_id,
-        )
-        return 0
-    return len(chunk_ids)
+    select_fields = ["source_chunk_ids", "chunk_hash_kwd", "content_with_weight"]
+    offset = 0
+    page_size = 1000
+    versions: dict[str, dict[str, dict]] = {}
+    requested_chunk_ids = set(requested_versions or {})
+    requested_hashes = {chunk_hash for chunk_hash in (requested_versions or {}).values() if chunk_hash}
+    normalized_doc_ids = {str(doc_id) for doc_id in ({doc_ids} if isinstance(doc_ids, str) else doc_ids) if doc_id}
+    condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD], "doc_id": sorted(normalized_doc_ids)}
+    if requested_chunk_ids:
+        condition["source_chunk_ids"] = sorted(requested_chunk_ids)
+    if requested_hashes:
+        condition["chunk_hash_kwd"] = sorted(requested_hashes)
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields,
+                [],
+                condition,
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index,
+                [kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
+        except Exception:
+            logging.exception("wiki_map: failed to load historical versions for docs %s", sorted(normalized_doc_ids))
+            return versions
+        for row in field_map.values():
+            chunk_ids = _wiki_doc_ids(row.get("source_chunk_ids"))
+            chunk_hash = row.get("chunk_hash_kwd")
+            if not isinstance(chunk_hash, str) or not chunk_hash:
+                continue
+            if requested_hashes and chunk_hash not in requested_hashes:
+                continue
+            try:
+                extract = json.loads(row.get("content_with_weight") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(extract, dict):
+                continue
+            for chunk_id in chunk_ids:
+                if requested_chunk_ids and chunk_id not in requested_chunk_ids:
+                    continue
+                if requested_versions is not None and requested_versions.get(chunk_id) != chunk_hash:
+                    continue
+                versions.setdefault(chunk_id, {}).setdefault(chunk_hash, extract)
+        if len(field_map) < page_size:
+            break
+        offset += page_size
+    return versions
 
 
 async def _wiki_persist_extracts(
@@ -807,6 +823,231 @@ async def _wiki_persist_extracts(
         await thread_pool_exec(settings.docStoreConn.insert, docs, index, kb_id)
     except Exception:
         logging.exception("wiki_map: failed to persist %d resume docs", len(docs))
+
+
+async def _wiki_scan_current_chunk_state(
+    tenant_id: str,
+    kb_id: str,
+    doc_ids: set[str],
+) -> dict[str, dict]:
+    """Scan enabled source chunks and return their current MAP input hashes."""
+    if not doc_ids:
+        return {}
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    state: dict[str, dict] = {}
+    for doc_id in sorted(doc_ids):
+        offset = 0
+        while True:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "doc_id", "content_with_weight"],
+                [],
+                {
+                    "doc_id": [doc_id],
+                    "available_int": 1,
+                    "must_not": {"exists": "compile_kwd"},
+                },
+                [],
+                OrderByExpr(),
+                offset,
+                1000,
+                index,
+                [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight"]) or {}
+            for row_id, row in rows.items():
+                chunk_id = str(row.get("id") or row_id or "")
+                if chunk_id:
+                    state[chunk_id] = {
+                        "doc_id": str(row.get("doc_id") or doc_id),
+                        "hash": _chunk_hash(row.get("content_with_weight") or ""),
+                    }
+            if len(rows) < 1000:
+                break
+            offset += 1000
+    return state
+
+
+async def _wiki_load_active_map_state(
+    tenant_id: str,
+    kb_id: str,
+) -> dict[str, dict]:
+    """Load the chunk versions used by the last successful Wiki build."""
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    generation = await _wiki_load_active_map_generation(tenant_id, kb_id)
+    if not generation:
+        return {}
+
+    state: dict[str, dict] = {}
+    offset = 0
+    while True:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["doc_id", "source_chunk_ids", "chunk_hash_kwd"],
+            [],
+            {"compile_kwd": [WIKI_MAP_STATE_COMPILE_KWD], "type_kwd": [generation]},
+            [],
+            OrderByExpr(),
+            offset,
+            1000,
+            index,
+            [kb_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, ["doc_id", "source_chunk_ids", "chunk_hash_kwd"]) or {}
+        for row in rows.values():
+            chunk_hash = row.get("chunk_hash_kwd")
+            if not isinstance(chunk_hash, str) or not chunk_hash:
+                continue
+            doc_id = next(iter(_wiki_doc_ids(row.get("doc_id"))), "")
+            for chunk_id in _wiki_doc_ids(row.get("source_chunk_ids")):
+                state[chunk_id] = {"doc_id": doc_id, "hash": chunk_hash}
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    return state
+
+
+async def _wiki_load_active_map_generation(tenant_id: str, kb_id: str) -> str:
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
+
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        ["type_kwd"],
+        [],
+        {
+            "compile_kwd": [WIKI_MAP_STATE_META_COMPILE_KWD],
+            "id": [_stable_row_id(WIKI_MAP_STATE_META_COMPILE_KWD, kb_id)],
+        },
+        [],
+        OrderByExpr(),
+        0,
+        1,
+        _rag_search.index_name(tenant_id),
+        [kb_id],
+    )
+    marker_rows = settings.docStoreConn.get_fields(res, ["type_kwd"]) or {}
+    for row in marker_rows.values():
+        values = _wiki_doc_ids(row.get("type_kwd"))
+        if values:
+            return next(iter(values))
+    return ""
+
+
+async def _wiki_load_map_extracts_for_state(
+    tenant_id: str,
+    kb_id: str,
+    state: dict[str, dict],
+    chunk_ids: Optional[set[str]] = None,
+) -> list[dict]:
+    """Load only MAP versions selected by a source-state snapshot."""
+    selected_ids = set(state)
+    if chunk_ids is not None:
+        selected_ids &= set(chunk_ids)
+    if not selected_ids:
+        return []
+
+    by_doc: dict[str, set[str]] = {}
+    for chunk_id in selected_ids:
+        doc_id = str(state[chunk_id].get("doc_id") or "")
+        if doc_id:
+            by_doc.setdefault(doc_id, set()).add(chunk_id)
+
+    requested_versions = {chunk_id: str(state[chunk_id].get("hash") or "") for chunk_ids_for_doc in by_doc.values() for chunk_id in chunk_ids_for_doc}
+    versions = await _wiki_load_map_versions(set(by_doc), tenant_id, kb_id, requested_versions)
+    extracts: list[dict] = []
+    for doc_id, doc_chunk_ids in by_doc.items():
+        for chunk_id in doc_chunk_ids:
+            chunk_hash = str(state[chunk_id].get("hash") or "")
+            extract = versions.get(chunk_id, {}).get(chunk_hash)
+            if not isinstance(extract, dict):
+                continue
+            item = dict(extract)
+            item["doc_id"] = doc_id
+            item["_map_version"] = {
+                "chunk_id": chunk_id,
+                "hash": chunk_hash,
+            }
+            extracts.append(item)
+    return extracts
+
+
+async def _wiki_commit_active_map_state(
+    tenant_id: str,
+    kb_id: str,
+    state: dict[str, dict],
+) -> None:
+    """Commit the source snapshot only after Wiki compilation succeeds."""
+    from common import settings
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    try:
+        previous_generation = await _wiki_load_active_map_generation(tenant_id, kb_id)
+    except Exception:
+        logging.exception("wiki_map: failed to read the previous active-state generation")
+        raise
+
+    generation = uuid.uuid4().hex
+    rows = []
+    for chunk_id, item in state.items():
+        doc_id = str(item.get("doc_id") or "")
+        chunk_hash = str(item.get("hash") or "")
+        if not doc_id or not chunk_hash:
+            continue
+        rows.append(
+            {
+                "id": _stable_row_id(WIKI_MAP_STATE_COMPILE_KWD, doc_id, chunk_id),
+                "doc_id": doc_id,
+                "compile_kwd": WIKI_MAP_STATE_COMPILE_KWD,
+                "type_kwd": generation,
+                "source_chunk_ids": [chunk_id],
+                "chunk_hash_kwd": chunk_hash,
+                "content_with_weight": "{}",
+                "available_int": 0,
+            }
+        )
+    # State rows use generation-qualified IDs so an interrupted write cannot
+    # overwrite the active snapshot. The single marker is switched only after
+    # every row in the new generation has been persisted.
+    for row in rows:
+        row["id"] = _stable_row_id(WIKI_MAP_STATE_COMPILE_KWD, generation, row["doc_id"], row["source_chunk_ids"][0])
+    if rows:
+        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
+    marker = {
+        "id": _stable_row_id(WIKI_MAP_STATE_META_COMPILE_KWD, kb_id),
+        "doc_id": "",
+        "compile_kwd": WIKI_MAP_STATE_META_COMPILE_KWD,
+        "type_kwd": generation,
+        "source_chunk_ids": ["__wiki_map_state__"],
+        "chunk_hash_kwd": "committed",
+        "content_with_weight": "{}",
+        "available_int": 0,
+    }
+    await thread_pool_exec(settings.docStoreConn.insert, [marker], index, kb_id)
+    if previous_generation and previous_generation != generation:
+        try:
+            await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"compile_kwd": [WIKI_MAP_STATE_COMPILE_KWD], "type_kwd": [previous_generation]},
+                index,
+                kb_id,
+            )
+        except Exception:
+            logging.warning(
+                "wiki_map: failed to remove inactive state generation %s",
+                previous_generation,
+                exc_info=True,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -951,6 +1192,7 @@ async def wiki_map_from_chunks(
     parser_config: Optional[dict] = None,
     batch_size_cap: Optional[int] = None,
     window_fraction: Optional[float] = None,
+    target_chunk_ids: Optional[set[str]] = None,
 ) -> dict:
     """Phase 1 (MAP) of the artifact compilation pipeline.
 
@@ -988,46 +1230,15 @@ async def wiki_map_from_chunks(
     """
     _ = embd_mdl  # noqa: F841 — accepted for symmetry with downstream phases
     if not chunks:
-        # Even with zero chunks we still want to sweep any orphaned MAP
-        # rows that point at chunks the doc no longer has — otherwise
-        # deletions never propagate.
-        prior_resume_map = await _wiki_load_resume_map(doc_id, tenant_id, kb_id)
-        if prior_resume_map:
-            await _wiki_delete_map_rows(
-                doc_id,
-                list(prior_resume_map.keys()),
-                tenant_id,
-                kb_id,
-            )
-            logging.info(
-                "wiki_map: doc %s now has zero chunks; swept %d stale extract row(s)",
-                doc_id,
-                len(prior_resume_map),
-            )
         out = _wiki_empty_extract()
         out["_meta"] = {
             "doc_id": str(doc_id),
-            "new": 0,
-            "changed": 0,
-            "deleted": len(prior_resume_map),
-            "unchanged": 0,
-            "had_delta": bool(prior_resume_map),
+            "requested": 0,
+            "cache_hits": 0,
+            "extracted": 0,
         }
         return out
 
-    # Incremental decision per current chunk:
-    #
-    #   * Compute the fresh chunk hash for every chunk in this call.
-    #   * Load the prior resume map (chunk_id → hash from the last MAP).
-    #   * NEW       — chunk_id not in prior     → MAP this chunk.
-    #   * UNCHANGED — chunk_id in prior, hash matches → skip (resume).
-    #   * CHANGED   — chunk_id in prior, hash differs → delete prior
-    #                 row, then MAP this chunk.
-    #   * DELETED   — chunk_id only in prior     → delete prior row
-    #                 (chunk was removed upstream).
-    #
-    # The "resume set" handed to ``_build_chunk_batches`` is just the
-    # UNCHANGED ids — those are the only ones the packer should skip.
     current_chunk_hashes: dict[str, str] = {}
     for chunk in chunks:
         cid = chunk.get("id") or chunk.get("chunk_id")
@@ -1036,43 +1247,23 @@ async def wiki_map_from_chunks(
         text = _wiki_pick_chunk_text(chunk) or ""
         current_chunk_hashes[cid] = _chunk_hash(text)
 
-    prior_resume_map = await _wiki_load_resume_map(doc_id, tenant_id, kb_id)
-    unchanged_ids: set[str] = set()
-    changed_ids: list[str] = []
-    new_ids: list[str] = []
-    for cid, h in current_chunk_hashes.items():
-        prior_h = prior_resume_map.get(cid)
-        if prior_h is None:
-            new_ids.append(cid)
-        elif prior_h and prior_h == h:
-            unchanged_ids.add(cid)
-        else:
-            # Empty stored hash = legacy row written before chunk_hash_kwd
-            # existed → re-MAP. Differing hash = content changed → re-MAP.
-            changed_ids.append(cid)
-    deleted_ids = [cid for cid in prior_resume_map if cid not in current_chunk_hashes]
+    requested_ids = set(current_chunk_hashes)
+    if target_chunk_ids is not None:
+        requested_ids &= set(target_chunk_ids)
 
-    if changed_ids or deleted_ids:
-        await _wiki_delete_map_rows(
-            doc_id,
-            list(set(changed_ids) | set(deleted_ids)),
-            tenant_id,
-            kb_id,
-        )
+    requested_versions = {chunk_id: current_chunk_hashes[chunk_id] for chunk_id in requested_ids}
+    historical_versions = await _wiki_load_map_versions(doc_id, tenant_id, kb_id, requested_versions)
+    cache_hits: list[dict] = []
+    cache_hit_ids: set[str] = set()
+    for chunk_id in requested_ids:
+        extract = historical_versions.get(chunk_id, {}).get(current_chunk_hashes[chunk_id])
+        if extract is not None:
+            cache_hit_ids.add(chunk_id)
+            cache_hits.append(extract)
 
-    if unchanged_ids or changed_ids or deleted_ids or new_ids:
-        logging.info(
-            "wiki_map: doc %s — new=%d changed=%d unchanged=%d deleted=%d",
-            doc_id,
-            len(new_ids),
-            len(changed_ids),
-            len(unchanged_ids),
-            len(deleted_ids),
-        )
-
-    # The packer's "resume" set is the UNCHANGED ids only — NEW and
-    # CHANGED both need re-extraction.
-    resume_set = unchanged_ids
+    extract_ids = requested_ids - cache_hit_ids
+    # Skip chunks outside this run's delta as well as historical cache hits.
+    resume_set = set(current_chunk_hashes) - extract_ids
 
     # Defensive scrub: chunkers sometimes embed the chunk_id / doc_id into
     # the body (e.g. as a header). Without this the extraction LLM tends to
@@ -1096,8 +1287,15 @@ async def wiki_map_from_chunks(
         batch_size_cap=batch_size_cap,
         window_fraction=window_fraction,
     )
+    cached_merged = _wiki_merge_extracts(cache_hits)
     if not packed_batches:
-        return _wiki_empty_extract()
+        cached_merged["_meta"] = {
+            "doc_id": str(doc_id),
+            "requested": len(requested_ids),
+            "cache_hits": len(cache_hit_ids),
+            "extracted": 0,
+        }
+        return cached_merged
 
     async def _process_one(batch: list[dict], bi: int, total: int) -> dict:
         # ``_run_chunked_pipeline`` already wraps each task in the engine's
@@ -1118,7 +1316,7 @@ async def wiki_map_from_chunks(
             chunk_hashes=current_chunk_hashes,
         )
 
-    merged = await _run_chunked_pipeline(
+    extracted = await _run_chunked_pipeline(
         packed_batches,
         process_batch=_process_one,
         aggregate=_wiki_merge_extracts,
@@ -1126,25 +1324,24 @@ async def wiki_map_from_chunks(
         callback=callback,
         log_prefix="wiki_map",
     )
+    merged = _wiki_merge_extracts([cached_merged, extracted])
     logging.info(
-        "wiki_map: doc %s — entities=%d concepts=%d claims=%d relations=%d topics=%d",
+        "wiki_map: doc %s — requested=%d cache_hits=%d extracted=%d entities=%d concepts=%d claims=%d relations=%d topics=%d",
         doc_id,
+        len(requested_ids),
+        len(cache_hit_ids),
+        len(extract_ids),
         len(merged["entities"]),
         len(merged["concepts"]),
         len(merged["claims"]),
         len(merged["relations"]),
         len(merged["topics"]),
     )
-    # Surface the incremental decisions to the orchestrator. ``had_delta``
-    # is the most useful summary: REDUCE/PLAN/REFINE can short-circuit
-    # KB-wide when no doc's MAP touched any rows on this run.
     merged["_meta"] = {
         "doc_id": str(doc_id),
-        "new": len(new_ids),
-        "changed": len(changed_ids),
-        "unchanged": len(unchanged_ids),
-        "deleted": len(deleted_ids),
-        "had_delta": bool(new_ids or changed_ids or deleted_ids),
+        "requested": len(requested_ids),
+        "cache_hits": len(cache_hit_ids),
+        "extracted": len(extract_ids),
     }
     return merged
 
@@ -1182,8 +1379,9 @@ async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
+    disabled_doc_ids = await _wiki_disabled_doc_ids(kb_id)
     condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
-    select_fields = ["id", "content_with_weight"]
+    select_fields = ["id", "content_with_weight", "doc_id"]
 
     PAGE_SIZE = 1000
     offset = 0
@@ -1213,6 +1411,8 @@ async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
             break
 
         for row in field_map.values():
+            if _wiki_doc_ids(row.get("doc_id")) & disabled_doc_ids:
+                continue
             content = row.get("content_with_weight")
             if not isinstance(content, str) or not content:
                 continue
@@ -1254,6 +1454,7 @@ async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
+    disabled_doc_ids = await _wiki_disabled_doc_ids(kb_id)
     condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
     select_fields = ["id", "doc_id"]
 
@@ -1282,10 +1483,8 @@ async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
         if not field_map:
             break
         for row in field_map.values():
-            raw = row.get("doc_id")
-            candidates = raw if isinstance(raw, list) else [raw]
-            for d in candidates:
-                if isinstance(d, str) and d and d not in seen:
+            for d in _wiki_doc_ids(row.get("doc_id")):
+                if d not in disabled_doc_ids and d not in seen:
                     seen.add(d)
                     doc_ids.append(d)
         if len(field_map) < PAGE_SIZE:
@@ -1318,8 +1517,9 @@ async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
+    disabled_doc_ids = await _wiki_disabled_doc_ids(kb_id)
     condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
-    select_fields = ["id", "source_chunk_ids", "chunk_hash_kwd"]
+    select_fields = ["id", "doc_id", "source_chunk_ids", "chunk_hash_kwd"]
 
     PAGE_SIZE = 128
     offset = 0
@@ -1352,6 +1552,8 @@ async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
         if not field_map:
             break
         for row in field_map.values():
+            if _wiki_doc_ids(row.get("doc_id")) & disabled_doc_ids:
+                continue
             hh = row.get("chunk_hash_kwd")
             if not isinstance(hh, str):
                 hh = ""
@@ -2611,7 +2813,7 @@ WIKI_TEMPLATE_EXAMPLE = (
     "   Put every heading on its own line and separate every paragraph with a blank line.\n"
     "3. Bold key terms on first use; link them with [[ ]] wikilinks.\n"
     "4. Examples or implications where the source provides them.\n"
-    "5. ## See also section at the end with wikilinks to highly related pages(less than 12).\n\n"
+    '5. End with a "## See also" section listing wikilinks to highly related pages (less than 12).\n\n'
     "Page structure could be as following:\n(Not provided)"
 )
 

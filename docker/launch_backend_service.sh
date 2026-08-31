@@ -68,7 +68,10 @@ STOP=false
 PIDS=()
 
 # Set the path to the NLTK data directory
-export NLTK_DATA="./nltk_data"
+# download_deps.py downloads NLTK data into ragflow_deps/nltk_data (see
+# ragflow_deps/download_deps.py); point NLTK_DATA there directly instead of a
+# stale top-level ./nltk_data so this matches what's actually populated.
+export NLTK_DATA="$(pwd)/ragflow_deps/nltk_data"
 
 # Function to handle termination signals
 cleanup() {
@@ -100,12 +103,12 @@ task_exe(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting $task_name (Attempt $((retry_count+1)))"
+        EXIT_CODE=0
         if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-            "${task_cmd[@]}"
+            "${task_cmd[@]}" || EXIT_CODE=$?
         else
-            LD_PRELOAD=$JEMALLOC_PATH "${task_cmd[@]}"
+            LD_PRELOAD=$JEMALLOC_PATH "${task_cmd[@]}" || EXIT_CODE=$?
         fi
-        EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "$task_name exited successfully."
             break
@@ -134,8 +137,8 @@ run_server(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting $server_name (Attempt $((retry_count+1)))"
-        "${server_cmd[@]}"
-        EXIT_CODE=$?
+        EXIT_CODE=0
+        "${server_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "$server_name exited successfully."
             break
@@ -164,8 +167,8 @@ run_admin_server(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting $server_name (Attempt $((retry_count+1)))"
-        "${server_cmd[@]}"
-        EXIT_CODE=$?
+        EXIT_CODE=0
+        "${server_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "$server_name exited successfully."
             break
@@ -186,8 +189,8 @@ run_data_sync(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting sync_data_source.py (Attempt $((retry_count+1)))"
-        $PY rag/svr/sync_data_source.py
-        EXIT_CODE=$?
+        EXIT_CODE=0
+        $PY rag/svr/sync_data_source.py || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "sync_data_source.py exited successfully."
             break
@@ -211,6 +214,15 @@ ensure_db_init() {
 }
 
 run_mysql_migrations() {
+    local db_type="${DB_TYPE:-mysql}"
+    db_type="${db_type,,}"
+    if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
+        # This migration script contains MySQL-only SQL and cannot run against
+        # a GaussDB metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+
     tools/scripts/run_migrations.sh
 }
 

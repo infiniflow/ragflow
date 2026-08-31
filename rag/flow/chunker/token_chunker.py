@@ -19,6 +19,7 @@ from copy import deepcopy
 from common.float_utils import normalize_overlapped_percent
 from common.token_utils import num_tokens_from_string
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.chunker._sentence_boundary import SENTENCE_BOUNDARY_PATTERN
 from rag.flow.chunker.schema import TokenChunkerFromUpstream
 from rag.flow.parser.pdf_chunk_metadata import (
     PDF_POSITIONS_KEY,
@@ -106,7 +107,7 @@ def _split_text_by_pattern(text, pattern):
     if not pattern:
         return [text or ""]
 
-    split_texts = re.split(r"(%s)" % pattern, text or "", flags=re.DOTALL)
+    split_texts = re.split("(" + pattern + ")", text or "", flags=re.DOTALL)
     chunks = []
     for i in range(0, len(split_texts), 2):
         chunk = split_texts[i]
@@ -173,8 +174,7 @@ def _build_json_chunks(json_result, delimiter_pattern):
 
 def _take_sentences(text, need_tokens, from_end=False):
     # Take text from one side until the target token budget is reached.
-    split_pat = r"([。!?？；！\n]|\. )"
-    texts = re.split(split_pat, text or "", flags=re.DOTALL)
+    texts = re.split(SENTENCE_BOUNDARY_PATTERN, text or "", flags=re.DOTALL)
     sentences = []
     for i in range(0, len(texts), 2):
         sentences.append(texts[i] + (texts[i + 1] if i + 1 < len(texts) else ""))
@@ -230,19 +230,59 @@ def _attach_context_to_media_chunks(chunks, table_context_size, image_context_si
         chunk["context_below"] = "".join(parts_below)
 
 
+def _overlap_tail_positions(prev_items, overlap_start):
+    # Given the source items a previous chunk was built from (each as
+    # ``(item_text, pos_group)`` where ``pos_group`` is that item's
+    # ``_pdf_positions`` list), return the flattened boxes whose item visible
+    # span intersects the overlap tail ``[overlap_start, total)``.
+    #
+    # PDF positions are per-item (coarse), so an item is included wholesale once
+    # any part of it falls in the overlap tail. This keeps the overlap prefix
+    # highlighted without over-inflating the box set with the previous chunk's
+    # non-overlap (head) coordinates (#18148).
+    if not prev_items:
+        return []
+    # Items are concatenated with a single "\n" separator, matching the merge
+    # join at _merge_text_chunks_by_token_size.
+    spans = []
+    offset = 0
+    for item_text, _pos_group in prev_items:
+        start = offset
+        end = offset + len(item_text)
+        spans.append((start, end))
+        offset = end + 1
+    if not spans:
+        return []
+    total = spans[-1][1]
+    out = []
+    for (start, end), (_text, pos_group) in zip(spans, prev_items, strict=True):
+        if start < total and end > overlap_start:
+            out.extend(pos_group or [])
+    return out
+
+
 def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percent):
     # Merge adjacent text chunks when delimiter-based splitting is not active.
     merged = []
+    # Parallel to ``merged``: for each merged chunk, the list of source items it
+    # was built from, each as ``(item_text, pos_group)``. Tracking items (not
+    # just the flattened position list) lets us map a visible-text offset range
+    # back to the exact coordinate boxes that belong to it, so the overlap
+    # prefix carries only the previous chunk's tail coordinates instead of
+    # dropping them (#18148).
+    merged_items = []
     prev_text_idx = -1
     threshold = chunk_token_size * (100 - overlapped_percent) / 100.0
 
     for chunk in chunks:
         if chunk["ck_type"] != "text":
             merged.append(deepcopy(chunk))
+            merged_items.append(None)
             prev_text_idx = -1
             continue
 
         current = deepcopy(chunk)
+        current_item = (current["text"], list(current.get(PDF_POSITIONS_KEY) or []))
         should_start_new = prev_text_idx < 0 or merged[prev_text_idx]["tk_nums"] > threshold
         # #17799: an over-budget unit stands alone — never merged into the
         # previous chunk. This matches Python naive_merge and the Go
@@ -262,11 +302,21 @@ def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percen
                 overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
                 if 0 <= overlap_start < len(visible):
                     overlap_text = visible[overlap_start:]
+                    # Carry the previous chunk's tail coordinates so the overlap
+                    # prefix is highlighted, not just the cur span (#18148).
+                    # Only the items intersecting the overlap tail keep their
+                    # boxes; the head (non-overlap) boxes are excluded so the
+                    # highlight is not over-inflated.
+                    overlap_positions = _overlap_tail_positions(merged_items[prev_text_idx], overlap_start)
                 else:
                     overlap_text = ""
+                    overlap_positions = []
                 current["text"] = overlap_text + current["text"]
+                current[PDF_POSITIONS_KEY] = overlap_positions + (current.get(PDF_POSITIONS_KEY) or [])
+                current_item = (current["text"], list(current.get(PDF_POSITIONS_KEY) or []))
                 current["tk_nums"] = num_tokens_from_string(current["text"])
             merged.append(current)
+            merged_items.append([current_item])
             prev_text_idx = len(merged) - 1
             continue
 
@@ -276,6 +326,7 @@ def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percen
             merged[prev_text_idx]["text"] += current["text"]
         merged[prev_text_idx][PDF_POSITIONS_KEY].extend(current.get(PDF_POSITIONS_KEY) or [])
         merged[prev_text_idx]["tk_nums"] += current["tk_nums"]
+        merged_items[prev_text_idx].append(current_item)
 
     return merged
 
@@ -322,7 +373,7 @@ def _split_chunk_docs_by_children(chunks, pattern):
 
         split_texts = _split_text_by_pattern(chunk.get("text", ""), pattern)
 
-        mom = chunk.get("text", "")
+        mom = chunk.get("text", "").removeprefix("\n")
         for text in split_texts:
             if not text.strip():
                 continue
@@ -340,8 +391,8 @@ class TokenChunker(ProcessBase):
     async def _invoke(self, **kwargs):
         try:
             from_upstream = TokenChunkerFromUpstream.model_validate(kwargs)
-        except Exception as e:
-            self.set_output("_ERROR", f"Input error: {str(e)}")
+        except Exception as e:  # noqa: BLE001
+            self.set_output("_ERROR", f"Input error: {e!s}")
             return
 
         # Build the primary delimiter regex. If no active custom delimiter exists,
@@ -377,7 +428,7 @@ class TokenChunker(ProcessBase):
                     for text in _split_text_by_pattern(c, custom_pattern):
                         if not text.strip():
                             continue
-                        docs.append({"text": text, "mom": c})
+                        docs.append({"text": text, "mom": c.removeprefix("\n")})
                 self.set_output("chunks", docs)
             else:
                 self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])
@@ -437,7 +488,7 @@ class TokenChunker(ProcessBase):
                     offset += 1
                 combined_text = "".join(parts[:-1])  # drop the trailing glue
 
-                raw = re.split(r"(%s)" % delimiter_pattern, combined_text, flags=re.DOTALL)
+                raw = re.split("(" + delimiter_pattern + ")", combined_text, flags=re.DOTALL)
                 segments = []  # (text, start, end) within combined_text
                 pos = 0
                 for i in range(0, len(raw), 2):

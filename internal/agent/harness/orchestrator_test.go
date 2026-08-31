@@ -62,22 +62,25 @@ func TestCrossCheckClaim_Unverified(t *testing.T) {
 	}
 }
 
-// TestComputeFusionScore_Sufficient asserts a fully-verified high-score set is
-// SUFFICIENT.
+// TestComputeFusionScore_Sufficient asserts a fully-verified high-confidence set
+// is SUFFICIENT.
 func TestComputeFusionScore_Sufficient(t *testing.T) {
-	agents := []AgentResult{{ClaimID: "c0", IsVerified: true, Report: "value 42", EvidenceIDs: []int{0}}}
+	agents := []AgentResult{{ClaimID: "c0", IsVerified: true, Confidence: 0.9, Report: "value 42", EvidenceIDs: []int{0}}}
 	cross := []ClaimCrossCheckResult{{ClaimID: "c0", CrossCheckPassed: true, CrossCheckScore: 1.0, HasEvidence: true}}
-	v := ComputeFusionScore(agents, cross, THINKING_MODES["medium"])
+	v := ComputeFusionScore(agents, cross, THINKING_MODES["medium"], "", nil, nil)
 	if v.Status != "SUFFICIENT" {
 		t.Errorf("status = %q, want SUFFICIENT", v.Status)
 	}
+	if v.AgentConfidence != 0.9 {
+		t.Errorf("agent_confidence = %v, want 0.9", v.AgentConfidence)
+	}
 }
 
-// TestComputeFusionScore_NoEvidence asserts a claim with no examined evidence is
-// UNANSWERABLE (empty-evidence guard).
+// TestComputeFusionScore_NoEvidence asserts a claim whose cross-check failed
+// (nothing passed) is UNANSWERABLE.
 func TestComputeFusionScore_NoEvidence(t *testing.T) {
-	cross := []ClaimCrossCheckResult{{ClaimID: "c0", CrossCheckPassed: true, CrossCheckScore: 1.0, HasEvidence: false}}
-	v := ComputeFusionScore([]AgentResult{{ClaimID: "c0", IsVerified: true}}, cross, THINKING_MODES["medium"])
+	cross := []ClaimCrossCheckResult{{ClaimID: "c0", CrossCheckPassed: false, CrossCheckScore: 0.0, HasEvidence: false}}
+	v := ComputeFusionScore([]AgentResult{{ClaimID: "c0", IsVerified: true, Confidence: 0.9}}, cross, THINKING_MODES["medium"], "", nil, nil)
 	if v.Status != "UNANSWERABLE" {
 		t.Errorf("status = %q, want UNANSWERABLE", v.Status)
 	}
@@ -88,7 +91,7 @@ func TestComputeFusionScore_NoEvidence(t *testing.T) {
 
 // TestRouteSufficiencyVerdict asserts SUFFICIENT → ANSWER.
 func TestRouteSufficiencyVerdict(t *testing.T) {
-	action, cont := RouteSufficiencyVerdict(SufficiencyVerdict{Status: "SUFFICIENT", Score: 0.9}, "medium", 0, 3)
+	action, cont, _ := RouteSufficiencyVerdict(SufficiencyVerdict{Status: "SUFFICIENT", Score: 0.9, AgentConfidence: 0.9}, "medium", 0, 3, nil)
 	if action != "ANSWER" || cont {
 		t.Errorf("got (%q,%v), want (ANSWER,false)", action, cont)
 	}
@@ -97,7 +100,7 @@ func TestRouteSufficiencyVerdict(t *testing.T) {
 // TestDirectSearch_Merges asserts direct search merges chunks and flags empty.
 func TestDirectSearch_Merges(t *testing.T) {
 	kb := &Kbinfos{}
-	res := DirectSearch(context.Background(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
+	res := DirectSearch(t.Context(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
 		return []map[string]interface{}{{"chunk_id": "a", "content_with_weight": "alpha"}}, nil
 	}, "q", "", kb)
 	if res.EmptyResult || !kb.HasChunks() {
@@ -108,7 +111,7 @@ func TestDirectSearch_Merges(t *testing.T) {
 // TestDirectSearch_Empty asserts direct search flags empty when no chunks.
 func TestDirectSearch_Empty(t *testing.T) {
 	kb := &Kbinfos{}
-	res := DirectSearch(context.Background(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
+	res := DirectSearch(t.Context(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
 		return nil, nil
 	}, "q", "", kb)
 	if !res.EmptyResult {
@@ -121,7 +124,7 @@ func TestDirectSearch_Empty(t *testing.T) {
 func TestDecomposeAndSearch_Verifies(t *testing.T) {
 	claims := []*ClaimTarget{{ClaimID: "c0", Description: "fact 42 about X"}}
 	kb := &Kbinfos{}
-	res := DecomposeAndSearch(context.Background(),
+	res := DecomposeAndSearch(t.Context(),
 		func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
 			return []map[string]interface{}{{"chunk_id": "x", "content_with_weight": "the value is 42"}}, nil
 		},

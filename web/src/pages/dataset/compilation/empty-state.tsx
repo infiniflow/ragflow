@@ -9,7 +9,7 @@ import {
   useDatasetGenerate,
   useGenerateStatus,
 } from '@/hooks/use-dataset-generate';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
+import { useIsGoBackend } from '@/utils/backend-variant';
 
 import {
   GenerableViewMode,
@@ -29,13 +29,11 @@ interface ICompilationEmptyStateProps {
 }
 
 const TitleKeyMap: Record<EmptyStateType, string> = {
-  [ViewMode.LlmWiki]: 'knowledgeDetails.noWikiPages',
-  [ViewMode.Skills]: 'knowledgeDetails.noSkills',
-  [ViewMode.Graph]: 'knowledgeDetails.noStructureGraph',
-  [ViewMode.MindMap]: 'knowledgeDetails.noStructureMindmap',
-  [ViewMode.Timeline]: 'knowledgeDetails.noStructureTimeline',
-  // [ViewMode.SessionEssence]: 'knowledgeDetails.noStructureSessionEssence',
-  // [ViewMode.SessionGraph]: 'knowledgeDetails.noStructureSessionGraph',
+  [ViewMode.LlmWiki]: 'knowledgeCompilation.noWikiPages',
+  [ViewMode.Skills]: 'knowledgeCompilation.noSkills',
+  [ViewMode.Graph]: 'knowledgeCompilation.noStructureGraph',
+  [ViewMode.MindMap]: 'knowledgeCompilation.noStructureMindmap',
+  [ViewMode.Timeline]: 'knowledgeCompilation.noStructureTimeline',
 };
 
 export function CompilationEmptyState({
@@ -59,7 +57,7 @@ export function CompilationEmptyState({
   }, [pauseGenerate, data?.id, generateType]);
 
   const showProgress = status === 'running' || status === 'failed';
-  const isGo = isGoDatasetBackend();
+  const isGo = useIsGoBackend();
 
   return (
     <div className="flex-1 min-h-0 flex flex-col items-center justify-center border border-dashed border-border-button rounded-xl">
@@ -73,12 +71,12 @@ export function CompilationEmptyState({
               disabled={disabled}
             >
               <WandSparkles className="mr-2 size-4" />
-              {t('knowledgeDetails.generate')}
+              {t('knowledgeCompilation.generate')}
             </Button>
           )}
           {isGo && (
             <p className="text-sm text-text-secondary">
-              {t('knowledgeDetails.autoCompiled')}
+              {t('knowledgeCompilation.autoCompiled')}
             </p>
           )}
         </div>
@@ -87,7 +85,7 @@ export function CompilationEmptyState({
           <div />
           <div className="flex flex-col items-center gap-5">
             {isGo ? (
-              // Go/hybrid: no stable percentage and no scheduler cancel, so show
+              // Go: no stable percentage and no scheduler cancel, so show
               // the MySQL inflight/backlog counts (or the error diagnostic).
               status === 'failed' ? (
                 <div className="flex flex-col items-center gap-2 text-state-error">
@@ -99,12 +97,12 @@ export function CompilationEmptyState({
               ) : (
                 <div className="flex flex-col items-center gap-2 text-text-secondary">
                   <span className="text-4xl font-medium text-accent-primary">
-                    {t('knowledgeDetails.compiling', {
+                    {t('knowledgeCompilation.compiling', {
                       defaultValue: 'Compiling…',
                     })}
                   </span>
                   <span>
-                    {t('knowledgeDetails.compilingCounts', {
+                    {t('knowledgeCompilation.compilingCounts', {
                       inflight: data?.inflight ?? 0,
                       backlog: data?.backlog ?? 0,
                       defaultValue:

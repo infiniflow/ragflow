@@ -77,8 +77,10 @@ type TTSDispatcher interface {
 //
 //   - ModelProviderRequest.ModelName (from req.Engine)  → modelName
 //     The Engine field is repurposed as a model identifier hint
-//     in the audio package's contract. Empty falls through to the
-//     model's default TTS model.
+//     in the audio package's contract. Built-in engine selectors
+//     ("gtts" / "edge-tts" / "custom") and an empty hint fall
+//     through to the tenant's default TTS model; any other value
+//     is passed as an explicit model name to the by-name lookup.
 //   - Text  → audioContent
 //   - Voice → TTSConfig.Params["voice"]
 //   - Lang  → TTSConfig.Params["lang"]
@@ -94,11 +96,17 @@ func NewTTSDispatchFunc(d TTSDispatcher) ModelProviderFunc {
 		return nil
 	}
 	return func(ctx context.Context, req ModelProviderRequest) (*SynthesizeResponse, error) {
-		// ModelName / Engine may both be empty; both are legal —
-		// the model dispatcher will fall back to the tenant's
-		// default TTS model in that case.
+		// ModelName carries the audio engine id ("gtts" / "edge-tts")
+		// when auto_play is the boolean UI toggle — those are built-in
+		// engine selectors, not tenant model names. Leave modelName nil
+		// for them (and for an empty hint) so the dispatcher falls back
+		// to the tenant's default TTS model, mirroring Python's canvas
+		// auto_play. Only an explicit model name is passed through to
+		// the by-name lookup.
 		var modelName *string
-		if req.ModelName != "" {
+		switch Engine(req.ModelName) {
+		case EngineEmpty, EngineGTTS, EngineEdge, EngineCustom:
+		default:
 			mn := req.ModelName
 			modelName = &mn
 		}
@@ -110,8 +118,9 @@ func NewTTSDispatchFunc(d TTSDispatcher) ModelProviderFunc {
 		// Build a TTSConfig from the request's voice + lang so
 		// the model driver can select a voice variant when the
 		// provider supports it (e.g. OpenAI's alloy/echo fable,
-		// edge-tts' voice short-name).
-		ttsConfig := &modelModule.TTSConfig{Params: map[string]any{}}
+		// edge-tts' voice short-name). MP3 matches the chat TTS
+		// endpoint's default response format.
+		ttsConfig := &modelModule.TTSConfig{Format: "mp3", Params: map[string]any{}}
 		if req.Voice != "" {
 			ttsConfig.Params["voice"] = req.Voice
 		}

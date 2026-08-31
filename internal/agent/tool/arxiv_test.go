@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -127,7 +126,7 @@ func TestArxiv_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewArxivTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(t.Context())
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -148,9 +147,10 @@ func TestArxiv_Info(t *testing.T) {
 
 func TestArxiv_EmptyQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewArxivTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty): %v", err)
 	}
@@ -180,6 +180,7 @@ func TestArxiv_FullRoundtrip(t *testing.T) {
 		_, _ = w.Write([]byte(canned))
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	// rewriteHostTransport points the hard-coded export.arxiv.org at the
 	// test server.
@@ -187,7 +188,7 @@ func TestArxiv_FullRoundtrip(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewArxivToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(), `{"query":"rag"}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"rag"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -212,6 +213,7 @@ func TestArxiv_FullRoundtrip(t *testing.T) {
 
 func TestArxiv_ComponentReferencesAndDefaults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	built, err := BuildByName("arxiv", map[string]any{
 		"top_n":   float64(7),
@@ -232,7 +234,7 @@ func TestArxiv_ComponentReferencesAndDefaults(t *testing.T) {
 	envelope := map[string]any{"results": []any{map[string]any{
 		"title": "Paper", "summary": "Paper summary.", "pdf_url": "https://arxiv.org/pdf/1", "entry_id": "kept",
 	}}}
-	chunks, docAggs := arxiv.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := arxiv.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["content"] != "Paper summary." {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

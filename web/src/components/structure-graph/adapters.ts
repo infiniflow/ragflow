@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import trim from 'lodash/trim';
 import { type TreeDataItem } from '@/components/ui/tree-view';
 import {
@@ -37,7 +53,7 @@ function buildTreeDataItems(
   relationTypes: string[],
   showEntityType = false,
 ): TreeDataItem[] {
-  const normalized = entities
+  const normalized = (entities ?? [])
     .map(normalizeEntity)
     .filter((entity) => entity.id);
   const map = new Map<string, TreeDataItem>(
@@ -53,7 +69,7 @@ function buildTreeDataItems(
   );
   const childIds = new Set<string>();
 
-  for (const relation of relations) {
+  for (const relation of relations ?? []) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
     // Self-referencing relation (same entity as its own child) creates
     // an infinite recursion in the tree renderer.  This is a backend
@@ -83,7 +99,7 @@ function buildUniqueTreeDataItems(
 ): TreeDataItem[] {
   const normalized = [
     ...new Map(
-      entities
+      (entities ?? [])
         .map(normalizeEntity)
         .filter((entity) => entity.id)
         .map((entity) => [entity.id, entity]),
@@ -103,7 +119,7 @@ function buildUniqueTreeDataItems(
   const childIds = new Set<string>();
   const parentMap = new Map<string, string>();
 
-  for (const relation of relations) {
+  for (const relation of relations ?? []) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
 
     const parent = map.get(relation.from);
@@ -156,7 +172,7 @@ export function adaptTreeToTreeData(
 export function adaptKnowledgeGraphToForceGraph(
   template: IStructureGraphTemplate,
 ): IArtifactGraph {
-  const entities: IArtifactGraphEntity[] = template.entities.map((entity) => {
+  const entities: IArtifactGraphEntity[] = (template.entities ?? []).map((entity) => {
     const normalized = normalizeEntity(entity);
     return {
       slug: normalized.id,
@@ -173,7 +189,7 @@ export function adaptKnowledgeGraphToForceGraph(
 
   return {
     entities,
-    relations: template.relations
+    relations: (template.relations ?? [])
       .filter(
         (relation) =>
           // Only keep relations whose source and target entities both exist in the graph.
@@ -268,7 +284,7 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
     };
   });
 
-  const edges = template.relations
+  const edges = (template.relations ?? [])
     .filter(
       (relation) => entityIds.has(relation.from) && entityIds.has(relation.to),
     )

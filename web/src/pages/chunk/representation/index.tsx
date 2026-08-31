@@ -60,7 +60,7 @@ function Representation({ onNodeClick }: RepresentationProps) {
               options={entityOptions}
               value={graphSelectValue}
               onChange={handleSelectEntity}
-              placeholder={t('knowledgeDetails.searchEntity')}
+              placeholder={t('knowledgeCompilation.searchEntity')}
               allowClear
               onNoMatchEnter={handleNoMatchEnter}
               disableAutoSelectOnEnter
@@ -69,7 +69,7 @@ function Representation({ onNodeClick }: RepresentationProps) {
             <ExpandableSearchInput
               value={searchKeyword}
               onChange={handleSearchKeywordChange}
-              placeholder={t('chunk.search', 'Search')}
+              placeholder={t('common.search')}
             />
           )}
           {templates.length > 0 && (
@@ -91,10 +91,7 @@ function Representation({ onNodeClick }: RepresentationProps) {
       {loading && !data && <SkeletonCard className="mt-6" />}
       {!(loading && !data) && templates.length === 0 && (
         <div className="mt-6 text-text-secondary">
-          {t(
-            'chunk.representationEmpty',
-            'No representation templates available.',
-          )}
+          {t('knowledgeCompilation.representationEmpty')}
         </div>
       )}
       {!(loading && !data) && templates.length > 0 && (

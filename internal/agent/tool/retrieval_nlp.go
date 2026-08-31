@@ -29,8 +29,8 @@
 //   tool.RetrievalRequest.Query      → nlp.RetrievalRequest.Question
 //   tool.RetrievalRequest.DatasetIDs → nlp.RetrievalRequest.KbIDs
 //   tool.RetrievalRequest.TopN       → nlp.RetrievalRequest.PageSize
-//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.Top
-//                                       (fallback Top=TopN*4 so rerank
+//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.KNNTopK
+//                                       (fallback KNNTopK=TopN*4 so rerank
 //                                        has headroom)
 //   tool.RetrievalRequest.KeywordsSimilarityWeight
 //                                    → nlp.RetrievalRequest.VectorSimilarityWeight
@@ -215,7 +215,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if len(datasets.tenantIDs) != 1 {
 		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
 	}
-	if err := validateEmbeddingModels(datasets.kbs); err != nil {
+	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
 		return nil, err
 	}
 	embeddingModel, err := a.resolveEmbeddingModel(ctx, datasets.kbs[0])
@@ -325,11 +325,14 @@ func nlpRequestFromRetrieval(
 		Aggs:           boolPtr(false),
 		Highlight:      boolPtr(false),
 	}
+	if req.RerankCandidatesCount != 0 {
+		nlpReq.RerankCandidatesCount = &req.RerankCandidatesCount
+	}
 	if req.TopK > 0 {
-		nlpReq.Top = &req.TopK
+		nlpReq.KNNTopK = &req.TopK
 	} else if topN > 0 {
 		rerankBudget := topN * 4
-		nlpReq.Top = &rerankBudget
+		nlpReq.KNNTopK = &rerankBudget
 	}
 	if req.SimilarityThreshold != nil {
 		nlpReq.SimilarityThreshold = req.SimilarityThreshold
@@ -412,7 +415,7 @@ func (a *NLPRetrievalAdapter) resolveDatasets(
 	return &resolvedDatasets{kbs: kbs, kbIDs: resolvedKBIDs, tenantIDs: tenantIDs}, nil
 }
 
-func validateEmbeddingModels(kbs []*entity.Knowledgebase) error {
+func validateEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Knowledgebase) error {
 	if len(kbs) == 0 {
 		return fmt.Errorf("retrieval: no datasets selected")
 	}
@@ -421,23 +424,26 @@ func validateEmbeddingModels(kbs []*entity.Knowledgebase) error {
 			return fmt.Errorf("retrieval: dataset record is nil")
 		}
 	}
-	firstKey := knowledgebaseEmbeddingKey(kbs[0])
+	embdNameCache := make(map[string]string)
+	firstKey := knowledgebaseEmbeddingKey(ctx, db, kbs[0], embdNameCache)
 	for _, kb := range kbs[1:] {
-		if knowledgebaseEmbeddingKey(kb) != firstKey {
+		if knowledgebaseEmbeddingKey(ctx, db, kb, embdNameCache) != firstKey {
 			return fmt.Errorf("retrieval: datasets use different embedding models")
 		}
 	}
 	return nil
 }
 
-func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase) string {
-	if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
-		return "tenant:" + strings.TrimSpace(*kb.TenantEmbdID)
+// knowledgebaseEmbeddingKey groups datasets by their resolved base embedding
+// model name (e.g. "BAAI/bge-m3"), matching the chat/dataset-search
+// validation, so datasets pointing at the same model through different
+// provider instances or storage forms (tenant_model id vs legacy composite
+// name) retrieve together.
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
+	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
+		return "default:" + strings.TrimSpace(kb.TenantID)
 	}
-	if strings.TrimSpace(kb.EmbdID) != "" {
-		return "embedding:" + strings.TrimSpace(kb.EmbdID)
-	}
-	return "default:" + strings.TrimSpace(kb.TenantID)
+	return "embedding:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
 }
 
 func (a *NLPRetrievalAdapter) resolveEmbeddingModel(

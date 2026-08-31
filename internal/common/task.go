@@ -27,6 +27,8 @@ const (
 
 	TaskTypeIngestionTask = "ingestion_task"
 	TaskTypeIngestionTest = "ingestion_test"
+	// TaskTypeSyncer is the NATS wake-up message type for datasource sync_logs tasks.
+	TaskTypeSyncer = "syncer"
 	// TaskTypeMemory is the async memory-extraction task type. Memory tasks
 	// share the tasks.RAGFLOW subject and the Ingestor's consumer + worker
 	// pool with ingestion tasks; processMessage dispatches them by TaskType.

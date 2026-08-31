@@ -129,7 +129,7 @@ func TestStagehandRuntime_Extract(t *testing.T) {
 		Schema:      schema,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 
 	t.Logf("starting stagehand RunExtract (timeout 3m); spawns subprocess, calls LLM once with schema=%s",
@@ -240,7 +240,7 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 		t.Fatalf("NewBrowserComponent: %v", err)
 	}
 
-	ctx := canvas.WithState(context.Background(), canvas.NewCanvasState("run-1", "task-1"))
+	ctx := canvas.WithState(t.Context(), canvas.NewCanvasState("run-1", "task-1"))
 	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	state.Sys["user_id"] = "tenant-1"
 

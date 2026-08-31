@@ -18,6 +18,7 @@ import json
 import os
 import logging
 import re
+import secrets
 from typing import Any
 
 from werkzeug.security import check_password_hash
@@ -146,7 +147,10 @@ class UserMgr:
         if target_status == usr.is_active:
             return f"User activate status is already {_activate_status}!"
         # update is_active
-        UserService.update_user(usr.id, {"is_active": target_status})
+        update_dict = {"is_active": target_status}
+        if target_status == ActiveEnum.INACTIVE.value:
+            update_dict["access_token"] = f"INVALID_{secrets.token_hex(16)}"
+        UserService.update_user(usr.id, update_dict)
         return f"Turn {_activate_status} user activate status successfully!"
 
     @staticmethod
@@ -500,6 +504,11 @@ class SandboxMgr:
             "description": "Tenki - Disposable microVM code sandboxes",
             "tags": ["saas", "cloud", "microvm", "isolated"],
         },
+        "ucloud_agent_sandbox": {
+            "name": "UCloud Agent Sandbox",
+            "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution",
+            "tags": ["saas", "cloud", "isolated", "ucloud"],
+        },
     }
 
     @staticmethod
@@ -520,6 +529,7 @@ class SandboxMgr:
             AliyunCodeInterpreterProvider,
             E2BProvider,
             TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         schemas = {
@@ -529,6 +539,7 @@ class SandboxMgr:
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
             "e2b": E2BProvider.get_config_schema(),
             "tenki": TenkiProvider.get_config_schema(),
+            "ucloud_agent_sandbox": UCloudAgentSandboxProvider.get_config_schema(),
         }
 
         if provider_id not in schemas:
@@ -595,6 +606,7 @@ class SandboxMgr:
             AliyunCodeInterpreterProvider,
             E2BProvider,
             TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         try:
@@ -640,6 +652,7 @@ class SandboxMgr:
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
                 "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
             provider = provider_classes[provider_type]()
             is_valid, error_msg = provider.validate_config(config)
@@ -688,6 +701,7 @@ class SandboxMgr:
                 AliyunCodeInterpreterProvider,
                 E2BProvider,
                 TenkiProvider,
+                UCloudAgentSandboxProvider,
             )
 
             # Instantiate provider based on type
@@ -698,6 +712,7 @@ class SandboxMgr:
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
                 "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
 
             if provider_type not in provider_classes:

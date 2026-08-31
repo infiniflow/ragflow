@@ -20,7 +20,6 @@ import RerunButton from './components/rerun-button';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
-  useHandleChunkCardClick,
   useUpdateChunk,
 } from './hooks';
 import styles from './index.module.less';
@@ -39,12 +38,11 @@ const ChunkerContainer = (props: IProps) => {
     data: { documentInfo, data = [], total },
     pagination,
     loading,
-    searchString,
-    handleInputChange,
-    available,
-    handleSetAvailable,
   } = useFetchNextChunkList();
-  const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
+  const [selectedChunkId, setSelectedChunkId] = useState<string>('');
+  const handleChunkCardClick = useCallback((chunkId: string) => {
+    setSelectedChunkId(chunkId);
+  }, []);
   const isPdf = documentInfo?.type === 'pdf';
   const {
     chunkUpdatingLoading,
@@ -164,20 +162,15 @@ const ChunkerContainer = (props: IProps) => {
               </div>
             </div>
             <ChunkResultBar
-              handleInputChange={handleInputChange}
-              searchString={searchString}
+              isReadonly={false}
               changeChunkTextMode={changeChunkTextMode}
               createChunk={showChunkUpdatingModal}
-              available={available}
-              selectAllChunk={selectAllChunk}
-              handleSetAvailable={handleSetAvailable}
             />
           </div>
           <div className=" rounded-[16px] box-border	mb-2">
             <div className="pt-[5px] pb-[5px]">
               <CheckboxSets
                 selectAllChunk={selectAllChunk}
-                switchChunk={handleSwitchChunk}
                 removeChunk={handleRemoveChunk}
                 checked={selectedChunkIds.length === data.length}
                 selectedChunkIds={selectedChunkIds}

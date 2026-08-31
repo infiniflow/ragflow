@@ -240,7 +240,7 @@ func TestUpstageEmbedRejectsDuplicateIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := u.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -257,7 +257,7 @@ func TestUpstageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	_, err := u.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := u.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -278,7 +278,7 @@ func TestUpstageEmbedHappyPathReordersByIndex(t *testing.T) {
 	u := newUpstageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "solar-embedding-1-large-passage"
-	vecs, err := u.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := u.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}

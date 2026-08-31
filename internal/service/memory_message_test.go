@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -132,6 +133,12 @@ func setupMemoryMessageTestDB(t *testing.T) {
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
+	// Pin the clock to a fixed instant in a fixed non-UTC location so the
+	// server-local assertions below hold on any host, including UTC CI
+	// runners.
+	pinned := time.Date(2026, 8, 20, 10, 5, 0, 0, time.FixedZone("UTC+8", 8*3600))
+	pinMemoryNow(t, pinned)
+
 	if err := dao.DB.Create(&entity.Memory{
 		ID:          "memory-1",
 		Name:        "Test memory",
@@ -171,10 +178,17 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 			}
 			if forgetAt, ok := docEngine.updateValue["forget_at"].(string); !ok || forgetAt == "" {
 				t.Fatalf("forget_at = %#v, want non-empty string", docEngine.updateValue["forget_at"])
+			} else if want := "2026-08-20 10:05:00"; forgetAt != want {
+				// forget_at must be the server-local wall clock, not a
+				// UTC-shifted one (which would be "2026-08-20 02:05:00").
+				t.Fatalf("forget_at = %q, want server-local wall clock %q", forgetAt, want)
 			}
-			_, hasCompanion := docEngine.updateValue["forget_at_flt"]
+			companion, hasCompanion := docEngine.updateValue["forget_at_flt"]
 			if hasCompanion != test.wantForgetAtCompanion {
 				t.Fatalf("forget_at_flt present = %t, want %t", hasCompanion, test.wantForgetAtCompanion)
+			}
+			if hasCompanion && companion != pinned.UnixMilli() {
+				t.Fatalf("forget_at_flt = %v, want Unix milliseconds of the stamped instant %d", companion, pinned.UnixMilli())
 			}
 		})
 	}

@@ -37,7 +37,7 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 		t.Fatalf("create bad task log: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Replace runDocumentTask to ensure it doesn't get called
 	var runDocumentTaskCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
@@ -89,7 +89,7 @@ func TestDefaultRunDocumentTask_BothPipelineAndParserMissing(t *testing.T) {
 		t.Fatalf("clear parser_id: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
 		ID:         taskID,
 		DocumentID: docID,
@@ -122,7 +122,7 @@ func TestDefaultRunDocumentTask_ParserIDWithoutPipelineID(t *testing.T) {
 		testutil.WithTaskID("task-1"),
 	)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
 		ID:         taskID,
 		DocumentID: docID,
@@ -152,7 +152,7 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 		testutil.WithTenantID("tenant-1"),
 	)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocumentTaskCalled bool
 	var gotTaskID string
 	var gotProgress []float64
@@ -212,7 +212,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 		testutil.WithTenantID("tenant-1"),
 	)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool { return true }
 
 	var runDocumentTaskCalled bool

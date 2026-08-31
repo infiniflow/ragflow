@@ -1284,6 +1284,34 @@ class ConfluenceConnector(
             raise ConnectorMissingCredentialError("Confluence")
         return self._low_timeout_confluence_client
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "ConfluenceConnector":
+        index_mode = (config.get("index_mode") or "everything").lower()
+        space = ""
+        page_id = ""
+        index_recursively = False
+        if index_mode == "space":
+            space = (config.get("space") or "").strip()
+        elif index_mode == "page":
+            page_id = (config.get("page_id") or "").strip()
+            index_recursively = bool(config.get("index_recursively", False))
+
+        connector = cls(
+            wiki_base=config["wiki_base"],
+            is_cloud=config.get("is_cloud", True),
+            space=space,
+            page_id=page_id,
+            index_recursively=index_recursively,
+        )
+        connector.set_credentials_provider(
+            StaticCredentialsProvider(
+                tenant_id=None,
+                connector_name=DocumentSource.CONFLUENCE,
+                credential_json=config.get("credentials") or {},
+            )
+        )
+        return connector
+
     def set_credentials_provider(self, credentials_provider: CredentialsProviderInterface) -> None:
         self.credentials_provider = credentials_provider
 
@@ -1733,9 +1761,10 @@ class ConfluenceConnector(
         end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
+        # ``start``/``end`` are accepted for interface compatibility, but the
+        # Confluence slim-doc CQL query is not time-filtered, so they are not
+        # forwarded -- same as ``retrieve_all_slim_docs_perm_sync`` below.
         return self._retrieve_all_slim_docs(
-            start=start,
-            end=end,
             callback=callback,
             include_permissions=False,
         )

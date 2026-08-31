@@ -147,12 +147,12 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 
 ---
 
-### Get a `Request error 404: undefined` when upgrading to v0.26.4
+### Get a `Request error 404: undefined` when upgrading to v0.27.1
 
 To resolve this issue, do either of the following:
 
-- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.26.4 image.
-- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.26.4` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
+- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.27.1 image.
+- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.27.1` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
 
 ### How to build the RAGFlow image from scratch?
 
@@ -395,10 +395,10 @@ tail -f ragflow/docker/ragflow-logs/*.log
    5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   docker-ragflow-cpu-1
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
-   cd29bcb254bc   pgsty/minio:RELEASE.2026-03-25T00-00-00Z               "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
+   cd29bcb254bc   pgsty/silo:RELEASE.2026-08-06T00-00-00Z                "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
-2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
 
 :::danger IMPORTANT
 The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -420,7 +420,7 @@ The status of a Docker container status does not necessarily reflect the status 
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    ```
 
-2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
 
    :::danger IMPORTANT
    The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -470,10 +470,10 @@ Yes, we do. See the Python files under the **rag/app** folder.
    *The status of a healthy Elasticsearch component should look as follows:*
 
    ```bash
-   cd29bcb254bc   pgsty/minio:RELEASE.2026-03-25T00-00-00Z               "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
+   cd29bcb254bc   pgsty/silo:RELEASE.2026-08-06T00-00-00Z                "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
-2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
 
 :::danger IMPORTANT
 The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -582,13 +582,29 @@ You can control the batch size for document parsing and embedding by setting the
 
 ### How to accelerate the question-answering speed of my chat assistant?
 
+To reduce response latency, consider the following:
+- Use a faster LLM with lower inference latency.
+- Reduce the number of retrieved chunks by adjusting retrieval parameters such as **Top N**.
+- Keep prompts concise and avoid unnecessary context.
+- Disable optional features that require additional model calls when they are not needed.
+- Use a reranker only when it provides a meaningful improvement in retrieval quality.
+- Make sure the deployed model service has sufficient computing resources and low network latency.
+
 See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
 
 ---
 
 ### How to accelerate the question-answering speed of my Agent?
 
-See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
+Agent response time depends on the number of components, model calls, and external services involved in the workflow.
+To improve response speed:
+- Use faster models for components that do not require strong reasoning capabilities.
+- Reduce unnecessary LLM, retrieval, tool, and HTTP calls.
+- Simplify the Agent workflow and avoid excessively long execution paths.
+- Limit the number of iterations in loops or reasoning-intensive components.
+- Reduce the amount of context passed between components where possible.
+- Run independent operations in parallel when the workflow supports it.
+- Make sure external APIs and model services used by the Agent have low latency.
 
 ### How to use MinerU to parse PDF documents?
 
@@ -724,7 +740,7 @@ This method uses PaddleOCR's official API service with an access token.
 This method allows you to deploy your own PaddleOCR service and use it without an access token.
 
 **Step 1: Deploy PaddleOCR Service**
-Follow the [PaddleOCR serving documentation](https://www.paddleocr.ai/latest/en/version3.x/deployment/serving.html) to deploy your own service. For layout parsing, you can use an endpoint like:
+Follow the [PaddleOCR serving documentation](https://www.paddleocr.ai/latest/en/version3.x/inference_deployment/serving/serving.html) to deploy your own service. For layout parsing, you can use an endpoint like:
 
 ```bash
 http://localhost:8080/layout-parsing

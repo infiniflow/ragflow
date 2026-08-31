@@ -8,7 +8,7 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { getBackendLanguage, isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -20,6 +20,7 @@ import {
   isEmpty,
   isEqual,
   omit,
+  pick,
   sample,
 } from 'lodash';
 import isObject from 'lodash/isObject';
@@ -209,14 +210,15 @@ export function transformParserParams(params: ParserFormSchemaType) {
   >((pre, cur, index) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
-        ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
+        Omit<ParserFormSchemaType['setups'][0], 'pages'> & {
+          suffix: string[];
+        } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
           pages: number[][];
         }
       > = {
         output_format: cur.output_format,
-        preprocess: cur.preprocess,
         suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
       };
 
@@ -231,11 +233,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
-            ...(isGoBackend()
-              ? {
-                  pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
-                }
-              : {}),
+            ...pickByBackend({
+              go: { pages: cur.pages?.map((x) => [x.from, x.to]) ?? [] },
+              python: {},
+            }),
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -289,6 +290,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
@@ -297,6 +299,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
@@ -312,6 +315,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
           };
           break;
         case FileType.Video:
@@ -335,11 +339,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
 
   // The Go backend expects the setups map flattened into top-level params,
   // while the Python backend reads them from the nested `setups` object.
-  // Default to the Python shape while the language probe is unresolved.
-  if (getBackendLanguage() === 'go') {
-    return { ...omit(params, ['setups']), ...setups };
-  }
-  return { ...params, setups };
+  return pickByBackend({
+    go: { ...omit(params, ['setups']), ...setups },
+    python: { ...params, setups },
+  });
 }
 
 export function transformTokenChunkerParams(
@@ -349,14 +352,11 @@ export function transformTokenChunkerParams(
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
-    overlapped_percent:
-      params.delimiter_mode === 'one'
-        ? 0
-        : Number(params.overlapped_percent) / 100,
-    delimiters:
-      params.delimiter_mode === 'delimiter'
-        ? transformObjectArrayToPureArray(params.delimiters, 'value')
-        : [],
+    // Keep the configured values in 'one' mode too: the chunker ignores them
+    // while merging everything into a single chunk, but zeroing them here
+    // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
+    overlapped_percent: Number(params.overlapped_percent) / 100,
+    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
@@ -399,8 +399,116 @@ export function transformTitleChunkerParams(
   };
 }
 
-export function transformExtractorParams(params: ExtractorFormSchemaType) {
-  return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+// LLM setting keys the Go extractor DSL keeps besides the nested groups.
+// Mirrors LlmSettingSchema (components/llm-setting-items/next) — duplicated
+// here as a plain list so this module doesn't import the form components.
+const ExtractorLlmSettingKeys = [
+  'llm_id',
+  'temperature',
+  'top_p',
+  'presence_penalty',
+  'frequency_penalty',
+  'max_tokens',
+  'parameter',
+  'thinking',
+  'temperatureEnabled',
+  'topPEnabled',
+  'presencePenaltyEnabled',
+  'frequencyPenaltyEnabled',
+  'maxTokensEnabled',
+];
+
+// The Python extractor only reads the legacy flat fields.
+function transformExtractorParamsPython(
+  params: ExtractorFormSchemaType,
+): Record<string, any> {
+  const raw = params as Record<string, any>;
+  return { ...params, prompts: [{ content: raw.prompts, role: 'user' }] };
+}
+
+// An unopened legacy node can still flow through here with flat keys
+// (auto_keywords, keywords_sys_prompt, enable_metadata + metadata[],
+// the transitional "metadata_config", ...). Accept them as read
+// fallbacks — flat "metadata" is an array, which distinguishes it from
+// the group object — but never re-emit them.
+function transformExtractorParamsGo(
+  params: ExtractorFormSchemaType,
+): Record<string, any> {
+  const raw = params as Record<string, any>;
+  const metadataGroup =
+    raw.metadata !== undefined && !Array.isArray(raw.metadata)
+      ? raw.metadata
+      : raw.metadata_config;
+
+  const isMetadataEnabled =
+    metadataGroup?.enabled !== undefined
+      ? Boolean(metadataGroup.enabled)
+      : raw.enable_metadata === 1 || raw.enable_metadata === true;
+
+  const isSummaryEnabled =
+    params.summary?.enabled !== undefined
+      ? Boolean(params.summary?.enabled)
+      : raw.enable_summary === 1 ||
+        raw.enable_summary === true ||
+        raw.field_name === 'summary';
+
+  const metadataList =
+    metadataGroup?.metadata ??
+    (Array.isArray(raw.metadata) ? raw.metadata : []);
+  const builtInMetadataList =
+    metadataGroup?.built_in_metadata ?? raw.built_in_metadata ?? [];
+
+  const summarySysPrompt =
+    params.summary?.system_prompt ?? raw.sys_prompt ?? '';
+
+  const keywordsTopN = params.keywords?.top_n ?? raw.auto_keywords ?? 0;
+  const keywordsSysPrompt =
+    params.keywords?.system_prompt ?? raw.keywords_sys_prompt ?? '';
+
+  const questionsTopN = params.questions?.top_n ?? raw.auto_questions ?? 0;
+  const questionsSysPrompt =
+    params.questions?.system_prompt ?? raw.questions_sys_prompt ?? '';
+
+  const tagsTopN = params.tags?.top_n ?? raw.auto_tags ?? 0;
+  const tagFileId = params.tags?.tag_file_id ?? raw.tag_file_id ?? '';
+
+  // The Go extractor (schema.ExtractorParam) reads only llm_id plus the
+  // nested per-feature groups, so emit exactly that whitelist along with
+  // the LLM settings the form defines — no legacy flat mirrors, no
+  // display-only fields like outputs.
+  return {
+    ...pick(params, ExtractorLlmSettingKeys),
+    keywords: {
+      top_n: keywordsTopN,
+      system_prompt: keywordsSysPrompt,
+    },
+    questions: {
+      top_n: questionsTopN,
+      system_prompt: questionsSysPrompt,
+    },
+    tags: {
+      top_n: tagsTopN,
+      tag_file_id: tagFileId,
+    },
+    summary: {
+      enabled: isSummaryEnabled,
+      system_prompt: summarySysPrompt,
+    },
+    metadata: {
+      enabled: isMetadataEnabled,
+      metadata: metadataList,
+      built_in_metadata: builtInMetadataList,
+    },
+  };
+}
+
+export function transformExtractorParams(
+  params: ExtractorFormSchemaType,
+): Record<string, any> {
+  return pickByBackend({
+    go: transformExtractorParamsGo,
+    python: transformExtractorParamsPython,
+  })(params);
 }
 
 function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
@@ -643,7 +751,7 @@ export const buildNewPositionMap = (
   >((pre, cur) => {
     // take a coordinate
     const effectiveIdxes = CategorizeAnchorPointPositions.map(
-      (x, idx) => idx,
+      (_, idx) => idx,
     ).filter((x) => !indexesInUse.some((y) => y === x));
     const idx = sample(effectiveIdxes);
     if (idx !== undefined) {
@@ -823,6 +931,34 @@ export function convertToObjectArray<T extends string | number | boolean>(
     return [];
   }
   return list.map((x) => ({ value: x }));
+}
+
+/**
+ * Message (回复消息) components keep their texts in form.content (string[]).
+ * The backend rejects the component at canvas run time unless at least one
+ * entry is a non-blank string, so missing/non-array/blank-only content all
+ * count as empty here as well.
+ */
+export function isEmptyMessageContent(content?: unknown): boolean {
+  return (
+    !Array.isArray(content) ||
+    !content.some((item) => typeof item === 'string' && item.trim() !== '')
+  );
+}
+
+/**
+ * Returns the display names of Message nodes whose content is empty, so the
+ * save flow can warn about them up front instead of surfacing the runtime
+ * error only when the user runs the agent.
+ */
+export function getEmptyMessageNodeNames(nodes: RAGFlowNodeType[]): string[] {
+  return nodes
+    .filter(
+      (node) =>
+        node.data?.label === Operator.Message &&
+        isEmptyMessageContent(node.data?.form?.content),
+    )
+    .map((node) => node.data?.name ?? node.id);
 }
 
 /**

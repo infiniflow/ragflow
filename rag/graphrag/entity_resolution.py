@@ -23,9 +23,10 @@ from typing import Any, Awaitable, Callable
 
 import networkx as nx
 
+from rapidfuzz.distance import Levenshtein
+
 from rag.graphrag.general.extractor import Extractor
 from rag.nlp import is_english
-import editdistance
 from rag.graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.graphrag.checkpoints import resolution_checkpoint_key
 from rag.llm.chat_model import Base as CompletionLLM
@@ -276,7 +277,7 @@ class EntityResolution(Extractor):
             return False
 
         if is_english(a) and is_english(b):
-            if editdistance.eval(a, b) <= min(len(a), len(b)) // 2:
+            if Levenshtein.distance(a, b) <= min(len(a), len(b)) // 2:
                 return True
             return False
 

@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -30,7 +29,7 @@ import (
 func TestFillup_PassesThroughInputs(t *testing.T) {
 	c, _ := New(componentNameFillup, nil)
 	state := canvas.NewCanvasState("run-1", "task-1")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
@@ -60,7 +59,7 @@ func TestFillup_NoTipsKey(t *testing.T) {
 		"tips":        "should be ignored",
 	})
 	state := canvas.NewCanvasState("run-2", "task-2")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
@@ -86,7 +85,7 @@ func TestFillup_NoTipsKey(t *testing.T) {
 func TestFillup_NonDictInput(t *testing.T) {
 	c, _ := New(componentNameFillup, nil)
 	state := canvas.NewCanvasState("run-3", "task-3")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
@@ -117,7 +116,7 @@ func TestFillup_NonDictInput(t *testing.T) {
 func TestFillup_FileInputStub(t *testing.T) {
 	c, _ := New(componentNameFillup, nil)
 	state := canvas.NewCanvasState("run-4", "task-4")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{

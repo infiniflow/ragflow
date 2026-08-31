@@ -13,6 +13,26 @@ import sys
 import types
 from unittest.mock import MagicMock
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _mock_disabled_document_lookup(monkeypatch):
+    """Keep knowledge-compile unit tests independent of the MySQL database."""
+    try:
+        from api.db.services.document_service import DocumentService
+    except ModuleNotFoundError:
+        module = types.ModuleType("api.db.services.document_service")
+        module.DocumentService = type(
+            "DocumentService",
+            (),
+            {"get_disabled_doc_ids_by_kb_id": MagicMock(return_value=set())},
+        )
+        monkeypatch.setitem(sys.modules, "api.db.services.document_service", module)
+        return
+
+    monkeypatch.setattr(DocumentService, "get_disabled_doc_ids_by_kb_id", MagicMock(return_value=set()))
+
 
 async def _fake_thread_pool_exec(fn, *args, **kwargs):
     """Execute the function directly (no actual thread pool)."""
@@ -60,6 +80,8 @@ if not hasattr(sys.modules["rag.prompts.generator"], "message_fit_in"):
         return True
 
     sys.modules["rag.prompts.generator"].message_fit_in = _message_fit_in
+if not hasattr(sys.modules["rag.prompts.generator"], "gen_json"):
+    sys.modules["rag.prompts.generator"].gen_json = MagicMock(return_value={})
 
 # ---- Modules that wiki_incremental.py imports at module level — use
 #      real import when possible to avoid polluting other test suites.
@@ -126,9 +148,15 @@ if hasattr(sys.modules["rag.advanced_rag.knowlege_compile"], "__package__"):
 
 # _common.py symbols used by wiki_incremental at import time
 _common_mod = sys.modules["rag.advanced_rag.knowlege_compile._common"]
+_common_mod.build_chunk_batches = lambda *a, **k: ([], {})
+_common_mod.bulk_dedup_items = lambda items, *a, **k: items
+_common_mod.ensure_llm_bundle = lambda model: model
 _common_mod.knowledge_compile_gen_conf = lambda *a, **k: {}
+_common_mod.run_chunked_pipeline = MagicMock(return_value={})
 _common_mod.stable_row_id = lambda *a, **k: ""
 
 # ---- Test helper constants (same values as structure.py) ----
 sys.modules["rag.advanced_rag.knowlege_compile.structure"].CONCEPT_MIN_CLAIMS = 3
 sys.modules["rag.advanced_rag.knowlege_compile.structure"].CONCEPT_MIN_SOURCES = 2
+sys.modules["rag.advanced_rag.knowlege_compile.structure"]._struct_get = lambda *a, **k: None
+sys.modules["rag.advanced_rag.knowlege_compile.structure"]._struct_localize = lambda value, *a, **k: value
