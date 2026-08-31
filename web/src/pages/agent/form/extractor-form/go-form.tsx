@@ -314,6 +314,7 @@ const GoExtractorForm = ({
                 max={10}
                 defaultValue={0}
                 layout={FormLayout.Vertical}
+                integer
               />
               <RAGFlowFormItem
                 label={t('flow.tagFile')}
@@ -334,7 +335,7 @@ const GoExtractorForm = ({
 
           <Collapse
             title={t('flow.summary')}
-            defaultOpen={summaryEnabled}
+            defaultOpen
             rightContent={
               <Switch
                 checked={summaryEnabled}
@@ -357,7 +358,7 @@ const GoExtractorForm = ({
 
           <Collapse
             title={t('flow.metadata')}
-            defaultOpen={metadataEnabled}
+            defaultOpen
             rightContent={
               <Switch
                 checked={metadataEnabled}
