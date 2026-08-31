@@ -138,7 +138,7 @@ func migrateIngestionTaskSchedulingIndexes(ctx context.Context, db *gorm.DB) err
 	}
 
 	// Converge any legacy unleased RUNNING/CREATED rows to SCHEDULED so they can be dispatched cleanly
-	_ = db.WithContext(ctx).Model(&entity.IngestionTask{}).
+	if err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
 		Where("(status = ? OR status = ?) AND (claim_token = '' OR claim_token IS NULL)", common.RUNNING, common.CREATED).
 		Updates(map[string]interface{}{
 			"status":                 common.SCHEDULED,
@@ -147,7 +147,9 @@ func migrateIngestionTaskSchedulingIndexes(ctx context.Context, db *gorm.DB) err
 			"claim_token":            "",
 			"claim_expires_at":       int64(0),
 			"lease_recovery_attempt": 0,
-		}).Error
+		}).Error; err != nil {
+		return fmt.Errorf("converge legacy unleased rows: %w", err)
+	}
 
 	return nil
 }
@@ -571,10 +573,12 @@ func addColumnIfNotExists(ctx context.Context, db *gorm.DB, tableName, columnNam
 		return nil
 	}
 
-	// Check if column exists using raw SQL
+	// Check if column exists using raw SQL scoped to the current database schema
 	var count int64
-	db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, columnName).Scan(&count)
+	if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, columnName).Scan(&count).Error; err != nil {
+		return err
+	}
 	if count > 0 {
 		return nil
 	}
@@ -583,7 +587,14 @@ func addColumnIfNotExists(ctx context.Context, db *gorm.DB, tableName, columnNam
 		zap.String("table", tableName),
 		zap.String("column", columnName))
 	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, columnName, columnDef)
-	return db.WithContext(ctx).Exec(sql).Error
+	if err := db.WithContext(ctx).Exec(sql).Error; err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // migrateSkillSearchTables creates skill search related tables

@@ -71,8 +71,8 @@ func seedAgedTask(t *testing.T, db *gorm.DB, id, docID, status string, age time.
 	}
 }
 
-// TestReconcileTasks converges every old CREATED row to SCHEDULED and
-// recovers expired claims, publishing each resulting dispatch intent.
+// TestReconcileTasks converges every old CREATED row to SCHEDULED,
+// publishing each resulting dispatch intent.
 func TestReconcileTasks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
