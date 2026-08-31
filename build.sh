@@ -370,6 +370,29 @@ build_go() {
 
     setup_cgo_env
 
+    # The in-process (Go) DeepDoc backend is statically linked against ONNX
+    # Runtime (--whole-archive + -Wl,--export-dynamic, see setup_cgo_env). The
+    # forked onnxruntime_go binding resolves OrtGetApiBase only at RUNTIME via
+    # dlopen(NULL), so a missing ORT archive still lets `go build` SUCCEED and
+    # yields a server binary that FAILS AT STARTUP with a fatal
+    # "no in-process DeepDoc backend serving". That is exactly the breakage
+    # colleagues hit when ORT was not present at build time and setup_cgo_env
+    # silently skipped it. Fail the build HERE instead of deferring the breakage
+    # to runtime: a server binary without ORT is unusable, not a degraded one.
+    if ! printf '%s' "$CGO_LDFLAGS" | grep -q 'libonnxruntime'; then
+        echo -e "${RED}Error: ONNX Runtime static libraries are not linked.${NC}" >&2
+        echo "  The in-process DeepDoc backend requires libonnxruntime.a to be" >&2
+        echo "  statically linked into ragflow_server (--whole-archive +" >&2
+        echo "  -Wl,--export-dynamic). Without it the binary compiles but dies" >&2
+        echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
+        echo "  Fetch the static libs with:" >&2
+        echo "    uv run python3 ragflow_deps/download_go_deps.py" >&2
+        echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
+        echo "  If you intentionally build without the native backend, use a" >&2
+        echo "  non-cgo build path; this production binary must include ORT." >&2
+        return 1
+    fi
+
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
