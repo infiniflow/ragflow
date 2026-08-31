@@ -314,6 +314,7 @@ const GoExtractorForm = ({
                 max={10}
                 defaultValue={0}
                 layout={FormLayout.Vertical}
+                integer
               />
               <RAGFlowFormItem
                 label={t('flow.tagFile')}
