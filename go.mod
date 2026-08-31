@@ -219,6 +219,7 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
+	github.com/yalue/onnxruntime_go v1.23.0
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.6.0 // indirect
@@ -249,3 +250,9 @@ require (
 replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9
 
 replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7
+
+// onnxruntime_go is forked to github.com/xugangqiang/onnxruntime_go (static-only:
+// resolves OrtGetApiBase via dlopen(NULL), no .so fallback). The fork is published at
+// that remote with tag v1.23.0; we pin a remote replace matching the gomsg pattern above
+// so the vendored tree no longer needs to live in-tree.
+replace github.com/yalue/onnxruntime_go => github.com/xugangqiang/onnxruntime_go v1.23.0

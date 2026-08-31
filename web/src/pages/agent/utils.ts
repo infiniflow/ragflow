@@ -934,6 +934,34 @@ export function convertToObjectArray<T extends string | number | boolean>(
 }
 
 /**
+ * Message (回复消息) components keep their texts in form.content (string[]).
+ * The backend rejects the component at canvas run time unless at least one
+ * entry is a non-blank string, so missing/non-array/blank-only content all
+ * count as empty here as well.
+ */
+export function isEmptyMessageContent(content?: unknown): boolean {
+  return (
+    !Array.isArray(content) ||
+    !content.some((item) => typeof item === 'string' && item.trim() !== '')
+  );
+}
+
+/**
+ * Returns the display names of Message nodes whose content is empty, so the
+ * save flow can warn about them up front instead of surfacing the runtime
+ * error only when the user runs the agent.
+ */
+export function getEmptyMessageNodeNames(nodes: RAGFlowNodeType[]): string[] {
+  return nodes
+    .filter(
+      (node) =>
+        node.data?.label === Operator.Message &&
+        isEmptyMessageContent(node.data?.form?.content),
+    )
+    .map((node) => node.data?.name ?? node.id);
+}
+
+/**
    * convert the following object into a list
    *
    * {
