@@ -25,6 +25,7 @@ import pandas as pd
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
 from common.time_utils import date_string_to_timestamp
+from common.float_utils import format_minimum_should_match_percent
 
 
 @singleton
@@ -187,7 +188,7 @@ class InfinityConnection(InfinityConnectionBase):
                         filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
                     minimum_should_match = matchExpr.extra_options.get("minimum_should_match", 0.0)
                     if isinstance(minimum_should_match, float):
-                        str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                        str_minimum_should_match = format_minimum_should_match_percent(minimum_should_match)
                         matchExpr.extra_options["minimum_should_match"] = str_minimum_should_match
 
                     for k, v in matchExpr.extra_options.items():
