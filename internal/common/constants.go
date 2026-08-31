@@ -16,6 +16,12 @@
 
 package common
 
+import "time"
+
+// IngestionDispatchGracePeriod prevents a second reconciler from immediately
+// republishing a task after the first reconciler reserved it.
+const IngestionDispatchGracePeriod = 2 * time.Minute
+
 const (
 	// PAGERANK_FLD is the field name for pagerank score
 	PAGERANK_FLD = "pagerank_fea"

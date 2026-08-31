@@ -325,7 +325,6 @@ const (
 	reconcileBatchLimit = 500
 	reconcileInterval   = 15 * time.Second
 	reconcileRate       = 100
-	dispatchGracePeriod = 2 * time.Minute
 )
 
 func (e *Ingestor) runReconciler() {
@@ -425,7 +424,7 @@ func (e *Ingestor) dispatchScheduledTasks(ctx context.Context, now time.Time) {
 	pace := time.NewTicker(time.Second / reconcileRate)
 	defer pace.Stop()
 	for {
-		tasks, err := dao.NewIngestionTaskDAO().ListScheduledForDispatch(ctx, dao.DB, now.Add(-dispatchGracePeriod), lastDispatchedAt, lastID, reconcileBatchLimit)
+		tasks, err := dao.NewIngestionTaskDAO().ListScheduledForDispatch(ctx, dao.DB, now.Add(-common.IngestionDispatchGracePeriod), lastDispatchedAt, lastID, reconcileBatchLimit)
 		if err != nil {
 			common.Warn(fmt.Sprintf("reconciliation: list SCHEDULED tasks: %v", err))
 			return

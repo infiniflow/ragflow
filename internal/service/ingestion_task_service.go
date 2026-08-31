@@ -20,9 +20,6 @@ import (
 // the task has been picked up by a worker.
 const (
 	stepKeyRunCount = "run_count"
-	// dispatchGracePeriod prevents a second reconciler from immediately
-	// republishing a task after the first reconciler reserved it.
-	dispatchGracePeriod = 2 * time.Minute
 )
 
 type InvalidTaskTransitionError struct {
@@ -247,7 +244,7 @@ func (s *IngestionTaskService) TryClaim(ctx context.Context, taskID string, ttl 
 // FinalizeClaim writes a terminal status only when the supplied token still
 // owns the task in fromStatus.
 func (s *IngestionTaskService) FinalizeClaim(ctx context.Context, taskID, token, fromStatus, toStatus string) (bool, error) {
-	return s.ingestionTaskDAO.FinalizeClaim(ctx, dao.DB, taskID, token, fromStatus, toStatus)
+	return s.ingestionTaskDAO.FinalizeClaim(ctx, dao.DB, taskID, token, fromStatus, toStatus, time.Now())
 }
 
 // TouchClaim extends a live worker lease. A false result means the worker lost
@@ -312,18 +309,17 @@ func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*ent
 	return task, nil
 }
 
+// validateTransition checks user-initiated state transitions triggered via RequestStop.
+// Worker-owned transitions (SCHEDULED->RUNNING, RUNNING->COMPLETED/FAILED) are fenced
+// via TryClaim and FinalizeClaim directly.
 func validateTransition(from, to string) error {
 	switch from {
 	case common.SCHEDULED:
-		if to == common.RUNNING || to == common.STOPPED {
+		if to == common.STOPPED {
 			return nil
 		}
 	case common.RUNNING:
 		if to == common.STOPPING {
-			return nil
-		}
-	case common.STOPPING:
-		if to == common.STOPPED {
 			return nil
 		}
 	}
@@ -450,7 +446,7 @@ func (s *IngestionTaskService) DispatchScheduledTask(ctx context.Context, taskID
 	if task.Status != common.SCHEDULED {
 		return nil
 	}
-	if task.LastDispatchedAt != 0 && task.LastDispatchedAt >= now.Add(-dispatchGracePeriod).UnixMilli() {
+	if task.LastDispatchedAt != 0 && task.LastDispatchedAt >= now.Add(-common.IngestionDispatchGracePeriod).UnixMilli() {
 		return nil
 	}
 	reserved, err := s.ingestionTaskDAO.TryReserveDispatch(ctx, dao.DB, taskID, task.LastDispatchedAt, now)

@@ -270,6 +270,7 @@ func TestIngestionTaskDAORecoverExpiredClaimIgnoresUnleasedTask(t *testing.T) {
 
 func TestIngestionTaskDAOFinalizeClaimRejectsExpiredOwner(t *testing.T) {
 	db := setupTaskTestDB(t)
+	now := time.Now()
 	task := &entity.IngestionTask{
 		ID:             "task-expired",
 		UserID:         "user-1",
@@ -277,13 +278,13 @@ func TestIngestionTaskDAOFinalizeClaimRejectsExpiredOwner(t *testing.T) {
 		DatasetID:      "kb-1",
 		Status:         common.RUNNING,
 		ClaimToken:     "owner-a",
-		ClaimExpiresAt: time.Now().Add(-time.Second).UnixMilli(),
+		ClaimExpiresAt: now.Add(-time.Second).UnixMilli(),
 	}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
-	finalized, err := NewIngestionTaskDAO().FinalizeClaim(t.Context(), db, task.ID, task.ClaimToken, common.RUNNING, common.COMPLETED)
+	finalized, err := NewIngestionTaskDAO().FinalizeClaim(t.Context(), db, task.ID, task.ClaimToken, common.RUNNING, common.COMPLETED, now)
 	if err != nil {
 		t.Fatalf("FinalizeClaim: %v", err)
 	}
@@ -440,6 +441,7 @@ func TestIngestionTaskDAOScheduleResetsClaimAndDispatchState(t *testing.T) {
 
 func TestIngestionTaskDAOFinalizeClaimRejectsStaleOwner(t *testing.T) {
 	db := setupTaskTestDB(t)
+	now := time.Now()
 	task := &entity.IngestionTask{
 		ID:             "task-1",
 		UserID:         "user-1",
@@ -447,13 +449,13 @@ func TestIngestionTaskDAOFinalizeClaimRejectsStaleOwner(t *testing.T) {
 		DatasetID:      "kb-1",
 		Status:         common.RUNNING,
 		ClaimToken:     "owner-b",
-		ClaimExpiresAt: time.Now().Add(time.Minute).UnixMilli(),
+		ClaimExpiresAt: now.Add(time.Minute).UnixMilli(),
 	}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
-	finalized, err := NewIngestionTaskDAO().FinalizeClaim(t.Context(), db, task.ID, "owner-a", common.RUNNING, common.COMPLETED)
+	finalized, err := NewIngestionTaskDAO().FinalizeClaim(t.Context(), db, task.ID, "owner-a", common.RUNNING, common.COMPLETED, now)
 	if err != nil {
 		t.Fatalf("FinalizeClaim: %v", err)
 	}
@@ -472,6 +474,7 @@ func TestIngestionTaskDAOFinalizeClaimRejectsStaleOwner(t *testing.T) {
 
 func TestIngestionTaskDAOFinalizeClaimCompletesCurrentOwner(t *testing.T) {
 	db := setupTaskTestDB(t)
+	now := time.Now()
 	task := &entity.IngestionTask{
 		ID:             "task-1",
 		UserID:         "user-1",
@@ -479,13 +482,13 @@ func TestIngestionTaskDAOFinalizeClaimCompletesCurrentOwner(t *testing.T) {
 		DatasetID:      "kb-1",
 		Status:         common.RUNNING,
 		ClaimToken:     "owner-a",
-		ClaimExpiresAt: time.Now().Add(time.Minute).UnixMilli(),
+		ClaimExpiresAt: now.Add(time.Minute).UnixMilli(),
 	}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
-	finalized, err := NewIngestionTaskDAO().FinalizeClaim(t.Context(), db, task.ID, "owner-a", common.RUNNING, common.COMPLETED)
+	finalized, err := NewIngestionTaskDAO().FinalizeClaim(t.Context(), db, task.ID, "owner-a", common.RUNNING, common.COMPLETED, now)
 	if err != nil {
 		t.Fatalf("FinalizeClaim: %v", err)
 	}

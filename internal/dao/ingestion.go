@@ -119,10 +119,10 @@ func (dao *IngestionTaskDAO) TouchClaim(ctx context.Context, db *gorm.DB, taskID
 }
 
 // ReleaseExpiredClaim makes a task available for another worker after its
-// running lease has expired (with 5s grace for queued tasks).
+// running lease has expired.
 func (dao *IngestionTaskDAO) ReleaseExpiredClaim(ctx context.Context, db *gorm.DB, taskID string, now time.Time) (bool, error) {
 	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ? AND claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at < ?", taskID, common.RUNNING, now.Add(-5*time.Second).UnixMilli()).
+		Where("id = ? AND status = ? AND claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at <= ?", taskID, common.RUNNING, now.UnixMilli()).
 		Updates(map[string]interface{}{
 			"status":           common.SCHEDULED,
 			"claim_token":      "",
@@ -139,7 +139,7 @@ func (dao *IngestionTaskDAO) ReleaseExpiredClaim(ctx context.Context, db *gorm.D
 // updates so concurrent reconcilers cannot consume the same recovery budget.
 func (dao *IngestionTaskDAO) RecoverExpiredClaim(ctx context.Context, db *gorm.DB, taskID string, now time.Time, maxAttempts int) (requeued, poisoned bool, err error) {
 	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ? AND claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at < ? AND lease_recovery_attempt < ?", taskID, common.RUNNING, now.Add(-5*time.Second).UnixMilli(), maxAttempts).
+		Where("id = ? AND status = ? AND claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at <= ? AND lease_recovery_attempt < ?", taskID, common.RUNNING, now.UnixMilli(), maxAttempts).
 		Updates(map[string]interface{}{
 			"status":                 common.SCHEDULED,
 			"claim_token":            "",
@@ -154,7 +154,7 @@ func (dao *IngestionTaskDAO) RecoverExpiredClaim(ctx context.Context, db *gorm.D
 	}
 
 	result = db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ? AND claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at < ? AND lease_recovery_attempt >= ?", taskID, common.RUNNING, now.Add(-5*time.Second).UnixMilli(), maxAttempts).
+		Where("id = ? AND status = ? AND claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at <= ? AND lease_recovery_attempt >= ?", taskID, common.RUNNING, now.UnixMilli(), maxAttempts).
 		Updates(map[string]interface{}{
 			"status":           common.FAILED,
 			"claim_token":      "",
@@ -184,9 +184,9 @@ func (dao *IngestionTaskDAO) ReleaseClaim(ctx context.Context, db *gorm.DB, task
 
 // FinalizeClaim applies a terminal transition only for the worker that still
 // owns the task in the expected status.
-func (dao *IngestionTaskDAO) FinalizeClaim(ctx context.Context, db *gorm.DB, taskID, token, fromStatus, toStatus string) (bool, error) {
+func (dao *IngestionTaskDAO) FinalizeClaim(ctx context.Context, db *gorm.DB, taskID, token, fromStatus, toStatus string, now time.Time) (bool, error) {
 	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ? AND claim_token = ? AND claim_token <> '' AND claim_expires_at > ?", taskID, fromStatus, token, time.Now().UnixMilli()).
+		Where("id = ? AND status = ? AND claim_token = ? AND claim_token <> '' AND claim_expires_at > ?", taskID, fromStatus, token, now.UnixMilli()).
 		Updates(map[string]interface{}{
 			"status":           toStatus,
 			"claim_token":      "",
@@ -384,7 +384,7 @@ func (dao *IngestionTaskDAO) ListByStatusAfterID(ctx context.Context, db *gorm.D
 // ListExpiredClaims returns leased tasks whose owner can no longer renew.
 func (dao *IngestionTaskDAO) ListExpiredClaims(ctx context.Context, db *gorm.DB, statuses []string, now time.Time, lastID string, limit int) ([]*entity.IngestionTask, error) {
 	query := db.WithContext(ctx).
-		Where("status IN ? AND ((claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at < ?) OR (claim_token = '' AND update_time < ?))", statuses, now.Add(-5*time.Second).UnixMilli(), now.Add(-15*time.Minute).UnixMilli())
+		Where("status IN ? AND ((claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at <= ?) OR (claim_token = '' AND update_time < ?))", statuses, now.UnixMilli(), now.Add(-15*time.Minute).UnixMilli())
 	if lastID != "" {
 		query = query.Where("id > ?", lastID)
 	}
@@ -395,11 +395,11 @@ func (dao *IngestionTaskDAO) ListExpiredClaims(ctx context.Context, db *gorm.DB,
 	return tasks, query.Order("id ASC").Find(&tasks).Error
 }
 
-// StopExpiredClaim finalizes a stop request after its worker lease expires (5s grace)
+// StopExpiredClaim finalizes a stop request after its worker lease expires.
 // Also handles legacy STOPPING rows with empty token via update_time staleness.
 func (dao *IngestionTaskDAO) StopExpiredClaim(ctx context.Context, db *gorm.DB, taskID string, now time.Time) (bool, error) {
 	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ? AND ((claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at < ?) OR (claim_token = '' AND update_time < ?))", taskID, common.STOPPING, now.Add(-5*time.Second).UnixMilli(), now.Add(-15*time.Minute).UnixMilli()).
+		Where("id = ? AND status = ? AND ((claim_token <> '' AND claim_expires_at > 0 AND claim_expires_at <= ?) OR (claim_token = '' AND update_time < ?))", taskID, common.STOPPING, now.UnixMilli(), now.Add(-15*time.Minute).UnixMilli()).
 		Updates(map[string]interface{}{
 			"status":           common.STOPPED,
 			"claim_token":      "",

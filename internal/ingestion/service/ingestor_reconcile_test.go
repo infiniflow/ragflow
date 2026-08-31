@@ -71,15 +71,15 @@ func seedAgedTask(t *testing.T, db *gorm.DB, id, docID, status string, age time.
 	}
 }
 
-// TestReconcileTasks converges every old CREATED row to SCHEDULED,
+// TestReconcileTasks dispatches every eligible SCHEDULED task,
 // publishing each resulting dispatch intent.
 func TestReconcileTasks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	seedAgedTask(t, db, "task-created-stale", "doc-created-stale", common.CREATED, 6*time.Minute)
-	seedAgedTask(t, db, "task-created-fresh", "doc-created-fresh", common.CREATED, 1*time.Minute)
+	seedAgedTask(t, db, "task-scheduled-stale", "doc-scheduled-stale", common.SCHEDULED, 6*time.Minute)
+	seedAgedTask(t, db, "task-scheduled-fresh", "doc-scheduled-fresh", common.SCHEDULED, 1*time.Minute)
 	seedAgedTask(t, db, "task-completed-old", "doc-completed-old", common.COMPLETED, 1*time.Hour)
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
@@ -97,7 +97,7 @@ func TestReconcileTasks(t *testing.T) {
 		return task.Status
 	}
 
-	for _, id := range []string{"task-created-stale", "task-created-fresh"} {
+	for _, id := range []string{"task-scheduled-stale", "task-scheduled-fresh"} {
 		if got := statusOf(id); got != common.SCHEDULED {
 			t.Fatalf("task %s status = %q, want SCHEDULED", id, got)
 		}
@@ -150,7 +150,7 @@ func TestConcurrentIngestorsReserveScheduledDispatchOnce(t *testing.T) {
 		DocumentID:       "doc-concurrent",
 		DatasetID:        "kb-1",
 		Status:           common.SCHEDULED,
-		LastDispatchedAt: time.Now().Add(-dispatchGracePeriod - time.Second).UnixMilli(),
+		LastDispatchedAt: time.Now().Add(-common.IngestionDispatchGracePeriod - time.Second).UnixMilli(),
 	}).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
