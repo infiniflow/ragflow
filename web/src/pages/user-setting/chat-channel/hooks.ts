@@ -25,7 +25,7 @@ import chatService from '@/services/next-chat-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
-import { AgentKeys, fetchAllAgents } from '@/hooks/use-agent-request';
+import { fetchAllAgents } from '@/hooks/use-agent-request';
 import { ChatChannelKey, useChatChannelInfo } from './constant';
 import { IChatChannel, IChatChannelBase, IChatChannelInfo } from './interface';
 
@@ -33,6 +33,7 @@ export const ChatChannelKeys = {
   list: () => ['chat-channel'] as const,
   detail: (id?: string) => ['chat-channel-detail', id] as const,
   dialogs: () => ['chat-channel-dialogs'] as const,
+  agents: () => ['chat-channel-agents'] as const,
 };
 
 export const useListChatChannel = () => {
@@ -242,7 +243,7 @@ export const useChatChannelDialogList = createChatChannelTargetListHook(
 
 // Flow agents available to connect a channel to.
 export const useChatChannelAgentList = createChatChannelTargetListHook(
-  AgentKeys.all(),
+  ChatChannelKeys.agents(),
   async () => {
     const agents = await fetchAllAgents();
     return (agents || []).map((agent) => ({
