@@ -214,15 +214,9 @@ ensure_db_init() {
 }
 
 run_mysql_migrations() {
-    local db_type="${DB_TYPE:-mysql}"
-    db_type="${db_type,,}"
-    if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
-        return 0
-    fi
-
+    # run_migrations.sh selects mysql_migration.py or postgres_migration.py
+    # from DB_TYPE so postgres/gaussdb upgrades get TenantModelIdMigrationStage
+    # (and model_type_merge) rather than skipping or running MySQL SQL.
     tools/scripts/run_migrations.sh
 }
 
