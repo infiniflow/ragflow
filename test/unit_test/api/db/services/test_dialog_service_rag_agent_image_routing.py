@@ -149,23 +149,33 @@ def test_rag_agent_routes_vision_image_questions_to_async_chat(monkeypatch):
 @pytest.mark.p2
 def test_rag_agent_keeps_agentic_loop_for_text_only_model_with_images(monkeypatch):
     """Images attached to a text-only model cannot be answered either way, so
-    the agentic loop must keep running."""
+    the agentic loop must keep running — and must not inject image content
+    parts the provider would reject (e.g. Zhipu GLM error 1210:
+    messages.content.type only allows 'text')."""
     recording_chat = _RecordingAsyncChat()
     monkeypatch.setattr(dialog_service, "async_chat", recording_chat)
     monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _t, _m: ["chat"])
-    _patch_agentic_stubs(monkeypatch)
+    chat_mdl = _patch_agentic_stubs(monkeypatch)
     monkeypatch.setattr(
         dialog_service,
         "get_files_content",
         lambda _last_message, _model_type: ("", ["data:image/jpeg;base64,QUJD"], []),
     )
+    conversions = []
+    monkeypatch.setattr(
+        dialog_service,
+        "convert_last_user_msg_to_multimodal",
+        lambda *_args: conversions.append(_args),
+    )
 
-    messages = [{"role": "user", "content": "描述图片内容", "id": "m-1", "files": [dict(_IMAGE_FILE_DICT)]}]
+    messages = [{"role": "user", "content": "describe the image", "id": "m-1", "files": [dict(_IMAGE_FILE_DICT)]}]
 
     results = _collect(dialog_service.rag_agent(_dialog("glm-4-flash@Zhipu"), messages, False, reasoning=1))
 
     assert recording_chat.calls == [], "agentic path must not delegate to async_chat for text-only models"
     assert results, "agentic path must produce an answer"
+    assert conversions == [], "text-only models must not receive image content parts"
+    assert isinstance(chat_mdl.sent_messages[-1]["content"], str)
 
 
 @pytest.mark.p2
@@ -189,6 +199,10 @@ def test_message_has_image_attachments_covers_client_shapes():
     assert dialog_service.message_has_image_attachments({"files": [_IMAGE_FILE_DICT]})
     assert dialog_service.message_has_image_attachments({"files": ["data:image/png;base64,AAA"]})
     assert dialog_service.message_has_image_attachments({"files": {"mime_type": "image/png"}})
+    # Aligned with the fetch path (FileService.get_files / split_file_attachments):
+    # any data: URI, and any mime_type containing "image".
+    assert dialog_service.message_has_image_attachments({"files": ["data:application/octet-stream;base64,AAA"]})
+    assert dialog_service.message_has_image_attachments({"files": [{"mime_type": "application/x-image"}]})
     assert not dialog_service.message_has_image_attachments({"files": [{"mime_type": "application/pdf"}]})
     assert not dialog_service.message_has_image_attachments({"files": ["https://example.com/a.png"]})
     assert not dialog_service.message_has_image_attachments({})
@@ -211,3 +225,60 @@ def test_dialog_model_vision_capable_resolves_enrolled_types(monkeypatch):
 
     assert dialog_service.dialog_model_vision_capable(SimpleNamespace(tenant_id="t1", llm_id="")) is False
 
+
+@pytest.mark.p2
+def test_dialog_model_vision_capable_resolves_the_effective_chat_model(monkeypatch):
+    """The capability probe must follow the same chat-model resolution
+    get_models()/async_chat() use: a tenant-level override that can serve as
+    a chat model wins, and an empty llm_id falls back to the tenant default."""
+    types_by_ref = {
+        "qwen3-vl-plus@Tongyi-Qianwen": ["chat", "vision"],
+        "chat-override-id": ["chat", "vision"],
+        "text-only@Zhipu": ["chat"],
+        "vision-only-override-id": ["vision"],
+        "default-chat-model-id": ["chat", "vision"],
+    }
+
+    def _fake_resolve(_tenant, ref):
+        if ref not in types_by_ref:
+            raise LookupError(ref)
+        return types_by_ref[ref]
+
+    monkeypatch.setattr(dialog_service, "resolve_model_type", _fake_resolve)
+
+    # A chat-capable tenant override replaces the dialog's text-only model.
+    dialog = SimpleNamespace(tenant_id="tenant-1", llm_id="text-only@Zhipu", tenant_llm_id="chat-override-id")
+    assert dialog_service.dialog_model_vision_capable(dialog) is True
+
+    # A vision-only override cannot serve as the chat model: fall back to llm_id.
+    dialog = SimpleNamespace(tenant_id="tenant-1", llm_id="text-only@Zhipu", tenant_llm_id="vision-only-override-id")
+    assert dialog_service.dialog_model_vision_capable(dialog) is False
+    dialog = SimpleNamespace(tenant_id="tenant-1", llm_id="qwen3-vl-plus@Tongyi-Qianwen", tenant_llm_id="vision-only-override-id")
+    assert dialog_service.dialog_model_vision_capable(dialog) is True
+
+    # An unresolvable override falls back to llm_id.
+    dialog = SimpleNamespace(tenant_id="tenant-1", llm_id="qwen3-vl-plus@Tongyi-Qianwen", tenant_llm_id="missing-id")
+    assert dialog_service.dialog_model_vision_capable(dialog) is True
+
+    # Empty llm_id: the tenant's default chat model decides.
+    dialog = SimpleNamespace(tenant_id="tenant-1", llm_id="", tenant_llm_id="")
+    fake_tenant = SimpleNamespace(tenant_llm_id="default-chat-model-id", llm_id="")
+    monkeypatch.setattr(dialog_service, "TenantService", SimpleNamespace(get_by_id=lambda _tid: (True, fake_tenant)))
+    assert dialog_service.dialog_model_vision_capable(dialog) is True
+
+    fake_tenant = SimpleNamespace(tenant_llm_id="", llm_id="text-only@Zhipu")
+    monkeypatch.setattr(dialog_service, "TenantService", SimpleNamespace(get_by_id=lambda _tid: (True, fake_tenant)))
+    assert dialog_service.dialog_model_vision_capable(dialog) is False
+
+    monkeypatch.setattr(dialog_service, "TenantService", SimpleNamespace(get_by_id=lambda _tid: (False, None)))
+    assert dialog_service.dialog_model_vision_capable(dialog) is False
+
+
+@pytest.mark.p2
+def test_empty_response_applies_only_without_attachment_context():
+    applies = dialog_service._empty_response_applies
+    assert applies([], "", [], [])
+    assert not applies(["chunk"], "", [], [])
+    assert not applies([], "parsed document text", [], [])
+    assert not applies([], "", ["data:image/png;base64,AAA"], [])
+    assert not applies([], "", [], [b"raw-image-bytes"])
