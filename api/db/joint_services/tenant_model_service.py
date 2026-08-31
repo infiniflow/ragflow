@@ -26,6 +26,8 @@ from common.constants import (
     MINERU_ENV_KEYS,
     MISTRAL_OCR_DEFAULT_CONFIG,
     MISTRAL_OCR_ENV_KEYS,
+    MONKEYOCR_DEFAULT_CONFIG,
+    MONKEYOCR_ENV_KEYS,
     OPENDATALOADER_DEFAULT_CONFIG,
     OPENDATALOADER_ENV_KEYS,
     PADDLEOCR_DEFAULT_CONFIG,
@@ -519,6 +521,15 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
         "OpenDataLoader",
         "opendataloader-from-env",
         _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
+    )
+
+
+def ensure_monkeyocr_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "MonkeyOCR",
+        "monkeyocr-from-env",
+        _collect_env_config(MONKEYOCR_ENV_KEYS, MONKEYOCR_DEFAULT_CONFIG),
     )
 
 
