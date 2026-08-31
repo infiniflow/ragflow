@@ -319,26 +319,25 @@ func deepDocAnalyzerFromEnv() (deepdoctype.DocAnalyzer, error) {
 // resolveDocAnalyzer applies the DeepDoc backend policy:
 //   - the in-process factory is the ONLY production backend; it is used
 //     directly when registered (serving),
-//   - if it is unavailable it falls back to MockDocAnalyzer for local dev
-//     (go build without build.sh / missing ORT+models) so `go run` and
-//     GoLand debugging remain usable. Production images built with
-//     `bash build.sh --all` (cgo + static ORT + models) never hit the
-//     fallback because Serving() is true; set DEEPDOC_STRICT=1 to re-enable
-//     fail-fast if strict production enforcement is desired.
+//   - if it is unavailable it returns an error so parsing fails loudly
+//     instead of silently producing empty layout/table/OCR results.
+//     ingestor and api must both be bound to the real in-process backend
+//     (no Mock fallback) when built with `bash build.sh --all`.
 //
 // The external Python HTTP service (formerly selected via DEEPDOC_URL) has
 // been removed entirely from both the production path and the test suite, so
 // production is in-process only.
 //
 // It takes its inputs explicitly (the factory) rather than reading
-// globals, so the policy is unit-testable in isolation.
+// globals, so the policy is unit-testable in isolation. It never returns a
+// mock: if no backend is available it returns an error.
 func resolveDocAnalyzer(factory func() (deepdoctype.DocAnalyzer, bool)) (deepdoctype.DocAnalyzer, error) {
 	if factory != nil {
 		if a, ok := factory(); ok {
 			return a, nil
 		}
 	}
-	return &deepdocpdf.MockDocAnalyzer{Healthy: true}, nil
+	return nil, fmt.Errorf("deepdoc: no in-process DeepDoc backend available: build with -tags cgo and provide ORT + models")
 }
 
 // GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the

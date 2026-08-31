@@ -293,7 +293,7 @@ func main() {
 	// never instantiate the analyzer, so they must not fail-fast when ORT and
 	// models are absent on their node.
 	if servermode.NeedsDeepDoc(*arguments.mode) {
-		registerNativeDeepDoc(*arguments.mode)
+		registerNativeDeepDoc()
 	}
 
 	globalConfig := server.GetConfig()
@@ -1082,11 +1082,11 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // running binary — see the onnxruntime_go fork), so there is no external
 // DeepDoc HTTP service and no dynamic .so deployment.
 //
-// Root fix: ingestor and deepdoc must coexist — ingestor is fail-fast (P0)
-// when ORT+models are absent, api is permissive (Warn+Mock) so GoLand
-// `go build` remains usable for non-PDF debugging. DEEPDOC_STRICT=1 can
-// still force api to fail-fast in strict production.
-func registerNativeDeepDoc(mode string) {
+// Fail-fast contract (P0): ingestor and api must both be bound to the real
+// in-process backend (ORT + models present). There is NO Mock fallback and
+// NO silent degradation: if the backend is not serving, the server aborts.
+// Build with `bash build.sh --all` to provide the static ORT + models.
+func registerNativeDeepDoc() {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
 
@@ -1095,23 +1095,15 @@ func registerNativeDeepDoc(mode string) {
 			zap.String("reason", err.Error()))
 	}
 
+	// The in-process (Go) DeepDoc backend is the ONLY production backend. Fail
+	// fast rather than silently parsing without layout/table/OCR if the local
+	// backend cannot serve (ORT + models must be present when built with -tags
+	// cgo). Both api and ingestor require the binding.
 	if !infnative.Serving() {
-		if mode == "ingestor" {
-			common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
-				"runtime + models and build with -tags cgo",
-				zap.String("model_dir", modelDir),
-				zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
-		}
-		common.Warn("in-process DeepDoc backend not serving, fallback to MockDocAnalyzer for local dev",
+		common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
+			"runtime + models and build with -tags cgo",
 			zap.String("model_dir", modelDir),
-			zap.String("hint", "build with bash build.sh --all or set DEEPDOC_MODEL_DIR; set DEEPDOC_STRICT=1 to enforce fail-fast"))
-		if strings.TrimSpace(common.GetEnv("DEEPDOC_STRICT")) == "1" {
-			common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
-				"runtime + models and build with -tags cgo",
-				zap.String("model_dir", modelDir),
-				zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
-		}
-		return
+			zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
 	}
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
