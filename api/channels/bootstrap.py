@@ -229,11 +229,12 @@ async def _run_agent_completion(ch, cc, msg: IncomingMessage) -> None:
     histories separate. The answer is produced by the same canvas completion
     path used by the agent API (``canvas_service.completion``).
     """
+    from peewee import IntegrityError
+
     from api.db.services.api_service import API4ConversationService
     from api.db.services.canvas_service import UserCanvasService, completion
     from api.db.services.user_canvas_version import UserCanvasVersionService
     from common.misc_utils import thread_pool_exec
-    from peewee import IntegrityError
 
     e, _ = await thread_pool_exec(UserCanvasService.get_by_id, cc.agent_id)
     if not e:
@@ -247,9 +248,7 @@ async def _run_agent_completion(ch, cc, msg: IncomingMessage) -> None:
 
     # Keep agent sessions on the same id space as dialog sessions (32 chars)
     # but distinct from them so rebinding never mixes histories.
-    session_id = hashlib.sha256(
-        f"agent:{cc.agent_id}:{ch.account_id}:{msg.chat_id}".encode()
-    ).hexdigest()[:32]
+    session_id = hashlib.sha256(f"agent:{cc.agent_id}:{ch.account_id}:{msg.chat_id}".encode()).hexdigest()[:32]
 
     exists, _ = await thread_pool_exec(API4ConversationService.get_by_id, session_id)
     if not exists:
