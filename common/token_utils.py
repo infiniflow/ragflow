@@ -126,7 +126,7 @@ def usage_from_response(resp) -> dict:
 def num_tokens_from_string(string: str) -> int:
     """Returns the number of tokens in a text string."""
     try:
-        code_list = encoder.encode(string)
+        code_list = encoder.encode(string, disallowed_special=())
         return len(code_list)
     except Exception:
         return 0
@@ -182,4 +182,4 @@ def total_token_count_from_response(resp):
 
 def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
-    return encoder.decode(encoder.encode(string)[:max_len])
+    return encoder.decode(encoder.encode(string, disallowed_special=())[:max_len])
