@@ -512,6 +512,24 @@ func ReadErrorBody(r io.Reader) string {
 	return string(b)
 }
 
+// applyExplicitThinkingToggle adds the generic thinking control to a chat
+// request body only when the caller explicitly configured one. Generic
+// OpenAI-API-compatible endpoints (LM Studio, Ollama-style gateways, etc.)
+// must not receive model-family-specific reasoning payloads such as vLLM's
+// chat_template_kwargs unless the driver knows the endpoint supports them;
+// unrequested extension fields make strict servers reject every chat call
+// (#19004).
+func applyExplicitThinkingToggle(reqBody map[string]any, config *ChatConfig) {
+	if config == nil || config.Thinking == nil {
+		return
+	}
+	thinkingType := "disabled"
+	if *config.Thinking {
+		thinkingType = "enabled"
+	}
+	reqBody["thinking"] = map[string]any{"type": thinkingType}
+}
+
 func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
 	reqBody := map[string]any{
 		"model":    modelName,

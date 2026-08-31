@@ -49,7 +49,11 @@ export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PRO
 export PYTHONPATH=$(pwd)
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
-JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
+# jemalloc is an optional optimization. Hosts without libjemalloc-dev used to
+# die here under `set -e` (pkg-config exit 1) before any service started —
+# silently, with no error message. Fall back to the common library dir; a
+# missing library only turns LD_PRELOAD into a loader warning.
+JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc 2>/dev/null || echo /usr/lib/x86_64-linux-gnu)/libjemalloc.so"
 
 PY=python3
 
