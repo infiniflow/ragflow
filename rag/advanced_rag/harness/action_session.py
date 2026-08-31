@@ -715,11 +715,25 @@ def _search_outcome(payload: list, ids: list, new_evidence: int) -> ToolOutcome:
     )
 
 
-async def _exec_retrieve(tools, queries: list) -> ToolOutcome:
-    """Corpus search via grep_search (exact-term locate, compact snippets)."""
+async def _exec_retrieve(tools, queries: list, doc_scope: list | None = None, nav_hint: str = "") -> ToolOutcome:
+    """Corpus search via grep_search (exact-term locate, compact snippets).
+
+    ``doc_scope`` restricts the search to the given documents.
+    ``nav_hint`` is the nav-routed docs' summary fed as a SOFT retrieval hint
+    (BM25 keywords) — it boosts routed docs WITHOUT excluding the rest of the
+    corpus, realising "nav is a hint, not a constraint".
+    """
     from rag.advanced_rag.harness.tools.search import grep_search
 
-    out, ids, new_ev = await _run_search(tools, grep_search, queries, top_n=10, max_q=3)
+    out, ids, new_ev = await _run_search(
+        tools,
+        grep_search,
+        queries,
+        top_n=10,
+        max_q=3,
+        doc_scope=doc_scope or None,
+        keywords=nav_hint or None,
+    )
     return _search_outcome(out, ids, new_ev)
 
 
@@ -856,7 +870,11 @@ async def _exec_navigate_tree(tools, args: dict) -> ToolOutcome:
             status=_reason_status(res.empty_reason),
             reason=res.empty_reason,
         )
-    return ToolOutcome(payload=[{"kind": "navigate_tree", "content": (res.text or "")[:8000], "doc_ids": res.doc_ids}], status=OK, metrics={"docs": len(res.doc_ids)})
+    return ToolOutcome(
+        payload=[{"kind": "navigate_tree", "content": (res.text or "")[:8000], "doc_ids": res.doc_ids}],
+        status=OK,
+        metrics={"docs": len(res.doc_ids), "routed_docs": list(res.routed_docs)},
+    )
 
 
 async def _exec_navigate_structure(tools, args: dict) -> ToolOutcome:
@@ -873,7 +891,12 @@ async def _exec_navigate_structure(tools, args: dict) -> ToolOutcome:
     query = str(args.get("query") or "")
     kind = str(args.get("kind") or "catalog")
     res = await _navigate_structure_impl(query, doc_id=doc_id, kind=kind)
-    metrics = {"entities": res.entities, "chunk_ptrs": res.chunk_ptrs, "top_score": res.top_score}
+    metrics = {
+        "entities": res.entities,
+        "chunk_ptrs": res.chunk_ptrs,
+        "top_score": res.top_score,
+        "chunk_paths": res.chunk_paths,
+    }
     if res.empty_reason:
         return ToolOutcome(
             payload=[
@@ -984,7 +1007,8 @@ async def execute_tool(tools, name: str, args: dict) -> ToolOutcome:
             reason="no_structure",
         )
     if name == "retrieve":
-        return await _exec_retrieve(tools, _arg_query_list(args, 3))
+        scope = [str(d) for d in (args.get("doc_scope") or []) if str(d).strip()]
+        return await _exec_retrieve(tools, _arg_query_list(args, 3), doc_scope=scope or None)
     if name == "search_chunks":
         # Compiled-structure expansion (page-index/tree/wiki/KG) inside
         # hybrid_search is enabled in ALL modes. Datasets with NO compiled
@@ -1149,6 +1173,11 @@ class _SessionState(TypedDict, total=False):
     # accrued, and the (status, reason, metrics) log of every executed call.
     _tool_strikes: dict
     _tool_outcomes: list
+    # navigation ladder: the ladder spans the prefix AND the session (the model
+    # drives the LLM rung in between), so its state has to outlive the prefix.
+    _direction: str  # this slot's question — needed to re-run retrieval later
+    _routed_docs: list  # navigate_tree's top-n: scope for the `scoped` rung
+    _nav_rule_id: str  # which rung control currently rests on ("" = finished)
 
 
 async def _run_action_node(state: _SessionState) -> dict:
@@ -1245,6 +1274,11 @@ async def _tool_node(state: _SessionState) -> dict:
     skipped = 0
     strikes = dict(state.get("_tool_strikes") or {})
     outcomes = list(state.get("_tool_outcomes") or [])
+    # Where the nav ladder currently rests. Bound BEFORE the loop so it survives
+    # the empty-pending case (UnboundLocalError) and is the input for every
+    # tool_call that comes in — a call only advances its own rung, and a later
+    # ladder continuation must continue from the SAME resting point.
+    pending_rule = state.get("_nav_rule_id", "")
     for c in pending:
         # Near-duplicate retrieval suppression: if the model re-issues the same
         # intent as an earlier search (paraphrase), do NOT re-run ES — return a
@@ -1324,7 +1358,11 @@ async def _tool_node(state: _SessionState) -> dict:
                     "note": "All hits from this call were ALREADY in your evidence. Re-reading them will not add anything — issue a genuinely new angle, or output a <state> patch with what you have.",
                 }
             )
-        outcomes.append({"name": c["name"], "status": oc.status, "reason": oc.reason, "metrics": oc.metrics})
+        # ── Ladder: did this call satisfy the rung the model was asked to do? ──
+        # (drill is AUTO now — it runs its own retrieve+structure+merge chain in
+        # the prefix — so there is no model-driven navigate_structure rung here.)
+        status, reason = oc.status, oc.reason
+        outcomes.append({"name": c["name"], "status": status, "reason": reason, "metrics": oc.metrics})
         payload = json.dumps({"passages": chunks}, ensure_ascii=False, default=str)
         # if the session is already heavy, cut this payload proportionally
         if used + len(payload) > budget_chars:
@@ -1338,6 +1376,49 @@ async def _tool_node(state: _SessionState) -> dict:
                 "content": payload,
             }
         )
+        # Continue the ladder in code when the model's rung came back weak. Keep
+        # going on the rule's own verdict so one weak step can cascade through the
+        # remaining (cheaper, wider) rungs instead of leaving the model to rediscover
+        # the fallback one turn at a time.
+        if pending_rule:
+            rule = _NAV_RULE_BY_ID.get(pending_rule)
+            if rule is not None:
+                nxt = rule.next.get(status, "")
+                if nxt:
+                    ctx = _NavContext(
+                        direction=state.get("_direction", ""),
+                        known_docs=list(state.get("_routed_docs") or []),
+                    )
+                    ladder_budget = max(5.0, (state.get("deadline_left") or _ACTION_TIMEOUT_S) * _NAV_PREFIX_BUDGET_RATIO)
+                    ladder_msgs: list = []
+                    stepped_to = await _run_nav_chain(
+                        tools,
+                        ctx,
+                        nxt,
+                        ladder_budget,
+                        _nav_tool_surface(tools),
+                        ladder_msgs,
+                        evidence_ids,
+                        outcomes,
+                        id_prefix="ladder",
+                        # Respect the session's remaining context budget: these
+                        # pairs are appended outside the node's own accounting.
+                        max_chars=max(800, budget_chars - used),
+                    )
+                    # The ladder keeps advancing: a later tool_call in the SAME
+                    # batch (or the next turn) resumes from where this call left
+                    # it, not from the original resting point. ``""`` means the
+                    # ladder finished — also correct to record.
+                    pending_rule = stepped_to
+                    used += sum(len(m.get("content") or "") for m in ladder_msgs if m.get("role") == "tool")
+                    tool_msgs.extend(ladder_msgs)
+                    if status != OK:
+                        _LOG.info(
+                            "[action_session] ladder %r -> %r (reason=%s)",
+                            rule.id,
+                            nxt,
+                            reason,
+                        )
     return {
         "messages": tool_msgs,
         "_pending_calls": [],
@@ -1348,6 +1429,9 @@ async def _tool_node(state: _SessionState) -> dict:
         "_skipped_dup": int(state.get("_skipped_dup", 0)) + skipped,
         "_tool_strikes": strikes,
         "_tool_outcomes": outcomes,
+        "_routed_docs": state.get("_routed_docs") or [],
+        "_direction": state.get("_direction", ""),
+        "_nav_rule_id": pending_rule,
     }
 
 
@@ -1487,11 +1571,25 @@ def _build_session_graph():
 # starts, and injects the resulting exchange as completed assistant/tool messages:
 # the model then explores on top of a guaranteed-correct opening, and cannot skip
 # a step. It keeps the loop's freedom for everything after the chain.
+AUTO = "auto"  # code-driven: the orchestrator runs this step itself
+LLM = "llm"  # model-driven: the code only constrains it, the model calls it
+
+
 @dataclass
 class _NavRule:
     """One step of the navigation chain.
 
-    :param args: builds the tool arguments from the running context.
+    :param mode: ``AUTO`` — the orchestrator runs this step itself (no model
+        round-trip). ``LLM`` — the step needs a decision only the model can make
+        (e.g. WHICH of the routed documents to drill into), so the chain stops
+        here and hands control back; the remaining rules still describe what to
+        do with the outcome once the model reports back.
+    :param run: optional async ``run(tools, ctx, available, budget_s) ->
+        ToolOutcome`` that replaces the single-tool path. A step that composes
+        several tools (drill: scoped retrieve + navigate_structure + merge +
+        LLM quality verdict) uses this instead of ``tool``+``args``.
+    :param args: builds the tool arguments from the running context (AUTO only,
+        and used for display when ``run`` composes internally).
     :param when: optional guard; the step is skipped when it returns False.
     :param next: ``status -> next rule id``. ``""`` (or a missing key) ends the
         chain. Routing on ``status`` is what makes "quality poor → fall back"
@@ -1500,92 +1598,234 @@ class _NavRule:
 
     id: str
     tool: str
-    args: Any
+    mode: str = AUTO
+    run: Any = None
+    args: Any = None
     when: Any = None
     next: dict = field(default_factory=dict)
 
 
 @dataclass
 class _NavContext:
-    """Mutable state threaded through the navigation chain."""
+    """Mutable state threaded through the navigation chain.
+
+    ``known_docs`` is the routed scope (doc_ids, for validate-against checks).
+    ``routed_docs`` carries each routed doc's OVERALL SUMMARY — the hint that
+    feeds retrieval as a soft boost instead of a hard filter ("nav is a hint, not
+    a constraint"). ``nav_hint`` is the joined summaries used as retrieval
+    keywords so routed docs rank up WITHOUT excluding the rest of the corpus.
+    """
 
     direction: str
     known_docs: list = field(default_factory=list)
-    structure_done: bool = False
+    routed_docs: list = field(default_factory=list)  # [(doc_id, summary), ...]
+    nav_hint: str = ""
 
 
-#: navigate_tree → navigate_structure → retrieve, driven by measured outcomes:
-#: an unrouted query or a weak drill falls through to plain retrieval instead of
-#: leaving the model to rediscover the fallback by trial and error.
+async def _run_drill_merge(tools, ctx: _NavContext, available: set, budget_s: float) -> ToolOutcome:
+    """The ``drill`` rung (AUTO): corpus retrieve for REAL chunks + the
+    root->chunk structure paths from navigate_structure, MERGED on chunk_id so
+    every retrieved chunk carries its hierarchy context.
+
+    **Nav is a hint, not a constraint.** Retrieval runs over the WHOLE corpus
+    (no ``doc_scope`` filter), but the nav-routed docs' summaries are fed back
+    as BM25 ``keywords`` (soft boost), and the returned chunks are re-ranked so
+    routed-doc chunks float to the top while non-routed chunks stay below. A
+    multi-hop / enumeration answer living OUTSIDE the routed docs therefore
+    survives — it just ranks lower — instead of being filtered out entirely.
+
+    There is deliberately NO LLM verdict here: since retrieval is no longer
+    scope-locked, there is no "did the scoped search miss?" signal to grade, and
+    no ``POOR -> global`` fallback to drive. The merged evidence is handed to the
+    model, whose judgement plus the outer SCA decides sufficiency.
+    """
+    merged: list = []
+    evidence_ids: list = []
+    seen_ids: set = set()
+
+    # 1. Skeleton A: whole-corpus retrieval, softly boosted by the nav hints.
+    ret_oc = await _exec_retrieve(tools, [ctx.direction], nav_hint=ctx.nav_hint)
+    for cid in ret_oc.evidence_ids:
+        if cid not in seen_ids:
+            seen_ids.add(cid)
+            evidence_ids.append(cid)
+    routed_ids = set(ctx.known_docs)
+
+    # 2. Supplement B: root->chunk paths from EVERY routed doc's structure.
+    paths: dict[str, str] = {}
+    if "navigate_structure" in available and ctx.known_docs:
+        for doc_id in ctx.known_docs:
+            try:
+                async with asyncio.timeout(max(5.0, budget_s or _NAV_PREFIX_CALL_TIMEOUT_S)):
+                    s_oc = await execute_tool(tools, "navigate_structure", {"doc_id": doc_id, "query": ctx.direction, "kind": "catalog"})
+            except Exception:
+                _LOG.warning("[action_session] drill structure load failed doc=%s", doc_id, exc_info=True)
+                continue
+            for d in s_oc.evidence_ids:
+                if d not in seen_ids:
+                    seen_ids.add(d)
+                    evidence_ids.append(d)
+            for cid, path in ((s_oc.metrics or {}).get("chunk_paths") or {}).items():
+                if cid and cid not in paths:
+                    paths[cid] = path
+
+    # 3. Merge: skeleton A is the base; attach structure_path where ids align.
+    #    Re-rank so routed-doc chunks float to the top WITHOUT deleting the rest.
+    for p in ret_oc.payload or []:
+        if not isinstance(p, dict):
+            merged.append({"content": str(p)})
+            continue
+        e = dict(p)
+        cid = e.get("id")
+        sp = paths.get(str(cid)) if cid else None
+        if sp:
+            e["structure_path"] = sp
+        doc = e.get("doc_id") or e.get("document_id") or ""
+        e["nav_rank"] = 0 if str(doc) in routed_ids else 1  # 0 = routed (top)
+        merged.append(e)
+    merged.sort(key=lambda e: (e.get("nav_rank", 1), 0))
+
+    if not merged:
+        return ToolOutcome(payload=[], evidence_ids=evidence_ids, status=MISS, reason="no_doc", metrics={"hits": 0})
+    return ToolOutcome(payload=merged, evidence_ids=evidence_ids, status=OK, metrics={"hits": len(merged), "routed": len(routed_ids)})
+
+
+#: Per-slot strategy ladder. "Nav is a hint, not a constraint": neither rung
+#: filters the corpus down to the routed docs — the tree ROUTES (locate), then
+#: drill retrieves over the WHOLE corpus while softly boosting + re-ranking the
+#: routed-doc chunks, so a multi-hop/enumeration answer living outside the
+#: routed docs survives (just ranks lower) instead of being filtered out.
+#:
+#:   locate  navigate_tree     route to top-n documents, exposing their summaries
+#:   drill   retrieve+merge    whole-corpus retrieve (nav summaries as BM25 soft
+#:                             hint) + navigate_structure paths merged on chunk_id
+#:                             + routed-doc chunks re-ranked to the top
+#:   global  retrieve          safety net only if drill itself came back empty
+#:
+#: There is deliberately NO LLM verdict on the drill evidence: retrieval is not
+#: scope-locked, so there is no "did the scoped search miss?" signal to grade and
+#: no ``POOR -> global`` fallback to drive. Sufficiency is the model's + outer
+#: SCA's job, not the ladder's.
 _NAV_RULES: tuple = (
     _NavRule(
         id="locate",
         tool="navigate_tree",
+        mode=AUTO,
         args=lambda ctx: {"query": ctx.direction},
-        next={OK: "drill", MISS: "fallback", EMPTY: "fallback", POOR: "fallback", ERROR: "fallback"},
+        # Tree missed => no routed hints to merge against; the only useful step is
+        # an unscoped search.
+        next={OK: "drill", MISS: "global", EMPTY: "global", POOR: "global", ERROR: "global"},
     ),
     _NavRule(
         id="drill",
         tool="navigate_structure",
-        when=lambda ctx: bool(ctx.known_docs) and not ctx.structure_done,
-        args=lambda ctx: {"doc_id": ctx.known_docs[0], "query": ctx.direction},
-        next={OK: "", MISS: "fallback", EMPTY: "fallback", POOR: "fallback", ERROR: "fallback"},
+        mode=AUTO,
+        run=_run_drill_merge,
+        args=lambda ctx: {"query": ctx.direction},
+        # drill returns OK with the merged, re-ranked evidence; only an empty
+        # whole-corpus result (MISS) or an infra failure falls through to global.
+        next={OK: "", MISS: "global", EMPTY: "global", ERROR: "global"},
     ),
     _NavRule(
-        id="fallback",
+        id="global",
         tool="retrieve",
+        mode=AUTO,
         args=lambda ctx: {"query": [ctx.direction]},
         next={},
     ),
 )
+_NAV_RULE_BY_ID: dict = {r.id: r for r in _NAV_RULES}
+_NAV_START_RULE = "locate"
 
 # Share of the session deadline the prefix may spend; the ReAct loop keeps the rest.
 _NAV_PREFIX_BUDGET_RATIO = 0.35
 # Per-call ceiling so one slow navigation cannot swallow the whole prefix.
 _NAV_PREFIX_CALL_TIMEOUT_S = 25.0
+# Cap on the nav-hint text fed back into retrieval as BM25 keywords.
+_NAV_HINT_CHARS = 600
 
 
-async def run_nav_prefix(tools, direction: str, deadline_left: float) -> tuple[list, list, list]:
-    """Execute :data:`_NAV_RULES` and return ``(messages, evidence_ids, outcomes)``.
-
-    The returned messages are completed assistant/tool pairs ready to seed the
-    session history, so the model sees the chain as work already done. Returns
-    empty lists when navigation is unavailable for this session — the chain is an
-    optimisation, never a precondition for the session to run.
-    """
+def _nav_tool_surface(tools) -> set:
+    """Tools this session may call, or an empty set when it cannot be resolved."""
     try:
-        available = {s["function"]["name"] for s in _active_tool_specs(tools)}
+        return {s["function"]["name"] for s in _active_tool_specs(tools)}
     except Exception:
-        _LOG.warning("[action_session] could not resolve the tool surface; skipping nav prefix", exc_info=True)
-        return [], [], []
-    if "navigate_tree" not in available:
-        return [], [], []
+        _LOG.warning("[action_session] could not resolve the tool surface", exc_info=True)
+        return set()
 
-    by_id = {r.id: r for r in _NAV_RULES}
-    ctx = _NavContext(direction=direction)
-    messages: list = []
-    evidence_ids: list = []
-    outcomes: list = []
-    rule_id = "locate"
+
+def _emit_nav_pair(messages: list, call_id: str, tool: str, args: dict, oc: ToolOutcome, max_chars: int = 0) -> int:
+    """Append one completed assistant/tool exchange.
+
+    The pair MUST be well formed — every ``tool_call`` needs its ``tool``
+    response, or the provider rejects the history (the reason
+    ``_strip_unpaired_tool_calls`` exists).
+
+    ``max_chars`` caps the serialized payload; these pairs bypass the tool node's
+    own budget accounting, so without a cap a wide fallback search could inject an
+    arbitrarily large message. Returns the characters actually added.
+    """
+    payload = json.dumps({"passages": oc.payload}, ensure_ascii=False, default=str)
+    if max_chars and len(payload) > max_chars:
+        payload = payload[: max(max_chars, 800)]
+    messages.append(
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": call_id, "type": "function", "function": {"name": tool, "arguments": json.dumps(args, ensure_ascii=False)}}],
+        }
+    )
+    messages.append({"role": "tool", "tool_call_id": call_id, "content": payload})
+    return len(payload)
+
+
+async def _run_nav_chain(
+    tools,
+    ctx: _NavContext,
+    start_id: str,
+    budget_s: float,
+    available: set,
+    messages: list,
+    evidence_ids: list,
+    outcomes: list,
+    id_prefix: str = "nav",
+    max_chars: int = 0,
+) -> str:
+    """Run :data:`_NAV_RULES` from ``start_id``, stopping at the first LLM step.
+
+    AUTO steps are executed here; an LLM step is returned without being run,
+    because only the model can supply its arguments (e.g. which routed document
+    to drill). Shared by the pre-session prefix and by the in-session fallback,
+    so both consume exactly the same ladder.
+
+    Returns the id of the rule control now rests on (``""`` when the ladder is
+    finished or was abandoned).
+    """
     started = time.monotonic()
-    budget = max(5.0, (deadline_left or _ACTION_TIMEOUT_S) * _NAV_PREFIX_BUDGET_RATIO)
-
+    spent = 0
+    rule_id = start_id
     while rule_id:
-        rule = by_id.get(rule_id)
+        rule = _NAV_RULE_BY_ID.get(rule_id)
         if rule is None or rule.tool not in available:
             break
+        if rule.mode == LLM:
+            return rule_id  # hand control back: the model must decide
         if rule.when is not None and not rule.when(ctx):
             break
-        remaining = budget - (time.monotonic() - started)
+        remaining = budget_s - (time.monotonic() - started)
         if remaining <= 1.0:
-            _LOG.info("[action_session] nav prefix out of budget before %r", rule_id)
+            _LOG.info("[action_session] nav chain out of budget before %r", rule_id)
             break
-        call_id = f"navprefix_{rule_id}"
         try:
-            async with asyncio.timeout(min(_NAV_PREFIX_CALL_TIMEOUT_S, remaining)):
-                oc: ToolOutcome = await execute_tool(tools, rule.tool, rule.args(ctx))
-        except (TimeoutError, Exception):
-            _LOG.warning("[action_session] nav prefix step %r failed", rule_id, exc_info=True)
+            if rule.run is not None:
+                # A composed step (e.g. drill = retrieve + structure + merge +
+                # LLM verdict) owns its own tool calls; it only needs the budget.
+                oc: ToolOutcome = await rule.run(tools, ctx, available, max(5.0, remaining))
+            else:
+                async with asyncio.timeout(min(_NAV_PREFIX_CALL_TIMEOUT_S, remaining)):
+                    oc = await execute_tool(tools, rule.tool, rule.args(ctx))
+        except Exception:
+            _LOG.warning("[action_session] nav chain step %r failed", rule_id, exc_info=True)
             break
 
         outcomes.append({"name": rule.tool, "status": oc.status, "reason": oc.reason, "metrics": oc.metrics})
@@ -1594,34 +1834,45 @@ async def run_nav_prefix(tools, direction: str, deadline_left: float) -> tuple[l
             for d in (oc.payload or [{}])[0].get("doc_ids") or []:
                 if d and d not in ctx.known_docs:
                     ctx.known_docs.append(d)
-        if rule.tool == "navigate_structure" and oc.status == OK:
-            ctx.structure_done = True
+            # Keep the routed docs WITH their summaries: the hint used to boost
+            # (not filter) retrieval for the drilled docs.
+            ctx.routed_docs = list((oc.metrics or {}).get("routed_docs") or [])
+            hints = [str(s) for _d, s in ctx.routed_docs if s]
+            if hints:
+                ctx.nav_hint = " ".join(hints)[:_NAV_HINT_CHARS]
         evidence_ids.extend(oc.evidence_ids)
-
-        # Emit a WELL-FORMED pair: every tool_call needs its tool response, or the
-        # provider rejects the history (see _strip_unpaired_tool_calls).
-        messages.append(
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": call_id,
-                        "type": "function",
-                        "function": {"name": rule.tool, "arguments": json.dumps(rule.args(ctx), ensure_ascii=False)},
-                    }
-                ],
-            }
-        )
-        messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": json.dumps({"passages": oc.payload}, ensure_ascii=False, default=str),
-            }
-        )
+        spent += _emit_nav_pair(messages, f"{id_prefix}_{rule_id}", rule.tool, rule.args(ctx), oc, max_chars=max_chars)
         rule_id = rule.next.get(oc.status, "")
-    return messages, evidence_ids, outcomes
+    return rule_id
+
+
+async def run_nav_prefix(tools, direction: str, deadline_left: float, ctx: _NavContext | None = None) -> tuple[list, list, list, str]:
+    """Run the navigation ladder up to the first model-driven step.
+
+    Returns ``(messages, evidence_ids, outcomes, pending_rule_id)`` — the
+    messages are completed assistant/tool pairs ready to seed the session
+    history, so the model sees the chain as work already done and cannot skip a
+    step. ``pending_rule_id`` is the rule the model is expected to act on ("" when
+    the ladder already finished).
+
+    ``ctx`` may be supplied by the caller to keep the ladder's accumulated state
+    (notably ``known_docs``, the routed scope the later rungs search within)
+    after the prefix ends.
+
+    Returns empty results when navigation is unavailable — the ladder is an
+    optimisation, never a precondition for the session to run.
+    """
+    available = _nav_tool_surface(tools)
+    if not available or "navigate_tree" not in available:
+        return [], [], [], ""
+
+    ctx = ctx or _NavContext(direction=direction)
+    messages: list = []
+    evidence_ids: list = []
+    outcomes: list = []
+    budget = max(5.0, (deadline_left or _ACTION_TIMEOUT_S) * _NAV_PREFIX_BUDGET_RATIO)
+    pending = await _run_nav_chain(tools, ctx, _NAV_START_RULE, budget, available, messages, evidence_ids, outcomes)
+    return messages, evidence_ids, outcomes, pending
 
 
 _SESSION_GRAPH = _build_session_graph()
@@ -1650,20 +1901,24 @@ async def run_action_session(
         return Result(messages=[], new_states=[])
 
     budget_left = deadline_left or _ACTION_TIMEOUT_S
-    # Deterministic navigation chain first: the rules below are guaranteed in
-    # code, so the model cannot skip navigate_tree and jump straight to
-    # navigate_structure the way it does when the order is only a prompt hint.
+    # Walk the navigation ladder up to its first model-driven rung: the routing
+    # rules below are guaranteed in code, so the model cannot skip navigate_tree
+    # and jump straight to navigate_structure the way it does when the order is
+    # only a prompt hint. The remaining rungs stay armed in session state so a
+    # weak drill falls through to scoped/global retrieval in code.
     prefix_started = time.monotonic()
-    prefix_msgs, prefix_ids, prefix_outcomes = [], [], []
+    nav_ctx = _NavContext(direction=direction)
+    prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = [], [], [], ""
     try:
-        prefix_msgs, prefix_ids, prefix_outcomes = await run_nav_prefix(tools, direction, budget_left)
+        prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = await run_nav_prefix(tools, direction, budget_left, ctx=nav_ctx)
     except Exception:
         _LOG.warning("[action_session] navigation prefix failed; continuing with the plain loop", exc_info=True)
     if prefix_msgs:
         _LOG.info(
-            "[action_session] nav prefix completed %d step(s): %s",
+            "[action_session] nav prefix completed %d step(s), pending=%r, routed=%d doc(s)",
             len(prefix_outcomes),
-            ", ".join(f"{o['name']}={o['status']}" for o in prefix_outcomes),
+            pending_rule,
+            len(nav_ctx.known_docs),
         )
     spent = time.monotonic() - prefix_started
 
@@ -1686,6 +1941,9 @@ async def run_action_session(
         "_skipped_dup": 0,
         "_tool_strikes": {},
         "_tool_outcomes": list(prefix_outcomes),
+        "_direction": direction,
+        "_routed_docs": list(nav_ctx.known_docs),
+        "_nav_rule_id": pending_rule,
     }
     try:
         final = await _SESSION_GRAPH.ainvoke(initial)

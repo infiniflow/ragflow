@@ -70,10 +70,19 @@ class NavResult:
     how a single unrouted query used to disable the tool for a whole session.
 
     :param doc_ids: documents reached (the routing result).
+    :param routed_docs: ``[(doc_id, summary), ...]`` — the routed documents WITH
+        their overall summaries. The summary is the "hint" the orchestrator feeds
+        back into retrieval: nav is a hint, not a constraint, so these become a
+        soft boost/rerank signal instead of a hard ``doc_scope`` filter.
     :param entities: compiled entities discovered across those documents.
     :param chunk_ptrs: chunk pointers the outline points the model at.
     :param top_score: best beam score reached while drilling (0.0 when the
         keyword fallback scored instead of vectors).
+    :param chunk_paths: ``{chunk_id: "root -> ... -> node"}`` — the full
+        hierarchy path (from the tree root down) of the node that owns each
+        drilled chunk. Lets a caller merge structure context onto retrieved
+        evidence: the snippet says WHAT a chunk contains, the path says WHERE it
+        sits in the document.
     :param empty_reason: ``""`` when usable, else ``no_structure`` /
         ``no_doc`` / ``infra`` / ``bad_args``. Only ``no_structure`` is a
         statement about the DATASET; ``no_doc`` is about the query.
@@ -81,9 +90,11 @@ class NavResult:
 
     text: str = ""
     doc_ids: list = field(default_factory=list)
+    routed_docs: list = field(default_factory=list)
     entities: int = 0
     chunk_ptrs: int = 0
     top_score: float = 0.0
+    chunk_paths: dict = field(default_factory=dict)
     empty_reason: str = ""
 
 
@@ -722,12 +733,12 @@ async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: l
 
 async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[str]:
     """Return the ``doc_id``s most relevant to the question / keywords by
-    searching the dataset's navigation-tree document leaves (``nav_doc`` layer).
+    descending the dataset's compiled navigation tree.
 
-    Runs ``search_dataset_layers`` with ``mode="nav_doc"``: a direct hybrid
-    search over the nav-tree doc leaves, so it only sees documents that have a
-    compiled nav-tree node.  Faster, no LLM cost, but less precise for ambiguous
-    queries.
+    Routes through :func:`_nav_search_titled`, which runs
+    ``search_dataset_layers`` with ``mode="navigation_tree"`` and
+    ``dense_only=True``: a BFS beam descent from the root clusters down to the
+    ``nav_doc`` leaves, driven by vector similarity alone.
 
     Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
     ``[]`` when no question/keywords are given or the search returns nothing.
@@ -884,7 +895,11 @@ async def _navigate_tree_impl(
         else:
             parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(doc_id)}"/>')
     parts.append("</tree_navigation>")
-    return NavResult(text="\n".join(parts), doc_ids=[did for did, _ in routed])
+    return NavResult(
+        text="\n".join(parts),
+        doc_ids=[did for did, _ in routed],
+        routed_docs=[(did, summary) for did, summary in routed],
+    )
 
 
 def _first_tenant_id(tools_slot) -> str:
@@ -989,11 +1004,15 @@ async def _navigate_structure_impl(
     total_entities = 0
     total_ptrs = 0
     best_score = 0.0
+    all_chunk_paths: dict[str, str] = {}
     for i, s in enumerate(structures):
         stats = s.get("stats") or {}
         total_entities += len(s.get("entities") or [])
         total_ptrs += int(stats.get("chunk_ptrs") or 0)
         best_score = max(best_score, float(stats.get("top_score") or 0.0))
+        for cid, path in (s.get("chunk_paths") or {}).items():
+            if cid and cid not in all_chunk_paths:
+                all_chunk_paths[cid] = path
         parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(s["doc_id"])}" doc_title="{_xml_escape(s["title"])}" entities="{len(s["entities"])}" relations="{len(s["relations"])}">')
         outline = s["outline"]
         if outline:
@@ -1006,6 +1025,7 @@ async def _navigate_structure_impl(
         entities=total_entities,
         chunk_ptrs=total_ptrs,
         top_score=round(best_score, 4),
+        chunk_paths=all_chunk_paths,
         empty_reason="no_structure" if total_entities == 0 else "",
     )
 
@@ -1181,7 +1201,7 @@ async def _read_structures(tools_slot, query: str, doc_ids: list[str], kinds: se
                 relations = structure.get("relations") or []
         except Exception:
             _LOG.exception("[navigate_structure] structure load failed for doc=%s", doc_id)
-        outline, stats = await _render_toc_drilldown(query, qvec, entities, relations)
+        outline, stats, chunk_paths = await _render_toc_drilldown(query, qvec, entities, relations)
         out.append(
             {
                 "doc_id": doc_id,
@@ -1190,6 +1210,7 @@ async def _read_structures(tools_slot, query: str, doc_ids: list[str], kinds: se
                 "relations": relations,
                 "outline": outline,
                 "stats": stats,
+                "chunk_paths": chunk_paths,
             }
         )
     return out
@@ -1342,7 +1363,7 @@ def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relati
     return kept_nodes, parents, kept_names, best_overall
 
 
-async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relations: list[dict]) -> tuple[str, dict]:
+async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relations: list[dict]) -> tuple[str, dict, dict]:
     """Drill down the pre-built TOC hierarchy toward the query and render an outline.
 
     Uses VECTOR BEAM descent when the nodes carry embeddings (``_vec``) and a query
@@ -1355,16 +1376,18 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
           - Immigration since 1945 (tree_node): <desc> [chunks: c3]
         - [chunk c3]: <snippet>
 
-    Also returns a stats dict (``nodes``, ``chunk_ptrs``, ``top_score``) so the
-    caller can judge QUALITY numerically instead of parsing the rendered text.
+    Also returns a stats dict (``nodes``, ``chunk_ptrs``, ``top_score``) and a
+    ``chunk_paths`` map ``{chunk_id: "root -> ... -> node"}`` — the full
+    hierarchy path of the node owning each drilled chunk — so a caller can merge
+    structure context onto retrieved evidence without re-deriving the tree.
     """
     query_terms = [t for t in re.findall(r"[A-Za-z0-9_]{2,}", (query or "").lower()) if len(t) >= 2]
     if not query_terms and qvec is None:
-        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities)
+        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities), {}
 
     kept_nodes, parents, kept_names, best = _drill_kept_nodes(query_terms, qvec, entities, relations)
     if not kept_nodes:
-        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities)
+        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities), {}
 
     # Render the drilled nodes (indented by depth via ancestor count).
     depth_of: dict[str, int] = {}
@@ -1375,6 +1398,25 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
             d += 1
             cur = parents.get(cur)
         depth_of[n] = d
+
+    # root -> ... -> node path for every drilled node, mapped onto its chunks so
+    # the caller can annotate retrieved evidence with where it sits structurally.
+    chunk_paths: dict[str, str] = {}
+    for e in kept_nodes:
+        name = (e.get("name") or "").strip()
+        if not name:
+            continue
+        segs = [name]
+        cur = parents.get(name)
+        guard = 0
+        while cur and guard < _STRUCT_MAX_DEPTH:
+            segs.append(cur)
+            cur = parents.get(cur)
+            guard += 1
+        path = " -> ".join(reversed(segs))
+        for cid in e.get("source_chunk_ids") or []:
+            if isinstance(cid, str) and cid and cid not in chunk_paths:
+                chunk_paths[cid] = path
 
     lines: list[str] = []
     for e in kept_nodes[:_STRUCT_MAX_NODES]:
@@ -1405,7 +1447,7 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
         "chunk_ptrs": len(wanted),
         "top_score": round(float(best), 4),
     }
-    return "\n".join(lines), stats
+    return "\n".join(lines), stats, chunk_paths
 
 
 def _outline_stats(entities: list[dict]) -> dict:
