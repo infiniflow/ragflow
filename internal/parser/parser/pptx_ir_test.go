@@ -69,6 +69,22 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 			wantTexts: []string{"before\nafter"},
 		},
 		{
+			// Regression: two consecutive breaks must collapse to exactly
+			// one newline - not zero, and not a preserved blank line. Blank
+			// lines are dropped, keeping one newline between two non-empty
+			// lines.
+			name: "consecutive hard line breaks collapse to one newline",
+			irJSON: `{"sections":[{"elements":[
+				{"type":"paragraph","content":[
+					{"type":"text","text":"before"},
+					{"type":"line_break"},
+					{"type":"line_break"},
+					{"type":"text","text":"after"}
+				]}
+			]}]}`,
+			wantTexts: []string{"before\nafter"},
+		},
+		{
 			name:      "bare text block passes through",
 			irJSON:    `{"sections":[{"elements":[{"type":"text","text":"loose text"}]}]}`,
 			wantTexts: []string{"loose text"},
@@ -116,5 +132,19 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestItemsFromPlainText pins the whole-document plain-text salvage used
+// when the structured IR is unusable: non-empty text becomes a single
+// trimmed item; blank text yields an empty, non-nil slice.
+func TestItemsFromPlainText(t *testing.T) {
+	items := itemsFromPlainText("  whole deck text  ")
+	if len(items) != 1 || items[0]["text"] != "whole deck text" || items[0]["doc_type_kwd"] != "text" {
+		t.Fatalf("items = %+v, want a single trimmed text item", items)
+	}
+	items = itemsFromPlainText("   ")
+	if items == nil || len(items) != 0 {
+		t.Fatalf("items = %+v, want an empty non-nil slice", items)
 	}
 }

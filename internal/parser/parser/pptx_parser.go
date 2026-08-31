@@ -118,7 +118,20 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// IR, which carries one section per slide.
 	irJSON, err := doc.ToIRJSON()
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("presentation ir-json: %w", err)}
+		// Salvage path: the document opened but its structured IR could
+		// not be serialized. Fall back to whole-document plain text
+		// (worst case: the entire deck as one chunk) so a still-readable
+		// deck yields content instead of a hard parse error. The original
+		// IR error is surfaced only when plain text fails too.
+		text, perr := doc.PlainText()
+		if perr != nil {
+			return ParseResult{Err: fmt.Errorf("presentation ir-json: %w", err)}
+		}
+		return ParseResult{
+			OutputFormat: "json",
+			File:         map[string]any{"name": filename, "format": p.format},
+			JSON:         itemsFromPlainText(text),
+		}
 	}
 	items, err := buildPPTXJSONSections(irJSON)
 	if err != nil {
@@ -132,9 +145,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		if perr != nil {
 			return ParseResult{Err: fmt.Errorf("presentation plain-text: %w", perr)}
 		}
-		if trimmed := strings.TrimSpace(text); trimmed != "" {
-			items = append(items, map[string]any{"text": trimmed, "doc_type_kwd": "text"})
-		}
+		items = itemsFromPlainText(text)
 	}
 
 	return ParseResult{

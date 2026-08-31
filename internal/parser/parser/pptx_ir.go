@@ -43,6 +43,9 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 	for i, sec := range ir.Sections {
 		var lines []string
 		for _, el := range sec.Elements {
+			// Trim each line and drop blank ones: consecutive hard line
+			// breaks collapse to a single newline, so exactly one newline
+			// survives between two non-empty lines.
 			for _, line := range strings.Split(docxElementText(el), "\n") {
 				if line = strings.TrimSpace(line); line != "" {
 					lines = append(lines, line)
@@ -56,4 +59,16 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 		})
 	}
 	return items, nil
+}
+
+// itemsFromPlainText wraps whole-document plain text as a single JSON
+// item. It salvages a still-readable deck when the structured IR cannot
+// be used (IR serialization failure or a sectionless IR); a document
+// without extractable text yields an empty, non-nil item slice.
+func itemsFromPlainText(text string) []map[string]any {
+	items := []map[string]any{}
+	if trimmed := strings.TrimSpace(text); trimmed != "" {
+		items = append(items, map[string]any{"text": trimmed, "doc_type_kwd": "text"})
+	}
+	return items
 }
