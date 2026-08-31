@@ -513,7 +513,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
       similarityThreshold: 'Benzerlik eşiği',
       similarityThresholdTip:
-        'RAGFlow, alım sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin veya ağırlıklı yeniden sıralama puanının kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Bu eşiğin altında benzerlik puanına sahip parçalar sonuçlardan çıkarılır. Varsayılan eşik 0.2 olarak ayarlanmıştır, yani yalnızca 20 veya daha yüksek hibrit benzerlik puanına sahip parçalar alınacaktır.',
+        'RAGFlow, alım sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin veya ağırlıklı yeniden sıralama puanının kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Bu eşiğin altında benzerlik puanına sahip parçalar sonuçlardan çıkarılır. Varsayılan eşik 20 olarak ayarlanmıştır, yani yalnızca 20 veya daha yüksek hibrit benzerlik puanına sahip parçalar alınacaktır.',
       vectorSimilarityWeight: 'Vektör benzerlik ağırlığı',
       vectorSimilarityWeightTip:
         "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. İki ağırlığın toplamı 1.0'a eşit olmalıdır.",
