@@ -1970,6 +1970,7 @@ This endpoint only supports datasets that use the built-in chunking pipeline. Fo
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"document_ids"`: `list[string]`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1980,7 +1981,8 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]
+          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"],
+          "user_id": "end-user-123"
      }'
 ```
 
@@ -1990,6 +1992,8 @@ curl --request POST \
   The dataset ID.
 - `"document_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the documents to parse.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on embedding requests for this parse job. Omitted when unset. The value is carried on the worker queue only; it is not stored on Task rows.
 
 #### Response
 
@@ -2029,6 +2033,7 @@ Starts, cancels, or reruns ingestion for documents. Use this endpoint for docume
   - `"doc_ids"`: `list[string]`
   - `"run"`: `string`
   - `"delete"`: `boolean`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -2041,7 +2046,8 @@ curl --request POST \
      {
           "doc_ids": ["97a5f1c2759811efaa500242ac120004"],
           "run": "1",
-          "delete": true
+          "delete": true,
+          "user_id": "end-user-123"
      }'
 ```
 
@@ -2053,6 +2059,8 @@ curl --request POST \
   The ingestion action. Use `"1"` to start ingestion and `"2"` to cancel ingestion.
 - `"delete"`: (*Body parameter*), `boolean`
   Whether to delete existing tasks and chunks before rerunning. Defaults to `false`.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on embedding requests when `run` starts ingestion. Omitted when unset.
 
 #### Response
 
