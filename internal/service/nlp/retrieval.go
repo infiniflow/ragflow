@@ -64,6 +64,9 @@ type RetrievalRequest struct {
 	Aggs                   *bool
 	Highlight              *bool
 	Filter                 map[string]interface{}
+	// Language is the dataset language ("" = English); diacritic-folding
+	// languages (Slovak, Czech) fold the query so its tokens match index tokens.
+	Language string
 }
 
 // RetrievalResult result from retrieval search
@@ -142,6 +145,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		EmbeddingModel:         req.EmbeddingModel,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
 		Filter:                 req.Filter,
+		Language:               req.Language,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
@@ -429,6 +433,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 	}
 
@@ -459,6 +464,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 	}
 
@@ -475,6 +481,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 	}
 	knnScores := s.docEngine.GetScores(knnResult)
@@ -489,6 +496,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		"content_ltks",
 		qb,
 		*req.RankFeature,
+		req.Language,
 	)
 }
 
@@ -509,6 +517,8 @@ type RetrievalSearchRequest struct {
 	Filter                 map[string]interface{}
 	EmbeddingModel         *models.EmbeddingModel
 	VectorSimilarityWeight *float64
+	// Language is the dataset language ("" = English).
+	Language string
 }
 
 func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
@@ -625,7 +635,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// Non-empty question
 
 		// Compute keywords via QueryBuilder
-		matchText, keywords := GetQueryBuilder().Question(req.Question, "", 0.3)
+		matchText, keywords := GetQueryBuilder().Question(req.Question, "", 0.3, req.Language)
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
 		}
@@ -700,7 +710,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 					// and lower vector similarity threshold (0.17 vs default 0.1-0.2).
 					// This provides a second chance for queries that were too strict
 					// on the first attempt.
-					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", 0.1)
+					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", 0.1, req.Language)
 					matchDense.ExtraOptions["similarity"] = 0.17
 					searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
 					searchRequest.RankFeature = req.RankFeature
@@ -716,9 +726,10 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		}
 
 		// Build kwds from keywords with fine-grained tokenization
+		tok := tokenizer.New(req.Language)
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
-			fgToken, _ := tokenizer.FineGrainedTokenize(k)
+			fgToken, _ := tok.FineGrainedTokenize(k)
 			for kk := range strings.FieldsSeq(fgToken) {
 				if len(kk) < 2 {
 					continue

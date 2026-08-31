@@ -707,6 +707,19 @@ void RAGAnalyzer::SetLanguage(const std::string &language) {
     lang_key.erase(lang_key.find_last_not_of(" \t") + 1);
     lang_key.erase(0, lang_key.find_first_not_of(" \t"));
 
+    // Diacritic-folding languages have no Snowball stemmer, so stemming and
+    // lemmatization are disabled for them. The Go side folds diacritics before
+    // the text reaches this analyzer, so the input is pure ASCII.
+    // Mirrors DIACRITIC_FOLDING_LANGUAGES in rag/nlp/rag_tokenizer.py.
+    if (lang_key == "slovak" || lang_key == "czech") {
+        disable_stemming_ = true;
+        use_lemmatizer_ = false;
+        return;
+    }
+    // Any other language resumes stemming, including an unmapped one that keeps
+    // the previously configured stemmer (same as the Python side).
+    disable_stemming_ = false;
+
     Language stem_lang = STEM_LANG_UNKNOWN;
     for (const auto &pair : SNOWBALL_LANGUAGE_MAP) {
         if (pair.first == lang_key) {
@@ -1433,7 +1446,11 @@ void RAGAnalyzer::EnglishNormalize(const std::vector<std::string> &tokens, std::
                 term_to_stem = lowercase_term;
             }
             std::string stem_term;
-            stemmer_->Stem(term_to_stem, stem_term);
+            if (disable_stemming_) {
+                stem_term = term_to_stem;
+            } else {
+                stemmer_->Stem(term_to_stem, stem_term);
+            }
             res.push_back(stem_term);
         } else {
             res.push_back(t);
@@ -1799,7 +1816,11 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) {
                     term_to_stem = lowercase_term;
                 }
                 std::string stem_term;
-                stemmer_->Stem(term_to_stem, stem_term);
+                if (disable_stemming_) {
+                    stem_term = term_to_stem;
+                } else {
+                    stemmer_->Stem(term_to_stem, stem_term);
+                }
                 res.push_back(stem_term);
             }
             continue;
@@ -1922,7 +1943,11 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
                             term_to_stem = lowercase_term;
                         }
                         std::string stem_term;
-                        stemmer_->Stem(term_to_stem, stem_term);
+                        if (disable_stemming_) {
+                            stem_term = term_to_stem;
+                        } else {
+                            stemmer_->Stem(term_to_stem, stem_term);
+                        }
 
                         tokens.push_back(stem_term);
 
@@ -2251,7 +2276,11 @@ void RAGAnalyzer::EnglishNormalizeWithPosition(const std::vector<std::string> &t
                 term_to_stem = lowercase_term;
             }
             std::string stem_term;
-            stemmer_->Stem(term_to_stem, stem_term);
+            if (disable_stemming_) {
+                stem_term = term_to_stem;
+            } else {
+                stemmer_->Stem(term_to_stem, stem_term);
+            }
 
             normalize_tokens.push_back(stem_term);
             normalize_positions.emplace_back(start_pos, end_pos);

@@ -75,6 +75,8 @@ export const LanguageList = [
   'Arabic',
   'Turkish',
   'Dutch',
+  'Slovak',
+  'Czech',
 ];
 export const LanguageMap = {
   English: 'English',
@@ -94,6 +96,8 @@ export const LanguageMap = {
   Arabic: 'العربية',
   Turkish: 'Türkçe',
   Dutch: 'Nederlands',
+  Slovak: 'Slovenčina',
+  Czech: 'Čeština',
 };
 
 export enum LanguageAbbreviation {
@@ -164,6 +168,8 @@ export const LanguageTranslationMap = {
   Arabic: 'ar',
   Turkish: 'tr',
   Dutch: 'nl',
+  Slovak: 'sk',
+  Czech: 'cs',
 };
 
 export enum FileMimeType {

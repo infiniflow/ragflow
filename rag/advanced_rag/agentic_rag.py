@@ -274,6 +274,12 @@ class RAGTools:
             for kb in kbs:
                 _exclude_sql_kb(kb)
 
+        # Dataset language for retrieval; None whenever the datasets disagree,
+        # since one query cannot be tokenized two ways.
+        from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
+        self.language = dataset_language(self.kbs)
+
         self.web_search = web_search
         self.meta_data_filter = meta_data_filter
         self.doc_scope = list(dict.fromkeys(doc_scope)) if doc_scope is not None else None
@@ -636,6 +642,7 @@ class RAGTools:
             highlight=True,
             doc_ids=doc_scope,
             rank_feature=label_question(question, self.kbs),
+            language=self.language,
         )
         if not kbinfos:
             return {"chunks": [], "doc_aggs": []}

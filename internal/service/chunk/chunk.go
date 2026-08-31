@@ -424,6 +424,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		RerankModel:            rerankModel,
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
+		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
 
 	// Call RetrievalService to perform retrieval

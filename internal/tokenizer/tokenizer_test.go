@@ -268,6 +268,64 @@ func TestTokenize_DefaultLanguageResetsAnalyzerState(t *testing.T) {
 	}
 }
 
+func TestTokenize_SlovakCzechFoldDiacriticsAndSkipStemming(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	SetEngineType("")
+
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	tests := []struct {
+		lang  string
+		input string
+		want  string
+	}{
+		// Diacritics are folded before the analyzer sees the text, so the
+		// split regex keeps words whole, and stemming/lemmatization are off.
+		{"Slovak", "škola daňové priznanie", "skola danove priznanie"},
+		{"Czech", "příliš žluťoučký kůň", "prilis zlutoucky kun"},
+		// No stemming for folding languages: the token survives unchanged.
+		{"Slovak", "running", "running"},
+	}
+	for _, tt := range tests {
+		got, err := New(tt.lang).Tokenize(tt.input)
+		if err != nil {
+			t.Fatalf("Tokenize(%s, %q) unexpected error: %v", tt.lang, tt.input, err)
+		}
+		if got != tt.want {
+			t.Errorf("Tokenize(%s, %q) = %q, want %q", tt.lang, tt.input, got, tt.want)
+		}
+	}
+
+	// English tokenization is unchanged and the pool resets sticky Slovak
+	// state: the default-language path still stems.
+	engGot, err := Tokenize("running")
+	if err != nil {
+		t.Fatalf("Tokenize(default, \"running\") unexpected error: %v", err)
+	}
+	if engGot == "running" {
+		t.Errorf("Tokenize(default, \"running\") = %q, want a stemmed form (English stemming must stay enabled)", engGot)
+	}
+
+	// FineGrainedTokenize on folded tokens must not stem either.
+	fg, err := New("Slovak").FineGrainedTokenize("danove priznanie")
+	if err != nil {
+		t.Fatalf("FineGrainedTokenize(Slovak) unexpected error: %v", err)
+	}
+	if fg != "danove priznanie" {
+		t.Errorf("FineGrainedTokenize(Slovak, \"danove priznanie\") = %q, want unchanged tokens", fg)
+	}
+}
+
 func findEnglishDutchDifferentiator(t *testing.T) languageDifferentiator {
 	t.Helper()
 

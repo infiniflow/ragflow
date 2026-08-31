@@ -419,6 +419,11 @@ async def retrieval_test_embedded(tenant_id=None):
         e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
         if not e:
             return get_error_data_result(message="Knowledgebase not found!")
+        # The search spans every kb_id, so the language has to be read from all
+        # of them, not just the first.
+        from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
+        kbs = await thread_pool_exec(KnowledgebaseService.get_by_ids, kb_ids)
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
@@ -451,6 +456,7 @@ async def retrieval_test_embedded(tenant_id=None):
             highlight=req.get("highlight"),
             rank_feature=labels,
             rerank_candidates_count=rerank_candidates_count,
+            language=dataset_language(kbs),
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)
