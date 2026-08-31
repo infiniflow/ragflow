@@ -72,13 +72,13 @@ _LOG = logging.getLogger(__name__)
 # one question's WHOLE pipeline comfortably under that line: when the budget
 # runs out the routing guards steer the graph straight to synthesis with
 # whatever evidence is on hand instead of starting another research round.
-_TOTAL_BUDGET_S = 180.0  # whole-graph wall-clock ceiling per question
-_MIN_ROUND_HEADROOM_S = 50.0  # need at least this much left to start a new round
-_PASS_TIMEOUT_S = 120.0  # slot research pass wall-clock
-_PREFETCH_TIMEOUT_S = 90.0  # programmatic fan-out fetch
-_DRAFT_TIMEOUT_S = 60.0  # fallback draft synthesis
-_SCA_TIMEOUT_S = 60.0  # sufficient-context review call
-_REWRITE_TIMEOUT_S = 45.0  # gap → query rewrite call
+_TOTAL_BUDGET_S = 900.0  # whole-graph wall-clock ceiling per question
+_MIN_ROUND_HEADROOM_S = 90.0  # need at least this much left to start a new round
+_PASS_TIMEOUT_S = 300.0  # slot research pass wall-clock
+_PREFETCH_TIMEOUT_S = 240.0  # programmatic fan-out fetch
+_DRAFT_TIMEOUT_S = 180.0  # fallback draft synthesis
+_SCA_TIMEOUT_S = 180.0  # sufficient-context review call
+_REWRITE_TIMEOUT_S = 120.0  # gap → query rewrite call
 
 
 def _snip(value: Any, limit: int = 240) -> str:
@@ -879,6 +879,17 @@ def build_agentic_graph(
         if time_left < _MIN_ROUND_HEADROOM_S:
             _LOG.info("[RAGAgent] only %.0fs left of the research budget; skipping further passes.", time_left)
             return {}
+        round_no = int(state.get("search_rounds", 0)) + 1
+        pool_before = len(((getattr(tools, "kbinfos", None) or state.get("kbinfos") or {}).get("chunks")) or [])
+        unresolved_ids = [
+            str(v.get("id"))
+            for v in _safe_list((state.get("slot_table") or {}).get("slots"), "slot_table.slots")
+            if not v.get("candidate")
+        ]
+        _LOG.info(
+            "[RAGAgent] ROUND %d start (search_rounds=%d, time_left=%.0fs, pool=%d chunks, unresolved slots=%s)",
+            round_no, int(state.get("search_rounds", 0)), time_left, pool_before, unresolved_ids or "-",
+        )
         t = max(20.0, min(_PASS_TIMEOUT_S, time_left - 25.0))
         slot_result = await _bounded(
             _run_slot_research_pass(tools, question, state, answer_conf, deadline_left=t),
@@ -892,6 +903,12 @@ def build_agentic_graph(
             "[RAGAgent] pass %d — %d slot(s) filled, unresolved=%d",
             int(state.get("search_rounds", 0)) + 1,
             sum(1 for s in getattr(slot_table, "state", []) if getattr(s, "candidate", None)),
+            len(slot_result.get("unresolved_slots") or []),
+        )
+        pool_after = len(((getattr(tools, "kbinfos", None) or state.get("kbinfos") or {}).get("chunks")) or [])
+        _LOG.info(
+            "[RAGAgent] ROUND %d end (+%d new chunks, pool=%d, unresolved=%d)",
+            round_no, pool_after - pool_before, pool_after,
             len(slot_result.get("unresolved_slots") or []),
         )
         return slot_result
@@ -1284,6 +1301,7 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
         len(unresolved_slots),
         bool(collected),
     )
+    _LOG.info("[SlotResearch] slot table after round:\n%s", _render_slot_draft(out_table, collected))
     return {
         "slot_table": out_table,
         "collected_answer": collected,

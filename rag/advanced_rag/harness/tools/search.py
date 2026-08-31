@@ -191,6 +191,16 @@ async def hybrid_search(
     if use_compiled and kbinfos.get("chunks"):
         _LOG.info("[Hybrid search] Compiled expansion enabled — enriching with page_index/tree/KG navigation.")
         await _expand_with_compiled(tools, query, keywords, kbinfos, doc_scope)
+    chunks_now = kbinfos.get("chunks") or []
+    if chunks_now:
+        _doc_stats: dict = {}
+        for _c in chunks_now:
+            _d = str(_c.get("docnm_kwd") or _c.get("docnm") or _c.get("doc_name") or "?")
+            _s = _doc_stats.setdefault(_d, [0, 0])
+            _s[0] += 1
+            _s[1] += len(str(_c.get("content") or _c.get("content_with_weight") or ""))
+        _detail = "; ".join(f"{d}:{n}chunk({sz}chars)" for d, (n, sz) in sorted(_doc_stats.items()))
+        _LOG.info(f'[Hybrid search] "{query[:80]}" -> {len(chunks_now)} chunk(s): {_detail}')
     if cache is not None:
         cache[cache_key] = kbinfos
     return kbinfos
@@ -423,6 +433,19 @@ async def grep_search(
             res["chunks"] = kept
     except Exception:
         _LOG.exception("[Grep search] narrow failed; using raw BM25 candidates.")
+    _g = res.get("chunks") or []
+    if _g:
+        _gs: dict = {}
+        for _c in _g:
+            _d = str(_c.get("docnm_kwd") or _c.get("docnm") or "?")
+            _e = _gs.setdefault(_d, [0, 0])
+            _e[0] += 1
+            _e[1] += len(str(_c.get("content") or _c.get("content_with_weight") or ""))
+        _LOG.info(
+            '[Grep search] "%s" -> %d chunk(s): %s',
+            str(query)[:80], len(_g),
+            "; ".join(f"{d}:{n}chunk({sz}chars)" for d, (n, sz) in sorted(_gs.items())),
+        )
     return res
 
 

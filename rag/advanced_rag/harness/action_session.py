@@ -35,8 +35,8 @@ from rag.advanced_rag.harness.config import resolve_mode
 
 _LOG = logging.getLogger(__name__)
 
-_INIT_TIMEOUT_S = 45.0
-_ACTION_TIMEOUT_S = 75.0
+_INIT_TIMEOUT_S = 150.0
+_ACTION_TIMEOUT_S = 180.0
 _SNIPPETS_PER_QUERY = 4
 _MAX_TOOL_RESPONSE_CHARS = 12000
 # Dataset-level empty results (reason="no_structure") a compiled-structure tool
@@ -1453,13 +1453,13 @@ async def _finalize_node(state: _SessionState) -> dict:
     # (e.g. tool execution failed), else the provider rejects the history.
     finalize_msgs = _strip_unpaired_tool_calls(list(state["messages"])) + [HumanMessage(content=budget_prompt)]
     try:
-        async with asyncio.timeout(max(15.0, min(45.0, state.get("deadline_left") or 45.0))):
+        async with asyncio.timeout(max(15.0, min(150.0, state.get("deadline_left") or 150.0))):
             fresp = await _acompletion(
                 state["mdl"],
                 finalize_msgs,
                 tools_list=None,
                 temperature=0.3,
-                timeout_s=45.0,
+                timeout_s=150.0,
             )
         fcontent = fresp.choices[0].message.content or ""
         new_states, found_answer = _parse_terminal(fcontent, parent)
@@ -2035,5 +2035,5 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     elif not first_queries:
         first_queries = [question]
     root = State(state=slots, depth=0)
-    _LOG.info("[Action Session:init] %s", root.brief())
+    _LOG.info("[Action Session:init] %s\n%s", root.brief(), root.render_slots())
     return root, first_queries
