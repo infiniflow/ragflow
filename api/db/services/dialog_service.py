@@ -36,7 +36,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService, validate
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from api.db.services.user_service import TenantService
-from common.metadata_utils import apply_meta_data_filter
+from common.metadata_utils import apply_meta_data_filter, normalize_doc_id_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
@@ -659,9 +659,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # Get scoped_doc_ids
     scoped_doc_ids = None
     if "doc_ids" in kwargs:
-        scoped_doc_ids = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
+        scoped_doc_ids = normalize_doc_id_filter(kwargs["doc_ids"].split(","))
     if "doc_ids" in messages[-1]:
-        scoped_doc_ids = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
+        scoped_doc_ids = normalize_doc_id_filter(messages[-1]["doc_ids"])
     if dialog.meta_data_filter:
         scoped_doc_ids = await apply_meta_data_filter(
             dialog.meta_data_filter,
@@ -1754,7 +1754,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
-    doc_ids = search_config.get("doc_ids", [])
+    doc_ids = normalize_doc_id_filter(search_config.get("doc_ids"))
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
     chat_llm_name = search_config.get("chat_id", chat_llm_name)
@@ -1883,7 +1883,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
 async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     meta_data_filter = search_config.get("meta_data_filter", {})
-    doc_ids = search_config.get("doc_ids", [])
+    doc_ids = normalize_doc_id_filter(search_config.get("doc_ids"))
     rerank_id = search_config.get("rerank_id", "")
     rerank_mdl = None
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
@@ -2104,11 +2104,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     doc_scope = None
     if "doc_ids" in kwargs:
         if isinstance(kwargs["doc_ids"], str):
-            doc_scope = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
+            doc_scope = normalize_doc_id_filter(kwargs["doc_ids"].split(","))
         elif isinstance(kwargs["doc_ids"], list):
-            doc_scope = [doc_id for doc_id in kwargs["doc_ids"] if doc_id]
+            doc_scope = normalize_doc_id_filter(kwargs["doc_ids"])
     if "doc_ids" in messages[-1]:
-        doc_scope = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
+        doc_scope = normalize_doc_id_filter(messages[-1]["doc_ids"])
     if dialog.meta_data_filter:
         doc_scope = await apply_meta_data_filter(
             dialog.meta_data_filter,

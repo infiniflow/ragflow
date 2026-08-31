@@ -32,7 +32,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
-from common.metadata_utils import apply_meta_data_filter
+from common.metadata_utils import apply_meta_data_filter, normalize_doc_id_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
@@ -344,7 +344,7 @@ async def retrieval_test_embedded(tenant_id=None):
         kb_ids = [kb_ids]
     if not kb_ids:
         return get_json_result(data=False, message="Please specify dataset firstly.", code=RetCode.DATA_ERROR)
-    doc_ids = req.get("doc_ids", [])
+    doc_ids = req.get("doc_ids")
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
@@ -360,7 +360,7 @@ async def retrieval_test_embedded(tenant_id=None):
 
     async def _retrieval():
         nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id, rerank_candidates_count
-        local_doc_ids = list(doc_ids) if doc_ids else []
+        local_doc_ids = normalize_doc_id_filter(doc_ids)
         tenant_ids = []
         _question = question
 

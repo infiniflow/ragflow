@@ -1045,7 +1045,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     from api.db.services.search_service import SearchService
     from api.db.services.user_service import UserTenantService
     from common.constants import LLMType
-    from common.metadata_utils import apply_meta_data_filter
+    from common.metadata_utils import apply_meta_data_filter, normalize_doc_id_filter
     from rag.app.tag import label_question
     from rag.prompts.generator import cross_languages, keyword_extraction
 
@@ -1060,7 +1060,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
-    doc_ids = req.get("doc_ids", [])
+    doc_ids = req.get("doc_ids")
     use_kg = req.get("use_kg", False)
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
@@ -1079,7 +1079,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
 
     if doc_ids is not None and not isinstance(doc_ids, list):
         return False, "`doc_ids` should be a list"
-    local_doc_ids = list(doc_ids) if doc_ids else []
+    local_doc_ids = normalize_doc_id_filter(doc_ids)
 
     meta_data_filter = {}
     search_id = req.get("search_id", "")
@@ -1436,7 +1436,7 @@ async def search_datasets(tenant_id: str, req: dict):
     from api.db.services.search_service import SearchService
     from api.db.services.user_service import UserTenantService
     from common.constants import LLMType
-    from common.metadata_utils import apply_meta_data_filter
+    from common.metadata_utils import apply_meta_data_filter, normalize_doc_id_filter
     from rag.app.tag import label_question
     from rag.prompts.generator import cross_languages, keyword_extraction
 
@@ -1445,7 +1445,7 @@ async def search_datasets(tenant_id: str, req: dict):
     size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
-    doc_ids = req.get("doc_ids", [])
+    doc_ids = req.get("doc_ids")
     use_kg = req.get("use_kg", False)
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
@@ -1476,7 +1476,7 @@ async def search_datasets(tenant_id: str, req: dict):
 
     if doc_ids is not None and not isinstance(doc_ids, list):
         return False, "`doc_ids` should be a list"
-    local_doc_ids = list(doc_ids) if doc_ids else []
+    local_doc_ids = normalize_doc_id_filter(doc_ids)
 
     meta_data_filter = {}
     search_id = req.get("search_id", "")

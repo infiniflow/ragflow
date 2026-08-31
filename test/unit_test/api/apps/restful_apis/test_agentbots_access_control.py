@@ -31,6 +31,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from common.metadata_utils import normalize_doc_id_filter
+
 
 class _PassthroughManager:
     def route(self, *_args, **_kwargs):
@@ -88,7 +90,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
         LLMBundle=SimpleNamespace(),
         resolve_llm_setting=lambda s: s or {"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4},
     )
-    _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=lambda *_a, **_k: None)
+    _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=lambda *_a, **_k: None, normalize_doc_id_filter=normalize_doc_id_filter)
     _stub(monkeypatch, "api.db.services.search_service", SearchService=SimpleNamespace())
     _stub(
         monkeypatch,
@@ -124,6 +126,15 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
     _stub(monkeypatch, "common", settings=SimpleNamespace())
     _stub(monkeypatch, "common.settings", retriever=SimpleNamespace(), kg_retriever=SimpleNamespace())
     _stub(monkeypatch, "api.utils.reference_metadata_utils", enrich_chunks_with_document_metadata=lambda *_a, **_k: None, resolve_reference_metadata_preferences=lambda *_a, **_k: None)
+    _stub(monkeypatch, "rag.utils.web_search_conn", has_web_search_provider=lambda *_a, **_k: False)
+    _stub(
+        monkeypatch,
+        "api.utils.pagination_utils",
+        DEFAULT_PAGE=1,
+        DEFAULT_PAGE_SIZE=30,
+        validate_rest_api_page=lambda value: int(value),
+        validate_rest_api_page_size=lambda value: int(value),
+    )
 
     repo_root = Path(__file__).resolve().parents[5]
     module_path = repo_root / "api" / "apps" / "restful_apis" / "bot_api.py"
