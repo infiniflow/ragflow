@@ -35,8 +35,8 @@ from rag.advanced_rag.harness.config import resolve_mode
 
 _LOG = logging.getLogger(__name__)
 
-_INIT_TIMEOUT_S = 45.0
-_ACTION_TIMEOUT_S = 75.0
+_INIT_TIMEOUT_S = 150.0
+_ACTION_TIMEOUT_S = 180.0
 _SNIPPETS_PER_QUERY = 4
 _MAX_TOOL_RESPONSE_CHARS = 12000
 # Dataset-level empty results (reason="no_structure") a compiled-structure tool
