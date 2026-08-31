@@ -1094,15 +1094,22 @@ func registerNativeDeepDoc() {
 			zap.String("reason", err.Error()))
 	}
 
-	// The in-process (Go) DeepDoc backend is the ONLY production backend. Fail
-	// fast rather than silently parsing without layout/table/OCR if the local
-	// backend cannot serve (ORT + models must be present when built with -tags
-	// cgo).
+	// The in-process (Go) DeepDoc backend is the production backend when
+	// built with `bash build.sh --all` (cgo + static ORT + models). For local
+	// dev (`go build` / GoLand without CGO_LDFLAGS) fall back to Mock with a
+	// warning so `--api` remains usable; set DEEPDOC_STRICT=1 to re-enable
+	// fail-fast in strict production environments.
 	if !infnative.Serving() {
-		common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
-			"runtime + models and build with -tags cgo",
+		common.Warn("in-process DeepDoc backend not serving, fallback to MockDocAnalyzer for local dev",
 			zap.String("model_dir", modelDir),
-			zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
+			zap.String("hint", "build with bash build.sh --all or set DEEPDOC_MODEL_DIR; set DEEPDOC_STRICT=1 to enforce fail-fast"))
+		if strings.TrimSpace(common.GetEnv("DEEPDOC_STRICT")) == "1" {
+			common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
+				"runtime + models and build with -tags cgo",
+				zap.String("model_dir", modelDir),
+				zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
+		}
+		return
 	}
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
