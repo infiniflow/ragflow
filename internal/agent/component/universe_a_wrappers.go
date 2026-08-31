@@ -192,6 +192,25 @@ func (c *retrievalComponent) Outputs() map[string]string {
 func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	query, _ := merged["query"].(string)
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
+			query = resolved
+		}
+	}
+	if query != "" && merged["retrieval_from"] == "dataset" {
+		rawIDs, present := merged["dataset_ids"]
+		emptySelection := !present || rawIDs == nil
+		switch ids := rawIDs.(type) {
+		case []string:
+			emptySelection = len(ids) == 0
+		case []any:
+			emptySelection = len(ids) == 0
+		}
+		if emptySelection {
+			return map[string]any{"_ERROR": "No dataset is selected."}, nil
+		}
+	}
 	common.Debug("agent retrieval component: invoke",
 		zap.Any("inputs", inputs),
 		zap.Any("merged", merged),
