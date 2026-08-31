@@ -106,6 +106,7 @@ export const extractParserConfigExt = (
     children_delimiter,
     use_parent_child,
     enable_children,
+    parent_child: legacyParentChild,
     ext,
     ...parserExt
   } = parserConfig;
@@ -130,7 +131,7 @@ export const extractParserConfigExt = (
           children_delimiter,
           use_parent_child: use_parent_child ?? enable_children,
         }
-      : undefined,
+      : legacyParentChild,
     ext: { ...ext, ...parserExt },
   };
 };

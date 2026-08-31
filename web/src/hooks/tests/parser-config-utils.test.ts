@@ -42,4 +42,39 @@ describe('extractParserConfigExt', () => {
       psi_bucket_size: 1024,
     });
   });
+
+  it('keeps legacy parent-child fields out of ext when children are disabled', () => {
+    const result = extractParserConfigExt({
+      enable_children: false,
+      children_delimiter: '\\n',
+      parent_child: {
+        children_delimiter: '\\n',
+        use_parent_child: true,
+      },
+    });
+
+    expect(result?.parent_child).toEqual({
+      children_delimiter: '\\n',
+      use_parent_child: true,
+    });
+    expect(result?.ext).not.toHaveProperty('parent_child');
+  });
+
+  it('prefers normalized parent-child fields when children are enabled', () => {
+    const result = extractParserConfigExt({
+      enable_children: true,
+      children_delimiter: '\\n',
+      use_parent_child: false,
+      parent_child: {
+        children_delimiter: 'legacy',
+        use_parent_child: true,
+      },
+    });
+
+    expect(result?.parent_child).toEqual({
+      children_delimiter: '\\n',
+      use_parent_child: false,
+    });
+    expect(result?.ext).not.toHaveProperty('parent_child');
+  });
 });
