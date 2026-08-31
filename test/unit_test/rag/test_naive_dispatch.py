@@ -93,6 +93,7 @@ def test_normalize_layout_recognizer_strips_known_provider_suffix():
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@mineru") == ("MinerU", "my-llm@my-instance@my-provider@mineru")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@paddleocr") == ("PaddleOCR", "my-llm@my-instance@my-provider@paddleocr")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@opendataloader") == ("OpenDataLoader", "my-llm@my-instance@my-provider@opendataloader")
+    assert normalize_layout_recognizer("my-llm@my-instance@my-provider@monkeyocr") == ("MonkeyOCR", "my-llm@my-instance@my-provider@monkeyocr")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@somark") == ("SoMark", "my-llm@my-instance@my-provider@somark")
 
 

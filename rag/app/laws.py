@@ -218,7 +218,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if not raw_sections and not tables:
             return []
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "mineru", "monkeyocr", "paddleocr"]:
             parser_config["chunk_token_num"] = 0
 
         for txt, poss in raw_sections:

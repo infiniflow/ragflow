@@ -485,6 +485,83 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     },
   },
 
+  // ============ MonkeyOCR ============
+  [LLMFactory.MonkeyOCR]: {
+    llmFactory: LLMFactory.MonkeyOCR,
+    title: 'MonkeyOCR',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'monkeyocr_apiserver',
+        label: 'monkeyocrApiserver',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'monkeyocrApiserverPlaceholder',
+        validation: { message: 'monkeyocrApiserverMessage' },
+      },
+      {
+        name: 'monkeyocr_server_url',
+        label: 'monkeyocrServerUrl',
+        type: FormFieldType.Text,
+        required: false,
+        placeholder: 'monkeyocrServerUrlPlaceholder',
+      },
+      {
+        name: 'monkeyocr_output_dir',
+        label: 'monkeyocrOutputDir',
+        type: FormFieldType.Text,
+        required: false,
+        placeholder: 'monkeyocrOutputDirPlaceholder',
+      },
+      {
+        name: 'monkeyocr_delete_output',
+        label: 'monkeyocrDeleteOutput',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: true,
+      },
+    ],
+    verifyTransform: (values) => {
+      const cfg: Record<string, any> = { ...values };
+      delete cfg.instance_name;
+      cfg.monkeyocr_delete_output = values.monkeyocr_delete_output ? '1' : '0';
+      return {
+        apiKey: cfg,
+        baseUrl: values.monkeyocr_apiserver,
+        modelInfo: [],
+      };
+    },
+    submitTransform: (values) => {
+      const cfg: Record<string, any> = { ...values };
+      delete cfg.instance_name;
+      cfg.monkeyocr_delete_output = values.monkeyocr_delete_output ? '1' : '0';
+      return {
+        instance_name: values.instance_name,
+        llm_factory: LLMFactory.MonkeyOCR,
+        api_key: cfg,
+        base_url: '',
+        model_info: [],
+      };
+    },
+    echoTransform: (instance) => {
+      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      return {
+        monkeyocr_apiserver: obj.monkeyocr_apiserver ?? '',
+        monkeyocr_server_url: obj.monkeyocr_server_url ?? '',
+        monkeyocr_output_dir: obj.monkeyocr_output_dir ?? '',
+        monkeyocr_delete_output: String(obj.monkeyocr_delete_output ?? '1') !== '0',
+      };
+    },
+  },
+
   // ============ PaddleOCR ============
   [LLMFactory.PaddleOCR]: {
     llmFactory: LLMFactory.PaddleOCR,

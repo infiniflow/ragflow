@@ -19,6 +19,7 @@ import os
 from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.monkeyocr_parser import MonkeyOCRParser
 from deepdoc.parser.mistral_parser import MistralParser
 from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
@@ -92,6 +93,66 @@ class MinerUOcrModel(Base, MinerUParser):
             backend=self.mineru_backend,
             server_url=self.mineru_server_url,
             delete_output=self.mineru_delete_output,
+            parse_method=parse_method,
+            **kwargs,
+        )
+        return sections, tables
+
+
+class MonkeyOCROcrModel(Base, MonkeyOCRParser):
+    _FACTORY_NAME = "MonkeyOCR"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+        raw_config = {}
+        if key:
+            try:
+                raw_config = json.loads(key)
+            except Exception:
+                raw_config = {}
+
+        config = raw_config.get("api_key", raw_config)
+        if not isinstance(config, dict):
+            config = {}
+
+        def _resolve_config(key: str, env_key: str, default=""):
+            return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
+
+        self.monkeyocr_api = _resolve_config("monkeyocr_apiserver", "MONKEYOCR_APISERVER", "")
+        self.monkeyocr_output_dir = _resolve_config("monkeyocr_output_dir", "MONKEYOCR_OUTPUT_DIR", "")
+        self.monkeyocr_server_url = _resolve_config("monkeyocr_server_url", "MONKEYOCR_SERVER_URL", "")
+        self.monkeyocr_delete_output = bool(int(_resolve_config("monkeyocr_delete_output", "MONKEYOCR_DELETE_OUTPUT", 1)))
+
+        redacted_config = {}
+        for k, v in config.items():
+            if any(sensitive_word in k.lower() for sensitive_word in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info("Parsed MonkeyOCR config (sensitive fields redacted): %s", redacted_config)
+
+        MonkeyOCRParser.__init__(
+            self,
+            monkeyocr_api=self.monkeyocr_api,
+            monkeyocr_server_url=self.monkeyocr_server_url,
+        )
+
+    def check_available(self, server_url: Optional[str] = None) -> tuple[bool, str]:
+        return self.check_installation(server_url=server_url or self.monkeyocr_server_url)
+
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"MonkeyOCR server not accessible: {reason}")
+
+        sections, tables = MonkeyOCRParser.parse_pdf(
+            self,
+            filepath=filepath,
+            binary=binary,
+            callback=callback,
+            output_dir=self.monkeyocr_output_dir,
+            server_url=self.monkeyocr_server_url,
+            delete_output=self.monkeyocr_delete_output,
             parse_method=parse_method,
             **kwargs,
         )

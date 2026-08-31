@@ -565,7 +565,7 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 func isNamedPDFParseMethod(raw string) bool {
 	method := strings.ToLower(strings.TrimSpace(raw))
 	switch method {
-	case "deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
+	case "deepdoc", "plain_text", "mineru", "monkeyocr", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
 		return true
 	}
 	return false
