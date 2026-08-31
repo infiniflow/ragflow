@@ -268,6 +268,8 @@ export const initialTokenChunkerValues = {
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
 };
 
 export enum Hierarchy {
