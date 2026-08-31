@@ -1995,7 +1995,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
-      noWikiPages: '暂无 Wiki 页面',
+      noWikiPages: '暂无 Wiki',
       noSkills: '暂无 Skills',
       noStructureGraph: '暂无 Graph',
       noStructureMindmap: '暂无 Mindmap',
