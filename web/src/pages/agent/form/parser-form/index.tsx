@@ -1,7 +1,7 @@
 import { Collapse } from '@/components/collapse';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
+import { Card } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
-import { Separator } from '@/components/ui/separator';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import i18n from '@/locales/config';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -49,7 +49,6 @@ const FileFormatWidgetMap = {
 type ParserItemProps = {
   name: string;
   index: number;
-  fieldLength: number;
 };
 
 const SetupSchema = z
@@ -119,7 +118,7 @@ export const FormSchema = z.object({
 
 export type ParserFormSchemaType = z.infer<typeof FormSchema>;
 
-function ParserItem({ name, index, fieldLength }: ParserItemProps) {
+function ParserItem({ name, index }: ParserItemProps) {
   const { t } = useTranslation();
   const form = useFormContext<ParserFormSchemaType>();
 
@@ -132,7 +131,7 @@ function ParserItem({ name, index, fieldLength }: ParserItemProps) {
       : () => <></>;
 
   return (
-    <section className="space-y-5">
+    <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
       {/* The file format is fixed per parser item; keep it registered so it is
           still submitted with the form. */}
       <input type="hidden" {...form.register(`setups.${index}.fileFormat`)} />
@@ -147,9 +146,7 @@ function ParserItem({ name, index, fieldLength }: ParserItemProps) {
           fileType={fileFormat as FileType}
         />
       </div>
-
-      {index < fieldLength - 1 && <Separator />}
-    </section>
+    </Card>
   );
 }
 
@@ -185,15 +182,10 @@ const ParserForm = ({
 
   return (
     <Form {...form}>
-      <form className="px-5">
+      <form className="space-y-5 px-5">
         {fields.map((field, index) => {
           return (
-            <ParserItem
-              key={field.id}
-              name={name}
-              index={index}
-              fieldLength={fields.length}
-            ></ParserItem>
+            <ParserItem key={field.id} name={name} index={index}></ParserItem>
           );
         })}
       </form>
