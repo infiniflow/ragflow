@@ -223,6 +223,10 @@ def test_dialog_model_vision_capable_resolves_enrolled_types(monkeypatch):
     monkeypatch.setattr(dialog_service, "resolve_model_type", _raise)
     assert dialog_service.dialog_model_vision_capable(_dialog()) is False
 
+    # Empty llm_id falls back to the tenant default chat model — that path
+    # queries the tenant row, so stub TenantService instead of requiring a
+    # live database (same pattern as the effective-chat-model test below).
+    monkeypatch.setattr(dialog_service, "TenantService", SimpleNamespace(get_by_id=lambda _tid: (False, None)))
     assert dialog_service.dialog_model_vision_capable(SimpleNamespace(tenant_id="t1", llm_id="")) is False
 
 
