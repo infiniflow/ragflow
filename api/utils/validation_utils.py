@@ -476,6 +476,43 @@ class ParserConfig(Base):
     # Table parser: list of column names (set by backend after first parse; used by frontend for role selector).
     table_column_names: Annotated[list[str] | None, Field(default=None)]
 
+    @field_validator("task_page_size", mode="before")
+    @classmethod
+    def coerce_unset_task_page_size(cls, v: Any) -> Any:
+        """Treat ``0`` (and any falsy non-None value) as ``None`` for ``task_page_size``.
+
+        Background: the v0.27.x web chunk-method dialog renders the "Task Page
+        Size" input only for the PDF + MinerU layout, but the dialog's
+        zod schema coerces the stored ``null`` to ``0`` and submits it on every
+        save. The backend schema (``ge=1``) then rejects the whole update and
+        the user cannot save any other field. The runtime
+        (``api/db/services/task_service.py::queue_tasks``) already treats a
+        falsy value as unset (``page_size = doc["parser_config"].get(
+        "task_page_size") or 12``), so the only missing piece was the
+        backend accepting the same value at the request boundary.
+
+        Mapping ``0`` and negative values to ``None`` here makes the API
+        robust to this frontend bug, plus to other clients (third-party
+        scripts, the HTTP API itself) that may legitimately submit ``0``
+        meaning "use the default". Mirrors the ``or 12`` fallback semantics
+        in ``queue_tasks`` and the v0.26.x behaviour where the field was
+        optional. See issue #19039.
+        """
+        if v is None or v == "":
+            return None
+        if isinstance(v, bool):
+            # ``True`` would be a misuse; coerce to None rather than 1 to
+            # avoid surprising callers who pass ``v=True`` thinking the
+            # field is set.
+            return None
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            return None
+        if iv < 1:
+            return None
+        return iv
+
     @field_validator("table_column_roles", mode="before")
     @classmethod
     def legacy_vectorize_table_column_role(cls, v: Any) -> Any:
