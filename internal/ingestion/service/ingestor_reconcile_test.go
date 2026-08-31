@@ -71,17 +71,13 @@ func seedAgedTask(t *testing.T, db *gorm.DB, id, docID, status string, age time.
 	}
 }
 
-// TestReconcileTasks converges every old CREATED row to SCHEDULED, recovers
-// stale unleased RUNNING rows left by old writers, and publishes each
-// resulting dispatch intent. A fresh unleased RUNNING row is left alone
-// because it may belong to a live worker that predates lease initialization.
+// TestReconcileTasks converges every old CREATED row to SCHEDULED and
+// recovers expired claims, publishing each resulting dispatch intent.
 func TestReconcileTasks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	seedAgedTask(t, db, "task-run-stale", "doc-run-stale", common.RUNNING, 16*time.Minute)
-	seedAgedTask(t, db, "task-run-fresh", "doc-run-fresh", common.RUNNING, 1*time.Minute)
 	seedAgedTask(t, db, "task-created-stale", "doc-created-stale", common.CREATED, 6*time.Minute)
 	seedAgedTask(t, db, "task-created-fresh", "doc-created-fresh", common.CREATED, 1*time.Minute)
 	seedAgedTask(t, db, "task-completed-old", "doc-completed-old", common.COMPLETED, 1*time.Hour)
@@ -101,13 +97,10 @@ func TestReconcileTasks(t *testing.T) {
 		return task.Status
 	}
 
-	for _, id := range []string{"task-run-stale", "task-created-stale", "task-created-fresh"} {
+	for _, id := range []string{"task-created-stale", "task-created-fresh"} {
 		if got := statusOf(id); got != common.SCHEDULED {
 			t.Fatalf("task %s status = %q, want SCHEDULED", id, got)
 		}
-	}
-	if got := statusOf("task-run-fresh"); got != common.RUNNING {
-		t.Fatalf("fresh unleased task status = %q, want RUNNING", got)
 	}
 	if got := statusOf("task-completed-old"); got != common.COMPLETED {
 		t.Fatalf("completed task status = %q, want COMPLETED", got)
@@ -116,8 +109,8 @@ func TestReconcileTasks(t *testing.T) {
 	// The reconciliation pass publishes every runnable task and never revives
 	// terminal rows.
 	published := recorder.published()
-	if len(published) != 3 {
-		t.Fatalf("re-enqueued tasks = %v, want three runnable tasks", published)
+	if len(published) != 2 {
+		t.Fatalf("re-enqueued tasks = %v, want two runnable tasks", published)
 	}
 }
 

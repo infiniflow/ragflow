@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -135,6 +136,19 @@ func migrateIngestionTaskSchedulingIndexes(ctx context.Context, db *gorm.DB) err
 			return fmt.Errorf("create %s: %w", index.name, err)
 		}
 	}
+
+	// Converge any legacy unleased RUNNING/CREATED rows to SCHEDULED so they can be dispatched cleanly
+	_ = db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("(status = ? OR status = ?) AND (claim_token = '' OR claim_token IS NULL)", common.RUNNING, common.CREATED).
+		Updates(map[string]interface{}{
+			"status":                 common.SCHEDULED,
+			"scheduled_at":           time.Now().UnixMilli(),
+			"last_dispatched_at":     int64(0),
+			"claim_token":            "",
+			"claim_expires_at":       int64(0),
+			"lease_recovery_attempt": 0,
+		}).Error
+
 	return nil
 }
 

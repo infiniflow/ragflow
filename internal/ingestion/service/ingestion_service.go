@@ -318,11 +318,10 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 }
 
 const (
-	reconcileBatchLimit     = 500
-	reconcileInterval       = 15 * time.Second
-	reconcileRate           = 100
-	dispatchGracePeriod     = 2 * time.Minute
-	legacyRunningStaleAfter = 15 * time.Minute
+	reconcileBatchLimit = 500
+	reconcileInterval   = 15 * time.Second
+	reconcileRate       = 100
+	dispatchGracePeriod = 2 * time.Minute
 )
 
 func (e *Ingestor) runReconciler() {
@@ -348,7 +347,6 @@ func (e *Ingestor) reconcileTasks(ctx context.Context) {
 	}
 	now := time.Now()
 	e.convergeCreatedTasks(ctx, now)
-	e.recoverLegacyRunningTasks(ctx, now)
 	e.recoverExpiredClaims(ctx, now)
 	e.dispatchScheduledTasks(ctx, now)
 }
@@ -382,46 +380,6 @@ func (e *Ingestor) convergeCreatedTasks(ctx context.Context, now time.Time) {
 					return
 				case <-pace.C:
 				}
-			}
-		}
-		if len(tasks) < reconcileBatchLimit {
-			return
-		}
-	}
-}
-
-func (e *Ingestor) recoverLegacyRunningTasks(ctx context.Context, now time.Time) {
-	lastID := ""
-	olderThan := now.Add(-legacyRunningStaleAfter)
-	pace := time.NewTicker(time.Second / reconcileRate)
-	defer pace.Stop()
-	taskDAO := dao.NewIngestionTaskDAO()
-	for {
-		tasks, err := taskDAO.ListLegacyRunningTasks(ctx, dao.DB, olderThan, lastID, reconcileBatchLimit)
-		if err != nil {
-			common.Warn(fmt.Sprintf("reconciliation: list legacy RUNNING tasks: %v", err))
-			return
-		}
-		if len(tasks) == 0 {
-			return
-		}
-		for _, task := range tasks {
-			lastID = task.ID
-			recovered, err := taskDAO.RecoverLegacyRunningTask(ctx, dao.DB, task.ID, now, olderThan)
-			if err != nil {
-				common.Warn(fmt.Sprintf("reconciliation: recover legacy task %s: %v", task.ID, err))
-				continue
-			}
-			if !recovered {
-				continue
-			}
-			if err := e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now); err != nil {
-				common.Warn(fmt.Sprintf("reconciliation: dispatch legacy task %s: %v", task.ID, err))
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-pace.C:
 			}
 		}
 		if len(tasks) < reconcileBatchLimit {

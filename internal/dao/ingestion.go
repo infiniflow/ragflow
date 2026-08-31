@@ -381,43 +381,6 @@ func (dao *IngestionTaskDAO) ListByStatusAfterID(ctx context.Context, db *gorm.D
 	return tasks, query.Order("id ASC").Find(&tasks).Error
 }
 
-// ListLegacyRunningTasks returns old RUNNING rows that have no lease fields.
-// They cannot be recovered by the active-lease scan because claim expiry zero
-// means that no worker has ever established a claim for them.
-func (dao *IngestionTaskDAO) ListLegacyRunningTasks(ctx context.Context, db *gorm.DB, olderThan time.Time, lastID string, limit int) ([]*entity.IngestionTask, error) {
-	query := db.WithContext(ctx).
-		Where("status = ? AND claim_token = '' AND claim_expires_at <= 0 AND update_time < ?", common.RUNNING, olderThan.UnixMilli())
-	if lastID != "" {
-		query = query.Where("id > ?", lastID)
-	}
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-	var tasks []*entity.IngestionTask
-	return tasks, query.Order("id ASC").Find(&tasks).Error
-}
-
-// RecoverLegacyRunningTask converts one stale, unleased RUNNING row left by
-// an older writer back into a durable scheduling intent. The staleness and
-// empty-lease predicates are repeated in the update so concurrent
-// reconcilers cannot recover a row that changed while it was being scanned.
-func (dao *IngestionTaskDAO) RecoverLegacyRunningTask(ctx context.Context, db *gorm.DB, taskID string, now, olderThan time.Time) (bool, error) {
-	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ? AND claim_token = '' AND claim_expires_at <= 0 AND update_time < ?", taskID, common.RUNNING, olderThan.UnixMilli()).
-		Updates(map[string]interface{}{
-			"status":                 common.SCHEDULED,
-			"scheduled_at":           now.UnixMilli(),
-			"last_dispatched_at":     int64(0),
-			"claim_token":            "",
-			"claim_expires_at":       int64(0),
-			"lease_recovery_attempt": 0,
-		})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
-}
-
 // ListExpiredClaims returns leased tasks whose owner can no longer renew.
 func (dao *IngestionTaskDAO) ListExpiredClaims(ctx context.Context, db *gorm.DB, statuses []string, now time.Time, lastID string, limit int) ([]*entity.IngestionTask, error) {
 	query := db.WithContext(ctx).
