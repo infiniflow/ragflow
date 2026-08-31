@@ -32,12 +32,28 @@ class _DummyFulltextQueryer:
 
 
 _fake_query.FulltextQueryer = _DummyFulltextQueryer
-_fake_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
-sys.modules.setdefault("rag.nlp.query", _fake_query)
-sys.modules.setdefault("rag.nlp.rag_tokenizer", _fake_tokenizer)
-sys.modules.setdefault("common.settings", types.ModuleType("common.settings"))
 
-from rag.nlp.search import Dealer  # noqa: E402
+_STUBS = {
+    "rag.nlp.query": _fake_query,
+    "rag.nlp.rag_tokenizer": types.ModuleType("rag.nlp.rag_tokenizer"),
+    "common.settings": types.ModuleType("common.settings"),
+}
+
+# Install the stubs only for the import below, then take them back out. Leaving
+# them in sys.modules is process-global and breaks any later test that imports
+# the real module, for example test/unit_test/common/test_settings_queue.py.
+_previous = {name: sys.modules.get(name) for name in _STUBS}
+for _name, _module in _STUBS.items():
+    sys.modules.setdefault(_name, _module)
+
+try:
+    from rag.nlp.search import Dealer  # noqa: E402
+finally:
+    for _name, _prior in _previous.items():
+        if _prior is not None:
+            sys.modules[_name] = _prior
+        elif sys.modules.get(_name) is _STUBS[_name]:
+            del sys.modules[_name]
 
 
 def _dealer():
@@ -101,9 +117,12 @@ async def test_existing_doc_is_served_from_cache_without_a_second_query(monkeypa
 @pytest.mark.asyncio
 async def test_mixed_batch_keeps_only_the_live_doc_when_cached(monkeypatch):
     dealer = _dealer()
-    _stub_document_service(monkeypatch, existing_ids={"live-doc"})
+    calls = _stub_document_service(monkeypatch, existing_ids={"live-doc"})
 
     await dealer._existing_doc_ids(["live-doc", "deleted-doc"])
     second = await dealer._existing_doc_ids(["live-doc", "deleted-doc"])
 
     assert second == {"live-doc"}
+    # A regression that re-queries would still return {"live-doc"}, so pin the
+    # round-trip count too.
+    assert len(calls) == 1
