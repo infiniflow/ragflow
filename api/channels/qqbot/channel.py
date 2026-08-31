@@ -7,7 +7,7 @@ import random
 import time
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 import aiohttp
 
@@ -69,6 +69,7 @@ class QQBotChannel(Channel):
         self._session_id: Optional[str] = None
         self._seq: Optional[int] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
+        self._dispatch_tasks: Set[asyncio.Task] = set()
         self._ws_thread: Optional[threading.Thread] = None
         self._ws_loop: Optional[asyncio.AbstractEventLoop] = None
         self._ws_session: Optional[aiohttp.ClientSession] = None
@@ -156,23 +157,43 @@ class QQBotChannel(Channel):
             LOGGER.error("[qqbot:%s] send failed", self.account_id, exc_info=True)
 
     async def _run(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                token = await self._get_access_token()
-                gateway_url = await self._get_gateway_url(token)
-                async with aiohttp.ClientSession() as session:
-                    self._ws_session = session
-                    async with session.ws_connect(gateway_url, heartbeat=None) as ws:
-                        LOGGER.info("[qqbot:%s] connected to gateway", self.account_id)
-                        await self._run_ws_session(ws, token)
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                LOGGER.error("[qqbot:%s] gateway loop error", self.account_id, exc_info=True)
-            finally:
-                self._ws_session = None
-            if not self._stop_event.is_set():
-                await asyncio.sleep(3)
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    token = await self._get_access_token()
+                    gateway_url = await self._get_gateway_url(token)
+                    async with aiohttp.ClientSession() as session:
+                        self._ws_session = session
+                        async with session.ws_connect(gateway_url, heartbeat=None) as ws:
+                            LOGGER.info("[qqbot:%s] connected to gateway", self.account_id)
+                            await self._run_ws_session(ws, token)
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    LOGGER.error("[qqbot:%s] gateway loop error", self.account_id, exc_info=True)
+                finally:
+                    self._ws_session = None
+                if not self._stop_event.is_set():
+                    await asyncio.sleep(3)
+        finally:
+            await self._drain_dispatch_tasks()
+
+    async def _drain_dispatch_tasks(self) -> None:
+        """Cancel and await the in-flight dispatches.
+
+        This runs on the websocket loop, on the way out of ``_run`` and before
+        ``_run_ws_thread`` closes that loop. Doing it from ``stop()`` instead
+        would call ``Task.cancel()`` from a different loop after the thread has
+        already been joined, which raises ``RuntimeError: Event loop is closed``
+        and leaves the dispatches pending.
+        """
+        tasks = tuple(self._dispatch_tasks)
+        self._dispatch_tasks.clear()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run_ws_session(self, ws: aiohttp.ClientWebSocketResponse, token: str) -> None:
         heartbeat_interval = 30
@@ -254,7 +275,12 @@ class QQBotChannel(Channel):
         incoming = self._normalize_incoming_event(event_type, data)
         if incoming is None:
             return
-        asyncio.create_task(self._dispatch(incoming))
+        # The event loop only keeps weak references to tasks, so a dispatch whose
+        # only reference was the create_task() call can be collected before the
+        # handler runs. Hold it until it completes.
+        task = asyncio.create_task(self._dispatch(incoming))
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
 
     async def _heartbeat_loop(self, ws: aiohttp.ClientWebSocketResponse, interval_ms: int) -> None:
         delay = max(interval_ms / 1000.0, 1.0)
