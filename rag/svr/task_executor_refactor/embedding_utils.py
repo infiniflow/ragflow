@@ -89,7 +89,7 @@ class EmbeddingUtils:
     ) -> List[str]:
         """Prepare texts for dataflow embedding.
 
-        Extracts content from 'questions', 'summary', or 'text' fields
+        Extracts content from 'questions', 'summary', 'text', or 'content_with_weight' fields
         (in priority order).
 
         Args:
@@ -100,7 +100,7 @@ class EmbeddingUtils:
         """
         texts = []
         for chunk in chunks:
-            text = chunk.get("questions", chunk.get("summary", chunk.get("text", "")))
+            text = chunk.get("questions") or chunk.get("summary") or chunk.get("text") or chunk.get("content_with_weight") or ""
             texts.append(text)
         return texts
 
