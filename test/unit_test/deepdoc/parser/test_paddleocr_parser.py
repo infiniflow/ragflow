@@ -66,7 +66,10 @@ def _local_response(markdown="hello", pruned=None):
 
 @pytest.mark.p1
 @pytest.mark.parametrize(
-    ("base_url", "expect_local"),
+    # Not named "base_url": pytest-base-url ships a session-scoped fixture of
+    # that name, and shadowing it with a function-scoped parametrize argument
+    # makes its session-scoped consumer fail with ScopeMismatch.
+    ("address", "expect_local"),
     [
         # Only the hosted address serves the asynchronous job API.
         ("https://paddleocr.aistudio-app.com", False),
@@ -86,11 +89,11 @@ def _local_response(markdown="hello", pruned=None):
         ("localhost:8080", True),
     ],
 )
-def test_protocol_is_selected_by_address(monkeypatch, base_url, expect_local):
+def test_protocol_is_selected_by_address(monkeypatch, address, expect_local):
     _clear_env(monkeypatch)
     module = _load_paddleocr_parser(monkeypatch)
 
-    parser = module.PaddleOCRParser(base_url=base_url)
+    parser = module.PaddleOCRParser(base_url=address)
     assert parser.local is expect_local
     assert module.PaddleOCRConfig(base_url=parser.base_url).local is expect_local
 
