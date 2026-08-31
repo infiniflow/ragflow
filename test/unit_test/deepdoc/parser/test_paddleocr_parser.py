@@ -199,8 +199,8 @@ def test_self_hosted_sends_base64_and_skips_markdown_images(monkeypatch):
     post = Mock(return_value=_local_response())
     monkeypatch.setattr(module.requests, "post", post)
 
-    parser = module.PaddleOCRParser(base_url="http://svc", access_token="tok")
-    parser._send_request(b"%PDF-1.7 body", module.PaddleOCRConfig(base_url="http://svc", access_token="tok"), None)
+    parser = module.PaddleOCRParser(base_url="https://svc", access_token="tok")
+    parser._send_request(b"%PDF-1.7 body", module.PaddleOCRConfig(base_url="https://svc", access_token="tok"), None)
 
     payload = post.call_args.kwargs["json"]
     assert payload["file"] == "JVBERi0xLjcgYm9keQ=="
@@ -208,6 +208,21 @@ def test_self_hosted_sends_base64_and_skips_markdown_images(monkeypatch):
     # inflate the response.
     assert payload["returnMarkdownImages"] is False
     assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer tok"
+
+
+@pytest.mark.p1
+def test_self_hosted_omits_authorization_over_plain_http(monkeypatch):
+    _clear_env(monkeypatch)
+    module = _load_paddleocr_parser(monkeypatch)
+
+    post = Mock(return_value=_local_response())
+    monkeypatch.setattr(module.requests, "post", post)
+
+    parser = module.PaddleOCRParser(base_url="http://svc", access_token="tok")
+    parser._send_request(b"%PDF-1.7", module.PaddleOCRConfig(base_url="http://svc", access_token="tok"), None)
+
+    # A bearer token on a plaintext connection is readable by anyone on the path.
+    assert "Authorization" not in post.call_args.kwargs["headers"]
 
 
 @pytest.mark.p1
