@@ -84,6 +84,7 @@ class RetrievalParam(ToolParamBase):
             "document_ids": {"name": "Document IDs", "type": "line"},
         }
 
+
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
