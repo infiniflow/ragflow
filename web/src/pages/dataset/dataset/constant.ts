@@ -9,6 +9,10 @@ export const RunningStatusMap = {
     label: 'Parsing',
     color: 'var(--team-member)',
   },
+  [RunningStatus.SCHEDULE]: {
+    label: 'Scheduled',
+    color: 'rgba(var(--state-warning))',
+  },
   [RunningStatus.CANCEL]: {
     label: 'CANCEL',
     color: 'rgba(var(--state-warning))',

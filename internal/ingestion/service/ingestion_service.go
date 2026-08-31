@@ -54,6 +54,7 @@ import (
 const (
 	defaultHeartbeatInterval = 2 * time.Second
 	defaultClaimTTL          = 15 * time.Second
+	defaultLeaseRecoveryMax  = 3
 )
 
 type Ingestor struct {
@@ -68,6 +69,7 @@ type Ingestor struct {
 	version           string
 	heartbeatInterval time.Duration
 	claimTTL          time.Duration
+	leaseRecoveryMax  int
 
 	// Runtime state
 	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
@@ -152,6 +154,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		docState:          newDocStateUpdater(),
 		heartbeatInterval: defaultHeartbeatInterval,
 		claimTTL:          defaultClaimTTL,
+		leaseRecoveryMax:  defaultLeaseRecoveryMax,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
@@ -163,6 +166,25 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 
 func (e *Ingestor) ID() string {
 	return e.id
+}
+
+// SetLeaseConfig applies the worker lease settings after configuration has
+// been parsed. A lease must outlive at least three heartbeat intervals so a
+// normal scheduling delay cannot be mistaken for a dead worker.
+func (e *Ingestor) SetLeaseConfig(heartbeatInterval, claimTTL time.Duration, maxRecoveryAttempts int) error {
+	if heartbeatInterval <= 0 {
+		return fmt.Errorf("ingestor heartbeat interval must be positive")
+	}
+	if claimTTL <= 3*heartbeatInterval {
+		return fmt.Errorf("ingestor claim TTL %s must be greater than three heartbeat intervals (%s)", claimTTL, 3*heartbeatInterval)
+	}
+	if maxRecoveryAttempts <= 0 {
+		return fmt.Errorf("ingestor lease recovery max must be positive")
+	}
+	e.heartbeatInterval = heartbeatInterval
+	e.claimTTL = claimTTL
+	e.leaseRecoveryMax = maxRecoveryAttempts
+	return nil
 }
 
 // consumeErrorBackoff paces the consume loop when GetMessages returns an
@@ -296,10 +318,11 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 }
 
 const (
-	reconcileBatchLimit      = 500
-	reconcileInterval        = 15 * time.Second
-	reconcileRate            = 100
-	maxLeaseRecoveryAttempts = 3
+	reconcileBatchLimit     = 500
+	reconcileInterval       = 15 * time.Second
+	reconcileRate           = 100
+	dispatchGracePeriod     = 2 * time.Minute
+	legacyRunningStaleAfter = 15 * time.Minute
 )
 
 func (e *Ingestor) runReconciler() {
@@ -325,12 +348,15 @@ func (e *Ingestor) reconcileTasks(ctx context.Context) {
 	}
 	now := time.Now()
 	e.convergeCreatedTasks(ctx, now)
+	e.recoverLegacyRunningTasks(ctx, now)
 	e.recoverExpiredClaims(ctx, now)
 	e.dispatchScheduledTasks(ctx, now)
 }
 
 func (e *Ingestor) convergeCreatedTasks(ctx context.Context, now time.Time) {
 	lastID := ""
+	pace := time.NewTicker(time.Second / reconcileRate)
+	defer pace.Stop()
 	for {
 		tasks, err := dao.NewIngestionTaskDAO().ListByStatusAfterID(ctx, dao.DB, common.CREATED, lastID, reconcileBatchLimit)
 		if err != nil {
@@ -348,7 +374,54 @@ func (e *Ingestor) convergeCreatedTasks(ctx context.Context, now time.Time) {
 				continue
 			}
 			if scheduled {
-				e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now)
+				if err := e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now); err != nil {
+					common.Warn(fmt.Sprintf("reconciliation: dispatch CREATED task %s: %v", task.ID, err))
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-pace.C:
+				}
+			}
+		}
+		if len(tasks) < reconcileBatchLimit {
+			return
+		}
+	}
+}
+
+func (e *Ingestor) recoverLegacyRunningTasks(ctx context.Context, now time.Time) {
+	lastID := ""
+	olderThan := now.Add(-legacyRunningStaleAfter)
+	pace := time.NewTicker(time.Second / reconcileRate)
+	defer pace.Stop()
+	taskDAO := dao.NewIngestionTaskDAO()
+	for {
+		tasks, err := taskDAO.ListLegacyRunningTasks(ctx, dao.DB, olderThan, lastID, reconcileBatchLimit)
+		if err != nil {
+			common.Warn(fmt.Sprintf("reconciliation: list legacy RUNNING tasks: %v", err))
+			return
+		}
+		if len(tasks) == 0 {
+			return
+		}
+		for _, task := range tasks {
+			lastID = task.ID
+			recovered, err := taskDAO.RecoverLegacyRunningTask(ctx, dao.DB, task.ID, now, olderThan)
+			if err != nil {
+				common.Warn(fmt.Sprintf("reconciliation: recover legacy task %s: %v", task.ID, err))
+				continue
+			}
+			if !recovered {
+				continue
+			}
+			if err := e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now); err != nil {
+				common.Warn(fmt.Sprintf("reconciliation: dispatch legacy task %s: %v", task.ID, err))
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-pace.C:
 			}
 		}
 		if len(tasks) < reconcileBatchLimit {
@@ -358,6 +431,8 @@ func (e *Ingestor) convergeCreatedTasks(ctx context.Context, now time.Time) {
 }
 
 func (e *Ingestor) recoverExpiredClaims(ctx context.Context, now time.Time) {
+	pace := time.NewTicker(time.Second / reconcileRate)
+	defer pace.Stop()
 	for _, status := range []string{common.RUNNING, common.STOPPING} {
 		lastID := ""
 		for {
@@ -372,13 +447,20 @@ func (e *Ingestor) recoverExpiredClaims(ctx context.Context, now time.Time) {
 			for _, task := range tasks {
 				lastID = task.ID
 				if status == common.RUNNING {
-					requeued, poisoned, err := dao.NewIngestionTaskDAO().RecoverExpiredClaim(ctx, dao.DB, task.ID, now, maxLeaseRecoveryAttempts)
+					requeued, poisoned, err := dao.NewIngestionTaskDAO().RecoverExpiredClaim(ctx, dao.DB, task.ID, now, e.leaseRecoveryMax)
 					if err != nil {
 						common.Warn(fmt.Sprintf("reconciliation: recover task %s: %v", task.ID, err))
 						continue
 					}
 					if requeued {
-						e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now)
+						if err := e.ingestionTaskSvc.DispatchScheduledTask(ctx, task.ID, now); err != nil {
+							common.Warn(fmt.Sprintf("reconciliation: dispatch recovered task %s: %v", task.ID, err))
+						}
+						select {
+						case <-ctx.Done():
+							return
+						case <-pace.C:
+						}
 					}
 					if poisoned {
 						common.Warn(fmt.Sprintf("task %s failed after repeated lease expiry", task.ID))
@@ -403,7 +485,7 @@ func (e *Ingestor) dispatchScheduledTasks(ctx context.Context, now time.Time) {
 	pace := time.NewTicker(time.Second / reconcileRate)
 	defer pace.Stop()
 	for {
-		tasks, err := dao.NewIngestionTaskDAO().ListScheduledForDispatch(ctx, dao.DB, now, lastDispatchedAt, lastID, reconcileBatchLimit)
+		tasks, err := dao.NewIngestionTaskDAO().ListScheduledForDispatch(ctx, dao.DB, now.Add(-dispatchGracePeriod), lastDispatchedAt, lastID, reconcileBatchLimit)
 		if err != nil {
 			common.Warn(fmt.Sprintf("reconciliation: list SCHEDULED tasks: %v", err))
 			return
@@ -540,7 +622,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
-	task, claimed, err := e.ingestionTaskSvc.TryClaim(e.ctx, taskMessage.TaskID, defaultClaimTTL)
+	task, claimed, err := e.ingestionTaskSvc.TryClaim(e.ctx, taskMessage.TaskID, e.claimTTL)
 	if err != nil {
 		if errors.Is(err, common.ErrTaskNotFound) {
 			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
@@ -951,7 +1033,23 @@ func (e *Ingestor) settleClaimLoss(ctx context.Context, task *entity.IngestionTa
 	}
 	switch current.Status {
 	case common.STOPPING:
-		return e.markStopped(ctx, task)
+		// Do one final CAS attempt for the same owner. Calling markStopped here
+		// would re-enter settleClaimLoss when the token is stale or empty and
+		// recurse indefinitely.
+		updated, err := e.finalizeClaim(ctx, task, common.STOPPING, common.STOPPED)
+		if err != nil {
+			common.Error(fmt.Sprintf("settle stopped task %s", task.ID), err)
+			return false
+		}
+		if updated {
+			if rc := redis2.Get(); rc != nil {
+				utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", task.ID), func() error {
+					rc.Delete(ctx, fmt.Sprintf("%s-cancel", task.ID))
+					return nil
+				})
+			}
+		}
+		return updated
 	case common.COMPLETED, common.STOPPED, common.FAILED:
 		return true
 	default:
@@ -1143,6 +1241,7 @@ func (e *Ingestor) markPoisonProgress(ctx context.Context, task *entity.Ingestio
 	if doc.ProgressMsg != nil {
 		message = *doc.ProgressMsg + message
 	}
+	message = limitProgressLog(message, progressLogMaxChars)
 	if err := svc.UpdateRunProgress(ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), message); err != nil {
 		common.Error(fmt.Sprintf("markPoisonProgress: update document %s: %v", task.DocumentID, err), err)
 	}
@@ -1177,6 +1276,13 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 				}
 				if taskCtx.IngestionTask.ClaimToken == "" {
 					continue
+				}
+				if dao.DB == nil {
+					common.Warn(fmt.Sprintf("task %s lease heartbeat stopped: DB is not initialized", taskCtx.IngestionTask.ID))
+					if taskCtx.Cancel != nil {
+						taskCtx.Cancel()
+					}
+					return
 				}
 				leaseCtx, cancel := context.WithTimeout(context.WithoutCancel(taskCtx.Ctx), 5*time.Second)
 				alive, err := e.ingestionTaskSvc.TouchClaim(leaseCtx, taskCtx.IngestionTask.ID, taskCtx.IngestionTask.ClaimToken, e.claimTTL)

@@ -132,7 +132,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 	}
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(ingestor.ctx, &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: testutil.TestClaimToken,
 	})
 	ingestor.taskChan <- taskCtx
 

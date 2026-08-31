@@ -70,6 +70,8 @@ ingestor:
   mq_type: 'nats'
   max_concurrent_workers: 1
   compiler_pool_size: 0
+  claim_ttl: 15s
+  max_lease_recovery_attempts: 3
 file_syncer:
   max_concurrent_syncs: 5
 user_default_llm:

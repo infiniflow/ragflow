@@ -56,3 +56,28 @@ The [db_schema_sync.py](https://github.com/infiniflow/ragflow/blob/main/tools/sc
 - **Development**: When modifying `db_models.py` and needing to update your local database without manual SQL.
 - **CI/CD pipelines**: To automatically prepare or apply database updates during deployment.
 - **Troubleshooting**: When the application fails due to "Unknown column" or "Table not found" errors, indicating a desynchronized schema.
+
+## Ingestion task scheduling rollout
+
+The ingestion scheduler adds lease and dispatch-tracking columns and composite
+indexes to the hot `ingestion_task` table. In a high-volume installation, do
+not rely on an application restart as the schema-change procedure:
+
+1. Back up the database and apply the additive schema changes during a planned
+   low-traffic window. Use an approved online-DDL tool such as `gh-ost` or
+   `pt-online-schema-change` when the database and change are compatible with
+   those tools; otherwise apply the DDL with the provider's online-DDL option
+   and monitor lock wait time.
+2. Verify the scheduling and claim indexes before starting new ingestors. The
+   required definitions are `(status, last_dispatched_at, id)` and
+   `(status, claim_expires_at, id)` on `ingestion_task`.
+3. Before switching traffic, converge legacy `CREATED` rows to `SCHEDULED`.
+   The new ingestor also continuously handles `CREATED` rows during a rolling
+   deployment, so a short old-writer/new-reader overlap is recoverable.
+4. Roll back only after testing the reverse version's handling of `SCHEDULED`
+   rows. Keep the schema additions in place during rollback; removing lease
+   columns or indexes while workers are running is not a rollback procedure.
+
+The Go startup migration creates missing scheduling indexes as a fallback, but
+it does not replace the online-DDL, backup, lock-monitoring, or rollback
+procedure required for a large production table.

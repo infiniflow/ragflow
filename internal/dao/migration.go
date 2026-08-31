@@ -53,6 +53,13 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on ingestion_task.document_id: %w", err)
 	}
 
+	// AutoMigrate creates these indexes for new installations. Keep an
+	// explicit fallback for existing installations because the reconciler's
+	// keyset scans depend on the full composite definitions being present.
+	if err := migrateIngestionTaskSchedulingIndexes(ctx, db); err != nil {
+		return fmt.Errorf("failed to add ingestion_task scheduling indexes: %w", err)
+	}
+
 	// Modify column types that AutoMigrate may not handle correctly
 	if err := modifyColumnTypes(ctx, db); err != nil {
 		return fmt.Errorf("failed to modify column types: %w", err)
@@ -69,6 +76,47 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 	}
 
 	common.Info("All manual migrations completed successfully")
+	return nil
+}
+
+func migrateIngestionTaskSchedulingIndexes(ctx context.Context, db *gorm.DB) error {
+	if !db.WithContext(ctx).Migrator().HasTable("ingestion_task") {
+		return nil
+	}
+
+	indexes := []struct {
+		name string
+		ddl  string
+	}{
+		{
+			name: "idx_ingestion_task_scheduled",
+			ddl:  "ALTER TABLE ingestion_task ADD INDEX idx_ingestion_task_scheduled (status, last_dispatched_at, id)",
+		},
+		{
+			name: "idx_ingestion_task_claim_expiry",
+			ddl:  "ALTER TABLE ingestion_task ADD INDEX idx_ingestion_task_claim_expiry (status, claim_expires_at, id)",
+		},
+	}
+
+	for _, index := range indexes {
+		var count int64
+		if err := db.WithContext(ctx).Raw(`
+			SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+			WHERE TABLE_NAME = ? AND INDEX_NAME = ?
+		`, "ingestion_task", index.name).Scan(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+		if err := db.WithContext(ctx).Exec(index.ddl).Error; err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+				continue
+			}
+			return fmt.Errorf("create %s: %w", index.name, err)
+		}
+	}
 	return nil
 }
 

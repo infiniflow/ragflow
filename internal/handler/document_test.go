@@ -1108,6 +1108,20 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	}
 }
 
+func TestMapRunStatusMapsScheduledToPublicStatus(t *testing.T) {
+	run := string(entity.TaskStatusSchedule)
+	if got := mapRunStatus(&run); got != "SCHEDULE" {
+		t.Fatalf("scheduled run status = %q, want SCHEDULE", got)
+	}
+}
+
+func TestNormalizeRunStatusFilterAcceptsScheduledStatus(t *testing.T) {
+	got := normalizeRunStatusFilter([]string{"SCHEDULE"})
+	if len(got) != 1 || got[0] != string(entity.TaskStatusSchedule) {
+		t.Fatalf("scheduled run filter = %#v, want [%q]", got, entity.TaskStatusSchedule)
+	}
+}
+
 func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB

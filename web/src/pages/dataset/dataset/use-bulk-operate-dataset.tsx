@@ -21,7 +21,8 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
-import { DocumentType, RunningStatus } from './constant';
+import { DocumentType } from './constant';
+import { isParserRunning } from './utils';
 
 export function useBulkOperateDataset({
   rowSelection,
@@ -107,9 +108,7 @@ export function useBulkOperateDataset({
   const handleDelete = useCallback(() => {
     const deletedKeys = selectedRowKeys.filter(
       (x) =>
-        !documents
-          .filter((y) => y.run === RunningStatus.RUNNING)
-          .some((y) => y.id === x),
+        !documents.filter((y) => isParserRunning(y.run)).some((y) => y.id === x),
     );
     if (deletedKeys.length === 0) {
       toast.error(

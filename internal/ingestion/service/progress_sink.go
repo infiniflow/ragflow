@@ -235,6 +235,27 @@ func trimLogHead(text string, maxChars int) string {
 	return text
 }
 
+// limitProgressLog bounds a message even when its existing content has no
+// newline boundary. Keep the suffix because terminal diagnostics are appended
+// at the end and must remain visible after truncation.
+func limitProgressLog(text string, maxChars int) string {
+	text = trimLogHead(text, maxChars)
+	if len(text) <= maxChars {
+		return text
+	}
+	runes := []rune(text)
+	start, size := len(runes), 0
+	for start > 0 {
+		width := len(string(runes[start-1]))
+		if size+width > maxChars {
+			break
+		}
+		start--
+		size += width
+	}
+	return string(runes[start:])
+}
+
 // deriveDocumentProgress computes the document-level progress (0..1) and run
 // label ("0".."4", matching Python's document.run enum) from the aggregated
 // ingestion_task_log. This logic is owned by the sink (the document-table

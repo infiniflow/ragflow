@@ -178,7 +178,11 @@ export const useFetchDocumentList = (loop = true) => {
     initialData: { docs: [], total: 0 },
     refetchInterval: (query) =>
       loop &&
-      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
+      query.state.data?.docs.some(
+        (doc) =>
+          doc.run === RunningStatus.RUNNING ||
+          doc.run === RunningStatus.SCHEDULE,
+      )
         ? 5000
         : false,
     enabled: !!knowledgeId || !!id,

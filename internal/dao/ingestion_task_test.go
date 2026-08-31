@@ -217,6 +217,88 @@ func TestIngestionTaskDAOTouchClaimRejectsExpiredLease(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskDAOListExpiredClaimsRequiresAnActiveLease(t *testing.T) {
+	db := setupTaskTestDB(t)
+	now := time.Unix(1_700_000_000, 0)
+	for _, task := range []*entity.IngestionTask{
+		{ID: "task-unleased", UserID: "user-1", DocumentID: "doc-unleased", DatasetID: "kb-1", Status: common.RUNNING},
+		{ID: "task-expired", UserID: "user-1", DocumentID: "doc-expired", DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: "owner-a", ClaimExpiresAt: now.Add(-time.Second).UnixMilli()},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	tasks, err := NewIngestionTaskDAO().ListExpiredClaims(t.Context(), db, []string{common.RUNNING}, now, "", 0)
+	if err != nil {
+		t.Fatalf("ListExpiredClaims: %v", err)
+	}
+	if got := idsOfTasks(tasks); fmt.Sprint(got) != "[task-expired]" {
+		t.Fatalf("expired tasks = %v, want [task-expired]", got)
+	}
+}
+
+func TestIngestionTaskDAORecoverExpiredClaimIgnoresUnleasedTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	now := time.Unix(1_700_000_000, 0)
+	task := &entity.IngestionTask{
+		ID:         "task-unleased",
+		UserID:     "user-1",
+		DocumentID: "doc-unleased",
+		DatasetID:  "kb-1",
+		Status:     common.RUNNING,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	requeued, poisoned, err := NewIngestionTaskDAO().RecoverExpiredClaim(t.Context(), db, task.ID, now, 3)
+	if err != nil {
+		t.Fatalf("RecoverExpiredClaim: %v", err)
+	}
+	if requeued || poisoned {
+		t.Fatalf("unleased recovery = requeued:%v poisoned:%v, want false:false", requeued, poisoned)
+	}
+	reloaded, err := NewIngestionTaskDAO().GetByID(t.Context(), db, task.ID)
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if reloaded.Status != common.RUNNING {
+		t.Fatalf("unleased task status = %q, want %q", reloaded.Status, common.RUNNING)
+	}
+}
+
+func TestIngestionTaskDAOFinalizeClaimRejectsExpiredOwner(t *testing.T) {
+	db := setupTaskTestDB(t)
+	task := &entity.IngestionTask{
+		ID:             "task-expired",
+		UserID:         "user-1",
+		DocumentID:     "doc-expired",
+		DatasetID:      "kb-1",
+		Status:         common.RUNNING,
+		ClaimToken:     "owner-a",
+		ClaimExpiresAt: time.Now().Add(-time.Second).UnixMilli(),
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	finalized, err := NewIngestionTaskDAO().FinalizeClaim(t.Context(), db, task.ID, task.ClaimToken, common.RUNNING, common.COMPLETED)
+	if err != nil {
+		t.Fatalf("FinalizeClaim: %v", err)
+	}
+	if finalized {
+		t.Fatal("expired owner must not finalize the task")
+	}
+	reloaded, err := NewIngestionTaskDAO().GetByID(t.Context(), db, task.ID)
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if reloaded.Status != common.RUNNING {
+		t.Fatalf("expired task status = %q, want %q", reloaded.Status, common.RUNNING)
+	}
+}
+
 func TestIngestionTaskDAOReleaseExpiredClaimClearsOwner(t *testing.T) {
 	db := setupTaskTestDB(t)
 	now := time.Unix(1_700_000_000, 0)
@@ -456,7 +538,7 @@ func TestIngestionTaskDAOListScheduledForDispatchAdvancesByKeyset(t *testing.T) 
 	}
 }
 
-func TestIngestionTaskDAOMarkDispatchedOnlyUpdatesScheduledTask(t *testing.T) {
+func TestIngestionTaskDAOTryReserveDispatchOnlyUpdatesExpectedScheduledTask(t *testing.T) {
 	db := setupTaskTestDB(t)
 	task := &entity.IngestionTask{
 		ID:         "task-1",
@@ -470,9 +552,9 @@ func TestIngestionTaskDAOMarkDispatchedOnlyUpdatesScheduledTask(t *testing.T) {
 	}
 
 	dispatchedAt := time.Unix(1_700_000_000, 0)
-	updated, err := NewIngestionTaskDAO().MarkDispatched(t.Context(), db, task.ID, dispatchedAt)
+	updated, err := NewIngestionTaskDAO().TryReserveDispatch(t.Context(), db, task.ID, 0, dispatchedAt)
 	if err != nil {
-		t.Fatalf("MarkDispatched: %v", err)
+		t.Fatalf("TryReserveDispatch: %v", err)
 	}
 	if !updated {
 		t.Fatal("scheduled task should record a successful dispatch")
@@ -484,6 +566,14 @@ func TestIngestionTaskDAOMarkDispatchedOnlyUpdatesScheduledTask(t *testing.T) {
 	}
 	if reloaded.LastDispatchedAt != dispatchedAt.UnixMilli() {
 		t.Fatalf("last dispatch = %d, want %d", reloaded.LastDispatchedAt, dispatchedAt.UnixMilli())
+	}
+
+	updated, err = NewIngestionTaskDAO().TryReserveDispatch(t.Context(), db, task.ID, 0, dispatchedAt.Add(time.Second))
+	if err != nil {
+		t.Fatalf("TryReserveDispatch with stale expected timestamp: %v", err)
+	}
+	if updated {
+		t.Fatal("stale dispatch reservation must not update the task")
 	}
 }
 

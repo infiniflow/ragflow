@@ -215,6 +215,29 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	}
 }
 
+func TestProcessMessageUsesConfiguredClaimTTL(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	scheduleIngestionTask(t, db, taskID)
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.claimTTL = 10 * time.Minute
+	ingestor.processMessage(newFakeHandle(taskID, common.TaskTypeIngestionTask))
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+	if err != nil {
+		t.Fatalf("reload claimed task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %q, want RUNNING", task.Status)
+	}
+	if task.ClaimExpiresAt < time.Now().Add(9*time.Minute).UnixMilli() {
+		t.Fatalf("claim expiry = %d, want approximately ten minutes from now", task.ClaimExpiresAt)
+	}
+}
+
 // TestProcessMessage_AlreadyCompletedAcks: a task already in a terminal state
 // (COMPLETED) is acked and skipped — no enqueue, and the document is NOT
 // resurrected to RUNNING. A redelivered terminal task must not reset a
@@ -383,12 +406,9 @@ func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_ShutdownRaceMarksStopped: shutdown winning the race
-// against the taskChan send must not leave the task in non-terminal RUNNING
-// with no in-flight worker. TryClaim has already flipped the task to
-// RUNNING, so the ctx.Done branch finalizes it as STOPPED (user-retryable)
-// with a detached timeout, and leaves the message unsettled — the broker
-// redelivers it and the terminal status ack-skips.
+// TestProcessMessage_ShutdownRaceReleasesClaim: shutdown winning the race
+// against the taskChan send must return the claimed task to SCHEDULED with no
+// in-flight worker. The message remains unsettled so the broker redelivers it.
 func TestProcessMessage_ShutdownRaceReleasesClaim(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)

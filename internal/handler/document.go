@@ -854,18 +854,20 @@ func normalizeRunStatusFilter(statuses []string) []string {
 		return nil
 	}
 	statusTextToNumeric := map[string]string{
-		"UNSTART": string(entity.TaskStatusUnstart),
-		"RUNNING": string(entity.TaskStatusRunning),
-		"CANCEL":  string(entity.TaskStatusCancel),
-		"DONE":    string(entity.TaskStatusDone),
-		"FAIL":    string(entity.TaskStatusFail),
+		"UNSTART":  string(entity.TaskStatusUnstart),
+		"RUNNING":  string(entity.TaskStatusRunning),
+		"CANCEL":   string(entity.TaskStatusCancel),
+		"DONE":     string(entity.TaskStatusDone),
+		"FAIL":     string(entity.TaskStatusFail),
+		"SCHEDULE": string(entity.TaskStatusSchedule),
 	}
 	validStatuses := map[string]bool{
-		string(entity.TaskStatusUnstart): true,
-		string(entity.TaskStatusRunning): true,
-		string(entity.TaskStatusCancel):  true,
-		string(entity.TaskStatusDone):    true,
-		string(entity.TaskStatusFail):    true,
+		string(entity.TaskStatusUnstart):  true,
+		string(entity.TaskStatusRunning):  true,
+		string(entity.TaskStatusCancel):   true,
+		string(entity.TaskStatusDone):     true,
+		string(entity.TaskStatusFail):     true,
+		string(entity.TaskStatusSchedule): true,
 	}
 	out := make([]string, 0, len(statuses))
 	for _, status := range statuses {
@@ -884,7 +886,7 @@ func normalizeRunStatusFilter(statuses []string) []string {
 // invalidRunStatuses returns the raw filter values that do not map to a valid
 // run status, mirroring Python's "Invalid filter run status conditions: ...".
 func invalidRunStatuses(statuses []string) []string {
-	valid := map[string]bool{"UNSTART": true, "RUNNING": true, "CANCEL": true, "DONE": true, "FAIL": true}
+	valid := map[string]bool{"UNSTART": true, "RUNNING": true, "CANCEL": true, "DONE": true, "FAIL": true, "SCHEDULE": true}
 	invalid := make([]string, 0)
 	for _, status := range statuses {
 		if !valid[strings.ToUpper(status)] {
@@ -1190,6 +1192,8 @@ func mapRunStatus(run *string) string {
 		return "DONE"
 	case "4":
 		return "FAIL"
+	case "5":
+		return "SCHEDULE"
 	default:
 		return strings.TrimSpace(*run)
 	}

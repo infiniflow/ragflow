@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RunningStatusMap } from '@/constants/knowledge';
+import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
 import { RunningStatus } from '@/pages/dataset/dataset/constant';
 import { Routes } from '@/routes';
 import { formatDate } from '@/utils/date';
@@ -92,19 +92,31 @@ const TaskCountdown = ({ row, now }: { row: IDataSourceLog; now: number }) => {
 };
 
 const getSummary = (row: IDataSourceLog, now: number) => {
-  if (row.status === RunningStatus.SCHEDULE || row.status === '5') {
+  if (
+    row.status === RunningStatus.SCHEDULE ||
+    row.status === RunningStatusOld.SCHEDULE
+  ) {
     return <TaskCountdown row={row} now={now} />;
   }
 
-  if (row.status === RunningStatus.RUNNING || row.status === '1') {
+  if (
+    row.status === RunningStatus.RUNNING ||
+    row.status === RunningStatusOld.RUNNING
+  ) {
     return row.task_type === 'prune' ? 'Prune in progress' : 'Sync in progress';
   }
 
-  if (row.status === RunningStatus.FAIL || row.status === '4') {
+  if (
+    row.status === RunningStatus.FAIL ||
+    row.status === RunningStatusOld.FAIL
+  ) {
     return row.error_msg || 'Task failed';
   }
 
-  if (row.status === RunningStatus.CANCEL || row.status === '2') {
+  if (
+    row.status === RunningStatus.CANCEL ||
+    row.status === RunningStatusOld.CANCEL
+  ) {
     return '';
   }
 

@@ -113,7 +113,7 @@ func TestStartHeartbeat_TouchesClaimAndCancelsOnOwnershipLoss(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	originalExpiry := time.Now().Add(30 * time.Millisecond).UnixMilli()
+	originalExpiry := time.Now().Add(500 * time.Millisecond).UnixMilli()
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
 		"claim_token":      "owner-a",
 		"claim_expires_at": originalExpiry,
@@ -123,7 +123,7 @@ func TestStartHeartbeat_TouchesClaimAndCancelsOnOwnershipLoss(t *testing.T) {
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.heartbeatInterval = 2 * time.Millisecond
-	ingestor.claimTTL = 100 * time.Millisecond
+	ingestor.claimTTL = 5 * time.Second
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	taskCtx := taskpkg.NewTaskContextForScheduling(ctx, &entity.IngestionTask{
@@ -156,5 +156,30 @@ func TestStartHeartbeat_TouchesClaimAndCancelsOnOwnershipLoss(t *testing.T) {
 	case <-ctx.Done():
 	case <-time.After(time.Second):
 		t.Fatal("lost claim did not cancel task context")
+	}
+}
+
+func TestStartHeartbeatStopsWhenDatabaseIsUnavailable(t *testing.T) {
+	originalDB := dao.DB
+	dao.DB = nil
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.heartbeatInterval = time.Millisecond
+	ingestor.claimTTL = time.Second
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	taskCtx := taskpkg.NewTaskContextForScheduling(ctx, &entity.IngestionTask{
+		ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.RUNNING, ClaimToken: "owner-a",
+	})
+	taskCtx.Cancel = cancel
+
+	stop := ingestor.startHeartbeat(taskCtx)
+	defer stop()
+
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("heartbeat did not stop when the database was unavailable")
 	}
 }

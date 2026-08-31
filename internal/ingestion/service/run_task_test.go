@@ -35,7 +35,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	cancel()
 
 	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
-		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1",
+		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1", ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -162,7 +162,7 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 	}
 
 	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING,
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING, ClaimToken: testutil.TestClaimToken,
 	})
 
 	if !terminal {
@@ -176,6 +176,24 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 	}
 	if task.Status != common.STOPPED {
 		t.Fatalf("task status = %s, want STOPPED", task.Status)
+	}
+}
+
+func TestMarkStoppedReturnsFalseWhenClaimIsLost(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.STOPPING).Error; err != nil {
+		t.Fatalf("set task STOPPING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	if got := ingestor.markStopped(t.Context(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING, ClaimToken: "stale-owner",
+	}); got {
+		t.Fatal("worker with a lost claim must not finalize STOPPING")
 	}
 }
 

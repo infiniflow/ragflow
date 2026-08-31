@@ -20,6 +20,9 @@ import (
 // the task has been picked up by a worker.
 const (
 	stepKeyRunCount = "run_count"
+	// dispatchGracePeriod prevents a second reconciler from immediately
+	// republishing a task after the first reconciler reserved it.
+	dispatchGracePeriod = 2 * time.Minute
 )
 
 type InvalidTaskTransitionError struct {
@@ -95,6 +98,13 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
 				Result:     "no such document",
+			})
+			continue
+		}
+		if doc.KbID != datasetID {
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     "document does not belong to the requested dataset",
 			})
 			continue
 		}
@@ -426,14 +436,34 @@ func (s *IngestionTaskService) dispatchScheduledTask(ctx context.Context, taskID
 	}
 }
 
-// DispatchScheduledTask publishes a persisted scheduling intent and records
-// the successful dispatch only while it remains SCHEDULED.
+// DispatchScheduledTask reserves and publishes a persisted scheduling intent.
+// The reservation is a compare-and-swap on last_dispatched_at, so concurrent
+// ingestors do not publish the same scheduled row in the same reconciliation
+// pass. A reservation records an attempt before publishing; a failed publish
+// remains recoverable because the task stays SCHEDULED and will be eligible
+// again after the dispatch grace period.
 func (s *IngestionTaskService) DispatchScheduledTask(ctx context.Context, taskID string, now time.Time) error {
+	task, err := s.ingestionTaskDAO.GetByID(ctx, dao.DB, taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status != common.SCHEDULED {
+		return nil
+	}
+	if task.LastDispatchedAt != 0 && task.LastDispatchedAt >= now.Add(-dispatchGracePeriod).UnixMilli() {
+		return nil
+	}
+	reserved, err := s.ingestionTaskDAO.TryReserveDispatch(ctx, dao.DB, taskID, task.LastDispatchedAt, now)
+	if err != nil {
+		return err
+	}
+	if !reserved {
+		return nil
+	}
 	if err := s.enqueueTask(taskID); err != nil {
 		return err
 	}
-	_, err := s.ingestionTaskDAO.MarkDispatched(ctx, dao.DB, taskID, now)
-	return err
+	return nil
 }
 
 func (s *IngestionTaskService) markDocumentScheduled(ctx context.Context, documentID, taskID string) {

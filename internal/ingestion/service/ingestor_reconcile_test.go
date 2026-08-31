@@ -71,9 +71,10 @@ func seedAgedTask(t *testing.T, db *gorm.DB, id, docID, status string, age time.
 	}
 }
 
-// TestReconcileTasks converges every old CREATED row to SCHEDULED, releases
-// expired RUNNING leases, and publishes each resulting dispatch intent. This
-// protects rolling upgrades where old writers left CREATED rows behind.
+// TestReconcileTasks converges every old CREATED row to SCHEDULED, recovers
+// stale unleased RUNNING rows left by old writers, and publishes each
+// resulting dispatch intent. A fresh unleased RUNNING row is left alone
+// because it may belong to a live worker that predates lease initialization.
 func TestReconcileTasks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -100,10 +101,13 @@ func TestReconcileTasks(t *testing.T) {
 		return task.Status
 	}
 
-	for _, id := range []string{"task-run-stale", "task-run-fresh", "task-created-stale", "task-created-fresh"} {
+	for _, id := range []string{"task-run-stale", "task-created-stale", "task-created-fresh"} {
 		if got := statusOf(id); got != common.SCHEDULED {
 			t.Fatalf("task %s status = %q, want SCHEDULED", id, got)
 		}
+	}
+	if got := statusOf("task-run-fresh"); got != common.RUNNING {
+		t.Fatalf("fresh unleased task status = %q, want RUNNING", got)
 	}
 	if got := statusOf("task-completed-old"); got != common.COMPLETED {
 		t.Fatalf("completed task status = %q, want COMPLETED", got)
@@ -112,8 +116,73 @@ func TestReconcileTasks(t *testing.T) {
 	// The reconciliation pass publishes every runnable task and never revives
 	// terminal rows.
 	published := recorder.published()
-	if len(published) != 4 {
-		t.Fatalf("re-enqueued tasks = %v, want four runnable tasks", published)
+	if len(published) != 3 {
+		t.Fatalf("re-enqueued tasks = %v, want three runnable tasks", published)
+	}
+}
+
+func TestDispatchScheduledTasksSkipsRecentlyDispatchedTasks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	now := time.Now().Truncate(time.Millisecond)
+	for _, task := range []*entity.IngestionTask{
+		{ID: "task-fresh", UserID: "u1", DocumentID: "doc-fresh", DatasetID: "kb-1", Status: common.SCHEDULED, LastDispatchedAt: now.Add(-time.Second).UnixMilli()},
+		{ID: "task-never-dispatched", UserID: "u1", DocumentID: "doc-never-dispatched", DatasetID: "kb-1", Status: common.SCHEDULED},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	recorder := &enqueueRecorder{}
+	ingestor.ingestionTaskSvc.SetTaskPublisher(recorder)
+	ingestor.dispatchScheduledTasks(t.Context(), now)
+
+	if got := recorder.published(); len(got) != 1 || got[0] != "task-never-dispatched" {
+		t.Fatalf("dispatched tasks = %v, want [task-never-dispatched]", got)
+	}
+}
+
+func TestConcurrentIngestorsReserveScheduledDispatchOnce(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	if err := db.Create(&entity.IngestionTask{
+		ID:               "task-concurrent",
+		UserID:           "u1",
+		DocumentID:       "doc-concurrent",
+		DatasetID:        "kb-1",
+		Status:           common.SCHEDULED,
+		LastDispatchedAt: time.Now().Add(-dispatchGracePeriod - time.Second).UnixMilli(),
+	}).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	first := newUnitIngestor("first", 1, []string{"pdf"})
+	second := newUnitIngestor("second", 1, []string{"pdf"})
+	firstPublisher := &enqueueRecorder{}
+	secondPublisher := &enqueueRecorder{}
+	first.ingestionTaskSvc.SetTaskPublisher(firstPublisher)
+	second.ingestionTaskSvc.SetTaskPublisher(secondPublisher)
+
+	var wg sync.WaitGroup
+	for _, ingestor := range []*Ingestor{first, second} {
+		wg.Add(1)
+		go func(ingestor *Ingestor) {
+			defer wg.Done()
+			if err := ingestor.ingestionTaskSvc.DispatchScheduledTask(t.Context(), "task-concurrent", time.Now()); err != nil {
+				t.Errorf("DispatchScheduledTask: %v", err)
+			}
+		}(ingestor)
+	}
+	wg.Wait()
+
+	if got := len(firstPublisher.published()) + len(secondPublisher.published()); got != 1 {
+		t.Fatalf("concurrent dispatches = %d, want one reservation", got)
 	}
 }
 
@@ -128,9 +197,13 @@ func TestRecoverExpiredClaimsMarksPoisonDocument(t *testing.T) {
 
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
 		"claim_expires_at":       time.Now().Add(-time.Second).UnixMilli(),
-		"lease_recovery_attempt": maxLeaseRecoveryAttempts,
+		"lease_recovery_attempt": defaultLeaseRecoveryMax,
 	}).Error; err != nil {
 		t.Fatalf("expire task at recovery cap: %v", err)
+	}
+	if err := db.Model(&entity.Document{}).Where("id = ?", docID).
+		Update("progress_msg", strings.Repeat("x", progressLogMaxChars+100)).Error; err != nil {
+		t.Fatalf("seed long progress message: %v", err)
 	}
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
@@ -158,6 +231,9 @@ func TestRecoverExpiredClaimsMarksPoisonDocument(t *testing.T) {
 	}
 	if document.ProgressMsg == nil || !strings.Contains(*document.ProgressMsg, "Failed after repeated lease expiry") {
 		t.Fatalf("document progress message = %v, want poison reason", document.ProgressMsg)
+	}
+	if len(*document.ProgressMsg) > progressLogMaxChars {
+		t.Fatalf("poison progress message length = %d, want <= %d", len(*document.ProgressMsg), progressLogMaxChars)
 	}
 }
 

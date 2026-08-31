@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,6 +67,36 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 	if doc.Run == nil || *doc.Run != string(entity.TaskStatusSchedule) {
 		t.Fatalf("document run = %v, want %q", doc.Run, entity.TaskStatusSchedule)
+	}
+}
+
+func TestIngestionTaskServiceCreateForDocumentsRejectsDocumentFromAnotherDataset(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestKB(t, "kb-2", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-foreign", "kb-2", 0, 0)
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-foreign"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if len(responses) != 1 || strings.HasPrefix(responses[0].Result, "task_id:") {
+		t.Fatalf("foreign document response = %+v, want rejection", responses)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("foreign document published messages = %v, want none", publisher.messages)
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-foreign")
+	if err != nil {
+		t.Fatalf("load foreign document task: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("foreign document task = %+v, want none", task)
 	}
 }
 
