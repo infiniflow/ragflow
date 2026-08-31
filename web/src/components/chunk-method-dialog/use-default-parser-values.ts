@@ -72,8 +72,9 @@ export function useFillDefaultValueOnMount() {
     (parserConfig: IParserConfig) => {
       return Object.entries(defaultParserValues).reduce<Record<string, any>>(
         (pre, [key, value]) => {
-          if (key in parserConfig) {
-            pre[key] = parserConfig[key as keyof IParserConfig];
+          const stored = parserConfig[key as keyof IParserConfig];
+          if (key in parserConfig && stored != null) {
+            pre[key] = stored;
           } else {
             pre[key] = value;
           }
