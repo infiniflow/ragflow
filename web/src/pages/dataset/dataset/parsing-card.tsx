@@ -1,27 +1,35 @@
 import { Button } from '@/components/ui/button';
+import {
+  normalizeRunningStatus,
+  RunningStatusValue,
+} from '@/constants/knowledge';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
-import { RunningStatus, RunningStatusMap } from './constant';
+import { RunningStatusMap } from './constant';
 
 interface IProps {
   record: IDocumentInfo;
   handleShowLog?: (record: IDocumentInfo) => void;
 }
 
-function Dot({ run }: { run: RunningStatus }) {
-  const runningStatus = RunningStatusMap[run];
+function Dot({ run }: { run: RunningStatusValue }) {
+  const normalizedRun = normalizeRunningStatus(run);
+  const runningStatus = normalizedRun && RunningStatusMap[normalizedRun];
   return (
     <span
       className={'size-1 inline-block rounded'}
-      style={{ backgroundColor: runningStatus.color }}
+      style={{ backgroundColor: runningStatus?.color }}
     ></span>
   );
 }
 
 export const PopoverContent = ({ record }: IProps) => {
   const { t } = useTranslation();
-  const label = t(`knowledgeDetails.runningStatus${record.run}`);
+  const normalizedRun = normalizeRunningStatus(record.run);
+  const label = normalizedRun
+    ? t(`knowledgeDetails.runningStatus${normalizedRun}`)
+    : '';
 
   const replaceText = (text: string) => {
     // Remove duplicate \n

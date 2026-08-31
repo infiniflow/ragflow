@@ -1,4 +1,4 @@
-import { RunningStatus } from '@/constants/knowledge';
+import { RunningStatusValue } from '@/constants/knowledge';
 
 export interface IDocumentInfo {
   // chunk_num: number;
@@ -18,7 +18,7 @@ export interface IDocumentInfo {
   process_duration: number;
   progress: number;
   progress_msg: string;
-  run: RunningStatus;
+  run: RunningStatusValue;
   size: number;
   source_type: string;
   status: string;

@@ -18,6 +18,10 @@ export const RunningStatusMap = {
     color: 'rgba(var(--state-success))',
   },
   [RunningStatus.FAIL]: { label: 'FAIL', color: 'rgba(var(--state-error))' },
+  [RunningStatus.SCHEDULE]: {
+    label: 'SCHEDULE',
+    color: 'rgba(var(--team-member))',
+  },
 };
 
 export * from '@/constants/knowledge';

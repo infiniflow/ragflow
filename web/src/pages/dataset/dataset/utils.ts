@@ -1,6 +1,9 @@
-import { RunningStatus } from './constant';
+import {
+  normalizeRunningStatus,
+  RunningStatus,
+  RunningStatusValue,
+} from '@/constants/knowledge';
 
-export const isParserRunning = (text: RunningStatus) => {
-  const isRunning = text === RunningStatus.RUNNING;
-  return isRunning;
+export const isParserRunning = (status: RunningStatusValue) => {
+  return normalizeRunningStatus(status) === RunningStatus.RUNNING;
 };
