@@ -1329,6 +1329,7 @@ async def search_dataset_nav(
     type_kwd: str = "",
     compile_kwd: str = _COMPILE_KWD,
     doc_scope: list[str] | None = None,
+    dense_only: bool = False,
 ) -> list[dict]:
     """Find the nav-tree nodes most relevant to ``query`` for one KB.
 
@@ -1357,6 +1358,13 @@ async def search_dataset_nav(
     Ranked by hybrid search: KNN over the node-summary vectors fused with a
     BM25 (full-text) leg over the tokenized fields. When ``embd_mdl`` is absent
     the lexical leg alone ranks the results.
+
+    ``dense_only=True`` runs the KNN leg alone and drops the ``text_score > 0``
+    gate. That gate rejects pure-nearest hits for an unrelated query, but it also
+    discards a nav node whose summary matches the query purely SEMANTICALLY —
+    which is precisely the case document routing cares about (an entity alias or
+    a paraphrase the summary never spells out). Callers routing by meaning want
+    this; callers matching a term the user actually typed want the hybrid default.
     """
     query = (query or "").strip()
     if not query:
@@ -1417,15 +1425,19 @@ async def search_dataset_nav(
         elif type_kwd == "nav_cluster":
             text_filter = {"doc_ids_kwd": sorted(allowed_docs)}
     try:
-        text_rows = await _store_text_search(
-            tenant_id,
-            kb_id,
-            query,
-            _NAV_SEARCH_FIELDS,
-            limit=max((top_k or 0) * 3, 20) if top_k else 10000,
-            compile_kwd=compile_kwd,
-            type_kwd=type_kwd,
-            extra_filter=text_filter,
+        text_rows = (
+            []
+            if dense_only
+            else await _store_text_search(
+                tenant_id,
+                kb_id,
+                query,
+                _NAV_SEARCH_FIELDS,
+                limit=max((top_k or 0) * 3, 20) if top_k else 10000,
+                compile_kwd=compile_kwd,
+                type_kwd=type_kwd,
+                extra_filter=text_filter,
+            )
         )
     except Exception:
         logging.exception("search_dataset_nav: text search failed for kb=%s", kb_id)
@@ -1441,7 +1453,7 @@ async def search_dataset_nav(
         entry[1] += text_w * ts
         entry[2] += ts
 
-    rows_with_scores = [(r, s) for r, s, t in fused.values() if s > 0 and t > 0 and _in_nav_scope(r, allowed_docs)]
+    rows_with_scores = [(r, s) for r, s, t in fused.values() if s > 0 and (dense_only or t > 0) and _in_nav_scope(r, allowed_docs)]
     rows_with_scores.sort(key=lambda item: item[1], reverse=True)
     if top_k is not None:
         rows_with_scores = rows_with_scores[:top_k]
@@ -1498,6 +1510,7 @@ async def search_nav_tree_descent(
     embd_mdl,
     top_k: int | None = None,
     doc_scope: list[str] | None = None,
+    dense_only: bool = False,
 ) -> list[dict]:
     """Tree-structured hybrid search: descend from root into the most relevant branches.
 
@@ -1509,6 +1522,16 @@ async def search_nav_tree_descent(
     Each level uses hybrid search (KNN + BM25 text) fused with the same
     weights as ``search_dataset_nav``, so both vector similarity *and*
     lexical matching drive the descent.
+
+    ``dense_only=True`` drops the BM25 legs and, critically, the
+    ``_text_score`` gates that reject leaves matched only by meaning. Those
+    gates exist to stop an unrelated keyword from returning its nearest
+    subtree — the right trade-off for term lookup, but destructive for
+    DOCUMENT ROUTING, where a summary relevant to the query rarely repeats
+    the query's literal words. Routing therefore descends on vectors alone
+    and relies on ``_NAV_TREE_MIN_SCORE`` to reject genuinely unrelated nodes.
+    The dense leg keeps weight ``_NAV_HYBRID_DENSE_W`` so scores stay on the
+    same scale as the flat path and thresholds remain comparable.
 
     The search uses BFS with beam pruning — at each depth, only the
     *beam_width* most similar clusters are expanded further.
@@ -1665,32 +1688,39 @@ async def search_nav_tree_descent(
                 children_knn = await _store_knn(tenant_id, kb_id, vec, vec_dim, child_doc_cond, top_k=beam_width * 3)
                 children_knn += await _store_knn(tenant_id, kb_id, vec, vec_dim, child_cluster_cond, top_k=beam_width * 3)
                 children_knn = [r for r in children_knn if _in_nav_scope(r, allowed_docs)]
-                children_text = await _store_text_search(
-                    tenant_id,
-                    kb_id,
-                    query,
-                    fields,
-                    limit=beam_width * 3,
-                    extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id], "doc_id": sorted(allowed_docs)},
-                )
-                children_text += await _store_text_search(
-                    tenant_id,
-                    kb_id,
-                    query,
-                    fields,
-                    limit=beam_width * 3,
-                    extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id], "doc_ids_kwd": sorted(allowed_docs)},
-                )
-                children_text = [r for r in children_text if _in_nav_scope(r, allowed_docs)]
+                if dense_only:
+                    children_text = []
+                else:
+                    children_text = await _store_text_search(
+                        tenant_id,
+                        kb_id,
+                        query,
+                        fields,
+                        limit=beam_width * 3,
+                        extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id], "doc_id": sorted(allowed_docs)},
+                    )
+                    children_text += await _store_text_search(
+                        tenant_id,
+                        kb_id,
+                        query,
+                        fields,
+                        limit=beam_width * 3,
+                        extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id], "doc_ids_kwd": sorted(allowed_docs)},
+                    )
+                    children_text = [r for r in children_text if _in_nav_scope(r, allowed_docs)]
             else:
                 children_knn = await _store_knn(tenant_id, kb_id, vec, vec_dim, child_cond, top_k=beam_width * 3)
-                children_text = await _store_text_search(
-                    tenant_id,
-                    kb_id,
-                    query,
-                    fields,
-                    limit=beam_width * 3,
-                    extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id]},
+                children_text = (
+                    []
+                    if dense_only
+                    else await _store_text_search(
+                        tenant_id,
+                        kb_id,
+                        query,
+                        fields,
+                        limit=beam_width * 3,
+                        extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id]},
+                    )
                 )
             candidates = _hybrid_fuse(vec, vf, query, children_knn, children_text, dense_w, beam_width)
 
@@ -1710,7 +1740,13 @@ async def search_nav_tree_descent(
                     # must not surface.  Vector similarity alone always yields
                     # a "nearest" node, so without this gate an unrelated
                     # keyword would return the whole nearest subtree.
-                    if not c.get("_text_score"):
+                    #
+                    # That reasoning holds for TERM lookup but not for ROUTING:
+                    # a document summary relevant to the query usually does not
+                    # repeat the query's words, so gating on a lexical hit drops
+                    # exactly the semantic matches routing is for. Dense routing
+                    # keeps the score floor below instead.
+                    if not dense_only and not c.get("_text_score"):
                         continue
                     # Skip low-relevance leaves: a below-threshold score means
                     # the query is unrelated to this node, so it must not
@@ -1718,7 +1754,16 @@ async def search_nav_tree_descent(
                     if score < _NAV_TREE_MIN_SCORE:
                         continue
                     seen_docs.add(doc_id)
-                    collected.append({"doc_id": doc_id, "score": round(score, 4)})
+                    collected.append(
+                        {
+                            "doc_id": doc_id,
+                            "score": round(score, 4),
+                            # Carry the leaf's own summary so the caller labels
+                            # the route without loading the document.
+                            "name": c.get("name") or "",
+                            "description": c.get("description") or "",
+                        }
+                    )
                 else:
                     next_level.append(c)
 
@@ -1742,7 +1787,7 @@ async def search_nav_tree_descent(
             node_score = node.get("_score", 0.0) or 0.0
             if node_score < _NAV_TREE_MIN_SCORE:
                 continue
-            if not node.get("_text_score"):
+            if not dense_only and not node.get("_text_score"):
                 continue
             for did in node.get("doc_ids_kwd") or []:
                 did_str = str(did).strip()
@@ -1751,7 +1796,14 @@ async def search_nav_tree_descent(
                 if allowed_docs and did_str not in allowed_docs:
                     continue
                 seen_docs.add(did_str)
-                collected.append({"doc_id": did_str, "score": round(node_score, 4)})
+                collected.append(
+                    {
+                        "doc_id": did_str,
+                        "score": round(node_score, 4),
+                        "name": node.get("name") or "",
+                        "description": node.get("description") or "",
+                    }
+                )
                 if top_k is not None and len(collected) >= top_k:
                     break
             if top_k is not None and len(collected) >= top_k:

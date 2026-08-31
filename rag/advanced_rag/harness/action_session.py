@@ -39,6 +39,12 @@ _INIT_TIMEOUT_S = 45.0
 _ACTION_TIMEOUT_S = 75.0
 _SNIPPETS_PER_QUERY = 4
 _MAX_TOOL_RESPONSE_CHARS = 12000
+# Dataset-level empty results (reason="no_structure") a compiled-structure tool
+# must accumulate before it is disabled for the rest of the session. Kept above
+# 1: a single empty can be SCOPED — graph_explore over a doc_scope that has no
+# knowledge graph says nothing about the other documents, and disabling on the
+# first empty is exactly the over-eager behaviour this replaced.
+_EMPTY_STRIKES = 2
 # Near-duplicate search-query detection: the model re-issues the SAME intent with
 # many paraphrase queries (observed: 20+ "Culdcept original creator/designer/
 # OmiyaSoft/founder" variants in ONE session), each executed against ES even
@@ -139,6 +145,40 @@ class Result:
     new_states: list = field(default_factory=list)
     found_answer: str | None = None
     retrieved_evidence_ids: list = field(default_factory=list)
+
+
+# ── Unified tool-result contract ─────────────────────────────────────────
+# Every executor returns a :class:`ToolOutcome` instead of a bare
+# ``(chunks, ids)`` tuple, so ``_tool_node`` can inspect WHAT happened and act
+# on it. Previously the node only saw a JSON string and counted characters —
+# no policy (timeout, budget, routing, disable) had anything to hook into.
+OK = "ok"
+EMPTY = "empty"  # dataset-level: no such compiled structure exists here
+MISS = "miss"  # query-level: nothing matched THIS query; the tool is still valid
+POOR = "poor"  # produced output, but too weak to be useful
+REDUNDANT = "redundant"  # ran fine, but added no NEW evidence
+ERROR = "error"  # infra / provider failure
+
+
+@dataclass
+class ToolOutcome:
+    """Result of ONE tool call.
+
+    :param payload: what the model sees (a list of passage dicts).
+    :param evidence_ids: doc/chunk ids worth tracking.
+    :param status: one of the constants above — the signal ``_tool_node`` acts on.
+    :param reason: machine-readable cause: ``""`` / ``no_structure`` / ``no_doc``
+        / ``infra`` / ``bad_args``. Only ``no_structure`` is DATASET-level and may
+        disable a tool; ``no_doc`` is QUERY-level and must NOT.
+    :param metrics: numeric signals for policy decisions (``hits``,
+        ``new_evidence``, ``top_score``, ...).
+    """
+
+    payload: list
+    evidence_ids: list = field(default_factory=list)
+    status: str = OK
+    reason: str = ""
+    metrics: dict = field(default_factory=dict)
 
 
 # ── Tool surface ─────────────────────────────────────────────────────────
@@ -450,23 +490,20 @@ def _disable_tool(tools, name: str) -> None:
         _LOG.warning("[action_session] could not mark tool %r disabled", name, exc_info=True)
 
 
-def _is_empty_structure(text, xml_tag: str) -> bool:
-    """True when a compiled-structure executor's payload has no usable content.
+def _reason_status(reason: str) -> str:
+    """Map a machine-readable failure cause to a :class:`ToolOutcome` status.
 
-    A payload is "empty" not only when blank — a well-formed XML with
-    ``count="0"`` or an ``error=`` marker also means "no structure compiled for
-    this kind". Treating those as empty lets the executor disable the tool and
-    steer the model back to plain retrieval instead of feeding it a count="0"
-    outline it will keep probing.
+    Single source of truth for the cause→status mapping so a tool cannot
+    disagree with itself about what its own ``empty_reason`` means.
     """
-    text = (text or "").strip()
-    if not text or text in ("[]", "{}"):
-        return True
-    if xml_tag and f"<{xml_tag}" in text and 'count="0"' in text:
-        return True
-    if "error=" in text:
-        return True
-    return False
+    if reason == "no_structure":
+        return EMPTY
+    if reason == "bad_args":
+        return ERROR
+    if reason == "infra":
+        return ERROR
+    # no_doc: this query reached nothing, the tool itself is fine.
+    return MISS
 
 
 # ── JSON / terminal parsing helpers ──────────────────────────────────────
@@ -596,13 +633,19 @@ def _seed_evidence(tools):
     return kbinfos
 
 
-def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True):
+def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) -> bool:
     """Register one chunk into the session output AND the shared evidence pool.
 
     Accumulating raw chunks into ``tools.kbinfos`` is what lets the downstream
     formalize_answer / compose stage cite them (DeepSearch search-context
     parity) — without it the research retrieves plenty but Composing reports
     "0 gathered passage(s)" → partial answer → outer loop re-invokes research.
+
+    Returns True when the chunk was NEW to the shared pool. A retrieval whose
+    every hit was already known surfaces as ``redundant`` — the model otherwise
+    receives a normal-looking passage list and believes the search succeeded,
+    which is one cause of it re-searching the same ground (the near-dup guard
+    only catches paraphrased QUERIES, not fresh queries over known chunks).
 
     Imports the chunk helpers locally to keep ``tools.search`` (and its heavy
     deepdoc dependency chain) out of module-import time.
@@ -611,7 +654,7 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True):
 
     cid = _chunk_id(c)
     if cid in seen:
-        return
+        return False
     seen.add(cid)
     ids.append(cid)
     entry = {"id": str(cid), "content": (_chunk_text(c) or "")[:1200]}
@@ -621,6 +664,8 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True):
     if isinstance(c, dict) and cid not in kb_seen:
         kb_seen.add(cid)
         kbinfos["chunks"].append(c)
+        return True
+    return False
 
 
 async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, **kw) -> tuple:
@@ -636,6 +681,7 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
     kb_ids = _kb_ids(tools)
     out, ids = [], []
     seen = set()
+    new_evidence = 0
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
     for fq in queries[:max_q]:
@@ -646,18 +692,38 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
             _LOG.warning("[action_session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
             continue
         for c in cands[:_SNIPPETS_PER_QUERY]:
-            _admit_evidence(kbinfos, kb_seen, c, out, ids, seen)
-    return out, ids
+            if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen):
+                new_evidence += 1
+    return out, ids, new_evidence
 
 
-async def _exec_retrieve(tools, queries: list) -> tuple:
+def _search_outcome(payload: list, ids: list, new_evidence: int) -> ToolOutcome:
+    """Wrap a query-based retrieval result into a :class:`ToolOutcome`.
+
+    A run that surfaced hits but admitted NOTHING NEW to the shared pool is
+    ``redundant`` rather than ``ok``: the model is told so it stops re-issuing
+    the same ground. The near-dup guard cannot catch this case — it compares
+    QUERY text, while this compares the EVIDENCE the query produced.
+    """
+    if not payload:
+        return ToolOutcome(payload=[], evidence_ids=[], status=MISS, reason="no_doc", metrics={"hits": 0, "new_evidence": 0})
+    return ToolOutcome(
+        payload=payload,
+        evidence_ids=ids,
+        status=REDUNDANT if new_evidence == 0 else OK,
+        metrics={"hits": len(payload), "new_evidence": new_evidence},
+    )
+
+
+async def _exec_retrieve(tools, queries: list) -> ToolOutcome:
     """Corpus search via grep_search (exact-term locate, compact snippets)."""
     from rag.advanced_rag.harness.tools.search import grep_search
 
-    return await _run_search(tools, grep_search, queries, top_n=10, max_q=3)
+    out, ids, new_ev = await _run_search(tools, grep_search, queries, top_n=10, max_q=3)
+    return _search_outcome(out, ids, new_ev)
 
 
-async def _exec_search_chunks(tools, queries: list, use_compiled: bool = False) -> tuple:
+async def _exec_search_chunks(tools, queries: list, use_compiled: bool = False) -> ToolOutcome:
     """Semantic retrieval (hybrid vector+BM25, narrow bypass) — the react-style
     channel that finds passages sharing NO surface words with the query.
 
@@ -669,10 +735,11 @@ async def _exec_search_chunks(tools, queries: list, use_compiled: bool = False) 
     """
     from rag.advanced_rag.harness.tools.search import hybrid_search
 
-    return await _run_search(tools, hybrid_search, queries, top_n=20, max_q=2, use_compiled=use_compiled)
+    out, ids, new_ev = await _run_search(tools, hybrid_search, queries, top_n=20, max_q=2, use_compiled=use_compiled)
+    return _search_outcome(out, ids, new_ev)
 
 
-async def _exec_web_search(tools, queries: list) -> tuple:
+async def _exec_web_search(tools, queries: list) -> ToolOutcome:
     """Open-web retrieval via the configured provider (Tavily/QuerIt/Serply/
     YouCom). Results share the RAGFlow chunk shape so they merge into the same
     evidence pool as corpus hits."""
@@ -685,9 +752,15 @@ async def _exec_web_search(tools, queries: list) -> tuple:
         # so the model moves on to the corpus tools — a web failure must never
         # block the Q&A.
         _LOG.warning("[action_session] web_search unavailable (no provider configured)")
-        return [{"kind": "web_search", "note": "Web search is NOT configured for this session. Do not use this tool again; use the corpus tools (retrieve / search_chunks / navigate_*) instead."}], []
+        return ToolOutcome(
+            payload=[
+                {"kind": "web_search", "note": "Web search is NOT configured for this session. Do not use this tool again; use the corpus tools (retrieve / search_chunks / navigate_*) instead."}
+            ],
+            status=ERROR,
+            reason="infra",
+        )
 
-    out, ids = [], []
+    out, ids, new_ev = [], [], 0
     seen = set()
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
@@ -703,20 +776,26 @@ async def _exec_web_search(tools, queries: list) -> tuple:
             cid = _chunk_id(c)
             if not cid or cid in seen:
                 continue
-            _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False)
-    return out, ids
+            if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False):
+                new_ev += 1
+    return _search_outcome(out, ids, new_ev)
 
 
-async def _exec_list_chunks(tools, doc_id: str) -> tuple:
-    """Deep-read one document's full text (list_chunks tool)."""
+async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
+    """Deep-read one document's full text (list_chunks tool).
+
+    An unknown/blank ``doc_id`` yields no chunks rather than raising — that is a
+    QUERY-level miss (``miss``), never a dataset fact, so ``_tool_node`` must not
+    disable the tool over it.
+    """
     from rag.advanced_rag.harness.tools.search import _chunk_id, list_chunks
 
     try:
         res = await list_chunks(tools, doc_id)
     except Exception:
         _LOG.warning("[action_session] list_chunks failed doc=%r", doc_id, exc_info=True)
-        return [], []
-    out, ids = [], []
+        return ToolOutcome(payload=[], status=ERROR, reason="infra")
+    out, ids, new_ev = [], [], 0
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
     seen = set()
@@ -724,8 +803,9 @@ async def _exec_list_chunks(tools, doc_id: str) -> tuple:
         cid = _chunk_id(c)
         if not cid:
             continue
-        _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False)
-    return out, ids
+        if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False):
+            new_ev += 1
+    return _search_outcome(out, ids, new_ev)
 
 
 def _arg_query_list(args, max_q: int) -> list:
@@ -753,54 +833,72 @@ def _inject_nav_tools_ref(tools) -> None:
         _LOG.warning("[action_session] could not inject navigation tools ref", exc_info=True)
 
 
-async def _exec_navigate_tree(tools, args: dict) -> tuple:
+async def _exec_navigate_tree(tools, args: dict) -> ToolOutcome:
     """Document-level embedding routing (navigate_tree). Returns doc candidates
-    as a text outline; evidence ids = routed doc_ids for later deep-read."""
+    as a text outline; evidence ids = routed doc_ids for later deep-read.
+
+    Classifies the payload but does NOT disable the tool — that decision belongs
+    to ``_tool_node``, which owns the strike counter. Disabling here (the old
+    behaviour) killed the tool for the whole session on a single hard query:
+    routing falls through at ``_NAV_MIN_DOC_SCORE``, which is query-dependent,
+    not a statement about the dataset.
+    """
     from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl
 
     _inject_nav_tools_ref(tools)
     query = str(args.get("query") or "")
-    text = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
-    # Empty / count="0" / error= payloads mean no compiled navigation tree —
-    # this dataset has no such structure. Disable the tool for the session and
-    # tell the model to fall back to plain retrieval (a count="0" XML is NOT a
-    # useful payload: without this, the model keeps re-invoking it).
-    text = (text or "").strip()
-    if _is_empty_structure(text, "tree_navigation"):
-        _disable_tool(tools, "navigate_tree")
-        _LOG.info("[action_session] navigate_tree disabled: dataset has no compiled navigation tree (text=%r)", text[:120])
-        return [{"kind": "navigate_tree", "note": "This dataset has NO compiled document navigation tree. navigate_tree is unavailable; use search_chunks / retrieve instead."}], []
-    return [{"kind": "navigate_tree", "content": text[:8000]}], []
+    res = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
+    if res.empty_reason:
+        # Structured signal — no XML parsing. The routed doc_ids feed the caller's
+        # known-doc set, which navigate_structure / list_chunks are validated against.
+        return ToolOutcome(
+            payload=[{"kind": "navigate_tree", "note": "navigate_tree routed to no document for this query. Rephrase the query, or use search_chunks / retrieve instead."}],
+            status=_reason_status(res.empty_reason),
+            reason=res.empty_reason,
+        )
+    return ToolOutcome(payload=[{"kind": "navigate_tree", "content": (res.text or "")[:8000], "doc_ids": res.doc_ids}], status=OK, metrics={"docs": len(res.doc_ids)})
 
 
-async def _exec_navigate_structure(tools, args: dict) -> tuple:
+async def _exec_navigate_structure(tools, args: dict) -> ToolOutcome:
     """In-document compiled-structure navigation (navigate_structure). Returns
-    outline annotated with chunk_ids; those become evidence for list_chunks."""
+    outline annotated with chunk_ids; those become evidence for list_chunks.
+
+    As with navigate_tree, classification only — ``_tool_node`` decides whether
+    to disable.
+    """
     from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl
 
     _inject_nav_tools_ref(tools)
     doc_id = str(args.get("doc_id") or "")
     query = str(args.get("query") or "")
     kind = str(args.get("kind") or "catalog")
-    text = await _navigate_structure_impl(query, doc_id=doc_id, kind=kind)
-    # Empty / count="0" / error= payloads mean no compiled structure of this kind
-    # in the dataset — the tool is a dead end. Disable it for the session so the
-    # model stops re-invoking it (a count="0" XML is NOT a useful payload).
-    text = (text or "").strip()
-    if _is_empty_structure(text, "structure_navigation"):
-        _disable_tool(tools, "navigate_structure")
-        _LOG.info("[action_session] navigate_structure disabled: no compiled structure kind=%r (text=%r)", kind, text[:120])
-        return [
-            {
-                "kind": "navigate_structure",
-                "doc_id": doc_id,
-                "note": "This document/dataset has NO compiled structure of the requested kind. navigate_structure is unavailable here; use search_chunks / retrieve / list_chunks instead.",
-            }
-        ], [doc_id] if doc_id else []
-    return [{"kind": "navigate_structure", "doc_id": doc_id, "content": text[:8000]}], [doc_id] if doc_id else []
+    res = await _navigate_structure_impl(query, doc_id=doc_id, kind=kind)
+    metrics = {"entities": res.entities, "chunk_ptrs": res.chunk_ptrs, "top_score": res.top_score}
+    if res.empty_reason:
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "navigate_structure",
+                    "doc_id": doc_id,
+                    "note": f"No compiled structure of kind={kind!r} reachable for this document. Try another doc_id or kind, or use search_chunks / retrieve / list_chunks.",
+                }
+            ],
+            status=_reason_status(res.empty_reason),
+            reason=res.empty_reason,
+            metrics=metrics,
+        )
+    # Reached a structure but drilled to nothing usable: not an error, just weak —
+    # the orchestrator may fall back to retrieval on ``status == poor``.
+    status = POOR if res.chunk_ptrs == 0 else OK
+    return ToolOutcome(
+        payload=[{"kind": "navigate_structure", "doc_id": doc_id, "content": (res.text or "")[:8000]}],
+        evidence_ids=res.doc_ids or ([doc_id] if doc_id else []),
+        status=status,
+        metrics=metrics,
+    )
 
 
-async def _exec_calculate(tools, args: dict) -> tuple:
+async def _exec_calculate(tools, args: dict) -> ToolOutcome:
     """Arithmetic terminal: compute_from_facts decides whether the question
     needs a computed number and safely evaluates an expression over facts."""
     from rag.advanced_rag.harness.arithmetic import compute_from_facts
@@ -813,7 +911,7 @@ async def _exec_calculate(tools, args: dict) -> tuple:
     # NOT. Pass the outer bundle.
     mdl = getattr(tools, "chat_mdl", None)
     if mdl is None:
-        return [{"kind": "calculate", "error": "no model"}], []
+        return ToolOutcome(payload=[{"kind": "calculate", "error": "no model"}], status=ERROR, reason="infra")
     try:
         res = await compute_from_facts(mdl, question, facts)
     except Exception:
@@ -821,14 +919,23 @@ async def _exec_calculate(tools, args: dict) -> tuple:
         res = None
     if not res:
         # nothing derivable -> tell the model so it doesn't loop on it
-        return [{"kind": "calculate", "expression": None, "note": "no numeric answer derivable from given facts; answer directly or retrieve more numbers."}], []
-    return [{"kind": "calculate", "expression": res.get("expression"), "result": res.get("value")}], []
+        return ToolOutcome(
+            payload=[{"kind": "calculate", "expression": None, "note": "no numeric answer derivable from given facts; answer directly or retrieve more numbers."}],
+            status=POOR,
+            reason="no_doc",
+        )
+    return ToolOutcome(payload=[{"kind": "calculate", "expression": res.get("expression"), "result": res.get("value")}], status=OK)
 
 
-async def _exec_graph_explore(tools, args: dict) -> tuple:
+async def _exec_graph_explore(tools, args: dict) -> ToolOutcome:
     """Relational knowledge-graph exploration (ultra-only). Returns either a
     direct answer or source passages behind relevant entities/relations, so the
-    model can continue with list_chunks/navigate on the returned chunk/doc ids."""
+    model can continue with list_chunks/navigate on the returned chunk/doc ids.
+
+    An empty result means no compiled KG in scope — a DATASET-level fact
+    (``no_structure``), which is the one class of failure that may disable the
+    tool. The disable itself is applied by ``_tool_node``.
+    """
     from rag.advanced_rag.harness.tools.navigation import graph_explore
 
     _inject_nav_tools_ref(tools)
@@ -842,37 +949,40 @@ async def _exec_graph_explore(tools, args: dict) -> tuple:
     answer = str(res.get("answer") or "").strip()
     chunks = res.get("chunks") or []
     if answer:
-        return [{"kind": "graph_explore", "answer": answer}], []
+        return ToolOutcome(payload=[{"kind": "graph_explore", "answer": answer}], status=OK, metrics={"hits": 0})
     if not chunks:
-        # No knowledge graph compiled for this dataset/scope: relational
-        # exploration is a dead end. Disable the tool for the session (it will
-        # keep coming back empty otherwise — 24 empty calls in one run) and
-        # guide the model back to retrieval.
-        _disable_tool(tools, "graph_explore")
-        _LOG.info("[action_session] graph_explore disabled: no compiled knowledge graph in scope")
-        return [
-            {
-                "kind": "graph_explore",
-                "note": "This dataset has NO compiled knowledge graph (or none in the given scope). graph_explore is unavailable; use search_chunks / navigate_structure / retrieve instead.",
-            }
-        ], []
+        return ToolOutcome(
+            payload=[
+                {
+                    "kind": "graph_explore",
+                    "note": "This dataset has NO compiled knowledge graph (or none in the given scope). graph_explore is unavailable; use search_chunks / navigate_structure / retrieve instead.",
+                }
+            ],
+            status=EMPTY,
+            reason="no_structure",
+        )
     snippet = [{"id": c.get("id"), "content": (str(c.get("content") or "")[:1500])} for c in chunks[:6]]
     ids = [str(c.get("id")) for c in chunks[:6] if c.get("id")]
-    return [{"kind": "graph_explore", "chunks": snippet}], ids
+    return ToolOutcome(payload=[{"kind": "graph_explore", "chunks": snippet}], evidence_ids=ids, status=OK, metrics={"hits": len(ids)})
 
 
-async def execute_tool(tools, name: str, args: dict) -> tuple:
+async def execute_tool(tools, name: str, args: dict) -> ToolOutcome:
     """DeepSearch ToolNode: dispatch ONE native tool call by name.
 
-    Returns ``(results, evidence_ids)`` where results is a JSON-serializable
-    payload and evidence_ids are any doc/chunk ids worth tracking.
+    Returns a :class:`ToolOutcome` whose ``status`` / ``reason`` let the caller
+    act on WHAT happened — empty payload, query miss, infra failure, or a run
+    that added no new evidence — instead of only counting characters.
     """
     # Short-circuit a tool already proven unavailable this session (no compiled
     # structure of its kind). We still return a note, not an error, so the model
     # learns to switch to the corpus tools rather than loop.
     if name in (_TOOL_MAP and (getattr(tools, "_disabled_tools", None) or set())):
         _LOG.info("[action_session] tool %r disabled (no compiled structure); returning note", name)
-        return [{"kind": name, "note": f"{name} is unavailable in this dataset (no compiled structure of its kind). Use search_chunks / retrieve / list_chunks instead."}], []
+        return ToolOutcome(
+            payload=[{"kind": name, "note": f"{name} is unavailable in this dataset (no compiled structure of its kind). Use search_chunks / retrieve / list_chunks instead."}],
+            status=EMPTY,
+            reason="no_structure",
+        )
     if name == "retrieve":
         return await _exec_retrieve(tools, _arg_query_list(args, 3))
     if name == "search_chunks":
@@ -893,7 +1003,7 @@ async def execute_tool(tools, name: str, args: dict) -> tuple:
     if name == "web_search":
         return await _exec_web_search(tools, _arg_query_list(args, 2))
     _LOG.warning("[action_session] unknown tool %r; ignored.", name)
-    return [], []
+    return ToolOutcome(payload=[], status=ERROR, reason="bad_args")
 
 
 # ── LangGraph session graph ──────────────────────────────────────────────
@@ -1035,6 +1145,10 @@ class _SessionState(TypedDict, total=False):
     deadline_left: float
     _ctx_budget: int
     _tool_chars: int
+    # per-tool policy bookkeeping: how many dataset-level empties each tool has
+    # accrued, and the (status, reason, metrics) log of every executed call.
+    _tool_strikes: dict
+    _tool_outcomes: list
 
 
 async def _run_action_node(state: _SessionState) -> dict:
@@ -1129,6 +1243,8 @@ async def _tool_node(state: _SessionState) -> dict:
     pending = state.get("_pending_calls") or []
     seen_queries = list(state.get("_search_queries") or [])
     skipped = 0
+    strikes = dict(state.get("_tool_strikes") or {})
+    outcomes = list(state.get("_tool_outcomes") or [])
     for c in pending:
         # Near-duplicate retrieval suppression: if the model re-issues the same
         # intent as an earlier search (paraphrase), do NOT re-run ES — return a
@@ -1177,13 +1293,38 @@ async def _tool_node(state: _SessionState) -> dict:
         # same-session tool cache: avoid re-grep/list_chunks on the same target
         cache_key = (c["name"], json.dumps(c["args"], sort_keys=True, ensure_ascii=False))
         if cache_key in cache:
-            chunks, ids = cache[cache_key]
+            oc = cache[cache_key]
         else:
-            chunks, ids = await execute_tool(tools, c["name"], c["args"])
-            cache[cache_key] = (chunks, ids)
+            oc = await execute_tool(tools, c["name"], c["args"])
+            cache[cache_key] = oc
         if q:
             seen_queries.append(q)
-        evidence_ids.extend(ids)
+        evidence_ids.extend(oc.evidence_ids)
+        chunks = list(oc.payload or [])
+        # ── Policy: act on WHAT happened, not just on payload size ──────────
+        if oc.status == OK:
+            # A real hit clears the tool's strike record: it demonstrably works.
+            strikes.pop(c["name"], None)
+        elif oc.status == EMPTY and oc.reason == "no_structure":
+            # Dataset-level dead end. Strike it; disable once the strikes pile up
+            # so one unlucky scope cannot kill the tool (graph_explore over a
+            # doc_scope without a KG says nothing about the other documents).
+            n = strikes.get(c["name"], 0) + 1
+            strikes[c["name"]] = n
+            if n >= _EMPTY_STRIKES:
+                _disable_tool(tools, c["name"])
+                _LOG.info("[action_session] %s disabled after %d dataset-level empty results", c["name"], n)
+        elif oc.status == REDUNDANT:
+            # Ran fine, but every hit was already in the shared evidence pool.
+            # Say so explicitly — otherwise the model sees a normal passage list
+            # and concludes the search succeeded, then re-searches the same ground.
+            chunks.append(
+                {
+                    "kind": c["name"],
+                    "note": "All hits from this call were ALREADY in your evidence. Re-reading them will not add anything — issue a genuinely new angle, or output a <state> patch with what you have.",
+                }
+            )
+        outcomes.append({"name": c["name"], "status": oc.status, "reason": oc.reason, "metrics": oc.metrics})
         payload = json.dumps({"passages": chunks}, ensure_ascii=False, default=str)
         # if the session is already heavy, cut this payload proportionally
         if used + len(payload) > budget_chars:
@@ -1205,6 +1346,8 @@ async def _tool_node(state: _SessionState) -> dict:
         "_tool_chars": used,
         "_search_queries": seen_queries,
         "_skipped_dup": int(state.get("_skipped_dup", 0)) + skipped,
+        "_tool_strikes": strikes,
+        "_tool_outcomes": outcomes,
     }
 
 
@@ -1336,6 +1479,151 @@ def _build_session_graph():
     return g.compile()
 
 
+# ── Deterministic navigation prefix (code-driven tool chain) ─────────────
+# The ReAct loop lets the MODEL decide which tool to call next, so ordering rules
+# ("route with navigate_tree first, then drill with navigate_structure, fall back
+# to retrieve when the drill is weak") can only be *suggested* in the prompt and
+# are routinely ignored. This prefix runs those rules IN CODE before the loop
+# starts, and injects the resulting exchange as completed assistant/tool messages:
+# the model then explores on top of a guaranteed-correct opening, and cannot skip
+# a step. It keeps the loop's freedom for everything after the chain.
+@dataclass
+class _NavRule:
+    """One step of the navigation chain.
+
+    :param args: builds the tool arguments from the running context.
+    :param when: optional guard; the step is skipped when it returns False.
+    :param next: ``status -> next rule id``. ``""`` (or a missing key) ends the
+        chain. Routing on ``status`` is what makes "quality poor → fall back"
+        a code decision rather than a prompt suggestion.
+    """
+
+    id: str
+    tool: str
+    args: Any
+    when: Any = None
+    next: dict = field(default_factory=dict)
+
+
+@dataclass
+class _NavContext:
+    """Mutable state threaded through the navigation chain."""
+
+    direction: str
+    known_docs: list = field(default_factory=list)
+    structure_done: bool = False
+
+
+#: navigate_tree → navigate_structure → retrieve, driven by measured outcomes:
+#: an unrouted query or a weak drill falls through to plain retrieval instead of
+#: leaving the model to rediscover the fallback by trial and error.
+_NAV_RULES: tuple = (
+    _NavRule(
+        id="locate",
+        tool="navigate_tree",
+        args=lambda ctx: {"query": ctx.direction},
+        next={OK: "drill", MISS: "fallback", EMPTY: "fallback", POOR: "fallback", ERROR: "fallback"},
+    ),
+    _NavRule(
+        id="drill",
+        tool="navigate_structure",
+        when=lambda ctx: bool(ctx.known_docs) and not ctx.structure_done,
+        args=lambda ctx: {"doc_id": ctx.known_docs[0], "query": ctx.direction},
+        next={OK: "", MISS: "fallback", EMPTY: "fallback", POOR: "fallback", ERROR: "fallback"},
+    ),
+    _NavRule(
+        id="fallback",
+        tool="retrieve",
+        args=lambda ctx: {"query": [ctx.direction]},
+        next={},
+    ),
+)
+
+# Share of the session deadline the prefix may spend; the ReAct loop keeps the rest.
+_NAV_PREFIX_BUDGET_RATIO = 0.35
+# Per-call ceiling so one slow navigation cannot swallow the whole prefix.
+_NAV_PREFIX_CALL_TIMEOUT_S = 25.0
+
+
+async def run_nav_prefix(tools, direction: str, deadline_left: float) -> tuple[list, list, list]:
+    """Execute :data:`_NAV_RULES` and return ``(messages, evidence_ids, outcomes)``.
+
+    The returned messages are completed assistant/tool pairs ready to seed the
+    session history, so the model sees the chain as work already done. Returns
+    empty lists when navigation is unavailable for this session — the chain is an
+    optimisation, never a precondition for the session to run.
+    """
+    try:
+        available = {s["function"]["name"] for s in _active_tool_specs(tools)}
+    except Exception:
+        _LOG.warning("[action_session] could not resolve the tool surface; skipping nav prefix", exc_info=True)
+        return [], [], []
+    if "navigate_tree" not in available:
+        return [], [], []
+
+    by_id = {r.id: r for r in _NAV_RULES}
+    ctx = _NavContext(direction=direction)
+    messages: list = []
+    evidence_ids: list = []
+    outcomes: list = []
+    rule_id = "locate"
+    started = time.monotonic()
+    budget = max(5.0, (deadline_left or _ACTION_TIMEOUT_S) * _NAV_PREFIX_BUDGET_RATIO)
+
+    while rule_id:
+        rule = by_id.get(rule_id)
+        if rule is None or rule.tool not in available:
+            break
+        if rule.when is not None and not rule.when(ctx):
+            break
+        remaining = budget - (time.monotonic() - started)
+        if remaining <= 1.0:
+            _LOG.info("[action_session] nav prefix out of budget before %r", rule_id)
+            break
+        call_id = f"navprefix_{rule_id}"
+        try:
+            async with asyncio.timeout(min(_NAV_PREFIX_CALL_TIMEOUT_S, remaining)):
+                oc: ToolOutcome = await execute_tool(tools, rule.tool, rule.args(ctx))
+        except (TimeoutError, Exception):
+            _LOG.warning("[action_session] nav prefix step %r failed", rule_id, exc_info=True)
+            break
+
+        outcomes.append({"name": rule.tool, "status": oc.status, "reason": oc.reason, "metrics": oc.metrics})
+        if rule.tool == "navigate_tree" and oc.status == OK:
+            # Routed docs become the validated scope for every later step.
+            for d in (oc.payload or [{}])[0].get("doc_ids") or []:
+                if d and d not in ctx.known_docs:
+                    ctx.known_docs.append(d)
+        if rule.tool == "navigate_structure" and oc.status == OK:
+            ctx.structure_done = True
+        evidence_ids.extend(oc.evidence_ids)
+
+        # Emit a WELL-FORMED pair: every tool_call needs its tool response, or the
+        # provider rejects the history (see _strip_unpaired_tool_calls).
+        messages.append(
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": rule.tool, "arguments": json.dumps(rule.args(ctx), ensure_ascii=False)},
+                    }
+                ],
+            }
+        )
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": json.dumps({"passages": oc.payload}, ensure_ascii=False, default=str),
+            }
+        )
+        rule_id = rule.next.get(oc.status, "")
+    return messages, evidence_ids, outcomes
+
+
 _SESSION_GRAPH = _build_session_graph()
 
 
@@ -1361,8 +1649,26 @@ async def run_action_session(
         _LOG.warning("[action_session] no usable model resolved for action session")
         return Result(messages=[], new_states=[])
 
+    budget_left = deadline_left or _ACTION_TIMEOUT_S
+    # Deterministic navigation chain first: the rules below are guaranteed in
+    # code, so the model cannot skip navigate_tree and jump straight to
+    # navigate_structure the way it does when the order is only a prompt hint.
+    prefix_started = time.monotonic()
+    prefix_msgs, prefix_ids, prefix_outcomes = [], [], []
+    try:
+        prefix_msgs, prefix_ids, prefix_outcomes = await run_nav_prefix(tools, direction, budget_left)
+    except Exception:
+        _LOG.warning("[action_session] navigation prefix failed; continuing with the plain loop", exc_info=True)
+    if prefix_msgs:
+        _LOG.info(
+            "[action_session] nav prefix completed %d step(s): %s",
+            len(prefix_outcomes),
+            ", ".join(f"{o['name']}={o['status']}" for o in prefix_outcomes),
+        )
+    spent = time.monotonic() - prefix_started
+
     initial: _SessionState = {
-        "messages": [SystemMessage(content=system), HumanMessage(content=seed_user)],
+        "messages": [SystemMessage(content=system), HumanMessage(content=seed_user)] + prefix_msgs,
         "parent_state": parent_state,
         "tools": tools,
         "mdl": mdl,
@@ -1370,14 +1676,16 @@ async def run_action_session(
         "_done": False,
         "new_states": [],
         "found_answer": None,
-        "retrieved_evidence_ids": [],
+        "retrieved_evidence_ids": list(prefix_ids),
         "attempts": 0,
-        "deadline_left": deadline_left or _ACTION_TIMEOUT_S,
+        "deadline_left": max(10.0, budget_left - spent),
         "_ctx_budget": _MAX_TOOL_RESPONSE_CHARS * 4,
         "_tool_chars": 0,
         "_tool_cache": {},
         "_search_queries": [],
         "_skipped_dup": 0,
+        "_tool_strikes": {},
+        "_tool_outcomes": list(prefix_outcomes),
     }
     try:
         final = await _SESSION_GRAPH.ainvoke(initial)

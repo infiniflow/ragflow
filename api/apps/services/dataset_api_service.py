@@ -3726,6 +3726,7 @@ async def search_dataset_layers(
     *,
     top_k: int | None = None,
     doc_scope: list[str] | None = None,
+    dense_only: bool = False,
 ) -> tuple[bool, dict]:
     """Unified search across different knowledge layers of a dataset.
 
@@ -3741,6 +3742,10 @@ async def search_dataset_layers(
             nav modes filter the compiled nav rows by doc, ``chunk`` restricts
             the retriever via ``doc_ids``.  Applied query-time so scoped rows
             are never dropped by the ``top_k`` truncation.
+
+        dense_only: Vector-only nav search (no BM25 leg, no ``text_score > 0``
+            gate). Only honoured by the ``nav_doc`` / ``nav_cluster`` modes;
+            routing by meaning wants it, term lookup does not.
 
         Items are shaped as ``{"doc_id": str, "score": float}``.
     """
@@ -3778,11 +3783,11 @@ async def search_dataset_layers(
         len([d for d in (doc_scope or []) if str(d).strip()]),
     )
     if mode == "nav_doc":
-        return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
+        return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope, dense_only=dense_only)
     elif mode == "nav_cluster":
-        return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
+        return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope, dense_only=dense_only)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope)
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope, dense_only=dense_only)
     elif mode == "chunk":
         return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "all":
@@ -3791,7 +3796,7 @@ async def search_dataset_layers(
         return False, {"error": f"unknown mode: {mode}", "code": RetCode.ARGUMENT_ERROR}
 
 
-async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None):
+async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None, dense_only=False):
     items = await _nav_search_result(
         tenant_id,
         dataset_id,
@@ -3801,11 +3806,12 @@ async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl,
         search_fn,
         type_kwd="nav_doc",
         doc_scope=doc_scope,
+        dense_only=dense_only,
     )
     return True, {"mode": "nav_doc", "total": len(items), "items": items}
 
 
-async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None):
+async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None, dense_only=False):
     items = await _nav_search_result(
         tenant_id,
         dataset_id,
@@ -3815,11 +3821,12 @@ async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_
         search_fn,
         type_kwd="nav_cluster",
         doc_scope=doc_scope,
+        dense_only=dense_only,
     )
     return True, {"mode": "nav_cluster", "total": len(items), "items": items}
 
 
-async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, *, doc_scope=None):
+async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, *, doc_scope=None, dense_only=False):
     from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
 
     items = await search_nav_tree_descent(
@@ -3829,6 +3836,7 @@ async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, em
         embd_mdl,
         top_k=top_k,
         doc_scope=doc_scope,
+        dense_only=dense_only,
     )
     return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
