@@ -565,7 +565,7 @@ func insertTestTask(t *testing.T, id, docID string) {
 
 func insertTestIngestionTask(t *testing.T, id, userID, docID, datasetID string) {
 	t.Helper()
-	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.CREATED)
+	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.SCHEDULED)
 }
 
 func insertTestIngestionTaskWithStatus(t *testing.T, id, userID, docID, datasetID, status string) {
@@ -2064,7 +2064,7 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 // that a terminal ingestion task (STOPPED/COMPLETED/FAILED) and a CREATED
 // (queued) task are deleted so the new run can proceed.
 func TestClearDocumentParseResults_DeletesTerminalIngestionTask(t *testing.T) {
-	for _, status := range []string{common.CREATED, common.COMPLETED, common.STOPPED, common.FAILED} {
+	for _, status := range []string{common.SCHEDULED, common.CREATED, common.COMPLETED, common.STOPPED, common.FAILED} {
 		t.Run(status, func(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
