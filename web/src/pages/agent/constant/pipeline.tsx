@@ -79,21 +79,6 @@ export const OutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat,
 };
 
-export const InitialOutputFormatMap = {
-  [FileType.PDF]: PdfOutputFormat.Json,
-  [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
-  [FileType.Image]: ImageOutputFormat.Json,
-  [FileType.Email]: EmailOutputFormat.Text,
-  [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
-  [FileType.Code]: TextJsonOutputFormat.Json,
-  [FileType.Html]: TextJsonOutputFormat.Json,
-  [FileType.Doc]: DocxOutputFormat.Json,
-  [FileType.Docx]: DocxOutputFormat.Json,
-  [FileType.PowerPoint]: PptOutputFormat.Json,
-  [FileType.Video]: VideoOutputFormat.Text,
-  [FileType.Audio]: AudioOutputFormat.Text,
-};
-
 // The video parser defaults to the tenant's VLM model and the audio parser to
 // the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
 // type without a configured tenant default keeps its empty model id.

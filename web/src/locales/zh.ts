@@ -2943,7 +2943,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compiler: '编译器',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
-      fileFormats: '文件类型',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: '表格',
