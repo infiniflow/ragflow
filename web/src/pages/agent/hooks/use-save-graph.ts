@@ -10,12 +10,14 @@ import {
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
+import { t } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Operator } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form';
 import useGraphStore from '../store';
+import { getEmptyMessageNodeNames } from '../utils';
 import { useBuildDslData } from './use-build-dsl';
 
 /**
@@ -89,6 +91,22 @@ export const useSaveGraph = (
         return;
       }
 
+      // Warn about Message components with empty content at save time; the
+      // canvas only fails on them when the agent runs otherwise (backend
+      // MessageParam.check() rejects empty content). Advisory only — the save
+      // itself proceeds. Autosave/publish (showMessage=false) stay silent to
+      // avoid nagging toasts.
+      if (showMessage) {
+        const emptyMessageNodeNames = getEmptyMessageNodeNames(
+          currentNodes ?? useGraphStore.getState().nodes,
+        );
+        if (emptyMessageNodeNames.length > 0) {
+          message.warning(
+            `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
+          );
+        }
+      }
+
       const params: Record<string, any> = {
         id,
         title: data.title,
@@ -101,7 +119,7 @@ export const useSaveGraph = (
 
       return setAgent(params);
     },
-    [id, getInvalidNode, data.title, buildDslData, setAgent],
+    [id, getInvalidNode, showMessage, data.title, buildDslData, setAgent],
   );
 
   return { saveGraph, loading };
