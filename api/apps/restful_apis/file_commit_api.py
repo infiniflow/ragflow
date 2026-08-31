@@ -19,6 +19,7 @@ from functools import wraps
 from quart import request
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.db.services.file_commit_service import FileCommitService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 
@@ -142,8 +143,8 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def list_commits(entity_id):
         folder_id = _resolve(entity_id)
         try:
-            page = int(request.args.get("page", 1))
-            page_size = int(request.args.get("page_size", 15))
+            page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+            page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
             order_by = request.args.get("order_by", "create_time")
             desc = request.args.get("desc", "true").lower() != "false"
             slug = request.args.get("slug") or ""
@@ -361,13 +362,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 # Register datasets first, workspace second, folders last —
 # the last call's handlers overwrite module-level names for test access.
 _register_commit_routes("/datasets/<entity_id>", "entity_id", resolver_type="datasets")
-_register_commit_routes("/workspace/<entity_id>", "entity_id")  # alias — workspace_id == folder_id
-_register_commit_routes("/folders/<entity_id>", "entity_id")  # direct — entity_id == folder_id (wins)
+_register_commit_routes("/workspaces/<entity_id>", "entity_id")
 # /memories and /skills routes are not mounted until resolvers are implemented.
 
 
 # ── File version history (shared across all entity types) ─────────────────
-@manager.route("/files/<file_id>/versions", methods=["GET"])  # noqa: F821
+@manager.route("/workspace-files/<file_id>/versions", methods=["GET"])  # noqa: F821
 @login_required
 async def get_file_version_history(file_id):
     try:

@@ -72,9 +72,10 @@ func newLangfuseServiceForTest(v langfuseVerifier) *LangfuseService {
 func TestLangfuseService_SetAPIKey_MissingFields(t *testing.T) {
 	setupLangfuseServiceTestDB(t)
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{authOK: true})
+	ctx := t.Context()
 
-	_, code, err := svc.SetAPIKey("tenant-1", "", "pk", "host")
-	if code != common.CodeDataError || err == nil || err.Error() != "Missing required fields" {
+	_, code, err := svc.SetAPIKey(ctx, "tenant-1", "", "pk", "host")
+	if code != common.CodeDataError || err == nil || err.Error() != "missing required fields" {
 		t.Fatalf("expected Missing required fields/CodeDataError, got code=%d err=%v", code, err)
 	}
 }
@@ -82,9 +83,10 @@ func TestLangfuseService_SetAPIKey_MissingFields(t *testing.T) {
 func TestLangfuseService_SetAPIKey_InvalidKeys(t *testing.T) {
 	setupLangfuseServiceTestDB(t)
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{authOK: false})
+	ctx := t.Context()
 
-	_, code, err := svc.SetAPIKey("tenant-1", "sk", "pk", "host")
-	if code != common.CodeDataError || err == nil || err.Error() != "Invalid Langfuse keys" {
+	_, code, err := svc.SetAPIKey(ctx, "tenant-1", "sk", "pk", "host")
+	if code != common.CodeDataError || err == nil || err.Error() != "invalid Langfuse keys" {
 		t.Fatalf("expected Invalid Langfuse keys/CodeDataError, got code=%d err=%v", code, err)
 	}
 }
@@ -92,8 +94,9 @@ func TestLangfuseService_SetAPIKey_InvalidKeys(t *testing.T) {
 func TestLangfuseService_SetAPIKey_VerifierError(t *testing.T) {
 	setupLangfuseServiceTestDB(t)
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{authErr: errors.New("network down")})
+	ctx := t.Context()
 
-	_, code, err := svc.SetAPIKey("tenant-1", "sk", "pk", "host")
+	_, code, err := svc.SetAPIKey(ctx, "tenant-1", "sk", "pk", "host")
 	if code != common.CodeServerError || err == nil || err.Error() != "network down" {
 		t.Fatalf("expected verifier error/CodeServerError, got code=%d err=%v", code, err)
 	}
@@ -102,9 +105,10 @@ func TestLangfuseService_SetAPIKey_VerifierError(t *testing.T) {
 func TestLangfuseService_SetAPIKey_CreateThenUpdate(t *testing.T) {
 	db := setupLangfuseServiceTestDB(t)
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{authOK: true})
+	ctx := t.Context()
 
 	// Create
-	row, code, err := svc.SetAPIKey("tenant-1", "sk-1", "pk-1", "https://a.langfuse.com")
+	row, code, err := svc.SetAPIKey(ctx, "tenant-1", "sk-1", "pk-1", "https://a.langfuse.com")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("create failed: code=%d err=%v", code, err)
 	}
@@ -119,7 +123,7 @@ func TestLangfuseService_SetAPIKey_CreateThenUpdate(t *testing.T) {
 	}
 
 	// Update (same tenant) should not create a second row
-	_, code, err = svc.SetAPIKey("tenant-1", "sk-2", "pk-2", "https://b.langfuse.com")
+	_, code, err = svc.SetAPIKey(ctx, "tenant-1", "sk-2", "pk-2", "https://b.langfuse.com")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("update failed: code=%d err=%v", code, err)
 	}
@@ -127,7 +131,7 @@ func TestLangfuseService_SetAPIKey_CreateThenUpdate(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected still 1 row after update, got %d", count)
 	}
-	stored, _ := dao.NewLangfuse().GetByTenantID("tenant-1")
+	stored, _ := dao.NewLangfuse().GetByTenantID(ctx, db, "tenant-1")
 	if stored == nil || stored.SecretKey != "sk-2" || stored.Host != "https://b.langfuse.com" {
 		t.Fatalf("update not persisted: %+v", stored)
 	}
@@ -136,8 +140,9 @@ func TestLangfuseService_SetAPIKey_CreateThenUpdate(t *testing.T) {
 func TestLangfuseService_GetAPIKey_NoRecord(t *testing.T) {
 	setupLangfuseServiceTestDB(t)
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{})
+	ctx := t.Context()
 
-	data, code, message, err := svc.GetAPIKey("tenant-1")
+	data, code, message, err := svc.GetAPIKey(ctx, "tenant-1")
 	if err != nil || code != common.CodeSuccess || data != nil {
 		t.Fatalf("unexpected: code=%d data=%v err=%v", code, data, err)
 	}
@@ -147,13 +152,14 @@ func TestLangfuseService_GetAPIKey_NoRecord(t *testing.T) {
 }
 
 func TestLangfuseService_GetAPIKey_Unauthorized(t *testing.T) {
-	setupLangfuseServiceTestDB(t)
-	if err := dao.NewLangfuse().Create(&entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
+	db := setupLangfuseServiceTestDB(t)
+	ctx := t.Context()
+	if err := dao.NewLangfuse().Create(ctx, db, &entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
 		t.Fatalf("seed failed: %v", err)
 	}
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{projErr: ErrLangfuseUnauthorized})
 
-	data, code, message, err := svc.GetAPIKey("tenant-1")
+	data, code, message, err := svc.GetAPIKey(ctx, "tenant-1")
 	if data != nil || code != common.CodeDataError || err == nil {
 		t.Fatalf("unexpected: code=%d data=%v err=%v", code, data, err)
 	}
@@ -163,13 +169,14 @@ func TestLangfuseService_GetAPIKey_Unauthorized(t *testing.T) {
 }
 
 func TestLangfuseService_GetAPIKey_ApiError(t *testing.T) {
-	setupLangfuseServiceTestDB(t)
-	if err := dao.NewLangfuse().Create(&entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
+	db := setupLangfuseServiceTestDB(t)
+	ctx := t.Context()
+	if err := dao.NewLangfuse().Create(ctx, db, &entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
 		t.Fatalf("seed failed: %v", err)
 	}
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{projErr: &LangfuseAPIError{StatusCode: 500, Body: "boom"}})
 
-	data, code, message, err := svc.GetAPIKey("tenant-1")
+	data, code, message, err := svc.GetAPIKey(ctx, "tenant-1")
 	if data != nil || code != common.CodeSuccess || err != nil {
 		t.Fatalf("unexpected: code=%d data=%v err=%v", code, data, err)
 	}
@@ -179,26 +186,28 @@ func TestLangfuseService_GetAPIKey_ApiError(t *testing.T) {
 }
 
 func TestLangfuseService_GetAPIKey_NonAPIError(t *testing.T) {
-	setupLangfuseServiceTestDB(t)
-	if err := dao.NewLangfuse().Create(&entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
+	db := setupLangfuseServiceTestDB(t)
+	ctx := t.Context()
+	if err := dao.NewLangfuse().Create(ctx, db, &entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
 		t.Fatalf("seed failed: %v", err)
 	}
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{projErr: errors.New("json parse failed")})
 
-	data, code, message, err := svc.GetAPIKey("tenant-1")
+	data, code, message, err := svc.GetAPIKey(ctx, "tenant-1")
 	if data != nil || code != common.CodeServerError || message != "" || err == nil {
 		t.Fatalf("unexpected: code=%d message=%q data=%v err=%v", code, message, data, err)
 	}
 }
 
 func TestLangfuseService_GetAPIKey_Success(t *testing.T) {
-	setupLangfuseServiceTestDB(t)
-	if err := dao.NewLangfuse().Create(&entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "https://a.langfuse.com"}); err != nil {
+	db := setupLangfuseServiceTestDB(t)
+	ctx := t.Context()
+	if err := dao.NewLangfuse().Create(ctx, db, &entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "https://a.langfuse.com"}); err != nil {
 		t.Fatalf("seed failed: %v", err)
 	}
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{projID: "proj-1", projName: "My Project"})
 
-	data, code, message, err := svc.GetAPIKey("tenant-1")
+	data, code, message, err := svc.GetAPIKey(ctx, "tenant-1")
 	if err != nil || code != common.CodeSuccess || message != "success" {
 		t.Fatalf("unexpected: code=%d message=%q err=%v", code, message, err)
 	}
@@ -215,8 +224,9 @@ func TestLangfuseService_GetAPIKey_Success(t *testing.T) {
 func TestLangfuseService_DeleteAPIKey_NoRecord(t *testing.T) {
 	setupLangfuseServiceTestDB(t)
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{})
+	ctx := t.Context()
 
-	ok, code, message, err := svc.DeleteAPIKey("tenant-1")
+	ok, code, message, err := svc.DeleteAPIKey(ctx, "tenant-1")
 	if ok || code != common.CodeSuccess || err != nil {
 		t.Fatalf("unexpected: ok=%v code=%d err=%v", ok, code, err)
 	}
@@ -227,12 +237,13 @@ func TestLangfuseService_DeleteAPIKey_NoRecord(t *testing.T) {
 
 func TestLangfuseService_DeleteAPIKey_Success(t *testing.T) {
 	db := setupLangfuseServiceTestDB(t)
-	if err := dao.NewLangfuse().Create(&entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
+	ctx := t.Context()
+	if err := dao.NewLangfuse().Create(ctx, db, &entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: "sk", PublicKey: "pk", Host: "host"}); err != nil {
 		t.Fatalf("seed failed: %v", err)
 	}
 	svc := newLangfuseServiceForTest(stubLangfuseVerifier{})
 
-	ok, code, message, err := svc.DeleteAPIKey("tenant-1")
+	ok, code, message, err := svc.DeleteAPIKey(ctx, "tenant-1")
 	if !ok || code != common.CodeSuccess || message != "" || err != nil {
 		t.Fatalf("unexpected: ok=%v code=%d message=%q err=%v", ok, code, message, err)
 	}

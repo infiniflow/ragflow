@@ -188,12 +188,11 @@ class TestRaptorServiceRunRaptorForKb:
         """RAPTOR config with file-level scope."""
         return {
             "raptor": {
-                "tree_builder": "raptor",
-                "clustering_method": "gmm",
                 "scope": "file",
                 "prompt": "summarize",
                 "max_token": 512,
-                "threshold": 0.5,
+                "clustering_threshold": 0.5,
+                "clustering_ratio": 0.5,
                 "max_cluster": 64,
                 "random_seed": 42,
             }
@@ -204,12 +203,11 @@ class TestRaptorServiceRunRaptorForKb:
         """RAPTOR config with dataset-level scope."""
         return {
             "raptor": {
-                "tree_builder": "raptor",
-                "clustering_method": "gmm",
                 "scope": "dataset",
                 "prompt": "summarize",
                 "max_token": 512,
-                "threshold": 0.5,
+                "clustering_threshold": 0.5,
+                "clustering_ratio": 0.5,
                 "max_cluster": 64,
                 "random_seed": 42,
             }
@@ -321,7 +319,7 @@ class TestRaptorServiceRunRaptorForKb:
         ):
 
             async def mock_run_file(*args, **kwargs):
-                cleanup_list = args[11]
+                cleanup_list = args[9]
                 cleanup_list.append(("doc_1", "tree_builder_a"))
                 return [{"id": "c1"}], 10
 
@@ -383,10 +381,10 @@ class TestRaptorServiceRunRaptorForKb:
             await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
 
         # Verify _run_file_level_raptor received vctr_nm with the correct vector size
-        # Positional args: 0=raptor_config, 1=tree_builder, 2=clustering_method,
-        #   3=chat_mdl, 4=embd_mdl, 5=vctr_nm
+        # Positional args: 0=raptor_config, 1=chat_mdl, 2=embd_mdl,
+        #   3=vctr_nm, 4=doc_ids, 5=doc_info_by_id
         positional_args = mock_file.call_args[0]
-        assert positional_args[5] == "q_256_vec"
+        assert positional_args[3] == "q_256_vec"
 
     # ---- Document info collection through public API ----
 
@@ -405,9 +403,9 @@ class TestRaptorServiceRunRaptorForKb:
             await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
 
         mock_collect.assert_called_once_with(doc_ids)
-        # Verify doc_info_by_id was passed as positional arg[7] to _run_file_level_raptor
+        # Verify doc_info_by_id was passed as positional arg[5] to _run_file_level_raptor
         positional_args = mock_file.call_args[0]
-        assert positional_args[7] == expected_info
+        assert positional_args[5] == expected_info
 
 
 class TestRaptorServiceFileLevelRaptorCheckpoint:
@@ -429,12 +427,10 @@ class TestRaptorServiceFileLevelRaptorCheckpoint:
             "scope": "file",
             "max_cluster": 64,
             "prompt": "test prompt",
-            "max_token": 256,
-            "threshold": 0.1,
+            "max_token": 512,
+            "clustering_threshold": 0.3,
+            "clustering_ratio": 0.5,
             "random_seed": 0,
-            "clustering_method": "gmm",
-            "tree_builder": "raptor",
-            "ext": {},
         }
 
         with patch.object(svc, "_get_raptor_chunk_methods", new_callable=AsyncMock) as mock_methods, patch.object(svc, "_should_skip_raptor", return_value=False):
@@ -442,8 +438,6 @@ class TestRaptorServiceFileLevelRaptorCheckpoint:
 
             result = await svc._run_file_level_raptor(
                 raptor_config=raptor_config,
-                tree_builder="raptor",
-                clustering_method="gmm",
                 chat_mdl=MagicMock(),
                 embd_mdl=MagicMock(),
                 vctr_nm="q_128_vec",

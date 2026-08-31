@@ -17,6 +17,7 @@
 package storage
 
 import (
+	"context"
 	"time"
 )
 
@@ -56,44 +57,46 @@ func (s StorageType) String() string {
 
 // Storage defines the interface for storage operations
 type Storage interface {
+	Type() string
+
 	// Health checks the storage service availability
-	Health() bool
+	Health(ctx context.Context) bool
 
 	// Put uploads an object to storage
 	// bucket: the bucket/container name
 	// fnm: the file/object name (key)
 	// binary: the data to upload
 	// tenantID: optional tenant identifier
-	Put(bucket, fnm string, binary []byte, tenantID ...string) error
+	Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error
 
 	// Get retrieves an object from storage
 	// Returns the data or nil if not found
-	Get(bucket, fnm string, tenantID ...string) ([]byte, error)
+	Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error)
 
 	// Remove removes an object from storage
-	Remove(bucket, fnm string, tenantID ...string) error
+	Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error
 
 	// ObjExist checks if an object exists
-	ObjExist(bucket, fnm string, tenantID ...string) bool
+	ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool
 
 	// ListObjects list all objects of the bucket
-	ListObjects(bucket string, tenantID ...string) ([]string, error)
+	ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error)
 
 	// GetPresignedURL generates a presigned URL for accessing an object
 	// expires: duration until the URL expires
-	GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error)
+	GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error)
 
 	// BucketExists checks if a bucket exists
-	BucketExists(bucket string) bool
+	BucketExists(ctx context.Context, bucket string) bool
 
 	// RemoveBucket removes a bucket and all its objects
-	RemoveBucket(bucket string) error
+	RemoveBucket(ctx context.Context, bucket string) error
 
 	// Copy copies an object from source to destination
-	Copy(srcBucket, srcPath, destBucket, destPath string) bool
+	Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool
 
 	// Move moves an object from source to destination
-	Move(srcBucket, srcPath, destBucket, destPath string) bool
+	Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool
 
 	// Close closes the storage connection
 	Close() error

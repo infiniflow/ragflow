@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import {
   useFetchAgent,
   useResetAgent,
@@ -9,16 +10,85 @@ import {
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
+import { t } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { Operator } from '../constant';
+import { FormSchema as ParserFormSchema } from '../form/parser-form';
 import useGraphStore from '../store';
+import { getEmptyMessageNodeNames } from '../utils';
+import { findAgentNodeWithoutModel } from '../utils/agent-node-model';
 import { useBuildDslData } from './use-build-dsl';
 
-export const useSaveGraph = (showMessage: boolean = true) => {
+/**
+ * A node's form only validates while its panel is mounted, so bad values can
+ * sit in the store long after the user has moved on. Re-check them against the
+ * same schema before persisting, but only for nodes the user actually edited —
+ * a node still carrying stale DSL from an older version must not wedge saving.
+ */
+function findInvalidNode(
+  nodes: RAGFlowNodeType[],
+  editedNodeIds: string[],
+): { node: RAGFlowNodeType; messageKey: string } | undefined {
+  const invalidParserNode = nodes.find(
+    (node) =>
+      editedNodeIds.includes(node.id) &&
+      node.data?.label === Operator.Parser &&
+      !ParserFormSchema.safeParse(node.data?.form).success,
+  );
+  if (invalidParserNode) {
+    return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
+  }
+  // Unlike the schema re-check above, the missing-model check is not gated on
+  // editedNodeIds: a canvas loaded from storage with an empty model must warn
+  // on the very next save, not only after the node is edited again.
+  const agentNode = findAgentNodeWithoutModel(nodes);
+  if (agentNode) {
+    return { node: agentNode, messageKey: 'flow.agentModelMissing' };
+  }
+  return undefined;
+}
+
+export const useValidateNodeForms = () => {
+  const { t } = useTranslation();
+  const nodes = useGraphStore((state) => state.nodes);
+  const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
+
+  const getInvalidNode = useCallback(
+    (currentNodes?: RAGFlowNodeType[]) =>
+      findInvalidNode(currentNodes ?? nodes, editedNodeFormIds),
+    [editedNodeFormIds, nodes],
+  );
+
+  // Only the entry points the user drives explicitly should warn; autosave and
+  // publish stay silent and just skip the write.
+  const notifyIfInvalid = useCallback(
+    (currentNodes?: RAGFlowNodeType[]) => {
+      const invalid = getInvalidNode(currentNodes);
+      if (invalid) {
+        message.warning(
+          t(invalid.messageKey, { name: invalid.node.data?.name }),
+        );
+        return false;
+      }
+      return true;
+    },
+    [getInvalidNode, t],
+  );
+
+  return { getInvalidNode, notifyIfInvalid };
+};
+
+export const useSaveGraph = (
+  showMessage: boolean = true,
+  skipInvalidation: boolean = false,
+) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage);
+  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
+  const { getInvalidNode } = useValidateNodeForms();
 
   const saveGraph = useCallback(
     async (
@@ -28,6 +98,30 @@ export const useSaveGraph = (showMessage: boolean = true) => {
       },
       release?: boolean,
     ) => {
+      if (!id) {
+        return;
+      }
+
+      if (getInvalidNode(currentNodes)) {
+        return;
+      }
+
+      // Warn about Message components with empty content at save time; the
+      // canvas only fails on them when the agent runs otherwise (backend
+      // MessageParam.check() rejects empty content). Advisory only — the save
+      // itself proceeds. Autosave/publish (showMessage=false) stay silent to
+      // avoid nagging toasts.
+      if (showMessage) {
+        const emptyMessageNodeNames = getEmptyMessageNodeNames(
+          currentNodes ?? useGraphStore.getState().nodes,
+        );
+        if (emptyMessageNodeNames.length > 0) {
+          message.warning(
+            `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
+          );
+        }
+      }
+
       const params: Record<string, any> = {
         id,
         title: data.title,
@@ -40,7 +134,7 @@ export const useSaveGraph = (showMessage: boolean = true) => {
 
       return setAgent(params);
     },
-    [setAgent, data, id, buildDslData],
+    [id, getInvalidNode, showMessage, data.title, buildDslData, setAgent],
   );
 
   return { saveGraph, loading };
@@ -49,9 +143,14 @@ export const useSaveGraph = (showMessage: boolean = true) => {
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetAgent } = useResetAgent();
+  const { notifyIfInvalid } = useValidateNodeForms();
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
+      if (!notifyIfInvalid(nextNodes)) {
+        return;
+      }
+
       const saveRet = await saveGraph(nextNodes);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
@@ -62,17 +161,46 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         }
       }
     },
-    [saveGraph, resetAgent, show],
+    [notifyIfInvalid, saveGraph, resetAgent, show],
   );
 
   return { handleRun, loading };
 };
 
+export function shouldAutosaveCanvas({
+  chatDrawerVisible,
+  agentId,
+  agentLoaded,
+  nodeCount,
+  edgeCount,
+}: {
+  chatDrawerVisible: boolean;
+  agentId?: string;
+  agentLoaded: boolean;
+  nodeCount: number;
+  edgeCount: number;
+}): boolean {
+  if (chatDrawerVisible) {
+    return false;
+  }
+  if (!agentId || !agentLoaded) {
+    return false;
+  }
+  // An empty store is the Zustand default and also the fallback when DSL has
+  // not been applied yet. Autosaving it would PUT components:{} over a real
+  // pipeline (#18771). Explicit Save still persists an empty canvas.
+  if (nodeCount === 0 && edgeCount === 0) {
+    return false;
+  }
+  return true;
+}
+
 export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const [time, setTime] = useState<string>();
+  const { id } = useParams();
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
-  const { saveGraph } = useSaveGraph(false);
+  const { saveGraph } = useSaveGraph(false, true);
   const { data: flowDetail } = useFetchAgent();
 
   const setSaveTime = useCallback((updateTime: number) => {
@@ -84,11 +212,30 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   }, [flowDetail, setSaveTime]);
 
   const saveAgent = useCallback(async () => {
-    if (!chatDrawerVisible) {
-      const ret = await saveGraph();
+    if (
+      !shouldAutosaveCanvas({
+        chatDrawerVisible,
+        agentId: id,
+        agentLoaded: Boolean(flowDetail?.id),
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+      })
+    ) {
+      return;
+    }
+    const ret = await saveGraph();
+    if (ret?.data?.update_time) {
       setSaveTime(ret.data.update_time);
     }
-  }, [chatDrawerVisible, saveGraph, setSaveTime]);
+  }, [
+    chatDrawerVisible,
+    edges.length,
+    flowDetail?.id,
+    id,
+    nodes.length,
+    saveGraph,
+    setSaveTime,
+  ]);
 
   useDebounceEffect(
     () => {

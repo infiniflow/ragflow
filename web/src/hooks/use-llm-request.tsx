@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { ModelTypeToField } from '@/constants/llm';
 import {
@@ -29,7 +45,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { parseModelValue } from '@/utils/llm-util';
+import {
+  buildModelValue,
+  buildValidModelIds,
+  parseModelValue,
+} from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const enum LLMApiAction {
@@ -57,13 +77,8 @@ export const LlmKeys = {
     [LLMApiAction.AllModels, modelType] as const,
   providerInstances: (providerName: string) =>
     [LLMApiAction.AddedProviders, providerName, 'instances'] as const,
-  providerInstance: (providerName: string, instanceName: string) =>
-    [
-      LLMApiAction.AddedProviders,
-      providerName,
-      instanceName,
-      'instance',
-    ] as const,
+  providerInstance: (providerName: string, id: string) =>
+    [LLMApiAction.AddedProviders, providerName, id, 'instance'] as const,
   instanceModels: (providerName: string, instanceName: string) =>
     [
       LLMApiAction.AddedProviders,
@@ -109,7 +124,12 @@ export const useFetchAllAddedModels = (
   modelType?: string,
   ownerTenantId?: string,
 ) => {
-  const { data, isFetching: loading } = useQuery<IAddedModel[]>({
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+  } = useQuery<IAddedModel[]>({
     queryKey: [...LlmKeys.allModels(modelType), ownerTenantId],
     initialData: [],
     gcTime: 0,
@@ -127,7 +147,31 @@ export const useFetchAllAddedModels = (
     },
   });
 
-  return { data, loading };
+  // `data` is seeded with `initialData: []`, so it can't tell a real empty
+  // result apart from "fetch hasn't completed yet" — `isFetched` stays false
+  // until a genuine response (or error) arrives.
+  return { data, loading, isFetched, isError };
+};
+
+/**
+ * The set of ids under which added models of the given types can be
+ * referenced (both the model_id form and the legacy composite form), for
+ * validating that a persisted form value still points at an existing model.
+ * `isFetched` must be checked before trusting `validIds` — while the model
+ * list is loading it is empty and every value would look missing.
+ */
+export const useModelValidIds = (
+  modelTypes: string[],
+  ownerTenantId?: string,
+) => {
+  const { data, isFetched } = useFetchAllAddedModels(undefined, ownerTenantId);
+
+  const validIds = useMemo(
+    () => buildValidModelIds(data, modelTypes),
+    [data, modelTypes],
+  );
+
+  return { validIds, isFetched };
 };
 
 export function useFindLlmByUuid() {
@@ -165,18 +209,15 @@ export const useFetchProviderInstances = (providerName: string) => {
   return { data, loading };
 };
 
-export const useFetchProviderInstance = (
-  providerName: string,
-  instanceName: string,
-) => {
+export const useFetchProviderInstance = (providerName: string, id: string) => {
   return useQuery<IProviderInstance>({
-    queryKey: LlmKeys.providerInstance(providerName, instanceName),
+    queryKey: LlmKeys.providerInstance(providerName, id),
     initialData: undefined as unknown as IProviderInstance,
     gcTime: 0,
     enabled: false,
     queryFn: async () => {
       const { data } = await llmService.showProviderInstance(
-        { provider_name: providerName, instance_name: instanceName },
+        { provider_name: providerName, id },
         true,
       );
       return (data?.data ?? {}) as IProviderInstance;
@@ -188,7 +229,11 @@ export const useFetchInstanceModels = (
   providerName: string,
   instanceName: string,
 ) => {
-  const { data, isFetching: loading } = useQuery<IInstanceModel[]>({
+  const {
+    data,
+    isFetching: loading,
+    isSuccess,
+  } = useQuery<IInstanceModel[]>({
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
     gcTime: 0,
@@ -198,11 +243,14 @@ export const useFetchInstanceModels = (
         { provider_name: providerName, instance_name: instanceName },
         true,
       );
+      if (data?.code !== 0) {
+        throw new Error(data?.message || 'Failed to fetch instance models');
+      }
       return data?.data ?? [];
     },
   });
 
-  return { data, loading };
+  return { data, loading, isSuccess };
 };
 
 export type LlmItem = { name: string; logo: string } & IMyLlmValue;
@@ -251,24 +299,8 @@ export const useAddProviderInstance = () => {
     ) => {
       try {
         await addProvider({ provider_name: params.llm_factory });
-
-        // When `id` is supplied the caller is updating an existing
-        // instance (blur-save on a saved card), so do not short-circuit
-        // on the "already exists" check — we *want* the server call.
-        if (!params.id) {
-          const { data: instancesRes } = await llmService.listProviderInstances(
-            { provider_name: params.llm_factory },
-            true,
-          );
-          const instanceExists = instancesRes?.data?.some(
-            (i: IProviderInstance) => i.instance_name === params.instance_name,
-          );
-          if (instanceExists && !params.verify) {
-            return { code: 0, data: null };
-          }
-        }
       } catch {
-        // ignore list failure and proceed to add
+        // ignore and proceed to add
       }
 
       // The provider is carried in the URL path
@@ -297,6 +329,9 @@ export const useAddProviderInstance = () => {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
         });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
       }
       return data;
     },
@@ -318,6 +353,7 @@ export const useVerifyProviderConnection = () => {
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
+      instance_id?: string;
     }) => {
       const { data } = await llmService.verifyProviderConnection(params);
       return data;
@@ -583,10 +619,7 @@ export const useUpdateProviderInstance = () => {
           queryKey: LlmKeys.providerInstances(params.provider_name),
         });
         queryClient.invalidateQueries({
-          queryKey: LlmKeys.providerInstance(
-            params.provider_name,
-            params.instance_name,
-          ),
+          queryKey: LlmKeys.providerInstance(params.provider_name, params.id),
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
@@ -629,7 +662,17 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
     const dict: Record<string, string> = {};
     Object.entries(ModelTypeToField).forEach(([key, field]) => {
       const model = defaultModels.find((m) => m.model_type === key);
-      dict[field] = model && model.enable ? model.model_id : '';
+      if (!model || !model.enable) {
+        dict[field] = '';
+        return;
+      }
+      dict[field] =
+        model.model_id ||
+        buildModelValue({
+          model_name: model.model_name,
+          model_instance: model.model_instance,
+          model_provider: model.model_provider,
+        });
     });
     return dict;
   }, [defaultModels]);

@@ -17,13 +17,14 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 const cannedScholarHTML = `<html><body>
@@ -178,6 +179,7 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 
 func TestGoogleScholar_ParseResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
@@ -189,7 +191,7 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGoogleScholarToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"query":"transformer","top_n":5,"sort_by":"relevance","year_low":2020,"year_high":2024,"patents":true}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -225,37 +227,108 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 	}
 }
 
-func TestGoogleScholar_RequiresQuery(t *testing.T) {
+func TestGoogleScholar_EmptyQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleScholarTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+	var envelope googleScholarEnvelope
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
 func TestGoogleScholar_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleScholarTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "google_scholar" {
-		t.Errorf("Name = %q, want google_scholar", info.Name)
+	if info.Name != "google_scholar_search" {
+		t.Errorf("Name = %q, want google_scholar_search", info.Name)
 	}
 	if !strings.Contains(info.Desc, "Scholar") {
 		t.Errorf("Desc = %q, want to mention Scholar", info.Desc)
 	}
 }
 
+func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	built, err := BuildByName("google_scholar", map[string]any{
+		"top_n":    float64(7),
+		"sort_by":  "date",
+		"year_low": float64(2020),
+		"patents":  false,
+		"outputs":  map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	scholar := built.(*GoogleScholarTool)
+	if scholar.defaults.TopN != 7 || scholar.defaults.SortBy != "date" || scholar.defaults.YearLow != 2020 || scholar.defaults.Patents == nil || *scholar.defaults.Patents {
+		t.Fatalf("defaults = %+v", scholar.defaults)
+	}
+	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "newest"}, {"patents": "yes"}} {
+		if _, err := BuildByName("google_scholar", params); err == nil {
+			t.Fatalf("BuildByName(%#v) succeeded", params)
+		}
+	}
+	spec := scholar.ComponentSpec()
+	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{
+		"title": "Paper", "link": "https://paper.example", "authors": "A Author", "year": "2024", "snippet": "Abstract",
+	}}}
+	chunks, docAggs := scholar.BuildReferences(ctx, envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 || !strings.Contains(chunks[0]["content"].(string), "Authors: A Author") {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	outputs := scholar.BuildComponentOutputs(envelope)
+	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	if !strings.Contains(outputs["formalized_content"].(string), "Snippet: Abstract") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestRenderGoogleScholarReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
+	t.Parallel()
+
+	chunks := []map[string]any{
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
+	}
+	firstBlock := renderGoogleScholarReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderGoogleScholarReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
+	}
+	if got := renderGoogleScholarReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderGoogleScholarReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
+	}
+}
+
 func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -293,7 +366,7 @@ func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 		YearHigh: 2024,
 		Patents:  boolPtr(false),
 	})
-	_, err := tool.InvokableRun(context.Background(), `{}`)
+	_, err := tool.InvokableRun(ctx, `{}`)
 	if err != nil {
 		t.Fatalf("InvokableRun with defaults: %v", err)
 	}

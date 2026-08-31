@@ -107,7 +107,7 @@ def test_validate_immutable_fields_chunk_count_mismatch():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `chunk_count`."
+    assert error_msg == "can't change `chunk_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -120,7 +120,7 @@ def test_validate_immutable_fields_token_count_mismatch():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_count`."
+    assert error_msg == "can't change `token_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -133,7 +133,7 @@ def test_validate_immutable_fields_progress_mismatch():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `progress`."
+    assert error_msg == "can't change `progress`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -185,7 +185,7 @@ def test_validate_immutable_fields_zero_values_must_match():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `chunk_count`."
+    assert error_msg == "can't change `chunk_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -198,7 +198,7 @@ def test_validate_immutable_fields_zero_token_count_mismatch_when_chunk_count_ma
     doc.progress = 0.0
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_count`."
+    assert error_msg == "can't change `token_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -211,7 +211,7 @@ def test_validate_immutable_fields_zero_progress_mismatch_when_counts_match():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `progress`."
+    assert error_msg == "can't change `progress`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -326,7 +326,7 @@ def test_validate_chunk_method_visual_not_supported():
     doc.name = "image.jpg"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -337,7 +337,7 @@ def test_validate_chunk_method_ppt_not_supported():
     doc.name = "presentation.ppt"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -348,7 +348,7 @@ def test_validate_chunk_method_pptx_not_supported():
     doc.name = "presentation.pptx"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -359,7 +359,7 @@ def test_validate_chunk_method_pages_not_supported():
     doc.name = "document.pages"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 

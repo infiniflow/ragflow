@@ -2,10 +2,8 @@ import {
   SelectWithSearch,
   type SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
-import {
-  type IStructureGraphTemplate,
-  type StructureTemplateKind,
-} from '@/interfaces/database/document-structure';
+import { type IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { formatKindLabel } from '@/utils/compilation-template-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,20 +13,12 @@ interface RepresentationSelectProps {
   onChange?: (value: string) => void;
 }
 
-function getKindLabel(
-  t: (key: string) => string,
-  kind: StructureTemplateKind,
-): string {
-  return t(`chunk.representationKinds.${kind}`);
-}
-
 export function RepresentationSelect({
   templates,
   value,
   onChange,
 }: RepresentationSelectProps) {
   const { t } = useTranslation();
-
   const options = useMemo<SelectWithSearchFlagOptionType[]>(() => {
     return templates.map((template) => ({
       value: template.template_id,
@@ -36,7 +26,7 @@ export function RepresentationSelect({
         <span className="flex items-center gap-2">
           <span className="truncate">{template.template_name}</span>
           <span className="text-xs text-text-secondary shrink-0">
-            {getKindLabel(t, template.kind)}
+            {formatKindLabel(t, template.kind)}
           </span>
         </span>
       ),

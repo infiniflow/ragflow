@@ -914,10 +914,3 @@ func isTextContent(data []byte) bool {
 	// Check for null bytes (indicates binary)
 	return !slices.Contains(data, 0)
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

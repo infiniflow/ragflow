@@ -65,3 +65,15 @@ func (h *UserHandler) IsAdmin(c *gin.Context) {
 func (h *UserHandler) GetMeta(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "GetMeta not implemented")
 }
+
+func (h *UserHandler) OAuthLogin(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "OAuthLogin not implemented")
+}
+
+func (h *UserHandler) OAuthChannelCallback(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "OAuthChannelCallback not implemented")
+}
+
+func (h *UserHandler) GetLoginChannels(c *gin.Context) {
+	common.SuccessWithData(c, []interface{}{}, "success")
+}

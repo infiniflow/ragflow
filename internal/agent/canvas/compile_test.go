@@ -17,7 +17,6 @@ package canvas
 
 import (
 	"bytes"
-	"context"
 	"sort"
 	"strings"
 	"testing"
@@ -69,9 +68,11 @@ func TestCompile_LogsWhenLegacyNodesPresent(t *testing.T) {
 		},
 	}
 
+	ctx := t.Context()
+
 	// Compile may return an error from downstream BuildWorkflow —
 	// we ignore it; the assertion is on the log line.
-	_, _ = Compile(context.Background(), c)
+	_, _ = Compile(ctx, c)
 
 	got := buf.String()
 	if !strings.Contains(got, "LoopItem/IterationItem") {
@@ -110,10 +111,11 @@ func TestCompile_NoLogOnCleanCanvas(t *testing.T) {
 		},
 	}
 
+	ctx := t.Context()
 	// We don't fail on Compile's own error (it may fail for many
 	// reasons unrelated to legacy names); the assertion is on the
 	// absence of the legacy log line.
-	_, _ = Compile(context.Background(), c)
+	_, _ = Compile(ctx, c)
 
 	got := buf.String()
 	if strings.Contains(got, "LoopItem/IterationItem") {
@@ -181,7 +183,8 @@ func TestCompile_RejectsUserFillUpInResumeMode(t *testing.T) {
 			"end":   {Obj: CanvasComponentObj{ComponentName: "Answer", Params: map[string]any{}}},
 		},
 	}
-	_, err := Compile(context.Background(), c, WithInterruptAfterNonTerminalCpn())
+	ctx := t.Context()
+	_, err := Compile(ctx, c, WithInterruptAfterNonTerminalCpn())
 	if err == nil {
 		t.Fatal("expected Compile to reject UserFillUp in resume mode, got nil error")
 	}
@@ -204,7 +207,8 @@ func TestCompile_PropagatesCheckPointID(t *testing.T) {
 			"answer:0": {Obj: CanvasComponentObj{ComponentName: "Answer", Params: map[string]any{}}},
 		},
 	}
-	compiled, err := Compile(context.Background(), c, WithCheckPointID("task-9"))
+	ctx := t.Context()
+	compiled, err := Compile(ctx, c, WithCheckPointID("task-9"))
 	if err != nil {
 		t.Skipf("skipping propagation assertion: canvas did not compile in unit scope: %v", err)
 	}

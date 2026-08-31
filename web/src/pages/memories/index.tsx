@@ -5,6 +5,7 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -22,6 +23,7 @@ export default function MemoryList() {
   // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
+    isLoading,
     pagination,
     searchString,
     handleInputChange,
@@ -56,6 +58,7 @@ export default function MemoryList() {
     },
     [setPagination],
   );
+  useGoToPreviousPageOnEmpty(list?.data?.memory_list?.length, isLoading);
 
   const [searchUrl, setMemoryUrl] = useSearchParams();
   const { filters } = useSelectFilters();

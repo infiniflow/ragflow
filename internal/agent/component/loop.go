@@ -46,6 +46,8 @@ package component
 
 import (
 	"context"
+
+	"gorm.io/gorm"
 )
 
 const componentNameLoop = "Loop"
@@ -171,13 +173,13 @@ func (c *LoopComponent) Outputs() map[string]string {
 // The returned map is empty. State writes from this method would be
 // silently dropped by the eino graph, because LoopComponent is not
 // registered as an eino node when the macro expansion fires.
-func (c *LoopComponent) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (c *LoopComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
 // Stream mirrors Invoke and emits an empty map as a single chunk.
-func (c *LoopComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := c.Invoke(ctx, inputs)
+func (c *LoopComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := c.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

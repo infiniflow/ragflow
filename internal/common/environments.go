@@ -18,6 +18,7 @@ package common
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,12 +32,12 @@ func GetEnvSmall(key string) string {
 
 // environment variables
 const (
-	EnvDeepDocURL                        = "DEEPDOC_URL"
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
+	EnvMaxContentLength                  = "MAX_CONTENT_LENGTH"
 	EnvRAGFlowDictPath                   = "RAGFLOW_DICT_PATH"
 	EnvDefaultSuperuserEmail             = "DEFAULT_SUPERUSER_EMAIL"
 	EnvDefaultSuperuserNickname          = "DEFAULT_SUPERUSER_NICKNAME"
@@ -59,9 +60,26 @@ const (
 	EnvE2BTemplateName                   = "E2B_TEMPLATE_NAME"
 	EnvE2BTimeout                        = "E2B_TIMEOUT"
 	EnvE2BAPIURL                         = "E2B_API_URL"
-	EnvE2BApiKey                         = "E2B_API_KEY"
+	EnvE2BAPIKey                         = "E2B_API_KEY"
 	EnvE2BAccessToken                    = "E2B_ACCESS_TOKEN"
 	EnvE2BDomain                         = "E2B_DOMAIN"
+	EnvTenkiAPIKey                       = "TENKI_API_KEY"
+	EnvTenkiAPIURL                       = "TENKI_API_URL"
+	EnvTenkiImage                        = "TENKI_IMAGE"
+	EnvTenkiTimeout                      = "TENKI_TIMEOUT"
+	EnvTenkiAllowOutbound                = "TENKI_ALLOW_OUTBOUND"
+	EnvUCloudSandboxAPIKey               = "UCLOUD_SANDBOX_API_KEY"
+	EnvUCloudSandboxRegion               = "UCLOUD_SANDBOX_REGION"
+	EnvUCloudSandboxDomain               = "UCLOUD_SANDBOX_DOMAIN"
+	EnvUCloudSandboxAPIURL               = "UCLOUD_SANDBOX_API_URL"
+	EnvUCloudSandboxTemplate             = "UCLOUD_SANDBOX_TEMPLATE"
+	EnvUCloudSandboxAllowInternetAccess  = "UCLOUD_SANDBOX_ALLOW_INTERNET_ACCESS"
+	EnvUCloudSandboxInsecureHTTP         = "UCLOUD_SANDBOX_INSECURE_HTTP"
+	EnvUCloudSandboxExecutionTimeout     = "UCLOUD_SANDBOX_EXECUTION_TIMEOUT"
+	EnvUCloudSandboxTimeout              = "UCLOUD_SANDBOX_TIMEOUT"
+	EnvUCloudSandboxMaxOutputBytes       = "UCLOUD_SANDBOX_MAX_OUTPUT_BYTES"
+	EnvUCloudSandboxMaxArtifacts         = "UCLOUD_SANDBOX_MAX_ARTIFACTS"
+	EnvUCloudSandboxMaxArtifactBytes     = "UCLOUD_SANDBOX_MAX_ARTIFACT_BYTES"
 	EnvLocalPythonBin                    = "LOCAL_PYTHON_BIN"
 	EnvLocalNodeBin                      = "LOCAL_NODE_BIN"
 	EnvLocalWorkDir                      = "LOCAL_WORK_DIR"
@@ -77,7 +95,7 @@ const (
 	EnvVECLIBMaximumThreads              = "VECLIB_MAXIMUM_THREADS"
 	EnvNumEXPRNumThreads                 = "NUMEXPR_NUM_THREADS"
 	EnvXDGCacheHome                      = "XDG_CACHE_HOME"
-	EnvOpenAIApiKey                      = "OPENAI_API_KEY"
+	EnvOpenAIAPIKey                      = "OPENAI_API_KEY"
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
 	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
@@ -86,6 +104,7 @@ const (
 	EnvSandboxExecutorManagerTimeout     = "SANDBOX_EXECUTOR_MANAGER_TIMEOUT"
 	EnvSandboxExecutorManagerPoolSize    = "SANDBOX_EXECUTOR_MANAGER_POOL_SIZE"
 	EnvSandboxExecutorManagerMaxRetries  = "SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES"
+	EnvSandboxExecutorManagerAPIToken    = "SANDBOX_EXECUTOR_MANAGER_API_TOKEN"
 	EnvSandboxBasePythonImage            = "SANDBOX_BASE_PYTHON_IMAGE"
 	EnvSandboxBaseNodeJSImage            = "SANDBOX_BASE_NODEJS_IMAGE"
 	EnvSandboxArtifactBucket             = "SANDBOX_ARTIFACT_BUCKET"
@@ -107,22 +126,23 @@ const (
 	EnvTrinoUseTls                       = "TRINO_USE_TLS"
 	EnvSSHEnableAPIURL                   = "SSH_ENABLE_API_URL"
 	EnvAllowAnyHost                      = "ALLOW_ANY_HOST"
-	EnvTavilyApiKey                      = "TAVILY_API_KEY"
+	EnvTavilyAPIKey                      = "TAVILY_API_KEY"
+	EnvQueritAPIKey                      = "QUERIT_API_KEY"
 	EnvHome                              = "HOME"
 	EnvUserProfile                       = "USERPROFILE"
-	EnvHttpHTTPProxy                     = "http_proxy"
-	EnvHttpHTTPSProxy                    = "https_proxy"
+	EnvHTTPProxy                         = "http_proxy"
+	EnvHTTPSProxy                        = "https_proxy"
 	EnvBatchSingle                       = "BATCH_SINGLE"
 	EnvBatchCount                        = "BATCH_COUNT"
 	EnvBatchLogLevel                     = "BATCH_LOG_LEVEL"
-	EnvBatchSkipOCR                      = "BATCH_SKIP_OCR"
 	EnvBatchCompareOnly                  = "BATCH_COMPARE_ONLY"
 	EnvBatchCompareFilter                = "BATCH_COMPARE_FILTER"
 	EnvBatchCompareCSV                   = "BATCH_COMPARE_CSV"
 	EnvPYOCRSuffix                       = "PY_OCR_SUFFIX"
-	EnvOSSDeepDocURL                     = "OSSDEEPDOC_URL"
 	EnvUpdateGolden                      = "UPDATE_GOLDEN"
 	EnvBatchParityFilter                 = "BATCH_PARITY_FILTER"
+	EnvBatchParityVariant                = "BATCH_PARITY_VARIANT"
+	EnvBatchParityDataRoot               = "BATCH_PARITY_DATA_ROOT"
 	EnvDumpCount                         = "DUMP_COUNT"
 	EnvBatchCSV                          = "BATCH_CSV"
 	EnvESTest                            = "ES_TEST"
@@ -132,22 +152,22 @@ const (
 	EnvESIndexPrefix                     = "ES_INDEX_PREFIX"
 	EnvGiteeListModelsIntegration        = "GITEE_LIST_MODELS_INTEGRATION"
 	EnvGiteeBaseUrl                      = "GITEE_BASE_URL"
-	EnvGiteeApiKey                       = "GITEE_API_KEY"
-	EnvRAGFlowApiTiming                  = "RAGFLOW_API_TIMING"
+	EnvGiteeAPIKey                       = "GITEE_API_KEY"
+	EnvRAGFlowAPITiming                  = "RAGFLOW_API_TIMING"
 	EnvInfinityURI                       = "INFINITY_URI"
 	EnvDoclingServerURL                  = "DOCLING_SERVER_URL"
-	EnvDoclingApiKey                     = "DOCLING_API_KEY"
-	EnvMineruApiServer                   = "MINERU_APISERVER"
-	EnvMineruApiKey                      = "MINERU_API_KEY"
+	EnvDoclingAPIKey                     = "DOCLING_API_KEY"
+	EnvMineruAPIServer                   = "MINERU_APISERVER"
+	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
-	EnvOpenDataLoaderApiServer           = "OPENDATALOADER_APISERVER"
-	EnvOpenDataLoaderApiKey              = "OPENDATALOADER_API_KEY"
+	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
+	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
-	EnvPaddleOCRApiURL                   = "PADDLEOCR_API_URL"
+	EnvPaddleOCRAPIURL                   = "PADDLEOCR_API_URL"
 	EnvPaddleOCRAccessToken              = "PADDLEOCR_ACCESS_TOKEN"
 	EnvPaddleOCRAlgorithm                = "PADDLEOCR_ALGORITHM"
 	EnvSOMarkBaseUrl                     = "SOMARK_BASE_URL"
-	EnvSOMarkApiKey                      = "SOMARK_API_KEY"
+	EnvSOMarkAPIKey                      = "SOMARK_API_KEY"
 	EnvSOMarkImageFormat                 = "SOMARK_IMAGE_FORMAT"
 	EnvSOMarkFormulaFormat               = "SOMARK_FORMULA_FORMAT"
 	EnvSOMarkTableFormat                 = "SOMARK_TABLE_FORMAT"
@@ -159,10 +179,15 @@ const (
 	EnvSOMarkEnableTableImage            = "SOMARK_ENABLE_TABLE_IMAGE"
 	EnvSOMarkEnableImageUnderstanding    = "SOMARK_ENABLE_IMAGE_UNDERSTANDING"
 	EnvSOMarkKeepHeaderFooter            = "SOMARK_KEEP_HEADER_FOOTER"
-	EnvTCADPApiServerURL                 = "TCADP_APISERVER_URL"
-	EnvTCADPApiKey                       = "TCADP_API_KEY"
+	EnvTCADPAPIServerURL                 = "TCADP_APISERVER_URL"
+	EnvTCADPAPIKey                       = "TCADP_API_KEY"
+	EnvFirecrawlAPIKey                   = "FIRECRAWL_API_KEY"
+	EnvFirecrawlAPIURL                   = "FIRECRAWL_API_URL"
+	EnvFirecrawlMaxRetries               = "FIRECRAWL_MAX_RETRIES"
+	EnvFirecrawlTimeout                  = "FIRECRAWL_TIMEOUT"
+	EnvFirecrawlRelayTimeout             = "FIRECRAWL_RELAY_TIMEOUT"
 	EnvRAGFlowSecretKey                  = "RAGFLOW_SECRET_KEY"
-	EnvRegisterEnabled                   = "REGISTER_ENABLED"
+	EnvEnableRegister                    = "ENABLE_REGISTER"
 	EnvDisablePasswordLogin              = "DISABLE_PASSWORD_LOGIN"
 	EnvMinioHost                         = "MINIO_HOST"
 	EnvMinioRegion                       = "MINIO_REGION"
@@ -174,8 +199,8 @@ const (
 	EnvTEIModel                          = "TEI_MODEL"
 	EnvTEIBaseURL                        = "TEI_BASE_URL"
 	EnvRAGFlowConfDir                    = "RAGFLOW_CONF_DIR"
-	EnvRAGProjectBaseURL                 = "RAG_PROJECT_BASE"
-	EnvRAGDeployBaseURL                  = "RAG_DEPLOY_BASE"
+	EnvRAGProjectBase                    = "RAG_PROJECT_BASE"
+	EnvRAGDeployBase                     = "RAG_DEPLOY_BASE"
 	EnvRAGFlowTestEnvIntOrUnset          = "RAGFLOW_TEST_ENVINTOR_UNSET"
 	EnvRAGFlowTestEnvIntOr               = "RAGFLOW_TEST_ENVINTOR"
 	EnvRAGFlowTestEnvOr                  = "RAGFLOW_TEST_ENVOR"
@@ -185,4 +210,61 @@ const (
 	EnvGmailWebOAuthRedirectURI          = "GMAIL_WEB_OAUTH_REDIRECT_URI"
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
+
+	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
+	// model snapshot (see common.DeepDocModelFiles); mirrors
+	// deepdoc_server.py's --model-dir (default rag/res/deepdoc).
+	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
+	// EnvDeepDocDropScore overrides the confidence threshold below which the
+	// in-process (Go) DeepDoc backend blanks recognized text while preserving
+	// the real score. It MUST match the Python inference service's
+	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
+	// backends apply the same text-blanking contract.
+	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
 )
+
+// DeepDocModelFiles is the single source of truth for the weights the
+// in-process (Go) DeepDoc backend and the Python DeepDoc service both
+// require. cmd/ resolves the model directory against it; infnative
+// validates file presence against it. Order is insignificant (callers do
+// set-membership checks); keep it stable so logs and diffs stay readable.
+//
+// External consumers that re-list these names must stay in sync:
+//   - .github/workflows/deepdoc-drift.yml  (MODEL_FILES)
+//   - deepdoc/server/download_deps.py      (FILES)
+var DeepDocModelFiles = []string{
+	"det.onnx",
+	"layout.onnx",
+	"tsr.onnx",
+	"rec.onnx",
+	"ocr.res",
+}
+
+// HasModelFiles reports whether dir contains every file listed in
+// DeepDocModelFiles. It is the single presence check shared by the server
+// (cmd/ragflow_server.go) and the in-process analyzer (infnative:
+// NewAnalyzer / canServe); those call sites must not re-roll this loop.
+func HasModelFiles(dir string) bool {
+	for _, f := range DeepDocModelFiles {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// DeepDocORTVersion is the onnxruntime native release the in-process (Go)
+// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is the
+// single source for the download URL and extracted dir name used across Go
+// and Python. The Go binding (github.com/yalue/onnxruntime_go, forked to
+// github.com/xugangqiang/onnxruntime_go) and the pip onnxruntime== pin must
+// track this MINOR version: the binding uses its own release numbering
+// (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
+// the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
+// so there is no .so / SONAME at runtime.
+//
+// To bump ORT: update DeepDocORTVersion (Go) AND ORT_VERSION in
+// ragflow_deps/download_deps.py AND the onnxruntime/onnxruntime-gpu pins in
+// pyproject.toml + .github/workflows/deepdoc-drift.yml, and refresh the
+// onnxruntime_go binding minor in go.mod.
+const DeepDocORTVersion = "1.23.2"

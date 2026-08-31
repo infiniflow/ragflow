@@ -34,14 +34,14 @@ type Synonym struct {
 	lookupNum  atomic.Int64
 	loadTm     time.Time
 	dictionary map[string][]string
-	redis      RedisClient // Optional Redis client for real-time synonym loading
+	redis      Client // Optional Redis client for real-time synonym loading
 	wordNet    *WordNet
 	resPath    string
 }
 
-// RedisClient interface for Redis operations
+// Client interface for Redis operations
 // This should be implemented by the caller if Redis support is needed
-type RedisClient interface {
+type Client interface {
 	Get(key string) (string, error)
 }
 
@@ -50,7 +50,7 @@ type RedisClient interface {
 // wordnetDir: path to wordnet directory (e.g., "/usr/share/infinity/resource/wordnet").
 //
 //	If empty, WordNet will not be initialized.
-func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
+func NewSynonym(redis Client, resPath string, wordnetDir string) *Synonym {
 	s := &Synonym{
 		loadTm:     time.Now().Add(-1000000 * time.Second),
 		dictionary: make(map[string][]string),

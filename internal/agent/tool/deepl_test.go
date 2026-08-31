@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +27,7 @@ import (
 
 func TestDeepL_BuildRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotMethod, gotAuth, gotCT, gotPath string
 	var gotForm url.Values
@@ -52,7 +52,7 @@ func TestDeepL_BuildRequest(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewDeepLToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"api_key":"key-xyz:fx","text":"Hello world","source_lang":"en","target_lang":"de"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -98,6 +98,7 @@ func TestDeepL_BuildRequest(t *testing.T) {
 
 func TestDeepL_DefaultLanguages(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +113,7 @@ func TestDeepL_DefaultLanguages(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewDeepLToolWith(helper)
-	if _, err := tool.InvokableRun(context.Background(),
+	if _, err := tool.InvokableRun(ctx,
 		`{"api_key":"x:fx","text":"Hello"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -126,13 +127,14 @@ func TestDeepL_DefaultLanguages(t *testing.T) {
 
 func TestDeepL_RequiresAPIKeyAndText(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewDeepLTool()
-	if _, err := tool.InvokableRun(context.Background(),
+	if _, err := tool.InvokableRun(ctx,
 		`{"api_key":"","text":"Hello"}`); err == nil {
 		t.Error("expected error for missing api_key")
 	}
-	if _, err := tool.InvokableRun(context.Background(),
+	if _, err := tool.InvokableRun(ctx,
 		`{"api_key":"x","text":""}`); err == nil {
 		t.Error("expected error for empty text")
 	}
@@ -140,9 +142,10 @@ func TestDeepL_RequiresAPIKeyAndText(t *testing.T) {
 
 func TestDeepL_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewDeepLTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -178,6 +181,7 @@ func TestDeepL_Info(t *testing.T) {
 // when both tests run in the same package.
 func TestDeepL_TranslationFailureReturnsError(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	// 500 Internal Server Error from a stub DeepL endpoint.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +193,7 @@ func TestDeepL_TranslationFailureReturnsError(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewDeepLToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"api_key":"key-xyz:fx","text":"hello","source_lang":"EN","target_lang":"ZH"}`)
 	if err == nil {
 		t.Fatalf("expected non-nil error, got nil; out=%s", out)

@@ -44,7 +44,7 @@ def user_list(tenant_id):
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 
@@ -64,7 +64,7 @@ async def create(tenant_id):
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 
@@ -141,7 +141,7 @@ async def rm(tenant_id):
     if current_user.id != tenant_id and current_user.id != user_id:
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 

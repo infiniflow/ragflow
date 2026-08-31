@@ -47,7 +47,7 @@ function FilePreview({ file }: FilePreviewProps) {
   }
 
   return (
-    <FileText className="size-10 text-muted-foreground" aria-hidden="true" />
+    <FileText strokeWidth={1} className="size-10 text-muted-foreground" aria-hidden="true" />
   );
 }
 
@@ -304,7 +304,7 @@ export function FileUploader(props: FileUploaderProps) {
         }
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 
   const isDisabled = disabled || (files?.length ?? 0) >= maxFileCount;

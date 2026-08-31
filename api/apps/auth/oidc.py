@@ -100,9 +100,12 @@ class OIDCClient(OAuthClient):
     def _load_oidc_metadata(issuer):
         """
         Load OIDC metadata from `/.well-known/openid-configuration`.
+
+        A configured issuer may carry a trailing slash, which would produce a
+        double slash in the discovery URL and a 404 on most providers.
         """
         try:
-            metadata_url = f"{issuer}/.well-known/openid-configuration"
+            metadata_url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
             response = sync_request("GET", metadata_url, timeout=7)
             response.raise_for_status()
             return response.json()

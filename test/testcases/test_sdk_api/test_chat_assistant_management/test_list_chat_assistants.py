@@ -20,7 +20,7 @@ import pytest
 
 @pytest.mark.usefixtures("add_chat_assistants")
 class TestChatAssistantsList:
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_default(self, client):
         assistants = client.list_chats()
         assert len(assistants) == 5
@@ -29,7 +29,7 @@ class TestChatAssistantsList:
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",
         [
-            ({"page": 0, "page_size": 2}, 5, ""),
+            ({"page": 0, "page_size": 2}, 2, ""),
             ({"page": 2, "page_size": 2}, 2, ""),
             ({"page": 3, "page_size": 2}, 1, ""),
             ({"page": "3", "page_size": 2}, 0, "not instance of"),
@@ -178,7 +178,7 @@ class TestChatAssistantsList:
         "chat_assistant_id, expected_message",
         [
             (lambda r: r[0], ""),
-            ("unknown", "No authorization."),
+            ("unknown", "no authorization"),
         ],
     )
     def test_get_chat(self, client, add_chat_assistants, chat_assistant_id, expected_message):

@@ -1,0 +1,16 @@
+{
+ "id": "token__html_backtick",
+ "component": "TokenChunker",
+ "notes": "Custom-delimiter branch on the html path.",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "`\n`"
+  ]
+ },
+ "input": {
+  "name": "t",
+  "output_format": "html",
+  "html": "<p>one</p>\n<p>two</p>\n<p>three</p>"
+ }
+}

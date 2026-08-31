@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: RAGFlow CLI
+sidebar_label: RAGFlow CLI
 slug: /admin_cli
 sidebar_custom_props: {
   categoryIcon: LucideSquareTerminal
@@ -16,9 +18,9 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 2. Install ragflow-cli.
 
    ```bash
-   pipx install ragflow-cli==0.26.4
+   pipx install ragflow-cli==0.27.1
    ```
-  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.26.4`.
+  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.27.1`.
 
 3. Launch the CLI client:
 
@@ -27,7 +29,7 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
    ```
 
     You will be prompted to enter the superuser's password to log in.
-    The default password is admin.
+    See [Default Administrative Account](#default-administrative-account) for how the initial password is chosen.
 
     **Parameters:**
 
@@ -35,16 +37,16 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 
     - -p: RAGFlow admin server port
 
-## Default administrative account
+## Default Administrative Account
 
 - Username: admin@ragflow.io
-- Password: admin
+- Password: the value of the `ADMIN_DEFAULT_PASSWORD` (or `DEFAULT_SUPERUSER_PASSWORD`) environment variable; if neither is set when the admin server first starts, a random password is generated and written once to `logs/admin_bootstrap_password.txt` (mode 0600). Change it after the first login.
 
 ## Supported Commands
 
 Commands are case-insensitive and must be terminated with a semicolon(;).
 
-### Service manage commands
+### Service Manage Commands
 
 `LIST SERVICES;`
 
@@ -121,7 +123,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - Lists the agents associated with the specified user.
 - [Example](#example-list-agents-of-user)
 
-### System info
+### System Info
 
 `SHOW VERSION;`
 - Display the current RAGFlow version.

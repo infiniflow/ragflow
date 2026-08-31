@@ -4,6 +4,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -475,7 +476,7 @@ func TestFaultInjection_RapidCancel_Restart(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 		_, err := engine.RunSync(ctx, map[string]any{"value": "cancel"})
 		cancel()
-		if err != nil && err != context.DeadlineExceeded && err != context.Canceled {
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 			t.Logf("iteration %d: %v", i, err)
 		}
 	}

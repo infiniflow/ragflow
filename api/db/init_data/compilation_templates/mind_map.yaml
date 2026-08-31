@@ -2,6 +2,12 @@ kind: mind_map
 display_name: Mind map - Radial concept hierarchy
 config:
   kind: mind_map
+  rechunk_rules: |
+    - Group only adjacent source chunks into coherent semantic units for this knowledge-compilation task.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Keep each main idea with its supporting content, and split when the topic or branch changes.
+    - Keep self-contained tables, lists, figures, and code blocks intact; do not split their internal structure.
+    - Do not invent, rewrite, or return source text; return only chunk grouping metadata.
   entity:
     description: >-
       You are a robust mind-map extractor. Extract the central concept,

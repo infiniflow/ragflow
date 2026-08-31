@@ -332,7 +332,7 @@ func TestWorkflowComplex_30NodeFullOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run 30 nodes")}})
 	events := drainEventsInto(iter)
 
@@ -429,7 +429,7 @@ func TestWorkflowComplex_CancelWithCheckpoint(t *testing.T) {
 	}
 
 	store := newAtomicStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	cpID := "cancel_with_checkpoint"
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{
@@ -491,7 +491,7 @@ func TestWorkflowComplex_HighConcurrency(t *testing.T) {
 				return
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			iter := wf.Run(ctx, &AgentInput{
 				Messages: []Message{schema.UserMessage(fmt.Sprintf("tenant %d", id))},
 			})
@@ -579,7 +579,7 @@ func TestWorkflowComplex_ConcurrentWithCheckpoint(t *testing.T) {
 				return
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			runner := NewTypedRunner(RunnerConfig[*schema.Message]{
 				Agent:           wf,
 				CheckPointStore: store,
@@ -621,7 +621,7 @@ func TestWorkflowComplex_50NodeStress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("50 node stress")}})
 
 	var errorCount int
@@ -658,7 +658,7 @@ func TestWorkflowComplex_ImmediateCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opt, cancel := WithCancel()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("immediate cancel")}}, opt)
 
@@ -730,7 +730,7 @@ func TestWorkflowComplex_ConcurrentCancel(t *testing.T) {
 				return
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			time.Sleep(time.Microsecond * time.Duration(rand.Intn(500)))
 
 			iter := wf.Run(ctx, &AgentInput{
@@ -786,7 +786,7 @@ func TestWorkflowComplex_MixedSpeedTools(t *testing.T) {
 			Tools: []Tool{tool},
 		}).WithName(nodeID)
 	}
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "mixed_speed", Description: "mix of fast and slow tools",
 		SubAgents: agents,
 	})
@@ -794,7 +794,7 @@ func TestWorkflowComplex_MixedSpeedTools(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("mixed speed")}})
 
 	for range drainEventsInto(iter) {

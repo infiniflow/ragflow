@@ -162,7 +162,6 @@ class TextRecognizer:
         return padding_im
 
     def resize_norm_img_vl(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
         img = img[:, :, ::-1]  # bgr2rgb
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
@@ -197,7 +196,6 @@ class TextRecognizer:
         return np.reshape(img_black, (c, row, col)).astype(np.float32)
 
     def srn_other_inputs(self, image_shape, num_heads, max_text_length):
-
         imgC, imgH, imgW = image_shape
         feature_dim = int((imgH / 8) * (imgW / 8))
 
@@ -281,7 +279,6 @@ class TextRecognizer:
         return img
 
     def resize_norm_img_svtr(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
         resized_image = resized_image.astype("float32")
@@ -291,7 +288,6 @@ class TextRecognizer:
         return resized_image
 
     def resize_norm_img_abinet(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
 
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
@@ -307,7 +303,6 @@ class TextRecognizer:
         return resized_image
 
     def norm_img_can(self, img, image_shape):
-
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # CAN only predict gray scale image
 
         if self.rec_image_shape[0] == 1:
@@ -640,6 +635,27 @@ class OCR:
                 text = ""
             texts.append(text)
         return texts
+
+    def recognize_batch_with_score(self, img_list, device_id: int | None = None):
+        """Like recognize_batch but keeps the per-item recognition score.
+
+        Returns a list of (text, score) tuples. Text below drop_score is
+        blanked, matching recognize_batch, but the score is preserved so the
+        caller (the OCR HTTP adapter) can surface it for score-based layer-2
+        rotation selection. Adding this method instead of changing
+        recognize_batch keeps the in-process __ocr path (pdf_parser.py) on the
+        original text-only contract.
+        """
+        if device_id is None:
+            device_id = 0
+        rec_res, elapse = self.text_recognizer[device_id](img_list)
+        out = []
+        for i in range(len(rec_res)):
+            text, score = rec_res[i]
+            if score < self.drop_score:
+                text = ""
+            out.append((text, score))
+        return out
 
     def __call__(self, img, device_id=0, cls=True):
         time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}

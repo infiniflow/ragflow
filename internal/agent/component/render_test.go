@@ -63,7 +63,7 @@ func TestRender_HTMLEscapesBody(t *testing.T) {
 	}
 }
 
-// TestRender_Markdown: markdown passthrough + markdown link list
+// TestRender_Markdown: Markdown passthrough + Markdown link list
 // for downloads.
 func TestRender_Markdown(t *testing.T) {
 	got := Render(RenderRequest{

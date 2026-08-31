@@ -377,6 +377,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
+	case "SOFT":
+		return Token{Type: TokenSoft, Value: ident}
 	case "FINGERPRINT":
 		return Token{Type: TokenFingerprint, Value: ident}
 	case "LICENSE":
@@ -409,6 +411,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAsync, Value: ident}
 	case "SYNC":
 		return Token{Type: TokenSync, Value: ident}
+	case "SYNC_LOGS":
+		return Token{Type: TokenSyncLogs, Value: ident}
 	case "BENCHMARK":
 		return Token{Type: TokenBenchmark, Value: ident}
 	case "PING":
@@ -513,6 +517,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAnalyze, Value: ident}
 	case "SUMMARY":
 		return Token{Type: TokenSummary, Value: ident}
+	case "STATS":
+		return Token{Type: TokenStats, Value: ident}
 	case "STORAGE":
 		return Token{Type: TokenStorage, Value: ident}
 	case "QUOTA":
@@ -523,6 +529,12 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenOrphan, Value: ident}
 	case "DAYS":
 		return Token{Type: TokenDays, Value: ident}
+	case "HOUR":
+		return Token{Type: TokenHour, Value: ident}
+	case "DAY":
+		return Token{Type: TokenDay, Value: ident}
+	case "MONTH":
+		return Token{Type: TokenMonth, Value: ident}
 	case "WINDOW":
 		return Token{Type: TokenWindow, Value: ident}
 	case "ACTIVITY":
@@ -537,6 +549,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenData, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
+	case "LOGS":
+		return Token{Type: TokenLogs, Value: ident}
 	case "LEVEL":
 		return Token{Type: TokenLevel, Value: ident}
 	case "DEBUG":

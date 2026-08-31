@@ -24,9 +24,9 @@ export function capitalize(s: string): string {
 }
 
 /**
- * When model_type contains chat and vision=true, automatically add image2text
+ * When model_type contains chat and vision=true, automatically add vision.
  */
-export function applyChatToImage2Text(
+export function applyChatToVision(
   modelType: string[] | string | undefined,
   vision?: boolean,
 ): string[] {
@@ -36,9 +36,36 @@ export function applyChatToImage2Text(
       ? [modelType]
       : [];
   if (arr.includes('chat') && vision) {
-    return [...arr, 'image2text'];
+    return [...arr, 'vision'];
   }
   return arr;
+}
+
+/**
+ * Parse a backend `api_key` value (which may be a JSON string, an
+ * already-parsed object, or a bare string) into the underlying object.
+ * Used by `echoTransform` implementations to lift provider-specific
+ * credential fields that the backend persists nested inside `api_key`
+ * (e.g. XunFei Spark's `spark_api_password`, PaddleOCR's nested config,
+ * MinerU's full config bundle).
+ *
+ * Returns `undefined` for bare strings or unparseable input so callers
+ * can fall back to empty values via `??`.
+ */
+export function parseApiKeyAsObject(
+  raw: unknown,
+): Record<string, any> | undefined {
+  let obj: any = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('{')) return undefined;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  return obj && typeof obj === 'object' ? obj : undefined;
 }
 
 /**

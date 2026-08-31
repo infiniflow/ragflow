@@ -94,6 +94,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminListCommands()
 	case TokenShow:
 		return p.parseAdminShowCommands()
+	case TokenStats:
+		return p.parseAdminStatsCommands()
 	case TokenCheck:
 		return p.parseAdminCheck()
 	case TokenCreate:

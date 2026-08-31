@@ -13,20 +13,20 @@ import (
 	models "ragflow/internal/entity/models"
 )
 
-func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
 	baseURL := strings.TrimSpace(parser.OpenDataLoaderAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiServer))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIServer))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader requires opendataloader_apiserver or OPENDATALOADER_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.OpenDataLoaderAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIKey))
 	}
 
 	bodyReader, contentType, err := openDataLoaderMultipart(filename, data, parser)
@@ -41,7 +41,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	resp, err := models.NewDriverHTTPClient().Do(req)
+	resp, err := models.NewDriverHTTPClient(false).Do(req)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader submit: %w", err)}
 	}
@@ -67,7 +67,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 		}
 	}
 	if strings.TrimSpace(payload.MDText) != "" {
-		return parseMinerUMarkdownResult(filename, payload.MDText, parser.OutputFormat, 1)
+		return parseMinerUMarkdownResult(ctx, filename, payload.MDText, parser.OutputFormat, 1)
 	}
 	return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader returned no parsed content")}
 }

@@ -2,7 +2,7 @@
  * Table transformer for markdown import/export
  */
 
-/* eslint-disable @typescript-eslint/no-unused-vars, no-console, @typescript-eslint/no-use-before-define */
+/* oxlint-disable typescript/no-unused-vars, no-console, typescript/no-use-before-define */
 
 import { ElementTransformer } from '@lexical/markdown';
 import {

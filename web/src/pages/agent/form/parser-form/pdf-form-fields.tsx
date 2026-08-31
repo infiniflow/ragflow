@@ -8,11 +8,13 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
+import { FileType } from '../../constant/pipeline';
 import {
   FlattenMediaToTextFormField,
   LanguageFormField,
@@ -22,8 +24,9 @@ import {
   TwoColumnCheckFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
+import { DynamicPageRange } from './dynamic-page-range';
 import { useSetInitialLanguage } from './use-set-initial-language';
-import { buildFieldNameWithPrefix } from './utils';
+import { buildFieldNameWithPrefix, isForeignParseMethod } from './utils';
 
 const tableResultTypeOptions: SelectWithSearchFlagOptionType[] = [
   { label: 'Markdown', value: '0' },
@@ -39,6 +42,7 @@ export function PdfFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
   const ownerTenantId = useOwnerTenantId();
+  const isGo = useIsGoBackend();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
   const parseMethod = useWatch({
@@ -66,7 +70,11 @@ export function PdfFormFields({ prefix }: CommonProps) {
   useSetInitialLanguage({ prefix, languageShown });
 
   useEffect(() => {
-    if (isEmpty(form.getValues(parseMethodName))) {
+    const current = form.getValues(parseMethodName);
+    // On a file-type switch the field remounts and react-hook-form re-seeds it
+    // from the node's saved form data, so it can hold another file type's
+    // static parse method (e.g. ocr) — reset it to DeepDOC in that case too.
+    if (isEmpty(current) || isForeignParseMethod(FileType.PDF, current)) {
       form.setValue(parseMethodName, ParseDocumentType.DeepDOC, {
         shouldValidate: true,
         shouldDirty: true,
@@ -107,6 +115,7 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <RmdirFormField prefix={prefix} />
       <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
+      {isGo && <DynamicPageRange prefix={prefix} />}
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
         <ModelTreeSelectFormField

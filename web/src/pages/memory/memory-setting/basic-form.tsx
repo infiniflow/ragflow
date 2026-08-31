@@ -1,12 +1,20 @@
 import { AvatarUpload } from '@/components/avatar-upload';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
+import { DESCRIPTION_MAX_LENGTH } from '@/constants/common';
 import { t } from 'i18next';
 import { z } from 'zod';
 export const basicInfoSchema = {
   name: z.string().min(1, { message: t('setting.nameRequired') }),
   avatar: z.string().optional(),
-  description: z.string().optional(),
+  description: z
+    .string()
+    .max(DESCRIPTION_MAX_LENGTH, {
+      message: t('common.descriptionMaxLength', {
+        max: DESCRIPTION_MAX_LENGTH,
+      }),
+    })
+    .optional(),
 };
 export const defaultBasicInfo = { name: '', avatar: '', description: '' };
 export const BasicInfo = () => {
@@ -49,6 +57,7 @@ export const BasicInfo = () => {
           return (
             <Input
               {...field}
+              maxLength={DESCRIPTION_MAX_LENGTH}
               placeholder={t('memory.config.descriptionPlaceholder')}
             ></Input>
           );

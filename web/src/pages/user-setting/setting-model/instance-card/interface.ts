@@ -19,6 +19,69 @@ import { IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo } from '@/interfaces/request/llm';
 import { RefObject } from 'react';
 
+/**
+ * Provider-specific transform that maps form values onto the verify
+ * payload's `api_key` / `base_url` / `region`. Shared by the saved and
+ * draft mode cards so per-model verify can forward structured
+ * credentials (e.g. PaddleOCR's nested config) the backend expects.
+ */
+export type VerifyTransform = (values: Record<string, any>) => {
+  apiKey: string | object | Record<string, any>;
+  baseUrl?: string;
+  region?: string;
+  modelInfo?: IModelInfo[];
+};
+
+/**
+ * Imperative save API exposed by each instance card (generic, Bedrock,
+ * SoMark) so the parent page can drive a single batch save from the
+ * top-of-page Save button.
+ *
+ * The card owns its form state and dirty tracking; the parent only needs
+ * to validate, collect payloads, and dispatch the API calls.
+ */
+export interface ProviderInstanceCardRef {
+  /**
+   * Trigger form validation (and the draft-name check for drafts).
+   * Returns true if the card is valid and ready to save. Errors are
+   * surfaced in the form UI as a side effect of `trigger()`.
+   */
+  validate: () => Promise<boolean>;
+  /**
+   * Build the save payload for this card, or return `null` when there
+   * is nothing to persist.
+   *
+   * - Drafts: always returns a payload (provided the instance name is
+   *   non-empty), since a draft is by definition unsaved.
+   * - Saved cards: returns a payload only when the current form values
+   *   differ from the last-synced baseline; otherwise `null` so the
+   *   parent can skip the redundant API call.
+   */
+  getSavePayload: () => InstanceSavePayload | null;
+  /**
+   * Update the card's dirty-tracking baseline to the current form
+   * values. Called by the parent after a successful save so the next
+   * `getSavePayload()` call short-circuits as a no-op.
+   */
+  markSaved: () => void;
+}
+
+/** Payload returned by {@link ProviderInstanceCardRef.getSavePayload}. */
+export interface InstanceSavePayload {
+  /** Ready-to-send body for the save API. Shape depends on `apiKind`. */
+  payload: Record<string, any>;
+  /** Instance name to save under. For drafts this is the typed-in name. */
+  instanceName: string;
+  /** True for a new (unsaved) instance, false for an existing one. */
+  isDraft: boolean;
+  /**
+   * Which save endpoint the parent should dispatch to:
+   *  - `'add'`: call `addProviderInstance` for drafts.
+   *  - `'update'`: call `updateProviderInstance` for saved cards.
+   */
+  apiKind: 'add' | 'update';
+}
+
 /** Public props for {@link ProviderInstanceCard}. */
 export interface ProviderInstanceCardProps {
   providerName: string;
@@ -30,20 +93,11 @@ export interface ProviderInstanceCardProps {
   instance: IProviderInstance;
   /**
    * True when this card represents a freshly-added (unsaved) instance.
-   * Renders Save / Cancel buttons and treats all fields as editable.
+   * Renders the instance-name input section and treats all fields as
+   * editable. Saving is driven by the parent through the imperative
+   * ref API (see {@link ProviderInstanceCardRef}).
    */
   isDraft?: boolean;
-  /** Called after a draft instance is successfully saved. */
-  onSaved?: (values: Record<string, any>) => void | Promise<void>;
-  /**
-   * Called after a draft instance's *name* has been persisted via
-   * `addProviderInstance` (with just `instance_name`). The parent should
-   * remove this draft from its visible list; the freshly invalidated
-   * `providerInstances` query will surface the persisted card. The
-   * saved `instanceName` is passed so the parent can keep the newly
-   * persisted card expanded.
-   */
-  onNameSaved?: (instanceName: string) => void;
   /**
    * Called when the user deletes a draft instance.
    * For drafts this is equivalent to onCancel; for saved instances
@@ -62,16 +116,23 @@ export interface ProviderInstanceCardProps {
 /**
  * Provider-specific credential fields that the backend expects bundled
  * *inside* `api_key` as an object rather than as top-level keys:
- *   api_key: { api_key, group_id?, api_version?, provider_order? }
+ *   api_key: { api_key?, ...providerCredentials }
  * - MiniMax        → group_id
  * - Azure OpenAI   → api_version
  * - OpenRouter     → provider_order
+ * - Bedrock        → auth_mode / AWS credentials / region
  * When none of these are present the api_key stays a bare string.
  */
 export const API_KEY_NESTED_FIELDS = [
   'group_id',
   'api_version',
   'provider_order',
+  'auth_mode',
+  'bedrock_ak',
+  'bedrock_sk',
+  'aws_role_arn',
+  'bedrock_api_key',
+  'bedrock_region',
 ] as const;
 
 export type ApiKeyNestedField = (typeof API_KEY_NESTED_FIELDS)[number];
@@ -88,29 +149,38 @@ export interface SavedModeCardProps {
   formFields: FormFieldConfig[];
   formDefaultValues: Record<string, any>;
   formRef: RefObject<DynamicFormRef>;
-  handleFieldsBlur: (e: React.FocusEvent<HTMLDivElement>) => void;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
   handleInstanceModelsEdited: () => void;
   providerName: string;
+  /** Persisted instance name (from the backend). */
   instanceName: string;
+  /**
+   * The instance name currently displayed (may differ from `instanceName`
+   * when the user has renamed via double-click). Falls back to
+   * `instanceName` when not set.
+   */
+  editedInstanceName: string;
+  /** Commit a rename: updates the card's edited-name state. */
+  onRename: (name: string) => void;
   instance: IProviderInstance;
   instanceDetailsLoaded: boolean;
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
-  blurSuppressRef: React.MutableRefObject<boolean>;
+  onInstanceModelsStatusChange: (ready: boolean) => void;
   draftName: string;
   open: boolean;
   setOpen: (open: boolean) => void;
+  /** Provider-specific transform forwarded to ModelsSection for per-model verify. */
+  verifyTransform?: VerifyTransform;
 }
 
-/** Props for the draft-mode card (instance name + locked form fields). */
+/** Props for the draft-mode card (instance name + form fields). */
 export interface DraftModeCardProps {
   formFields: FormFieldConfig[];
   formDefaultValues: Record<string, any>;
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
-  handleSaveName: () => Promise<void>;
   handleInstanceModelsEdited: () => void;
   providerName: string;
   instanceName: string;
@@ -118,4 +188,6 @@ export interface DraftModeCardProps {
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
   draftName: string;
   setDraftName: (name: string) => void;
+  /** Provider-specific transform forwarded to ModelsSection for per-model verify. */
+  verifyTransform?: VerifyTransform;
 }

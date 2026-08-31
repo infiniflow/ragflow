@@ -45,7 +45,7 @@ def test_document_download_by_id_invalid_id_contract(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert payload["message"] == "Document not found!", payload
+    assert payload["message"] == "document not found", payload
 
 
 @pytest.mark.p2
@@ -62,4 +62,4 @@ def test_document_artifact_rejects_unsafe_filename(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert payload["message"] == "Invalid file type.", payload
+    assert payload["message"] == "invalid file type", payload

@@ -32,8 +32,8 @@ import (
 type StreamEvent struct {
 	// Event is the event name: "node_start" | "node_finish" | "message" | "error" | "cancelled" | ...
 	Event string `json:"event"`
-	// TaskID identifies the canvas run; required for client correlation.
-	TaskID string `json:"task_id"`
+	// SessionID identifies the canvas session; required for client correlation.
+	SessionID string `json:"session_id"`
 	// Component identifies the canvas component that produced the event.
 	Component string `json:"component,omitempty"`
 	// Data is the free-form event body. SSE wire format is "data: " + json(ev.Data).
@@ -74,7 +74,7 @@ func (e *channelEmitter) Emit(ev StreamEvent) error {
 	default:
 		common.Warn("canvas stream: dropping event (buffer full)",
 			zap.String("event", ev.Event),
-			zap.String("task", ev.TaskID))
+			zap.String("session", ev.SessionID))
 		return nil
 	}
 }

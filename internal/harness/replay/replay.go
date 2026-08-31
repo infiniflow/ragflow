@@ -286,10 +286,7 @@ func parsePayload(ev *events.Event, target any) error {
 // diffEventLists compares original and replayed event lists.
 func diffEventLists(original, replayed []*events.Event) []EventDivergence {
 	var divergences []EventDivergence
-	maxLen := len(original)
-	if len(replayed) > maxLen {
-		maxLen = len(replayed)
-	}
+	maxLen := max(len(replayed), len(original))
 
 	for i := 0; i < maxLen; i++ {
 		var orig *events.Event

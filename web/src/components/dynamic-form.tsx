@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   forwardRef,
@@ -93,6 +109,15 @@ export interface FormFieldConfig {
   labelClassName?: string;
   className?: string;
   disabled?: boolean;
+  /**
+   * HTML `autocomplete` attribute forwarded to the underlying `<input>`.
+   * Use `'new-password'` to suppress browser autofill — Chrome ignores
+   * `'off'` on forms that contain a password field (treats them as login
+   * forms), so `'new-password'` is the reliable value for autofill-prone
+   * fields like api_key / instance_name / base_url / group_id.
+   */
+  autoComplete?: string;
+  fieldConfig?: Record<string, any>;
 }
 
 // Component props interface
@@ -107,6 +132,24 @@ interface DynamicFormProps<T extends FieldValues> {
   //   updatedField: Partial<FormFieldConfig>,
   // ) => void;
   labelClassName?: string;
+  /**
+   * Options forwarded to `form.reset()` when `defaultValues` change.
+   * Pass `{ keepDirtyValues: true }` to preserve user edits during
+   * background refetches / lazy detail loads. Defaults to `{}`
+   * (hard reset) to preserve the original behavior for existing
+   * consumers.
+   */
+  resetOptions?: {
+    keepValues?: boolean;
+    keepDefaultValues?: boolean;
+    keepErrors?: boolean;
+    keepDirty?: boolean;
+    keepDirtyValues?: boolean;
+    keepIsSubmitted?: boolean;
+    keepTouched?: boolean;
+    keepIsValid?: boolean;
+    keepSubmitCount?: boolean;
+  };
 }
 
 // Form ref interface
@@ -114,6 +157,7 @@ export interface DynamicFormRef {
   submit: () => void;
   isDirty: () => boolean;
   getValues: (name?: string) => any;
+  getFilteredValues: () => any;
   reset: (values?: any) => void;
   trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
@@ -423,9 +467,11 @@ export const RenderField = ({
               : fieldProps;
             return (
               <Textarea
+                {...field.fieldConfig}
                 {...finalFieldProps}
                 placeholder={field.placeholder}
                 disabled={field.disabled}
+                // resize="vertical"
                 // className="resize-none"
               />
             );
@@ -444,7 +490,6 @@ export const RenderField = ({
               ? {
                   ...fieldProps,
                   onChange: (value: string) => {
-                    console.log('select value', value);
                     if (fieldProps.onChange) {
                       fieldProps.onChange(value);
                     }
@@ -472,7 +517,6 @@ export const RenderField = ({
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
-            console.log('multi select value', fieldProps);
             const finalFieldProps = {
               ...fieldProps,
               onValueChange: (value: string[]) => {
@@ -487,10 +531,6 @@ export const RenderField = ({
                 variant="inverted"
                 maxCount={100}
                 {...finalFieldProps}
-                // onValueChange={(data) => {
-                //   console.log(data);
-                //   field.onChange?.(data);
-                // }}
                 options={field.options as MultiSelectOptionType[]}
                 disabled={field.disabled}
               />
@@ -613,6 +653,7 @@ export const RenderField = ({
                   type={field.type}
                   placeholder={field.placeholder}
                   disabled={field.disabled}
+                  autoComplete={field.autoComplete}
                 />
               </div>
             );
@@ -634,6 +675,7 @@ const DynamicForm = {
         defaultValues: formDefaultValues = {} as DefaultValues<T>,
         // onFieldUpdate,
         labelClassName,
+        resetOptions,
       }: DynamicFormProps<T>,
       ref: React.Ref<any>,
     ) => {
@@ -715,7 +757,6 @@ const DynamicForm = {
               combinedErrors[key] = combinedErrors[key][0];
             }
           }
-          console.log('combinedErrors', combinedErrors);
           return {
             values: Object.keys(combinedErrors).length ? {} : data,
             errors: combinedErrors,
@@ -815,6 +856,7 @@ const DynamicForm = {
           },
           isDirty: () => form.formState.isDirty,
           getValues: form.getValues,
+          getFilteredValues: () => filterActiveValues(form.getValues()),
           reset: (values?: T) => {
             if (values) {
               form.reset(values);
@@ -867,12 +909,15 @@ const DynamicForm = {
       (form as any).filterActiveValues = filterActiveValues;
       useEffect(() => {
         if (formDefaultValues && Object.keys(formDefaultValues).length > 0) {
-          form.reset({
-            ...generateDefaultValues(fields),
-            ...formDefaultValues,
-          });
+          form.reset(
+            {
+              ...generateDefaultValues(fields),
+              ...formDefaultValues,
+            },
+            resetOptions,
+          );
         }
-      }, [form, formDefaultValues, fields]);
+      }, [form, formDefaultValues, fields, resetOptions]);
 
       // Submit handler
       //   const handleSubmit = form.handleSubmit(onSubmit);
@@ -936,30 +981,17 @@ const DynamicForm = {
           (async () => {
             try {
               const beValid = await form.trigger();
-              console.log('form valid', beValid, form);
-              // if (beValid) {
-              //   form.handleSubmit(async (values) => {
-              //     console.log('form values', values);
-              //     submitFunc?.(values);
-              //   })();
-              // }
 
               if (beValid && submitFunc) {
                 form.handleSubmit(async (values) => {
                   const filteredValues = (form as any).filterActiveValues
                     ? (form as any).filterActiveValues(values)
                     : values;
-                  console.log(
-                    'filtered form values in saving button',
-                    filteredValues,
-                  );
                   submitFunc(filteredValues);
                 })();
               }
             } catch (e) {
               console.error(e);
-            } finally {
-              console.log('form submit3');
             }
           })();
         }}

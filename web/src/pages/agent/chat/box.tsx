@@ -14,7 +14,7 @@ import {
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { memo, useCallback, useContext, useEffect } from 'react';
+import { memo, useCallback, useContext, useEffect, useRef } from 'react';
 import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitComponentData } from '../hooks/use-chat-logic';
@@ -64,6 +64,27 @@ function AgentChatBox() {
 
   const isTaskMode = useIsTaskMode();
 
+  const inputWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Keep the message list anchored to its bottom edge while the input box
+  // changes height (drag-to-resize or autosize), so history shifts up/down
+  // together with the input instead of being covered by it.
+  useEffect(() => {
+    const wrapper = inputWrapperRef.current;
+    const container = messageContainerRef.current;
+    if (!wrapper || !container) return;
+    let previousHeight = wrapper.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const delta = wrapper.clientHeight - previousHeight;
+      previousHeight = wrapper.clientHeight;
+      if (delta !== 0) {
+        container.scrollTop += delta;
+      }
+    });
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [messageContainerRef]);
+
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
@@ -76,7 +97,10 @@ function AgentChatBox() {
   return (
     <>
       <section className="flex flex-1 flex-col px-5 min-h-0 pb-4">
-        <div className="flex-1 overflow-auto" ref={messageContainerRef}>
+        <div
+          className="flex-1 overflow-auto min-h-0"
+          ref={messageContainerRef}
+        >
           <div>
             {!sendLoading && <div data-testid="agent-run-idle" />}
             {/* <Spin spinning={sendLoading}> */}
@@ -97,7 +121,7 @@ function AgentChatBox() {
                   clickDocumentButton={clickDocumentButton}
                   index={i}
                   showLikeButton={false}
-                  sendLoading={sendLoading}
+                  sendLoading={sendLoading && derivedMessages.length - 1 === i}
                 >
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 === i && (
@@ -129,20 +153,22 @@ function AgentChatBox() {
           <div ref={scrollRef} />
         </div>
         {isTaskMode || (
-          <NextMessageInput
-            value={value}
-            sendLoading={sendLoading}
-            disabled={isWaiting}
-            sendDisabled={sendLoading || isWaiting}
-            isUploading={loading || isWaiting}
-            resize="vertical"
-            onPressEnter={handlePressEnter}
-            onInputChange={handleInputChange}
-            stopOutputMessage={stopOutputMessage}
-            onUpload={handleUploadFile}
-            removeFile={removeFile}
-            conversationId=""
-          />
+          <div ref={inputWrapperRef}>
+            <NextMessageInput
+              value={value}
+              sendLoading={sendLoading}
+              disabled={isWaiting}
+              sendDisabled={sendLoading || isWaiting}
+              isUploading={loading || isWaiting}
+              resize="vertical"
+              onPressEnter={handlePressEnter}
+              onInputChange={handleInputChange}
+              stopOutputMessage={stopOutputMessage}
+              onUpload={handleUploadFile}
+              removeFile={removeFile}
+              conversationId=""
+            />
+          </div>
         )}
       </section>
       {visible && (

@@ -2,16 +2,18 @@ import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import i18n from '@/locales/config';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useHover } from 'ahooks';
 import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   useFieldArray,
   UseFieldArrayRemove,
@@ -25,6 +27,7 @@ import {
   InitialOutputFormatMap,
   initialParserValues,
 } from '../../constant/pipeline';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -40,88 +43,11 @@ import {
   HtmlFormFields,
   TextMarkdownFormFields,
 } from './text-html-form-fields';
-import { buildFieldNameWithPrefix } from './utils';
+import { buildFieldNameWithPrefix, getInitialParseMethod } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 import { WordFormFields } from './word-form-fields';
 
 const outputList = buildOutputList(initialParserValues.outputs);
-
-// type PreprocessOptionConfig = {
-//   value: PreprocessValue;
-//   required?: boolean;
-// };
-
-// const DefaultPreprocessOptionConfigs: PreprocessOptionConfig[] = [
-//   { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-// ];
-
-// const PreprocessOptionConfigsMap: Partial<
-//   Record<FileType, PreprocessOptionConfig[]>
-// > = {
-//   [FileType.PDF]: [
-//     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-//     { value: PreprocessValue.abstract },
-//     { value: PreprocessValue.author },
-//     { value: PreprocessValue.section_title },
-//   ],
-//   [FileType.PowerPoint]: [
-//     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-//   ],
-//   [FileType.Spreadsheet]: [
-//     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-//   ],
-//   [FileType.TextMarkdown]: [
-//     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-//     { value: PreprocessValue.section_title },
-//   ],
-//   [FileType.Code]: [{ value: MAIN_CONTENT_PREPROCESS_VALUE, required: true }],
-//   [FileType.Html]: [
-//     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-//     { value: PreprocessValue.section_title },
-//   ],
-//   [FileType.Doc]: [
-//     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-//     { value: PreprocessValue.section_title },
-//   ],
-//   [FileType.Docx]: [
-//     { value: MAIN_CONTENT_PREPROCESS_VALUE, required: true },
-//     { value: PreprocessValue.section_title },
-//   ],
-// };
-
-// function getPreprocessOptionConfigs(fileType?: FileType) {
-//   if (!fileType) {
-//     return DefaultPreprocessOptionConfigs;
-//   }
-
-//   return PreprocessOptionConfigsMap[fileType] ?? DefaultPreprocessOptionConfigs;
-// }
-
-// function normalizePreprocessValuesByFileType(
-//   fileType: FileType | undefined,
-//   values: string[] | undefined,
-// ) {
-//   const optionConfigs = getPreprocessOptionConfigs(fileType);
-//   const allowedValueSet = new Set(optionConfigs.map((x) => x.value));
-//   const requiredValues = optionConfigs
-//     .filter((x) => x.required)
-//     .map((x) => x.value);
-//   const normalizedOptionalValues = (Array.isArray(values) ? values : []).filter(
-//     (value) => allowedValueSet.has(value as PreprocessValue),
-//   ) as PreprocessValue[];
-
-//   return Array.from(
-//     new Set<PreprocessValue>([...requiredValues, ...normalizedOptionalValues]),
-//   );
-// }
-
-// function isSameStringArray(a: string[] | undefined, b: string[]) {
-//   if (!a || a.length !== b.length) {
-//     return false;
-//   }
-
-//   return a.every((item, idx) => item === b[idx]);
-// }
 
 const FileFormatWidgetMap = {
   [FileType.PDF]: PdfFormFields,
@@ -145,25 +71,69 @@ type ParserItemProps = {
   fileFormatOptions: SelectWithSearchFlagOptionType[];
 };
 
+const SetupSchema = z
+  .object({
+    fileFormat: z.string().nullish(),
+    // preprocess: z.array(z.string()).optional(),
+    output_format: z.string().optional(),
+    parse_method: z.string().optional(),
+    lang: z.string().optional(),
+    fields: z.array(z.string()).optional(),
+    vlm: z.object({ llm_id: z.string().optional() }).optional(),
+    flatten_media_to_text: z.boolean().optional(),
+    system_prompt: z.string().optional(),
+    table_result_type: z.string().optional(),
+    markdown_image_response_type: z.string().optional(),
+    enable_multi_column: z.boolean().optional(),
+    remove_toc: z.boolean().optional(),
+    remove_header_footer: z.boolean().optional(),
+    pages: z
+      .array(
+        z
+          .object({
+            // Keep these checks on the fields themselves: an object-level
+            // `superRefine` is skipped whenever the base shape fails to
+            // parse, so one missing sibling would silently swallow the
+            // other field's error.
+            from: z.coerce
+              .number()
+              .int(i18n.t('knowledgeDetails.pageRangeFromInvalid'))
+              .min(1, i18n.t('knowledgeDetails.pageRangeFromInvalid')),
+            to: z.coerce
+              .number()
+              .int(i18n.t('knowledgeDetails.pageRangeToInvalid'))
+              .min(1, i18n.t('knowledgeDetails.pageRangeToInvalid')),
+          })
+          .refine(({ from, to }) => to >= from, {
+            path: ['to'],
+            message: i18n.t('knowledgeDetails.pageRangeToInvalid'),
+          }),
+      )
+      .optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.fileFormat === FileType.Email && !values.fields?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fields'],
+        message: 'Fields is required',
+      });
+    }
+    if (
+      (values.fileFormat === FileType.Video ||
+        values.fileFormat === FileType.Audio) &&
+      !values.vlm?.llm_id
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['vlm', 'llm_id'],
+        message: 'Model is required',
+      });
+    }
+  });
+
 export const FormSchema = z.object({
-  setups: z.array(
-    z.object({
-      fileFormat: z.string().nullish(),
-      // preprocess: z.array(z.string()).optional(),
-      output_format: z.string().optional(),
-      parse_method: z.string().optional(),
-      lang: z.string().optional(),
-      fields: z.array(z.string()).optional(),
-      vlm: z.object({ llm_id: z.string().optional() }).optional(),
-      flatten_media_to_text: z.boolean().optional(),
-      system_prompt: z.string().optional(),
-      table_result_type: z.string().optional(),
-      markdown_image_response_type: z.string().optional(),
-      enable_multi_column: z.boolean().optional(),
-      remove_toc: z.boolean().optional(),
-      remove_header_footer: z.boolean().optional(),
-    }),
-  ),
+  setups: z.array(SetupSchema),
 });
 
 export type ParserFormSchemaType = z.infer<typeof FormSchema>;
@@ -181,7 +151,26 @@ function ParserItem({
   const isHovering = useHover(ref);
 
   const prefix = `${name}.${index}`;
-  const fileFormat = form.getValues(`setups.${index}.fileFormat`);
+  const fileFormat = form.watch(`setups.${index}.fileFormat`);
+  const prevFileFormatRef = useRef(fileFormat);
+
+  useEffect(() => {
+    if (!fileFormat || prevFileFormatRef.current === fileFormat) {
+      return;
+    }
+    prevFileFormatRef.current = fileFormat;
+
+    form.setValue(
+      `setups.${index}.output_format`,
+      InitialOutputFormatMap[fileFormat as FileType],
+      { shouldDirty: true, shouldValidate: true, shouldTouch: true },
+    );
+    form.setValue(
+      `setups.${index}.parse_method`,
+      getInitialParseMethod(fileFormat as FileType),
+      { shouldDirty: true, shouldValidate: true, shouldTouch: true },
+    );
+  }, [fileFormat, form, index]);
 
   const values = form.getValues();
   const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
@@ -200,68 +189,6 @@ function ParserItem({
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
       : () => <></>;
-
-  const handleFileTypeChange = useCallback(
-    (value: FileType) => {
-      form.setValue(
-        `setups.${index}.output_format`,
-        InitialOutputFormatMap[value],
-        { shouldDirty: true, shouldValidate: true, shouldTouch: true },
-      );
-    },
-    [form, index],
-  );
-
-  // const handlePreprocessChange = useCallback(
-  //   (value: PreprocessValue[]) => {
-  //     form.setValue(`setups.${index}.preprocess`, value, {
-  //       shouldDirty: true,
-  //       shouldValidate: true,
-  //       shouldTouch: true,
-  //     });
-  //   },
-  //   [form, index],
-  // );
-
-  // const preprocessOptions = useMemo(() => {
-  //   const optionConfigs = getPreprocessOptionConfigs(fileFormat as FileType);
-
-  //   return optionConfigs.map((optionConfig) => {
-  //     const labelMap: Record<string, string> = {
-  //       [MAIN_CONTENT_PREPROCESS_VALUE]: t('flow.preprocess.mainContent'),
-  //       [PreprocessValue.section_title]: t('flow.preprocess.sectionTitle'),
-  //       [PreprocessValue.abstract]: t('flow.preprocess.abstract'),
-  //       [PreprocessValue.author]: t('flow.preprocess.author'),
-  //     };
-
-  //     const label = labelMap[optionConfig.value] || optionConfig.value;
-
-  //     return {
-  //       value: optionConfig.value,
-  //       disabled: optionConfig.required,
-  //       label: label,
-  //     };
-  //   });
-  // }, [fileFormat, t]);
-
-  // useEffect(() => {
-  //   const currentPreprocessValues = form.getValues(
-  //     `setups.${index}.preprocess`,
-  //   ) as string[] | undefined;
-  //   const normalizedPreprocessValues = normalizePreprocessValuesByFileType(
-  //     fileFormat as FileType,
-  //     currentPreprocessValues,
-  //   );
-
-  //   if (
-  //     !isSameStringArray(currentPreprocessValues, normalizedPreprocessValues)
-  //   ) {
-  //     form.setValue(`setups.${index}.preprocess`, normalizedPreprocessValues, {
-  //       shouldDirty: false,
-  //       shouldValidate: true,
-  //     });
-  //   }
-  // }, [fileFormat, form, index]);
 
   return (
     <section
@@ -286,10 +213,7 @@ function ParserItem({
         {(field) => (
           <SelectWithSearch
             value={field.value}
-            onChange={(val) => {
-              field.onChange(val);
-              handleFileTypeChange(val as FileType);
-            }}
+            onChange={field.onChange}
             options={filteredFileFormatOptions}
           ></SelectWithSearch>
         )}
@@ -301,32 +225,18 @@ function ParserItem({
           fileType={fileFormat as FileType}
         />
       </div>
-      {/* <RAGFlowFormItem
-        name={buildFieldNameWithPrefix(`preprocess`, prefix)}
-        label={t('flow.preprocess.preprocess')}
-      >
-        {(field) => (
-          <MultiSelect
-            value={field.value || []}
-            onValueChange={(val) => {
-              const nextValues = normalizePreprocessValuesByFileType(
-                fileFormat as FileType,
-                val,
-              );
-              field.onChange(nextValues);
-              handlePreprocessChange(nextValues);
-            }}
-            showSelectAll={false}
-            options={preprocessOptions}
-          ></MultiSelect>
-        )}
-      </RAGFlowFormItem> */}
+
       {index < fieldLength - 1 && <Separator />}
     </section>
   );
 }
 
-const ParserForm = ({ node }: INextOperatorForm) => {
+const ParserForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+  externalErrors,
+}: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialParserValues, node);
 
@@ -335,8 +245,11 @@ const ParserForm = ({ node }: INextOperatorForm) => {
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
     shouldUnregister: true,
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   const name = 'setups';
   const { fields, remove, append } = useFieldArray({
@@ -360,6 +273,7 @@ const ParserForm = ({ node }: INextOperatorForm) => {
   }, [append]);
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -382,9 +296,11 @@ const ParserForm = ({ node }: INextOperatorForm) => {
           </BlockButton>
         )}
       </form>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

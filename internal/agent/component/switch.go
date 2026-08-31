@@ -40,6 +40,8 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameSwitch = "Switch"
@@ -78,7 +80,7 @@ func (s *SwitchComponent) Name() string { return s.name }
 // returning "_next" as a []any (list of cpn_ids). The canvas
 // scheduler's MultiBranch condition consumes this list via
 // NewGraphMultiBranch so every declared target fires.
-func (s *SwitchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *SwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Switch: %w", err)
@@ -135,8 +137,8 @@ func (s *SwitchComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 // Stream is a synchronous facade over Invoke for P0. Switch is a
 // routing decision, not a stream of partial results; the channel
 // receives one payload and closes.
-func (s *SwitchComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := s.Invoke(ctx, inputs)
+func (s *SwitchComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := s.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

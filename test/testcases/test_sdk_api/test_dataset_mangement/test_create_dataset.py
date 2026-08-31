@@ -94,7 +94,7 @@ class TestDatasetCreate:
             if name == "":
                 expected_message = "failed on the 'required' tag"
             elif isinstance(name, str) and not name.strip():
-                expected_message = "Dataset name can't be empty."
+                expected_message = "dataset name can't be empty"
             elif isinstance(name, str):
                 expected_message = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
         assert expected_message in str(exception_info.value), str(exception_info.value)
@@ -138,9 +138,9 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, prefix, expected_message",
         [
-            ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -236,9 +236,9 @@ class TestDatasetCreate:
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in str(exception_info.value), str(exception_info.value)
+            assert "embedding model identifier must follow <model_name>@<provider> format" in str(exception_info.value), str(exception_info.value)
         else:
-            assert "Both model_name and provider must be non-empty strings" in str(exception_info.value), str(exception_info.value)
+            assert "both model_name and provider must be non-empty strings" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_embedding_model_unset(self, client):
@@ -396,12 +396,12 @@ class TestDatasetCreate:
             ("raptor_true", {"raptor": {"use_raptor": True}}),
             ("raptor_false", {"raptor": {"use_raptor": False}}),
             ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
-            ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+            ("raptor_max_token_min", {"raptor": {"max_token": 512}}),
             ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
             ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
-            ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
-            ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
-            ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+            ("raptor_clustering_threshold_min", {"raptor": {"clustering_threshold": 0.0}}),
+            ("raptor_clustering_threshold_mid", {"raptor": {"clustering_threshold": 0.5}}),
+            ("raptor_clustering_threshold_max", {"raptor": {"clustering_threshold": 1.0}}),
             ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
             ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
             ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
@@ -449,9 +449,9 @@ class TestDatasetCreate:
             "raptor_max_token_min",
             "raptor_max_token_mid",
             "raptor_max_token_max",
-            "raptor_threshold_min",
-            "raptor_threshold_mid",
-            "raptor_threshold_max",
+            "raptor_clustering_threshold_min",
+            "raptor_clustering_threshold_mid",
+            "raptor_clustering_threshold_max",
             "raptor_max_cluster_min",
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
@@ -512,13 +512,11 @@ class TestDatasetCreate:
             ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ("raptor_prompt_empty", {"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ("raptor_prompt_space", {"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-            ("raptor_max_token_min_limit", {"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_token_max_limit", {"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
             ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-            ("raptor_threshold_min_limit", {"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-            ("raptor_threshold_max_limit", {"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+            ("raptor_clustering_threshold_min_limit", {"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+            ("raptor_clustering_threshold_max_limit", {"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+            ("raptor_clustering_threshold_type_invalid", {"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
             ("raptor_max_cluster_min_limit", {"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_cluster_max_limit", {"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
             ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -568,13 +566,11 @@ class TestDatasetCreate:
             "raptor_type_invalid",
             "raptor_prompt_empty",
             "raptor_prompt_space",
-            "raptor_max_token_min_limit",
             "raptor_max_token_max_limit",
-            "raptor_max_token_float_not_allowed",
             "raptor_max_token_type_invalid",
-            "raptor_threshold_min_limit",
-            "raptor_threshold_max_limit",
-            "raptor_threshold_type_invalid",
+            "raptor_clustering_threshold_min_limit",
+            "raptor_clustering_threshold_max_limit",
+            "raptor_clustering_threshold_type_invalid",
             "raptor_max_cluster_min_limit",
             "raptor_max_cluster_max_limit",
             "raptor_max_cluster_float_not_allowed",

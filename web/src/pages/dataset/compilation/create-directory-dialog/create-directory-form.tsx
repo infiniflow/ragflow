@@ -12,12 +12,12 @@ export function CreateDirectoryFormFields() {
     <div className="space-y-4">
       <RAGFlowFormItem
         name="name"
-        label={t('knowledgeDetails.directoryName')}
+        label={t('common.name')}
         required
       >
         <Input placeholder={t('common.pleaseInput')} autoComplete="off" />
       </RAGFlowFormItem>
-      <RAGFlowFormItem name="rule" label={t('knowledgeDetails.directoryRule')}>
+      <RAGFlowFormItem name="rule" label={t('knowledgeCompilation.directoryRule')}>
         <Textarea placeholder={t('common.pleaseInput')} />
       </RAGFlowFormItem>
     </div>

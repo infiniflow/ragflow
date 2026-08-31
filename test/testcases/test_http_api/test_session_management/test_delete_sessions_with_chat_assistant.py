@@ -44,7 +44,7 @@ class TestSessionWithChatAssistantDelete:
             (
                 "invalid_chat_assistant_id",
                 109,
-                "No authorization.",
+                "no authorization",
             ),
         ],
     )

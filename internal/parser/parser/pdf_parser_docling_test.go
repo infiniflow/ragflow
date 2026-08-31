@@ -11,6 +11,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var requestCount atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +71,8 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 		"docling_api_key":    "doc-secret",
 	})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -83,6 +85,7 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 }
 
 func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var requestCount atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +135,8 @@ func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *t
 		"docling_server_url": server.URL,
 	})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -151,7 +155,8 @@ func TestPDFParser_ParseWithResult_DoclingRequiresServerURL(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "Docling"})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err == nil {
 		t.Fatal("ParseWithResult: want error when docling_server_url is missing, got nil")
 	}

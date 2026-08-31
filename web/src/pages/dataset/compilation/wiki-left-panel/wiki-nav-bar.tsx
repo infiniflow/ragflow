@@ -10,50 +10,14 @@ import { SearchInput } from '@/components/ui/input';
 import { IArtifact } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
+import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CreateDirectoryDialog } from '../create-directory-dialog';
 import { useCreateDirectory } from '../hooks/use-create-directory';
-import { useWikiNavigation, WikiPageType } from './hooks/use-wiki-navigation';
+import { useWikiNavigation } from './hooks/use-wiki-navigation';
 import { WikiArtifactList } from './wiki-artifact-list';
 import { WikiTopicList } from './wiki-topic-list';
-
-type PageTypeFilterProps = {
-  value: WikiPageType;
-  onChange: (value: WikiPageType) => void;
-};
-
-function PageTypeFilter({ value, onChange }: PageTypeFilterProps) {
-  const { t } = useTranslation();
-
-  const handleConceptClick = useCallback(() => {
-    onChange('concept');
-  }, [onChange]);
-
-  const handleEntityClick = useCallback(() => {
-    onChange('entity');
-  }, [onChange]);
-
-  return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant={value === 'concept' ? 'default' : 'outline'}
-        size="sm"
-        onClick={handleConceptClick}
-      >
-        {t('knowledgeDetails.concept')}
-      </Button>
-      <Button
-        variant={value === 'entity' ? 'default' : 'outline'}
-        size="sm"
-        onClick={handleEntityClick}
-      >
-        {t('knowledgeDetails.entity')}
-      </Button>
-    </div>
-  );
-}
 
 type WikiNavBarProps = {
   selectedArtifact: IArtifact | null;
@@ -69,15 +33,16 @@ export function WikiNavBar({
     scrollRef,
     searchString,
     selectedTopic,
-    pageType,
-    topics,
+    selectedTopicPath,
+    visibleTopics,
+    showArtifacts,
     artifacts,
     loading,
     hasMore,
     handleSearchChange,
     handleSelectTopic,
+    handleSelectTopicPath,
     handleBackToTopics,
-    handlePageTypeChange,
     handleScroll,
   } = useWikiNavigation();
   const {
@@ -89,14 +54,17 @@ export function WikiNavBar({
     handleOk: handleCreateOk,
   } = useCreateDirectory();
 
+  const selectedTopicSegments = selectedTopicPath
+    ? selectedTopicPath.split('/').filter(Boolean)
+    : [];
+
   return (
-    <div className="size-full flex flex-col gap-3 px-3">
+    <div className="size-full flex flex-col gap-3">
       <SearchInput
         placeholder={t('common.search')}
         value={searchString}
         onChange={handleSearchChange}
       />
-      <PageTypeFilter value={pageType} onChange={handlePageTypeChange} />
       <section>
         <div className="flex items-center justify-between">
           <Breadcrumb>
@@ -111,19 +79,31 @@ export function WikiNavBar({
                       : 'text-text-primary cursor-default',
                   )}
                 >
-                  {t('knowledgeDetails.topics')}
+                  {t('knowledgeCompilation.topics')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
-              {selectedTopic && (
-                <>
+              {selectedTopicSegments.map((segment, index) => (
+                <Fragment key={`${segment}-${index}`}>
                   <BreadcrumbSeparator />
                   <BreadcrumbItem>
-                    <BreadcrumbLink className="text-text-primary text-sm cursor-default">
-                      {selectedTopic.title}
+                    <BreadcrumbLink
+                      onClick={() =>
+                        handleSelectTopicPath(
+                          selectedTopicSegments.slice(0, index + 1).join('/'),
+                        )
+                      }
+                      className={cn(
+                        'text-sm',
+                        index === selectedTopicSegments.length - 1
+                          ? 'text-text-primary cursor-default'
+                          : 'text-text-secondary cursor-pointer',
+                      )}
+                    >
+                      {segment}
                     </BreadcrumbLink>
                   </BreadcrumbItem>
-                </>
-              )}
+                </Fragment>
+              ))}
             </BreadcrumbList>
           </Breadcrumb>
           {!selectedTopic && (
@@ -131,6 +111,7 @@ export function WikiNavBar({
               variant="secondary"
               size="icon-xs"
               onClick={handleShowCreateDialog}
+              className="hidden"
             >
               <Plus className="size-4" />
             </Button>
@@ -149,7 +130,7 @@ export function WikiNavBar({
         className="flex-1 min-h-0 overflow-y-auto pb-3"
         onScroll={handleScroll}
       >
-        {selectedTopic ? (
+        {showArtifacts ? (
           <WikiArtifactList
             artifacts={artifacts}
             selectedArtifact={selectedArtifact}
@@ -159,7 +140,7 @@ export function WikiNavBar({
           />
         ) : (
           <WikiTopicList
-            topics={topics}
+            topics={visibleTopics}
             loading={loading}
             hasMore={hasMore}
             onSelectTopic={handleSelectTopic}

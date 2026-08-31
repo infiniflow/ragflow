@@ -125,7 +125,7 @@ func (p *E2BProvider) ProviderType() ProviderType { return ProviderE2B }
 // resolves from the same env vars. We return an error if neither
 // is set so the manager does not register a broken provider.
 func (p *E2BProvider) Initialize(ctx context.Context) error {
-	apiKey := common.GetEnv(common.EnvE2BApiKey)
+	apiKey := common.GetEnv(common.EnvE2BAPIKey)
 	accessToken := common.GetEnv(common.EnvE2BAccessToken)
 	if apiKey == "" && accessToken == "" {
 		return errors.New(

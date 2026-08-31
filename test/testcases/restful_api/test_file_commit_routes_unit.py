@@ -743,7 +743,7 @@ def test_get_file_version_history(monkeypatch):
 
 @pytest.mark.p2
 def test_workspace_alias(monkeypatch):
-    """Verify /workspace/ alias routes work the same as /folders/."""
+    """Verify /workspaces/ alias routes work the same as /folders/."""
     module = _load_module(monkeypatch)
     FileTestModel.create(id="f1", parent_id="ws-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 

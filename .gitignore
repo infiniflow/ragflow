@@ -222,11 +222,14 @@ backup
 
 /target
 
-# Do not include in PR (local dev / build artifacts)
+# Do not include in PR (local dev / build artifacts / working notes)
 ragflow.egg-info/
 uv-aarch64*.tar.gz
 uv-aarch64-unknown-linux-gnu.tar.gz
 docker/launch_backend_service_windows.sh
+
+# Scratch/working notes (agent task planning & self-review docs; not PR material)
+tasks/*.md
 
 # C++ build directories
 internal/binding/cpp/build/
@@ -239,12 +242,14 @@ internal/binding/cpp/cmake-build-debug/
 # Go server build output
 bin/*
 !bin/.gitkeep
+/ragflow_server
 .claude/settings.local.json
 
 .run/
 # Local agent tooling state (per-developer; not for commit)
 .omc/
 .marscode/
+.omx/
 
 # Parser test fixtures and python tools
 internal/deepdoc/parser/pdf/testdata/
@@ -262,3 +267,10 @@ internal/deepdoc/parser/docx/tool/
 internal/ingestion/task/tool/generate_dataflow_golden.py
 internal/ingestion/task/tool/README.md
 internal/cpp/cmake-build-release
+
+# downloaded native static-lib artifacts (fetched by ragflow_deps/download_deps.py)
+ragflow_deps/*.zip
+
+# external DeepDoc testdata, fetched on demand via scripts/fetch_deepdoc_testdata.sh
+# (symlinked into place from ~/.cache/ragflow-testdata; never committed)
+internal/deepdoc/native/testdata

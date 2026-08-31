@@ -17,14 +17,8 @@
 Unit tests for rag/utils/raptor_utils.py module.
 """
 
-import pytest
 from rag.utils.raptor_utils import (
     RAPTOR_TREE_BUILDER,
-    PSI_TREE_BUILDER,
-    GMM_CLUSTERING_METHOD,
-    AHC_CLUSTERING_METHOD,
-    get_raptor_tree_builder,
-    get_raptor_clustering_method,
     _as_extra_dict,
     _has_raptor_marker,
     _raptor_methods_from_fields,
@@ -36,65 +30,6 @@ from rag.utils.raptor_utils import (
     should_skip_raptor,
     get_skip_reason,
 )
-
-
-class TestGetRaptorTreeBuilder:
-    """Tests for get_raptor_tree_builder function."""
-
-    def test_returns_default_raptor_tree_builder(self):
-        """Test that default tree builder is 'raptor'."""
-        result = get_raptor_tree_builder(None)
-        assert result == RAPTOR_TREE_BUILDER
-
-    def test_returns_default_with_empty_config(self):
-        """Test that empty config returns default."""
-        result = get_raptor_tree_builder({})
-        assert result == RAPTOR_TREE_BUILDER
-
-    def test_returns_configured_tree_builder(self):
-        """Test that configured tree builder is returned."""
-        config = {"tree_builder": PSI_TREE_BUILDER}
-        result = get_raptor_tree_builder(config)
-        assert result == PSI_TREE_BUILDER
-
-    def test_returns_ext_tree_builder(self):
-        """Test that ext.tree_builder takes precedence."""
-        config = {"tree_builder": "old", "ext": {"tree_builder": PSI_TREE_BUILDER}}
-        result = get_raptor_tree_builder(config)
-        assert result == PSI_TREE_BUILDER
-
-    def test_raises_error_for_unsupported_tree_builder(self):
-        """Test that unsupported tree builder raises ValueError."""
-        config = {"tree_builder": "unknown"}
-        with pytest.raises(ValueError, match="Unsupported RAPTOR tree builder"):
-            get_raptor_tree_builder(config)
-
-
-class TestGetRaptorClusteringMethod:
-    """Tests for get_raptor_clustering_method function."""
-
-    def test_returns_default_gmm(self):
-        """Test that default clustering method is 'gmm'."""
-        result = get_raptor_clustering_method(None)
-        assert result == GMM_CLUSTERING_METHOD
-
-    def test_returns_configured_clustering_method(self):
-        """Test that configured clustering method is returned."""
-        config = {"clustering_method": AHC_CLUSTERING_METHOD}
-        result = get_raptor_clustering_method(config)
-        assert result == AHC_CLUSTERING_METHOD
-
-    def test_returns_ext_clustering_method(self):
-        """Test that ext.clustering_method takes precedence."""
-        config = {"clustering_method": "old", "ext": {"clustering_method": AHC_CLUSTERING_METHOD}}
-        result = get_raptor_clustering_method(config)
-        assert result == AHC_CLUSTERING_METHOD
-
-    def test_raises_error_for_unsupported_clustering_method(self):
-        """Test that unsupported clustering method raises ValueError."""
-        config = {"clustering_method": "unknown"}
-        with pytest.raises(ValueError, match="Unsupported RAPTOR clustering method"):
-            get_raptor_clustering_method(config)
 
 
 class TestAsExtraDict:
@@ -129,14 +64,14 @@ class TestAsExtraDict:
         assert result == {}
 
     def test_parses_python_dict_literal(self):
-        """Test that Python dict literal is parsed."""
+        """Test that Python dict literal string is parsed correctly."""
         input_str = "{'key': 'value'}"
         result = _as_extra_dict(input_str)
         assert result == {"key": "value"}
 
     def test_returns_empty_dict_for_malformed_string(self):
         """Test that malformed string returns empty dict."""
-        input_str = "{invalid json}"
+        input_str = "not a dict at all"
         result = _as_extra_dict(input_str)
         assert result == {}
 
@@ -162,7 +97,7 @@ class TestHasRaptorMarker:
 
     def test_returns_false_for_list_without_raptor(self):
         """Test that list without 'raptor' returns False."""
-        assert _has_raptor_marker(["psi", "other"]) is False
+        assert _has_raptor_marker(["other", "unknown"]) is False
 
 
 class TestRaptorMethodsFromFields:
@@ -173,23 +108,23 @@ class TestRaptorMethodsFromFields:
         result = _raptor_methods_from_fields({})
         assert result == {RAPTOR_TREE_BUILDER}
 
-    def test_returns_method_from_extra_dict(self):
-        """Test that method is extracted from extra dict."""
-        fields = {"extra": {"raptor_method": PSI_TREE_BUILDER}}
+    def test_returns_raptor_method_from_extra_dict(self):
+        """Test that the RAPTOR method is extracted from extra dict."""
+        fields = {"extra": {"raptor_method": RAPTOR_TREE_BUILDER}}
         result = _raptor_methods_from_fields(fields)
-        assert result == {PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER}
 
     def test_returns_method_from_extra_field(self):
         """Test that method is extracted from extra field directly."""
-        fields = {"extra": "{'raptor_method': 'psi'}"}
+        fields = {"extra": "{'raptor_method': 'raptor'}"}
         result = _raptor_methods_from_fields(fields)
-        assert result == {PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER}
 
     def test_handles_list_method(self):
         """Test that list method is converted to set."""
-        fields = {"extra": {"raptor_method": ["raptor", "psi"]}}
+        fields = {"extra": {"raptor_method": ["raptor", "other"]}}
         result = _raptor_methods_from_fields(fields)
-        assert result == {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER, "other"}
 
     def test_handles_empty_method(self):
         """Test that empty method returns default."""
@@ -208,21 +143,21 @@ class TestCollectRaptorMethods:
 
     def test_collects_methods_from_raptor_chunks(self):
         """Test that methods are collected from RAPTOR chunks."""
-        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": PSI_TREE_BUILDER}}}
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": RAPTOR_TREE_BUILDER}}}
         result = collect_raptor_methods(field_map)
-        assert result == {PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER}
 
     def test_skips_non_raptor_chunks(self):
         """Test that non-RAPTOR chunks are skipped."""
-        field_map = {"chunk_1": {"raptor_kwd": "other", "extra": {"raptor_method": PSI_TREE_BUILDER}}}
+        field_map = {"chunk_1": {"raptor_kwd": "other", "extra": {"raptor_method": RAPTOR_TREE_BUILDER}}}
         result = collect_raptor_methods(field_map)
         assert result == set()
 
     def test_collects_multiple_methods(self):
         """Test that multiple methods are collected."""
-        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "other"}}}
         result = collect_raptor_methods(field_map)
-        assert result == {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER, "other"}
 
 
 class TestCollectRaptorChunkIds:
@@ -241,7 +176,7 @@ class TestCollectRaptorChunkIds:
 
     def test_excludes_specified_methods(self):
         """Test that specified methods are excluded."""
-        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "other"}}}
         result = collect_raptor_chunk_ids(field_map, exclude_methods={"raptor"})
         assert result == {"chunk_2"}
 

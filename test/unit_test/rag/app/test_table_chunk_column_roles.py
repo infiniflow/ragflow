@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import sys
+from io import BytesIO
 from importlib import import_module, reload
 from unittest.mock import MagicMock, patch
 
@@ -39,6 +40,9 @@ TEST_CSV = b"""row_id,title,content,country,category
 1,Earthquake hits Turkey,A 5.8 magnitude earthquake struck Konya,Turkey,Disaster
 2,Oil prices surge,Brent crude jumped 4.2 percent,Global,Economy
 3,AI regulation proposed,EU unveiled a draft regulation,EU,Technology
+"""
+TEST_DUPLICATE_COLUMNS_CSV = b"""name,name,name_2
+Alice,Engineer,Team A
 """
 
 FILENAME = "test.csv"
@@ -105,6 +109,49 @@ def _run_chunk(table_module, parser_config: dict, mock_update_kb: MagicMock):
         parser_config=parser_config,
         lang="Chinese",
     )
+
+
+def test_chunk_deduplicates_repeated_column_names(table_module, mock_update_kb: MagicMock):
+    chunks = table_module.chunk(
+        FILENAME,
+        binary=TEST_DUPLICATE_COLUMNS_CSV,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    assert len(chunks) == 1
+    cww = chunks[0]["content_with_weight"]
+    assert "- name: Alice" in cww
+    assert "- name_3: Engineer" in cww
+    assert "- name_2: Team A" in cww
+    args, kwargs = mock_update_kb.call_args
+    assert args[1]["table_column_names"] == ["name", "name_3", "name_2"]
+
+
+def test_excel_image_description_string_stays_single_cell(table_module, monkeypatch):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["image", "note"])
+    ws.append([None, "keep"])
+    buf = BytesIO()
+    wb.save(buf)
+
+    monkeypatch.setattr(
+        table_module.Excel,
+        "_extract_images_from_worksheet",
+        staticmethod(
+            lambda ws, sheetname=None: [{"sheet": sheetname or ws.title, "image": None, "image_description": "", "row_from": 2, "col_from": 1, "row_to": 2, "col_to": 1, "span_type": "single_cell"}]
+        ),
+    )
+    monkeypatch.setattr(table_module, "vision_figure_parser_figure_xlsx_wrapper", lambda images, callback=None, **kwargs: [((None, "abcdef"), [(0, 0, 0, 0, 0)])])
+
+    dfs, tbls = table_module.Excel()("test.xlsx", binary=buf.getvalue(), callback=_noop_callback)
+
+    assert tbls == []
+    assert dfs[0].iat[0, 0] == "abcdef"
 
 
 def test_chunk_auto_mode_all_columns_in_text_and_stored(table_module, mock_update_kb: MagicMock):
@@ -247,3 +294,81 @@ def test_chunk_updates_table_column_names(table_module, mock_update_kb: MagicMoc
 def test_chunk_count_matches_row_count(table_module, mock_update_kb: MagicMock):
     chunks = _run_chunk(table_module, {}, mock_update_kb)
     assert len(chunks) == 3
+
+
+# Regression for #18287: Infinity/OceanBase/SereneDB store chunk_data
+# keyed by the original column name, and the SQL prompt examples
+# reference those exact keys via `json_extract_string(chunk_data,
+# '$.FieldName')`. Keys must therefore be the original column names
+# — not the pinyin form (`py_clmns[i].lower()`), which silently
+# broke non-ASCII columns because the LLM was told `xing_ming` but
+# `chunk_data` was keyed by `姓名`.
+def _enable_infinity(monkeypatch):
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", True)
+    monkeypatch.setattr(settings, "DOC_ENGINE_OCEANBASE", False)
+
+
+def _enable_oceanbase(monkeypatch):
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
+    monkeypatch.setattr(settings, "DOC_ENGINE_OCEANBASE", True)
+
+
+def test_chunk_infinity_field_map_uses_original_column_names(table_module, mock_update_kb: MagicMock, monkeypatch):
+    _enable_infinity(monkeypatch)
+    _run_chunk(table_module, {}, mock_update_kb)
+    payload = mock_update_kb.call_args.args[1]
+    field_map = payload["field_map"]
+    # field_map keys must equal the original column names so they line up
+    # with chunk_data storage keys used by the SQL prompt's
+    # `json_extract_string(chunk_data, '$.FieldName')` examples.
+    assert set(field_map.keys()) == {"row_id", "title", "content", "country", "category"}
+    # No pinyin (e.g. "row_id_tks") should leak into field_map keys —
+    # pinyin belongs in the type-suffixed ES path, not the Infinity
+    # JSON-extract path.
+    assert not any(k.endswith("_tks") for k in field_map.keys())
+    # Keys must be the raw column name verbatim. Under the buggy
+    # implementation `row_id` was being rewritten to `"row id"`, which
+    # the SQL prompt's `$.row id` could not match against
+    # `chunk_data["row_id"]`. Values, however, get underscore-to-space
+    # formatting applied (so the LLM sees a human-readable label), but
+    # the key must NOT be reformatted.
+    assert "row_id" in field_map
+    assert "row id" not in field_map
+    assert field_map["row_id"] == "row id"
+
+
+def test_chunk_oceanbase_field_map_uses_original_column_names(table_module, mock_update_kb: MagicMock, monkeypatch):
+    _enable_oceanbase(monkeypatch)
+    _run_chunk(table_module, {}, mock_update_kb)
+    payload = mock_update_kb.call_args.args[1]
+    field_map = payload["field_map"]
+    assert set(field_map.keys()) == {"row_id", "title", "content", "country", "category"}
+    assert not any(k.endswith("_tks") for k in field_map.keys())
+    assert "row_id" in field_map
+    assert "row id" not in field_map
+    assert field_map["row_id"] == "row id"
+
+
+def test_chunk_infinity_field_map_non_ascii_columns_are_keys(table_module, mock_update_kb: MagicMock, monkeypatch):
+    """The original bug repros here: a non-ASCII column would be keyed by
+    its pinyin form (`xing_ming`) under the old behavior, so the LLM
+    is told a key that doesn't exist in `chunk_data`. After the fix the
+    field_map key IS the original column name."""
+    _enable_infinity(monkeypatch)
+    test_csv = b"row_id,\xe5\xa7\x93\xe5\x90\x8d,\xe9\x95\xbf\xe5\xba\xa6\n1,Alice,42\n"  # row_id, 姓名, 长度
+    table_module.chunk(
+        FILENAME,
+        binary=test_csv,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    payload = mock_update_kb.call_args.args[1]
+    field_map = payload["field_map"]
+    # The original column names — including the non-ASCII ones — must
+    # appear verbatim as keys so the SQL prompt's `$.姓名` matches the
+    # JSON extraction in chunk_data.
+    assert "\u59d3\u540d" in field_map  # 姓名
+    assert "\u957f\u5ea6" in field_map  # 长度
+    assert not any(k.endswith("_tks") for k in field_map.keys())

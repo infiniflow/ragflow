@@ -22,6 +22,7 @@ import (
 )
 
 func TestAudioParser_ValidExtension(t *testing.T) {
+	ctx := t.Context()
 	p := NewAudioParser()
 	p.ConfigureFromSetup(map[string]any{
 		"output_format": "text",
@@ -30,7 +31,7 @@ func TestAudioParser_ValidExtension(t *testing.T) {
 		},
 	})
 
-	result := p.ParseWithResult("test.mp3", []byte{1, 2, 3, 4})
+	result := p.ParseWithResult(ctx, "test.mp3", []byte{1, 2, 3, 4})
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
@@ -43,9 +44,10 @@ func TestAudioParser_ValidExtension(t *testing.T) {
 }
 
 func TestAudioParser_AllExtensions(t *testing.T) {
+	ctx := t.Context()
 	for _, ext := range []string{"da", "wave", "wav", "mp3", "aac", "flac", "ogg", "aiff", "au", "midi", "wma", "realaudio", "vqf", "oggvorbis", "ape"} {
 		p := NewAudioParser()
-		result := p.ParseWithResult("audio."+ext, []byte{})
+		result := p.ParseWithResult(ctx, "audio."+ext, []byte{})
 		if result.Err != nil {
 			t.Errorf("extension .%s rejected: %v", ext, result.Err)
 		}
@@ -53,8 +55,9 @@ func TestAudioParser_AllExtensions(t *testing.T) {
 }
 
 func TestAudioParser_InvalidExtension(t *testing.T) {
+	ctx := t.Context()
 	p := NewAudioParser()
-	result := p.ParseWithResult("notaudio.txt", []byte{})
+	result := p.ParseWithResult(ctx, "notaudio.txt", []byte{})
 	if result.Err == nil {
 		t.Fatal("expected error for .txt extension")
 	}
@@ -76,19 +79,21 @@ func TestAudioParser_ConfigureVLM(t *testing.T) {
 }
 
 func TestAudioParser_ConfigureNilSafe(t *testing.T) {
+	ctx := t.Context()
 	p := NewAudioParser()
 	p.ConfigureFromSetup(nil)
 	p.ConfigureFromSetup(map[string]any{})
 	// Should not panic.
-	result := p.ParseWithResult("test.wav", []byte{})
+	result := p.ParseWithResult(ctx, "test.wav", []byte{})
 	if result.Err != nil {
 		t.Errorf("unexpected error: %v", result.Err)
 	}
 }
 
 func TestAudioParser_DefaultOutputFormat(t *testing.T) {
+	ctx := t.Context()
 	p := NewAudioParser()
-	result := p.ParseWithResult("test.flac", []byte{})
+	result := p.ParseWithResult(ctx, "test.flac", []byte{})
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}

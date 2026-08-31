@@ -74,7 +74,7 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig())
 
 	pages := []int{0, 1, 2, 3, 4, 5, 6, 7}
-	results, err := p.runPageWorkers(context.Background(), eng, pages,
+	results, err := p.runPageWorkers(t.Context(), eng, pages,
 		mock, NewTableBuilderFor(mock))
 	if err != nil {
 		t.Fatalf("runPageWorkers: %v", err)
@@ -96,7 +96,7 @@ func TestParser_RunPageWorkers_PoolSize4_DeterministicOrder(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig())
 
 	pages := []int{0, 1, 2, 3, 4, 5, 6, 7}
-	results, err := p.runPageWorkers(context.Background(), eng, pages,
+	results, err := p.runPageWorkers(t.Context(), eng, pages,
 		mock, NewTableBuilderFor(mock))
 	if err != nil {
 		t.Fatalf("runPageWorkers: %v", err)
@@ -130,7 +130,7 @@ func TestParser_RunPageWorkers_StableAcrossPoolSizes(t *testing.T) {
 		p := NewParser(pdf.DefaultParserConfig())
 
 		pages := []int{0, 1, 2, 3}
-		results, err := p.runPageWorkers(context.Background(), eng, pages,
+		results, err := p.runPageWorkers(t.Context(), eng, pages,
 			mock, NewTableBuilderFor(mock))
 		if err != nil {
 			t.Fatalf("poolSize=%d: runPageWorkers: %v", par, err)
@@ -161,7 +161,7 @@ func TestParser_ParseRaw_PoolSizeEquivalence(t *testing.T) {
 	for i, par := range []int{1, 3} {
 		setPoolSize(t, par)
 		p := NewParser(pdf.DefaultParserConfig())
-		r, err := p.ParseRaw(context.Background(), eng, mock)
+		r, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("poolSize=%d: ParseRaw: %v", par, err)
 		}
@@ -204,7 +204,7 @@ func TestParser_ProcessPage_UnifiedPath(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "Hello", Confidence: 0.9}},
 		}
 		p := NewParser(pdf.DefaultParserConfig())
-		r := p.processPage(context.Background(), eng, 0, mock, NewTableBuilderFor(mock))
+		r := p.processPage(t.Context(), eng, 0, mock, NewTableBuilderFor(mock))
 		if r.Err != nil {
 			t.Fatalf("processPage: %v", r.Err)
 		}
@@ -233,7 +233,7 @@ func TestParser_ProcessPage_UnifiedPath(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "OCR result", Confidence: 0.9}},
 		}
 		p := NewParser(pdf.DefaultParserConfig())
-		r := p.processPage(context.Background(), eng, 0, mock, NewTableBuilderFor(mock))
+		r := p.processPage(t.Context(), eng, 0, mock, NewTableBuilderFor(mock))
 		if r.Err != nil {
 			t.Fatalf("processPage: %v", r.Err)
 		}
@@ -252,7 +252,7 @@ func TestParser_ProcessPage_UnifiedPath(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "scan OCR", Confidence: 0.9}},
 		}
 		p := NewParser(pdf.DefaultParserConfig())
-		r := p.processPage(context.Background(), eng, 0, mock, NewTableBuilderFor(mock))
+		r := p.processPage(t.Context(), eng, 0, mock, NewTableBuilderFor(mock))
 		if r.Err != nil {
 			t.Fatalf("processPage: %v", r.Err)
 		}
@@ -307,7 +307,7 @@ func TestParser_ProcessPages_CrossPageTableMerge(t *testing.T) {
 	for _, par := range []int{1, 4} {
 		setPoolSize(t, par)
 		p := NewParser(pdf.DefaultParserConfig())
-		result, err := p.ParseRaw(context.Background(), eng, mock)
+		result, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("poolSize=%d: ParseRaw: %v", par, err)
 		}
@@ -336,7 +336,7 @@ func TestParser_PageParallel_DeterministicOrder_MockEngine(t *testing.T) {
 	runParse := func(par int) *pdf.ParseResult {
 		setPoolSize(t, par)
 		p := NewParser(pdf.DefaultParserConfig())
-		r, err := p.ParseRaw(context.Background(), eng, mock)
+		r, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("poolSize=%d: ParseRaw: %v", par, err)
 		}
@@ -377,7 +377,7 @@ func TestParser_ParseRaw_RetryZoomReplacesPageImageAndZoom(t *testing.T) {
 	}
 	mock := &MockDocAnalyzer{Healthy: true}
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestParser_ParseRaw_RetryZoomUsesHigherDPIForOCR(t *testing.T) {
 	}
 	analyzer := &recordingAnalyzer{}
 
-	result, err := p.ParseRaw(context.Background(), eng, analyzer)
+	result, err := p.ParseRaw(t.Context(), eng, analyzer)
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}

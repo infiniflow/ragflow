@@ -16,15 +16,15 @@ and creates an `LLMBundle(tenant, tts_model_config)`. The TTS
 factory in `rag/llm/tts_model.py` dispatches to one of several
 **HTTP-based** providers:
 
-| Provider | Backend | Pure Go? |
-|----------|---------|----------|
-| FishAudioTTS | HTTP POST to `api.fish.audio/v1/tts` (msgpack body) | feasible |
-| QwenTTS | DashScope SDK (over WebSocket) | heavy |
-| OpenAITTS | HTTP POST to OpenAI-compatible `/audio/tts` | feasible |
-| StepFunTTS | HTTP POST to vendor endpoint | feasible |
-| RAGconTTS | LiteLLM proxy (HTTP) | feasible |
-| XinferenceTTS | HTTP POST to xinference | feasible |
-| TongyiTTS | DashScope SDK | heavy |
+| Provider      | Backend                                             | Pure Go? |
+|---------------|-----------------------------------------------------|----------|
+| FishAudioTTS  | HTTP POST to `api.fish.audio/v1/tts` (msgpack body) | feasible |
+| QwenTTS       | DashScope SDK (over WebSocket)                      | heavy    |
+| OpenAITTS     | HTTP POST to OpenAI-compatible `/audio/tts`         | feasible |
+| StepFunTTS    | HTTP POST to vendor endpoint                        | feasible |
+| RAGconTTS     | LiteLLM proxy (HTTP)                                | feasible |
+| XinferenceTTS | HTTP POST to xinference                             | feasible |
+| TongyiTTS     | DashScope SDK                                       | heavy    |
 
 None of the production providers are gtts / edge-tts. The "gtts or
 edge-tts shell-out" wording in the original plan was a placeholder

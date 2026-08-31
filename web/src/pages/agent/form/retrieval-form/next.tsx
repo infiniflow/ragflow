@@ -9,19 +9,19 @@ import {
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
-import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
-import { TopNFormField } from '@/components/top-n-item';
 import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+  RerankCandidatesCountFormField,
+  rerankCandidatesCountSchema,
+} from '@/components/rerank-candidates-count-item';
+
+import { TopNFormField } from '@/components/top-n-item';
+import { Form } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
-import { Textarea } from '@/components/ui/textarea';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
 import {
@@ -44,15 +44,12 @@ import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
-  keywords_similarity_weight: z.coerce.number(),
+  keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
-  top_k: z.coerce.number(),
+  ...rerankCandidatesCountSchema,
   dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
-  empty_response: z.string(),
   cross_languages: z.array(z.string()),
-  use_kg: z.boolean(),
-  toc_enhance: z.boolean(),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
@@ -106,34 +103,6 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
   return retrievalFrom === RetrievalFrom.Memory;
 }
 
-export function EmptyResponseField() {
-  const { t } = useTranslation();
-  const form = useFormContext();
-
-  return (
-    <FormField
-      control={form.control}
-      name="empty_response"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('chat.emptyResponseTip')}>
-            {t('chat.emptyResponse')}
-          </FormLabel>
-          <FormControl>
-            <Textarea
-              placeholder={t('common.namePlaceholder')}
-              {...field}
-              autoComplete="off"
-              rows={4}
-            />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
-}
-
 export function DocumentIdsFormField() {
   const { t } = useTranslation();
 
@@ -167,14 +136,22 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(node?.id, form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <Form {...form}>
@@ -191,19 +168,19 @@ function RetrievalForm({ node }: INextOperatorForm) {
               similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
-                <RerankFormFields ownerTenantId={ownerTenantId}></RerankFormFields>
+                <RerankFormFields
+                  ownerTenantId={ownerTenantId}
+                ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}
-            <EmptyResponseField></EmptyResponseField>
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-                <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-                <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
               </>
             )}
           </section>

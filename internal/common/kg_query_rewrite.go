@@ -133,7 +133,7 @@ func ParseQueryRewriteResponse(response string) (*QueryRewriteResult, error) {
 		return result, nil
 	}
 
-	// Fallback: try to extract JSON from markdown code blocks
+	// Fallback: try to extract JSON from Markdown code blocks
 	cleaned := strings.TrimSpace(response)
 	if idx := strings.Index(cleaned, "```"); idx >= 0 {
 		rest := cleaned[idx+3:]

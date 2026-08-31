@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import {
@@ -62,7 +78,10 @@ export const useUploadFile = () => {
       const formData = new FormData();
       formData.append('parent_id', params.parentId);
       fileList.forEach((file: any, index: number) => {
-        formData.append('file', file);
+        // Explicitly set filename to file.name (base name) to prevent the
+        // browser from using webkitRelativePath (e.g. "folder/file.txt")
+        // which would cause the backend to create an extra folder.
+        formData.append('file', file, file.name);
         formData.append('path', pathList[index]);
       });
       try {
@@ -231,16 +250,23 @@ export const useDeleteFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.DeleteFile],
     mutationFn: async (params: { fileIds: string[]; parentId: string }) => {
-      const { data } = await fileManagerService.removeFile({
-        ids: params.fileIds,
-      });
-      if (data.code === 0) {
-        message.success(t('message.deleted'));
+      try {
+        const { data } = await fileManagerService.removeFile({
+          ids: params.fileIds,
+        });
+        if (data.code === 0) {
+          message.success(t('message.deleted'));
+        }
+        queryClient.invalidateQueries({
+          queryKey: [FileApiAction.FetchFileList],
+        });
+        return data.code;
+      } catch {
+        // Swallow request failures so callers awaiting the mutation never
+        // produce an unhandled rejection; a failed delete simply returns no
+        // code and the selection state stays untouched.
+        return;
       }
-      queryClient.invalidateQueries({
-        queryKey: [FileApiAction.FetchFileList],
-      });
-      return data.code;
     },
   });
 

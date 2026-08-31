@@ -3,7 +3,6 @@
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
 #
 #      http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -13,6 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+"""Title-based chunking shared by the hierarchy and group strategies.
+
+Both strategies build raw chunks from upstream line records, then a single
+post-build pass (`BaseTitleChunker._enforce_token_cap`) guarantees no text
+chunk exceeds the configured token ceiling.
+"""
+
+import logging
 import random
 import re
 import sys
@@ -20,9 +27,11 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from copy import deepcopy
 
+from common.token_utils import num_tokens_from_string, truncate
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.chunker._sentence_boundary import SENTENCE_BOUNDARY_RE
 from rag.flow.parser.pdf_chunk_metadata import (
     PDF_POSITIONS_KEY,
     extract_pdf_positions,
@@ -32,28 +41,45 @@ from rag.flow.parser.pdf_chunk_metadata import (
 )
 from rag.nlp import not_bullet, not_title
 
+logger = logging.getLogger(__name__)
+
 BODY_LEVEL = sys.maxsize - 1
 
 
 class TitleChunkerParam(ProcessParamBase):
+    """Parameters for the title-based chunkers (hierarchy and group)."""
+
     def __init__(self):
         super().__init__()
         self.levels = []
         self.hierarchy = None
         self.include_heading_content = False
         self.root_chunk_as_heading = False
+        # Hard ceiling on each text chunk's token count. A built chunk that
+        # exceeds it is re-split on sentence boundaries into <= cap sub-chunks
+        # (see BaseTitleChunker._enforce_token_cap). 0/None disables the
+        # ceiling.
+        self.chunk_token_cap = 512
 
     def check(self):
+        """Validate the configured parameters before chunking runs."""
         if self.method in {"hierarchy", "group"}:
             self.check_empty(self.levels, "Hierarchical setups.")
         if self.method == "hierarchy":
             self.check_empty(self.hierarchy, "Hierarchy number.")
+        if self.chunk_token_cap:
+            self.check_positive_integer(self.chunk_token_cap, "Chunk token cap.")
+            if not (128 <= int(self.chunk_token_cap) <= 8000):
+                raise ValueError("Chunk token cap must be between 128 and 8000.")
 
     def get_input_form(self) -> dict[str, dict]:
+        """Return the canvas-visible parameter form (empty for this chunker)."""
         return {}
 
 
 class BaseTitleChunker(ABC):
+    """Shared base for the hierarchy and group title chunkers."""
+
     start_message = "Start to chunk by title."
 
     def __init__(self, process: ProcessBase, from_upstream):
@@ -62,26 +88,160 @@ class BaseTitleChunker(ABC):
         self.from_upstream = from_upstream
 
     async def invoke(self):
+        """Run the full chunking pipeline for one upstream payload."""
         self.process.set_output("output_format", "chunks")
         self.process.callback(random.randint(1, 5) / 100.0, self.start_message)
         line_records = self.extract_line_records()
         resolved = self.resolve_levels(line_records)
         chunks = self.build_chunks(line_records, resolved)
+        chunks = self._enforce_token_cap(chunks)
         await self.set_chunks(chunks)
         self.process.callback(1, "Done.")
 
+    @staticmethod
+    def _split_text_by_sentences(text):
+        """Split text on sentence boundaries, keeping each delimiter attached
+        to the preceding sentence so re-merged text preserves punctuation.
+        """
+        if not text:
+            return []
+        raw = re.split(SENTENCE_BOUNDARY_RE, text)
+        sentences = []
+        for i in range(0, len(raw), 2):
+            piece = raw[i]
+            if i + 1 < len(raw):
+                piece += raw[i + 1]
+            if piece:
+                sentences.append(piece)
+        return sentences
+
+    @staticmethod
+    def _hard_split_by_tokens(text, cap):
+        """Hard-split a boundary-less run into <= cap-token pieces.
+
+        Mirrors common.token_utils.truncate semantics (prefix bounded by
+        ``cap`` tokens). Falls back to a character prefix if the tokenizer is
+        unavailable so the ceiling still holds.
+        """
+        out = []
+        rest = text or ""
+        while rest:
+            try:
+                head = truncate(rest, cap)
+            except (ValueError, TypeError, UnicodeError):
+                # Tokenizer unavailable/failed; fall back to a character prefix
+                # so the ceiling still holds instead of raising.
+                head = rest[:cap]
+            # truncate decodes the first `cap` tokens; when that lands mid
+            # multibyte character it emits a U+FFFD, which is not a true prefix
+            # of `rest`. Trim it so the rest[len(head):] advance stays lossless
+            # and no character is dropped at the split boundary.
+            if head and not rest.startswith(head):
+                head = head[:-1]
+            if not head:
+                out.append(rest)
+                break
+            out.append(head)
+            if head == rest:
+                break
+            rest = rest[len(head) :]
+        return out
+
+    def _split_text_chunk_by_cap(self, chunk, cap):
+        """Re-split one oversized text chunk into <= cap sub-chunks.
+
+        Sentence boundaries are tried first; any remaining over-cap segment is
+        hard-split. Every sub-chunk keeps the original (coarse, page-level)
+        positions so each still gets its preview image and highlight.
+        """
+        text = chunk.get("text") or ""
+        sentences = self._split_text_by_sentences(text)
+        if not sentences:
+            return [chunk]
+
+        groups = []
+        current = ""
+        for sentence in sentences:
+            candidate = current + sentence if current else sentence
+            if current and self._token_count(candidate) > cap:
+                groups.append(current)
+                current = sentence
+            else:
+                current = candidate
+        if current:
+            groups.append(current)
+
+        final_groups = []
+        for group in groups:
+            if self._token_count(group) <= cap:
+                final_groups.append(group)
+            else:
+                final_groups.extend(self._hard_split_by_tokens(group, cap))
+        if not final_groups:
+            return [chunk]
+
+        has_positions = PDF_POSITIONS_KEY in chunk
+        orig_positions = chunk.get(PDF_POSITIONS_KEY)
+        out = []
+        for group in final_groups:
+            sub = dict(chunk)
+            sub["text"] = group
+            # Every sub-chunk keeps the original (coarse, page-level)
+            # coordinates so the preview-image/position restore pass covers
+            # all sub-chunks. Each sub-chunk owns a deep copy so no two of
+            # them alias the same position list.
+            if has_positions:
+                sub[PDF_POSITIONS_KEY] = deepcopy(orig_positions)
+            out.append(sub)
+        return out
+
+    def _token_count(self, text):
+        """Count tokens for ``text``.
+
+        ``num_tokens_from_string`` returns 0 when the encoder is unavailable;
+        in that case fall back to the character count so the cap is still
+        enforced rather than silently skipped.
+        """
+        n = num_tokens_from_string(text or "")
+        if n == 0 and text:
+            logger.warning("tokenizer returned 0 tokens for non-empty text; falling back to character count for the token cap")
+            return len(text or "")
+        return n
+
+    def _enforce_token_cap(self, chunks):
+        """Apply the hard token ceiling to every text chunk after build_chunks.
+
+        Both hierarchy and group methods honour ``chunk_token_cap``. Table and
+        image chunks are atomic and skipped. ``cap`` of 0/None disables it.
+        """
+        cap = self.param.chunk_token_cap
+        if not cap or cap <= 0:
+            return chunks
+
+        out = []
+        for chunk in chunks:
+            if chunk.get("doc_type_kwd", "text") != "text":
+                out.append(chunk)
+                continue
+            if self._token_count(chunk.get("text") or "") <= cap:
+                out.append(chunk)
+                continue
+            out.extend(self._split_text_chunk_by_cap(chunk, cap))
+        if len(out) != len(chunks):
+            logger.info(
+                "title chunker token cap enforced: cap=%s chunks %d -> %d",
+                cap,
+                len(chunks),
+                len(out),
+            )
+        return out
+
     def extract_line_records(self):
+        """Normalize all upstream input payloads into a unified ordered record
+        stream. All level resolution and chunk construction operate on this
+        standard stream, decoupling strategies from upstream output formats.
         """
-        Normalize all upstream input payloads into a unified ordered record stream.
-        All level resolution and chunk construction logic operates on this standard stream,
-        decoupling downstream chunking strategies from different upstream output formats.
-        """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
         payload = None
-        # Extract raw content payload based on upstream output format type
         if self.from_upstream.output_format == "markdown":
             payload = self.from_upstream.markdown_result or ""
         elif self.from_upstream.output_format == "text":
@@ -89,24 +249,17 @@ class BaseTitleChunker(ABC):
         elif self.from_upstream.output_format == "html":
             payload = self.from_upstream.html_result or ""
 
-        # Boundary robustness fix: explicit None check to distinguish `None` and empty string ""
-        # Prevents empty payload from unexpectedly falling through to structured chunk branch
         if payload is not None:
             lines = payload.split("\n")
             input_line_count = len(lines)
-
-            # Format-branched text processing to preserve original document semantics
-            # Plain text: perform full whitespace stripping and invalid empty line filtering
+            # Plain text: full whitespace strip + drop blank lines. Markdown &
+            # HTML: keep original spacing, drop only pure blank lines.
             if self.from_upstream.output_format == "text":
                 clean_lines = [line.strip() for line in lines if line.strip()]
-            # Markdown & HTML: retain original indentation/spacing, only filter pure blank lines
             else:
                 clean_lines = [line for line in lines if line.strip()]
-
             output_line_count = len(clean_lines)
-            # Production observability log: added format dimension per project coding guidelines
             logger.info(f"payload filter: format={self.from_upstream.output_format} before={input_line_count} after={output_line_count}")
-
             return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in clean_lines]
         items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
         return [
@@ -121,6 +274,7 @@ class BaseTitleChunker(ABC):
         ]
 
     def extract_outlines(self):
+        """Extract PDF bookmarks/outlines used for outline-based leveling."""
         file = self.from_upstream.file or {}
         source = file.get("blob") or file.get("binary") or file.get("path") or file.get("name")
         if not source:
@@ -129,6 +283,7 @@ class BaseTitleChunker(ABC):
 
     @staticmethod
     def match_regex_level(text, level_group):
+        """Return the 1-based level whose regex matches ``text``, else None."""
         stripped = text.strip()
         for level, pattern in enumerate(level_group, start=1):
             if re.match(pattern, stripped) and not not_bullet(stripped):
@@ -137,12 +292,13 @@ class BaseTitleChunker(ABC):
 
     @staticmethod
     def select_level_group(lines, raw_levels):
+        """Pick the single regex family that best matches ``lines``.
+
+        Mixing families would make level numbers ambiguous and break downstream
+        comparisons, so only the most frequently matching family is kept.
+        """
         if not raw_levels:
             return []
-
-        # Select one regex family before assigning numeric levels. Mixing
-        # patterns across families would make the level numbers ambiguous and
-        # break downstream comparisons.
         hits = [0] * len(raw_levels)
         for i, group in enumerate(raw_levels):
             for sec in lines:
@@ -153,7 +309,6 @@ class BaseTitleChunker(ABC):
                     if re.match(pattern, sec) and not not_bullet(sec):
                         hits[i] += 1
                         break
-
         maximum = 0
         selected = -1
         for i, hit in enumerate(hits):
@@ -161,28 +316,29 @@ class BaseTitleChunker(ABC):
                 continue
             selected = i
             maximum = hit
-
         if selected < 0:
             return []
         return [pattern for pattern in raw_levels[selected] if pattern]
 
     @staticmethod
     def match_layout_level(text, layout, fallback_level):
-        if re.search(r"(section|title|head)", layout, re.I) and not not_title(text.split("@")[0].strip()):
+        """Treat layout-tagged title-like lines as ``fallback_level``."""
+        if re.search(r"(section|title|head)", layout, re.IGNORECASE) and not not_title(text.split("@")[0].strip()):
             return fallback_level
         return BODY_LEVEL
 
     @staticmethod
     def _outline_similarity(left, right):
+        """Jaccard similarity of adjacent outline-text bigrams."""
         left_pairs = {left[i] + left[i + 1] for i in range(len(left) - 1)}
         right_pairs = {right[i] + right[i + 1] for i in range(min(len(left), len(right) - 1))}
         return len(left_pairs & right_pairs) / max(len(left_pairs), len(right_pairs), 1)
 
     def resolve_outline_levels(self, line_records):
+        """Resolve levels from PDF outlines when they cover enough of the doc."""
         outlines = self.extract_outlines()
         if not line_records or len(outlines) / len(line_records) <= 0.03:
             return None
-
         max_level = max(level for _, level, _ in outlines) + 1
         levels = []
         for record in line_records:
@@ -196,7 +352,6 @@ class BaseTitleChunker(ABC):
                     break
             else:
                 levels.append(BODY_LEVEL)
-
         return {
             "levels": levels,
             "most_level": max(1, max_level - 1),
@@ -204,6 +359,7 @@ class BaseTitleChunker(ABC):
         }
 
     def resolve_frequency_levels(self, line_records):
+        """Resolve levels by regex family and layout tagging."""
         level_group = self.select_level_group(
             [record["text"] for record in line_records],
             self.param.levels,
@@ -225,13 +381,11 @@ class BaseTitleChunker(ABC):
                     fallback_level,
                 )
             )
-
         most_level = None
         for level, _ in Counter(levels).most_common():
             if level < BODY_LEVEL:
                 most_level = level
                 break
-
         return {
             "levels": levels,
             "most_level": most_level,
@@ -239,13 +393,15 @@ class BaseTitleChunker(ABC):
         }
 
     def resolve_title_levels(self, line_records):
+        """Resolve levels, preferring outlines then falling back to frequency."""
         return self.resolve_outline_levels(line_records) or self.resolve_frequency_levels(line_records)
 
     def build_chunks_from_record_groups(self, record_groups):
-        # Strategy code decides record grouping. This method materializes each
-        # group into the output chunk representation. For PDF-like inputs, the
-        # chunk box is defined by merged source positions and the text payload
-        # is normalized by removing parser tags.
+        """Materialize each record group into the output chunk representation.
+
+        For PDF-like inputs the chunk box is defined by merged source positions
+        and the text payload is normalized by removing parser tags.
+        """
         if self.from_upstream.output_format in ["markdown", "text", "html"]:
             chunks = [{"text": "".join(record["text"] + "\n" for record in records)} for records in record_groups if records]
         else:
@@ -280,6 +436,7 @@ class BaseTitleChunker(ABC):
         return chunks
 
     async def set_chunks(self, chunks):
+        """Finalize and emit chunks, enriching PDF positions when needed."""
         if self.from_upstream.output_format in ["markdown", "text", "html"]:
             self.process.set_output("chunks", chunks)
             return
@@ -291,14 +448,17 @@ class BaseTitleChunker(ABC):
 
     @abstractmethod
     def resolve_levels(self, line_records):
+        """Resolve title levels for the concrete chunker strategy."""
         raise NotImplementedError()
 
     @abstractmethod
     def build_chunks(self, line_records, resolved):
+        """Build raw chunks from records and resolved levels."""
         raise NotImplementedError()
 
 
 def resolve_target_level(levels, hierarchy):
+    """Pick the title level used as the chunking target for ``hierarchy``."""
     title_levels = sorted({level for level in levels if 0 < level < BODY_LEVEL})
     if not title_levels:
         return None

@@ -88,6 +88,7 @@ def _load_canvas_runtime(monkeypatch):
 
     llm_service = ModuleType("api.db.services.llm_service")
     llm_service.LLMBundle = object
+    llm_service.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service)
 
     task_service = ModuleType("api.db.services.task_service")

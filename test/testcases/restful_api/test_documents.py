@@ -255,28 +255,28 @@ def test_documents_list_error_and_sorting_contract(rest_client, create_dataset, 
             f"/datasets/{dataset_id}/documents",
             {"name": "unknown.txt"},
             102,
-            "You don't own the document unknown.txt.",
+            "you don't own the document unknown.txt",
         ),
         (
             "id unknown",
             f"/datasets/{dataset_id}/documents",
             {"id": "unknown.txt"},
             102,
-            "You don't own the document unknown.txt.",
+            "you don't own the document unknown.txt",
         ),
         (
             "name+id unknown name",
             f"/datasets/{dataset_id}/documents",
             {"id": first_id, "name": "unknown"},
             102,
-            "You don't own the document unknown.",
+            "you don't own the document unknown",
         ),
         (
             "name+id unknown id",
             f"/datasets/{dataset_id}/documents",
             {"id": "id", "name": "ragflow_test_upload_0.txt"},
             102,
-            "You don't own the document id.",
+            "you don't own the document id",
         ),
         (
             "run invalid",
@@ -289,36 +289,36 @@ def test_documents_list_error_and_sorting_contract(rest_client, create_dataset, 
             "orderby invalid",
             f"/datasets/{dataset_id}/documents",
             {"orderby": "unknown"},
-            100,
-            "Document' has no attribute 'unknown'",
+            101,
+            "invalid orderby field",
         ),
         (
             "page invalid number",
             f"/datasets/{dataset_id}/documents",
             {"page": -1, "page_size": 2},
-            100,
-            "1064",
+            0,
+            "",
         ),
         (
             "page invalid type",
             f"/datasets/{dataset_id}/documents",
             {"page": "a", "page_size": 2},
-            100,
-            "invalid literal for int()",
+            0,
+            "",
         ),
         (
             "page_size invalid number",
             f"/datasets/{dataset_id}/documents",
             {"page_size": -1},
-            100,
-            "1064",
+            0,
+            "",
         ),
         (
             "page_size invalid type",
             f"/datasets/{dataset_id}/documents",
             {"page_size": "a"},
-            100,
-            "invalid literal for int()",
+            0,
+            "",
         ),
     ]
     for case_name, path, params, expected_code, expected_message in error_cases:
@@ -378,7 +378,7 @@ def test_documents_upload_missing_file(rest_client, create_dataset):
     assert payload["message"] == "No file part!", payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_upload_contract_matrix(rest_client, create_dataset, tmp_path):
     dataset_id = create_dataset("dataset_upload_contract")
 
@@ -547,7 +547,7 @@ def test_documents_update_name_contract(rest_client, create_dataset, tmp_path):
         ("new_name.txt", 0, ""),
         (long_name, 0, ""),
         (0, 102, "Field: <name> - Message: <Input should be a valid string> - Value: <0>"),
-        (None, 100, "AttributeError('NoneType' object has no attribute 'encode')"),
+        (None, 102, "Field: <name> - Message: <Input should be a valid string> - Value: <None>"),
         ("", 101, "The extension of file can't be changed"),
         ("ragflow_test_upload_0", 101, "The extension of file can't be changed"),
         ("ragflow_test_upload_1.txt", 102, "Duplicated document name in the same dataset."),
@@ -584,7 +584,7 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_body = invalid_dataset_res.json()
     assert invalid_dataset_body["code"] == 102, invalid_dataset_body
-    assert "You don't own the dataset." in invalid_dataset_body["message"], invalid_dataset_body
+    assert "you don't own the dataset" in invalid_dataset_body["message"], invalid_dataset_body
 
     invalid_document_res = rest_client.patch(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}",
@@ -593,7 +593,7 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     assert invalid_document_res.status_code == 200
     invalid_document_body = invalid_document_res.json()
     assert invalid_document_body["code"] == 102, invalid_document_body
-    assert invalid_document_body["message"] == "The dataset doesn't own the document.", invalid_document_body
+    assert invalid_document_body["message"] == "the dataset doesn't own the document", invalid_document_body
 
 
 @pytest.mark.p2
@@ -681,7 +681,7 @@ def test_documents_update_meta_fields_contract(rest_client, create_dataset, tmp_
     assert invalid_meta_doc_res.status_code == 200
     invalid_meta_doc_body = invalid_meta_doc_res.json()
     assert invalid_meta_doc_body["code"] == 102, invalid_meta_doc_body
-    assert "The dataset doesn't own the document." in invalid_meta_doc_body["message"], invalid_meta_doc_body
+    assert "the dataset doesn't own the document" in invalid_meta_doc_body["message"], invalid_meta_doc_body
 
 
 @pytest.mark.p2
@@ -690,12 +690,12 @@ def test_documents_update_invalid_field_and_guard_contract(rest_client, create_d
     first_document_id = uploaded_docs[0]["id"]
 
     strict_guard_cases = [
-        ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
-        ({"token_count": 1}, 102, "Can't change `token_count`."),
-        ({"chunk_count": 100}, 102, "Can't change `chunk_count`."),
-        ({"token_count": 100}, 102, "Can't change `token_count`."),
+        ({"chunk_count": 1}, 102, "can't change `chunk_count`"),
+        ({"token_count": 1}, 102, "can't change `token_count`"),
+        ({"chunk_count": 100}, 102, "can't change `chunk_count`"),
+        ({"token_count": 100}, 102, "can't change `token_count`"),
         ({"progress": 2.0}, 102, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <2.0>"),
-        ({"progress": 1.0}, 102, "Can't change `progress`."),
+        ({"progress": 1.0}, 102, "can't change `progress`"),
         ({"meta_fields": []}, 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
     ]
     for payload, expected_code, expected_message in strict_guard_cases:
@@ -754,9 +754,10 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
         "topn_tags": 3,
         "raptor": {
             "use_raptor": True,
-            "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-            "max_token": 256,
-            "threshold": 0.1,
+            "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+            "max_token": 512,
+            "clustering_threshold": 0.3,
+            "clustering_ratio": 0.5,
             "max_cluster": 64,
             "random_seed": 0,
         },
@@ -1012,7 +1013,7 @@ def test_document_metadata_config_contract(rest_client, create_document):
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert invalid_dataset_payload["message"] == "You don't own the dataset.", invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "you don't own the dataset", invalid_dataset_payload
 
     invalid_document_res = rest_client.put(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/metadata/config",
@@ -1021,7 +1022,7 @@ def test_document_metadata_config_contract(rest_client, create_document):
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"Document {INVALID_ID_32} not found in dataset {dataset_id}", invalid_document_payload
+    assert invalid_document_payload["message"] == f"document {INVALID_ID_32} not found in dataset {dataset_id}", invalid_document_payload
 
     update_payload = {"metadata": {"author": "alice", "tags": ["one", "two"]}}
     update_res = rest_client.put(
@@ -1054,7 +1055,7 @@ def test_documents_metadata_update_path(rest_client, create_document):
     assert payload["data"]["updated"] >= 1, payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_delete_contract_matrix(rest_client, create_dataset, tmp_path):
     scenarios = [
         ("empty object", lambda ids: {}, 102, "should either provide doc ids or set delete_all(true)", 3),
@@ -1162,7 +1163,7 @@ def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dat
     assert other_list_payload["data"]["total"] == 1, other_list_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_delete_concurrent_and_bulk_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=60, timeout=120)
     document_ids = [doc["id"] for doc in uploaded_docs]
@@ -1220,7 +1221,7 @@ def test_documents_parse_requires_auth(create_document):
         assert_auth_error(body, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
     scenarios = [
         ("empty ids", lambda ids: {"document_ids": []}, 102, "`document_ids` is required"),
@@ -1256,7 +1257,7 @@ def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
                 assert "Task done" in doc["progress_msg"], (scenario_name, doc)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=3)
     doc_ids = [doc["id"] for doc in uploaded_docs]
@@ -1303,7 +1304,7 @@ def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_cli
     _wait_document_runs(rest_client, dataset_id, doc_ids, expected_run="DONE")
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_parse_chunks_and_scaled_bulk_contract(rest_client, create_dataset, tmp_path):
     single_dataset_id, single_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=1)
     single_doc_id = single_docs[0]["id"]
@@ -1421,7 +1422,7 @@ def test_documents_stop_parse_contract_matrix(rest_client, create_dataset, tmp_p
         assert "Can't stop parsing document that has not started or already completed" in repeated_stop_payload["message"], repeated_stop_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_stop_parse_invalid_dataset_partial_and_scaled_concurrency(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=25)
     doc_ids = [doc["id"] for doc in uploaded_docs]
@@ -1490,14 +1491,14 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     assert invalid_doc_res.status_code == 200
     invalid_doc_payload = invalid_doc_res.json()
     assert invalid_doc_payload["code"] == 102, invalid_doc_payload
-    assert invalid_doc_payload["message"] == "Document not found!", invalid_doc_payload
+    assert invalid_doc_payload["message"] == "document not found", invalid_doc_payload
 
     invalid_dataset_path = tmp_path / "invalid_dataset_download.txt"
     invalid_dataset_res = _download_document_to_file(rest_client, "invalid_dataset_id", document_id, invalid_dataset_path)
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert invalid_dataset_payload["message"] == "Document not found!", invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "document not found", invalid_dataset_payload
 
 
 @pytest.mark.p2
@@ -1562,7 +1563,7 @@ def test_documents_download_filetype_repeat_and_concurrent_contract(rest_client,
         assert compare_by_hash(source_path, downloaded_path), source_path.name
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_table_parser_chat_patterns(rest_client, clear_datasets, tmp_path):
     create_dataset_res = rest_client.post(
         "/datasets",

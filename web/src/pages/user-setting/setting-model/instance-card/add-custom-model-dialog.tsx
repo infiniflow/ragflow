@@ -44,8 +44,15 @@ export interface AddCustomModelDialogFields {
   /** Display label */
   label: string;
   /** Form field type */
-  type: 'text' | 'number' | 'multi-select' | 'switch-group';
-  /** Options for multi-select / switch-group types */
+  type:
+    | 'text'
+    | 'number'
+    | 'multi-select'
+    | 'switch-group'
+    | 'select'
+    | 'switch'
+    | 'section';
+  /** Options for multi-select / switch-group / select types */
   options?: { label: string; value: string }[];
   /** Whether the field is required */
   required?: boolean;
@@ -74,6 +81,15 @@ interface AddCustomModelDialogProps {
   loading?: boolean;
   /** Existing model names for uniqueness validation */
   existingNames: string[];
+  /**
+   * Whitelist of feature keys that are provider-specific (e.g.
+   * SoMark's `somark_enable_*`). On submit, these are moved from the
+   * `features` array into `extra` as boolean `true` values so each
+   * provider's payload stays self-describing. Standard features like
+   * `is_tools` stay in `features`. When omitted, no features are
+   * moved to `extra`.
+   */
+  providerFeatureKeys?: string[];
   /** Initial form values (overrides field-level defaults). Useful for edit mode. */
   defaultValues?: Record<string, unknown>;
 }
@@ -95,6 +111,7 @@ export const AddCustomModelDialog = ({
   loading = false,
   existingNames,
   defaultValues,
+  providerFeatureKeys,
 }: AddCustomModelDialogProps) => {
   const { t } = useTranslate('setting');
   const { t: commonT } = useTranslate('common');
@@ -109,7 +126,53 @@ export const AddCustomModelDialog = ({
         field.type === 'multi-select' || field.type === 'switch-group';
       const defaultValue =
         field.defaultValue ??
-        (field.type === 'number' ? 0 : isArrayType ? [] : '');
+        (field.type === 'number'
+          ? 0
+          : field.type === 'switch'
+            ? false
+            : isArrayType
+              ? []
+              : '');
+
+      if (field.type === 'section') {
+        return {
+          name: `__section_${field.name}`,
+          label: field.label,
+          type: FormFieldType.Custom,
+          hideLabel: true,
+          schema: z.any().optional(),
+          render: () => (
+            <div className="text-sm font-semibold text-muted-foreground border-b pb-1 mt-4">
+              {field.label}
+            </div>
+          ),
+        };
+      }
+
+      if (field.type === 'switch') {
+        return {
+          name: field.name,
+          label: field.label,
+          type: FormFieldType.Switch,
+          required: field.required,
+          defaultValue: defaultValue ?? false,
+          disabled: field.disabled,
+          labelClassName: '!mb-0',
+        };
+      }
+
+      if (field.type === 'select') {
+        return {
+          name: field.name,
+          label: field.label,
+          type: FormFieldType.Select,
+          required: field.required,
+          defaultValue,
+          disabled: field.disabled,
+          options: field.options,
+          placeholder: field.label,
+        };
+      }
 
       if (field.type === 'switch-group') {
         return {
@@ -125,14 +188,16 @@ export const AddCustomModelDialog = ({
           render: (fieldProps) => {
             const currentValues = (fieldProps.value as string[]) ?? [];
             return (
-              <div className="space-y-2 rounded-md border border-border-button p-3">
-                {field.options?.map((opt) => {
+              <div className="rounded-md border border-border-button overflow-hidden">
+                {field.options?.map((opt, index) => {
                   const isChecked = currentValues.includes(opt.value);
                   const switchId = `${field.name}-${opt.value}`;
                   return (
                     <div
                       key={opt.value}
-                      className="flex items-center justify-between gap-3"
+                      className={`flex items-center justify-between gap-3 px-3 py-2.5 ${
+                        index % 2 === 1 ? 'bg-bg-card' : ''
+                      }`}
                     >
                       <Label
                         htmlFor={switchId}
@@ -205,18 +270,61 @@ export const AddCustomModelDialog = ({
   const handleSubmit = useCallback(
     (values: FormValues) => {
       const features = values.features;
+      const featuresArray = Array.isArray(features)
+        ? (features as string[])
+        : [];
+      // Use the caller-supplied `providerFeatureKeys` whitelist to
+      // separate provider-specific feature flags from standard ones.
+      // Provider-specific flags are stored as boolean values in `extra`
+      // rather than as array entries in `features`, so each provider's
+      // payload stays self-describing. When no whitelist is supplied,
+      // all features stay in `features` (backward compatible).
+      const providerSet = new Set(providerFeatureKeys ?? []);
+      const standardFeatures = featuresArray.filter(
+        (f) => typeof f === 'string' && !providerSet.has(f),
+      );
+      const providerFeatures = featuresArray.filter(
+        (f) => typeof f === 'string' && providerSet.has(f),
+      );
       const item: IProviderModelItem = {
         name: (values.name as string) ?? '',
         max_tokens: (values.max_tokens as number) ?? 0,
         model_types: (values.model_types as string[]) ?? [],
-        features:
-          Array.isArray(features) && features.length > 0
-            ? (features as string[])
-            : null,
+        features: standardFeatures.length > 0 ? standardFeatures : null,
       };
+      // Collect provider-specific extra fields (e.g. SoMark's
+      // element-format selects) that are not part of the standard
+      // IProviderModelItem shape.
+      const standardKeys = new Set([
+        'name',
+        'model_types',
+        'max_tokens',
+        'features',
+      ]);
+      const extra: Record<string, any> = {};
+      for (const [key, value] of Object.entries(values)) {
+        if (
+          !standardKeys.has(key) &&
+          !key.startsWith('__section_') &&
+          value !== undefined
+        ) {
+          extra[key] = value;
+        }
+      }
+      // Convert ALL provider-specific features to boolean extra values.
+      // Selected features get `true`, unselected get `false` so the
+      // backend clears toggles the user turned off (not just sets the
+      // ones that are on).
+      const selectedSet = new Set(providerFeatures);
+      for (const key of providerFeatureKeys ?? []) {
+        extra[key] = selectedSet.has(key);
+      }
+      if (Object.keys(extra).length > 0) {
+        item.extra = extra;
+      }
       onSubmit(item);
     },
-    [onSubmit],
+    [onSubmit, providerFeatureKeys],
   );
 
   // Reset form whenever the dialog opens/closes, applying defaultValues for edit mode.
@@ -230,32 +338,34 @@ export const AddCustomModelDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" onClick={(e) => e.stopPropagation()}>
+      <DialogContent className="max-w-2xl" onClick={(e) => e.stopPropagation()}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-
-        <DynamicForm.Root
-          ref={formRef}
-          fields={dynamicFields}
-          onSubmit={handleSubmit}
-          defaultValues={defaultValues}
-        >
-          <DialogFooter className="mb-0 pb-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={loading}
-            >
-              {cancelText ?? t('cancel')}
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {submitText ?? commonT('confirm')}
-            </Button>
-          </DialogFooter>
-        </DynamicForm.Root>
+        <div className=" max-h-[70vh] overflow-y-auto mb-12">
+          <DynamicForm.Root
+            ref={formRef}
+            fields={dynamicFields}
+            onSubmit={handleSubmit}
+            defaultValues={defaultValues}
+            className="pr-2 pb-2"
+          >
+            <DialogFooter className="absolute bottom-5 right-5 left-0 mb-0 pb-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={loading}
+              >
+                {cancelText ?? t('cancel')}
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {submitText ?? commonT('confirm')}
+              </Button>
+            </DialogFooter>
+          </DynamicForm.Root>
+        </div>
       </DialogContent>
     </Dialog>
   );

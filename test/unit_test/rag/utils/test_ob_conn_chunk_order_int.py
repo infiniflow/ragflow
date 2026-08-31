@@ -1,0 +1,35 @@
+#
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+from rag.utils.ob_conn import _get_entity_value, column_names, get_column_value, get_default_value
+
+
+class TestChunkOrderIntSchema:
+    def test_chunk_order_int_is_a_first_class_oceanbase_column(self):
+        assert "chunk_order_int" in column_names
+        assert get_default_value("chunk_order_int") == 0
+        assert get_column_value("chunk_order_int", "7") == 7
+
+    def test_null_chunk_order_int_uses_default_entity_value(self):
+        assert _get_entity_value("chunk_order_int", None) == 0
+
+    def test_null_order_id_uses_default_entity_value(self):
+        assert _get_entity_value("_order_id", None) == 0
+
+    def test_null_non_order_columns_remain_none_on_read(self):
+        assert _get_entity_value("available_int", None) is None
+        assert _get_entity_value("removed_kwd", None) is None
+        assert _get_entity_value("group_id", None) is None

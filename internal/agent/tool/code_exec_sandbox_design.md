@@ -27,7 +27,7 @@ class SandboxProvider(ABC):
 
 | Provider | File | Backend |
 |----------|------|---------|
-| `SelfManagedProvider` | `self_managed.py` | HTTP at `localhost:9385` (the `executor_manager`, which runs a Docker pool with gVisor) |
+| `SelfManagedProvider` | `self_managed.py` | HTTP at `sandbox-executor-manager:9385` (the `executor_manager`, which runs a Docker pool with gVisor) |
 | `AliyunCodeInterpreterProvider` | `aliyun_codeinterpreter.py` | Alibaba Cloud sandbox (uses `agentrun` SDK / Function Compute) |
 | `E2BProvider` | `e2b.py` | e2b cloud sandbox (SaaS) |
 
@@ -94,7 +94,7 @@ Cons
 
 Read the three provider implementations and write Go equivalents:
 
-- `SelfManagedProvider` → Go HTTP client to `localhost:9385`
+- `SelfManagedProvider` → Go HTTP client to `sandbox-executor-manager:9385`
   (the executor_manager). Smallest of the three.
 - `AliyunCodeInterpreterProvider` → Go reimplementation of the
   `agentrun` SDK client. ~Vendor SDK surface to maintain.

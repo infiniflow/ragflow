@@ -26,7 +26,7 @@
 //                  become <a href="..." download="...">filename</a>
 //   - "markdown" — pass through verbatim; downloads become
 //                  [filename](url) links. Python also passes
-//                  markdown through with light normalization; we
+//                  Markdown through with light normalization; we
 //                  match that for parity.
 //   - "plain"    — strip HTML tags (best-effort) and present
 //                  downloads as "filename (url)" lines. Default
@@ -173,7 +173,7 @@ func joinPlain(body, dlBlock string) string {
 // plain renderer. It removes paired and unpaired tags without
 // attempting to keep attribute content. This matches the
 // pragmatic behaviour in Python's `_stringify_message_value`
-// fallback path: "if markdown → use as-is, if plain → strip tags".
+// fallback path: "if Markdown → use as-is, if plain → strip tags".
 var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 
 // StripHTMLTags removes HTML tags from s. Used by callers that

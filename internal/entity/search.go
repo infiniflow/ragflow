@@ -33,3 +33,10 @@ type Search struct {
 func (Search) TableName() string {
 	return "search"
 }
+
+// SearchListItem represents a search list row with owner profile fields.
+type SearchListItem struct {
+	Search
+	Nickname     *string `gorm:"column:nickname" json:"nickname,omitempty"`
+	TenantAvatar *string `gorm:"column:tenant_avatar" json:"tenant_avatar,omitempty"`
+}

@@ -51,5 +51,5 @@ func (h *PluginHandler) ListLLMTools(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, h.pluginService.ListLLMTools(), "SUCCESS")
+	common.SuccessWithData(c, h.pluginService.ListLLMTools(), "success")
 }

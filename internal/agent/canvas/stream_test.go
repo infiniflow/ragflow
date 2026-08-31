@@ -28,10 +28,10 @@ func TestChannelEmitter_EmitAndClose(t *testing.T) {
 	ch := em.(*channelEmitter).Channel()
 
 	evs := []StreamEvent{
-		{Event: "node_start", TaskID: "t1", Component: "begin_0"},
-		{Event: "message", TaskID: "t1", Component: "llm_0",
+		{Event: "node_start", SessionID: "s1", Component: "begin_0"},
+		{Event: "message", SessionID: "s1", Component: "llm_0",
 			Data: map[string]any{"delta": "hello"}},
-		{Event: "node_finish", TaskID: "t1", Component: "begin_0",
+		{Event: "node_finish", SessionID: "s1", Component: "begin_0",
 			Data: map[string]any{"ok": true}},
 	}
 	for _, ev := range evs {
@@ -51,7 +51,7 @@ func TestChannelEmitter_EmitAndClose(t *testing.T) {
 		t.Fatalf("got %d events, want %d", len(got), len(evs))
 	}
 	for i, ev := range got {
-		if ev.Event != evs[i].Event || ev.TaskID != evs[i].TaskID ||
+		if ev.Event != evs[i].Event || ev.SessionID != evs[i].SessionID ||
 			ev.Component != evs[i].Component {
 			t.Fatalf("event %d: got %+v, want %+v", i, ev, evs[i])
 		}
@@ -62,12 +62,12 @@ func TestChannelEmitter_NonBlockingDrop(t *testing.T) {
 	// Buffer of 1 with no reader; the second Emit must return nil
 	// immediately (drop on full) rather than block.
 	em := NewChannelEmitter(1)
-	if err := em.Emit(StreamEvent{Event: "e1", TaskID: "t"}); err != nil {
+	if err := em.Emit(StreamEvent{Event: "e1", SessionID: "s"}); err != nil {
 		t.Fatalf("Emit 1: %v", err)
 	}
 	done := make(chan struct{})
 	go func() {
-		if err := em.Emit(StreamEvent{Event: "e2", TaskID: "t"}); err != nil {
+		if err := em.Emit(StreamEvent{Event: "e2", SessionID: "s"}); err != nil {
 			t.Errorf("Emit 2: %v", err)
 		}
 		close(done)
@@ -88,7 +88,7 @@ func TestChannelEmitter_NonBlockingDrop(t *testing.T) {
 func TestFormatSSE(t *testing.T) {
 	ev := StreamEvent{
 		Event:     "message",
-		TaskID:    "task_42",
+		SessionID: "session_42",
 		Component: "llm_0",
 		Data: map[string]any{
 			"delta": "héllo, 世界",
@@ -121,7 +121,7 @@ func TestFormatSSE(t *testing.T) {
 
 func TestFormatSSE_EmptyData(t *testing.T) {
 	// Empty Data must still produce a valid frame, not panic.
-	got := FormatSSE(StreamEvent{Event: "node_start", TaskID: "t"})
+	got := FormatSSE(StreamEvent{Event: "node_start", SessionID: "s"})
 	if !strings.HasPrefix(got, "data: ") || !strings.HasSuffix(got, "\n\n") {
 		t.Fatalf("empty Data frame malformed: %q", got)
 	}

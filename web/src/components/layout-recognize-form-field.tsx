@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
@@ -46,10 +62,11 @@ export function LayoutRecognizeFormField({
   const form = useFormContext();
 
   const { t } = useTranslate('knowledgeDetails');
-  const { data: allAddedModels } = useFetchAllAddedModels(
-    undefined,
-    ownerTenantId,
-  );
+  const {
+    data: allAddedModels,
+    isFetched: modelsFetched,
+    isError: modelsError,
+  } = useFetchAllAddedModels(undefined, ownerTenantId);
 
   const treeData = useMemo(() => {
     const list = optionsWithoutLLM
@@ -118,6 +135,7 @@ export function LayoutRecognizeFormField({
                       testId={testId}
                       showSearch
                       defaultExpandAll
+                      loading={!modelsFetched || modelsError}
                       renderSelected={(node) => {
                         if (!node) return null;
                         return node.label ?? node.title;

@@ -47,12 +47,12 @@ def test_chat_create_session_raises_server_error_message(monkeypatch):
     monkeypatch.setattr(
         chat,
         "post",
-        lambda *_args, **_kwargs: _DummyResponse({"code": 102, "message": "`name` can not be empty."}),
+        lambda *_args, **_kwargs: _DummyResponse({"code": 102, "message": "`name` can not be empty"}),
     )
 
     with pytest.raises(Exception) as exception_info:
         chat.create_session(name="")
-    assert "`name` can not be empty." in str(exception_info.value), str(exception_info.value)
+    assert "`name` can not be empty" in str(exception_info.value), str(exception_info.value)
 
 
 @pytest.mark.p2

@@ -28,7 +28,7 @@ export function useCommitArtifact({
     () =>
       z.object({
         comments: z.string().min(1, {
-          message: t('knowledgeDetails.versionContentRequired'),
+          message: t('knowledgeCompilation.versionContentRequired'),
         }),
       }),
     [t],
@@ -43,10 +43,6 @@ export function useCommitArtifact({
     form.reset({ comments: '' });
     setIsOpen(true);
   }, [form]);
-
-  const close = useCallback(() => {
-    setIsOpen(false);
-  }, []);
 
   const handleConfirm = useCallback(
     async (values: CommitFormValues) => {
@@ -72,7 +68,7 @@ export function useCommitArtifact({
   return {
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,

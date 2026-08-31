@@ -55,6 +55,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVolcEngine(baseURL, urlSuffix), nil
 	case "vllm":
 		return NewVllmModel(baseURL, urlSuffix), nil
+	case "openai-api-compatible":
+		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
+	case "mws":
+		return NewMWSModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
 	case "lm-studio":
@@ -111,6 +115,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
 		return NewAvianModel(baseURL, urlSuffix), nil
+	case "ragcon":
+		return NewRAGconModel(baseURL, urlSuffix), nil
 	case "replicate":
 		return NewReplicateModel(baseURL, urlSuffix), nil
 	case "togetherai":
@@ -119,7 +125,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewPPIOModel(baseURL, urlSuffix), nil
 	case "voyage ai":
 		return NewVoyageModel(baseURL, urlSuffix), nil
-	case "paddleocr.net":
+	case "paddleocr":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
 	case "xunfei spark":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
@@ -143,7 +149,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewN1NModel(baseURL, urlSuffix), nil
 	case "bedrock":
 		return NewBedrockModel(baseURL, urlSuffix), nil
-	case "paddleocr":
+	case "paddleocr.local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
 	case "orcarouter":
 		return NewOrcaRouterModel(baseURL, urlSuffix), nil
@@ -153,6 +159,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewQiniuModel(baseURL, urlSuffix), nil
 	case "xiaomi":
 		return NewXiaomiModel(baseURL, urlSuffix), nil
+	case "funasr":
+		return NewFunASRModel(baseURL, urlSuffix), nil
+	case "greenpt":
+		return NewGreenPTModel(baseURL, urlSuffix), nil
+	case "synthorai":
+		return NewSynthoraiModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

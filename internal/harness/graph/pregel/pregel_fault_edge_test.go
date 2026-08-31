@@ -3,6 +3,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -272,7 +273,7 @@ func TestFault_ContextCancelledBeforeRun(t *testing.T) {
 	cancel() // cancel immediately
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "x"})
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Logf("expected cancellation: %v", err)
 	}
 }

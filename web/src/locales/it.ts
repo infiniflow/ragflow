@@ -59,7 +59,7 @@ export default {
       submit: 'Invia',
       clear: 'Cancella',
       embedIntoSite: 'Incorpora nella pagina web',
-      openInNewTab: 'Chat in una nuova scheda',
+      openInNewTab: 'Apri in una nuova scheda',
       previousPage: 'Precedente',
       nextPage: 'Successivo',
       previous: 'Precedente',
@@ -519,7 +519,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
       similarityThreshold: 'Soglia di similarità',
       similarityThresholdTip:
-        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 0.2. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
+        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 20. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
       vectorSimilarityWeight: 'Peso similarità vettoriale',
       vectorSimilarityWeightTip:
         'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
@@ -582,7 +582,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Un delimitatore può consistere in uno o più caratteri speciali. Se sono più caratteri, assicurati che siano racchiusi tra backtick (``). Ad esempio, se configuri i tuoi delimitatori così: \\n`##`;, i tuoi testi saranno separati a interruzioni di riga, doppio cancelletto (##) e punto e virgola.',
 
       html4excel: 'Excel in HTML',
-      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dev/enable_excel2html per i dettagli.`,
+      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration per i dettagli.`,
       autoKeywords: 'Parole chiave automatiche',
       autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Domande automatiche',
@@ -622,7 +622,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       overlappedPercentTip:
         'La percentuale di sovrapposizione tra due chunk adiacenti',
       globalIndexModelTip:
-        'Usato per generare grafi della conoscenza, RAPTOR, metadati automatici, parole chiave automatiche e domande automatiche. Le prestazioni del modello influenzeranno la qualità della generazione.',
+        'Usato per generare metadati automatici, parole chiave automatiche e domande automatiche. Le prestazioni del modello influenzeranno la qualità della generazione.',
       globalIndexModel: 'Modello di indicizzazione',
       settings: 'Impostazioni',
       autoMetadataTip: `Genera automaticamente i metadati. Si applica ai nuovi file durante l'analisi. I file esistenti richiedono una nuova analisi per essere aggiornati (i chunk rimangono preservati). Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'.`,
@@ -668,9 +668,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       linkSourceSetTip:
         'Gestisci il collegamento della fonte dati con questo dataset',
       linkDataSource: 'Collega fonte dati',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        " Per i chunk esistenti, genera un indice gerarchico (una directory per file). Durante le query, quando il Miglioramento Directory è attivato, il sistema userà un modello grande per determinare quali elementi della directory sono rilevanti per la domanda dell'utente, identificando così i chunk rilevanti.",
       deleteGenerateModalContent: `
         <p>Eliminando i risultati <strong class='text-text-primary'>{{type}}</strong> generati
         rimuoverai tutte le entità e relazioni derivate da questo dataset.
@@ -769,6 +766,12 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dialogueExamplesTitle: 'visualizza',
       methodEmpty:
         'Questo mostrerà una spiegazione visiva delle categorie del dataset',
+      audio: `<p>I formati file supportati sono <b>WAV, MP3, AAC, FLAC, OGG</b> e altri formati audio comuni.</p>
+<p>Questo metodo trascrive i file audio in testo utilizzando un modello speech-to-text.</p>`,
+      email: `<p>I formati file supportati sono <b>EML</b> e <b>MSG</b>.</p>
+<p>Questo metodo analizza i file email, estraendo i campi di intestazione (come Da, A, CC, Oggetto e Data), il corpo del messaggio e gli allegati.</p>`,
+      knowledgeCompiler: `<p>Questa pipeline analizza e suddivide i file in chunk, quindi compila i chunk in unità di conoscenza strutturate (knowledge graph, wiki, RAPTOR, mappa mentale o navigazione del dataset) tramite il componente Knowledge Compiler.</p>
+<p>Le unità di conoscenza compilate vengono emesse come chunk uniti nel flusso di chunk, l'ideale per costruire un livello di conoscenza recuperabile sopra i documenti suddivisi.</p>`,
       book: `<p>I formati file supportati sono <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Per ogni libro in PDF, imposta gli <i>intervalli di pagine</i> per rimuovere informazioni indesiderate e ridurre il tempo di analisi.</p>`,
       laws: `<p>I formati file supportati sono <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -888,7 +891,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       entityTypes: 'Tipi di entità',
       vietnamese: 'Vietnamita',
       pageRank: 'Page rank',
-      pageRankTip: `Puoi assegnare un punteggio PageRank più alto a specifici dataset durante il recupero. Il punteggio corrispondente viene aggiunto ai punteggi di similarità ibrida dei chunk recuperati da questi dataset, aumentando il loro ranking. Vedi https://ragflow.io/docs/dev/set_page_rank per i dettagli.`,
+      pageRankTip: `Puoi assegnare un punteggio PageRank più alto a specifici dataset durante il recupero. Il punteggio corrispondente viene aggiunto ai punteggi di similarità ibrida dei chunk recuperati da questi dataset, aumentando il loro ranking. Vedi https://ragflow.io/docs/dataset_configuration#basic-information per i dettagli.`,
       tagName: 'Tag',
       frequency: 'Frequenza',
       searchTags: 'Cerca tag',
@@ -896,7 +899,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       tagTable: 'Tabella',
       tagSet: 'Set di tag',
       tagSetTip: `
-     <p> Seleziona uno o più dataset tag per auto-taggare i chunk nel tuo dataset. Vedi https://ragflow.io/docs/dev/use_tag_sets per i dettagli.</p>
+     <p> Seleziona uno o più dataset tag per auto-taggare i chunk nel tuo dataset. Vedi https://ragflow.io/docs/dataset_configuration#basic-information per i dettagli.</p>
 <p>Anche la query dell'utente sarà auto-taggata.</p>
 Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulteriore livello di conoscenza specifica del dominio al dataset esistente.
 <p>Differenza tra auto-tag e auto-keyword:</p>
@@ -1029,7 +1032,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       topN: 'Top N',
       topNTip: `Non tutti i chunk con punteggio di similarità sopra la 'soglia di similarità' saranno inviati all'LLM. Questo seleziona 'Top N' chunk da quelli recuperati.`,
       variable: 'Variabile',
-      variableTip: `Usate insieme alle API di gestione dell'assistente chat di RAGFlow, le variabili possono aiutare a sviluppare strategie di prompt di sistema più flessibili. Le variabili definite saranno usate dal 'Prompt di sistema' come parte dei prompt per l'LLM. {knowledge} è una variabile speciale riservata che rappresenta i chunk recuperati dal/i dataset specificato/i, e tutte le variabili devono essere racchiuse tra parentesi graffe {} nel 'Prompt di sistema'. Vedi https://ragflow.io/docs/dev/set_chat_variables per i dettagli.`,
+      variableTip: `Usate insieme alle API di gestione dell'assistente chat di RAGFlow, le variabili possono aiutare a sviluppare strategie di prompt di sistema più flessibili. Le variabili definite saranno usate dal 'Prompt di sistema' come parte dei prompt per l'LLM. {knowledge} è una variabile speciale riservata che rappresenta i chunk recuperati dal/i dataset specificato/i, e tutte le variabili devono essere racchiuse tra parentesi graffe {} nel 'Prompt di sistema'. Vedi https://ragflow.io/docs/chat_configuration#system-prompt per i dettagli.`,
       add: 'Aggiungi',
       key: 'Chiave',
       optional: 'Opzionale',
@@ -1088,6 +1091,9 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       created: 'Creato',
       action: 'Azione',
       embedModalTitle: 'Incorpora nella pagina web',
+      embedUserIdPlaceholder: 'es. user-001',
+      embedUserIdTooltip:
+        "Stringa di testo (massimo 255 caratteri) che identifica l'utente finale della pagina incorporata. Viene aggiunta all'URL di incorporamento come parametro userId.",
       published: 'Pubblicato',
       publishedTooltip:
         "Usa la versione pubblicata per questo embed. Quando abilitato, l'URL generato include release=true.",
@@ -1179,12 +1185,12 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
         'Permette a questo modello di chiamare strumenti quando il tipo di modello selezionato supporta le chiamate a strumenti.',
       deleteModel: 'Elimina modello',
       bedrockCredentialsHint:
-        "Suggerimento: lascia Access Key / Secret Key vuoti per usare l'autenticazione AWS IAM.",
-      awsAuthModeAccessKeySecret: 'Access Key',
+        "Suggerimento: lascia ACCESS KEY / SECRET KEY vuoti per usare l'autenticazione AWS IAM.",
+      awsAuthModeAccessKeySecret: 'ACCESS KEY',
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
-      awsAccessKeyId: 'AWS Access Key ID',
-      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsAccessKeyId: 'AWS ACCESS KEY ID',
+      awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: 'Inserisci AWS Role ARN',
       awsAssumeRoleTip:
@@ -1277,6 +1283,8 @@ Esempio: Virtual Hosted Style`,
         'Connetti un sito SharePoint tramite Microsoft Graph per sincronizzare le sue librerie documenti.',
       sharepointSiteUrlTip:
         "URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).",
+      azure_devopsDescription:
+        'Collega Azure DevOps per sincronizzare i file del repository e le pull request.',
       bitbucketDescription:
         'Connetti Bitbucket per sincronizzare il contenuto delle PR.',
       bitbucketTopWorkspaceTip:
@@ -1556,13 +1564,13 @@ Esempio: Virtual Hosted Style`,
       addedModels: 'Modelli aggiunti',
       modelsToBeAdded: 'Modelli da aggiungere',
       addTheModel: 'Aggiungi',
-      apiKey: 'Chiave API',
+      apiKey: 'CHIAVE API',
       apiKeyMessage: 'Inserisci la chiave API',
       apiKeyTip:
         'La chiave API può essere ottenuta registrandosi presso il fornitore LLM corrispondente.',
       showMoreModels: 'Visualizza modelli',
       hideModels: 'Nascondi modelli',
-      baseUrl: 'URL Base',
+      baseUrl: 'URL BASE',
       baseUrlTip:
         'Se la tua chiave API è da OpenAI, ignoralo. Qualsiasi altro fornitore intermedio fornirà questo URL base con la chiave API.',
       tongyiBaseUrlTip:
@@ -1609,7 +1617,7 @@ Esempio: Virtual Hosted Style`,
       modelType: 'Tipo modello',
       modelTypeMessage: 'Inserisci il tuo tipo di modello!',
       addLlmBaseUrl: 'URL base',
-      baseUrlNameMessage: 'Inserisci il tuo URL base!',
+      baseUrlNameMessage: 'Inserisci il tuo URL base',
       paddleocr: {
         apiUrl: 'URL API di PaddleOCR',
         apiUrlPlaceholder:
@@ -1631,13 +1639,13 @@ Esempio: Virtual Hosted Style`,
       endpointIDMessage: "Inserisci l'ID del tuo modello",
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Inserisci la tua ARK_API_KEY',
-      bedrockModelNameMessage: 'Inserisci il nome del tuo modello!',
+      bedrockModelNameMessage: 'Inserisci il nome del tuo modello',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: 'Inserisci la tua ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: 'Inserisci la tua SECRET KEY',
       bedrockRegion: 'Regione AWS',
-      bedrockRegionMessage: 'Seleziona!',
+      bedrockRegionMessage: 'Seleziona',
       'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
       'us-west-1': 'US West (N. California)',
@@ -1675,25 +1683,25 @@ Esempio: Virtual Hosted Style`,
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Inserisci il tuo Secret ID',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Inserisci la tua Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Inserisci la tua SECRET KEY',
       SparkModelNameMessage: 'Seleziona il modello Spark',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'inserisci la tua APIPassword',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'inserisci il tuo APP ID',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'inserisci il tuo APISecret',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'inserisci il tuo API SECRET',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'inserisci la tua APIKey',
       yiyanModelNameMessage: 'Inserisci il nome del modello',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Inserisci la tua API KEY',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Inserisci la tua Secret KEY',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Inserisci la tua API Key',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Inserisci la tua SECRET KEY',
       FishAudioModelNameMessage: 'Dai un nome al tuo modello di sintesi vocale',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Inserisci la tua API KEY',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Inserisci la tua API Key',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Inserisci il Reference ID (lascia vuoto per usare il modello predefinito).',
@@ -1761,7 +1769,7 @@ Esempio: Virtual Hosted Style`,
         chat: 'Chat',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -2180,7 +2188,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
         "Un componente che recupera informazioni meteorologiche, come temperatura e qualità dell'aria, da https://www.qweather.com/.",
       lang: 'Lingua',
       type: 'Tipo',
-      webApiKey: 'Web API key',
+      webApiKey: 'Web API Key',
       userType: 'Tipo utente',
       timePeriod: 'Periodo di tempo',
       qWeatherLangOptions: {
@@ -2797,7 +2805,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         username: 'Nome utente',
         password: 'Password',
         algorithm: 'Algoritmo',
-        secret: 'Secret',
+        secret: 'SECRET',
         issuer: 'Emittente',
         audience: 'Destinatario',
         requiredClaims: 'Claim richiesti',
@@ -2807,7 +2815,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         bodyTemplate: 'Template body',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'Api key',
+        apiKey: 'API Key',
         queryParameters: 'Parametri query',
         headerParameters: 'Parametri header',
         requestBodyParameters: 'Parametri body richiesta',

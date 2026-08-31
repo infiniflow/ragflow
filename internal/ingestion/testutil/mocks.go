@@ -100,6 +100,8 @@ func NewMockStorageWithError(err error) *MockStorage {
 	return &MockStorage{Err: err}
 }
 
+func (m *MockStorage) Type() string { return "mock_storage" }
+
 func (m *MockStorage) Health() bool { return true }
 
 func (m *MockStorage) Get(bucket, objectName string, tenantID ...string) ([]byte, error) {

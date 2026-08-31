@@ -242,7 +242,7 @@ class RAGFlowConnector:
 
         result_list = []
         for data in datasets:
-            d = {"description": data["description"], "id": data["id"]}
+            d = {"id": data["id"], "name": data.get("name"), "description": data.get("description")}
             result_list.append(json.dumps(d, ensure_ascii=False))
         return "\n".join(result_list)
 
