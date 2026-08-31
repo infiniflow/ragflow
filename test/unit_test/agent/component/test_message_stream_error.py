@@ -131,7 +131,7 @@ def _build_canvas(invoke_message):
         pytest.param("complete", None, 1, id="successful"),
     ],
 )
-def test_canvas_message_completion_follows_stream_error(chunk, source_error, completion_count):
+def test_canvas_message_completion_follows_stream_error(caplog, chunk, source_error, completion_count):
     async def invoke_message(component, **_kwargs):
         async def stream():
             yield chunk
@@ -142,7 +142,8 @@ def test_canvas_message_completion_follows_stream_error(chunk, source_error, com
 
     canvas, message = _build_canvas(invoke_message)
 
-    events = asyncio.run(_collect_canvas_events(canvas))
+    with caplog.at_level(logging.DEBUG):
+        events = asyncio.run(_collect_canvas_events(canvas))
 
     assert [event["data"]["content"] for event in events if event["event"] == "message"] == [chunk]
     assert sum(event["event"] == "message_end" for event in events) == completion_count
@@ -150,7 +151,10 @@ def test_canvas_message_completion_follows_stream_error(chunk, source_error, com
     message_finished = next(event for event in events if event["event"] == "node_finished" and event["data"]["component_id"] == "message")
     assert message_finished["data"]["error"] == source_error
     assert message.output("content") == (None if source_error else chunk)
-    assert canvas.error == (source_error or "")
+    assert canvas.error == ("Component execution failed: message" if source_error else "")
+    if source_error:
+        assert "Runtime Error: Component execution failed: message" in caplog.text
+        assert source_error not in caplog.text
 
 
 async def _collect_canvas_events(canvas):
