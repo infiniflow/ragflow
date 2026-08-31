@@ -458,6 +458,15 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 	return s.taskPublisher.PublishTaskMessage("tasks.RAGFLOW", taskMessage)
 }
 
+// EnqueueByID re-publishes the wake-up message for an existing task without
+// touching its status. Used by ingestor startup reconciliation to redeliver
+// CREATED orphans; duplicate delivery is made safe at the consumer level
+// (StartRunning CAS + in-process claim guard), not by broker dedup — see
+// NatsEngine.PublishTask for why publish-time MsgID dedup is harmful here.
+func (s *IngestionTaskService) EnqueueByID(taskID string) error {
+	return s.enqueueTask(taskID)
+}
+
 // UpdateComponentTotal records the number of components in the task's DSL
 // graph - the authoritative denominator for progress percentage.
 func (s *IngestionTaskService) UpdateComponentTotal(ctx context.Context, taskID string, total int) error {

@@ -30,7 +30,6 @@ _ACTIVE_PHASES: ContextVar[tuple[str, ...]] = ContextVar("agentic_rag_active_pha
 _PHASE_ORDER = [
     "formalize",
     "route",
-    "pre_search",
     "planner",
     "decompose",
     "direct",

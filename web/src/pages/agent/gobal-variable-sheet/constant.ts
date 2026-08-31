@@ -37,12 +37,14 @@ export const GlobalFormFields = (t: TFunction<'translation', undefined>) =>
       name: 'value',
       placeholder: '',
       type: FormFieldType.Textarea,
+      fieldConfig: { className: 'overflow-auto', resize: 'vertical' },
     },
     {
       label: t('flow.description'),
       name: 'description',
       placeholder: t('flow.variableDescription'),
       type: FormFieldType.Textarea,
+      fieldConfig: { className: 'overflow-auto', resize: 'vertical' },
     },
   ] as FormFieldConfig[];
 

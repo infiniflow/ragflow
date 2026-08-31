@@ -7729,13 +7729,6 @@
                     "max_tokens": 1048576,
                     "model_type": "chat",
                     "is_tools": true
-                },
-                {
-                    "llm_name": "mimo-v2-flash",
-                    "tags": "LLM,CHAT,256K",
-                    "max_tokens": 262144,
-                    "model_type": "chat",
-                    "is_tools": true
                 }
             ]
         },

@@ -18,8 +18,10 @@ package chunker
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"ragflow/internal/ingestion/component/schema"
 )
@@ -238,5 +240,181 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 		if strings.Contains(pdf, absent) {
 			t.Errorf("chunk[1] over-carried non-overlap head coordinates %s: pdf_positions=%s", absent, pdf)
 		}
+	}
+}
+
+// TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces pins the
+// chunk-screenshot-mismatch fix on the JSON delimiter-split path
+// (chunkFromItem): an item whose text contains the active delimiter must NOT
+// copy its whole bbox to every piece. Each piece's positions must be a
+// vertical slice proportional to its rune share, and adjacent slices must
+// abut so the pieces jointly tile the original box.
+func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
+	it := schema.ChunkDoc{
+		Text:         "AAAA\nBBBB",
+		DocType:      "text",
+		CKType:       "text",
+		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
+	}
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	if len(got) != 2 {
+		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
+	}
+	p0 := matrixOfRaw(t, got[0].PDFPositions)
+	p1 := matrixOfRaw(t, got[1].PDFPositions)
+	if len(p0) != 1 || len(p1) != 1 {
+		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
+	}
+	if p0[0][3] != 0 || math.Abs(p0[0][4]-20) > 1e-9 {
+		t.Errorf("piece 0 bounds = [%v,%v], want [0,20]", p0[0][3], p0[0][4])
+	}
+	if math.Abs(p1[0][3]-20) > 1e-9 || p1[0][4] != 40 {
+		t.Errorf("piece 1 bounds = [%v,%v], want [20,40]", p1[0][3], p1[0][4])
+	}
+}
+
+// TestSplitOversizedText_SlicedPositionsTrackPieceTextShare pins the core
+// user-facing invariant of the screenshot-mismatch fix: each hard-split
+// piece's cropped region height is proportional to its OWN text share (its
+// rune count relative to all siblings), so the thumbnail matches the chunk
+// text instead of showing the whole paragraph. The synthetic leading "\n"
+// glue carries no visual height and must not inflate the first slice.
+//
+// This test uses REAL tokenizer behavior only to drive WHERE the oversized
+// unit splits; the ratio assertions are derived from the emitted piece texts,
+// so they hold regardless of cut points.
+func TestSplitOversizedText_SlicedPositionsTrackPieceTextShare(t *testing.T) {
+	const boxTop, boxBottom = 50.0, 80.0 // height 30
+	build := func(text string) schema.ChunkDoc {
+		return schema.ChunkDoc{
+			Text:         text,
+			DocType:      "text",
+			CKType:       "text",
+			TKNums:       intPtr(tokenizeStr(text)),
+			PDFPositions: json.RawMessage(`[[1,10,200,50,80]]`),
+		}
+	}
+	run := func(ck schema.ChunkDoc, lead bool) {
+		t.Helper()
+		got := splitOversizedText(ck, 30)
+		if len(got) < 2 {
+			t.Fatalf("oversized unit must be split, got %d piece(s)", len(got))
+		}
+		counts := make([]int, len(got))
+		total := 0
+		for i, p := range got {
+			n := utf8.RuneCountInString(p.Text)
+			if i == 0 && lead {
+				n -= utf8.RuneCountInString("\n") // leading glue: no visual height
+				if n < 0 {
+					n = 0
+				}
+			}
+			counts[i] = n
+			total += n
+		}
+		prevBottom := boxTop
+		for i, p := range got {
+			m := matrixOfRaw(t, p.PDFPositions)
+			if len(m) != 1 {
+				t.Fatalf("piece %d: want one sliced row, got %v", i, m)
+			}
+			wantHeight := float64(counts[i]) / float64(total) * (boxBottom - boxTop)
+			if math.Abs((m[0][4]-m[0][3])-wantHeight) > 1e-6*float64(len(got)) {
+				t.Errorf("piece %d height = %v, want %v (text share %d/%d)",
+					i, m[0][4]-m[0][3], wantHeight, counts[i], total)
+			}
+			if math.Abs(m[0][3]-prevBottom) > 1e-9 {
+				t.Errorf("piece %d top = %v, want the previous bottom %v (slices must abut)", i, m[0][3], prevBottom)
+			}
+			prevBottom = m[0][4]
+		}
+		if math.Abs(prevBottom-boxBottom) > 1e-9 {
+			t.Errorf("last piece bottom = %v, want %v (box fully covered)", prevBottom, boxBottom)
+		}
+	}
+
+	body := strings.Repeat("word ", 100) // ~100 tokens, no sentence boundary
+	// No lead glue: raw rune shares apply.
+	run(build(body), false)
+	// Text-path units are built as "\n"+paragraph (mergeByTokenSize); the
+	// leading glue must be excluded from the first piece's share.
+	run(build("\n"+body), true)
+}
+
+// TestChunkFromItem_SlicesPositionsIgnoresPositionTags ensures the
+// position-slicing ratio is based on visible text. Parser tags
+// (@@...##) carry no visual height and must not shift crop boundaries.
+// This is the regression for the tag-aware fix (token.go:649).
+func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
+	// Visible "AAAA"(4) vs "CCCC"(4) => 0.5 split => [0,20]/[20,40].
+	// Raw first piece contains a 16-rune tag; if counted it would shift
+	// the boundary to ~33.3, reproducing the screenshot mismatch.
+	it := schema.ChunkDoc{
+		Text:         "AAAA@@1\t0\t200\t0\t40##\nCCCC",
+		DocType:      "text",
+		CKType:       "text",
+		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
+	}
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	if len(got) != 2 {
+		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
+	}
+	p0 := matrixOfRaw(t, got[0].PDFPositions)
+	p1 := matrixOfRaw(t, got[1].PDFPositions)
+	if len(p0) != 1 || len(p1) != 1 {
+		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
+	}
+	if math.Abs(p0[0][4]-20) > 1e-9 {
+		t.Errorf("piece 0 bottom = %v, want 20 (tag runes must not shift ratio)", p0[0][4])
+	}
+	if math.Abs(p1[0][3]-20) > 1e-9 {
+		t.Errorf("piece 1 top = %v, want 20 (tag runes must not shift ratio)", p1[0][3])
+	}
+}
+
+// TestSplitOversizedText_SlicesPositionsIgnoreTags verifies the hard-cap
+// path also uses tag-free visible runes for its ratio, mirroring the
+// delimiter path. The leading "\n" glue and tags both carry no height.
+func TestSplitOversizedText_SlicesPositionsIgnoreTags(t *testing.T) {
+	const boxTop, boxBottom = 0.0, 40.0
+	tag := "@@1\t0\t200\t0\t40##"
+	body := strings.Repeat("word ", 30) + tag + strings.Repeat("word ", 30)
+	ck := schema.ChunkDoc{
+		Text:         body,
+		DocType:      "text",
+		CKType:       "text",
+		TKNums:       intPtr(tokenizeStr(body)),
+		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
+	}
+	got := splitOversizedText(ck, 30)
+	if len(got) < 2 {
+		t.Fatalf("oversized unit must be split, got %d piece(s)", len(got))
+	}
+	// Ratio must be computed from visible (tag-free) text.
+	totalVisible := 0
+	counts := make([]int, len(got))
+	for i, p := range got {
+		n := utf8.RuneCountInString(removeTag(p.Text))
+		counts[i] = n
+		totalVisible += n
+	}
+	prevBottom := boxTop
+	for i, p := range got {
+		m := matrixOfRaw(t, p.PDFPositions)
+		if len(m) != 1 {
+			t.Fatalf("piece %d: want one sliced row, got %v", i, m)
+		}
+		wantHeight := float64(counts[i]) / float64(totalVisible) * (boxBottom - boxTop)
+		if math.Abs((m[0][4]-m[0][3])-wantHeight) > 1e-6*float64(len(got)) {
+			t.Errorf("piece %d height = %v, want %v (visible share %d/%d)", i, m[0][4]-m[0][3], wantHeight, counts[i], totalVisible)
+		}
+		if math.Abs(m[0][3]-prevBottom) > 1e-9 {
+			t.Errorf("piece %d top = %v, want previous bottom %v (slices must abut)", i, m[0][3], prevBottom)
+		}
+		prevBottom = m[0][4]
+	}
+	if math.Abs(prevBottom-boxBottom) > 1e-9 {
+		t.Errorf("last piece bottom = %v, want %v (box fully covered)", prevBottom, boxBottom)
 	}
 }

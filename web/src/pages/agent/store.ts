@@ -211,6 +211,11 @@ export type RFState = {
   toggleBottomCollapse: (nodeId: string, handleId: NodeHandleId) => void;
   hasDownstreamNode: (nodeId: string) => boolean;
   hasUpstreamNode: (nodeId: string) => boolean;
+  // Nodes whose form the user has actually edited this session. The save gate
+  // only validates these, so a node carrying stale DSL from an older version
+  // never blocks a save the user did not cause.
+  editedNodeFormIds: string[];
+  markNodeFormEdited: (nodeId: string) => void;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -224,6 +229,15 @@ const useGraphStore = create<RFState>()(
       collapsedBottomHandles: {} as CollapsedBottomHandles,
       clickedNodeId: '',
       clickedToolId: '',
+      editedNodeFormIds: [] as string[],
+      markNodeFormEdited: (nodeId: string) => {
+        if (get().editedNodeFormIds.includes(nodeId)) {
+          return;
+        }
+        set((state) => {
+          state.editedNodeFormIds.push(nodeId);
+        });
+      },
       onNodesChange: (changes) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),

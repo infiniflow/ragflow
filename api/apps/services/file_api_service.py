@@ -164,11 +164,12 @@ def list_files(tenant_id: str, args: dict):
         FileService.init_knowledgebase_docs(pf_id, tenant_id)
         FileService.init_skills_folder(pf_id, tenant_id)
 
-    e, _ = FileService.get_by_id(pf_id)
+    e, folder = FileService.get_by_id(pf_id)
     if not e:
         return False, "Folder not found!"
 
-    files, total = FileService.get_by_pf_id(tenant_id, pf_id, page_number, items_per_page, orderby, desc, keywords)
+    exclude_skills = folder.id == folder.parent_id
+    files, total = FileService.get_by_pf_id(tenant_id, pf_id, page_number, items_per_page, orderby, desc, keywords, exclude_skills)
 
     parent_folder = FileService.get_parent_folder(pf_id)
     if not parent_folder:

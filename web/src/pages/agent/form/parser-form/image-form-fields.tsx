@@ -5,11 +5,11 @@ import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { ImageParseMethod } from '../../constant/pipeline';
+import { FileType, ImageParseMethod } from '../../constant/pipeline';
 import { LanguageFormField, ParserMethodFormField } from './common-form-fields';
 import { CommonProps } from './interface';
 import { useSetInitialLanguage } from './use-set-initial-language';
-import { buildFieldNameWithPrefix } from './utils';
+import { buildFieldNameWithPrefix, isForeignParseMethod } from './utils';
 
 export function ImageFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
@@ -30,7 +30,11 @@ export function ImageFormFields({ prefix }: CommonProps) {
   }, [parseMethod]);
 
   useEffect(() => {
-    if (isEmpty(form.getValues(parseMethodName))) {
+    const current = form.getValues(parseMethodName);
+    // On a file-type switch the field remounts and react-hook-form re-seeds it
+    // from the node's saved form data, so it can hold another file type's
+    // static parse method (e.g. DeepDOC) — reset it to OCR in that case too.
+    if (isEmpty(current) || isForeignParseMethod(FileType.Image, current)) {
       form.setValue(parseMethodName, ImageParseMethod.OCR, {
         shouldValidate: true,
         shouldDirty: true,

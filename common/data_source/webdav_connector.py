@@ -26,6 +26,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         base_url: str,
         remote_path: str = "/",
         batch_size: int = INDEX_BATCH_SIZE,
+        ca_cert_path: str | None = None,
     ) -> None:
         """Initialize WebDAV connector
 
@@ -33,6 +34,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             base_url: Base URL of the WebDAV server (e.g., "https://webdav.example.com")
             remote_path: Remote path to sync from (default: "/")
             batch_size: Number of documents per batch
+            ca_cert_path: Optional path to a custom CA certificate bundle inside the container
         """
         self.base_url = base_url.rstrip("/")
         if not remote_path:
@@ -43,6 +45,9 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             remote_path = remote_path.rstrip("/")
         self.remote_path = remote_path
         self.batch_size = batch_size
+        if ca_cert_path is not None and not isinstance(ca_cert_path, str):
+            raise ConnectorValidationError("WebDAV CA certificate path must be a string.")
+        self.ca_cert_path = ca_cert_path.strip() if ca_cert_path else None
         self.client: Optional[WebDAVClient] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
@@ -112,6 +117,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             base_url=config["base_url"],
             remote_path=config.get("remote_path", "/"),
             batch_size=batch_size,
+            ca_cert_path=config.get("ca_cert_path"),
         )
         connector.set_allow_images(config.get("allow_images", False))
         connector.load_credentials(config.get("credentials") or {})
@@ -128,6 +134,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         Raises:
             ConnectorMissingCredentialError: If required credentials are missing
+            ConnectorValidationError: If TLS verification cannot be configured
         """
         logging.debug(f"Loading credentials for WebDAV server {self.base_url}")
 
@@ -138,11 +145,20 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise ConnectorMissingCredentialError("WebDAV requires 'username' and 'password' credentials")
 
         try:
-            # Initialize WebDAV client
-            self.client = WebDAVClient(base_url=self.base_url, auth=(username, password))
-        except Exception as e:
-            logging.error(f"Failed to connect to WebDAV server: {e}")
-            raise ConnectorMissingCredentialError(f"Failed to authenticate with WebDAV server: {e}")
+            # Omit `verify` unless a custom CA is configured so webdav4 keeps its secure default.
+            client_options: dict[str, Any] = {}
+            if self.ca_cert_path:
+                client_options["verify"] = self.ca_cert_path
+                logging.debug(f"Enabled custom TLS verification for WebDAV server {self.base_url}")
+
+            self.client = WebDAVClient(
+                base_url=self.base_url,
+                auth=(username, password),
+                **client_options,
+            )
+        except OSError as e:
+            logging.error(f"Failed to configure TLS verification for WebDAV server: {e}")
+            raise ConnectorValidationError(f"Failed to configure WebDAV TLS verification: {e}") from e
 
         return None
 

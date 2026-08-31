@@ -290,6 +290,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
@@ -298,6 +299,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
@@ -313,6 +315,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            remove_toc: cur.remove_toc,
           };
           break;
         case FileType.Video:
@@ -349,14 +352,11 @@ export function transformTokenChunkerParams(
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
-    overlapped_percent:
-      params.delimiter_mode === 'one'
-        ? 0
-        : Number(params.overlapped_percent) / 100,
-    delimiters:
-      params.delimiter_mode === 'delimiter'
-        ? transformObjectArrayToPureArray(params.delimiters, 'value')
-        : [],
+    // Keep the configured values in 'one' mode too: the chunker ignores them
+    // while merging everything into a single chunk, but zeroing them here
+    // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
+    overlapped_percent: Number(params.overlapped_percent) / 100,
+    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
@@ -931,6 +931,34 @@ export function convertToObjectArray<T extends string | number | boolean>(
     return [];
   }
   return list.map((x) => ({ value: x }));
+}
+
+/**
+ * Message (回复消息) components keep their texts in form.content (string[]).
+ * The backend rejects the component at canvas run time unless at least one
+ * entry is a non-blank string, so missing/non-array/blank-only content all
+ * count as empty here as well.
+ */
+export function isEmptyMessageContent(content?: unknown): boolean {
+  return (
+    !Array.isArray(content) ||
+    !content.some((item) => typeof item === 'string' && item.trim() !== '')
+  );
+}
+
+/**
+ * Returns the display names of Message nodes whose content is empty, so the
+ * save flow can warn about them up front instead of surfacing the runtime
+ * error only when the user runs the agent.
+ */
+export function getEmptyMessageNodeNames(nodes: RAGFlowNodeType[]): string[] {
+  return nodes
+    .filter(
+      (node) =>
+        node.data?.label === Operator.Message &&
+        isEmptyMessageContent(node.data?.form?.content),
+    )
+    .map((node) => node.data?.name ?? node.id);
 }
 
 /**

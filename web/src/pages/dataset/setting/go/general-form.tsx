@@ -10,7 +10,10 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { LanguageTranslationMap } from '@/constants/common';
+import {
+  DESCRIPTION_MAX_LENGTH,
+  LanguageTranslationMap,
+} from '@/constants/common';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -111,6 +114,7 @@ export function GeneralForm() {
                 <FormControl className="w-3/4">
                   <Input
                     {...field}
+                    maxLength={DESCRIPTION_MAX_LENGTH}
                     placeholder={t('knowledgeConfiguration.datasetDescription')}
                     data-testid="ds-settings-basic-description-input"
                   ></Input>

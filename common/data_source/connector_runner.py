@@ -1,3 +1,4 @@
+import re
 import sys
 import time
 import logging
@@ -19,6 +20,68 @@ from common.data_source.models import ConnectorCheckpoint, ConnectorFailure, Doc
 TimeRange = tuple[datetime, datetime]
 
 CT = TypeVar("CT", bound=ConnectorCheckpoint)
+
+# Substring patterns (lowercased) that mark a ``f_locals`` key as
+# credential-bearing. ``ConnectorRunner.run`` redacts any variable whose
+# name matches one of these patterns before logging, so that an OAuth
+# access_token / refresh_token / client_secret / api_key / etc. that a
+# connector holds in memory cannot be written to the log file on any
+# transient connector error.
+#
+# The match is case-insensitive substring on the key name. This is
+# intentionally a small, explicit allowlist -- we are not trying to do
+# perfect secrets detection on variable values, only to drop the
+# well-known credential field names from the auto-dump of locals. Pure
+# password strings inside a non-credential variable name are out of
+# scope.
+_SENSITIVE_KEY_PATTERNS = (
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "client_secret",
+    "client_id",
+    "api_key",
+    "apikey",
+    "secret",
+    "password",
+    "token",
+    "credentials",
+    "credential",
+    "authorization",
+    "auth",
+    "cookie",
+    "session",
+    # Provider/SDK credential field names that don't already substring-match
+    # any of the patterns above. ``secret`` already catches ``secret_key`` /
+    # ``aws_secret_access_key`` etc., so we only add the ones that would
+    # otherwise leak.
+    "private_key",  # google_service_account_private_key, privateKey, ...
+    "access_key",  # aws_access_key_id, access_key, AccessKey, ...
+    "creds",  # creds, creds_dict, service_account_creds, ...
+)
+
+
+def _is_sensitive_key(name: object) -> bool:
+    """Return True if ``name`` looks like a credential / token / secret field.
+
+    Used by :meth:`ConnectorRunner.run` to redact ``f_locals`` entries
+    before logging them. Matching is case-insensitive substring on a
+    small allowlist of well-known credential-related field names -- see
+    ``_SENSITIVE_KEY_PATTERNS`` for the full list. Non-string keys
+    (e.g. tuple indices from ``f_locals``) are never sensitive.
+
+    Separators (``_``, ``-``) are stripped from the input before
+    matching so that ``privateKey``, ``private_key``, ``Private-Key``
+    etc. all collapse to the same canonical form and a single pattern
+    like ``private_key`` catches them all.
+    """
+    if not isinstance(name, str):
+        return False
+    lowered = re.sub(r"[_\-]", "", name.lower())
+    return any(pat.replace("_", "").replace("-", "") in lowered for pat in _SENSITIVE_KEY_PATTERNS)
+
+
+_REDACTED = "<redacted>"
 
 
 def batched_doc_ids(
@@ -188,7 +251,14 @@ class ConnectorRunner(Generic[CT]):
                 tb = tb.tb_next  # Move to the next frame in the traceback
 
             # Get the local variables from the frame where the exception occurred
+            # and redact any credential-bearing entries before logging. See
+            # ``_is_sensitive_key`` for the allowlist; this prevents OAuth
+            # access_token / refresh_token / client_secret / api_key from being
+            # written to the log file on any connector error. The redacted value
+            # is the literal string ``<redacted>`` so an operator debugging the
+            # log can see that a field was hidden, not that it just disappeared.
             local_vars = tb.tb_frame.f_locals
-            local_vars_str = "\n".join(f"{key}: {value}" for key, value in local_vars.items())
+            redacted_vars = {key: (_REDACTED if _is_sensitive_key(key) else value) for key, value in local_vars.items()}
+            local_vars_str = "\n".join(f"{key}: {value}" for key, value in redacted_vars.items())
             logging.error(f"Error in connector. type: {exc_type};\nlocal_vars below -> \n{local_vars_str[:1024]}")
             raise

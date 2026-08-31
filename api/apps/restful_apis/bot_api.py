@@ -337,7 +337,7 @@ async def ask_about_embedded(tenant_id=None):
 async def retrieval_test_embedded(tenant_id=None):
     req = await get_request_json()
     page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
-    size = validate_rest_api_page_size(req.get("size", DEFAULT_PAGE_SIZE))
+    size = validate_rest_api_page_size(req.get("page_size", req.get("size", DEFAULT_PAGE_SIZE)))
     question = req["question"]
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):

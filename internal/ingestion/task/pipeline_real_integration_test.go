@@ -16,6 +16,9 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
@@ -139,6 +142,16 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 	requireTokenizerPool(t)
 	ctx := t.Context()
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend).
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	// Loads service config (server.Init side effect) without requiring any
 	// external MySQL/MinIO/ES. The pipeline runs against an in-memory sqlite

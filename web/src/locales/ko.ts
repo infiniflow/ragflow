@@ -508,7 +508,7 @@ export default {
         'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요. 키워드 유사도 가중치나 유사도 임계값 등 기본 설정을 조정하여 최적의 결과를 얻었다면, 해당 변경 사항은 자동으로 저장되지 않으므로 채팅 어시스턴트 설정 또는 검색 에이전트 컴포넌트 설정에 적용해야 합니다.',
       similarityThreshold: '유사도 임계값',
       similarityThresholdTip:
-        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도, 또는 가중 키워드 유사도와 가중 rerank 점수의 조합을 사용합니다. 이 파라미터는 사용자 쿼리와 chunk 간 유사도 임계값을 설정합니다.\n이 임계값보다 낮은 유사도 점수를 가진 chunk는 결과에서 제외됩니다. 기본 임계값은 0.2이며, 하이브리드 유사도 점수가 20 이상인 chunk만 검색됩니다.',
+        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도, 또는 가중 키워드 유사도와 가중 rerank 점수의 조합을 사용합니다. 이 파라미터는 사용자 쿼리와 chunk 간 유사도 임계값을 설정합니다.\n이 임계값보다 낮은 유사도 점수를 가진 chunk는 결과에서 제외됩니다. 기본 임계값은 20이며, 하이브리드 유사도 점수가 20 이상인 chunk만 검색됩니다.',
       vectorSimilarityWeight: '벡터 유사도 가중치',
       vectorSimilarityWeightTip:
         '벡터 코사인 유사도 또는 rerank 점수와 함께 사용되는 결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
@@ -570,7 +570,7 @@ export default {
         '구분자는 하나 또는 여러 특수 문자로 구성될 수 있습니다. 여러 문자인 경우 백틱(` `)으로 감싸야 합니다. 예를 들어 구분자를 \\n`##`;으로 설정하면 줄바꿈, 이중 해시 기호(##), 세미콜론에서 텍스트가 분리됩니다.',
 
       html4excel: 'Excel을 HTML로',
-      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dev/enable_excel2html 을 참조하세요.`,
+      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration 을 참조하세요.`,
       autoKeywords: '자동 키워드',
       autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
       autoQuestions: '자동 질문',
@@ -609,7 +609,7 @@ export default {
       datasetDescription: '데이터셋을 설명하세요',
       overlappedPercentTip: '인접한 두 chunk 간의 겹침 비율',
       globalIndexModelTip:
-        '지식 그래프, RAPTOR, 자동 메타데이터, 자동 키워드 및 자동 질문 생성에 사용됩니다. 모델 성능이 생성 품질에 영향을 줍니다.',
+        '자동 메타데이터, 자동 키워드 및 자동 질문 생성에 사용됩니다. 모델 성능이 생성 품질에 영향을 줍니다.',
       globalIndexModel: '인덱싱 모델',
       settings: '설정',
       autoMetadataTip: `메타데이터를 자동으로 생성합니다. 파싱 시 새로 추가되는 파일에 적용되며, 기존 파일은 업데이트하려면 재파싱이 필요합니다(Chunk는 그대로 유지됩니다). 이때 '설정'에서 지정한 인덱싱 모델이 추가 토큰을 소비하니 참고하세요.`,
@@ -680,10 +680,10 @@ export default {
       parseType: '파싱 유형',
       manualSetup: '파이프라인',
       builtIn: '기본 제공',
-      titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다.',
+      titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다',
       name: '데이터셋 이름',
       photo: '데이터셋 사진',
-      photoTip: '최대 4MB의 이미지를 업로드할 수 있습니다.',
+      photoTip: '최대 4MB의 이미지를 업로드할 수 있습니다',
       description: '설명',
       language: '문서 언어',
       languageMessage: '언어를 입력해 주세요',
@@ -870,7 +870,7 @@ export default {
       entityTypes: '엔티티 유형',
       vietnamese: 'Tiếng Việt',
       pageRank: 'Page rank',
-      pageRankTip: `검색 시 특정 데이터셋에 더 높은 PageRank 점수를 부여할 수 있습니다. 해당 점수는 이 데이터셋에서 검색된 chunk의 하이브리드 유사도 점수에 추가되어 순위를 높입니다. 자세한 내용은 https://ragflow.io/docs/dev/set_page_rank 을 참조하세요.`,
+      pageRankTip: `검색 시 특정 데이터셋에 더 높은 PageRank 점수를 부여할 수 있습니다. 해당 점수는 이 데이터셋에서 검색된 chunk의 하이브리드 유사도 점수에 추가되어 순위를 높입니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#basic-information 을 참조하세요.`,
       tagName: '태그',
       frequency: '빈도',
       searchTags: '태그 검색',
@@ -878,7 +878,7 @@ export default {
       tagTable: '표',
       tagSet: '태그 세트',
       tagSetTip: `
-     <p> 데이터셋의 chunk에 자동 태그를 지정할 태그 데이터셋을 하나 이상 선택하세요. 자세한 내용은 https://ragflow.io/docs/dev/use_tag_sets 을 참조하세요.</p>
+     <p> 데이터셋의 chunk에 자동 태그를 지정할 태그 데이터셋을 하나 이상 선택하세요. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#basic-information 을 참조하세요.</p>
 <p>사용자 쿼리도 자동으로 태그가 지정됩니다.</p>
 이 자동 태그 기능은 기존 데이터셋에 도메인별 지식 레이어를 추가하여 검색을 향상시킵니다.
 <p>자동 태그와 자동 키워드의 차이점:</p>
@@ -1010,7 +1010,7 @@ export default {
       topN: 'Top N',
       topNTip: `'유사도 임계값' 이상의 유사도 점수를 가진 모든 chunk가 LLM에 전송되는 것은 아닙니다. 검색된 chunk에서 'Top N'개를 선택합니다.`,
       variable: '변수',
-      variableTip: `RAGFlow의 채팅 어시스턴트 관리 API와 함께 사용하면 변수를 통해 더 유연한 시스템 프롬프트 전략을 개발할 수 있습니다. 정의된 변수는 '시스템 프롬프트'에서 LLM의 프롬프트 일부로 사용됩니다. {knowledge}는 지정된 데이터셋에서 검색된 chunk를 나타내는 예약 특수 변수이며, 모든 변수는 '시스템 프롬프트'에서 중괄호 {}로 묶어야 합니다. 자세한 내용은 https://ragflow.io/docs/dev/set_chat_variables 를 참조하세요.`,
+      variableTip: `RAGFlow의 채팅 어시스턴트 관리 API와 함께 사용하면 변수를 통해 더 유연한 시스템 프롬프트 전략을 개발할 수 있습니다. 정의된 변수는 '시스템 프롬프트'에서 LLM의 프롬프트 일부로 사용됩니다. {knowledge}는 지정된 데이터셋에서 검색된 chunk를 나타내는 예약 특수 변수이며, 모든 변수는 '시스템 프롬프트'에서 중괄호 {}로 묶어야 합니다. 자세한 내용은 https://ragflow.io/docs/chat_configuration#system-prompt 를 참조하세요.`,
       add: '추가',
       key: '키',
       optional: '선택 사항',
@@ -1255,7 +1255,8 @@ export default {
         'Microsoft Graph를 통해 SharePoint 사이트를 연결하여 문서 라이브러리를 동기화합니다.',
       sharepointSiteUrlTip:
         '인덱싱할 SharePoint 사이트의 전체 URL (예: https://contoso.sharepoint.com/sites/MySite). Sites.Read.All 및 Files.Read.All 애플리케이션 권한이 있는 Azure AD 앱이 필요합니다 (관리자 동의).',
-      azure_devopsDescription: 'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
+      azure_devopsDescription:
+        'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
       bitbucketDescription: 'Bitbucket을 연결하여 PR 콘텐츠를 동기화합니다.',
       bitbucketTopWorkspaceTip:
         '인덱싱할 Bitbucket 워크스페이스 (예: https://bitbucket.org/atlassian/workspace 의 "atlassian").',

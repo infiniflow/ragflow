@@ -502,7 +502,10 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         if status_by_kb:
-            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
+            # The documented contract (HTTP API + Python SDK references) places the
+            # counts at the top level of each dataset record, not under a nested
+            # "parsing_status" object.
+            kb.update(status_by_kb.get(kb["id"], {}))
         response_data_list.append(remap_dictionary_keys(kb))
 
     embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
@@ -1054,7 +1057,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     )
 
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
@@ -1439,7 +1442,7 @@ async def search_datasets(tenant_id: str, req: dict):
 
     kb_ids = req.get("dataset_ids", [])
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
@@ -1572,6 +1575,7 @@ async def search_datasets(tenant_id: str, req: dict):
         knn_top_k=knn_top_k,
         knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,
+        highlight=req.get("highlight", False),
         rank_feature=labels,
         trace_id=search_id,
         must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
@@ -3689,7 +3693,7 @@ async def generate_nav(
             continue
         try:
             await upsert_dataset_nav_doc(
-                tenant_id=tenant_id,
+                tenant_id=kb.tenant_id,
                 kb_id=dataset_id,
                 doc_id=doc_id,
                 summary_or_tree=summary,

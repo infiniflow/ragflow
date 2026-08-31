@@ -145,6 +145,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
         sections = excel_parser.html(binary, MAXIMUM_TASK_PAGE_NUMBER)
+        # One parser tokenizes the whole file as a single chunk, so per-cell
+        # coordinates cannot be cited. Keep the HTML text only.
+        sections = [s[0] if isinstance(s, tuple) else s for s in sections]
 
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

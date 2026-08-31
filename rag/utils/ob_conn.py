@@ -45,6 +45,49 @@ from rag.nlp import rag_tokenizer
 
 logger = logging.getLogger("ragflow.ob_conn")
 
+_IMPORTANT_KEYWORD_MAX_BYTES = 256
+
+
+def _sanitize_important_keywords(keywords: list[Any]) -> tuple[list[Any], bool]:
+    """Bound keyword array elements to the OceanBase VARCHAR byte limit."""
+    normalized: list[Any] = []
+    truncated = False
+    for keyword in keywords:
+        if not isinstance(keyword, str):
+            normalized.append(keyword)
+            continue
+
+        keyword = keyword.strip()
+        encoded = keyword.encode("utf-8")
+        if len(encoded) <= _IMPORTANT_KEYWORD_MAX_BYTES:
+            normalized.append(keyword)
+            continue
+
+        sanitized = encoded[:_IMPORTANT_KEYWORD_MAX_BYTES].decode("utf-8", errors="ignore").rstrip()
+        logger.warning(
+            "Sanitizing oversized OceanBase/SeekDB important keyword (%d bytes, stored %d bytes, limit %d)",
+            len(encoded),
+            len(sanitized.encode("utf-8")),
+            _IMPORTANT_KEYWORD_MAX_BYTES,
+        )
+        normalized.append(sanitized)
+        truncated = True
+    return normalized, truncated
+
+
+def _normalize_important_keyword_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    keywords = fields.get("important_kwd")
+    if not isinstance(keywords, list):
+        return fields
+
+    normalized_keywords, truncated = _sanitize_important_keywords(keywords)
+    normalized_fields = dict(fields)
+    normalized_fields["important_kwd"] = normalized_keywords
+    if truncated:
+        normalized_fields["important_tks"] = rag_tokenizer.tokenize(" ".join(keyword for keyword in normalized_keywords if isinstance(keyword, str)))
+    return normalized_fields
+
+
 column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk order id for maintaining sequence")
 column_chunk_order_int = Column("chunk_order_int", Integer, nullable=True, comment="chunk order index for retrieval sorting")
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
@@ -653,7 +696,9 @@ class OBConnection(OBConnectionBase):
                     result.total = result.total + 1
             return result
 
-        output_fields = select_fields.copy()
+        output_fields = [field for field in select_fields.copy() if field != "row_id()"]
+        if len(output_fields) != len(select_fields):
+            logger.warning("SeekDB/OceanBase does not support row_id(); removing it from output fields")
         if "*" in output_fields:
             if index_names[0].startswith("ragflow_doc_meta_"):
                 output_fields = doc_meta_column_names.copy()
@@ -1039,6 +1084,7 @@ class OBConnection(OBConnectionBase):
         docs: list[dict] = []
         ids: list[str] = []
         for document in documents:
+            document = _normalize_important_keyword_fields(document)
             d: dict = {}
             for k, v in document.items():
                 if vector_column_pattern.match(k):
@@ -1059,6 +1105,9 @@ class OBConnection(OBConnectionBase):
                     d[k] = json.dumps(v, ensure_ascii=False)
                 elif k == "position_int":
                     d[k] = json.dumps([list(vv) for vv in v], ensure_ascii=False)
+                elif k == "important_kwd" and isinstance(v, list):
+                    # Let JSON encoding escape control characters without expanding the stored array elements.
+                    d[k] = json.dumps(v, ensure_ascii=False)
                 elif isinstance(v, list):
                     # remove characters like '\t' for JSON dump and clean special characters
                     cleaned_v = []
@@ -1142,6 +1191,8 @@ class OBConnection(OBConnectionBase):
         if not self._check_table_exists_cached(index_name):
             return True
 
+        new_value = _normalize_important_keyword_fields(new_value)
+
         # For doc_meta tables, don't force kb_id in condition
         if not index_name.startswith("ragflow_doc_meta_"):
             condition["kb_id"] = knowledgebase_id
@@ -1164,6 +1215,8 @@ class OBConnection(OBConnectionBase):
                 for kk, vv in v.items():
                     if kk not in array_columns:
                         raise ValueError(f"Column '{kk}' is not an array column.")
+                    if kk == "important_kwd" and isinstance(vv, str):
+                        vv = _sanitize_important_keywords([vv])[0][0]
                     set_values.append(f"{kk} = array_append({kk}, {get_value_str(vv)})")
             elif k == "metadata":
                 if not isinstance(v, dict):
@@ -1240,6 +1293,24 @@ class OBConnection(OBConnectionBase):
     """
     Helper functions for search result
     """
+
+    def get_scores(self, res: SearchResult) -> dict[str, float]:
+        """Return the scores attached to SeekDB search result chunks."""
+        scores = {}
+        missing_id = 0
+        missing_score = 0
+        for chunk in res.chunks:
+            chunk_id = chunk.get("id")
+            if chunk_id is None:
+                missing_id += 1
+                continue
+            score = chunk.get("_score")
+            if score is None:
+                missing_score += 1
+            scores[chunk_id] = float(score or 0.0)
+        if missing_id or missing_score:
+            logger.debug("get_scores skipped chunks: missing_id=%d missing_score=%d", missing_id, missing_score)
+        return scores
 
     def get_total(self, res) -> int:
         return res.total

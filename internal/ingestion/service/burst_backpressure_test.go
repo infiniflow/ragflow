@@ -47,6 +47,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
 
 	"gorm.io/gorm"
@@ -171,6 +172,39 @@ func TestProcessMessage_BurstNoTaskLossUnderBackpressure(t *testing.T) {
 	if completed != burstTaskCount {
 		t.Fatalf("expected all %d tasks to complete, got %d (stuck in RUNNING)",
 			burstTaskCount, completed)
+	}
+}
+
+// TestFetchBudget_NeverExceedsChannelCapacity: the consume loop must never
+// pull more messages than it can enqueue immediately. The fetch budget is
+// min(free channel slots, maxConcurrency) with a floor of 1 so a fully
+// saturated channel still polls (and lets blocked sends drain) instead of
+// stalling until AckWait expires on in-flight messages.
+func TestFetchBudget_NeverExceedsChannelCapacity(t *testing.T) {
+	ingestor := newUnitIngestor("test", 2, []string{"pdf"}) // channel cap = 4
+	defer ingestor.Stop(context.Background())
+
+	if got := ingestor.fetchBudget(); got != 2 {
+		t.Fatalf("empty channel: fetchBudget = %d, want 2 (capped by maxConcurrency)", got)
+	}
+
+	for i := 0; i < cap(ingestor.taskChan)-1; i++ {
+		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(context.Background(), &entity.IngestionTask{ID: "filler"})
+	}
+	if got := ingestor.fetchBudget(); got != 1 {
+		t.Fatalf("3/4-full channel: fetchBudget = %d, want 1 (one free slot)", got)
+	}
+
+	ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(context.Background(), &entity.IngestionTask{ID: "filler"})
+	if got := ingestor.fetchBudget(); got != 1 {
+		t.Fatalf("full channel: fetchBudget = %d, want 1 (floor: must never fetch 0)", got)
+	}
+
+	// A wide pool is bounded by the channel, not the worker count.
+	wide := newUnitIngestor("test-wide", 8, []string{"pdf"}) // channel cap = 16
+	defer wide.Stop(context.Background())
+	if got := wide.fetchBudget(); got != 8 {
+		t.Fatalf("wide empty channel: fetchBudget = %d, want 8 (capped by maxConcurrency)", got)
 	}
 }
 
