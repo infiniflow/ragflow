@@ -293,7 +293,7 @@ func main() {
 	// never instantiate the analyzer, so they must not fail-fast when ORT and
 	// models are absent on their node.
 	if servermode.NeedsDeepDoc(*arguments.mode) {
-		registerNativeDeepDoc()
+		registerNativeDeepDoc(*arguments.mode)
 	}
 
 	globalConfig := server.GetConfig()
@@ -1082,10 +1082,11 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // running binary — see the onnxruntime_go fork), so there is no external
 // DeepDoc HTTP service and no dynamic .so deployment.
 //
-// Fail-fast contract (P0): the in-process backend must be available at startup
-// (ORT + models present). There is NO silent degradation to an empty analyzer:
-// if the backend is not serving, the server aborts.
-func registerNativeDeepDoc() {
+// Root fix: ingestor and deepdoc must coexist — ingestor is fail-fast (P0)
+// when ORT+models are absent, api is permissive (Warn+Mock) so GoLand
+// `go build` remains usable for non-PDF debugging. DEEPDOC_STRICT=1 can
+// still force api to fail-fast in strict production.
+func registerNativeDeepDoc(mode string) {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
 
@@ -1094,12 +1095,13 @@ func registerNativeDeepDoc() {
 			zap.String("reason", err.Error()))
 	}
 
-	// The in-process (Go) DeepDoc backend is the production backend when
-	// built with `bash build.sh --all` (cgo + static ORT + models). For local
-	// dev (`go build` / GoLand without CGO_LDFLAGS) fall back to Mock with a
-	// warning so `--api` remains usable; set DEEPDOC_STRICT=1 to re-enable
-	// fail-fast in strict production environments.
 	if !infnative.Serving() {
+		if mode == "ingestor" {
+			common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
+				"runtime + models and build with -tags cgo",
+				zap.String("model_dir", modelDir),
+				zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
+		}
 		common.Warn("in-process DeepDoc backend not serving, fallback to MockDocAnalyzer for local dev",
 			zap.String("model_dir", modelDir),
 			zap.String("hint", "build with bash build.sh --all or set DEEPDOC_MODEL_DIR; set DEEPDOC_STRICT=1 to enforce fail-fast"))
