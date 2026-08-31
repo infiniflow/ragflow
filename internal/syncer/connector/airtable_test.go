@@ -32,11 +32,12 @@ func TestNewAirtableConnectorParsesConfig(t *testing.T) {
 		"credentials": map[string]any{
 			"airtable_access_token": "token",
 		},
-		"base_id":          "base 1",
-		"table_name_or_id": "My Table",
-		"batch_size":       "0",
-		"sync_batch_size":  "3",
-		"size_threshold":   "123",
+		"base_id":             "base 1",
+		"table_name_or_id":    "My Table",
+		"last_modified_field": "Modified",
+		"batch_size":          "0",
+		"sync_batch_size":     "3",
+		"size_threshold":      "123",
 	})
 	if err != nil {
 		t.Fatalf("NewAirtableConnector failed: %v", err)
@@ -46,6 +47,9 @@ func TestNewAirtableConnectorParsesConfig(t *testing.T) {
 	}
 	if connector.batchSize != 3 || connector.sizeThreshold != 123 {
 		t.Fatalf("batch/threshold = %d/%d, want 3/123", connector.batchSize, connector.sizeThreshold)
+	}
+	if connector.lastModified != "Modified" {
+		t.Fatalf("last modified field = %q", connector.lastModified)
 	}
 }
 
@@ -245,6 +249,66 @@ func TestAirtableOpenSyncWindowFilter(t *testing.T) {
 	}
 	if !got["airtable:inside"] || !got["airtable:inside:att-1"] {
 		t.Fatalf("documents = %+v, want record and attachment", got)
+	}
+}
+
+func TestAirtableOpenSyncWindowUsesLastModifiedField(t *testing.T) {
+	connector := newAirtableTestConnector()
+	connector.lastModified = "Modified"
+	connector.batchSize = 10
+	connector.listRecords = func(ctx context.Context, pageURL string) (airtableRecordPage, error) {
+		inside := airtableTestRecordWithIDTime("inside", "2026-01-01T00:00:00Z", "inside.pdf")
+		inside.Fields["Modified"] = "2026-01-03T00:00:00Z"
+		after := airtableTestRecordWithIDTime("after", "2026-01-01T00:00:00Z", "after.pdf")
+		after.Fields["Modified"] = "2026-01-05T00:00:00Z"
+		fallback := airtableTestRecordWithIDTime("fallback", "2026-01-01T00:00:00Z", "fallback.pdf")
+		return airtableRecordPage{Records: []airtableRecord{inside, after, fallback}}, nil
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		WindowStart: airtableMustTimePointer(t, "2026-01-02T00:00:00Z"),
+		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "airtable:inside" {
+		t.Fatalf("documents = %#v, want inside record only", batch.Documents)
+	}
+	if !batch.Documents[0].UpdatedAt.Equal(mustTime(t, "2026-01-03T00:00:00Z")) {
+		t.Fatalf("record updated at = %s, want 2026-01-03T00:00:00Z", batch.Documents[0].UpdatedAt)
+	}
+}
+
+func TestAirtableRecordDocumentFallsBackToCreatedTime(t *testing.T) {
+	connector := newAirtableTestConnector()
+	connector.lastModified = "Modified"
+	withField := airtableRecord{
+		ID:          "rec-field",
+		CreatedTime: "2026-01-01T00:00:00Z",
+		Fields: map[string]any{
+			"Modified": "2026-01-03T00:00:00Z",
+		},
+	}
+	doc, ok := connector.recordDocument(withField)
+	if !ok || !doc.UpdatedAt.Equal(mustTime(t, "2026-01-03T00:00:00Z")) {
+		t.Fatalf("recordDocument with field = ok %v, updated %s", ok, doc.UpdatedAt)
+	}
+	if doc.Metadata["last_modified"] != "2026-01-03T00:00:00Z" {
+		t.Fatalf("last_modified metadata = %v", doc.Metadata["last_modified"])
+	}
+
+	withoutField := airtableRecord{
+		ID:          "rec-created",
+		CreatedTime: "2026-01-02T00:00:00Z",
+		Fields:      map[string]any{},
+	}
+	doc, ok = connector.recordDocument(withoutField)
+	if !ok || !doc.UpdatedAt.Equal(mustTime(t, "2026-01-02T00:00:00Z")) {
+		t.Fatalf("recordDocument fallback = ok %v, updated %s", ok, doc.UpdatedAt)
 	}
 }
 

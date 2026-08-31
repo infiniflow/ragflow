@@ -49,6 +49,7 @@ const (
 type AirtableConnector struct {
 	baseID        string
 	tableNameOrID string
+	lastModified  string
 	accessToken   string
 	batchSize     int
 	sizeThreshold int64
@@ -70,6 +71,7 @@ func NewAirtableConnector(config map[string]any) (*AirtableConnector, error) {
 	return &AirtableConnector{
 		baseID:        strings.TrimSpace(stringConfig(config["base_id"])),
 		tableNameOrID: strings.TrimSpace(stringConfig(config["table_name_or_id"])),
+		lastModified:  strings.TrimSpace(stringConfig(config["last_modified_field"])),
 		accessToken:   strings.TrimSpace(stringConfig(credentials["airtable_access_token"])),
 		batchSize:     batchSize,
 		sizeThreshold: sizeThreshold,
@@ -325,29 +327,45 @@ func (c *AirtableConnector) sourceDocument(recordID, fieldName string, attachmen
 }
 
 func (c *AirtableConnector) recordDocument(record airtableRecord) (SourceDocument, bool) {
-	if strings.TrimSpace(record.ID) == "" || record.CreatedTime == "" {
+	if strings.TrimSpace(record.ID) == "" {
 		return SourceDocument{}, false
 	}
-	createdAt := parseOutlookTime(record.CreatedTime)
-	if createdAt.IsZero() {
+	updatedAt := c.recordUpdatedAt(record)
+	if updatedAt.IsZero() {
 		return SourceDocument{}, false
 	}
 	blob := airtableRecordBlob(record)
+	createdAt := parseOutlookTime(record.CreatedTime)
+	metadata := map[string]any{
+		"record_id":        record.ID,
+		"base_id":          c.baseID,
+		"table_name_or_id": c.tableNameOrID,
+		"last_modified":    updatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if !createdAt.IsZero() {
+		metadata["created_time"] = createdAt.UTC().Format(time.RFC3339Nano)
+	}
 	return SourceDocument{
 		SourceID:           airtableRecordSourceID(record.ID),
 		SemanticIdentifier: airtableRecordTitle(record),
 		Extension:          ".json",
 		Blob:               blob,
-		UpdatedAt:          createdAt,
+		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),
-		Metadata: map[string]any{
-			"record_id":        record.ID,
-			"base_id":          c.baseID,
-			"table_name_or_id": c.tableNameOrID,
-			"created_time":     createdAt.UTC().Format(time.RFC3339Nano),
-		},
-		Fingerprint: airtableRecordFingerprint(record),
+		Metadata:           metadata,
+		Fingerprint:        airtableRecordFingerprint(record),
 	}, true
+}
+
+func (c *AirtableConnector) recordUpdatedAt(record airtableRecord) time.Time {
+	if field := strings.TrimSpace(c.lastModified); field != "" {
+		if raw, ok := record.Fields[field]; ok {
+			if updatedAt := parseOutlookTime(stringConfig(raw)); !updatedAt.IsZero() {
+				return updatedAt
+			}
+		}
+	}
+	return parseOutlookTime(record.CreatedTime)
 }
 
 func airtableRecordBlob(record airtableRecord) []byte {
@@ -400,12 +418,12 @@ func airtableAttachmentFingerprint(recordID, fieldName string, attachment airtab
 	})
 }
 
-func includeAirtableRecord(request SyncRequest, record airtableRecord) bool {
+func (c *AirtableConnector) includeAirtableRecord(request SyncRequest, record airtableRecord) bool {
 	if request.FromBeginning {
 		return true
 	}
-	createdAt := parseOutlookTime(record.CreatedTime)
-	if createdAt.IsZero() {
+	updatedAt := c.recordUpdatedAt(record)
+	if updatedAt.IsZero() {
 		return false
 	}
 	if len(request.Fingerprints) > 0 {
@@ -413,10 +431,10 @@ func includeAirtableRecord(request SyncRequest, record airtableRecord) bool {
 		stored, ok := request.Fingerprints[airtableRecordSourceID(record.ID)]
 		return fingerprint == "" || !ok || stored == "" || stored != fingerprint
 	}
-	if request.WindowStart != nil && createdAt.Before(*request.WindowStart) {
+	if request.WindowStart != nil && updatedAt.Before(*request.WindowStart) {
 		return false
 	}
-	if !request.WindowEnd.IsZero() && !createdAt.Before(request.WindowEnd) {
+	if !request.WindowEnd.IsZero() && !updatedAt.Before(request.WindowEnd) {
 		return false
 	}
 	return true
@@ -534,7 +552,7 @@ func (s *airtableSyncSession) nextDocumentPage(ctx context.Context) ([]airtableB
 				offset:     offset,
 			}
 			all = append(all, buffered)
-			if includeAirtableRecord(s.request, record) {
+			if s.connector.includeAirtableRecord(s.request, record) {
 				included = append(included, buffered)
 			}
 		}
