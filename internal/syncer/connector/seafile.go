@@ -762,7 +762,7 @@ func seafileParseMtime(raw any) time.Time {
 			}
 		}
 	}
-	return time.Now().UTC()
+	return time.Time{}
 }
 
 func readSeaFileBody(resp *http.Response) ([]byte, error) {
