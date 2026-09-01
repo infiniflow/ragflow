@@ -895,13 +895,7 @@ class MinerUParser(RAGFlowPdfParser):
         from rag.app.picture import vision_llm_chunk
         from rag.prompts.generator import vision_llm_figure_describe_prompt
 
-        image_jobs = [
-            (idx, item)
-            for idx, item in enumerate(outputs)
-            if item.get("type") == MinerUContentType.IMAGE
-            and item.get("img_path")
-            and os.path.exists(item["img_path"])
-        ]
+        image_jobs = [(idx, item) for idx, item in enumerate(outputs) if item.get("type") == MinerUContentType.IMAGE and item.get("img_path") and os.path.exists(item["img_path"])]
         if not image_jobs:
             return
 
