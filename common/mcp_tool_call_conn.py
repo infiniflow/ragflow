@@ -410,6 +410,7 @@ class MCPToolCallSession(ToolCallSession):
         with self._shutdown_lock:
             if self._shutdown_future is None:
                 self._close = True
+                logger.info("Closing MCP session for server %s", self._mcp_server.id)
                 coroutine = self._shutdown_on_event_loop()
                 try:
                     self._shutdown_future = asyncio.run_coroutine_threadsafe(coroutine, self._event_loop)
@@ -508,11 +509,25 @@ class MCPToolCallSession(ToolCallSession):
         except FuturesCancelledError as error:
             shutdown_error = error
 
-        self._thread.join(timeout=max(0, deadline - time.monotonic()))
-        if self._thread.is_alive():
+        join_error = None
+        join_traceback = None
+        try:
+            self._thread.join(timeout=max(0, deadline - time.monotonic()))
+        except Exception as error:  # noqa: BLE001
+            join_error = error
+            join_traceback = error.__traceback__
+        if self._thread.is_alive() and join_error is None:
             logger.error("Timeout while joining MCP session thread for server %s (timeout=%s)", self._mcp_server.id, timeout)
         if shutdown_error is not None:
+            if join_error is not None:
+                logger.error(
+                    "Exception while joining MCP session thread for server %s",
+                    self._mcp_server.id,
+                    exc_info=(type(join_error), join_error, join_traceback),
+                )
             raise shutdown_error
+        if join_error is not None:
+            raise join_error.with_traceback(join_traceback)
 
 
 def close_multiple_mcp_toolcall_sessions(sessions: list[MCPToolCallSession]) -> int:

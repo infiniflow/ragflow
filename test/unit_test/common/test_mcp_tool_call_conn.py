@@ -284,8 +284,9 @@ def test_owner_close_queued_by_stop_callback_is_drained(monkeypatch):
         session.close_sync(timeout=1)
 
 
-def test_close_sync_propagates_transport_cleanup_error(monkeypatch):
+def test_close_sync_propagates_transport_cleanup_error(monkeypatch, caplog):
     initialized = threading.Event()
+    join_attempted = threading.Event()
 
     @asynccontextmanager
     async def fake_sse_client(url, headers):
@@ -312,22 +313,66 @@ def test_close_sync_propagates_transport_cleanup_error(monkeypatch):
 
     server = SimpleNamespace(id="server-1", url="http://mcp.test", headers={}, server_type=MCPServerType.SSE)
     session = MCPToolCallSession(server)
+    real_join = session._thread.join
+
+    def failing_join(timeout=None):
+        join_attempted.set()
+        raise ValueError("join failed")
+
+    monkeypatch.setattr(session._thread, "join", failing_join)
 
     try:
         assert initialized.wait(timeout=1)
-        with pytest.raises(RuntimeError, match="transport cleanup failed"):
+        with caplog.at_level("ERROR"), pytest.raises(RuntimeError, match="transport cleanup failed"):
             session.close_sync(timeout=1)
 
+        assert join_attempted.is_set()
+        assert "Exception while joining MCP session thread for server server-1" in caplog.messages
+        join_record = next(record for record in caplog.records if record.getMessage() == "Exception while joining MCP session thread for server server-1")
+        assert join_record.exc_info is not None
+        assert join_record.exc_info[0] is ValueError
+        assert str(join_record.exc_info[1]) == "join failed"
+
+        monkeypatch.setattr(session._thread, "join", real_join)
+        assert session._shutdown_complete.wait(timeout=1)
+        real_join(timeout=1)
         assert not session._thread.is_alive()
         assert session._event_loop.is_closed()
         assert session not in MCPToolCallSession._ALL_INSTANCES
     finally:
+        monkeypatch.setattr(session._thread, "join", real_join)
         if session._thread.is_alive():
             try:
                 session.close_sync(timeout=1)
             except RuntimeError as error:
                 if str(error) != "transport cleanup failed":
                     raise
+
+
+def test_close_sync_propagates_thread_join_error(monkeypatch):
+    server_started = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    real_join = session._thread.join
+
+    def failing_join(timeout=None):
+        raise ValueError("join failed")
+
+    monkeypatch.setattr(session._thread, "join", failing_join)
+
+    try:
+        assert server_started.wait(timeout=1)
+        with pytest.raises(ValueError, match="join failed"):
+            session.close_sync(timeout=1)
+    finally:
+        monkeypatch.setattr(session._thread, "join", real_join)
+        session.close_sync(timeout=1)
 
 
 def test_close_sync_cancels_in_flight_call_and_wakes_caller(monkeypatch):
@@ -449,7 +494,7 @@ def test_close_sync_wakes_queued_call_without_dispatching_it(monkeypatch):
         caller_pool.shutdown(wait=True)
 
 
-def test_concurrent_close_is_idempotent(monkeypatch):
+def test_concurrent_close_is_idempotent(monkeypatch, caplog):
     server_started = threading.Event()
     finalized = threading.Event()
     finalizer_count = 0
@@ -479,13 +524,15 @@ def test_concurrent_close_is_idempotent(monkeypatch):
 
     try:
         assert server_started.wait(timeout=1)
-        barrier.wait(timeout=1)
-        for closer in closers:
-            closer.result(timeout=2)
+        with caplog.at_level("INFO"):
+            barrier.wait(timeout=1)
+            for closer in closers:
+                closer.result(timeout=2)
 
-        session.close_sync(timeout=1)
+            session.close_sync(timeout=1)
         assert finalized.is_set()
         assert finalizer_count == 1
+        assert caplog.messages.count("Closing MCP session for server server-1") == 1
         assert session.tool_call("after-close", {}, timeout=1) == "Error: Session is closed"
         assert not session._thread.is_alive()
         assert session._event_loop.is_closed()

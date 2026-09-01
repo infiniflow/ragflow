@@ -89,7 +89,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-if __name__ == "__main__":
+def run_server():
     faulthandler.enable()
     init_root_logger("ragflow_server")
     logging.info(r"""
@@ -168,19 +168,31 @@ if __name__ == "__main__":
         start_chat_channels()
 
     # start http server
+    logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
+    app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=False)
+
+
+def main():
+    force_kill = False
     try:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
-        logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
-        app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=False)
+        run_server()
     except Exception as e:
+        force_kill = True
         logging.exception(f"Unhandled exception: {e}")
-        stop_background_services()
-        os.kill(os.getpid(), signal.SIGKILL)
     finally:
         if shutdown_requested:
             logging.info("Received interrupt signal, shutting down...")
         try:
             shutdown_all_mcp_sessions()
         finally:
-            stop_background_services()
+            try:
+                stop_background_services()
+            finally:
+                if force_kill:
+                    os.kill(os.getpid(), signal.SIGKILL)
+
+
+if __name__ == "__main__":
+    main()
