@@ -374,6 +374,64 @@ func TestRetrieval_RoutesMemoryRequestsWithUserFilter(t *testing.T) {
 	}
 }
 
+func TestRetrieval_UnsetBareUserRefYieldsNoFilter(t *testing.T) {
+	previous := GetMemoryRetrievalService()
+	memoryService := &capturingRetrievalService{}
+	SetMemoryRetrievalService(memoryService)
+	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
+
+	// sys.user_id is deliberately left unset: an unresolvable bare ref must
+	// mean "no user filter" (UserID == ""), not a literal "sys.user_id"
+	// filter that matches no user.
+	state := runtime.NewCanvasState("run-1", "session-1")
+	ctx := runtime.WithState(t.Context(), state)
+
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{
+		MemoryIDs: []string{"memory-1"},
+		UserID:    "sys.user_id",
+	})
+	if _, err := rt.InvokableRun(ctx, `{"query":"remember this"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if memoryService.req.UserID != "" {
+		t.Fatalf("UserID = %q, want empty (no user filter) for unset sys.user_id", memoryService.req.UserID)
+	}
+
+	// The braced form of an unset ref keeps the loud failure — Python's
+	// canvas.get_variable_value raises KeyError on missing globals.
+	braced := NewRetrievalToolWithDefaults(retrievalArgs{
+		MemoryIDs: []string{"memory-1"},
+		UserID:    "{sys.user_id}",
+	})
+	if _, err := braced.InvokableRun(ctx, `{"query":"remember this"}`); err == nil {
+		t.Fatal("InvokableRun(braced unset ref): expected error, got nil")
+	}
+}
+
+func TestRetrieval_LiteralUserIDPassesThrough(t *testing.T) {
+	previous := GetMemoryRetrievalService()
+	memoryService := &capturingRetrievalService{}
+	SetMemoryRetrievalService(memoryService)
+	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
+
+	// sys.user_id is set to prove a non-ref literal is never substituted
+	// from state.
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "user-42"
+	ctx := runtime.WithState(t.Context(), state)
+
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{
+		MemoryIDs: []string{"memory-1"},
+		UserID:    "user-77",
+	})
+	if _, err := rt.InvokableRun(ctx, `{"query":"remember this"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if memoryService.req.UserID != "user-77" {
+		t.Fatalf("UserID = %q, want literal user-77", memoryService.req.UserID)
+	}
+}
+
 func TestRetrieval_ResolvesCanvasVariables(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.SetVar("source", "ids", []any{"kb-1", "kb-2"})

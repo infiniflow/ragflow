@@ -351,6 +351,20 @@ func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
 // Retrieval._retrieve_memory: a variable reference — `{sys.user_id}` template
 // or bare `sys.*` / `env.*` / `component@param` form — is looked up in the
 // canvas state; anything else is a literal user id and passes through.
+//
+// Two deliberate divergences from Python, which resolves only the fully
+// braced form and passes bare refs through literally (agent/tools/retrieval.py
+// `_retrieve_memory`):
+//
+//   - bare ref forms are resolved too, so a canvas storing `sys.user_id`
+//     unbraced still filters per user; as a corollary, a literal user id
+//     that collides with a live state variable name is substituted (RAGFlow
+//     user ids are UUID-like and never look like refs);
+//   - an unset bare `sys.*` / `env.*` ref resolves to "" (no user filter)
+//     instead of the literal ref string, which could never match a real user
+//     id and would silently empty the result. Bare `component@param` refs
+//     keep the literal fallback because an "@" in the value is ambiguous
+//     with an email-style literal user id.
 func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) {
 	trimmed := strings.TrimSpace(userID)
 	if trimmed == "" {
@@ -372,6 +386,11 @@ func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) 
 			return text, nil
 		}
 		return fmt.Sprintf("%v", value), nil
+	}
+	if strings.HasPrefix(trimmed, "sys.") || strings.HasPrefix(trimmed, "env.") {
+		// An unset sys./env. ref cannot be a literal user id; treat it as
+		// "no user filter" per the RetrievalRequest.UserID contract.
+		return "", nil
 	}
 	return trimmed, nil
 }
