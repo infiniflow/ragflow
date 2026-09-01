@@ -1092,7 +1092,7 @@ def build_agentic_graph(
     # broad-fanout chunks first, so the model-driven drill had nothing left to
     # admit (observed "Drill admitted 0 for entire runs"). rag_agent retrieves on
     # its own, so the pool fills naturally from targeted per-slot searches.
-    use_prefetch = False
+    use_prefetch = use_fanout
 
     g.add_edge(START, "formalize_question")
     g.add_edge("formalize_question", "planner" if use_fanout else ("prefetch" if use_prefetch else "rag_agent"))

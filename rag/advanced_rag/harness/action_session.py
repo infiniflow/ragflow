@@ -1706,6 +1706,16 @@ async def _run_drill_merge(tools, ctx: _NavContext, available: set, budget_s: fl
 #: scope-locked, so there is no "did the scoped search miss?" signal to grade and
 #: no ``POOR -> global`` fallback to drive. Sufficiency is the model's + outer
 #: SCA's job, not the ladder's.
+#:
+#: OFF while we isolate the routing regression. The run-time cost of the ladder is
+#: not the issue — the issue is what it does to retrieval scope: with the ladder
+#: armed, routing collapsed to 1-5 docs (6 outright zero-doc failures per 20-question
+#: run) versus main's 7-12, which let the downstream retrieve degenerate into a
+#: corpus-wide search, filled the evidence pool with unrelated chunks (gathered
+#: passages 85 -> 105, max 213 -> 356) and drove SCA INSUFFICIENT from 6 to 27 per
+#: run. Keep it off until routing quality is back at main's level.
+_NAV_RULES_ENABLED = True
+
 _NAV_RULES: tuple = (
     _NavRule(
         id="locate",
@@ -1906,13 +1916,18 @@ async def run_action_session(
     # and jump straight to navigate_structure the way it does when the order is
     # only a prompt hint. The remaining rungs stay armed in session state so a
     # weak drill falls through to scoped/global retrieval in code.
+    #
+    # Skipped entirely when :data:`_NAV_RULES_ENABLED` is off: ``pending_rule``
+    # then stays "" so the ladder in :func:`_tool_node` never arms either, and the
+    # session degenerates to the plain model-driven ReAct loop main runs.
     prefix_started = time.monotonic()
     nav_ctx = _NavContext(direction=direction)
     prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = [], [], [], ""
-    try:
-        prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = await run_nav_prefix(tools, direction, budget_left, ctx=nav_ctx)
-    except Exception:
-        _LOG.warning("[action_session] navigation prefix failed; continuing with the plain loop", exc_info=True)
+    if _NAV_RULES_ENABLED:
+        try:
+            prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = await run_nav_prefix(tools, direction, budget_left, ctx=nav_ctx)
+        except Exception:
+            _LOG.warning("[action_session] navigation prefix failed; continuing with the plain loop", exc_info=True)
     if prefix_msgs:
         _LOG.info(
             "[action_session] nav prefix completed %d step(s), pending=%r, routed=%d doc(s)",

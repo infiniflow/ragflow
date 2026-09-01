@@ -665,10 +665,17 @@ async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: l
     accurate on large datasets where many document summaries look alike in a flat
     comparison.
 
-    PURE VECTOR descent: ``dense_only=True`` skips the BM25 legs and the
-    ``_text_score`` gates. Those gates silently discarded nodes whose summary
-    matches the query only semantically — i.e. most real routing cases — which is
-    why routing used to behave like keyword search and so often came back empty.
+    HYBRID descent (vector + BM25): both the KNN legs and the ``_text_score``
+    gates stay armed. A pure-vector descent was tried — it dropped the text legs
+    and the ``_text_score > 0`` gate, on the theory that routing cares about
+    semantic matches a summary never spells out. It regressed routing badly:
+    scores collapsed onto the dense leg alone, the descent fell below
+    ``_NAV_TREE_MIN_SCORE`` far more often, and routing returned 1-5 docs instead
+    of hybrid's 7-12 — with 6 outright zero-doc failures per 20-question run.
+    Losing that scope let the downstream retrieval degenerate into a corpus-wide
+    search, which filled the evidence pool with unrelated chunks (gathered
+    passages 85 -> 105, max 213 -> 356) and drove SCA INSUFFICIENT from 6 to 27
+    per run. Routing needs both legs; the vector-only path was removed.
 
     Each nav row already carries the document's overall summary (``description``
     on the leaf row), so labelling the route costs ZERO extra queries — the
@@ -702,7 +709,6 @@ async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: l
                 "navigation_tree",
                 top_k=_NAV_SEARCH_MAX_DOCS,
                 doc_scope=list(allowed_docs) or None,
-                dense_only=True,
             )
         except Exception:
             _LOG.exception("[Dataset navigation search] search_dataset_layers failed for kb=%s", kb.id)
@@ -736,9 +742,9 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
     descending the dataset's compiled navigation tree.
 
     Routes through :func:`_nav_search_titled`, which runs
-    ``search_dataset_layers`` with ``mode="navigation_tree"`` and
-    ``dense_only=True``: a BFS beam descent from the root clusters down to the
-    ``nav_doc`` leaves, driven by vector similarity alone.
+    ``search_dataset_layers`` with ``mode="navigation_tree"``: a hybrid BFS beam
+    descent (vector + BM25) from the root clusters down to the ``nav_doc``
+    leaves, with the ``_text_score`` gates armed.
 
     Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
     ``[]`` when no question/keywords are given or the search returns nothing.
