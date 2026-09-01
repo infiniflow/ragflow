@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"ragflow/internal/common"
@@ -47,9 +46,6 @@ type IngestionTaskService struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	taskPublisher       TaskPublisher
-	// createMu serializes duplicate-document handling within one service
-	// instance while a CREATED task is being published.
-	createMu sync.Mutex
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
@@ -390,9 +386,6 @@ func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to
 }
 
 func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
-	s.createMu.Lock()
-	defer s.createMu.Unlock()
-
 	existing, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
 	if err != nil {
 		return nil, err
