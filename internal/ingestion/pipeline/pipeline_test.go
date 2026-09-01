@@ -100,7 +100,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"}, nil)
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "doc-canvas"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 
 func TestPipelineRunNilPipeline(t *testing.T) {
 	var p *Pipeline
-	if _, err := p.Run(context.Background(), nil, nil); err == nil {
+	if _, err := p.Run(t.Context(), nil, nil); err == nil {
 		t.Fatal("expected error for nil pipeline")
 	}
 }
@@ -146,7 +146,7 @@ func TestPipelineRunStageErrorBubbles(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}, nil); err == nil {
+	if _, err := pipe.Run(t.Context(), map[string]any{"name": "x"}, nil); err == nil {
 		t.Fatal("expected stage error")
 	}
 }
@@ -252,7 +252,7 @@ func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 		return &factorySentinelStage{marker: "instance"}, nil
 	})
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *te
 	results := make(chan result, 2)
 	run := func(pipe *Pipeline) {
 		defer wg.Done()
-		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+		out, err := pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 		if err != nil {
 			results <- result{err: err}
 			return
@@ -366,7 +366,7 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"}, nil)
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "doc-resume"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 	// Run 1: terminal B errors (oneShotErrStage n=1), simulating a crash.
 	// Non-terminal A's checkpoint + interrupt persist because the error path
 	// does not call ClearInterruptID or store.Delete.
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc-cross-run"}, nil)
 	if err == nil {
 		t.Fatal("Run 1: expected error from simulated crash, got nil")
 	}
@@ -443,7 +443,7 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 
 	// Run 2: resume from after A via tracker.GetInterruptID. A is skipped;
 	// B's oneShotErrStage (n=2) delegates to its embedded mock successfully.
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc-cross-run"}, nil)
 	if err != nil {
 		t.Fatalf("Run 2: expected recovery success, got error: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestPipelineRunResumableDSLChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
 	}
-	if _, err := pipe1.Run(context.Background(), map[string]any{"name": "doc-dsl-changed"}, nil); err == nil {
+	if _, err := pipe1.Run(t.Context(), map[string]any{"name": "doc-dsl-changed"}, nil); err == nil {
 		t.Fatal("Run 1: expected error from simulated crash, got nil")
 	}
 	if mockA.calls != 1 {
@@ -527,7 +527,7 @@ func TestPipelineRunResumableDSLChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
 	}
-	if _, err := pipe2.Run(context.Background(), map[string]any{"name": "doc-dsl-changed"}, nil); err != nil {
+	if _, err := pipe2.Run(t.Context(), map[string]any{"name": "doc-dsl-changed"}, nil); err != nil {
 		t.Fatalf("Run 2: expected fresh run to succeed after DSL edit, got error: %v", err)
 	}
 
@@ -608,7 +608,7 @@ func TestGuardDSLChange_CheckpointLookupErrorSkipsOverwrite(t *testing.T) {
 		rawDSL: []byte(`{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}}}}}}`),
 	}
 	// tracker is nil-safe (only used on the delete branch, which is skipped).
-	p.guardDSLChange(context.Background(), store, nil, taskID, map[string]any{"k": "v"})
+	p.guardDSLChange(t.Context(), store, nil, taskID, map[string]any{"k": "v"})
 	if store.setCalled {
 		t.Fatal("guardDSLChange must not overwrite fingerprints after a failed checkpoint lookup")
 	}
@@ -660,7 +660,7 @@ func TestPipelineRunResumableOverrideChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
 	}
-	if _, err := pipe1.Run(context.Background(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v1"}); err == nil {
+	if _, err := pipe1.Run(t.Context(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v1"}); err == nil {
 		t.Fatal("Run 1: expected error from simulated crash, got nil")
 	}
 	if mockA.calls != 1 {
@@ -674,7 +674,7 @@ func TestPipelineRunResumableOverrideChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
 	}
-	if _, err := pipe2.Run(context.Background(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v2"}); err != nil {
+	if _, err := pipe2.Run(t.Context(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v2"}); err != nil {
 		t.Fatalf("Run 2: expected fresh run to succeed after override edit, got error: %v", err)
 	}
 	if mockA.calls != 2 {
@@ -708,7 +708,7 @@ func TestPipelineRun_RequireResumeRejectsWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if !errors.Is(err, ErrResumeUnavailable) {
 		t.Fatalf("expected ErrResumeUnavailable, got %v", err)
 	}
@@ -769,7 +769,7 @@ func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}, nil); err != nil {
+	if _, err := pipe.Run(t.Context(), map[string]any{"name": "doc-sink"}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -808,11 +808,11 @@ func TestCleanupCheckpoint_DeletesStoreAndClearsTracker(t *testing.T) {
 	t.Cleanup(func() { client.Close() })
 
 	store := newMemCheckpointStore()
-	if err := store.Set(context.Background(), "cp-1", []byte("data")); err != nil {
+	if err := store.Set(t.Context(), "cp-1", []byte("data")); err != nil {
 		t.Fatalf("store.Set: %v", err)
 	}
 	// Fingerprint keys must share the checkpoint's lifecycle on cleanup.
-	if err := store.Set(context.Background(), "cp-1"+dslKeySuffix, []byte("dslfp")); err != nil {
+	if err := store.Set(t.Context(), "cp-1"+dslKeySuffix, []byte("dslfp")); err != nil {
 		t.Fatalf("store.Set dsl: %v", err)
 	}
 	if err := store.Set(context.Background(), "cp-1"+ovfKeySuffix, []byte("ovrfp")); err != nil {

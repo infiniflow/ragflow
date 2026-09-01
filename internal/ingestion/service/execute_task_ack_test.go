@@ -60,7 +60,7 @@ func TestExecuteTask_AcksMessageOnCompletion(t *testing.T) {
 	}
 
 	handle := &fakeTaskHandle{}
-	ingestor.executeTask(ctx, newAckTaskCtx(context.Background(), taskID, docID, handle))
+	ingestor.executeTask(ctx, newAckTaskCtx(t.Context(), taskID, docID, handle))
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack / 0 Nack on completion, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -94,7 +94,7 @@ func TestExecuteTask_AcksMessageOnFailure(t *testing.T) {
 	}
 
 	handle := &fakeTaskHandle{}
-	ingestor.executeTask(ctx, newAckTaskCtx(context.Background(), taskID, docID, handle))
+	ingestor.executeTask(ctx, newAckTaskCtx(t.Context(), taskID, docID, handle))
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack / 0 Nack on failure, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -170,7 +170,7 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 	}
 
 	handle := &fakeTaskHandle{}
-	go ingestor.executeTask(ctx, newAckTaskCtx(context.Background(), taskID, docID, handle))
+	go ingestor.executeTask(ctx, newAckTaskCtx(t.Context(), taskID, docID, handle))
 
 	<-started
 
@@ -252,7 +252,7 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 	ctx := t.Context()
 
 	handle := &fakeTaskHandle{}
-	ingestor.executeTask(ctx, newAckTaskCtx(context.Background(), taskID, docID, handle))
+	ingestor.executeTask(ctx, newAckTaskCtx(t.Context(), taskID, docID, handle))
 
 	if _, stillActive := ingestor.currentTasks[taskID]; stillActive {
 		t.Fatal("expected task released from currentTasks after executeTask finished")
@@ -268,7 +268,7 @@ func TestSettleMessage_AckOnTerminal(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
-	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+	taskCtx := newAckTaskCtx(t.Context(), "task-1", "doc-1", handle)
 
 	ingestor.settleMessage(ctx, taskCtx, func(ctx context.Context) bool { return true })
 
@@ -282,7 +282,7 @@ func TestSettleMessage_NackOnNonTerminal(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
-	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+	taskCtx := newAckTaskCtx(t.Context(), "task-1", "doc-1", handle)
 
 	ingestor.settleMessage(ctx, taskCtx, func(ctx context.Context) bool { return false })
 
@@ -308,7 +308,7 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
-	taskCtx := newAckTaskCtx(context.Background(), taskID, docID, handle)
+	taskCtx := newAckTaskCtx(t.Context(), taskID, docID, handle)
 
 	panicked := false
 	func() {
@@ -342,7 +342,7 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 func TestAckOrNack_AckOnTerminal(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
-	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+	taskCtx := newAckTaskCtx(t.Context(), "task-1", "doc-1", handle)
 
 	ingestor.ackOrNack(taskCtx, true)
 
@@ -355,7 +355,7 @@ func TestAckOrNack_AckOnTerminal(t *testing.T) {
 func TestAckOrNack_NackOnNonTerminal(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
-	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+	taskCtx := newAckTaskCtx(t.Context(), "task-1", "doc-1", handle)
 
 	ingestor.ackOrNack(taskCtx, false)
 
@@ -368,7 +368,7 @@ func TestAckOrNack_NackOnNonTerminal(t *testing.T) {
 func TestAckOrNack_NoOpWhenNoHandle(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	taskCtx := taskpkg.NewTaskContextForScheduling(
-		context.Background(),
+		t.Context(),
 		&entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.RUNNING},
 	)
 	// taskCtx.Handle is nil
@@ -394,7 +394,7 @@ func TestSettleMessage_DBTruthOverridesBodyReturn(t *testing.T) {
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
-	taskCtx := newAckTaskCtx(context.Background(), taskID, docID, handle)
+	taskCtx := newAckTaskCtx(t.Context(), taskID, docID, handle)
 
 	// body returns false AND marks the task FAILED — simulating a panic
 	// recovery where markFailed succeeded: the task is terminal (FAILED)

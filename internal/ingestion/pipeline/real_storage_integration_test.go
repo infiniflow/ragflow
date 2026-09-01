@@ -93,7 +93,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 	}, nil)
 	if err != nil {
@@ -389,7 +389,7 @@ func mustSeedRealPipelineDocument(
 	}).Error; err != nil {
 		t.Fatalf("create kb: %v", err)
 	}
-	if err := stg.Put(context.Background(), bucket, objectPath, []byte(content)); err != nil {
+	if err := stg.Put(t.Context(), bucket, objectPath, []byte(content)); err != nil {
 		t.Fatalf("put real minio object: %v", err)
 	}
 	if err := db.Create(&entity.File{
@@ -434,7 +434,7 @@ func cleanupRealPipelineDocument(db *gorm.DB, stg storage.Storage, tenantID, kbI
 	_ = db.Where("id = ?", fileID).Delete(&entity.File{}).Error
 	_ = db.Where("id = ?", kbID).Delete(&entity.Knowledgebase{}).Error
 	_ = db.Where("id = ?", tenantID).Delete(&entity.Tenant{}).Error
-	_ = stg.Remove(context.Background(), bucket, objectPath)
+	_ = stg.Remove(t.Context(), bucket, objectPath)
 }
 
 func strPtr(s string) *string {

@@ -16,7 +16,6 @@
 package dataset
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -193,7 +192,7 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 func TestGetDatasetCompilationStatus_EmptyID(t *testing.T) {
 	setupCompilationStatusTestDB(t)
 	_, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		context.Background(), "user-1", "")
+		t.Context(), "user-1", "")
 	if err == nil {
 		t.Fatal("expected error for empty dataset_id")
 	}
