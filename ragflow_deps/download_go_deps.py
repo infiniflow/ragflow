@@ -225,11 +225,22 @@ if __name__ == "__main__":
         with tarfile.open(archive_path) as tf:
             tf.extractall(target)
 
-    extract_onnxruntime(
+    if not extract_onnxruntime(
         os.path.join(native_deps_dir, "onnxruntime", "static_lib"),
         os.path.join(os.getcwd(), f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip"),
         ORT_VERSION,
-    )
+    ):
+        # The archive was not downloaded or failed to extract, so no .a landed.
+        # Fail loud instead of exiting 0: build.sh's ORT guard would otherwise
+        # reject the build later with a less actionable message, and a missing
+        # .a left here is exactly the "silent green" this PR is meant to prevent.
+        print(
+            f"  ERROR: ONNX Runtime static archives for {ORT_VERSION} were not "
+            f"extracted to {os.path.join(native_deps_dir, 'onnxruntime', 'static_lib')}. "
+            f"Check the download above; build.sh will refuse to link without them.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # ONNX Runtime is statically linked into the server binary, so there is no
     # runtime .so to surface. Log where build.sh (ONNXRUNTIME_STATIC_PREFIX) will
@@ -241,4 +252,5 @@ if __name__ == "__main__":
     if ort_a_files:
         print(f"  ✓ onnxruntime static archives ready: {len(ort_a_files)} .a under {ort_static_dir}")
     else:
-        print(f"  Skipping onnxruntime static check: no .a found under {ort_static_dir}")
+        print(f"  ERROR: ONNX Runtime .a files still missing under {ort_static_dir} after extraction; build.sh will refuse to link.", file=sys.stderr)
+        sys.exit(1)

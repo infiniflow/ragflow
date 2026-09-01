@@ -242,6 +242,12 @@ jobs:
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
+          # Deps-download regression guards (ORT extraction / version bump).
+          # These are pure-Python, local, and need no API keys; run them in
+          # isolation so the test/testcases conftest (which requires
+          # SILICONFLOW_API_KEY) cannot fail the collection.
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/agent$' \
