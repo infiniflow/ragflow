@@ -396,7 +396,7 @@ export default {
         'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
       similarityThreshold: 'Seuil de similarité',
       similarityThresholdTip:
-        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 0.2 (soit 20%).',
+        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 20 (soit 20%).',
       vectorSimilarityWeight: 'Poids de similarité des mots-clés',
       vectorSimilarityWeightTip:
         "Définit l'importance de la similarité par mots-clés dans le score global. Le total des poids doit être de 1.0.",

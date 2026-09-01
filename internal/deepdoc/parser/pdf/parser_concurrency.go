@@ -222,3 +222,49 @@ func (p *Parser) inferOCRRecognize(ctx context.Context, doc pdf.DocAnalyzer, cro
 	})
 	return texts, err
 }
+
+// batchRecognizer is an OPTIONAL capability a pdf.DocAnalyzer may implement to
+// recognize a page's OCR crops in one batched forward pass (see
+// NativeAnalyzer.OCRRecognizeBatch). The production in-process backend
+// implements it; test doubles (MockDocAnalyzer, replay
+// analyzer) and any analyzer that prefers per-crop recognition do not.
+// Callers MUST fall back to inferOCRRecognize when the analyzer does not
+// implement it, so adding this capability never forces changes onto mocks or
+// the parity-replay analyzer (which routes recognition by the box index
+// stamped in ctx and is inherently per-crop).
+type batchRecognizer interface {
+	OCRRecognizeBatch(ctx context.Context, imgs []image.Image) ([][]pdf.OCRText, error)
+}
+
+// inferOCRRecognizeBatch routes a batch of crops through the inference limiter
+// in a single slot. It is only safe to call after a type assertion confirms
+// doc implements batchRecognizer. The whole batch consumes one limiter slot
+// (instead of one per crop), which is both correct (one ONNX Run) and a
+// throughput win. An empty slice returns nil without touching the analyzer.
+func (p *Parser) inferOCRRecognizeBatch(ctx context.Context, doc pdf.DocAnalyzer, crops []image.Image) ([][]pdf.OCRText, error) {
+	br, ok := doc.(batchRecognizer)
+	if !ok || len(crops) == 0 {
+		return nil, nil
+	}
+	if doc == nil || !doc.Health() {
+		return nil, nil
+	}
+	var results [][]pdf.OCRText
+	err := p.limiters().withSlot(ctx, func() error {
+		r, callErr := br.OCRRecognizeBatch(ctx, crops)
+		if callErr != nil {
+			return callErr
+		}
+		results = r
+		return nil
+	})
+	return results, err
+}
+
+// docSupportsBatchOCR reports whether doc implements the optional batched OCR
+// recognition capability. Used by the OCR loop to choose between one batched
+// Run and a per-crop fallback without paying for a redundant type assertion.
+func (p *Parser) docSupportsBatchOCR(doc pdf.DocAnalyzer) bool {
+	_, ok := doc.(batchRecognizer)
+	return ok
+}

@@ -243,8 +243,6 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T) {
 	RequireTokenizerPool(t)
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
