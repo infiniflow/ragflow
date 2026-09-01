@@ -62,6 +62,13 @@ type TaskContext struct {
 	// TaskKindMemory.
 	MemoryPayload map[string]any
 
+	// TaskID is the envelope task identifier (TaskMessage.TaskID) that the
+	// scheduler claimed and will release. It is the authoritative claim key
+	// for both task kinds; MemoryPayload["id"] may differ from it for
+	// malformed or foreign messages, so execution must settle by this field,
+	// not by re-deriving an id from the payload.
+	TaskID string
+
 	// Handle is the message-queue ack handle for the task message that scheduled
 	// this context. The scheduler sets it before queueing; the worker decides
 	// the terminal Ack/Nack:
@@ -78,22 +85,28 @@ type TaskContext struct {
 
 // NewMemoryTaskContextForScheduling creates a lightweight TaskContext for a
 // memory-extraction task. It only sets the scheduling-related fields, not the
-// full ingestion business data.
-func NewMemoryTaskContextForScheduling(ctx context.Context, payload map[string]any, handle common.TaskHandle) *TaskContext {
+// full ingestion business data. taskID is the envelope TaskMessage.TaskID that
+// the scheduler claims and will release.
+func NewMemoryTaskContextForScheduling(ctx context.Context, taskID string, payload map[string]any, handle common.TaskHandle) *TaskContext {
 	return &TaskContext{
 		Ctx:           ctx,
 		Kind:          TaskKindMemory,
+		TaskID:        taskID,
 		MemoryPayload: payload,
 		Handle:        handle,
 	}
 }
 
-// TaskID returns the task identifier for logging regardless of task kind:
-// the ingestion task id, or the memory payload's id/task_id. Empty for a
-// context that has neither (defensive).
-func (c *TaskContext) TaskID() string {
+// ID returns the task identifier for logging regardless of task kind:
+// the envelope task id (authoritative), falling back to the memory payload's
+// id/task_id for contexts built without one. Empty for a context that has
+// neither (defensive).
+func (c *TaskContext) ID() string {
 	if c == nil {
 		return ""
+	}
+	if c.TaskID != "" {
+		return c.TaskID
 	}
 	if c.IngestionTask != nil {
 		return c.IngestionTask.ID

@@ -376,7 +376,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
-		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
+		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
 		// Claim the task before enqueueing so a redelivered copy of the same
 		// memory task (NATS AckWait/BackOff redelivery, or a restart replay) is
 		// Ack-skipped instead of executed again. Memory tasks have no
@@ -561,10 +561,10 @@ func (e *Ingestor) workerLoop(id int32) {
 // stall every subsequent document parse. The recovered panic is treated as a
 // transient failure and Nacked for redelivery.
 func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
-	taskID, _ := taskCtx.MemoryPayload["id"].(string)
-	if taskID == "" {
-		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
-	}
+	// The envelope task id is the authoritative claim key (set by
+	// processMessage). Releasing by any other id would leak the claim and
+	// permanently block redelivery, so always settle by taskCtx.ID().
+	taskID := taskCtx.ID()
 
 	// Release the claim taken by processMessage when the worker finishes, so a
 	// future redelivery (after restart) can re-claim the task. Mirrors
@@ -1074,7 +1074,7 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 			select {
 			case <-ticker.C:
 				if err := taskCtx.Handle.InProgress(); err != nil {
-					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.TaskID()), err)
+					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.ID()), err)
 				}
 			case <-done:
 				return

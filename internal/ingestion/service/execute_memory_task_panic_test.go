@@ -40,7 +40,7 @@ func TestExecuteMemoryTask_PanicDoesNotPropagate(t *testing.T) {
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-panic-1", TaskType: common.TaskTypeMemory}}
-	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-panic-1", map[string]any{
 		"id": "mem-panic-1", "task_type": "memory", "memory_id": "mem-p", "source_id": 1,
 		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
 	}, handle)
@@ -90,7 +90,7 @@ func TestWorkerLoop_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 	}
 
 	memHandle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-panic-2", TaskType: common.TaskTypeMemory}}
-	memCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
+	memCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-panic-2", map[string]any{
 		"id": "mem-panic-2", "task_type": "memory", "memory_id": "mem-p2", "source_id": 1,
 		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
 	}, memHandle)
