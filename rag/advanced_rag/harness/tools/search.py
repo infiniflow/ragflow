@@ -355,6 +355,22 @@ _GREP_OUT_TOTAL_CHARS = 8000
 _LIST_CHUNKS_MAX_CHUNKS = 80
 
 
+def _is_table_chunk(c: dict) -> bool:
+    """Corpus-neutral table detector: HTML table markup or >=3 pipe rows.
+
+    Table chunks must NOT be term-narrowed: their answer rows often sit
+    mid/late-table (e.g. a rank row at ~62% of a 14.7K-char table), and the
+    grep context window truncates them to a header-only snippet, hiding the
+    answer from the action-session model (Q86: 2011 Pan Am standings rank 19
+    at char 5181 of 14717 was cut by the 700-char narrow).
+    """
+    t = str(_chunk_text(c) or "")
+    if "<table" in t.lower() or "<tr" in t.lower():
+        return True
+    pipe_rows = sum(1 for line in t.splitlines() if line.count("|") >= 2)
+    return pipe_rows >= 3
+
+
 def _grep_terms_from_query(query: str, max_terms: int = _GREP_TERMS_MAX) -> list[str]:
     """Extract compact grep terms from a query: bare alnum words of length>=2,
     deduped (order-preserving) and capped. Numbers/ids are preserved as-is."""
@@ -414,15 +430,24 @@ async def grep_search(
     if not chunks or not terms:
         return res
     try:
-        out = narrow_by_terms(
-            chunks,
-            terms,
-            keywords=str(query).strip(),
-            context={"before": 1, "after": 0},
-            max_out_chars_per_chunk=_GREP_OUT_CHARS_PER_CHUNK,
-            max_out_total_chars=_GREP_OUT_TOTAL_CHARS,
-        )
-        kept = out.get("kept") or []
+        # Table chunks pass through UN-narrowed (full text): term-grep windows
+        # truncate them to a header-only snippet and hide mid-table answer rows.
+        # Prose chunks keep the compact narrow.
+        table_chunks = [c for c in chunks if _is_table_chunk(c)]
+        prose_chunks = [c for c in chunks if not _is_table_chunk(c)]
+        if prose_chunks:
+            out = narrow_by_terms(
+                prose_chunks,
+                terms,
+                keywords=str(query).strip(),
+                context={"before": 1, "after": 0},
+                max_out_chars_per_chunk=_GREP_OUT_CHARS_PER_CHUNK,
+                max_out_total_chars=_GREP_OUT_TOTAL_CHARS,
+            )
+            kept = out.get("kept") or []
+        else:
+            kept = []
+        kept = table_chunks + kept
         if kept:
             _LOG.info(
                 "[Grep search] narrowed %d->%d chunk(s), %.1fK chars.",
