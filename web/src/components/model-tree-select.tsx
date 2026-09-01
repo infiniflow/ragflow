@@ -212,15 +212,25 @@ export const ModelTreeSelect = forwardRef<
   );
 
   // The persisted model no longer matches any added model (e.g. it was
-  // deleted from the provider) — keep it visible with a warning marker
-  // instead of rendering a blank select. Prefer the readable model name over
-  // the raw composite id.
+  // deleted from the provider, or the row was left holding a legacy integer
+  // id from a v0.26.x → v0.27.x in-place upgrade that didn't run the
+  // tenant_*_id migration) — keep it visible with a warning marker instead
+  // of rendering a blank select.
+  //
+  // Prefer the readable model name from the composite key when the value
+  // still parses as one; otherwise fall back to a generic warning string
+  // rather than echoing back an opaque value (a 32-char hex id, or a
+  // legacy integer like "23") that the user can't act on. The English
+  // string is intentional — this is a degraded-state warning rather than a
+  // primary UI label, and the existing code already keeps the raw composite
+  // key in English on the same screen.
   const renderMissingModel = useCallback((missingValue: string) => {
+    const readableName = parseModelValue(missingValue)?.model_name;
     return (
       <span className="flex items-center gap-1.5 text-text-disabled">
         <TriangleAlert className="size-4 flex-shrink-0" />
         <span className="truncate">
-          {parseModelValue(missingValue)?.model_name ?? missingValue}
+          {readableName ?? 'Model not available — please re-select'}
         </span>
       </span>
     );
@@ -245,7 +255,6 @@ export const ModelTreeSelect = forwardRef<
     />
   );
 });
-
 
 export interface ModelTreeSelectFormFieldProps extends ModelTreeSelectProps {
   name?: string;

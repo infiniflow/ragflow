@@ -14,12 +14,23 @@
  *  limitations under the License.
  */
 
-import { IAddedModel } from '@/interfaces/database/llm';
+import { IAddedModel, IDefaultModel } from '@/interfaces/database/llm';
 import { getCachedLlmList } from './llm-cache';
 
 // The names of the large models returned by the interface are similar to "deepseek-r1___OpenAI-API"
 export function getRealModelName(llmName: string) {
   return llmName.split('__').at(0) ?? '';
+}
+
+// `tenant_model.id` is a 32-char lowercase hex string produced by
+// `common.misc_utils.get_uuid` (`uuid.uuid1().hex`). On a v0.26.x → v0.27.x
+// in-place upgrade, the `tenant.tenant_*_id` columns may still hold a legacy
+// integer from the pre-tenant_model world; anything that doesn't match the
+// canonical 32-char hex shape is treated as not a tenant_model id.
+const TENANT_MODEL_ID_PATTERN = /^[0-9a-f]{32}$/;
+
+export function isTenantModelId(value?: string | null): value is string {
+  return typeof value === 'string' && TENANT_MODEL_ID_PATTERN.test(value);
 }
 
 // Get tenant model ID from LLM list by model name and factory ID
@@ -58,6 +69,35 @@ export function buildModelValue(model: {
   model_provider: string;
 }) {
   return `${model.model_name}@${model.model_instance}@${model.model_provider}`;
+}
+
+/**
+ * Pick the value to seed a `ModelTreeSelect` (or any other form field that
+ * consumes a default model selection) with.
+ *
+ * Preferred: `model.model_id` when it is a canonical 32-char `tenant_model.id`
+ * (the value the tree uses as the leaf id for currently added models). When
+ * the API instead returns a legacy integer from a v0.26.x → v0.27.x in-place
+ * upgrade — or any non-hex string that doesn't match the canonical shape —
+ * fall back to the composite "name@instance@provider" key so the tree's
+ * `legacyIdMap` can resolve it to the actual leaf node. The composite key is
+ * populated from the same `model_name`/`model_instance`/`model_provider` the
+ * server already returns alongside `model_id`, so no extra round-trip is
+ * needed.
+ *
+ * Returns the empty string when the slot is empty or disabled, matching the
+ * existing "no model selected" contract.
+ */
+export function resolveDefaultModelFormValue(
+  model: IDefaultModel | undefined | null,
+): string {
+  if (!model || !model.enable) return '';
+  if (isTenantModelId(model.model_id)) return model.model_id;
+  return buildModelValue({
+    model_name: model.model_name,
+    model_instance: model.model_instance,
+    model_provider: model.model_provider,
+  });
 }
 
 /**
