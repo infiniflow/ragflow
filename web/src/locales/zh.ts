@@ -2945,7 +2945,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compiler: '编译器',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
-      fileFormats: '文件类型',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: '表格',
@@ -2961,7 +2960,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         video: '视频',
       },
       fields: '字段',
-      addParser: '增加解析器',
       rule: '规则',
       addRule: '增加规则',
       addRegularExpressions: '增加正则表达式',
