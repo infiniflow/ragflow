@@ -132,10 +132,6 @@ COPY cmd cmd
 COPY go.mod go.sum ./
 COPY build.sh ./
 
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY
-
 # The runner image currently pre-seeds an older pdf_oxide library. Fetch the
 # verified archive during the Go build so the linked static library is stable.
 RUN curl --fail --location --retry 5 --retry-all-errors \
