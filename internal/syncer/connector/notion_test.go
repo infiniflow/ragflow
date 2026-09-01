@@ -152,8 +152,8 @@ func TestNotionConnectorResumeMissingCheckpointFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
-	if _, err = session.NextBatch(context.Background()); err == nil || errors.Is(err, io.EOF) {
-		t.Fatalf("NextBatch = %v, want missing checkpoint error", err)
+	if _, err = session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("NextBatch = %v, want ErrSyncResumeInvalid", err)
 	}
 }
 

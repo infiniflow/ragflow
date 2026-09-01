@@ -28,7 +28,7 @@ func TestProcessMessage_MemoryTaskDispatches(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Memory extractor must be enabled for the memory branch to enqueue.
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
 
@@ -77,7 +77,7 @@ func TestProcessMessage_MemoryTaskDisabledAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"}) // memorySvc nil by default
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"}) // memorySvc nil by default
 	handle := newFakeHandle("mem-task-2", common.TaskTypeMemory)
 
 	ingestor.processMessage(handle)
@@ -108,7 +108,7 @@ func TestExecuteMemoryTaskAlreadyFailedAcks(t *testing.T) {
 		t.Fatalf("insert already-failed task: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Real memory service (non-nil memories) so HandleSaveToMemoryTask gets past
 	// the nil-guard and reaches the progress==-1 "already failed" branch.
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
@@ -145,7 +145,7 @@ func TestExecuteMemoryTaskTransientFailureNacks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-task-x", TaskType: common.TaskTypeMemory}}
@@ -177,7 +177,7 @@ func TestProcessMessage_NonIngestionTaskAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle("task-1", "not-ingestion")
 
 	ingestor.processMessage(handle)
@@ -196,7 +196,7 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// No task seeded in DB — StartRunning returns ErrTaskNotFound.
 	handle := newFakeHandle("no-such-task", common.TaskTypeIngestionTask)
 
@@ -234,7 +234,7 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 		t.Fatalf("set COMPLETED: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
@@ -267,7 +267,7 @@ func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	// Pre-claim the task so processMessage sees a claim conflict.
 	ingestor.claimTask(taskID)
 
@@ -291,7 +291,7 @@ func TestProcessMessage_ClaimSucceedsEnqueues(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
@@ -322,7 +322,7 @@ func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	// maxConcurrency=2 → channel cap=4. Fill it completely.
-	ingestor := NewIngestor("test", 2, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 2, []string{"pdf"})
 	for i := 0; i < cap(ingestor.taskChan); i++ {
 		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
 	}
@@ -371,6 +371,73 @@ func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 	}
 }
 
+// TestProcessMessage_ShutdownRaceMarksStopped: shutdown winning the race
+// against the taskChan send must not leave the task in non-terminal RUNNING
+// with no in-flight worker. StartRunning has already flipped the task to
+// RUNNING, so the ctx.Done branch finalizes it as STOPPED (user-retryable)
+// with a detached timeout, and leaves the message unsettled — the broker
+// redelivers it and the terminal status ack-skips.
+func TestProcessMessage_ShutdownRaceMarksStopped(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	// SeedTestData creates the task RUNNING; reset to CREATED so the race
+	// below is the real one: processMessage's StartRunning flips it RUNNING
+	// and then blocks on the full channel.
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("reset task to CREATED: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"}) // channel cap = 2
+	for i := 0; i < cap(ingestor.taskChan); i++ {
+		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
+	}
+
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+	done := make(chan struct{})
+	go func() {
+		ingestor.processMessage(handle)
+		close(done)
+	}()
+
+	// Wait until StartRunning flipped the task RUNNING and processMessage
+	// is blocked on the full channel.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var task entity.IngestionTask
+		if err := db.Where("id = ?", taskID).First(&task).Error; err == nil && task.Status == common.RUNNING {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("task never reached RUNNING; processMessage did not reach the blocking send")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	// Shutdown wins the race against the channel send.
+	ingestor.cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("processMessage did not return after shutdown")
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %q, want %q (shutdown race must not strand a RUNNING row)", task.Status, common.STOPPED)
+	}
+	// Message unsettled: on redelivery the STOPPED status ack-skips it.
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 0 Ack/0 Nack (unsettled for redelivery), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
 // TestProcessMessage_StartRunningErrorNacks: when StartRunning returns a
 // non-ErrTaskNotFound error (e.g. a DB blip), processMessage nacks the
 // message for redelivery instead of killing the consumer (B2 fix). The
@@ -387,7 +454,7 @@ func TestProcessMessage_StartRunningErrorNacks(t *testing.T) {
 		t.Fatalf("drop table: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)

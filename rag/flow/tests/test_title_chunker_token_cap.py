@@ -354,9 +354,9 @@ def test_boundaryless_run_is_hard_split():
 
 
 # --------------------------------------------------------------------------- #
-# 7. PDF positions: plan A - first sub-chunk keeps coordinates, rest empty    #
+# 7. PDF positions: every sub-chunk keeps the source coordinates              #
 # --------------------------------------------------------------------------- #
-def test_position_plan_a_first_subchunk_keeps_coordinates():
+def test_position_all_subchunks_keep_coordinates():
     body = "。".join(f"S{i:02d}" for i in range(12)) + "。"
     items = [{"text": body, "doc_type_kwd": "text", "positions": [[1, 10, 200, 50, 80]]}]
     chunks = _run(
@@ -368,9 +368,48 @@ def test_position_plan_a_first_subchunk_keeps_coordinates():
     )
 
     assert len(chunks) > 1
-    assert chunks[0].get("position_int") == [[1, 10, 200, 50, 80]], "first sub-chunk must keep coordinates"
-    for ck in chunks[1:]:
-        assert "position_int" not in ck, "only the first sub-chunk should carry coordinates"
+    for ck in chunks:
+        assert ck.get("position_int") == [[1, 10, 200, 50, 80]], "every sub-chunk must keep the source coordinates"
+
+
+# --------------------------------------------------------------------------- #
+# 7d. sub-chunk position lists are independent deep copies (no aliasing)       #
+# --------------------------------------------------------------------------- #
+def test_split_subchunk_positions_not_aliased():
+    # _split_text_chunk_by_cap must give every sub-chunk its own deep copy of
+    # the source position list: sharing one list object across sub-chunks
+    # would let a future in-place mutation silently corrupt all of them.
+    body = "。".join(f"S{i:02d}" for i in range(12)) + "。"
+    source_positions = [[1, 10, 200, 50, 80], [2, 15, 190, 60, 90]]
+
+    with _load_title_chunker_with_stubs() as (common_module, _hierarchy_module, _group_module):
+        key = common_module.PDF_POSITIONS_KEY
+
+        class _Splitter(common_module.BaseTitleChunker):
+            # _split_text_chunk_by_cap uses no instance state, so skip the
+            # process/from_upstream wiring of the real constructor.
+            def __init__(self):
+                pass
+
+            def resolve_levels(self, line_records):
+                return None
+
+            def build_chunks(self, line_records, resolved):
+                return []
+
+        chunker = _Splitter()
+        chunk = {"text": body, "doc_type_kwd": "text", key: source_positions}
+        subs = common_module.BaseTitleChunker._split_text_chunk_by_cap(chunker, chunk, 20)
+
+    assert len(subs) > 1
+    for sub in subs:
+        assert sub[key] == source_positions, "every sub-chunk keeps the source coordinates"
+        assert sub[key] is not source_positions, "sub-chunk must not alias the source position list"
+    # Deep independence: mutating one sub-chunk's nested coordinates must not
+    # leak into the source chunk or any other sub-chunk.
+    subs[0][key][0][0] = 999
+    assert source_positions[0][0] == 1
+    assert all(sub[key][0][0] == 1 for sub in subs[1:])
 
 
 # --------------------------------------------------------------------------- #

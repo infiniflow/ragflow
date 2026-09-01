@@ -63,7 +63,7 @@ func TestCheckpoint_InterruptAndResume(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	threadID := "recovery-thread-001"
 	config := types.NewRunnableConfig()
 	config.ThreadID = threadID
@@ -124,7 +124,7 @@ func TestCheckpoint_MultiStepRecovery(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]interface{}{"count": 0, "words": []interface{}{}},
 		&types.RunnableConfig{ThreadID: "multi-step-001"})
 	if err != nil {
@@ -156,7 +156,7 @@ func TestCheckpoint_ConcurrentSaves(t *testing.T) {
 				"version": id,
 			}
 			// Put is thread-safe via MemorySaver's RWMutex.
-			_ = saver.Put(context.Background(), config, cp)
+			_ = saver.Put(t.Context(), config, cp)
 			time.Sleep(time.Millisecond)
 			done <- true
 		}(i)
@@ -167,7 +167,7 @@ func TestCheckpoint_ConcurrentSaves(t *testing.T) {
 	}
 
 	// Verify latest checkpoint is accessible.
-	latest, err := saver.Get(context.Background(), map[string]interface{}{"thread_id": "concurrent-save"})
+	latest, err := saver.Get(t.Context(), map[string]interface{}{"thread_id": "concurrent-save"})
 	if err != nil {
 		t.Fatalf("Get after concurrent saves: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestCheckpoint_RecursionLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	_, err = cg.Invoke(context.Background(), map[string]interface{}{"count": 0})
+	_, err = cg.Invoke(t.Context(), map[string]interface{}{"count": 0})
 	if err == nil {
 		t.Fatal("expected recursion limit error, got nil")
 	}

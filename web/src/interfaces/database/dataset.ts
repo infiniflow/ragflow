@@ -231,6 +231,7 @@ export interface IArtifactTopic {
   topic: string;
   title: string;
   slug: string;
+  page_count?: number;
 }
 
 export interface IArtifactPage {

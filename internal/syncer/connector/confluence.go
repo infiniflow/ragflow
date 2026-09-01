@@ -175,7 +175,9 @@ func (c *ConfluenceConnector) OpenSync(ctx context.Context, request SyncRequest)
 		pageCursor:    newConfluenceSearchCursor(c, c.pageCQL(request.WindowStart, end, request.FromBeginning), strings.Join(confluencePageExpansionFields, ",")),
 		nameCounts:    map[string]int{},
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -555,7 +557,7 @@ func (s *confluenceSyncSession) NextBatch(ctx context.Context) (SyncBatch, error
 		doc, err := s.nextDocument(ctx)
 		if errors.Is(err, io.EOF) {
 			if s.resumeSourceID != "" && !s.resumeMatched {
-				return SyncBatch{}, fmt.Errorf("confluence sync resume checkpoint %q was not found in the source; refusing to discard unprocessed documents", s.resumeSourceID)
+				return SyncBatch{}, fmt.Errorf("confluence sync resume checkpoint %q was not found in the source: %w", s.resumeSourceID, ErrSyncResumeInvalid)
 			}
 			if len(documents) == 0 {
 				return SyncBatch{}, io.EOF
@@ -640,19 +642,20 @@ func (s *confluenceSyncSession) includeResumed(doc SourceDocument) bool {
 		s.resumeMatched = true
 		return false
 	}
-	if s.resumeUpdatedAt != nil && doc.UpdatedAt.After(*s.resumeUpdatedAt) {
-		s.resumeMatched = true
-		return true
-	}
 	return false
 }
 
-func (s *confluenceSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *confluenceSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
-	s.resumeSourceID = firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	if sourceID == "" {
+		return fmt.Errorf("confluence sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	s.resumeSourceID = sourceID
 	s.resumeUpdatedAt = checkpoint.UpdatedAt
+	return nil
 }
 
 func confluenceSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {

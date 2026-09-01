@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
 )
 
@@ -174,7 +175,7 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 		filter["page_type_kwd"] = []string{pageType}
 	}
 	if topic != "" {
-		filter["topic_kwd"] = []string{topic}
+		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
 	}
 	offset := (page - 1) * pageSize
 	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
@@ -197,7 +198,7 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 			Slug:     bareSlug,
 			Title:    firstStringValue(c["title_kwd"]),
 			PageType: pageType,
-			Topic:    firstStringValue(c["topic_kwd"]),
+			Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 			Summary:  firstStringValue(c["summary_with_weight"]),
 		})
 	}
@@ -264,7 +265,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		Slug:           detailSlug,
 		Title:          firstStringValue(c["title_kwd"]),
 		PageType:       detailPageType,
-		Topic:          firstStringValue(c["topic_kwd"]),
+		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 		ContentMd:      content,
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
@@ -334,44 +335,29 @@ type WikiTopicItem struct {
 	PageCount int    `json:"page_count"`
 }
 
-// ListWikiTopics aggregates wiki topics for a dataset.
+// ListWikiTopics aggregates materialized Wiki topic paths for a dataset. Topic
+// is the complete path and Title is its leaf segment; the frontend may derive a
+// navigation tree by splitting Topic on '/'.
 func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID string) ([]WikiTopicItem, int64, error) {
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
-		"page_type_kwd": []string{"concept", "entity"},
+		"page_type_kwd": []string{"concept", "entity", "topic"},
 		"available_int": 1, // count only merged pages, not per-doc source rows
 	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"topic_kwd", "title_kwd", "slug_kwd", "page_type_kwd"}, 0, 1000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	counts := map[string]int{}
-	metas := map[string]WikiTopicItem{}
-	for _, c := range chunks {
-		t := firstStringValue(c["topic_kwd"])
-		if t == "" {
-			continue
+	const batchSize = 1000
+	fields := []string{"topic_kwd"}
+	chunks := make([]map[string]interface{}, 0, batchSize)
+	for offset := 0; ; offset += batchSize {
+		batch, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, fields, offset, batchSize, nil)
+		if err != nil {
+			return nil, 0, err
 		}
-		pageType := firstStringValue(c["page_type_kwd"])
-		bareSlug := firstStringValue(c["slug_kwd"])
-		if pageType != "" {
-			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
-		}
-		counts[t]++
-		if _, ok := metas[t]; !ok {
-			metas[t] = WikiTopicItem{
-				Topic: t,
-				Title: firstStringValue(c["title_kwd"]),
-				Slug:  bareSlug,
-			}
+		chunks = append(chunks, batch...)
+		if len(batch) == 0 || int64(len(chunks)) >= total {
+			break
 		}
 	}
-	items := make([]WikiTopicItem, 0, len(metas))
-	for t, it := range metas {
-		it.PageCount = counts[t]
-		items = append(items, it)
-	}
+	items := aggregateWikiTopicItems(chunks)
 	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
 	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
 	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
@@ -381,6 +367,37 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
 	})
 	return items, int64(len(items)), nil
+}
+
+func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
+	type aggregate struct {
+		topic string
+		count int
+	}
+	byKey := make(map[string]*aggregate)
+	for _, c := range chunks {
+		t := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		item := byKey[key]
+		if item == nil {
+			item = &aggregate{topic: t}
+			byKey[key] = item
+		}
+		item.count++
+	}
+	items := make([]WikiTopicItem, 0, len(byKey))
+	for _, aggregate := range byKey {
+		items = append(items, WikiTopicItem{
+			Topic:     aggregate.topic,
+			Title:     kccommon.WikiTopicLeaf(aggregate.topic),
+			Slug:      aggregate.topic,
+			PageCount: aggregate.count,
+		})
+	}
+	return items
 }
 
 // wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
@@ -433,11 +450,11 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// so the frontend can build artifact/<page_type>/<slug> links that
 		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
 		// "wiki_topic"); strip the prefix. slug_kwd stores the full
-		// "<page_type>/<slug>" form; expose the trailing bare slug.
+		// "<page_type>/<slug>" form; preserve nested slug segments.
 		fullSlug := firstStringValue(c["slug_kwd"])
 		bareSlug := fullSlug
 		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
-		if idx := strings.LastIndex(bareSlug, "/"); idx >= 0 {
+		if idx := strings.IndexByte(bareSlug, '/'); idx >= 0 {
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
 		}
@@ -949,13 +966,12 @@ func firstStringValue(v interface{}) string {
 	return ""
 }
 
-// bareWikiSlug strips the "<page_type>/" prefix from a full wiki slug
-// ("topic/yellow-turban-rebellion" -> "yellow-turban-rebellion"), matching the
-// bare-slug form the graph UI keys nodes/relations on. Slugs with no prefix are
-// returned unchanged.
+// bareWikiSlug strips only the first path segment from a full wiki slug
+// ("entity/location/长社" -> "location/长社"). Nested type/name segments are
+// preserved so distinct typed entities remain distinguishable in graph links.
 func bareWikiSlug(slug string) string {
 	s := strings.TrimSpace(slug)
-	if idx := strings.LastIndex(s, "/"); idx >= 0 && idx < len(s)-1 {
+	if idx := strings.IndexByte(s, '/'); idx >= 0 && idx < len(s)-1 {
 		return s[idx+1:]
 	}
 	return s

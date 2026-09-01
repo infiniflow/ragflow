@@ -80,25 +80,20 @@ func (n *NatsEngine) Init() error {
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
 		MaxMsgs:   1024 * 128,
-		MaxBytes:  1024 * 1024,
+		MaxBytes:  1024 * 1024 * 64,
+		// Server-side dedup window. Inert for task publishes: PublishTask
+		// intentionally sends no MsgID (see below — dedup would swallow
+		// retry republishes of a reused task_id). It only takes effect for
+		// a publisher that opts into MsgIDs.
+		Duplicates: 10 * time.Minute,
 	}
 
-	n.stream, err = n.jetStream.CreateStream(ctx, streamCfg)
+	n.stream, err = ensureStreamConfig(ctx, n.jetStream, streamCfg)
 	if err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			n.nc.Close()
-			return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
-		}
-
-		common.Info("NATS stream already exists, use existing stream")
-		n.stream, err = n.jetStream.Stream(ctx, "RAGFLOW_TASKS")
-		if err != nil {
-			n.nc.Close()
-			return fmt.Errorf("fail to get existing stream at %s: %w", natsURL, err)
-		}
-	} else {
-		common.Info(fmt.Sprintf("NATS stream create successfully at %s", natsURL))
+		n.nc.Close()
+		return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
 	}
+	common.Info(fmt.Sprintf("NATS stream RAGFLOW_TASKS ready at %s", natsURL))
 
 	return nil
 }
@@ -115,6 +110,16 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// Deliberately NO MsgID/dedup here. Ingestion tasks reuse the same
+	// task_id across publish attempts (the FAILED/STOPPED→CREATED retry
+	// path), and the server's Duplicates window suppresses a republished
+	// MsgID for its whole lifetime regardless of whether the original
+	// message was already consumed and acked. A deduped retry publish
+	// strands the task in CREATED with no message behind it — unreachable
+	// by any consumer and un-reparsable ("already exists, status: CREATED").
+	// Duplicate delivery is instead made safe at the consumer level:
+	// StartRunning's CREATED→RUNNING CAS plus the in-process claim guard
+	// ack-skip any second copy (see Ingestor.processMessage).
 	ack, err := n.jetStream.Publish(ctx, subject, payload)
 	if err != nil {
 		return err
@@ -212,15 +217,32 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	defer cancel()
 
 	var err error
+	// Explicit redelivery schedule: BackOff paces successive redeliveries
+	// (5s/15s/30s, then 60s repeated) so an unsettled message (crash, slow
+	// DB) is retried with breathing room instead of the broker default. The
+	// server normalizes AckWait to BackOff[0] when BackOff is present; the
+	// 60s AckWait is the effective schedule if BackOff is ever dropped.
+	// INVARIANT: the worker's InProgress heartbeat (Ingestor
+	// defaultHeartbeatInterval) must stay below BackOff[0] = 5s, or in-flight
+	// messages get redelivered mid-run and the claim-guard ack-skip acks the
+	// only live copy.
+	// Note: CreateOrUpdateConsumer is atomic. MaxWaiting is immutable after
+	// creation; if it mismatches the whole update fails (error "max waiting
+	// can not be updated") and NONE of AckWait/BackOff/MaxAckPending are
+	// applied. When MaxWaiting matches (the default, since this config omits
+	// it), the other three update in place. The fallback below handles the
+	// MaxWaiting mismatch by keeping the existing consumer.
 	n.consumer, err = n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Name:          "RAGFLOW_CONSUMER",
 		AckPolicy:     jetstream.AckExplicitPolicy,
 		MaxDeliver:    16,
 		MaxAckPending: 1024 * 128,
 		FilterSubject: "tasks.>",
+		AckWait:       60 * time.Second,
+		BackOff:       []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second},
 	})
 	if err != nil {
-		// MaxAckPending is immutable after consumer creation.
+		// MaxWaiting is immutable after consumer creation (AckWait/BackOff/MaxAckPending remain mutable when MaxWaiting matches; the update is atomic).
 		// If the consumer already exists, fall back to fetching it.
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
 			n.consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")

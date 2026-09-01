@@ -28,6 +28,7 @@ import (
 type AgenticState struct {
 	Question       string
 	Keywords       string
+	SystemPrompt   string
 	Route          RouteDecision
 	SeedChunks     []string
 	Plan           WorkflowPlan
@@ -51,17 +52,18 @@ type AgenticState struct {
 // and delegates to RunAgenticRAGWithRoute so production runners that need a
 // route-aware search strategy (e.g. prefer wiki_query on a wiki suggestion) can
 // reuse the same flow with a pre-computed route.
-func RunAgenticRAG(ctx context.Context, db *gorm.DB, question, keywords, modeLabel string, search SearchFn) AnswerResult {
-	return RunAgenticRAGWithRoute(ctx, db, question, keywords, modeLabel, RouteNode(ctx, db, question, modeLabel), search)
+func RunAgenticRAG(ctx context.Context, db *gorm.DB, question, keywords, modeLabel string, search SearchFn, systemPrompt string) AnswerResult {
+	return RunAgenticRAGWithRoute(ctx, db, question, keywords, modeLabel, RouteNode(ctx, db, question, modeLabel), search, systemPrompt)
 }
 
 // RunAgenticRAGWithRoute is the route-aware core of RunAgenticRAG. It performs
 // pre_search → planner → orchestrator → formalize_answer with the given route.
-func RunAgenticRAGWithRoute(ctx context.Context, db *gorm.DB, question, keywords, modeLabel string, route RouteDecision, search SearchFn) AnswerResult {
+func RunAgenticRAGWithRoute(ctx context.Context, db *gorm.DB, question, keywords, modeLabel string, route RouteDecision, search SearchFn, systemPrompt string) AnswerResult {
 	state := &AgenticState{
-		Question: strings.TrimSpace(question),
-		Keywords: keywords,
-		Kbinfos:  &Kbinfos{},
+		Question:     strings.TrimSpace(question),
+		Keywords:     keywords,
+		SystemPrompt: strings.TrimSpace(systemPrompt),
+		Kbinfos:      &Kbinfos{},
 	}
 	if state.Question == "" {
 		return AnswerResult{FinalAnswer: emptyResultMessage, Empty: true}
@@ -99,7 +101,7 @@ func RunAgenticRAGWithRoute(ctx context.Context, db *gorm.DB, question, keywords
 	}
 
 	// ── formalize_answer ──
-	res := FormalizeAnswer(ctx, db, state.Question, state.Kbinfos, state.PartialAnswer, state.Abstain, state.EmptyResult, orch.Caveat, orch.ForceLLM)
+	res := FormalizeAnswer(ctx, db, state.Question, state.Kbinfos, state.PartialAnswer, state.Abstain, state.EmptyResult, orch.Caveat, orch.ForceLLM, state.SystemPrompt)
 	// Log only the question length, never its content, to avoid persisting user
 	// input in logs.
 	log.Printf("agentic_rag: finished (qlen=%d, strategy=%s, chunks=%d, partial=%v, abstain=%v)",

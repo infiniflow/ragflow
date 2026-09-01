@@ -38,7 +38,7 @@ from common.data_source.utils import rl_requests, retry_builder
 from common.ssrf_guard import assert_url_is_safe, pin_dns
 
 try:
-    from jsonpath import jsonpath as _jsonpath  # type: ignore[import]
+    from jsonpath import search as _jsonpath  # type: ignore[import]
 except Exception:  # pragma: no cover
     _jsonpath = None
 
@@ -498,7 +498,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
         if limit <= 0:
             limit = per_page
 
-        cursor: Optional[str] = self.pagination_config.get("initial_cursor")
+        initial_cursor = self.pagination_config.get("initial_cursor")
+        cursor: Optional[str] = None if initial_cursor in (None, "") else str(initial_cursor)
+        seen_cursors = {cursor} if cursor is not None else set()
 
         while True:
             if page_count >= self.max_pages:
@@ -524,9 +526,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 raise ConnectorValidationError(f"REST API page fetch failed: {exc}") from exc
 
             items = self._extract_items(response_json)
-            if not items:
+            has_next_page = self._extract_has_next_page(response_json)
+            if not items and not (self.pagination_type == PaginationType.CURSOR and has_next_page is True):
                 break
-
             for item in items:
                 if isinstance(item, Mapping):
                     yield item
@@ -544,9 +546,15 @@ class RestAPIConnector(LoadConnector, PollConnector):
                     break
                 offset += limit
             elif self.pagination_type == PaginationType.CURSOR:
+                if has_next_page is False:
+                    break
                 next_cursor = self._extract_next_cursor(response_json)
                 if not next_cursor:
                     break
+                if next_cursor in seen_cursors:
+                    logging.warning("REST API connector received a repeated pagination cursor; stopping.")
+                    break
+                seen_cursors.add(next_cursor)
                 cursor = next_cursor
 
     def _page_iter_for_validation(self) -> Iterable[Mapping[str, Any]]:
@@ -812,7 +820,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         """Extract the items array from a JSON response."""
         if self.items_path and _jsonpath is not None:
             try:
-                matches = _jsonpath(response_json, self.items_path)
+                matches = _jsonpath(self.items_path, response_json)
             except Exception as exc:
                 raise ConnectorValidationError(f"Failed to apply items JSONPath '{self.items_path}': {exc}") from exc
             if not matches:
@@ -839,6 +847,14 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         return [it for it in items if isinstance(it, Mapping)]
 
+    def _extract_has_next_page(self, response_json: Any) -> Optional[bool]:
+        """Return an explicit cursor continuation flag when configured."""
+        field = self.pagination_config.get("has_next_page_field")
+        if not field or not isinstance(response_json, Mapping):
+            return None
+        value = response_json.get(field)
+        return value if isinstance(value, bool) else None
+
     def _extract_next_cursor(self, response_json: Any) -> Optional[str]:
         """Extract cursor value for cursor-based pagination."""
         cursor_path = self.pagination_config.get("next_cursor_path")
@@ -853,7 +869,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             return None
 
         try:
-            matches = _jsonpath(response_json, cursor_path)
+            matches = _jsonpath(cursor_path, response_json)
         except Exception:
             return None
 

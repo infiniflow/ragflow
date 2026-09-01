@@ -250,16 +250,23 @@ export const useDeleteFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.DeleteFile],
     mutationFn: async (params: { fileIds: string[]; parentId: string }) => {
-      const { data } = await fileManagerService.removeFile({
-        ids: params.fileIds,
-      });
-      if (data.code === 0) {
-        message.success(t('message.deleted'));
+      try {
+        const { data } = await fileManagerService.removeFile({
+          ids: params.fileIds,
+        });
+        if (data.code === 0) {
+          message.success(t('message.deleted'));
+        }
+        queryClient.invalidateQueries({
+          queryKey: [FileApiAction.FetchFileList],
+        });
+        return data.code;
+      } catch {
+        // Swallow request failures so callers awaiting the mutation never
+        // produce an unhandled rejection; a failed delete simply returns no
+        // code and the selection state stays untouched.
+        return;
       }
-      queryClient.invalidateQueries({
-        queryKey: [FileApiAction.FetchFileList],
-      });
-      return data.code;
     },
   });
 

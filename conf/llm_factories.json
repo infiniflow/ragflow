@@ -1,6 +1,44 @@
 {
     "factory_llm_infos": [
         {
+            "name": "Synthorai",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "50",
+            "url": "https://synthorai.io/v1",
+            "llm": [
+                {
+                    "llm_name": "claude-opus-5",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v4-pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-5.2",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
+        },
+        {
             "name": "GreenPT",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT",
@@ -2007,6 +2045,16 @@
                     "tags": "LLM,CHAT,",
                     "max_tokens": 1000000,
                     "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v4-flash-vision-exp",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -7679,13 +7727,6 @@
                     "llm_name": "mimo-v2.5",
                     "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "mimo-v2-flash",
-                    "tags": "LLM,CHAT,256K",
-                    "max_tokens": 262144,
                     "model_type": "chat",
                     "is_tools": true
                 }

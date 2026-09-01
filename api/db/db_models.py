@@ -1455,8 +1455,8 @@ class Dialog(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     tenant_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=255, null=True, help_text="dialog application name", index=True)
-    description = TextField(null=True, help_text="Dialog description")
-    icon = TextField(null=True, help_text="icon base64 string")
+    description = EmptyStringTextField(null=True, help_text="Dialog description")
+    icon = EmptyStringTextField(null=True, help_text="icon base64 string")
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     # Map application-level empty chat/reranker model IDs to storage NULL in the
     # field instead of handling None throughout the business code.
@@ -1475,6 +1475,7 @@ class Dialog(DataBaseModel):
     vector_similarity_weight = FloatField(default=0.3)
 
     top_n = IntegerField(default=6)
+    rerank_candidates_count = IntegerField(default=64)
 
     top_k = IntegerField(default=1024)
 
@@ -2412,6 +2413,7 @@ def migrate_db():
     alter_db_add_column(migrator, "document", "suffix", EmptyStringCharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
     alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
+    alter_db_add_column(migrator, "dialog", "rerank_candidates_count", IntegerField(default=64))
     alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))

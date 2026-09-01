@@ -79,6 +79,51 @@ class MockChatModel:
         pass
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        "**ERROR**: ERROR_MAX_RETRIES - upstream unavailable",
+        "partial response\n**ERROR**: ERROR_SERVER - connection lost",
+        ("**ERROR**: ERROR_GENERIC - invalid request", 0),
+    ],
+)
+async def test_chat_mdl_ask_raises_for_model_error_response(response):
+    chat_mdl = MockChatModel(response)
+
+    with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+        await _wiki._chat_mdl_ask(chat_mdl, "system", "user")
+
+
+@pytest.mark.asyncio
+async def test_chat_mdl_ask_returns_normal_response():
+    response = "SUMMARY: Apple\n\nApple is a company."
+
+    assert await _wiki._chat_mdl_ask(MockChatModel(response), "system", "user") == response
+
+
+@pytest.mark.asyncio
+async def test_refine_page_does_not_persist_model_error_response():
+    doc_store = make_doc_store()
+
+    with patch("common.settings.docStoreConn", doc_store):
+        with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+            await _wiki._wiki_refine_page(
+                mode="generate",
+                page_id="entity/Apple",
+                page_title="Apple",
+                existing_page=None,
+                chat_mdl=MockChatModel("**ERROR**: ERROR_MAX_RETRIES - upstream unavailable"),
+                embd_mdl=MockEmbeddingModel(),
+                tenant_id="t1",
+                kb_id="kb1",
+                page_version=0,
+            )
+
+    doc_store.insert.assert_not_called()
+    doc_store.update.assert_not_called()
+
+
 def make_doc_store(search_results: list[dict] | None = None):
     """Create a mock settings.docStoreConn."""
     conn = MagicMock()

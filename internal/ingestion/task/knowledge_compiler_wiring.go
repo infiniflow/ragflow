@@ -356,6 +356,12 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if err := putWikiActiveStates(ctx, docEngine, activeStates); err != nil {
 		return err
 	}
+	// Do not wake the dataset consumer when this document never had any Wiki
+	// products and the dirty replacement produced none. A full replacement with
+	// existing products still publishes so the consumer can retract them.
+	if len(rows) == 0 && (existing == nil || len(existing.Chunks) == 0) {
+		return nil
+	}
 	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"})
 }
 

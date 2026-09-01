@@ -200,6 +200,7 @@ def _build_default_completion_dialog():
         prompt_config=deepcopy(_DEFAULT_DIRECT_CHAT_PROMPT_CONFIG),
         kb_ids=[],
         top_n=6,
+        rerank_candidates_count=64,
         top_k=1024,
         rerank_id="",
         similarity_threshold=0.1,
@@ -461,6 +462,7 @@ async def create():
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)
+        req.setdefault("rerank_candidates_count", 64)
         req.setdefault("top_k", 1024)
         req.setdefault("rerank_id", "")
         req.setdefault("similarity_threshold", 0.1)

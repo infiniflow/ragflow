@@ -103,8 +103,17 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
-// TestGmailConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
-func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
+func TestGmailConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newFixtureGmailConnector()
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+// TestGmailConnectorResumeRejectsMissingRemoteAnchor verifies a deleted list item invalidates the saved anchor.
+func TestGmailConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	connector := newFixtureGmailConnector()
 	connector.GmailConnector.batchSize = 2
 	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
@@ -141,15 +150,12 @@ func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
-	second, err := resumed.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("resume NextBatch failed: %v", err)
+	_, err = resumed.NextBatch(context.Background())
+	if err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
-		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
-	}
-	if resumeListCalls != 1 {
-		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
+	if resumeListCalls == 0 {
+		t.Fatalf("resume should have listed the current remote page")
 	}
 }
 

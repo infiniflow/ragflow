@@ -351,7 +351,7 @@ var errParseNotRunning = errors.New("parse task is not in running status")
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
+		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
 	}
 
 	docRun := ""
@@ -365,12 +365,12 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 
 	if task != nil {
 		if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
-			return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
+			return fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, err)
 		}
 	}
 
 	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
-		return fmt.Errorf("failed to update document %s: %v", doc.ID, upErr)
+		return fmt.Errorf("failed to update document %s: %w", doc.ID, upErr)
 	}
 	return nil
 }

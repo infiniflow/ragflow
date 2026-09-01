@@ -51,7 +51,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt --no-install-recommends install -y ca-certificates \
     libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 \
     libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less \
-    ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese \
+    ghostscript pandoc lmodern texlive texlive-latex-extra texlive-xetex texlive-lang-chinese \
     fonts-freefont-ttf fonts-noto-cjk postgresql-client
 
 # Download resource from GitHub to /usr/share/infinity

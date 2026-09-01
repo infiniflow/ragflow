@@ -1761,9 +1761,10 @@ class ConfluenceConnector(
         end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
+        # ``start``/``end`` are accepted for interface compatibility, but the
+        # Confluence slim-doc CQL query is not time-filtered, so they are not
+        # forwarded -- same as ``retrieve_all_slim_docs_perm_sync`` below.
         return self._retrieve_all_slim_docs(
-            start=start,
-            end=end,
             callback=callback,
             include_permissions=False,
         )

@@ -150,8 +150,8 @@ func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
-// TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
-func TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
+// TestGoogleDriveConnectorResumeRejectsMissingRemoteAnchor verifies a deleted list item invalidates the saved anchor.
+func TestGoogleDriveConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	connector, err := NewGoogleDriveConnector(map[string]any{
 		"my_drive_emails": "admin@example.com",
 		"batch_size":      2,
@@ -199,15 +199,31 @@ func TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
-	second, err := resumed.NextBatch(context.Background())
+	_, err = resumed.NextBatch(context.Background())
+	if err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+	if resumeListCalls == 0 {
+		t.Fatalf("resume should have listed the current remote page")
+	}
+}
+
+func TestGoogleDriveConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails": "admin@example.com",
+		"batch_size":      2,
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
 	if err != nil {
-		t.Fatalf("resume NextBatch failed: %v", err)
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://drive.google.com/file/d/file-3" {
-		t.Fatalf("resume documents = %+v, want file-3", second.Documents)
-	}
-	if resumeListCalls != 1 {
-		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 

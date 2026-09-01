@@ -216,7 +216,9 @@ func (c *GitHubConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		return nil, err
 	}
 	session := &githubSyncSession{connector: c, repos: repos, batchSize: c.batchSize, stage: githubStagePRs, page: 1, windowStart: request.WindowStart, windowEnd: request.WindowEnd}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -552,7 +554,10 @@ func (s *githubSyncSession) nextDocumentPage(ctx context.Context) ([]githubBuffe
 		if err != nil {
 			return nil, err
 		}
-		docs = s.filterResumedDocuments(repo.FullName, githubStagePRs, s.page, docs)
+		docs, err = s.filterResumedDocuments(repo.FullName, githubStagePRs, s.page, docs)
+		if err != nil {
+			return nil, err
+		}
 		if done {
 			s.advanceStage()
 		} else {
@@ -568,7 +573,10 @@ func (s *githubSyncSession) nextDocumentPage(ctx context.Context) ([]githubBuffe
 		if err != nil {
 			return nil, err
 		}
-		docs = s.filterResumedDocuments(repo.FullName, githubStageIssues, s.page, docs)
+		docs, err = s.filterResumedDocuments(repo.FullName, githubStageIssues, s.page, docs)
+		if err != nil {
+			return nil, err
+		}
 		if done {
 			s.advanceRepo()
 		} else {
@@ -637,17 +645,20 @@ func (s *githubSyncSession) advanceRepo() {
 }
 
 // applyResume advances a sync session to the last committed GitHub page.
-func (s *githubSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *githubSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
 	}
 
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("github sync cursor is missing: %w", ErrSyncResumeInvalid)
+	}
 	var cursor githubSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("github sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.Repo == "" || cursor.Stage == "" || cursor.Page <= 0 {
-		return
+		return fmt.Errorf("github sync cursor has no resume anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, repo := range s.repos {
 		if repo.FullName != cursor.Repo {
@@ -661,35 +672,29 @@ func (s *githubSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.resumePage = cursor.Page
 		s.resumeOffset = cursor.Offset
 		s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		return
+		if s.resumeSourceID == "" {
+			return fmt.Errorf("github sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+		}
+		return nil
 	}
+	return fmt.Errorf("github resume repo %q was not found in the current listing: %w", cursor.Repo, ErrSyncResumeInvalid)
 }
 
 // filterResumedDocuments drops documents through the committed checkpoint.
-func (s *githubSyncSession) filterResumedDocuments(repo, stage string, page int, candidates []githubBufferedDocument) []githubBufferedDocument {
+func (s *githubSyncSession) filterResumedDocuments(repo, stage string, page int, candidates []githubBufferedDocument) ([]githubBufferedDocument, error) {
 	if s.resumeRepo == "" || repo != s.resumeRepo || stage != s.resumeStage || page != s.resumePage {
-		return candidates
+		return candidates, nil
 	}
 	if s.resumeSourceID != "" {
 		for index, candidate := range candidates {
 			if candidate.sourceID == s.resumeSourceID {
 				s.clearResume()
-				return candidates[index+1:]
+				return candidates[index+1:], nil
 			}
 		}
+		return nil, fmt.Errorf("github resume anchor %q was not found on page %d: %w", s.resumeSourceID, page, ErrSyncResumeInvalid)
 	}
-	if s.resumeOffset <= 0 {
-		s.clearResume()
-		return candidates
-	}
-	filtered := candidates[:0]
-	for _, candidate := range candidates {
-		if candidate.offset > s.resumeOffset {
-			filtered = append(filtered, candidate)
-		}
-	}
-	s.clearResume()
-	return filtered
+	return nil, fmt.Errorf("github sync cursor has no source anchor: %w", ErrSyncResumeInvalid)
 }
 
 func (s *githubSyncSession) clearResume() {

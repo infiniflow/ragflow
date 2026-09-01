@@ -118,6 +118,7 @@ export enum Operator {
   SearXNG = 'SearXNG',
   BGPT = 'BGPT',
   KeenableSearch = 'KeenableSearch',
+  YouComSearch = 'YouComSearch',
   DocGenerator = 'DocGenerator',
   Browser = 'Browser',
   Placeholder = 'Placeholder',

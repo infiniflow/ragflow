@@ -98,6 +98,11 @@ async def create_container(name: str, language: SupportLanguage) -> bool:
         "--workdir",
         "/workspace",
     ]
+    # Network isolation by default: sandboxed code gets no external network
+    # access unless a deployment explicitly opts in (e.g. needing pip/npm
+    # installs or outbound requests) via SANDBOX_CONTAINER_NETWORK.
+    container_network = (os.getenv("SANDBOX_CONTAINER_NETWORK") or "").strip() or "none"
+    create_args.extend(["--network", container_network])
     if os.getenv("SANDBOX_MAX_MEMORY"):
         memory_limit = os.getenv("SANDBOX_MAX_MEMORY") or "256m"
         if is_valid_memory_limit(memory_limit):
@@ -136,7 +141,7 @@ async def create_container(name: str, language: SupportLanguage) -> bool:
 
         return await container_is_running(name)
     except Exception as e:
-        logger.error(f"❌ Container creation exception {name}: {str(e)}")
+        logger.error(f"❌ Container creation exception {name}: {e!s}")
         return False
 
 
@@ -148,7 +153,7 @@ async def recreate_container(name: str, language: SupportLanguage) -> bool:
 
         return await create_container(name, language)
     except Exception as e:
-        logger.error(f"❌ Container {name} recreation failed: {str(e)}")
+        logger.error(f"❌ Container {name} recreation failed: {e!s}")
         return False
 
 

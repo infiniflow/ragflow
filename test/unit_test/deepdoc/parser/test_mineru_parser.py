@@ -4,7 +4,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 import json
 
 import pytest
@@ -109,6 +109,91 @@ def test_parse_pdf_forwards_normalized_dataset_language_to_image_enhancement(mon
     enhance.assert_called_once_with([], vision_model, callback=None, language=expected_language)
 
 
+def test_parse_pdf_forwards_page_range_and_callback_to_page_rendering(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    callback = Mock()
+    render_pages = Mock()
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", render_pages)
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=[]))
+
+    parser.parse_pdf(
+        filepath=str(pdf_path),
+        binary=None,
+        callback=callback,
+        output_dir=str(output_dir),
+        delete_output=False,
+        page_from=12,
+        page_to=15,
+    )
+
+    render_pages.assert_called_once_with(pdf_path, zoomin=1, page_from=12, page_to=15, callback=callback)
+
+
+def test_page_rendering_only_renders_requested_range(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+
+    class _Page:
+        def __init__(self, page_number):
+            self.page_number = page_number
+
+        def to_image(self, **_kwargs):
+            rendered_pages.append(self.page_number)
+            return type("RenderedPage", (), {"original": module.Image.new("RGB", (10, 20))})()
+
+    class _Pdf:
+        pages = [_Page(page_number) for page_number in range(15)]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    rendered_pages = []
+    monkeypatch.setattr(module.pdfplumber, "open", lambda *_args, **_kwargs: _Pdf())
+
+    parser.__images__(b"pdf", page_from=12, page_to=15)
+
+    assert rendered_pages == [12, 13, 14]
+    assert parser.page_images is not None
+    assert len(parser.page_images) == 3
+    assert parser.page_from == 12
+
+
+def test_crop_converts_local_page_to_document_page(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 12
+    parser.page_images = [module.Image.new("RGB", (100, 200), "white")]
+
+    image, positions = parser.crop("@@1\t10\t40\t50\t80##", need_position=True)
+
+    assert image is not None
+    assert positions == [(12, 10, 40, 50, 80)]
+
+
+def test_page_rendering_failure_is_reported_to_callback(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    callback = Mock()
+    monkeypatch.setattr(module.pdfplumber, "open", Mock(side_effect=ValueError("bad pdf")))
+
+    parser.__images__(b"pdf", page_from=2, page_to=4, callback=callback)
+
+    assert callback.call_args_list == [
+        call(0.16, "[MinerU] Rendering PDF pages..."),
+        call(0.16, "[MinerU] PDF page rendering failed for pages 2:4: bad pdf"),
+    ]
+
+
 def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):
     module = _load_mineru_parser(monkeypatch)
     text = "&lt;table&gt;&lt;tr&gt;&lt;td&gt;Alpha&lt;/td&gt;&lt;td&gt;Beta&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"
@@ -159,6 +244,37 @@ def test_transfer_to_sections_only_sanitizes_tables(monkeypatch, output, expecte
     sections = parser._transfer_to_sections([output], parse_method="raw", table_enable=False)
 
     assert sections[0][0] == expected
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("code_body", "expected_body"),
+    [
+        ("```txt\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```txt\nList<String> names = new ArrayList<String>();\n``` trailing", "```txt\nList<String> names = new ArrayList<String>();\n``` trailing"),
+    ],
+)
+def test_transfer_to_sections_wraps_caption_and_unwrapped_body_in_fence(
+    monkeypatch: pytest.MonkeyPatch,
+    code_body: str,
+    expected_body: str,
+) -> None:
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    caption = "Java / C# style"
+    output = {
+        "type": module.MinerUContentType.CODE,
+        "code_body": code_body,
+        "code_caption": [caption],
+        "page_idx": 0,
+        "bbox": (97, 195, 579, 252),
+    }
+
+    sections = parser._transfer_to_sections([output], parse_method="raw")
+
+    assert len(sections) == 1
+    assert sections[0][0] == f"```{caption}\n{expected_body}\n```"
 
 
 @pytest.mark.p1
@@ -240,6 +356,7 @@ def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
 
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
+    parser.page_from = 12
     image_path = tmp_path / "figure.png"
     module.Image.new("RGB", (2, 2), "red").save(image_path)
     outputs = [
@@ -250,6 +367,10 @@ def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
             "table_footnote": [],
             "page_idx": 0,
             "bbox": (1, 2, 3, 4),
+            "_mineru_positions": [
+                {"page_idx": 0, "bbox": (1, 2, 3, 4)},
+                {"page_idx": 1, "bbox": (1, 0, 3, 2)},
+            ],
         },
         {
             "type": module.MinerUContentType.IMAGE,
@@ -285,7 +406,10 @@ def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
     assert isinstance(image, module.Image.Image)
     assert image.getpixel((0, 0)) == (255, 0, 0)
     assert texts == ["Figure 1", "Source", "A red square"]
-    assert [chunk["doc_type_kwd"] for chunk in tokenize_table(media, {}, False)] == ["table", "image", "table"]
+    assert [[position[0] for position in item[1]] for item in media] == [[12, 13], [12], [13]]
+    chunks = tokenize_table(media, {}, False)
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["table", "image", "table"]
+    assert [chunk["page_num_int"] for chunk in chunks] == [[13, 14], [13], [14]]
 
 
 @pytest.mark.p1
@@ -316,6 +440,27 @@ def test_media_context_preserves_media_without_positions(monkeypatch):
 
     assert append_context2table_image4pdf([], media, 1) == media
     assert append_context2table_image4pdf([], media, 1, return_context=True) == [("", ""), ("", "")]
+
+
+@pytest.mark.p1
+def test_media_context_preserves_image_payload_type(monkeypatch):
+    import rag.nlp as nlp
+    from PIL import Image
+
+    image = Image.new("RGB", (1, 1))
+    sections = [("Context before.", "@@1\t0\t10\t0\t5##")]
+    media = [((image, ["Figure 1"]), [(12, 0, 1, 10, 20)])]
+
+    monkeypatch.setattr(nlp, "tokenize", lambda d, text, _eng, language="English": d.update({"content_with_weight": text}))
+    contextualized = nlp.append_context2table_image4pdf(sections, media, 1, section_page_offset=12)
+
+    rows = contextualized[0][0][1]
+    assert isinstance(rows, list)
+    assert "Context before." in rows[0]
+    assert "Figure 1" in rows[0]
+    chunks = nlp.tokenize_table(contextualized, {}, False)
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["image"]
+    assert chunks[0]["page_num_int"] == [13]
 
 
 @pytest.mark.p1

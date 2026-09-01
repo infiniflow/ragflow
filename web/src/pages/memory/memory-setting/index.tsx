@@ -2,7 +2,7 @@ import { DynamicForm } from '@/components/dynamic-form';
 import { Button } from '@/components/ui/button';
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
-import { MainContainer } from '@/pages/dataset/dataset-setting/configuration-form-container';
+import { MainContainer } from '@/pages/dataset/setting/python/configuration-form-container';
 import { TopTitle } from '@/pages/dataset/dataset-title';
 import { IMemory } from '@/pages/memories/interface';
 import { zodResolver } from '@hookform/resolvers/zod';

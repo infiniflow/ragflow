@@ -1,7 +1,6 @@
 package dataset
 
 import (
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -57,8 +56,8 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != strings.TrimSpace(chunkMethod) {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 }
 
@@ -94,47 +93,6 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	}
 }
 
-func TestCreateDataset_KnowledgeCompilerParamsPopulated(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
-
-	parserID := "knowledge_compiler"
-	parseType := 1
-	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:      "ds-kc-cp",
-		ParserID:  &parserID,
-		ParseType: &parseType,
-	}, "tenant-1")
-	if err != nil {
-		t.Fatalf("CreateDataset failed: %v", err)
-	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected success code, got %d", code)
-	}
-	parserConfig, ok := result["parser_config"].(entity.JSONMap)
-	if !ok || len(parserConfig) == 0 {
-		t.Fatal("expected non-empty parser_config for knowledge_compiler pipeline")
-	}
-	compiler, ok := parserConfig["Compiler:KnownSwiftLions"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected compiler component params, got %#v", parserConfig["Compiler:KnownSwiftLions"])
-	}
-	if compiler["llm_id"] != "llm-default" {
-		t.Fatalf("compiler llm_id = %#v, want llm-default", compiler["llm_id"])
-	}
-	if _, ok := compiler["embedding_model"]; ok {
-		t.Fatalf("compiler embedding_model = %#v, want absent", compiler["embedding_model"])
-	}
-	if _, ok := compiler["tenant_id"]; ok {
-		t.Fatalf("compiler tenant_id = %#v, want absent", compiler["tenant_id"])
-	}
-	if _, ok := compiler["dataset_id"]; ok {
-		t.Fatalf("compiler dataset_id = %#v, want absent", compiler["dataset_id"])
-	}
-}
-
 func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -156,8 +114,8 @@ func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != chunkMethod {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 	if v, ok := result["pipeline_id"]; ok && v != nil {
 		t.Fatalf("expected pipeline_id to be nil for BuiltIn mode, got %#v", v)

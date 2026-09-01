@@ -1498,13 +1498,9 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	}
 }
 
-// TestRunAgent_RealCanvas_CompileFails pins the schema-failure
-// branch: when the DSL references a component name that is not
-// registered against runtime.DefaultFactory, canvas.Compile fails
-// (buildNodeBody returns 'factory: component: unknown component'),
-// and RunAgent must surface that as a wrapped ErrAgentStorageError
-// so mapAgentError classifies it as CodeServerError (500) with a
-// sanitized message — NOT the raw build error string.
+// TestRunAgent_RealCanvas_CompileFails pins the asynchronous compile-failure
+// branch. Once streaming has started, Runner must emit a typed internal error
+// with a stable public message rather than the raw component factory failure.
 func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
@@ -1557,13 +1553,13 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error event from Compile of DSL with unknown component name")
 	}
-	// The error message should mention ErrAgentStorageError but NOT
-	// contain the raw factory error substring (sanitised at the
-	// service layer). The factory error is wrapped inside the
-	// buildNodeBody / BuildWorkflow chain — its full text is
-	// preserved for the logs but not echoed as the SSE message.
-	if !strings.Contains(errs[0].Message, "agent storage error") {
-		t.Errorf("error message %q does not mention sanitised label", errs[0].Message)
+	// The raw factory error remains available to server logs, while the event
+	// carries an explicit internal kind and a stable public message.
+	if errs[0].Kind != canvas.RunErrorKindInternal {
+		t.Errorf("error kind = %q, want %q", errs[0].Kind, canvas.RunErrorKindInternal)
+	}
+	if errs[0].Message != canvas.InternalRunErrorMessage {
+		t.Errorf("error message = %q, want %q", errs[0].Message, canvas.InternalRunErrorMessage)
 	}
 }
 

@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +11,7 @@ import (
 // TestDLARealWorldCompare runs DLA on fixture PDFs and verifies
 // region count, label types, and structural invariants.
 func TestDLARealWorldCompare(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	outDir := filepath.Join("testdata", "output", "render_compare")
 	os.MkdirAll(outDir, 0755)
 
@@ -56,7 +55,7 @@ func TestDLARealWorldCompare(t *testing.T) {
 				savePNGFile(imgPath, pageImg)
 
 				// Call DLA.
-				regions, err := client.DLA(context.Background(), pageImg)
+				regions, err := client.DLA(t.Context(), pageImg)
 				if err != nil {
 					t.Fatalf("DLA: %v", err)
 				}

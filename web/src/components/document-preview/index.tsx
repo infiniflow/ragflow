@@ -31,6 +31,7 @@ type PreviewProps = {
   fileType: string;
   className?: string;
   url: string;
+  positions?: number[][];
 };
 const DocumentPreview = function ({
   fileType,
@@ -38,6 +39,7 @@ const DocumentPreview = function ({
   highlights,
   setWidthAndHeight,
   url,
+  positions,
 }: PreviewProps & Partial<IProps>) {
   const isPdf = fileType === 'pdf';
 
@@ -90,9 +92,13 @@ const DocumentPreview = function ({
           <PptPreviewer className={className} url={url} />
         </section>
       )}
-      {['xlsx'].indexOf(fileType) > -1 && (
-        <section>
-          <ExcelCsvPreviewer className={className} url={url} />
+      {['xlsx', 'xls'].indexOf(fileType) > -1 && (
+        <section className="h-full">
+          <ExcelCsvPreviewer
+            className={className}
+            url={url}
+            positions={positions}
+          />
         </section>
       )}
       {['csv'].indexOf(fileType) > -1 && (

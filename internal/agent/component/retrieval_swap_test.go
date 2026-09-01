@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -89,7 +88,7 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 		t.Errorf("SearchMyDataset alias c.Name() = %q, want %q (canonical)", got, componentNameRetrieval)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": "kb"})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"query": "kb"})
 	if err != nil {
 		t.Fatalf("SearchMyDataset Invoke errored: %v", err)
 	}

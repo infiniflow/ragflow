@@ -181,7 +181,9 @@ func (c *JiraConnector) OpenSync(ctx context.Context, request SyncRequest) (Sync
 		windowEnd:     end,
 		fromBeginning: request.FromBeginning,
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -600,11 +602,16 @@ type jiraSyncSession struct {
 	nextPageToken string
 	done          bool
 	resumeSource  string
+	resumeSkip    bool
+	resumeChecked bool
 }
 
 func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	if s.done {
 		return SyncBatch{}, io.EOF
+	}
+	if err := s.validateResumeSource(ctx); err != nil {
+		return SyncBatch{}, err
 	}
 	documents := make([]SourceDocument, 0, s.batchSize)
 	var checkpoint *SyncCheckpoint
@@ -614,7 +621,7 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			return SyncBatch{}, err
 		}
 		for _, issue := range page.Issues {
-			if s.resumeSource != "" {
+			if s.resumeSkip && s.resumeSource != "" {
 				if s.connector.issueURL(issue.Key) == s.resumeSource {
 					s.resumeSource = ""
 				}
@@ -649,6 +656,28 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
+func (s *jiraSyncSession) validateResumeSource(ctx context.Context) error {
+	if s.resumeSource == "" || s.resumeChecked {
+		return nil
+	}
+	s.resumeChecked = true
+	prefix := strings.TrimRight(s.connector.baseURL, "/") + "/browse/"
+	key := strings.TrimPrefix(s.resumeSource, prefix)
+	if key == "" || key == s.resumeSource {
+		return fmt.Errorf("jira sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	var page jiraSearchPage
+	if err := s.connector.searchJQL(ctx, fmt.Sprintf(`key = "%s"`, strings.ReplaceAll(key, `"`, `\"`)), 0, 1, jiraSlimFields, "", &page); err != nil {
+		return err
+	}
+	for _, issue := range page.Issues {
+		if s.connector.issueURL(issue.Key) == s.resumeSource {
+			return nil
+		}
+	}
+	return fmt.Errorf("jira resume anchor %q was not found in the current listing: %w", s.resumeSource, ErrSyncResumeInvalid)
+}
+
 func (s *jiraSyncSession) Close() error { return nil }
 
 func (s *jiraSyncSession) nextIssuePage(ctx context.Context) (jiraSearchPage, error) {
@@ -667,20 +696,27 @@ func (s *jiraSyncSession) nextIssuePage(ctx context.Context) (jiraSearchPage, er
 	return page, nil
 }
 
-func (s *jiraSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *jiraSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("jira sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor jiraSyncCursor
-	if checkpoint.Cursor != "" && json.Unmarshal([]byte(checkpoint.Cursor), &cursor) == nil {
-		s.startAt = cursor.StartAt
-		s.nextPageToken = cursor.NextPageToken
-		if s.startAt == 0 && s.nextPageToken == "" {
-			s.resumeSource = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		}
-		return
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return fmt.Errorf("jira sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
-	s.resumeSource = checkpoint.SourceID
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	prefix := strings.TrimRight(s.connector.baseURL, "/") + "/browse/"
+	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
+		return fmt.Errorf("jira sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	s.resumeSource = sourceID
+	s.startAt = cursor.StartAt
+	s.nextPageToken = cursor.NextPageToken
+	s.resumeSkip = s.startAt == 0 && s.nextPageToken == ""
+	return nil
 }
 
 type jiraPruneSession struct {

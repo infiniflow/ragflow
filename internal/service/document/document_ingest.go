@@ -37,7 +37,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 
 	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, req.DocIDs)
 	if err != nil {
-		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %s", err.Error())
+		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %w", err)
 	}
 
 	docsByID := make(map[string]*entity.Document, len(docs))

@@ -155,9 +155,9 @@ export function ParsingStatusCell({
                 <Progress value={p} className="h-1 flex-1 min-w-10" />
                 <div className="flex items-center gap-1">
                   {p}%
-                  <sup className="inline-flex">
-                    <CircleQuestionMark className="size-[1.25em]" />
-                  </sup>
+                  <span className="inline-flex items-center">
+                    <CircleQuestionMark className="size-[1em]" />
+                  </span>
                 </div>
               </Button>
 

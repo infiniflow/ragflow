@@ -116,6 +116,102 @@ func TestEmailParser_EmlText(t *testing.T) {
 	}
 }
 
+// TestEmailParser_EmlTextChunkText covers the KB chunk-quality bug behind
+// Feishu issue om_x100b675dcd7a18a4c2cbfff662a404e: the text output of an
+// .eml with an RFC 2047 encoded subject, transport headers (DKIM/ARC/
+// Received) and an HTML part used to carry (1) the flattened metadata dump,
+// (2) the raw "=?utf-8?B?...?=" subject blob and (3) shredded HTML markup —
+// all of which ended up in chunks. The text output must instead skip the
+// metadata dump, decode the subject, and flatten the HTML part to its
+// visible text. The JSON output keeps metadata and raw text_html unchanged.
+func TestEmailParser_EmlTextChunkText(t *testing.T) {
+	ctx := t.Context()
+	// "=?utf-8?B?5bim6ZmE5Lu255qEZW1haWw=?=" decodes to "带附件的email";
+	// "=?utf-8?B?5a6J?=" decodes to "安".
+	raw := strings.Join([]string{
+		"From: =?utf-8?B?5a6J?= <asiro@qq.com>",
+		"To: someone@test.com",
+		"Subject: =?utf-8?B?5bim6ZmE5Lu255qEZW1haWw=?=",
+		"DKIM-Signature: v=1; a=rsa-sha256; b=abc123",
+		"ARC-Seal: i=1; cv=none",
+		"Received: from mail.example.com by mx.example.com",
+		"MIME-Version: 1.0",
+		"Content-Type: multipart/alternative; boundary=altbound",
+		"",
+		"--altbound",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"带附件的email",
+		"--altbound",
+		"Content-Type: text/html; charset=utf-8",
+		"",
+		`<div><img style="width:100%" src="http://example.com/x.png"><div>带附件的email</div></div>`,
+		"--altbound--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "text",
+		"fields":        []string{"from", "to", "subject", "body"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+
+	// (1) No transport-header dump.
+	for _, noise := range []string{"metadata:", "dkim-signature", "arc-seal", "received:"} {
+		if strings.Contains(strings.ToLower(result.Text), noise) {
+			t.Errorf("text output contains header noise %q: %q", noise, result.Text)
+		}
+	}
+	// (2) Subject/from decoded from RFC 2047.
+	if !strings.Contains(result.Text, "subject:带附件的email") {
+		t.Errorf("subject not decoded: %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "from:安 <asiro@qq.com>") {
+		t.Errorf("from not decoded: %q", result.Text)
+	}
+	if strings.Contains(result.Text, "=?utf-8?") {
+		t.Errorf("raw encoded-word leaked into text: %q", result.Text)
+	}
+	// (3) HTML part flattened to visible text, no markup.
+	for _, tag := range []string{"<div", "<img", "style="} {
+		if strings.Contains(result.Text, tag) {
+			t.Errorf("raw HTML markup %q leaked into text: %q", tag, result.Text)
+		}
+	}
+	// HTML part must actually contribute its visible text: subject + plain
+	// body + html body = exactly 3 occurrences of the body string.
+	if c := strings.Count(result.Text, "带附件的email"); c != 3 {
+		t.Errorf("expected subject+plain+html body text, got %d occurrences in: %q", c, result.Text)
+	}
+	if !strings.Contains(result.Text, "text_html:带附件的email") {
+		t.Errorf("html body text missing from text_html: %q", result.Text)
+	}
+
+	// JSON output keeps the full metadata and raw text_html.
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "to", "subject", "body"},
+	})
+	jres := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if jres.Err != nil {
+		t.Fatalf("unexpected error: %v", jres.Err)
+	}
+	item := jres.JSON[0]
+	if _, ok := item["metadata"].(map[string]any); !ok {
+		t.Errorf("json output must keep metadata: %#v", item)
+	}
+	if v, _ := item["text_html"].(string); !strings.Contains(v, "<img") {
+		t.Errorf("json output must keep raw text_html: %q", v)
+	}
+	if v, _ := item["subject"].(string); v != "带附件的email" {
+		t.Errorf("json subject not decoded: %q", v)
+	}
+}
+
 // TestEmailParser_MsgSupported parses a real Outlook .msg fixture and verifies
 // the Go output aligns with the Python flow parser _email() .msg branch
 // (rag/flow/parser/parser.py). Replaces the old "MsgNotSupported" test now that
@@ -231,6 +327,43 @@ func TestEmailParser_MsgMetadataAlwaysPresent(t *testing.T) {
 	for _, dropped := range []string{"to", "date", "body", "attachments"} {
 		if _, ok := item[dropped]; ok {
 			t.Errorf("%s should be dropped when not in fields", dropped)
+		}
+	}
+}
+
+// TestEmailParser_MsgTextOutputExcludesMetadata verifies the .msg text
+// output: .msg content flows through the same flatten loop as .eml, so the
+// unconditionally emitted metadata map stays out of the chunkable text
+// (while remaining available in the JSON output) and the basic fields are
+// still flattened.
+func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
+	ctx := t.Context()
+	data, err := os.ReadFile("testdata/sample.msg")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	p := NewEmailParser() // text output; default fields
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
+	})
+	result := p.ParseWithResult(ctx, "sample.msg", data)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.OutputFormat != "text" {
+		t.Fatalf("output format = %q, want text", result.OutputFormat)
+	}
+
+	if !strings.Contains(result.Text, "subject:asdf") {
+		t.Errorf("text output missing subject, got %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "from:<christoph@freiraum.xyz>") {
+		t.Errorf("text output missing from, got %q", result.Text)
+	}
+	for _, leaked := range []string{"metadata", "message_id", "in_reply_to"} {
+		if strings.Contains(result.Text, leaked) {
+			t.Errorf("text output must not contain %q, got %q", leaked, result.Text)
 		}
 	}
 }
@@ -900,11 +1033,11 @@ func TestEmailParser_NestedEMLAttachmentRechunk(t *testing.T) {
 				t.Errorf("[json] nested body not found as separate item: %#v", result.JSON)
 			}
 		} else {
-			// Text mode: the outer email's own metadata is flattened once;
-			// the nested email must NOT add a second "metadata:{" segment.
-			if c := strings.Count(result.Text, "metadata:{"); c != 1 {
-				t.Errorf("[text] expected exactly 1 metadata:{ segment (outer only), got %d in: %q",
-					c, result.Text)
+			// Text mode: metadata (transport headers) is never flattened
+			// into chunkable text — not for the outer email, and not for
+			// the nested re-parse (which always requests JSON output).
+			if strings.Contains(result.Text, "metadata:") {
+				t.Errorf("[text] metadata must not leak into text output: %q", result.Text)
 			}
 		}
 	}
@@ -1062,5 +1195,130 @@ func TestReadMailBody_AttachmentPreservesRaw(t *testing.T) {
 	}
 	if payload, _ := att["payload"].(string); payload != "中文" {
 		t.Errorf("payload = %q, want 中文 (charset-decoded)", payload)
+	}
+}
+
+// TestDecodeHeaderWord_Charsets verifies the charset routing behind RFC 2047
+// encoded-word decoding. The "gb2312" label must decode plain 8-bit
+// GB2312/GBK bytes — not HZ escape sequences — because real-world mail
+// labeled gb2312 carries plain bytes. HZ decoding stays available under its
+// own "hz-gb-2312" label. An unsupported charset leaves the value untouched.
+func TestDecodeHeaderWord_Charsets(t *testing.T) {
+	encodedWord := func(charset string, raw []byte) string {
+		return "=?" + charset + "?B?" + base64.StdEncoding.EncodeToString(raw) + "?="
+	}
+
+	tests := []struct {
+		name   string
+		header string
+		want   string
+	}{
+		{"gb2312 label decodes plain GB2312 bytes", encodedWord("gb2312", []byte{0xD6, 0xD0, 0xCE, 0xC4}), "中文"},
+		{"gbk", encodedWord("gbk", []byte{0xD6, 0xD0, 0xCE, 0xC4}), "中文"},
+		{"gb18030", encodedWord("gb18030", []byte{0xD6, 0xD0, 0xCE, 0xC4}), "中文"},
+		{"big5", encodedWord("big5", []byte{0xA4, 0xA4, 0xA4, 0xE5}), "中文"},
+		{"shift_jis", encodedWord("shift_jis", []byte{0x93, 0xFA, 0x96, 0x7B}), "日本"},
+		{"euc-kr", encodedWord("euc-kr", []byte{0xC7, 0xD1, 0xB1, 0xB9}), "한국"},
+		{"iso-8859-1", encodedWord("iso-8859-1", []byte{'c', 'a', 'f', 0xE9}), "café"},
+		{"hz-gb-2312 keeps HZ escape decoding", encodedWord("hz-gb-2312", []byte("~{VPND~}")), "中文"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := decodeHeaderWord(tt.header); got != tt.want {
+				t.Errorf("decodeHeaderWord(%q) = %q, want %q", tt.header, got, tt.want)
+			}
+		})
+	}
+
+	unsupported := encodedWord("x-unsupported-charset", []byte{0x01, 0x02})
+	if got := decodeHeaderWord(unsupported); got != unsupported {
+		t.Errorf("unsupported charset: decodeHeaderWord(%q) = %q, want value untouched", unsupported, got)
+	}
+}
+
+// TestParseEML_GB2312EncodedSubject is the end-to-end regression for the
+// charset fix: a subject labeled gb2312 carrying plain 8-bit bytes must
+// arrive decoded, not as the raw "=?gb2312?B?...?=" blob.
+func TestParseEML_GB2312EncodedSubject(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"Subject: =?gb2312?B?" + base64.StdEncoding.EncodeToString([]byte{0xD6, 0xD0, 0xCE, 0xC4}) + "?=",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"body",
+	}, "\r\n")
+
+	content := parseEML(strings.NewReader(raw), []string{"subject"})
+	if content["subject"] != "中文" {
+		t.Errorf("subject = %q, want 中文", content["subject"])
+	}
+}
+
+// TestDecodeMailPayload_DeclaredCharsets verifies the body-side charset
+// resolution: a gb2312-labeled body carries plain 8-bit bytes (routed to
+// GBK like the header path, not HZGB2312), HZ-escaped content decodes only
+// under its own "hz-gb-2312" label, and a declared charset beyond the
+// fallback chain (big5) decodes via charsetEncoding instead of degrading to
+// latin-1 mojibake.
+func TestDecodeMailPayload_DeclaredCharsets(t *testing.T) {
+	if got := decodeMailPayload([]byte{0xD6, 0xD0, 0xCE, 0xC4}, "gb2312"); got != "中文" {
+		t.Errorf("gb2312 body = %q, want 中文", got)
+	}
+	if got := decodeMailPayload([]byte("~{VPND~}"), "hz-gb-2312"); got != "中文" {
+		t.Errorf("hz-gb-2312 body = %q, want 中文", got)
+	}
+	if got := decodeMailPayload([]byte{0xA4, 0xA4, 0xA4, 0xE5}, "big5"); got != "中文" {
+		t.Errorf("big5 body = %q, want 中文", got)
+	}
+}
+
+// TestReadMailBody_DeclaredBodyCharsets locks the body-path charset routing
+// exercised end to end by readMailBody (readMailBody → decodeMailPayload →
+// decodeWithCharset), beyond the direct decodeMailPayload unit above: a
+// gb2312-declared body part decodes its plain 8-bit bytes, and HZ-escaped
+// content decodes under its own "hz-gb-2312" label.
+func TestReadMailBody_DeclaredBodyCharsets(t *testing.T) {
+	tests := []struct {
+		name    string
+		charset string
+		body    []byte
+	}{
+		{"gb2312 body decodes plain bytes", "gb2312", []byte{0xD6, 0xD0, 0xCE, 0xC4}},
+		{"hz-gb-2312 body decodes HZ escapes", "hz-gb-2312", []byte("~{VPND~}")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, _, _ := readMailBody(strings.NewReader(string(tt.body)), "text/plain; charset="+tt.charset, false)
+			if text != "中文" {
+				t.Errorf("readMailBody(charset=%s) = %q, want 中文", tt.charset, text)
+			}
+		})
+	}
+}
+
+// TestHTMLBodyToText verifies the visible-text flattening of email HTML
+// bodies, above all that text preceding a nested block-level element starts
+// a new line instead of fusing with the block's own text.
+func TestHTMLBodyToText(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"text before nested block", `<div>prefix<p>paragraph</p></div>`, "prefix\nparagraph"},
+		{"nested divs", `<div>outer<div>inner</div></div>`, "outer\ninner"},
+		{"sibling blocks", `<p>one</p><p>two</p>`, "one\ntwo"},
+		{"layout table cells", `<table><tr><td>a</td><td>b</td></tr></table>`, "a\nb"},
+		{"multi-row layout table stays line-separated", `<p>intro</p><table><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></table><p>outro</p>`, "intro\na\nb\nc\noutro"},
+		{"inline tags stay on one line", `<p>Hello <b>world</b></p>`, "Hello world"},
+		{"br forces a break", `one<br>two`, "one\ntwo"},
+		{"head script style skipped", `<html><head><title>t</title><style>.x{color:red}</style></head><body><p>visible</p><script>var x=1;</script></body></html>`, "visible"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := htmlBodyToText(tt.body); got != tt.want {
+				t.Errorf("htmlBodyToText(%q) = %q, want %q", tt.body, got, tt.want)
+			}
+		})
 	}
 }

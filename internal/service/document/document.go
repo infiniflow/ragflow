@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/ingestion/knowledge_compile"
 )
 
 // DocumentService document service
@@ -49,6 +50,10 @@ func NewDocumentService() *DocumentService {
 	publisher := service.NewMessageQueueTaskPublisher()
 	ingestionTaskSvc := service.NewIngestionTaskService()
 	ingestionTaskSvc.SetTaskPublisher(publisher)
+	// Document deletion is handled by the API process, while the dataset-level
+	// consumer is owned by the ingestor. Register the shared publisher here so
+	// knowledge_compile.PublishDeleted is effective in API processes as well.
+	knowledge_compile.InitializePublisher(dao.DB, engine.GetMessageQueueEngine())
 	return &DocumentService{
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),

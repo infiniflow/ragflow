@@ -26,6 +26,12 @@ import (
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
+// docxOpenFromBytes is a test seam that mirrors officeOxide.OpenFromBytes.
+// Overridden in tests to capture the effective container format.
+// Not safe for concurrent use with t.Parallel() — tests must save/restore
+// it sequentially (see office_detect_cgo_test.go).
+var docxOpenFromBytes = officeOxide.OpenFromBytes
+
 // DOCXParser is the cgo-backed DOCX parser. It is the only DOCX
 // entrypoint that depends on office_oxide; the IR data model and
 // postprocessing live in cgo-free files (docx_ir.go, docx_postprocess.go)
@@ -67,8 +73,28 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 //
 // JSON path mirrors python parser.py:_docx() output_format == "json".
 // Markdown path mirrors python naive.py: Docx() → naive_merge_docx().
+//
+// File["format"] in the returned ParseResult reflects the effective
+// container format after magic-byte sniffing (e.g. "doc" for an OLE
+// payload uploaded as .docx), not merely the file extension. See
+// office_detect_cgo.go:officeContainer for the detection contract.
 func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	doc, err := officeOxide.OpenFromBytes(data, "docx")
+	// office_oxide's OpenFromBytes takes the container format as given
+	// and does no magic-byte detection, so a legacy .doc uploaded with a
+	// .docx extension would be parsed as ZIP/OOXML and fail. Sniff the
+	// real container and pass the matching format so mislabeled files
+	// still parse (mirrors the magic-byte correction office_oxide::Open
+	// performs on file paths).
+	format := "docx"
+	if officeContainer(data) == "ole" {
+		format = "doc"
+	}
+	// Note: when format == "doc" (OLE fallback), header/footer and TOC
+	// post-processing below degrades gracefully: extractDOCXHeaderFooterTexts
+	// opens the payload as ZIP and fails closed, so RemoveHeaderFooter becomes
+	// a no-op for legacy OLE inputs. This is acceptable — legacy DOC has no
+	// OOXML header/footer parts to strip.
+	doc, err := docxOpenFromBytes(data, format)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("docx open: %w", err)}
 	}
@@ -76,7 +102,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	fileMeta := map[string]any{
 		"name":   filename,
-		"format": "docx",
+		"format": format,
 	}
 
 	// Extract IR JSON for section building (JSON path) and

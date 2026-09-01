@@ -141,12 +141,6 @@ export default defineConfig(({ mode }) => {
   const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
-    define: {
-      // Expose to client code via import.meta.env
-      'import.meta.env.API_PROXY_SCHEME': JSON.stringify(proxyScheme),
-      // Keep backward compatibility
-      __API_PROXY_SCHEME__: JSON.stringify(proxyScheme),
-    },
     plugins: [
       inspectorBabelPlugin(),
       react(),

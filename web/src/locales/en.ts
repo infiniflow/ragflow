@@ -24,6 +24,7 @@ export default {
       namePlaceholder: 'Please input name',
       nameSlashError: 'Name cannot contain "/"',
       descriptionPlaceholder: 'Enter description',
+      descriptionMaxLength: 'Description must be at most {{max}} characters.',
       next: 'Next',
       create: 'Create',
       edit: 'Edit',
@@ -54,6 +55,7 @@ export default {
       viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
+      figure: 'Fig.',
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
@@ -76,6 +78,7 @@ export default {
       search: 'Search',
       reset: 'Reset',
       noDataFound: 'No data found.',
+      searchOrEnterToAdd: 'Search or enter to add',
       noData: 'No data available',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
@@ -534,7 +537,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -564,6 +567,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number (excluded)',
+      pageRangeFromInvalid: 'Start page must be an integer greater than 0',
+      pageRangeToInvalid:
+        'End page must be an integer no less than the start page',
       layoutRecognize: 'PDF parser',
       layoutRecognizeTip:
         'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
@@ -601,7 +607,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       delimiterPreviewCount: '({{count}})',
 
       html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
@@ -641,7 +647,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       datasetDescription: 'Describe your dataset',
       overlappedPercentTip: 'The overlapped percent between two nearby chunks',
       globalIndexModelTip:
-        'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
+        'Used to generate auto-metadata, auto-keywords, and auto-questions. Model performance affects generation quality.',
       globalIndexModel: 'Indexing model',
       settings: 'Settings',
       autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
@@ -915,7 +921,7 @@ Paragraphs:
       scopeFile: 'File',
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
-      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
+      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dataset_configuration#basic-information for details.`,
       tagName: 'Tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
@@ -923,7 +929,7 @@ Paragraphs:
       tagTable: 'Table',
       tagSet: 'Tag sets',
       tagSetTip: `
-     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
+     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dataset_configuration#basic-information for details.</p>
 <p>The user query will also be auto-tagged.</p>
 This auto-tagging feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
@@ -1067,8 +1073,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers. If your model has native support for reasoning, you can add //no_thinking add the prompt to stop reasoning.',
       topN: 'Top N',
       topNTip: `Not all chunks with similarity score above the 'similarity threshold' will be sent to the LLM. This selects 'Top N' chunks from the retrieved ones.`,
+      rerankCandidatesCount: 'Rerank candidates',
+      rerankCandidatesCountTip:
+        'The number of candidate chunks retrieved for reranking.',
+      rerankCandidatesCountValidation:
+        'Rerank candidates must be greater than or equal to Top N.',
       variable: 'Variable',
-      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
+      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/chat_configuration#system-prompt for details.`,
       add: 'Add',
       key: 'Key',
       variableKeyMessage: 'Please input the variable key',
@@ -1107,6 +1118,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       thinking: 'Thinking',
+      thinkingMode: 'Thinking',
       thought: 'Thought',
       thinkingDefault: 'System default',
       thinkingEnabled: 'Enabled',
@@ -1144,6 +1156,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       created: 'Created',
       action: 'Action',
       embedModalTitle: 'Embed into webpage',
+      embedUserIdPlaceholder: 'e.g. user-001',
+      embedUserIdTooltip:
+        'A plain-text identifier (up to 255 characters) for the end user of the embedded page. It is appended to the embed URL as the userId parameter.',
       published: 'Published',
       publishedTooltip:
         'Use the published version for this embed. When enabled, the generated URL includes release=true.',
@@ -1309,6 +1324,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldDiscordBotToken: 'Discord Bot Token',
       dataSourceFieldServerIds: 'Server IDs',
       dataSourceFieldChannels: 'Channels',
+      dataSourceFieldXquikApiKey: 'Xquik API key',
+      dataSourceFieldXquikQuery: 'X search query',
+      dataSourceFieldXquikQueryType: 'Result order',
+      dataSourceFieldXquikPageSize: 'Posts per page',
       dataSourceFieldPrimaryAdminEmail: 'Primary Admin Email',
       dataSourceFieldOauthTokenJson: 'OAuth Token JSON',
       dataSourceFieldMyDriveEmails: 'My Drive Emails',
@@ -1391,6 +1410,14 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldWikiBaseUrl: 'Wiki Base URL',
       dataSourceFieldIsCloud: 'Is Cloud',
       dataSourceFieldIndexMode: 'Index Mode',
+      dataSourceFieldAzureDevOpsPat: 'Azure DevOps personal access token',
+      dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps organization',
+      dataSourceFieldAzureDevOpsRepositories: 'Repositories',
+      dataSourceFieldAzureDevOpsContentTypes: 'Content types',
+      dataSourceOptionOrganization: 'Organization',
+      dataSourceOptionCode: 'Code',
+      dataSourceOptionPullRequests: 'Pull requests',
+      dataSourceOptionBoth: 'Both',
       dataSourceFieldPageId: 'Page ID',
       dataSourceFieldSpaceKey: 'Space Key',
       dataSourceFieldIndexRecursively: 'Index Recursively',
@@ -1540,6 +1567,8 @@ Example: Virtual Hosted Style`,
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
         'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
+      webdavCaCertPathTip:
+        'Optional: Path to a CA certificate bundle mounted inside the RAGFlow container.',
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
@@ -1570,6 +1599,19 @@ Example: Virtual Hosted Style`,
         'Connect a SharePoint site via Microsoft Graph to sync its document libraries.',
       sharepointSiteUrlTip:
         'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
+      azureDevOpsPatTip: 'A personal access token with the Code (Read) scope.',
+      azureDevOpsOrganizationTip:
+        'Organization name (e.g. "contoso"), or the full collection URL of a self-hosted Azure DevOps Server (e.g. https://tfs.contoso.com/DefaultCollection).',
+      azureDevOpsProjectsTip:
+        'Comma separated team project names. E.g., Project1,Project2',
+      azureDevOpsRepositoriesTip:
+        'Comma separated repositories. Use project/repo to disambiguate repositories that share a name.',
+      azureDevOpsOrganizationScopeTip:
+        'Every repository visible to the token in this organization will be indexed.',
+      azureDevOpsContentTypesTip:
+        'Choose what to index: source files, pull requests, or both.',
+      azure_devopsDescription:
+        'Connect Azure DevOps to sync repository files and pull requests.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
@@ -1729,6 +1771,18 @@ Example: Virtual Hosted Style`,
         'Optional per-query job timeout in milliseconds.',
       rest_apiDescription:
         'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      xquikDescription:
+        'Search X posts with Xquik and sync matching posts into a knowledge base.',
+      xquikApiKeyTip:
+        'Create an Xquik API key and store it only in this password field.',
+      xquikQueryTip:
+        'Use keywords, hashtags, or X search operators such as from:username.',
+      xquikPageSizeTip:
+        'Maximum posts requested per API page. Each returned post uses 1 Xquik credit.',
+      xquikMaxPagesTip:
+        'Stop each sync after this many pages to bound API usage.',
+      xquikPageSizeValidation: 'Posts Per Page must be from 1 to 10000.',
+      xquikMaxPagesValidation: 'Max Pages must be from 1 to 1000.',
       onedriveDescription:
         'Connect OneDrive or OneDrive for Business to index files and folders via Microsoft Graph delta queries.',
       onedriveTenantIdTip:
@@ -2015,6 +2069,7 @@ Example: Virtual Hosted Style`,
       instanceNameTip:
         'A unique name to identify this provider instance under the same factory.',
       instanceNamePlaceholder: 'Please input instance name',
+      instanceNameExists: 'Instance name already exists',
       deleteInstance: 'Delete instance',
       modelName: 'Model name',
       modelID: 'Model ID',
@@ -2234,6 +2289,8 @@ Example: Virtual Hosted Style`,
       listModelsLoading: 'Loading models…',
       selectModelBeforeVerify:
         'Please select at least one model before verification.',
+      selectModelBeforeSave:
+        'Please discover and select at least one model before saving.',
       addCustomModel: 'Add custom model',
       addCustomModelTitle: 'Add custom model',
       batchAddModels: 'Add all models',
@@ -2270,7 +2327,7 @@ Example: Virtual Hosted Style`,
       fieldRule: 'Rule',
       addField: 'Add field',
       editField: 'Edit field',
-      selectFieldType: 'Select field type',
+      selectFieldType: 'Select or enter a field type',
       fieldTypeExists: 'This field type already exists',
       example: 'Example',
       instruction: 'Instruction',
@@ -2313,7 +2370,7 @@ Example: Virtual Hosted Style`,
       graph: 'Graph',
       structureMindmap: 'Mind map',
       structureTimeline: 'Timeline',
-      noWikiPages: 'No wiki pages yet',
+      noWikiPages: 'No wiki yet',
       noSkills: 'No skills yet',
       noStructureGraph: 'No graph yet',
       noStructureMindmap: 'No mind map yet',
@@ -2361,6 +2418,8 @@ Example: Virtual Hosted Style`,
       skillDeleteDescription: 'Are you sure you want to delete this skill?',
       navTitle: 'Navigation tree',
       navEmpty: 'No navigation nodes',
+      navLoadFailed: 'Failed to load the navigation tree',
+      navChildLoadFailed: 'Failed to load child nodes',
       navLoading: 'Loading...',
       navSelectNode: 'Select a child node to view details',
       navNoDescription: 'No description',
@@ -2585,6 +2644,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       maxRounds: 'Max reflection rounds',
       delayAfterError: 'Delay after error',
       maxRetries: 'Max retry rounds',
+      toolTimeout: 'Tool timeout',
+      toolTimeoutTip:
+        'Timeout in seconds for a single tool call (including MCP tools). Increase it for long-running tools.',
       maxSteps: 'Max steps',
       headless: 'Headless',
       enableDefaultExtensions: 'Enable default extensions',
@@ -2705,6 +2767,18 @@ Best for: Documents with flowing, contextually connected content — such as boo
       keenableMode: 'Search mode',
       keenableSite: 'Site',
       keenableApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      youComSearch: 'You.com',
+      youComSearchDescription:
+        "A web search component powered by You.com's own index. Each result carries extracted passages from the page rather than a single snippet. Works without an API Key by default (keyless free tier); add a key to lift rate limits.",
+      youComFreshness: 'Freshness',
+      youComFreshnessTip:
+        'Restrict results by how recently they were published.',
+      youComFreshnessAny: 'Any time',
+      youComFreshnessDay: 'Past day',
+      youComFreshnessWeek: 'Past week',
+      youComFreshnessMonth: 'Past month',
+      youComFreshnessYear: 'Past year',
+      youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',
@@ -3059,6 +3133,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      debugRunLimits:
+        'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
       templateDescription:
         'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
@@ -3291,6 +3367,10 @@ This process aggregates variables from multiple branches into a single variable 
         'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Indexer',
       tokenizerRequired: 'Please add the Indexer node first',
+      nodeFormInvalid:
+        'Cannot save: "{{name}}" has invalid settings. Please fix them first',
+      agentModelMissing:
+        'Cannot save: "{{name}}" has no model selected. Please choose one first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',
@@ -3359,7 +3439,7 @@ Task
 Extract the most important keywords/phrases of a given piece of text content.
 
 Requirements
-- Summarize the text content, and give the top 5 important keywords/phrases.
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
 - The keywords MUST be in the same language as the given piece of text content.
 - The keywords are delimited by ENGLISH COMMA.
 - Output keywords ONLY.`,
@@ -3367,10 +3447,10 @@ Requirements
 You are a text analyzer.
 
 Task
-Propose 3 questions about a given piece of text content.
+Propose {{ topn }} questions about a given piece of text content.
 
 Requirements
-- Understand and summarize the text content, and propose the top 3 important questions.
+- Understand and summarize the text content, and propose the top {{ topn }} important questions.
 - The questions SHOULD NOT have overlapping meanings.
 - The questions SHOULD cover the main content of the text as much as possible.
 - The questions MUST be in the same language as the given piece of text content.

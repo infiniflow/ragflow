@@ -17,6 +17,8 @@
 package parser
 
 import (
+	"encoding/base64"
+	"fmt"
 	"html"
 	"regexp"
 	"strconv"
@@ -37,6 +39,83 @@ var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`
 var numericCellRe = regexp.MustCompile(`^[\$\+\-]?[\d,]+(\.\d+)?%?$`)
 
 const defaultTableChunkRows = 256
+
+// extractXLSXImages returns the floating and in-cell images anchored to a
+// worksheet as structured parser items. Excelize exposes both kinds through
+// GetPictureCells/GetPictures; walking the reported anchor cells avoids
+// scanning the worksheet's entire coordinate space.
+func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []string) {
+	cells, err := f.GetPictureCells(sheet)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("XLSX image discovery failed for sheet %q: %v", sheet, err)}
+	}
+	if len(cells) == 0 {
+		return nil, nil
+	}
+
+	items := make([]map[string]any, 0, len(cells))
+	warnings := make([]string, 0)
+	for _, cell := range cells {
+		pictures, err := f.GetPictures(sheet, cell)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("XLSX image extraction failed for sheet %q cell %s: %v", sheet, cell, err))
+			continue
+		}
+		for _, picture := range pictures {
+			if len(picture.File) == 0 {
+				continue
+			}
+			mimeType, ok := xlsxImageMIMEType(picture.Extension)
+			if !ok {
+				warnings = append(warnings, fmt.Sprintf("XLSX image skipped for sheet %q cell %s: unsupported extension %q", sheet, cell, picture.Extension))
+				continue
+			}
+			encoded := base64.StdEncoding.EncodeToString(picture.File)
+			alt := cell
+			if picture.Format != nil && picture.Format.AltText != "" {
+				alt = picture.Format.AltText
+			}
+			items = append(items, map[string]any{
+				"text":         alt,
+				"doc_type_kwd": "image",
+				"ck_type":      "image",
+				"image":        "data:" + mimeType + ";base64," + encoded,
+				"sheet":        sheet,
+				"cell":         cell,
+			})
+		}
+	}
+	return items, warnings
+}
+
+func xlsxImageMIMEType(extension string) (string, bool) {
+	switch strings.TrimPrefix(strings.ToLower(extension), ".") {
+	case "jpg", "jpeg":
+		return "image/jpeg", true
+	case "gif":
+		return "image/gif", true
+	case "bmp":
+		return "image/bmp", true
+	case "tif", "tiff":
+		return "image/tiff", true
+	case "svg":
+		return "image/svg+xml", true
+	case "png":
+		return "image/png", true
+	case "emf":
+		return "image/x-emf", true
+	case "emz":
+		return "image/x-emz", true
+	case "ico":
+		return "image/x-icon", true
+	case "wmf":
+		return "image/x-wmf", true
+	case "wmz":
+		return "image/x-wmz", true
+	default:
+		return "", false
+	}
+}
 
 // maxMergeExtentCols caps how far a merged range may widen the header row.
 // excelize's GetRows truncates each row at its last valued cell, so a merged
@@ -72,6 +151,16 @@ func buildHeaderRow(row []string) string {
 	return b.String()
 }
 
+// htmlTableChunk is one self-contained <table> chunk with 1-based sheet/row/col
+// coordinates for source location (mirrors Excel position_int semantics).
+type htmlTableChunk struct {
+	HTML     string
+	RowStart int // inclusive, 1-based Excel row of first data row (header-only chunks use headerRowAbs)
+	RowEnd   int // inclusive, 1-based Excel row of last data row
+	ColStart int
+	ColEnd   int
+}
+
 // recordsToHTMLTableChunks renders records as one or more self-contained HTML
 // <table> chunks. The first row is always the header (<th>). Data rows are
 // split into chunks of chunkRows, each chunk being a complete <table> with
@@ -82,18 +171,48 @@ func buildHeaderRow(row []string) string {
 // <thead>/<tbody>, so every <table> is one atomic chunk that downstream
 // chunkers can consume independently.
 func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string) string {
+	chunks := recordsToHTMLTableChunkList(records, chunkRows, caption, 1)
+	parts := make([]string, len(chunks))
+	for i, ch := range chunks {
+		parts[i] = ch.HTML
+	}
+	return strings.Join(parts, "")
+}
+
+// recordsToHTMLTableChunkList is the structured form of recordsToHTMLTableChunks.
+// headerRowAbs is the 1-based workbook row number of records[0] (normally 1).
+func recordsToHTMLTableChunkList(records [][]string, chunkRows int, caption string, headerRowAbs int) []htmlTableChunk {
+	if headerRowAbs <= 0 {
+		headerRowAbs = 1
+	}
+	colEnd := 1
+	for _, row := range records {
+		if n := len(row); n > colEnd {
+			colEnd = n
+		}
+	}
 	if len(records) == 0 {
-		return "<table><caption>" + html.EscapeString(caption) + "</caption></table>"
+		return []htmlTableChunk{{
+			HTML:     "<table><caption>" + html.EscapeString(caption) + "</caption></table>",
+			RowStart: headerRowAbs,
+			RowEnd:   headerRowAbs,
+			ColStart: 1,
+			ColEnd:   colEnd,
+		}}
 	}
 
-	// Build the header row once — repeated in every chunk.
 	headerHTML := buildHeaderRow(records[0])
 	dataRows := records[1:]
 	nData := len(dataRows)
 
 	if nData == 0 {
-		// Only a header row exists.
-		return "<table><caption>" + html.EscapeString(caption) + "</caption>\n" + headerHTML + "</table>"
+		return []htmlTableChunk{{
+			HTML:     "<table><caption>" + html.EscapeString(caption) + "</caption>\n" + headerHTML + "</table>",
+			RowStart: headerRowAbs,
+			RowEnd:   headerRowAbs,
+			ColStart: 1,
+			ColEnd:   colEnd,
+		}}
 	}
 
 	if chunkRows <= 0 {
@@ -101,7 +220,7 @@ func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string)
 	}
 
 	nChunks := (nData + chunkRows - 1) / chunkRows
-	var b strings.Builder
+	out := make([]htmlTableChunk, 0, nChunks)
 	for ci := 0; ci < nChunks; ci++ {
 		start := ci * chunkRows
 		end := start + chunkRows
@@ -109,6 +228,7 @@ func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string)
 			end = nData
 		}
 
+		var b strings.Builder
 		b.WriteString("<table><caption>")
 		b.WriteString(html.EscapeString(caption))
 		b.WriteString("</caption>\n")
@@ -124,8 +244,16 @@ func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string)
 			b.WriteString("</tr>\n")
 		}
 		b.WriteString("</table>\n")
+
+		out = append(out, htmlTableChunk{
+			HTML:     b.String(),
+			RowStart: headerRowAbs + start + 1,
+			RowEnd:   headerRowAbs + end,
+			ColStart: 1,
+			ColEnd:   colEnd,
+		})
 	}
-	return b.String()
+	return out
 }
 
 // ──────────────────────────────────────────────────────────── axis helpers
@@ -512,9 +640,18 @@ func decodeChunkRows(setup map[string]any) int {
 // data into chunkRows-sized atomic tables each repeating the header. An empty
 // or unreadable sheet yields an empty string.
 func renderSheetTables(f *excelize.File, sheet string, chunkRows int) string {
+	chunks := renderSheetTableChunks(f, sheet, chunkRows)
+	parts := make([]string, len(chunks))
+	for i, ch := range chunks {
+		parts[i] = ch.HTML
+	}
+	return strings.Join(parts, "")
+}
+
+func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) []htmlTableChunk {
 	rows, err := f.GetRows(sheet)
 	if err != nil || len(rows) == 0 {
-		return ""
+		return nil
 	}
 	rows = cleanIllegalControlChars(rows)
 
@@ -538,11 +675,32 @@ func renderSheetTables(f *excelize.File, sheet string, chunkRows int) string {
 	// data. For the common case (header on row 1) this is a no-op.
 	records := make([][]string, 0, len(rows))
 	records = append(records, rows[headerRow-1])
+	absDataRows := make([]int, 0, len(rows)-1)
 	for i, r := range rows {
 		if i == headerRow-1 {
 			continue
 		}
 		records = append(records, r)
+		absDataRows = append(absDataRows, i+1)
 	}
-	return recordsToHTMLTableChunks(records, chunkRows, sheet)
+
+	chunks := recordsToHTMLTableChunkList(records, chunkRows, sheet, headerRow)
+	if len(chunks) == 0 || len(absDataRows) == 0 {
+		return chunks
+	}
+	if chunkRows <= 0 {
+		chunkRows = defaultTableChunkRows
+	}
+	for ci := range chunks {
+		start := ci * chunkRows
+		end := start + chunkRows
+		if end > len(absDataRows) {
+			end = len(absDataRows)
+		}
+		if start < end {
+			chunks[ci].RowStart = absDataRows[start]
+			chunks[ci].RowEnd = absDataRows[end-1]
+		}
+	}
+	return chunks
 }

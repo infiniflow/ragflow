@@ -1,6 +1,6 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
 
 export enum FileType {
@@ -29,7 +29,7 @@ export enum SpreadsheetOutputFormat {
 }
 
 export enum ImageOutputFormat {
-  Text = 'text',
+  Json = 'json',
 }
 
 export enum EmailOutputFormat {
@@ -81,7 +81,7 @@ export const OutputFormatMap = {
 export const InitialOutputFormatMap = {
   [FileType.PDF]: PdfOutputFormat.Json,
   [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
-  [FileType.Image]: ImageOutputFormat.Text,
+  [FileType.Image]: ImageOutputFormat.Json,
   [FileType.Email]: EmailOutputFormat.Text,
   [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
   [FileType.Code]: TextJsonOutputFormat.Json,
@@ -208,7 +208,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Image,
-      output_format: ImageOutputFormat.Text,
+      output_format: ImageOutputFormat.Json,
       parse_method: ImageParseMethod.OCR,
       preprocess: PreprocessValue.main_content,
       system_prompt: '',
@@ -268,6 +268,8 @@ export const initialTokenChunkerValues = {
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
 };
 
 export enum Hierarchy {
@@ -392,7 +394,12 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return isGoBackend() ? initialGoExtractorValues : initialExtractorValues;
+  return pickByBackend<
+    typeof initialGoExtractorValues | typeof initialExtractorValues
+  >({
+    go: initialGoExtractorValues,
+    python: initialExtractorValues,
+  });
 }
 
 export const initialCompilationValues = {

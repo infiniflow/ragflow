@@ -175,6 +175,30 @@ func TestDedupSubstringOverlaps(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_YOvershootFragmentDropped locks root-cause-A:
+// an OCR double-detection fragment whose text is a whitespace-normalized
+// substring of the container but whose Y bounds overshoot by a few points of
+// detection noise (beyond boxInsideTolerant's 3pt Y tolerance) must STILL be collapsed. This
+// is the exact geometry Rag Flow Usage / 三国人物 produce and that leaks
+// duplicated text into the Go output without it.
+func TestDedupSubstringOverlaps_YOvershootFragmentDropped(t *testing.T) {
+	full := pdf.TextBox{
+		Text:       "We'resoextoseeyou again",
+		PageNumber: 0, Top: 224.8, Bottom: 233.3, X0: 477, X1: 599, IsOCR: true,
+	}
+	frag := pdf.TextBox{
+		Text:       "toseeyou again", // substring of full; Y overshoots 0.5pt top / 1.0pt bottom
+		PageNumber: 0, Top: 224.3, Bottom: 234.3, X0: 537, X1: 599, IsOCR: true,
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, frag})
+	if len(got) != 1 {
+		t.Fatalf("Y-overshoot substring fragment must be dropped, got %d boxes", len(got))
+	}
+	if got[0].Text != full.Text {
+		t.Fatalf("the full box must be kept, got %q", got[0].Text)
+	}
+}
+
 // TestDedupSubstringOverlaps_DisjointYKept ensures a substring box at a
 // DISJOINT Y position is kept — a real repeated heading or sentence is legal.
 func TestDedupSubstringOverlaps_DisjointYKept(t *testing.T) {
@@ -226,7 +250,7 @@ func TestDedupSubstringOverlaps_AdjacentLinesKept(t *testing.T) {
 // TestDedupSubstringOverlaps_PartialYOverlapKept locks the Y-containment
 // boundary: a substring box that PARTIALLY overlaps the containing box in Y
 // (extends below it) is KEPT — it is an adjacent-line fragment, not a contained
-// duplicate. Only a fragment FULLY inside the containing box (boxInside) is
+// duplicate. Only a fragment contained in the box (boxInsideTolerant) is
 // collapsed. With the height-vs-text decoupled guard this case is also kept;
 // the test pins the boundary against future over-collapsing.
 func TestDedupSubstringOverlaps_PartialYOverlapKept(t *testing.T) {
@@ -247,7 +271,7 @@ func TestDedupSubstringOverlaps_PartialYOverlapKept(t *testing.T) {
 // beyond the containing box (to either side) must be KEPT — it is not an OCR
 // fragment of the container (e.g. an adjacent-column line whose text happens
 // to be a whitespace-normalized substring of the paragraph). Only a box fully
-// inside on BOTH axes is collapsed. This pins the boxInside hardening that the
+// inside on BOTH axes is collapsed. This pins the boxInsideTolerant hardening that the
 // whitespace-insensitive match otherwise leaves exposed (a plain horizontal
 // intersect used to pass the X check).
 func TestDedupSubstringOverlaps_HorizontalOverhangKept(t *testing.T) {
@@ -290,7 +314,7 @@ func TestDedupSubstringOverlaps_TallerFragmentKept(t *testing.T) {
 // ("-name:" vs "- name:") normalize to the SAME text and must collapse when
 // geometrically contained. The legacy `len(ai) == len(aj)` skip would have
 // kept the duplicate; whitespace normalization makes the two look identical,
-// and boxInside decides the containment.
+// and boxInsideTolerant decides the containment.
 func TestDedupSubstringOverlaps_WhitespaceInsensitive_EqualAfterNorm(t *testing.T) {
 	outer := pdf.TextBox{
 		Text:       "-name:", // OCR recognizer stripped the space after '-'
@@ -418,5 +442,93 @@ func TestDedupSubstringOverlaps_WhitespaceInsensitive_CharPathKept(t *testing.T)
 	got := DedupSubstringOverlaps([]pdf.TextBox{full, repeat})
 	if len(got) != 2 {
 		t.Fatalf("char-path whitespace-divergent substring must be kept, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_CrossColumnKept locks the 1例3个月 fix: a
+// substring box in a DIFFERENT column from the containing box is kept even
+// when its geometry is fully inside the container. On a two-column page the
+// OCR detector often draws a wide right-column paragraph box whose X span
+// reaches across the gutter into the left column, so a left-column short line
+// whose text happens to be a substring of that paragraph is geometrically
+// "inside" it. It is independent document text, not an OCR duplicate, and
+// AssignColumn (which now runs before dedup) tags the two with different
+// ColIDs — so the substring collapse must NOT fire across columns.
+func TestDedupSubstringOverlaps_CrossColumnKept(t *testing.T) {
+	rightCol := pdf.TextBox{
+		Text:       "出血，尤其是心脏病患者，术中应密切监测血氧饱和度并备好抢救药物如沙丁胺醇",
+		PageNumber: 0, Top: 100, Bottom: 400, X0: 40, X1: 600, ColID: 1, IsOCR: true, // wide OCR box spanning both columns
+	}
+	leftLine := pdf.TextBox{
+		Text:       "出血，尤其是心脏病患者",                                                    // left-column short line, IS a substring of rightCol text
+		PageNumber: 0, Top: 150, Bottom: 165, X0: 50, X1: 280, ColID: 0, IsOCR: true, // inside rightCol geometry
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{rightCol, leftLine})
+	if len(got) != 2 {
+		t.Fatalf("cross-column substring must be kept (different ColID), got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_SameColumnStillCollapses locks the invariant that
+// moving the column guard does NOT weaken same-column dedup: two boxes in the
+// SAME column (identical ColID) with substring text and containment geometry
+// are still collapsed. This is the real OCR double-detection case.
+func TestDedupSubstringOverlaps_SameColumnStillCollapses(t *testing.T) {
+	outer := pdf.TextBox{
+		Text:       "用Python生成的分词1为：文章中提到了哪些健康服务体系?",
+		PageNumber: 0, Top: 100, Bottom: 400, X0: 60, X1: 520, ColID: 1, IsOCR: true,
+	}
+	inner := pdf.TextBox{
+		Text:       "文章中提到了哪些健康服务体系", // substring, same column
+		PageNumber: 0, Top: 150, Bottom: 165, X0: 60, X1: 520, ColID: 1, IsOCR: true,
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, inner})
+	if len(got) != 1 {
+		t.Fatalf("same-column substring must still collapse, got %d boxes", len(got))
+	}
+	if got[0].Text != outer.Text {
+		t.Fatalf("outer must be kept, got %q", got[0].Text)
+	}
+}
+
+// TestDedupSubstringOverlaps_AssignColumnFirst locks the production pipeline
+// order (AssignColumn BEFORE dedup) against the 1例3个月 regression: a
+// two-column page where the OCR detector draws a wide right-column paragraph
+// box whose X span reaches across the gutter. The left column carries
+// independent short lines whose text happens to be a substring of that
+// paragraph. Without the column guard these left-column lines are collapsed
+// as "duplicates" and the page loses content. After AssignColumn tags the two
+// columns with distinct ColIDs, DedupSubstringOverlaps must keep the
+// cross-column lines while still collapsing a genuine same-column duplicate.
+func TestDedupSubstringOverlaps_AssignColumnFirst(t *testing.T) {
+	// Two-column page: left column lines X~[60,280], right column lines
+	// X~[320,600]. The OCR right-column paragraph box is wide (X0=40) and
+	// spans both columns.
+	boxes := []pdf.TextBox{
+		// left column, independent lines (ColID assigned by AssignColumn)
+		{Text: "出血，尤其是心脏病患者", PageNumber: 0, Top: 150, Bottom: 165, X0: 60, X1: 280, IsOCR: true},
+		{Text: "的操作技巧是避免鼻插", PageNumber: 0, Top: 170, Bottom: 185, X0: 60, X1: 280, IsOCR: true},
+		// right column lines
+		{Text: "第四节 麻醉管理", PageNumber: 0, Top: 150, Bottom: 165, X0: 320, X1: 600, IsOCR: true},
+		// wide OCR right-column paragraph box spanning both columns
+		{Text: "出血，尤其是心脏病患者术中应密切监测并备好抢救药物如沙丁胺醇", PageNumber: 0, Top: 100, Bottom: 400, X0: 40, X1: 600, IsOCR: true},
+		// a genuine same-column OCR double-detection of the wide box
+		{Text: "出血，尤其是心脏病患者术中应密切监测并备好抢救药物如沙丁胺醇", PageNumber: 0, Top: 100, Bottom: 400, X0: 40, X1: 600, IsOCR: true},
+	}
+
+	assigned := AssignColumn(boxes)
+	// Sanity: the two columns must be split into distinct ColIDs.
+	leftCol := assigned[0].ColID
+	rightCol := assigned[2].ColID
+	if leftCol == rightCol {
+		t.Fatalf("AssignColumn failed to split the two columns: left=%d right=%d", leftCol, rightCol)
+	}
+
+	got := DedupSubstringOverlaps(assigned)
+	// The 2 left-column lines (substring of the wide box but different column)
+	// survive; the duplicate wide box (same column, identical text) collapses.
+	// Expected: left line1, left line2, right heading, wide box = 4.
+	if len(got) != 4 {
+		t.Fatalf("want 4 boxes (2 left-column lines kept + right heading + 1 wide box), got %d: %+v", len(got), got)
 	}
 }

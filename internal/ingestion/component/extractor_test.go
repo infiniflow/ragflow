@@ -1712,6 +1712,103 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestExtractorTopNPlaceholderSubstitution verifies the {{ topn }} placeholder
+// in custom keyword/question system prompts is replaced with the configured
+// top_n, so the count slider stays authoritative when the frontend pre-fills
+// a prompt.
+func TestExtractorTopNPlaceholderSubstitution(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "alpha, beta"},
+		stubResponse{Content: "q1?\nq2?"},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n":         9,
+			"system_prompt": "Give the top {{ topn }} keywords.",
+		},
+		"questions": map[string]any{
+			"top_n":         7,
+			"system_prompt": "Propose {{topn}} questions.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	if got := reqs[0].Messages[0].Content; got != "Give the top 9 keywords." {
+		t.Errorf("expected keywords prompt with top_n=9 substituted, got: %q", got)
+	}
+	if got := reqs[1].Messages[0].Content; got != "Propose 7 questions." {
+		t.Errorf("expected questions prompt with top_n=7 substituted, got: %q", got)
+	}
+}
+
+// TestExtractorDefaultPromptsRenderTopN verifies the built-in keyword/question
+// prompts interpolate the configured top_n when no custom prompt is set.
+func TestExtractorDefaultPromptsRenderTopN(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "k1, k2"},
+		stubResponse{Content: "q1?"},
+	)
+
+	params := map[string]any{
+		"llm_id":    "llm-1",
+		"keywords":  map[string]any{"top_n": 4},
+		"questions": map[string]any{"top_n": 6},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	kwPrompt := reqs[0].Messages[0].Content
+	if !strings.Contains(kwPrompt, "top 4 important keywords/phrases") {
+		t.Errorf("expected built-in keywords prompt with top_n=4, got: %q", kwPrompt)
+	}
+	qPrompt := reqs[1].Messages[0].Content
+	if !strings.Contains(qPrompt, "top 6 important questions") {
+		t.Errorf("expected built-in questions prompt with top_n=6, got: %q", qPrompt)
+	}
+	if strings.Contains(kwPrompt, "{{") || strings.Contains(qPrompt, "{{") {
+		t.Errorf("expected no leftover placeholders, got keywords=%q questions=%q", kwPrompt, qPrompt)
+	}
+}
+
 func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 	stub := withStubChatInvoker(t, stubResponse{Content: "Not expected"})
 
@@ -1929,5 +2026,123 @@ func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
 	}
 	if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+}
+
+func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "Bidding, Procurement"})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{
+				"docnm_kwd":           "Tender_Notice.pdf",
+				"content_with_weight": "General bidding notice content.",
+			},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+
+	kwds, ok := chunks[0]["important_kwd"].([]string)
+	if !ok || len(kwds) != 2 {
+		t.Fatalf("expected important_kwd populated with 2 keywords, got %v", chunks[0]["important_kwd"])
+	}
+
+	// Verify getChunkText on the resulting chunk merges extracted keywords and content without title pollution
+	chunkText := getChunkText(chunks[0])
+	if !strings.Contains(chunkText, "Bidding") || !strings.Contains(chunkText, "Procurement") || !strings.Contains(chunkText, "General bidding notice content.") {
+		t.Fatalf("expected chunk text to contain content and extracted keywords, got %q", chunkText)
+	}
+	if strings.Contains(chunkText, "Tender_Notice") {
+		t.Fatalf("expected chunk text to NOT contain title when content is present, got %q", chunkText)
+	}
+}
+
+func TestExtractor_LLMCacheKey(t *testing.T) {
+	k1 := extractorLLMCacheKey("keywords", "modelA", "prompt1", "text1")
+	k2 := extractorLLMCacheKey("keywords", "modelA", "prompt1", "text1")
+	if k1 != k2 {
+		t.Errorf("extractorLLMCacheKey should be deterministic: %s != %s", k1, k2)
+	}
+
+	// Task type isolation
+	kQuestions := extractorLLMCacheKey("questions", "modelA", "prompt1", "text1")
+	if k1 == kQuestions {
+		t.Errorf("Different task types must produce different keys: %s == %s", k1, kQuestions)
+	}
+
+	// Model isolation
+	kModelB := extractorLLMCacheKey("keywords", "modelB", "prompt1", "text1")
+	if k1 == kModelB {
+		t.Errorf("Different models must produce different keys: %s == %s", k1, kModelB)
+	}
+
+	// NUL separator collision test ("ab", "c") vs ("a", "bc")
+	kColl1 := extractorLLMCacheKey("k", "m", "ab", "c")
+	kColl2 := extractorLLMCacheKey("k", "m", "a", "bc")
+	if kColl1 == kColl2 {
+		t.Errorf("NUL separator should prevent collisions: %s == %s", kColl1, kColl2)
+	}
+}
+
+func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "Alpha, Beta"},
+		stubResponse{Content: "What is Alpha?\nWhat is Beta?"},
+		stubResponse{Content: "This is a summary without Redis."},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test-noredis",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Sample text for fail open test."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("Expected 3 LLM calls, got %d", calls)
+	}
+	ck := out["chunks"].([]map[string]any)[0]
+	if sum, ok := ck["summary"].(string); !ok || sum != "This is a summary without Redis." {
+		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}
 }

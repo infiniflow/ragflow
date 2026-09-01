@@ -1300,6 +1300,10 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         chunks: List of chunk dictionaries to insert
         progress_callback: Callback function for progress updates
     """
+    from rag.svr.task_executor_refactor.chunk_service import apply_source_chunks_document_availability
+
+    apply_source_chunks_document_availability(chunks)
+
     mothers = []
     mother_ids = set([])
     for ck in chunks:

@@ -32,8 +32,7 @@ import (
 	"time"
 
 	"github.com/AkmalOt/gomsg"
-	"golang.org/x/text/encoding"
-	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/net/html"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/utility"
@@ -149,8 +148,21 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	// Text output: flatten fields into a single string.
 	var sb strings.Builder
 	for k, v := range content {
+		// The metadata map (every non-basic header: Received chains,
+		// DKIM/ARC signatures, …) stays available in the JSON output, but
+		// flattening it into chunkable text buries the message under
+		// transport noise, so it is excluded from the text output.
+		if k == "metadata" {
+			continue
+		}
 		switch val := v.(type) {
 		case string:
+			if k == "text_html" {
+				// Text output feeds the chunker directly; emit the
+				// visible text of the HTML part instead of raw markup,
+				// which otherwise lands in chunks as tag soup.
+				val = htmlBodyToText(val)
+			}
 			sb.WriteString(k)
 			sb.WriteString(":")
 			sb.WriteString(val)
@@ -198,6 +210,30 @@ func targetFieldsSet(fields []string) map[string]bool {
 	return m
 }
 
+// -- header decoding (RFC 2047) --
+
+// rfc2047Decoder decodes RFC 2047 encoded-words (e.g. "=?utf-8?B?...?=") in
+// header values. utf-8 is handled natively by mime; the CharsetReader covers
+// the non-UTF-8 charsets via charsetEncoding.
+var rfc2047Decoder = &mime.WordDecoder{
+	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
+		if enc, ok := charsetEncoding(charset); ok {
+			return transform.NewReader(input, enc.NewDecoder()), nil
+		}
+		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
+	},
+}
+
+// decodeHeaderWord decodes any RFC 2047 encoded-words in a header value,
+// leaving undecodable values untouched.
+func decodeHeaderWord(val string) string {
+	decoded, err := rfc2047Decoder.DecodeHeader(val)
+	if err != nil {
+		return val
+	}
+	return decoded
+}
+
 // -- .eml parsing (RFC 5322 with multipart support) --
 
 func parseEML(r io.Reader, fields []string) map[string]any {
@@ -210,11 +246,18 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 		return content
 	}
 
-	// Headers.
+	// Headers. net/mail does not decode RFC 2047 encoded-words, so decode
+	// each value explicitly; otherwise a non-ASCII subject/from arrives as
+	// an unreadable "=?utf-8?B?...?=" blob that chunk delimiters then shred
+	// at the "?" characters.
 	meta := map[string]any{}
 	for key, vals := range msg.Header {
 		keyLower := strings.ToLower(key)
-		val := strings.Join(vals, ", ")
+		decoded := make([]string, len(vals))
+		for i, v := range vals {
+			decoded[i] = decodeHeaderWord(v)
+		}
+		val := strings.Join(decoded, ", ")
 		switch keyLower {
 		case "from", "to", "cc", "bcc", "date", "subject":
 			if target[keyLower] {
@@ -401,6 +444,73 @@ func attachmentFilename(part *multipart.Part) string {
 	return "attachment.bin"
 }
 
+// -- HTML body → visible text (text output only) --
+
+// htmlBodyToText flattens an email HTML body to its visible text. Unlike the
+// structured HTML parser (which keeps table markup for the dedicated HTML
+// chunk method), email bodies use tables for layout, so this walker descends
+// into tables and emits cell text instead. <head>/<script>/<style> subtrees
+// are skipped; whitespace folding is shared with the standalone HTML parser
+// via leafWriter.
+func htmlBodyToText(body string) string {
+	if strings.TrimSpace(body) == "" {
+		return ""
+	}
+	doc, err := html.Parse(strings.NewReader(body))
+	if err != nil {
+		return body
+	}
+	var b bytes.Buffer
+	w := &leafWriter{b: &b, lineStart: true}
+	walkHTMLBodyText(doc, w)
+	return strings.TrimSpace(b.String())
+}
+
+// isEmailBlockTag reports whether tag delimits a line in flattened email
+// body text: the standard block tags plus table tags, since email uses
+// tables for layout and their cells/rows must not fuse either.
+func isEmailBlockTag(tag string) bool {
+	return isBlockTag(tag) || tag == "table" || tag == "td" || tag == "th"
+}
+
+func walkHTMLBodyText(n *html.Node, w *leafWriter) {
+	switch n.Type {
+	case html.TextNode:
+		w.writeText(n.Data)
+	case html.DocumentNode:
+		// html.Parse always wraps the fragment in a Document node holding an
+		// <html><body> skeleton; the walker relies on descending through those
+		// transparent containers (head/script/style subtrees are skipped by the
+		// ElementNode case), so without descending here the whole body would
+		// be dropped.
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walkHTMLBodyText(child, w)
+		}
+	case html.ElementNode:
+		switch n.Data {
+		case "head", "script", "style", "noscript":
+			return
+		case "br":
+			w.hardBreak()
+			return
+		}
+		// A nested block starts on a new line when text already precedes
+		// it, so outer text and inner block text stay separate
+		// ("<div>a<p>b</p></div>" flattens to "a\nb", not "ab").
+		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
+			w.hardBreak()
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walkHTMLBodyText(child, w)
+		}
+		// Block-level tags and table cells/rows end the current line so
+		// adjacent block/cell text does not fuse together.
+		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
+			w.hardBreak()
+		}
+	}
+}
+
 // decodeMailPayload attempts multiple charset decodings.
 // Mirrors Python's _decode_payload with fallback chain:
 // utf-8 → gb2312 → gbk → gb18030 → latin1 → utf-8 (ignore).
@@ -408,16 +518,8 @@ func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	charsets := buildCharsetChain(charset)
-	for _, enc := range charsets {
-		if enc == "" {
-			// raw bytes → already fallthrough
-			return string(payload)
-		}
-		decoded, err := decodeWithCharset(payload, enc)
-		if err == nil {
-			return decoded
-		}
+	if decoded, _, ok := decodeFirstCharsetMatch(payload, buildCharsetChain(charset)); ok {
+		return decoded
 	}
 	return string(payload)
 }
@@ -429,48 +531,6 @@ func buildCharsetChain(declared string) []string {
 	}
 	chain = append(chain, "utf-8", "gb2312", "gbk", "gb18030", "latin1")
 	return chain
-}
-
-func decodeWithCharset(payload []byte, charset string) (string, error) {
-	charset = strings.ToLower(strings.TrimSpace(charset))
-	switch charset {
-	case "utf-8", "utf8", "":
-		s := string(payload)
-		if !strings.ContainsRune(s, '\ufffd') {
-			return s, nil
-		}
-		return "", fmt.Errorf("invalid utf-8")
-	case "latin1", "iso-8859-1", "iso8859-1":
-		runes := make([]rune, len(payload))
-		for i, b := range payload {
-			runes[i] = rune(b)
-		}
-		return string(runes), nil
-	case "gb2312":
-		return decodeTransform(payload, simplifiedchinese.HZGB2312.NewDecoder())
-	case "gbk":
-		return decodeTransform(payload, simplifiedchinese.GBK.NewDecoder())
-	case "gb18030":
-		return decodeTransform(payload, simplifiedchinese.GB18030.NewDecoder())
-	}
-	// Unknown charset: treat as latin-1.
-	runes := make([]rune, len(payload))
-	for i, b := range payload {
-		runes[i] = rune(b)
-	}
-	return string(runes), nil
-}
-
-func decodeTransform(payload []byte, decoder *encoding.Decoder) (string, error) {
-	reader := transform.NewReader(bytes.NewReader(payload), decoder)
-	decoded, err := io.ReadAll(reader)
-	if err != nil {
-		return "", err
-	}
-	if !strings.ContainsRune(string(decoded), '\ufffd') {
-		return string(decoded), nil
-	}
-	return "", fmt.Errorf("decode produced replacement characters")
 }
 
 // parseMSG parses an Outlook .msg (OLE2 compound document) file using the

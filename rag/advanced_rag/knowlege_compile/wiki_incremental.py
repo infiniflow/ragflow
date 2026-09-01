@@ -161,7 +161,10 @@ async def _chat_mdl_ask(chat_mdl, system_prompt: str, user_prompt: str, temperat
         raise
     if isinstance(raw, tuple):
         raw = raw[0]
-    return _strip_think(raw or "")
+    response = _strip_think(raw or "")
+    if any(line.lstrip().startswith("**ERROR**") for line in response.splitlines()):
+        raise RuntimeError(f"Wiki LLM call failed: {response}")
+    return response
 
 
 def _wiki_should_re_synthesize(

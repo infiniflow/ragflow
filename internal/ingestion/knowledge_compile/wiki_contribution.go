@@ -246,7 +246,7 @@ func wikiContributionSignature(product kccommon.Product) string {
 	}{
 		Content:        strings.TrimSpace(product.Content),
 		Title:          strings.TrimSpace(metaString(product.Meta, "title")),
-		Topic:          strings.TrimSpace(metaString(product.Meta, "topic")),
+		Topic:          kccommon.NormalizeWikiTopicPath(metaString(product.Meta, "topic")),
 		Summary:        strings.TrimSpace(metaString(product.Meta, "summary")),
 		EntityNames:    sortedUniqueCopy(metaStringSlice(product.Meta, "entity_names")),
 		RelatedKBPages: sortedUniqueCopy(metaStringSlice(product.Meta, "related_kb_pages")),

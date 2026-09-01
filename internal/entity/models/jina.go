@@ -17,15 +17,20 @@
 package models
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"go.uber.org/zap"
 )
 
 type JinaModel struct {
@@ -106,6 +111,7 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
+	messages = prepareJinaMessages(baseURL, messages)
 	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -125,6 +131,9 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 }
 
 func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -143,10 +152,10 @@ func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 		return err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
+	messages = prepareJinaMessages(baseURL, messages)
 	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	if chatModelConfig != nil {
 		chatModelConfig.ToolCallsResult = nil
@@ -156,9 +165,267 @@ func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 		}
 	}
 
-	return j.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
-		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	err = j.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return handleJinaStreamingResponse(body, modelUsage, chatModelConfig, sender)
 	})
+	if err != nil {
+		upstreamResponse := err.Error()
+		errorChunk := "**ERROR**: " + upstreamResponse
+		if sendErr := sender(&errorChunk, nil); sendErr != nil {
+			return fmt.Errorf("forward Jina stream error: %w", sendErr)
+		}
+		endOfStream := "[DONE]"
+		if sendErr := sender(&endOfStream, nil); sendErr != nil {
+			return fmt.Errorf("finish Jina error stream: %w", sendErr)
+		}
+		return nil
+	}
+	return nil
+}
+
+func prepareJinaMessages(baseURL string, messages []Message) []Message {
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil || !strings.EqualFold(parsedURL.Hostname(), "api.jina.ai") {
+		return messages
+	}
+	return mergeLeadingJinaSystemMessages(messages)
+}
+
+func mergeLeadingJinaSystemMessages(messages []Message) []Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	firstNonSystem := 0
+	systemParts := make([]string, 0, 1)
+	for firstNonSystem < len(messages) && strings.EqualFold(strings.TrimSpace(messages[firstNonSystem].Role), "system") {
+		if content, ok := messages[firstNonSystem].Content.(string); ok && strings.TrimSpace(content) != "" {
+			systemParts = append(systemParts, content)
+		}
+		firstNonSystem++
+	}
+	if firstNonSystem == 0 {
+		return messages
+	}
+
+	out := append([]Message(nil), messages[firstNonSystem:]...)
+	systemText := strings.Join(systemParts, "\n\n")
+	if len(out) == 0 || !strings.EqualFold(strings.TrimSpace(out[0].Role), "user") {
+		return append([]Message{{Role: "user", Content: systemText}}, out...)
+	}
+	out[0].Content = prependJinaSystemText(out[0].Content, systemText)
+	return out
+}
+
+func prependJinaSystemText(content any, systemText string) any {
+	if strings.TrimSpace(systemText) == "" {
+		return content
+	}
+	switch value := content.(type) {
+	case string:
+		if strings.TrimSpace(value) == "" {
+			return systemText
+		}
+		return systemText + "\n\n" + value
+	case []interface{}:
+		parts := make([]interface{}, 0, len(value)+1)
+		parts = append(parts, map[string]interface{}{"type": "text", "text": systemText})
+		return append(parts, value...)
+	default:
+		return systemText
+	}
+}
+
+// handleJinaStreamingResponse adapts Jina-VLM's thinking stream to the
+// internal content/reasoning split. Jina emits both kinds of text in
+// delta.content and marks thinking chunks with delta.type="think"; the
+// generic OpenAI handler treats all of them as answer content.
+func handleJinaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, chatConfig *ChatConfig, sender func(*string, *string) error) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
+	var streamUsage *TokenUsage
+	accumulatedToolCalls := make(map[int]map[string]any)
+	thinking := false
+	thinkingClosed := false
+	var pending strings.Builder
+	streamModel := ""
+	streamResponseID := ""
+
+	emit := func(text string, reasoning bool) error {
+		if text == "" {
+			return nil
+		}
+		if reasoning {
+			return sender(nil, &text)
+		}
+		return sender(&text, nil)
+	}
+
+	flushThinking := func(final bool) error {
+		value := pending.String()
+		if !final && len(value) > len("</think>")-1 {
+			safeEnd := len(value) - (len("</think>") - 1)
+			for safeEnd > 0 && !utf8.RuneStart(value[safeEnd]) {
+				safeEnd--
+			}
+			safe := value[:safeEnd]
+			pending.Reset()
+			pending.WriteString(value[len(safe):])
+			return emit(safe, true)
+		}
+		pending.Reset()
+		return emit(value, true)
+	}
+
+	consumeContent := func(content string, typ string) error {
+		if typ == "think" && !thinkingClosed {
+			thinking = true
+		}
+		if !thinking {
+			return emit(content, false)
+		}
+
+		pending.WriteString(content)
+		for thinking {
+			value := pending.String()
+			idx := strings.Index(value, "</think>")
+			if idx < 0 {
+				return flushThinking(false)
+			}
+			if err := emit(value[:idx], true); err != nil {
+				return err
+			}
+			pending.Reset()
+			pending.WriteString(value[idx+len("</think>"):])
+			thinking = false
+			thinkingClosed = true
+		}
+		value := pending.String()
+		pending.Reset()
+		return emit(value, false)
+	}
+
+	_, eventCount, err := parseJinaStream(body, func(event map[string]any) error {
+		if id, ok := event["id"].(string); ok && id != "" {
+			streamResponseID = id
+		}
+		if u, ok := OpenAIParserConfig.StreamParser(event); ok {
+			streamUsage = u
+		}
+		if m, ok := event["model"].(string); ok {
+			streamModel = m
+		}
+		if apiErr, ok := event["error"]; ok && apiErr != nil {
+			return fmt.Errorf("upstream stream error: %v", apiErr)
+		}
+		choices, ok := event["choices"].([]any)
+		if !ok || len(choices) == 0 {
+			return nil
+		}
+		choice, ok := choices[0].(map[string]any)
+		if !ok {
+			return nil
+		}
+		delta, ok := choice["delta"].(map[string]any)
+		if !ok {
+			return nil
+		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+		content, _ := delta["content"].(string)
+		typ, _ := delta["type"].(string)
+		return consumeContent(content, typ)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan Jina response body: %w", err)
+	}
+	if thinking {
+		if err := flushThinking(true); err != nil {
+			return err
+		}
+	}
+	if eventCount == 0 {
+		return fmt.Errorf("Jina stream contained no JSON events")
+	}
+	if chatConfig != nil {
+		setSortedToolCallsResult(chatConfig, accumulatedToolCalls)
+	}
+	if streamUsage != nil {
+		recordResponseUsage(modelUsage, streamResponseID, streamUsage, "chat")
+		if chatConfig != nil {
+			chatConfig.UsageResult = streamUsage
+			common.Info("StreamUsage", zap.String("model", streamModel), zap.Int("prompt", streamUsage.PromptTokens), zap.Int("completion", streamUsage.CompletionTokens), zap.Int("total", streamUsage.TotalTokens))
+		}
+	}
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
+}
+
+// parseJinaStream accepts both OpenAI-style SSE frames and Jina-VLM's
+// newline-delimited JSON stream. Jina may terminate a successful stream by
+// closing the connection instead of emitting a final [DONE] frame.
+func parseJinaStream(body io.Reader, onEvent func(map[string]any) error) (done bool, eventCount int, err error) {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	var sseData []string
+	flushSSE := func() error {
+		if len(sseData) == 0 {
+			return nil
+		}
+		line := strings.Join(sseData, "\n")
+		sseData = nil
+		if line == "[DONE]" {
+			done = true
+			return nil
+		}
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			return fmt.Errorf("invalid Jina stream event: %w", err)
+		}
+		eventCount++
+		return onEvent(event)
+	}
+	for scanner.Scan() {
+		line := strings.TrimRight(scanner.Text(), "\r")
+		if line == "" {
+			if err := flushSSE(); err != nil {
+				return false, eventCount, err
+			}
+			if done {
+				return true, eventCount, nil
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			sseData = append(sseData, strings.TrimSpace(line[len("data:"):]))
+			continue
+		} else if strings.Contains(line, ":") && !strings.HasPrefix(line, "{") && !strings.HasPrefix(line, "[") {
+			// Ignore non-data SSE fields such as event:, id:, and retry:.
+			continue
+		}
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
+			var event map[string]any
+			if err := json.Unmarshal([]byte(line), &event); err != nil {
+				return false, eventCount, fmt.Errorf("invalid Jina stream event: %w", err)
+			}
+			eventCount++
+			if err := onEvent(event); err != nil {
+				return false, eventCount, err
+			}
+			continue
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return false, eventCount, err
+	}
+	if err := flushSSE(); err != nil {
+		return false, eventCount, err
+	}
+	if done {
+		return true, eventCount, nil
+	}
+	return false, eventCount, nil
 }
 
 func (j *JinaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {

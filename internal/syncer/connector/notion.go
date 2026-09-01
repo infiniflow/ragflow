@@ -112,11 +112,15 @@ func (c *NotionConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	}
 	c.indexedPages = map[string]bool{}
 	c.pagePathCache = map[string]string{}
+	resumeSourceID, err := notionResumeSourceID(request.Resume)
+	if err != nil {
+		return nil, err
+	}
 	session := &notionSyncSession{
 		connector:      c,
 		request:        request,
 		batchSize:      c.batchSize,
-		resumeSourceID: notionResumeSourceID(request.Resume),
+		resumeSourceID: resumeSourceID,
 		searchRequest: notionSearchRequest{
 			Filter:   map[string]any{"property": "object", "value": "page"},
 			PageSize: 100,
@@ -618,7 +622,7 @@ func (s *notionSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		pageDocs, err := s.nextPageDocuments(ctx)
 		if errors.Is(err, io.EOF) {
 			if s.resumeSourceID != "" && !s.resumeMatched {
-				return SyncBatch{}, fmt.Errorf("notion sync resume checkpoint %q was not found in the source; refusing to discard unprocessed documents", s.resumeSourceID)
+				return SyncBatch{}, fmt.Errorf("notion sync resume checkpoint %q was not found in the source: %w", s.resumeSourceID, ErrSyncResumeInvalid)
 			}
 			if len(documents) == 0 {
 				return SyncBatch{}, io.EOF
@@ -869,11 +873,15 @@ func notionSearchResultsOlderThanWindowStart(pages []notionPage, request SyncReq
 	return true
 }
 
-func notionResumeSourceID(checkpoint *SyncCheckpoint) string {
+func notionResumeSourceID(checkpoint *SyncCheckpoint) (string, error) {
 	if checkpoint == nil {
-		return ""
+		return "", nil
 	}
-	return firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	if sourceID == "" {
+		return "", fmt.Errorf("notion sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	return sourceID, nil
 }
 
 func includeNotionUpdatedAt(updatedAt time.Time, request SyncRequest) bool {

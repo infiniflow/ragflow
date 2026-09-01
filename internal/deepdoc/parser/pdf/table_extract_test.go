@@ -99,7 +99,7 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 		},
 	}
 
-	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 	if len(item.Cells) != 1 {
 		t.Fatalf("cells = %d, want 1", len(item.Cells))
 	}
@@ -163,7 +163,7 @@ func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
 		},
 	}
 
-	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 
 	const wantOffX = regionX0 - util.TSRRegionMarginPx // 100 - 30 = 70
 	const wantOffY = regionY0 - util.TSRRegionMarginPx // 140 - 30 = 110
@@ -216,7 +216,7 @@ func TestProcessOneTable_NoPerCellOCR(t *testing.T) {
 				},
 			}
 
-			item := p.processOneTable(context.Background(), pageImg, boxes, 0, doc, builder, match, pdf.DlaScale)
+			item := p.processOneTable(t.Context(), pageImg, boxes, 0, doc, builder, match, pdf.DlaScale)
 			if len(item.Cells) != 1 {
 				t.Fatalf("cells = %d, want 1", len(item.Cells))
 			}
@@ -281,20 +281,17 @@ func TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill(t *testing.T) {
 		},
 	}
 
-	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
-	if len(item.Grid) != 2 || len(item.Grid[0]) != 1 || len(item.Grid[1]) != 1 {
-		t.Fatalf("grid shape = %v, want 2x1", item.Grid)
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	// Python's construct_table groups boxes by their R/C labels, producing a
+	// row only for an R that carries a box. Both boxes land in the SAME row
+	// (they overlap vertically), so the grid is 1x1 — not 2x1.
+	if len(item.Grid) != 1 || len(item.Grid[0]) != 1 {
+		t.Fatalf("grid shape = %v, want 1x1 (R/C grouping emits a row only for the R that carries the box)", item.Grid)
 	}
 
-	row0, row1 := item.Grid[0][0].Text, item.Grid[1][0].Text
-	nonEmpty := 0
-	for _, text := range []string{row0, row1} {
-		if text != "" {
-			nonEmpty++
-		}
-	}
-	if nonEmpty != 1 {
-		t.Fatalf("nonEmpty cells = %d (row0=%q row1=%q), want exactly 1: overlapping boxes must merge into a single cell assignment instead of spreading duplicated text across rows", nonEmpty, row0, row1)
+	row0 := item.Grid[0][0].Text
+	if row0 == "" {
+		t.Fatalf("row0 = %q, want non-empty: overlapping boxes must merge into a single cell assignment instead of spreading duplicated text across rows", row0)
 	}
 }
 

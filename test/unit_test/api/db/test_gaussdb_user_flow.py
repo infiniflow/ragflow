@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[4]
 HELPER_DIR = Path(__file__).resolve().parent
 
@@ -37,6 +36,7 @@ stub_settings_import_dependencies()
         text=True,
         capture_output=True,
         timeout=timeout,
+        check=False,
     )
     assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     return result
@@ -75,6 +75,8 @@ print("gaussdb-adapter-ok")
 
 
 def test_gaussdb_empty_string_compatible_fields_are_nullable_only_for_gaussdb():
+    """Verify empty-string field behavior across supported metadata databases."""
+
     gaussdb_result = run_isolated_flow(
         """
 from api.db.db_models import API4Conversation, Dialog, Document, File, Knowledgebase, Memory, SyncLogs, SystemSettings, Task, Tenant, User, UserCanvas
@@ -88,6 +90,8 @@ fields = [
     Tenant.rerank_id,
     File.source_type,
     Knowledgebase.embd_id,
+    Dialog.description,
+    Dialog.icon,
     Dialog.llm_id,
     Dialog.rerank_id,
     Memory.embd_id,
@@ -147,6 +151,8 @@ fields = [
     (Tenant.rerank_id, False),
     (File.source_type, False),
     (Knowledgebase.embd_id, False),
+    (Dialog.description, True),
+    (Dialog.icon, True),
     (Dialog.llm_id, False),
     (Dialog.rerank_id, False),
     (Memory.embd_id, False),
@@ -165,6 +171,9 @@ for field, expected_null in fields:
     assert field.null is expected_null
     assert field.db_value("") == ""
 
+for field in (Dialog.description, Dialog.icon):
+    assert field.python_value(None) is None
+
 assert Task.chunk_ids.field_type == "LONGTEXT"
 sql, params = File.select().where(File.source_type == "").sql()
 assert "IS NULL" not in sql
@@ -177,6 +186,38 @@ print("mysql-nullability-ok")
         },
     )
     assert "mysql-nullability-ok" in mysql_result.stdout
+
+    postgres_result = run_isolated_flow(
+        """
+from common import config_utils
+
+config_utils.CONFIGS["postgres"] = {
+    "name": "rag_flow",
+    "user": "rag_flow",
+    "password": "test-password",
+    "host": "postgres.local",
+    "port": 5432,
+    "max_connections": 1,
+    "stale_timeout": 30,
+}
+from api.db.db_models import Dialog
+
+for field in (Dialog.description, Dialog.icon):
+    assert field.null is True
+    assert field.db_value("") == ""
+    assert field.python_value(None) is None
+
+sql, params = Dialog.select().where(Dialog.icon == "").sql()
+assert "IS NULL" not in sql
+assert "LENGTH" not in sql
+assert params == [""]
+print("postgres-empty-string-behavior-ok")
+""",
+        {
+            "DB_TYPE": "postgres",
+        },
+    )
+    assert "postgres-empty-string-behavior-ok" in postgres_result.stdout
 
 
 def test_live_gaussdb_init_lock_and_user_crud_flow():

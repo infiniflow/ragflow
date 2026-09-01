@@ -108,7 +108,14 @@ def _load_dataset_module(monkeypatch):
         resolve_model_config=lambda *_args, **_kwargs: {"llm_name": "new-embd"},
         resolve_model_id=lambda *_args, **_kwargs: "new-embd",
     )
-    _install_module(monkeypatch, "api.db.db_models", File=SimpleNamespace())
+    _install_module(
+        monkeypatch,
+        "api.db.db_models",
+        Connector2Kb=SimpleNamespace(kb_id="kb_id"),
+        Document=SimpleNamespace(kb_id="kb_id"),
+        File=SimpleNamespace(),
+        SyncLogs=SimpleNamespace(kb_id="kb_id", status=SimpleNamespace(in_=lambda _values: None)),
+    )
     _install_module(
         monkeypatch,
         "api.db.services.document_service",
@@ -126,7 +133,12 @@ def _load_dataset_module(monkeypatch):
         ),
         validate_dataset_embedding_models=lambda *_args, **_kwargs: None,
     )
-    _install_module(monkeypatch, "api.db.services.connector_service", Connector2KbService=SimpleNamespace())
+    _install_module(
+        monkeypatch,
+        "api.db.services.connector_service",
+        Connector2KbService=SimpleNamespace(),
+        SyncLogsService=SimpleNamespace(),
+    )
     _install_module(
         monkeypatch,
         "api.db.services.task_service",
@@ -154,6 +166,7 @@ def _load_dataset_module(monkeypatch):
         PAGERANK_FLD="pagerank_fea",
         RetCode=SimpleNamespace(NOT_EFFECTIVE=590),
         StatusEnum=SimpleNamespace(VALID=SimpleNamespace(value="1")),
+        TaskStatus=SimpleNamespace(SCHEDULE="schedule", RUNNING="running", CANCEL="cancel"),
     )
     _install_module(
         monkeypatch,

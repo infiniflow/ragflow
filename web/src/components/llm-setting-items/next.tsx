@@ -57,6 +57,8 @@ interface LlmSettingFieldItemsProps {
     | 'thinking'
   >;
   showCollapse?: boolean;
+  collapseOpen?: boolean;
+  onCollapseOpenChange?: (open: boolean) => void;
   ownerTenantId?: string;
 }
 
@@ -103,6 +105,8 @@ export function LlmSettingFieldItems({
   ],
   llmId,
   showCollapse = false,
+  collapseOpen,
+  onCollapseOpenChange,
   ownerTenantId,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
@@ -262,7 +266,7 @@ export function LlmSettingFieldItems({
           render={({ field }) => (
             <FormItem className="flex justify-between items-center">
               <FormLabel className="flex-1" tooltip={t('thinkingTip')}>
-                {t('thinking')}
+                {t('thinkingMode')}
               </FormLabel>
               <FormControl>
                 <Select
@@ -303,7 +307,13 @@ export function LlmSettingFieldItems({
         ownerTenantId={ownerTenantId}
       ></LLMFormField>
       {showCollapse ? (
-        <Collapse title={t('modelSetting')}>{settingFields}</Collapse>
+        <Collapse
+          title={t('modelSetting')}
+          open={collapseOpen}
+          onOpenChange={onCollapseOpenChange}
+        >
+          {settingFields}
+        </Collapse>
       ) : (
         settingFields
       )}

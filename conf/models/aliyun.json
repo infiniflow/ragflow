@@ -46,12 +46,6 @@
       }
     },
     {
-      "name": "qwen-tts-flash",
-      "model_types": [
-        "tts"
-      ]
-    },
-    {
       "name": "qwen-asr-flash",
       "model_types": [
         "asr"

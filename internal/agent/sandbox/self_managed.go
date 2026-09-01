@@ -62,6 +62,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -101,6 +102,11 @@ type SelfManagedProvider struct {
 	// language's image get a per-language override path that the
 	// executor_manager can then route at container-create time.
 	baseImages map[string]string
+	// apiToken is the shared secret authenticating this RAGFlow
+	// instance towards the executor_manager's /run endpoint
+	// (Authorization: Bearer). Empty means the executor_manager runs
+	// without authentication (backwards compatibility).
+	apiToken string
 }
 
 // newSelfManagedProviderFromEnv reads SANDBOX_EXECUTOR_MANAGER_URL
@@ -111,39 +117,77 @@ type SelfManagedProvider struct {
 // are also read; empty values mean "use executor_manager's
 // default image" — no override.
 func newSelfManagedProviderFromEnv() *SelfManagedProvider {
-	return newSelfManagedProviderFromConfig(selfManagedConfigFromEnv())
+	return newSelfManagedProviderFromConfig(map[string]any{})
 }
 
-// selfManagedConfigFromEnv builds a config map from the SANDBOX_*
-// env vars, mirroring the admin-panel settings JSON shape.
-func selfManagedConfigFromEnv() map[string]any {
-	return map[string]any{
-		"EXECUTOR_MANAGER_URL":         common.GetEnv(common.EnvSandboxExecutorManagerURL),
-		"EXECUTOR_MANAGER_TIMEOUT":     common.GetEnv(common.EnvSandboxExecutorManagerTimeout),
-		"EXECUTOR_MANAGER_POOL_SIZE":   common.GetEnv(common.EnvSandboxExecutorManagerPoolSize),
-		"EXECUTOR_MANAGER_MAX_RETRIES": common.GetEnv(common.EnvSandboxExecutorManagerMaxRetries),
-		"BASE_PYTHON_IMAGE":            common.GetEnv(common.EnvSandboxBasePythonImage),
-		"BASE_NODEJS_IMAGE":            common.GetEnv(common.EnvSandboxBaseNodeJSImage),
+// The provider resolves each field through one canonical chain: the
+// lowercase admin-panel settings schema first (endpoint, timeout,
+// max_retries, pool_size, api_token — the exact schema
+// agent/sandbox/providers/self_managed.py persists and reads; pool_size
+// additionally accepts its executor_manager_pool_size spelling, which the
+// Python provider reads first), then the SANDBOX_* environment variable for
+// fields absent from persisted settings, then the built-in default. Keeping
+// a single resolution path on both runtimes means a settings row plus
+// environment variables configures Python and Go identically.
+func configStringEnv(cfg map[string]any, envName string, keys ...string) string {
+	for _, key := range keys {
+		// Blank-after-trim values count as absent so they fall through to
+		// the environment, matching the Python provider's
+		// `config.get(...) or env` resolution.
+		if value := strings.TrimSpace(configString(cfg, key)); value != "" {
+			return value
+		}
 	}
+	return common.GetEnv(envName)
 }
 
-// newSelfManagedProviderFromConfig builds the provider from a JSON
-// config map (as stored in the system_settings table for the
-// self_managed provider). The config keys mirror the env-var names
-// without the SANDBOX_ prefix; see selfManagedConfigFromEnv for the
-// shape. Missing / unparseable values fall back to the same defaults
-// the env-driven path uses.
+func configIntEnv(cfg map[string]any, fallback int, envName string, keys ...string) int {
+	for _, key := range keys {
+		if _, ok := cfg[key]; ok && cfg[key] != nil {
+			return configInt(cfg, key, fallback)
+		}
+	}
+	if envValue := common.GetEnv(envName); envValue != "" {
+		if parsed, err := strconv.Atoi(envValue); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func configDurationEnv(cfg map[string]any, fallback time.Duration, envName string, keys ...string) time.Duration {
+	for _, key := range keys {
+		if _, ok := cfg[key]; ok && cfg[key] != nil {
+			return configDuration(cfg, key, fallback)
+		}
+	}
+	if envValue := common.GetEnv(envName); envValue != "" {
+		if parsed, err := time.ParseDuration(envValue); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+// newSelfManagedProviderFromConfig builds the provider from the persisted
+// settings JSON (the `sandbox.self_managed` row written by the admin panel,
+// lowercase keys: endpoint, timeout, max_retries, pool_size, api_token,
+// optionally base_python_image / base_nodejs_image). Fields absent from the
+// settings fall back to their SANDBOX_* environment variable before the
+// built-in default, mirroring the Python provider's config-over-env
+// resolution.
 func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
-	endpoint := configString(cfg, "EXECUTOR_MANAGER_URL")
+	endpoint := configStringEnv(cfg, common.EnvSandboxExecutorManagerURL, "endpoint")
 	if endpoint == "" {
 		endpoint = selfManagedDefaultEndpoint
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
 
-	timeout := configDuration(cfg, "EXECUTOR_MANAGER_TIMEOUT", 30*time.Second)
-	poolSize := configInt(cfg, "EXECUTOR_MANAGER_POOL_SIZE", 3)
-	maxRetries := configInt(cfg, "EXECUTOR_MANAGER_MAX_RETRIES", 3)
-	_ = maxRetries // retained for future use; retry is in HTTPClient
+	timeout := configDurationEnv(cfg, 30*time.Second, common.EnvSandboxExecutorManagerTimeout, "timeout")
+	poolSize := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerPoolSize, "executor_manager_pool_size", "pool_size")
+	// max_retries maps to the HTTP client's total attempt count (first try
+	// included), matching its default of 3 attempts.
+	maxRetries := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerMaxRetries, "max_retries")
 
 	// Per-language base image overrides. Empty = executor_manager
 	// default; non-empty = the operator picked a custom base image
@@ -151,17 +195,21 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	// pre-installed, or a node image with native deps for native
 	// addons).
 	baseImages := map[string]string{
-		"python": configString(cfg, "BASE_PYTHON_IMAGE"),
-		"nodejs": configString(cfg, "BASE_NODEJS_IMAGE"),
+		"python": configStringEnv(cfg, common.EnvSandboxBasePythonImage, "base_python_image"),
+		"nodejs": configStringEnv(cfg, common.EnvSandboxBaseNodeJSImage, "base_nodejs_image"),
 	}
+
+	apiToken := strings.TrimSpace(configStringEnv(cfg, common.EnvSandboxExecutorManagerAPIToken, "api_token"))
 
 	return &SelfManagedProvider{
 		endpoint:   endpoint,
 		timeout:    timeout,
 		poolSize:   poolSize,
 		baseImages: baseImages,
+		apiToken:   apiToken,
 		helper: NewHTTPClient(HTTPConfig{
-			Timeout: timeout,
+			Timeout:     timeout,
+			MaxAttempts: maxRetries,
 		}),
 		healthHelper: NewHTTPClient(HTTPConfig{
 			Timeout: 5 * time.Second,
@@ -264,7 +312,13 @@ func (p *SelfManagedProvider) ExecuteCode(
 	}
 
 	start := time.Now()
-	resp, err := p.helper.Do(ctx, http.MethodPost, p.endpoint+"/run", string(body), "application/json", nil)
+	// Shared-secret authentication towards the executor_manager; empty
+	// token keeps the request unauthenticated (backwards compatibility).
+	var reqHeaders map[string]string
+	if p.apiToken != "" {
+		reqHeaders = map[string]string{"Authorization": "Bearer " + p.apiToken}
+	}
+	resp, err := p.helper.Do(ctx, http.MethodPost, p.endpoint+"/run", string(body), "application/json", reqHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("self_managed: POST /run: %w", err)
 	}
