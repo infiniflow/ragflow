@@ -372,10 +372,16 @@ async def grep_search(
     kb_ids: list[str] | None = None,
     top_n: int = 60,
     doc_scope: list[str] | None = None,
+    keywords: str | None = None,
 ) -> dict:
     """Exact keyword/pattern locate: BM25-first candidate pool, then a
     case-insensitive regex locate with a short context window (like dynamic's
     grep_chunks, but returning the ``Pipeline`` ``{"chunks": [...]}`` contract).
+
+    ``keywords`` (optional) is a SOFT retrieval hint fed to the BM25 candidate
+    pool — e.g. the nav-routed docs' summaries ("nav is a hint, not a
+    constraint"). When empty, the query's own terms are extracted instead. It
+    never acts as a hard filter; the candidate pool still spans the whole corpus.
 
     Returns compact snippet chunks (token-cheap) for the sub-agent. When grep
     matches nothing, the BM25 candidates are returned unchanged so evidence is
@@ -386,9 +392,15 @@ async def grep_search(
     _LOG.info('[Grep search] Keyword-first locate for "%s"', query)
     if not query or not str(query).strip():
         return {"chunks": [], "doc_aggs": []}
-    res = await bm25_search(tools, query=str(query).strip(), kb_ids=kb_ids, top_n=top_n, doc_scope=doc_scope)
-    chunks = res.get("chunks", []) or []
     terms = _grep_terms_from_query(str(query).strip())
+    # Pass the extracted terms (or the explicit nav hint) as BM25 keywords so the
+    # candidate pool is built from "sentence + discriminating terms". A long
+    # question buries its proper nouns (e.g. "Culdect Saga") under stopwords;
+    # without the keywords boost the noun chunk never enters the pool and grep
+    # has nothing to locate.
+    hint = keywords if keywords else " ".join(terms)
+    res = await bm25_search(tools, query=str(query).strip(), kb_ids=kb_ids, top_n=top_n, doc_scope=doc_scope, keywords=hint)
+    chunks = res.get("chunks", []) or []
     if not chunks or not terms:
         return res
     try:
