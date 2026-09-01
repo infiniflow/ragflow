@@ -26,6 +26,9 @@ services:
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}
+    build:
+      context: ..
+      dockerfile: Dockerfile_go
     ulimits:
       nofile:
         soft: 65535
@@ -85,6 +88,9 @@ services:
     profiles:
       - gpu
     image: ${RAGFLOW_IMAGE}
+    build:
+      context: ..
+      dockerfile: Dockerfile_go
     ulimits:
       nofile:
         soft: 65535

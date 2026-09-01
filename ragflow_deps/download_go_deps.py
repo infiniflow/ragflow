@@ -63,7 +63,10 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
             # network access during CI.
             ["https://gh-proxy.com/https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
-            [f"https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz", f"pdf_oxide-go-ffi-linux-amd64-v{PDF_OXIDE_VERSION}.tar.gz"],
+            [
+                f"https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz",
+                f"pdf_oxide-go-ffi-linux-amd64-v{PDF_OXIDE_VERSION}.tar.gz",
+            ],
             ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
     else:
