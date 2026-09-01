@@ -261,7 +261,7 @@ func TestSeaFileValidateConnectorSettingUsesRequestUsernamePassword(t *testing.T
 	})
 	receiver.httpClient = server.Client()
 	request := map[string]any{
-		"seafile_url": "https://request.example.com",
+		"seafile_url": server.URL,
 		"credentials": map[string]any{
 			"username": "alice",
 			"password": "secret",
@@ -292,6 +292,9 @@ func TestSeaFileValidateRepoToken(t *testing.T) {
 }
 
 func TestSeaFileDefaultListLibrariesFiltersShared(t *testing.T) {
+	orig := restAPISSRFAllowLoopback
+	restAPISSRFAllowLoopback = true
+	defer func() { restAPISSRFAllowLoopback = orig }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api2/repos/" || r.Header.Get("Authorization") != "Token token" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -684,6 +687,9 @@ func TestSeaFileRegistryOpen(t *testing.T) {
 }
 
 func TestSeaFileDirentWrapperAndDownloadLinkDecode(t *testing.T) {
+	orig := restAPISSRFAllowLoopback
+	restAPISSRFAllowLoopback = true
+	defer func() { restAPISSRFAllowLoopback = orig }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -731,5 +737,33 @@ func TestSeaFileDirentWrapperAndDownloadLinkDecode(t *testing.T) {
 	}
 	if fetch.RepoID != "repo1" || fetch.Path != "/Docs/a.txt" || fetch.Size != 10 {
 		t.Fatalf("fetch reference = %#v", fetch)
+	}
+}
+
+func TestSeaFileAssertURLSafe(t *testing.T) {
+	orig := restAPISSRFAllowLoopback
+	defer func() { restAPISSRFAllowLoopback = orig }()
+
+	restAPISSRFAllowLoopback = false
+	if _, _, err := seafileAssertURLSafe(context.Background(), "ftp://example.com"); err == nil {
+		t.Fatalf("expected scheme rejection")
+	}
+	if _, _, err := seafileAssertURLSafe(context.Background(), "localhost"); err == nil {
+		t.Fatalf("expected missing host rejection")
+	}
+	if _, _, err := seafileAssertURLSafe(context.Background(), "https://localhost/seafile"); err == nil {
+		t.Fatalf("expected localhost rejection")
+	}
+	if _, _, err := seafileAssertURLSafe(context.Background(), "https://127.0.0.1/seafile"); err == nil {
+		t.Fatalf("expected loopback rejection")
+	}
+
+	restAPISSRFAllowLoopback = true
+	hostname, pinIP, err := seafileAssertURLSafe(context.Background(), "http://127.0.0.1:8080/seafile")
+	if err != nil {
+		t.Fatalf("loopback should be allowed: %v", err)
+	}
+	if hostname != "127.0.0.1" || !pinIP.IsLoopback() {
+		t.Fatalf("hostname/pinIP = %q/%v", hostname, pinIP)
 	}
 }

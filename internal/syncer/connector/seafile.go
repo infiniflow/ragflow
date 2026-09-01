@@ -38,6 +38,7 @@ const (
 	seafileDefaultBatchSize     = 2
 	seafileDefaultSizeThreshold = 20 * 1024 * 1024
 	seafileRequestTimeout       = 60 * time.Second
+	seafileMaxRedirects         = 10
 	seafileMaxResponseSize      = 32 * 1024 * 1024
 )
 
@@ -214,13 +215,8 @@ func (c *SeaFileConnector) ValidateConnectorSetting(ctx context.Context, request
 	if err != nil {
 		return err
 	}
-	if c != nil {
-		if c.httpClient != nil {
-			candidate.httpClient = c.httpClient
-		}
-		if c.seafileURL != "" {
-			candidate.seafileURL = c.seafileURL
-		}
+	if c != nil && c.httpClient != nil {
+		candidate.httpClient = c.httpClient
 	}
 	return candidate.Validate(ctx)
 }
@@ -437,11 +433,6 @@ func (c *SeaFileConnector) validateRepoAccessViaAccount(ctx context.Context) err
 }
 
 func (c *SeaFileConnector) defaultListLibraries(ctx context.Context) ([]seafileLibrary, error) {
-	var libraries []seafileLibrary
-	if err := c.getJSON(ctx, "repos/", false, nil, &libraries); err != nil {
-		return nil, err
-	}
-func (c *SeaFileConnector) defaultListLibraries(ctx context.Context) ([]seafileLibrary, error) {
 	if !c.includeShared && c.currentUserEmail == "" {
 		if err := c.defaultValidateAccountToken(ctx); err != nil {
 			return nil, err
@@ -548,25 +539,66 @@ func (c *SeaFileConnector) getBody(ctx context.Context, endpoint string, useRepo
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, seafileRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.apiURL(endpoint, useRepoToken, query), nil)
-	if err != nil {
-		return nil, err
+	currentURL := c.apiURL(endpoint, useRepoToken, query)
+	previousNetloc := restAPINetloc(currentURL)
+	for hop := 0; hop <= seafileMaxRedirects; hop++ {
+		hostname, pinIP, err := seafileAssertURLSafe(reqCtx, currentURL)
+		if err != nil {
+			return nil, &ConnectorValidationError{Message: "Unsafe SeaFile URL: " + err.Error()}
+		}
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, currentURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+		transport := newRestAPIPinnedTransport(hostname, pinIP)
+		client := &http.Client{
+			Transport: transport,
+			Timeout:   seafileRequestTimeout,
+			// Redirects are handled manually so every hop is re-validated
+			// for SSRF and DNS-pinned before a connection is made.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			transport.CloseIdleConnections()
+			return nil, err
+		}
+		if !restAPIIsRedirect(resp.StatusCode) {
+			resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
+			body, err := readSeaFileBody(resp)
+			if err != nil {
+				return nil, err
+			}
+			if resp.StatusCode >= 400 {
+				return nil, &seafileHTTPError{Status: resp.StatusCode, Body: string(body), URL: req.URL.String()}
+			}
+			return body, nil
+		}
+		location := resp.Header.Get("Location")
+		resp.Body.Close()
+		transport.CloseIdleConnections()
+		if location == "" {
+			return nil, fmt.Errorf("SeaFile API redirect with empty Location header")
+		}
+		nextURL, err := restAPIResolveURL(currentURL, location)
+		if err != nil {
+			return nil, err
+		}
+		// Never forward credentials to a different host, matching Go's default
+		// redirect handling.
+		nextNetloc := restAPINetloc(nextURL)
+		if nextNetloc != "" && nextNetloc != previousNetloc {
+			headers = restAPIStripAuthHeaders(headers)
+		}
+		previousNetloc = nextNetloc
+		currentURL = nextURL
 	}
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	body, err := readSeaFileBody(resp)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		return nil, &seafileHTTPError{Status: resp.StatusCode, Body: string(body), URL: req.URL.String()}
-	}
-	return body, nil
+	return nil, fmt.Errorf("SeaFile API request exceeded %d redirects", seafileMaxRedirects)
 }
 
 func (c *SeaFileConnector) requestHeaders(useRepoToken bool) (map[string]string, error) {
@@ -843,6 +875,60 @@ func validateSeaFileURLForSSRF(rawURL string) error {
 		}
 	}
 	return nil
+}
+
+// seafileAssertURLSafe validates a per-request SeaFile URL for SSRF and
+// returns the hostname plus the first validated IP so the caller can pin DNS
+// for the actual dial, preventing DNS rebinding between validation and the
+// connection.
+func seafileAssertURLSafe(ctx context.Context, rawURL string) (string, net.IP, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", nil, fmt.Errorf("SeaFile URL is missing a host.")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", nil, fmt.Errorf("Disallowed SeaFile URL scheme: %q. Only [http https] are allowed.", parsed.Scheme)
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return "", nil, fmt.Errorf("SeaFile URL is missing a host.")
+	}
+	if strings.EqualFold(hostname, "localhost") && !restAPISSRFAllowLoopback {
+		return "", nil, fmt.Errorf("SeaFile URL hostname %q is not allowed (localhost is blocked).", hostname)
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
+	if err != nil {
+		return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
+	}
+	if len(addrs) == 0 {
+		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
+	}
+	if restAPISSRFAllowLoopback {
+		allLoopback := true
+		for _, addr := range addrs {
+			if !addr.IP.IsLoopback() {
+				allLoopback = false
+				break
+			}
+		}
+		if allLoopback {
+			return hostname, addrs[0].IP, nil
+		}
+		// Not all loopback — fall through to normal validation.
+	}
+	var first net.IP
+	for _, addr := range addrs {
+		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr.IP)) {
+			return "", nil, fmt.Errorf("SeaFile URL resolves to a non-public address (%s), which is not allowed.", addr.IP)
+		}
+		if first == nil {
+			first = addr.IP
+		}
+	}
+	if first == nil {
+		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
+	}
+	return hostname, first, nil
 }
 
 type seafileSyncSession struct {
