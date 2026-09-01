@@ -34,11 +34,12 @@ target/
 
 # ── ragflow_deps build context (built as a separate image, mounted ──
 # ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
-# Excluding the entire directory keeps the main build context small
-# regardless of which deps files download_deps.py currently fetches.
+# Excluding downloaded dependencies keeps the main build context small.
+# The Go Dockerfile needs its separately downloaded pdf_oxide archive.
 # The deps image is built from this directory with:
 #   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
-ragflow_deps/
+ragflow_deps/*
+!ragflow_deps/pdf_oxide-go-ffi-linux-amd64-v0.3.73.tar.gz
 
 # ── IDE and editor config ──────────────────────────────────────────────────
 .idea/
