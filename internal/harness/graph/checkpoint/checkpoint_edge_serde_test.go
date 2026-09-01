@@ -3,7 +3,6 @@
 package checkpoint
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -19,7 +18,7 @@ import (
 // TestCheckpointSerde_VariousTypes verifies round-trip of all basic types.
 func TestCheckpointSerde_VariousTypes(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "serde-types"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -63,7 +62,7 @@ func TestCheckpointSerde_VariousTypes(t *testing.T) {
 // TestCheckpointSerde_EmptyMap verifies empty map round-trip.
 func TestCheckpointSerde_EmptyMap(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "serde-empty"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -87,7 +86,7 @@ func TestCheckpointSerde_EmptyMap(t *testing.T) {
 // TestCheckpointSerde_LargeMap verifies large map serialization.
 func TestCheckpointSerde_LargeMap(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "serde-large"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -115,7 +114,7 @@ func TestCheckpointSerde_LargeMap(t *testing.T) {
 // TestCheckpointSerde_NestedArrays verifies deeply nested arrays.
 func TestCheckpointSerde_NestedArrays(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "serde-nest-arr"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -148,7 +147,7 @@ func TestCheckpointSerde_NestedArrays(t *testing.T) {
 // TestCheckpointConcurrent_DifferentThreads runs Put on 100 threads.
 func TestCheckpointConcurrent_DifferentThreads(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
@@ -171,7 +170,7 @@ func TestCheckpointConcurrent_DifferentThreads(t *testing.T) {
 // TestCheckpointSerde_ListZeroLimit verifies List returns all when limit=0.
 func TestCheckpointSerde_ListZeroLimit(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "list-zero"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -195,7 +194,7 @@ func TestCheckpointSerde_ListZeroLimit(t *testing.T) {
 // TestCheckpointSerde_LatestAfterManyPuts verifies Get returns latest.
 func TestCheckpointSerde_LatestAfterManyPuts(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "latest-after-many"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -228,7 +227,7 @@ func TestCheckpointSerde_LatestAfterManyPuts(t *testing.T) {
 // TestCheckpointSerde_TimestampOrdering verifies List ordering.
 func TestCheckpointSerde_TimestampOrdering(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "ts-ordering"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -262,7 +261,7 @@ func TestCheckpointSerde_TimestampOrdering(t *testing.T) {
 // TestCheckpointSerde_ParentIDChain verifies parent_id links form a chain.
 func TestCheckpointSerde_ParentIDChain(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "parent-chain"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -296,7 +295,7 @@ func TestCheckpointSerde_ParentIDChain(t *testing.T) {
 // TestCheckpointSerde_RapidPutGet does 1000 Put/Get cycles on same thread.
 func TestCheckpointSerde_RapidPutGet(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "rapid-pg"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -319,7 +318,7 @@ func TestCheckpointSerde_RapidPutGet(t *testing.T) {
 // on multiple threads.
 func TestCheckpointConcurrent_RapidCycle(t *testing.T) {
 	ms := NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	var wg sync.WaitGroup
 	for g := 0; g < 20; g++ {
 		wg.Add(1)

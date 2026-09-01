@@ -152,7 +152,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
@@ -181,7 +181,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 	})
 	if err != nil {
@@ -202,7 +202,7 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
-	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), nil, map[string]any{
+	out, err := cIntf.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
@@ -230,7 +230,7 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
 	c, stub := withStubEmbedder(t, 2)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
@@ -473,7 +473,7 @@ func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
 			{"text": "second chunk", "doc_type_kwd": "text"},
 		},
 	}
-	out, err := comp.Invoke(context.Background(), nil, inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -519,7 +519,7 @@ func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
-	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "json",
 		"json":          items,
@@ -589,7 +589,7 @@ func TestChunkOrderInt_AllPathsUnconditional(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 			}
-			out, err := comp.Invoke(context.Background(), nil, tc.inputs)
+			out, err := comp.Invoke(t.Context(), nil, tc.inputs)
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
@@ -638,7 +638,7 @@ func TestChunkOrderInt_A5FilterKeepsSequenceContiguous(t *testing.T) {
 		{"questions": "orphan question"}, // dropped: no retrievable content
 		{"text": "second"},
 	}
-	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        items,
@@ -685,7 +685,7 @@ func TestTokenizerComponent_ImportantKwd_CommaOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenizerComponent: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": "kw1,kw2;kw3，kw4"},
@@ -738,7 +738,7 @@ func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
 	}
 
 	// Middle empty element must be preserved (["a","","b"]), not dropped.
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": "a,,b"},
@@ -769,7 +769,7 @@ func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
 	// non-empty keywords field (tokenizer.go:682), so important_kwd is left
 	// unset (nil) rather than materialized as an empty array. Downstream
 	// indexing treats a missing important_kwd as "no keywords", which is safe.
-	outEmpty, err := c.Invoke(context.Background(), nil, map[string]any{
+	outEmpty, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": ""},
@@ -853,7 +853,7 @@ func TestTokenizerComponent_ImportantKwd_Bounded(t *testing.T) {
 	}
 
 	oversized := strings.Repeat("x", 40000)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": "normal," + oversized + ",中文字"},

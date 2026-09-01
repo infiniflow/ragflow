@@ -89,7 +89,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 	}
 	t.Cleanup(func() { getSyncerTaskPublisher = previousPublisher })
 
-	_, code, err := NewConnectorService().UpdateConnector(context.Background(), "conn-1", "user-1", &UpdateConnectorRequest{
+	_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "user-1", &UpdateConnectorRequest{
 		Status: string(entity.TaskStatusSchedule),
 	})
 	if err != nil {
@@ -165,7 +165,7 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		getSyncCheckpointLoader = previousLoader
 	})
 
-	ok, code, err := NewConnectorService().ResumeFailedSync(context.Background(), "conn-1", "user-1", &ResumeFailedSyncRequest{KbID: "kb-1", TaskID: "task-1"})
+	ok, code, err := NewConnectorService().ResumeFailedSync(t.Context(), "conn-1", "user-1", &ResumeFailedSyncRequest{KbID: "kb-1", TaskID: "task-1"})
 	if err != nil {
 		t.Fatalf("ResumeFailedSync error: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 		getSyncCheckpointDeleter = previousDeleter
 	})
 
-	ok, code, err := NewConnectorService().RebuildConnector(context.Background(), "conn-1", "user-1", "kb-1")
+	ok, code, err := NewConnectorService().RebuildConnector(t.Context(), "conn-1", "user-1", "kb-1")
 	if err != nil {
 		t.Fatalf("RebuildConnector error: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestUpdateConnectorScheduleDoesNotDuplicateRunningTask(t *testing.T) {
 	}
 	t.Cleanup(func() { getSyncerTaskPublisher = previousPublisher })
 
-	_, code, err := NewConnectorService().UpdateConnector(context.Background(), "conn-1", "user-1", &UpdateConnectorRequest{
+	_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "user-1", &UpdateConnectorRequest{
 		Status: string(entity.TaskStatusSchedule),
 	})
 	if err != nil {
