@@ -57,6 +57,18 @@ func TestDOCXParser_ConfigureFromSetup_JSON(t *testing.T) {
 	}
 }
 
+func TestDOCXParser_ConfigureAutomaticNumbering(t *testing.T) {
+	p := NewDOCXParser()
+	if p.extractAutomaticNumbering {
+		t.Fatal("automatic numbering must be disabled by default")
+	}
+
+	p.ConfigureFromSetup(map[string]any{"extract_automatic_numbering": true})
+	if !p.extractAutomaticNumbering {
+		t.Fatal("automatic numbering was not enabled from setup")
+	}
+}
+
 func TestDOCXParser_ConfigureFromSetup_Markdown(t *testing.T) {
 	ctx := t.Context()
 	p := NewDOCXParser()
