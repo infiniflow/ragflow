@@ -91,7 +91,7 @@ class Dealer:
         # Fast path: serve every doc_id from the short-lived cache if it is fresh.
         with self._doc_exists_lock:
             cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
-            hit = {d for d in unique_doc_ids if d in cached}
+            hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
             miss = [d for d in unique_doc_ids if d not in cached]
 
         if not miss:

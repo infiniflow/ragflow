@@ -474,6 +474,7 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  max_concurrency: 0,
   outputs: {},
 };
 

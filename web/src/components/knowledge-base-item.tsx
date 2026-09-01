@@ -81,7 +81,9 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   // (e.g. "BAAI/bge-m3@renew@SILICONFLOW" vs "BAAI/bge-m3@COPY@SILICONFLOW").
   const selectedEmbedBaseName = useMemo(() => {
     const data = datasetList?.find((item) => item.id === datasetId?.[0]);
-    return getEmbeddingBaseName(data?.embedding_model);
+    return getEmbeddingBaseName(
+      data?.embedding_model_name || data?.embedding_model,
+    );
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
@@ -112,8 +114,9 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
           item.chunk_count === 0 ||
           item.chunk_method === DocumentParserType.Tag ||
           (selectedEmbedBaseName !== '' &&
-            getEmbeddingBaseName(item.embedding_model) !==
-              selectedEmbedBaseName),
+            getEmbeddingBaseName(
+              item.embedding_model_name || item.embedding_model,
+            ) !== selectedEmbedBaseName),
       };
     });
   }, [datasetList, selectedEmbedBaseName]);
