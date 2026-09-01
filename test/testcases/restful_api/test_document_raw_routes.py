@@ -21,12 +21,39 @@ from test.testcases.restful_api.helpers.client import RestClient
 
 
 @pytest.mark.p2
+def test_document_image_requires_auth(rest_client_noauth):
+    """Unauthenticated requests to /documents/images/<id> must be rejected."""
+    res = rest_client_noauth.get("/documents/images/any-image-id")
+    assert res.status_code == 401, res.text
+    payload = res.json()
+    assert payload["code"] == 401, payload
+
+
+@pytest.mark.p2
+def test_document_thumbnail_requires_auth(rest_client_noauth):
+    """Unauthenticated requests to /documents/<doc_id>/thumbnail must be rejected."""
+    res = rest_client_noauth.get("/documents/any-doc-id/thumbnail")
+    assert res.status_code == 401, res.text
+    payload = res.json()
+    assert payload["code"] == 401, payload
+
+
+@pytest.mark.p2
 def test_document_image_invalid_id_contract(rest_client):
     res = rest_client.get("/documents/images/not-a-valid-image-id")
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
     assert payload["message"] == "Image not found.", payload
+
+
+@pytest.mark.p2
+def test_document_thumbnail_invalid_id_contract(rest_client):
+    res = rest_client.get("/documents/nonexistent-doc-id/thumbnail")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 102, payload
+    assert payload["message"] == "No authorization.", payload
 
 
 @pytest.mark.p2
