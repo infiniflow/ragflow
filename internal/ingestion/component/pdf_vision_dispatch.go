@@ -86,6 +86,27 @@ func maybeDispatchPDFVision(
 		return res, true, nil
 	}
 
+	// MonkeyOCR dispatch: parse_method "monkeyocr" or layout_recognizer "@MonkeyOCR".
+	// Must run before named-method/VLM classification so ParserComponent.Invoke
+	// does not fall through to NewPDFParser / validateParseMethod.
+	if strings.EqualFold(strings.TrimSpace(method), "monkeyocr") ||
+		strings.HasPrefix(layoutLower, "monkeyocr") ||
+		strings.Contains(layoutLower, "@monkeyocr") {
+		common.Info("pdf vision dispatch: MonkeyOCR branch matched",
+			zap.String("parse_method", method),
+			zap.String("layout_recognizer", layout),
+			zap.String("tenant_id", tenantID))
+		if tenantID == "" {
+			return parserDispatchResult{}, true,
+				fmt.Errorf("parser: MonkeyOCR requires tenant_id")
+		}
+		res, err := dispatchMonkeyOCRPDF(ctx, db, filename, binary, tenantID, setup)
+		if err != nil {
+			return parserDispatchResult{}, true, err
+		}
+		return res, true, nil
+	}
+
 	// PaddleOCR dispatch: parse_method "paddleocr", a layout_recognizer whose
 	// provider/selectors name PaddleOCR, or a bare tenant model UUID (in
 	// either parse_method or layout_recognizer) that resolves to a PaddleOCR
@@ -210,6 +231,118 @@ func dispatchMinerUPDF(
 		OutputFormat: "markdown",
 		Markdown:     md,
 	}, nil
+}
+
+// dispatchMonkeyOCRPDF submits a PDF to the tenant's MonkeyOCR adapter
+// (MinerU-compatible /file_parse ZIP) and returns markdown sections.
+// Mirrors Python's by_monkeyocr + MonkeyOCRParser.parse_pdf.
+func dispatchMonkeyOCRPDF(
+	ctx context.Context,
+	db *gorm.DB,
+	_ string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+) (parserDispatchResult, error) {
+	_, _, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCR")
+	if err != nil {
+		return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCR model: %w", err)
+	}
+
+	baseURL := monkeyOCRAPIServer(apiConfig)
+	if baseURL == "" {
+		return parserDispatchResult{}, fmt.Errorf(
+			"parser: MonkeyOCR requires MONKEYOCR_APISERVER or a tenant MonkeyOCR OCR model URL")
+	}
+	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
+
+	parseMethod := getStringOr(setup, "parse_method", "raw")
+	if strings.EqualFold(parseMethod, "monkeyocr") {
+		parseMethod = "raw"
+	}
+	lang := getStringOr(setup, "mineru_lang", getStringOr(setup, "lang", "Chinese"))
+	mineruLang := mineruLangCode(lang)
+	backend := getStringOr(setup, "monkeyocr_backend", "vlm-transformers")
+
+	// Tenant MonkeyOCR api_key is usually a JSON config blob (URLs), not a
+	// bearer token. Only forward a non-JSON key as Authorization.
+	var streamKey *string
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		trimmed := strings.TrimSpace(*apiConfig.ApiKey)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "{") {
+			streamKey = apiConfig.ApiKey
+		}
+	}
+	zipBytes, err := mineruStreamParse(apiURL, streamKey, binary, parseMethod, mineruLang, backend)
+	if err != nil {
+		return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
+	}
+
+	sections, err := mineruExtractSections(zipBytes)
+	if err != nil {
+		return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCR extract: %w", err)
+	}
+
+	var parts []string
+	for _, s := range sections {
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	md := strings.Join(parts, "\n")
+
+	if format := strings.TrimSpace(getStringOr(setup, "output_format", "markdown")); !strings.EqualFold(format, "markdown") {
+		common.Warn("monkeyocr parser: output_format %q requested but backend only returns markdown; treating result as markdown",
+			zap.String("output_format", format))
+	}
+	return parserDispatchResult{
+		OutputFormat: "markdown",
+		Markdown:     md,
+	}, nil
+}
+
+// monkeyOCRAPIServer resolves the adapter base URL from tenant OCR config
+// then MONKEYOCR_APISERVER, matching Python MonkeyOCROcrModel.
+func monkeyOCRAPIServer(apiConfig *modelModule.APIConfig) string {
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil {
+			if v := monkeyOCRAPIServerFromKey(*apiConfig.ApiKey); v != "" {
+				return v
+			}
+		}
+		if apiConfig.BaseURL != nil {
+			if v := strings.TrimSpace(*apiConfig.BaseURL); v != "" {
+				return v
+			}
+		}
+	}
+	return strings.TrimSpace(common.GetEnv(common.EnvMonkeyOCRAPIServer))
+}
+
+func monkeyOCRAPIServerFromKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return ""
+	}
+	cfg, ok := parsed.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if nested, ok := cfg["api_key"].(map[string]any); ok {
+		cfg = nested
+	}
+	for _, key := range []string{"monkeyocr_apiserver", "MONKEYOCR_APISERVER"} {
+		if v, ok := cfg[key].(string); ok {
+			if s := strings.TrimSpace(v); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // resolvePaddleOCRModelForDispatch resolves the OCR model used by the
@@ -550,7 +683,7 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 // MUST stay aligned with the PDF whitelist enforced by
 // (*ParserComponent).Check() (parser.go:200-203):
 //
-//	deepdoc, plain_text, mineru, docling,
+//	deepdoc, plain_text, mineru, monkeyocr, docling,
 //	opendataloader, tcadp parser, paddleocr, somark
 //
 // A parse_method that Check() rejects must not be treated as a named method

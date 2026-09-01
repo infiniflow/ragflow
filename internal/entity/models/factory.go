@@ -139,6 +139,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAI302Model(baseURL, urlSuffix), nil
 	case "mineru":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "monkeyocr":
+		// MonkeyOCR's RAGFlow adapter speaks the same local /file_parse ZIP
+		// protocol as MinerU; reuse that driver with MonkeyOCR's suffix map.
+		return NewMinerLocalUModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":

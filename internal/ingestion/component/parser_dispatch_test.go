@@ -786,6 +786,69 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}
 }
 
+func TestDispatch_PDFMonkeyOCRMarkdown_UsesTenantModel(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# Monkey Title\n\nBody\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
+	baseURL := server.URL
+	apiKey := ""
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if providerName != "MonkeyOCR" {
+			t.Fatalf("providerName = %q, want MonkeyOCR", providerName)
+		}
+		return &mineruTestDriver{}, "MonkeyOCR-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
+
+	param := schema.ParserParam{}.Defaults()
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "monkeyocr"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{Param: param, Setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["output_format"], "markdown"; got != want {
+		t.Fatalf("output_format = %v, want %v", got, want)
+	}
+	md, ok := out["markdown"].(string)
+	if !ok || !strings.Contains(md, "Monkey Title") {
+		t.Fatalf("markdown payload = %#v, want Monkey Title content", out["markdown"])
+	}
+}
+
+func TestMonkeyOCRAPIServerFromKey(t *testing.T) {
+	got := monkeyOCRAPIServerFromKey(`{"api_key":{"monkeyocr_apiserver":"http://adapter:9000"}}`)
+	if got != "http://adapter:9000" {
+		t.Fatalf("nested key = %q", got)
+	}
+	got = monkeyOCRAPIServerFromKey(`{"MONKEYOCR_APISERVER":"http://env-style:9000"}`)
+	if got != "http://env-style:9000" {
+		t.Fatalf("flat key = %q", got)
+	}
+}
+
 // mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
 type mineruTestDriver struct{}
 
