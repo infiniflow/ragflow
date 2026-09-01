@@ -652,14 +652,23 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     Imports the chunk helpers locally to keep ``tools.search`` (and its heavy
     deepdoc dependency chain) out of module-import time.
     """
-    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text, _doc_id
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text, _doc_id, _is_table_chunk
 
     cid = _chunk_id(c)
     if cid in seen:
         return False
     seen.add(cid)
     ids.append(cid)
-    entry = {"id": str(cid), "content": (_chunk_text(c) or "")[:1200]}
+    # Table chunks pass through UN-truncated: the 1200-char cap hides answer
+    # rows in the mid/late table (Q86: rank-19 row at char 5181 of a 8274-char
+    # standings table was cut, so the session model guessed the athlete). The
+    # pool (kbinfos) already stores the full chunk; only the model-facing
+    # session output was truncated here.
+    _ct = _chunk_text(c) or ""
+    if _is_table_chunk(c):
+        entry = {"id": str(cid), "content": _ct}
+    else:
+        entry = {"id": str(cid), "content": _ct[:1200]}
     if include_doc_id:
         entry["doc_id"] = _doc_id(c)
     out.append(entry)
