@@ -56,13 +56,15 @@ func RunOCRRec(ctx context.Context, modelDir string, img *Image) (OCRRecResult, 
 }
 
 // RunOCRRecBatchReal recognizes a batch of cropped text-line images with a
-// SINGLE ONNX Run, mirroring deepdoc's TextRecognizer.__call__: every line is
-// resized to the batch's shared width (imgW = 48*max_wh_ratio, floored at
-// 320/48) and zero-padded on the right, all blobs are concatenated into one
-// {N,3,48,imgW} tensor, and the model runs once. The output is split back into
-// per-line sequences and CTC-decoded in order, so the result is numerically
-// identical to calling RunOCRRec on each line (each line sees the same shared
-// batch width), but amortized over one forward pass instead of N.
+// SINGLE ONNX Run, mirroring deepdoc's TextRecognizer.__call__: each line is
+// resized to its own proportional width (recH * that line's wh_ratio), capped
+// by the batch-shared imgW (imgW = recH * max_wh_ratio, with max_wh_ratio
+// floored at 320/48), and zero-padded on the right out to imgW; all blobs are
+// concatenated into one {N,3,48,imgW} tensor, and the model runs once. The
+// output is split back into per-line sequences and CTC-decoded in order, so
+// the result is numerically identical to calling RunOCRRec on each line (each
+// line sees the same shared batch width), but amortized over one forward pass
+// instead of N.
 //
 // The shared batch width means a line is resized against the batch max wh_ratio,
 // not its own — exactly what deepdoc does inside a batch. A standalone call to

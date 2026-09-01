@@ -55,6 +55,13 @@ uv run python3 ragflow_deps/download_deps.py
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
 >
+> # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
+> # assignment: the shell does not expand `*` inside the double-quoted
+> # CGO_LDFLAGS below, and `--whole-archive` must stay a separate argument from
+> # the archive path. If this lists more than one match, delete the stale
+> # version dir — build.sh refuses to link two ORT versions.
+> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
+>
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
 >     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
@@ -62,7 +69,7 @@ uv run python3 ragflow_deps/download_deps.py
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--export-dynamic -Wl,--whole-archive${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a -Wl,--no-whole-archive -lstdc++ \
+>     -Wl,--export-dynamic -Wl,--whole-archive ${ORT_A} -Wl,--no-whole-archive -lstdc++ \
 >     -fuse-ld=lld \
 >     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > ```

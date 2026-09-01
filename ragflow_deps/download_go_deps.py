@@ -36,6 +36,7 @@ import os
 import shutil
 import sys
 import zipfile
+
 import requests
 
 # Mirrors internal/common.DeepDocORTVersion (Go in-process backend). Single
@@ -43,6 +44,54 @@ import requests
 # DeepDoc backend. The pip onnxruntime== pin (pyproject.toml) and the
 # onnxruntime_go binding minor (go.mod) must stay on the same minor line.
 ORT_VERSION = "1.23.2"
+
+
+def prune_stale_onnxruntime(static_lib_dir, version):
+    """Remove ONNX Runtime version dirs under static_lib that do NOT match
+    `version`. Without this, a version bump leaves the stale dir next to
+    the new one and build.sh's `find ... -name '*.a'` links BOTH (duplicate
+    symbols / wrong version, silently)."""
+    if not os.path.isdir(static_lib_dir):
+        return
+    expected = f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+    for name in os.listdir(static_lib_dir):
+        if not name.startswith("onnxruntime-linux-x64-static_lib-"):
+            continue
+        if name == expected:
+            continue
+        stale = os.path.join(static_lib_dir, name)
+        print(f"  Removing stale ONNX Runtime dir: {stale}")
+        shutil.rmtree(stale)
+
+
+def has_static_archives(directory):
+    """True when `directory` holds at least one static archive (.a)."""
+    return any(f.endswith(".a") for _, _, files in os.walk(directory) for f in files)
+
+
+def extract_onnxruntime(static_lib_dir, archive_path, version):
+    """Ensure the ONNX Runtime static archives for `version` sit under
+    `static_lib_dir`. Returns True when that version is available afterwards
+    (extracted now or already present), False when the archive is missing.
+
+    ORT ships a version-stamped top-level dir inside the zip
+    (onnxruntime-linux-x64-static_lib-<version>-glibc2_28/), so a present
+    `static_lib_dir` is NOT evidence that THIS version is extracted: after a
+    version bump the stale dir is pruned and the new one must be extracted.
+    """
+    if not os.path.isfile(archive_path):
+        print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
+        return False
+    prune_stale_onnxruntime(static_lib_dir, version)
+    version_dir = os.path.join(static_lib_dir, f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28")
+    if os.path.isdir(version_dir) and has_static_archives(version_dir):
+        print(f"  ✓ onnxruntime/static_lib ({version}) already extracted to {version_dir}")
+        return True
+    os.makedirs(static_lib_dir, exist_ok=True)
+    print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
+    with zipfile.ZipFile(archive_path) as zf:
+        zf.extractall(static_lib_dir)
+    return True
 
 
 def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
@@ -154,30 +203,13 @@ if __name__ == "__main__":
     # Extract native static libraries to ~/ragflow-native-libs for Go build.
     # Ensures build.sh can find them without network access.
     native_deps_dir = os.path.expanduser("~/ragflow-native-libs")
+    import tarfile
+
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
         ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
-        (f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip", os.path.join("onnxruntime", "static_lib")),
     ]
-    import tarfile
-
-    def _prune_stale_onnxruntime(static_lib_dir, version):
-        """Remove ONNX Runtime version dirs under static_lib that do NOT match
-        `version`. Without this, a version bump leaves the stale dir next to
-        the new one and build.sh's `find ... -name '*.a'` links BOTH (duplicate
-        symbols / wrong version, silently)."""
-        if not os.path.isdir(static_lib_dir):
-            return
-        expected = f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
-        for name in os.listdir(static_lib_dir):
-            if not name.startswith("onnxruntime-linux-x64-static_lib-"):
-                continue
-            if name == expected:
-                continue
-            stale = os.path.join(static_lib_dir, name)
-            print(f"  Removing stale ONNX Runtime dir: {stale}")
-            shutil.rmtree(stale)
 
     for archive, subdir in extractions:
         archive_path = os.path.join(os.getcwd(), archive)
@@ -185,32 +217,19 @@ if __name__ == "__main__":
             print(f"  Skipping extraction: {archive} not found")
             continue
         target = os.path.join(native_deps_dir, subdir)
-
-        # ONNX Runtime ships a version-stamped top-level dir inside the zip
-        # (onnxruntime-linux-x64-static_lib-<ORT_VERSION>-glibc2_28/). A plain
-        # "any .a present?" skip would keep a STALE version in place after a
-        # bump: the new zip downloads, but extraction is skipped because the
-        # old .a is still under static_lib, so the bump silently does nothing.
-        # Prune stale version dirs and only skip when the matching version is
-        # already extracted.
-        if subdir == os.path.join("onnxruntime", "static_lib"):
-            _prune_stale_onnxruntime(target, ORT_VERSION)
-            version_dir = os.path.join(target, f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28")
-            if os.path.isdir(version_dir) and any(f.endswith(".a") for _, _, files in os.walk(version_dir) for f in files):
-                print(f"  ✓ {subdir} ({ORT_VERSION}) already extracted to {version_dir}")
-                continue
-
         if os.path.isdir(target):
             print(f"  ✓ {subdir} already extracted to {target}")
             continue
         os.makedirs(target, exist_ok=True)
         print(f"  Extracting {archive} → {target}")
-        if archive_path.endswith(".zip"):
-            with zipfile.ZipFile(archive_path) as zf:
-                zf.extractall(target)
-        else:
-            with tarfile.open(archive_path) as tf:
-                tf.extractall(target)
+        with tarfile.open(archive_path) as tf:
+            tf.extractall(target)
+
+    extract_onnxruntime(
+        os.path.join(native_deps_dir, "onnxruntime", "static_lib"),
+        os.path.join(os.getcwd(), f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip"),
+        ORT_VERSION,
+    )
 
     # ONNX Runtime is statically linked into the server binary, so there is no
     # runtime .so to surface. Log where build.sh (ONNXRUNTIME_STATIC_PREFIX) will

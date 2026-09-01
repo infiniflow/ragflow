@@ -37,13 +37,26 @@ import (
 // InitCL100KEncoder must succeed and the encoder must really count tokens. If
 // the table is absent, it must return a non-nil error. What it forbids is
 // InitCL100KEncoder returning nil while the encoder cannot load.
+//
+// The assertions stay environment-agnostic on purpose: the encoder is cached in
+// a sync.Once, so if a sibling test in this package already loaded it
+// successfully, InitCL100KEncoder reports that cached success no matter how
+// narrow the search roots are. Scoping the roots therefore decides the outcome
+// only for the FIRST load in the process — which is exactly what makes the
+// "table absent" branch reachable in a clean CI run.
 func TestInitCL100KEncoder_FailFast(t *testing.T) {
 	// Narrow the search to an empty dir so the outcome is driven by whether a
-	// table exists in the search roots (working dir / its ancestors under
-	// ragflow_deps/, or the Dockerfile-mounted copy), not by a stale cache dir.
+	// table exists in the search roots, not by a stale cache dir. The roots
+	// themselves must be scoped too: by default they cover every ancestor of
+	// the working directory, so a table sitting in ragflow_deps/ anywhere above
+	// this package — or the Dockerfile-mounted copy baked into the image —
+	// satisfies the lookup and the "table absent" branch never runs, leaving
+	// the fail-fast contract untested in CI.
 	dir := t.TempDir()
 	t.Setenv("TIKTOKEN_CACHE_DIR", dir)
 	t.Setenv("DATA_GYM_CACHE_DIR", dir)
+	SetBpeSearchRootsForTest([]string{dir})
+	t.Cleanup(func() { SetBpeSearchRootsForTest(nil) })
 
 	err := InitCL100KEncoder()
 	if err != nil {
