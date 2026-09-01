@@ -247,7 +247,7 @@ async def parse(tenant_id, dataset_id):
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
-        DocumentService.run(tenant_id,doc, kb_table_num_map)
+        DocumentService.run(tenant_id, doc, kb_table_num_map)
         success_count += 1
     if not_found:
         return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
