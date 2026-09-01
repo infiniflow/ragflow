@@ -18,8 +18,11 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -43,6 +46,30 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 		userService:    userService,
 		datasetService: datasetService,
 	}
+}
+
+// devImportAllowedDir restricts dev_insert_*_from_file to this directory tree.
+// Override with the DEV_IMPORT_DIR environment variable.
+var devImportAllowedDir = func() string {
+	if d := os.Getenv("DEV_IMPORT_DIR"); d != "" {
+		return d
+	}
+	return "/ragflow/data"
+}()
+
+func validateDevImportPath(raw string) (string, error) {
+	cleaned := filepath.Clean(raw)
+	if !filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("file_path must be absolute")
+	}
+	allowed, err := filepath.Abs(devImportAllowedDir)
+	if err != nil {
+		return "", fmt.Errorf("file_path not allowed")
+	}
+	if !strings.HasPrefix(cleaned, allowed+string(filepath.Separator)) && cleaned != allowed {
+		return "", fmt.Errorf("file_path must be under %s", allowed)
+	}
+	return cleaned, nil
 }
 
 func (h *TenantHandler) SetModels(c *gin.Context) {
@@ -352,14 +379,15 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 		return
 	}
 
-	// Read the JSON file
-	// codeql[go/path-injection] False positive: req.FilePath is the
-	// JSON file path the operator configured (tenant import flow). The
-	// OS access check enforces permissions, and the handler is gated
-	// to admin/owner roles upstream.
-	data, err := os.ReadFile(req.FilePath)
+	safePath, err := validateDevImportPath(req.FilePath)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
+		return
+	}
+
+	data, err := os.ReadFile(safePath)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file")
 		return
 	}
 
@@ -428,14 +456,15 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 		return
 	}
 
-	// Read the JSON file
-	// codeql[go/path-injection] False positive: req.FilePath is the
-	// path the operator configured (tenant import flow). The
-	// OS access check enforces permissions, and the handler is gated
-	// to admin/owner roles upstream.
-	data, err := os.ReadFile(req.FilePath)
+	safePath, err := validateDevImportPath(req.FilePath)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
+		return
+	}
+
+	data, err := os.ReadFile(safePath)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file")
 		return
 	}
 
