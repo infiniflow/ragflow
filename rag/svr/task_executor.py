@@ -181,6 +181,7 @@ def _redact_task_user(task: dict) -> dict:
         payload["user_id"] = True
     return payload
 
+
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get("WORKER_HEARTBEAT_TIMEOUT", "120"))
 stop_event = threading.Event()
 

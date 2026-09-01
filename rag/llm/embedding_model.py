@@ -268,11 +268,13 @@ class OpenAIEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
-        # extra_body is forwarded verbatim to the provider. \`drop_params\` is
+        # extra_body is forwarded verbatim to the provider. `drop_params` is
         # an OpenRouter-specific convention; Together AI (and any strict
         # OpenAI-compatible provider) rejects it with HTTP 400
-        # "Unrecognized request arguments supplied: drop_params". Send only
-        # fields that every OpenAI-compatible provider accepts.
+        # "Unrecognized request arguments supplied: drop_params".
+        # `user` is OpenAI-standard and is only sent when LLM request context
+        # is active. Local servers that reject unknown fields (LocalAI,
+        # LM Studio, Xinference) use their own embed classes and omit it.
         res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", **openai_user_kwargs())
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
@@ -296,7 +298,8 @@ class LocalAIEmbed(Base):
         self.model_name = model_name.split("___")[0]
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, **openai_user_kwargs())
+        # Local servers often reject OpenAI's optional `user` field.
+        res = self.client.embeddings.create(input=batch, model=self.model_name)
         # Local servers (LocalAI / LM Studio) usually omit usage data; fall back
         # to a local tiktoken count rather than fabricating a fixed number.
         tokens = total_token_count_from_response(res)
@@ -540,7 +543,8 @@ class XinferenceEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
-        res = self.client.embeddings.create(input=batch, model=self.model_name, **openai_user_kwargs())
+        # Xinference's OpenAI-compatible server may reject unknown fields such as `user`.
+        res = self.client.embeddings.create(input=batch, model=self.model_name)
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
