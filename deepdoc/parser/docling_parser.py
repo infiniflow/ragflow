@@ -131,6 +131,26 @@ class DoclingParser(RAGFlowPdfParser):
             self.logger.error(f"[Docling] init DocumentConverter failed: {e}")
             return False
 
+    @staticmethod
+    def _resolve_page_range(page_from: int, page_to: int) -> Optional[tuple[int, int]]:
+        """Translate RAGFlow's task page range into Docling's ``page_range``.
+
+        RAGFlow is 0-based with ``page_to`` exclusive (Python slice stop); Docling
+        is 1-based with both bounds inclusive and rejects a range whose start is
+        below 1 or whose end precedes its start. Bounds are clamped first, since
+        ``parse_pdf`` is public and its callers are not required to pre-clamp.
+
+        Returns ``None`` for a range that covers the whole document, and for an
+        empty one; both mean "convert everything".
+        """
+        start = max(0, page_from)
+        end = min(page_to, MAXIMUM_PAGE_NUMBER)
+        if start == 0 and end >= MAXIMUM_PAGE_NUMBER:
+            return None
+        if end <= start:
+            return None
+        return (start + 1, end)
+
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
@@ -154,10 +174,15 @@ class DoclingParser(RAGFlowPdfParser):
         if bbox is None:
             return ""
         x0, x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
-        if hasattr(self, "page_images") and self.page_images and len(self.page_images) >= bbox.page_no:
-            _, page_height = self.page_images[bbox.page_no - 1].size
+        # Docling numbers pages from the start of the document while page_images
+        # only holds the rendered window, and crop() adds page_from back when it
+        # turns a tag into a position. Emit window-relative page numbers, like
+        # cropout_docling_table already indexes by.
+        page_no = bbox.page_no - getattr(self, "page_from", 0)
+        if hasattr(self, "page_images") and self.page_images and 0 < page_no <= len(self.page_images):
+            _, page_height = self.page_images[page_no - 1].size
             top, bott = page_height - top, page_height - bott
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(bbox.page_no, x0, x1, top, bott)
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(page_no, x0, x1, top, bott)
 
     @staticmethod
     def extract_positions(txt: str) -> list[tuple[list[int], float, float, float, float]]:
@@ -396,6 +421,7 @@ class DoclingParser(RAGFlowPdfParser):
         parse_method: str = "raw",
         docling_server_url: Optional[str] = None,
         request_timeout: Optional[int] = None,
+        page_range: Optional[tuple[int, int]] = None,
     ):
         """
         Parses a PDF document using a remote Docling server.
@@ -431,14 +457,21 @@ class DoclingParser(RAGFlowPdfParser):
         filename = Path(filepath).name or "input.pdf"
         b64 = base64.b64encode(pdf_bytes).decode("ascii")
 
+        # docling-serve's ConvertDocumentsOptions.page_range is Docling's own field
+        # (docling.datamodel.service.options): 1-based, both bounds inclusive.
+        # Docling still numbers the pages it returns from the start of the
+        # document, so nothing downstream needs rebasing. A task covering the
+        # whole document omits the field entirely.
+        range_opt = {"page_range": list(page_range)} if page_range else {}
+
         # Standard payloads
         # Standard fallback payloads (no chunking)
         v1_payload_standard = {
-            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"], **range_opt},
             "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
         }
         v1alpha_payload_standard = {
-            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"], **range_opt},
             "file_sources": [{"filename": filename, "base64_string": b64}],
         }
 
@@ -452,6 +485,7 @@ class DoclingParser(RAGFlowPdfParser):
                 "overlap": 50,
                 "tokenizer": "sentencepiece",  # Required by Docling contract
             },
+            **range_opt,
         }
         v1_payload_chunked = {
             "options": chunking_opts,
@@ -569,11 +603,21 @@ class DoclingParser(RAGFlowPdfParser):
         parse_method: str = "raw",
         docling_server_url: Optional[str] = None,
         request_timeout: Optional[int] = None,
+        page_from: int = 0,
+        page_to: int = MAXIMUM_PAGE_NUMBER,
     ):
         self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
 
         if not self.check_installation(docling_server_url=docling_server_url):
             raise RuntimeError("Docling not available, please install `docling`")
+
+        # RAGFlow splits a large PDF into several page-range tasks and calls this
+        # once per range. Without forwarding the range every task converts the
+        # whole document, so the work is repeated N times and each request is as
+        # slow and as memory-hungry as the entire file.
+        page_range = self._resolve_page_range(page_from, page_to)
+        if page_range:
+            self.logger.info(f"[Docling] resolved page range {page_range} (from page_from={page_from} page_to={page_to})")
 
         server_url = self._effective_server_url(docling_server_url)
         if server_url:
@@ -584,6 +628,7 @@ class DoclingParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 docling_server_url=server_url,
                 request_timeout=request_timeout,
+                page_range=page_range,
             )
 
         if binary is not None:
@@ -606,7 +651,13 @@ class DoclingParser(RAGFlowPdfParser):
             callback(0.1, f"[Docling] Converting: {src_path}")
 
         try:
-            self.__images__(str(src_path), zoomin=1)
+            # Render the same window the conversion covers, so a page-split task
+            # does not pay the whole document's rasterisation cost, and so
+            # page_from matches the images the position logic indexes into.
+            if page_range:
+                self.__images__(str(src_path), zoomin=1, page_from=page_range[0] - 1, page_to=page_range[1])
+            else:
+                self.__images__(str(src_path), zoomin=1)
         except Exception as e:
             self.logger.warning(f"[Docling] render pages failed: {e}")
 
@@ -615,7 +666,7 @@ class DoclingParser(RAGFlowPdfParser):
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_formula_enrichment = do_formula_enrichment
         conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
-        conv_res = conv.convert(str(src_path))
+        conv_res = conv.convert(str(src_path), page_range=page_range) if page_range else conv.convert(str(src_path))
         doc = conv_res.document
         if callback:
             callback(0.7, f"[Docling] Parsed doc: {getattr(doc, 'num_pages', 'n/a')} pages")
