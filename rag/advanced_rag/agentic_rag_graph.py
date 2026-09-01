@@ -882,9 +882,9 @@ def build_agentic_graph(
         round_no = int(state.get("search_rounds", 0)) + 1
         pool_before = len(((getattr(tools, "kbinfos", None) or state.get("kbinfos") or {}).get("chunks")) or [])
         unresolved_ids = [
-            str(v.get("id"))
-            for v in _safe_list((state.get("slot_table") or {}).get("slots"), "slot_table.slots")
-            if not v.get("candidate")
+            str(getattr(v, "id", ""))
+            for v in getattr(state.get("slot_table"), "state", None) or []
+            if not getattr(v, "candidate", None)
         ]
         _LOG.info(
             "[RAGAgent] ROUND %d start (search_rounds=%d, time_left=%.0fs, pool=%d chunks, unresolved slots=%s)",
