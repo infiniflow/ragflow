@@ -839,7 +839,12 @@ func startServer(ctx context.Context) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
+	// WithDocumentService wires the rerun dependency used by
+	// POST /api/v1/agents/rerun (dataflow "re-run" in the pipeline
+	// result viewer). RerunAgent fails closed without it, so this must
+	// stay attached to NewAgentHandler.
+	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService).
+		WithDocumentService(documentService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
