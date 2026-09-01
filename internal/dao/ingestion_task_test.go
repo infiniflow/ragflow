@@ -103,78 +103,65 @@ func TestIngestionTaskDAODocumentIDIsUniqueAtDBLevel(t *testing.T) {
 	}
 }
 
-func TestIngestionTaskDAODeleteAllowsUnpublishedTask(t *testing.T) {
+func TestIngestionTaskDAODeleteAllowsScheduledTask(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB
 	DB = db
 	t.Cleanup(func() { DB = orig })
 
 	task := &entity.IngestionTask{
-		ID:         "task-unpublished",
+		ID:         "task-scheduled",
 		UserID:     "user-1",
-		DocumentID: "doc-unpublished",
+		DocumentID: "doc-scheduled",
 		DatasetID:  "kb-1",
-		Status:     "",
+		Status:     common.SCHEDULED,
 	}
 	if err := db.Create(task).Error; err != nil {
-		t.Fatalf("create unpublished task: %v", err)
+		t.Fatalf("create scheduled task: %v", err)
 	}
 
 	info, err := NewIngestionTaskDAO().Delete(t.Context(), db, task.ID, nil)
 	if err != nil {
-		t.Fatalf("delete unpublished task: %v", err)
+		t.Fatalf("delete scheduled task: %v", err)
 	}
 	if info == nil || info.TaskID != task.ID {
 		t.Fatalf("unexpected task info: %+v", info)
 	}
 }
 
-func TestIngestionTaskDAODeleteIfStatusOnlyDeletesMatchingTask(t *testing.T) {
-	db := setupTaskTestDB(t)
-	orig := DB
-	DB = db
-	t.Cleanup(func() { DB = orig })
-
-	task := &entity.IngestionTask{
-		ID:         "task-unpublished",
-		UserID:     "user-1",
-		DocumentID: "doc-unpublished",
-		DatasetID:  "kb-1",
-		Status:     "",
-	}
-	if err := db.Create(task).Error; err != nil {
-		t.Fatalf("create unpublished task: %v", err)
-	}
-
-	deleted, err := NewIngestionTaskDAO().DeleteIfStatus(t.Context(), db, task.ID, common.CREATED)
-	if err != nil {
-		t.Fatalf("delete with mismatched status: %v", err)
-	}
-	if deleted {
-		t.Fatal("delete should not remove a task with a mismatched status")
-	}
-	if _, err := NewIngestionTaskDAO().GetByID(t.Context(), db, task.ID); err != nil {
-		t.Fatalf("task should remain after mismatched delete: %v", err)
-	}
-
-	deleted, err = NewIngestionTaskDAO().DeleteIfStatus(t.Context(), db, task.ID, "")
-	if err != nil {
-		t.Fatalf("delete with matching status: %v", err)
-	}
-	if !deleted {
-		t.Fatal("delete should remove a task with a matching status")
-	}
-}
-
-func TestIngestionTaskDAOListsExcludeUnpublishedTasks(t *testing.T) {
+func TestIngestionTaskDAOListByStatus(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB
 	DB = db
 	t.Cleanup(func() { DB = orig })
 
 	for _, task := range []*entity.IngestionTask{
-		{ID: "task-unpublished", UserID: "user-1", DocumentID: "doc-unpublished", DatasetID: "kb-1", Status: ""},
 		{ID: "task-created", UserID: "user-1", DocumentID: "doc-created", DatasetID: "kb-1", Status: common.CREATED},
+		{ID: "task-scheduled", UserID: "user-1", DocumentID: "doc-scheduled", DatasetID: "kb-1", Status: common.SCHEDULED},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	tasks, err := NewIngestionTaskDAO().ListByStatus(t.Context(), db, common.CREATED)
+	if err != nil {
+		t.Fatalf("list CREATED tasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-created" {
+		t.Fatalf("CREATED tasks = %+v, want only task-created", tasks)
+	}
+}
+
+func TestIngestionTaskDAOListsTasks(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	for _, task := range []*entity.IngestionTask{
+		{ID: "task-created", UserID: "user-1", DocumentID: "doc-created", DatasetID: "kb-1", Status: common.CREATED},
+		{ID: "task-scheduled", UserID: "user-1", DocumentID: "doc-scheduled", DatasetID: "kb-1", Status: common.SCHEDULED},
 	} {
 		if err := db.Create(task).Error; err != nil {
 			t.Fatalf("create task %s: %v", task.ID, err)
@@ -186,24 +173,24 @@ func TestIngestionTaskDAOListsExcludeUnpublishedTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tasks by user: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].ID != "task-created" {
-		t.Fatalf("listed tasks = %+v, want only task-created", tasks)
+	if len(tasks) != 2 {
+		t.Fatalf("listed tasks = %+v, want 2 tasks", tasks)
 	}
 
 	tasks, err = d.ListByUserIDAndDatasetID(t.Context(), db, "user-1", "kb-1", 0, 0)
 	if err != nil {
 		t.Fatalf("list tasks by user and dataset: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].ID != "task-created" {
-		t.Fatalf("listed tasks by dataset = %+v, want only task-created", tasks)
+	if len(tasks) != 2 {
+		t.Fatalf("listed tasks by dataset = %+v, want 2 tasks", tasks)
 	}
 
 	tasks, err = d.GetAllTasks(t.Context(), db, 0, 0)
 	if err != nil {
 		t.Fatalf("list all tasks: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].ID != "task-created" {
-		t.Fatalf("all listed tasks = %+v, want only task-created", tasks)
+	if len(tasks) != 2 {
+		t.Fatalf("all listed tasks = %+v, want 2 tasks", tasks)
 	}
 }
 
@@ -249,7 +236,7 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 	t.Cleanup(func() { DB = orig })
 
 	// Create tasks in different statuses, each with a unique docID.
-	statuses := []string{"", common.CREATED, common.RUNNING, common.STOPPING, common.COMPLETED, common.STOPPED, common.FAILED}
+	statuses := []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING, common.COMPLETED, common.STOPPED, common.FAILED}
 	for i, status := range statuses {
 		docID := fmt.Sprintf("doc-%d", i)
 		task := &entity.IngestionTask{
@@ -266,7 +253,7 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 
 	ctx := t.Context()
 	// DeleteIfTerminal deletes everything except RUNNING and STOPPING.
-	// Unpublished and CREATED are safe to delete (no worker has claimed them yet);
+	// CREATED and SCHEDULED are safe to delete (no worker has claimed them yet);
 	// COMPLETED/STOPPED/FAILED are terminal.
 	// Call it for every doc and verify the negative cases survived.
 	for i := 0; i < len(statuses); i++ {
@@ -288,7 +275,7 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 			t.Fatalf("%s task (doc=%d) must not be deleted", statuses[i], i)
 		}
 	}
-	// Unpublished, CREATED, COMPLETED, STOPPED, FAILED must be gone.
+	// CREATED, SCHEDULED, COMPLETED, STOPPED, FAILED must be gone.
 	for _, i := range []int{0, 1, 4, 5, 6} {
 		docID := fmt.Sprintf("doc-%d", i)
 		task, err := NewIngestionTaskDAO().GetByDocumentID(ctx, db, docID)

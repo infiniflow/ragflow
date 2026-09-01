@@ -23,7 +23,7 @@ import (
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
 // The document run status is NOT set here; service.IngestionTaskService.StartRunning
 // sets it to RUNNING when the worker picks up the task and transitions it from
-// CREATED or the internal unpublished reservation. Extracted from Ingest so
+// CREATED or SCHEDULED. Extracted from Ingest so
 // other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
@@ -81,16 +81,15 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	// Refuse to clear a non-terminal ingestion task. An in-flight worker
 	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
 	// corrupt the new run's results. The caller must stop the task first
-	// and wait for a terminal state (COMPLETED/STOPPED/FAILED) or CREATED. An
-	// unpublished reservation is also safe to clear because it has not been
-	// exposed as a task to the caller.
+	// and wait for a terminal state (COMPLETED/STOPPED/FAILED), CREATED, or
+	// SCHEDULED.
 	if task, _ := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); task != nil {
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
 	}
 
-	// Delete terminal, unpublished, and CREATED ingestion tasks atomically, leaving
+	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically, leaving
 	// RUNNING/STOPPING tasks untouched so the check-then-delete window
 	// between GetByDocumentID and the delete above cannot delete a task
 	// that just transitioned to RUNNING.
@@ -348,7 +347,7 @@ var errParseNotRunning = errors.New("parse task is not in running status")
 // RequestStop (STOPPING), then marks the document run status as CANCEL.
 // It mirrors the Python cancel precondition: only a document whose run status
 // is RUNNING or CANCEL, or one with an in-flight ingestion task
-// (CREATED/RUNNING/STOPPING), can be canceled; otherwise errParseNotRunning
+// (CREATED/SCHEDULED/RUNNING/STOPPING), can be canceled; otherwise errParseNotRunning
 // is returned. A missing ingestion task is not an error by itself — cancel is
 // then a no-op on the task side, matching Python's cancel_all_task_of.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
@@ -361,7 +360,7 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 	if doc.Run != nil {
 		docRun = *doc.Run
 	}
-	inFlight := task != nil && (task.Status == common.CREATED || task.Status == common.RUNNING || task.Status == common.STOPPING)
+	inFlight := task != nil && (task.Status == common.CREATED || task.Status == common.SCHEDULED || task.Status == common.RUNNING || task.Status == common.STOPPING)
 	if docRun != string(entity.TaskStatusRunning) && docRun != string(entity.TaskStatusCancel) && !inFlight {
 		return errParseNotRunning
 	}

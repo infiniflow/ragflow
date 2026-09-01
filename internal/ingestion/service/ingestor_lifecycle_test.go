@@ -28,6 +28,15 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
+type startupTaskPublisher struct {
+	messages []common.TaskMessage
+}
+
+func (p *startupTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.messages = append(p.messages, msg)
+	return nil
+}
+
 // TestStartWorkerPool_StartOnceIdempotent verifies that calling startWorkerPool
 // twice only starts maxConcurrency workers (sync.Once gate). It observes the
 // active worker count directly: a broken sync.Once would double the worker
@@ -245,5 +254,44 @@ func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
 	}
 	if got := ing.activeWorkers.Load(); got <= 0 {
 		t.Fatalf("expected activeWorkers > 0 after Start(), got %d", got)
+	}
+}
+
+func TestStartSchedulesCreatedTasks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("set task CREATED: %v", err)
+	}
+
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(testutil.SetupNatsEngine(t))
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
+	ingestor := newUnitIngestor("test-schedule-created", 1, nil)
+	publisher := &startupTaskPublisher{}
+	ingestor.ingestionTaskSvc.SetTaskPublisher(publisher)
+	t.Cleanup(func() { ingestor.Stop(context.Background()) })
+
+	if err := ingestor.Start(); err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("published messages = %d, want 1", len(publisher.messages))
+	}
+	if publisher.messages[0].TaskID != taskID {
+		t.Fatalf("published task ID = %q, want %q", publisher.messages[0].TaskID, taskID)
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("load scheduled task: %v", err)
+	}
+	if task.Status != common.SCHEDULED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.SCHEDULED)
 	}
 }

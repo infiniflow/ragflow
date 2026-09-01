@@ -63,7 +63,7 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 }
 
-func TestIngestionTaskServiceMarksTaskCreatedOnlyAfterPublish(t *testing.T) {
+func TestIngestionTaskServiceMarksTaskScheduledOnlyAfterPublish(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -86,8 +86,8 @@ func TestIngestionTaskServiceMarksTaskCreatedOnlyAfterPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
-	if statusDuringPublish != "" {
-		t.Fatalf("status during publish = %q, want empty unpublished status", statusDuringPublish)
+	if statusDuringPublish != common.CREATED {
+		t.Fatalf("status during publish = %q, want %q", statusDuringPublish, common.CREATED)
 	}
 	if len(responses) != 1 || !strings.HasPrefix(responses[0].Result, "task_id: ") {
 		t.Fatalf("unexpected parse response: %+v", responses)
@@ -97,8 +97,8 @@ func TestIngestionTaskServiceMarksTaskCreatedOnlyAfterPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if task.Status != common.CREATED {
-		t.Fatalf("status after publish = %q, want %q", task.Status, common.CREATED)
+	if task.Status != common.SCHEDULED {
+		t.Fatalf("status after publish = %q, want %q", task.Status, common.SCHEDULED)
 	}
 }
 
@@ -136,12 +136,12 @@ func TestIngestionTaskServiceAcceptsConsumerWinningPublishRace(t *testing.T) {
 	}
 }
 
-func TestIngestionTaskServiceStartRunningAllowsUnpublishedTask(t *testing.T) {
+func TestIngestionTaskServiceStartRunningTransitionsScheduledTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", "")
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 
 	task, err := NewIngestionTaskService().StartRunning(t.Context(), "task-1")
 	if err != nil {
@@ -593,8 +593,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 			if task.ID != "task-1" {
 				t.Fatalf("task ID = %q, want task-1", task.ID)
 			}
-			if task.Status != common.CREATED {
-				t.Fatalf("status = %q, want %q", task.Status, common.CREATED)
+			if task.Status != common.SCHEDULED {
+				t.Fatalf("status = %q, want %q", task.Status, common.SCHEDULED)
 			}
 			if len(publisher.messages) != 1 || publisher.messages[0].TaskID != "task-1" {
 				t.Fatalf("unexpected published messages: %+v", publisher.messages)
@@ -603,17 +603,17 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reload task: %v", err)
 			}
-			if reloaded.Status != common.CREATED {
-				t.Fatalf("reloaded status = %q, want %q", reloaded.Status, common.CREATED)
+			if reloaded.Status != common.SCHEDULED {
+				t.Fatalf("reloaded status = %q, want %q", reloaded.Status, common.SCHEDULED)
 			}
 		})
 	}
 }
 
-func TestIngestionTaskServiceCreateAndEnqueueReplacesUnpublishedTask(t *testing.T) {
+func TestIngestionTaskServiceCreateAndEnqueueSchedulesExistingCreatedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	insertTestIngestionTaskWithStatus(t, "stale-task", "user-1", "doc-1", "kb-1", "")
+	insertTestIngestionTaskWithStatus(t, "stale-task", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
@@ -628,29 +628,49 @@ func TestIngestionTaskServiceCreateAndEnqueueReplacesUnpublishedTask(t *testing.
 	if err != nil {
 		t.Fatalf("CreateAndEnqueue failed: %v", err)
 	}
-	if task.ID == "stale-task" {
-		t.Fatalf("expected a new task ID after replacing unpublished task, got %q", task.ID)
+	if task.ID != "stale-task" {
+		t.Fatalf("task ID = %q, want stale-task", task.ID)
 	}
-	if task.Status != common.CREATED {
-		t.Fatalf("status = %q, want %q", task.Status, common.CREATED)
+	if task.Status != common.SCHEDULED {
+		t.Fatalf("status = %q, want %q", task.Status, common.SCHEDULED)
 	}
 	if len(publisher.messages) != 1 || publisher.messages[0].TaskID != task.ID {
 		t.Fatalf("unexpected published messages: %+v", publisher.messages)
 	}
 
-	oldTask, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
+	reloaded, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
 	if err != nil {
-		t.Fatalf("load task after replacing unpublished task: %v", err)
+		t.Fatalf("load task after scheduling created task: %v", err)
 	}
-	if oldTask == nil || oldTask.ID == "stale-task" {
-		t.Fatalf("expected only the replacement task to remain, task=%+v", oldTask)
+	if reloaded == nil || reloaded.ID != "stale-task" || reloaded.Status != common.SCHEDULED {
+		t.Fatalf("expected created task to be scheduled in place, task=%+v", reloaded)
+	}
+}
+
+func TestIngestionTaskServiceScheduleCreatedTasksKeepsTaskCreatedOnPublishFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{err: errors.New("publish failed")}
+	if err := svc.ScheduleCreatedTasks(t.Context()); err == nil {
+		t.Fatal("expected ScheduleCreatedTasks to return publish error")
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.CREATED {
+		t.Fatalf("status after failed recovery publish = %q, want %q", task.Status, common.CREATED)
 	}
 }
 
 func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher

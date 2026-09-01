@@ -206,17 +206,17 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_UnpublishedTaskStartsRunning verifies that a message
-// delivered before the API's post-publish CREATED update is still executable.
-func TestProcessMessage_UnpublishedTaskStartsRunning(t *testing.T) {
+// TestProcessMessage_CreatedTaskStartsRunning verifies that a worker can claim
+// a task after NATS accepts its message but before the API records SCHEDULED.
+func TestProcessMessage_CreatedTaskStartsRunning(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
-		Update("status", "").Error; err != nil {
-		t.Fatalf("reset task to unpublished: %v", err)
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("reset task to CREATED: %v", err)
 	}
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
@@ -224,7 +224,7 @@ func TestProcessMessage_UnpublishedTaskStartsRunning(t *testing.T) {
 
 	ingestor.processMessage(handle)
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
-		t.Fatalf("unpublished task: expected 0 Ack/0 Nack (deferred), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+		t.Fatalf("CREATED task: expected 0 Ack/0 Nack (deferred), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 	if len(ingestor.taskChan) != 1 {
 		t.Fatalf("expected 1 task enqueued, got %d", len(ingestor.taskChan))

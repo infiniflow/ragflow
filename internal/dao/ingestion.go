@@ -69,18 +69,6 @@ func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm
 	return result.RowsAffected == 1, nil
 }
 
-// DeleteIfStatus deletes a task only when its current status matches. It is
-// used to remove an unpublished reservation without racing a consumer that
-// has already claimed the task.
-func (dao *IngestionTaskDAO) DeleteIfStatus(ctx context.Context, db *gorm.DB, taskID, status string) (bool, error) {
-	result := db.WithContext(ctx).Where("id = ? AND status = ?", taskID, status).
-		Delete(&entity.IngestionTask{})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
-}
-
 // UpdateComponentTotal records the number of components in the task's DSL
 // graph. It is the authoritative denominator for progress percentage.
 func (dao *IngestionTaskDAO) UpdateComponentTotal(ctx context.Context, db *gorm.DB, taskID string, total int) error {
@@ -132,7 +120,7 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 
 	taskStatus := tasks[0].Status
 	switch taskStatus {
-	case "", common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
+	case common.CREATED, common.SCHEDULED, common.STOPPED, common.COMPLETED, common.FAILED:
 		// ingestion_task_log no longer carries file references (the old
 		// checkpoint JSON column was dropped in favor of typed columns), so
 		// there are no task-level files to delete here.
@@ -156,7 +144,7 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 
 func (dao *IngestionTaskDAO) GetAllTasks(ctx context.Context, db *gorm.DB, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	query := db.WithContext(ctx).Where("status <> ?", "")
+	query := db.WithContext(ctx)
 	var err error
 	if pageSize == 0 {
 		err = query.Find(&tasks).Error
@@ -168,7 +156,7 @@ func (dao *IngestionTaskDAO) GetAllTasks(ctx context.Context, db *gorm.DB, page,
 
 func (dao *IngestionTaskDAO) ListByUserID(ctx context.Context, db *gorm.DB, userID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	query := db.WithContext(ctx).Where("user_id = ? AND status <> ?", userID, "")
+	query := db.WithContext(ctx).Where("user_id = ?", userID)
 	var err error
 	if pageSize == 0 {
 		err = query.Order("create_time DESC").Find(&tasks).Error
@@ -181,7 +169,7 @@ func (dao *IngestionTaskDAO) ListByUserID(ctx context.Context, db *gorm.DB, user
 
 func (dao *IngestionTaskDAO) ListByUserIDAndDatasetID(ctx context.Context, db *gorm.DB, userID, datasetID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	query := db.WithContext(ctx).Where("user_id = ? AND dataset_id = ? AND status <> ?", userID, datasetID, "")
+	query := db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID)
 	var err error
 	if pageSize == 0 {
 		err = query.Order("create_time DESC").Find(&tasks).Error
@@ -189,6 +177,12 @@ func (dao *IngestionTaskDAO) ListByUserIDAndDatasetID(ctx context.Context, db *g
 		err = query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 
+	return tasks, err
+}
+
+func (dao *IngestionTaskDAO) ListByStatus(ctx context.Context, db *gorm.DB, status string) ([]*entity.IngestionTask, error) {
+	var tasks []*entity.IngestionTask
+	err := db.WithContext(ctx).Where("status = ?", status).Order("create_time ASC").Find(&tasks).Error
 	return tasks, err
 }
 
@@ -211,8 +205,8 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 }
 
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a
-// terminal state (COMPLETED, STOPPED, FAILED), unpublished, or still queued
-// (CREATED).
+// terminal state (COMPLETED, STOPPED, FAILED), or not yet running
+// (CREATED, SCHEDULED).
 // RUNNING and STOPPING tasks are NOT deleted because an in-flight worker
 // would keep writing chunks and corrupt a new run's results.
 // Returns the number of rows deleted.

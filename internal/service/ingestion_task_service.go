@@ -20,10 +20,6 @@ import (
 // the task has been picked up by a worker.
 const stepKeyRunCount = "run_count"
 
-// unpublishedTaskStatus is the internal reservation state used between
-// inserting the task row and receiving a successful NATS publish result.
-const unpublishedTaskStatus = ""
-
 type InvalidTaskTransitionError struct {
 	TaskID string
 	From   string
@@ -51,8 +47,8 @@ type IngestionTaskService struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	taskPublisher       TaskPublisher
-	// createMu prevents a concurrent parse request from deleting an
-	// unpublished reservation while its owner is publishing the task.
+	// createMu serializes duplicate-document handling within one service
+	// instance while a CREATED task is being published.
 	createMu sync.Mutex
 }
 
@@ -109,7 +105,7 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			UserID:     userID,
 			DatasetID:  datasetID,
 			Schema:     nil,
-			Status:     unpublishedTaskStatus,
+			Status:     common.CREATED,
 		}
 		task, err = s.CreateAndEnqueue(ctx, task)
 		if err != nil {
@@ -212,7 +208,7 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		return nil, err
 	}
 	switch task.Status {
-	case unpublishedTaskStatus, common.CREATED:
+	case common.CREATED, common.SCHEDULED:
 		task, err = s.transition(ctx, taskID, common.RUNNING)
 		if err != nil {
 			return nil, err
@@ -258,7 +254,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		return nil, err
 	}
 	switch task.Status {
-	case common.CREATED:
+	case common.CREATED, common.SCHEDULED:
 		return s.transition(ctx, taskID, common.STOPPED)
 	case common.RUNNING:
 		task, err = s.transition(ctx, taskID, common.STOPPING)
@@ -333,11 +329,11 @@ func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*ent
 
 func validateTransition(from, to string) error {
 	switch from {
-	case unpublishedTaskStatus:
-		if to == common.RUNNING {
+	case common.CREATED:
+		if to == common.SCHEDULED || to == common.RUNNING || to == common.STOPPED {
 			return nil
 		}
-	case common.CREATED:
+	case common.SCHEDULED:
 		if to == common.RUNNING || to == common.STOPPED {
 			return nil
 		}
@@ -350,7 +346,7 @@ func validateTransition(from, to string) error {
 			return nil
 		}
 	case common.FAILED, common.STOPPED:
-		if to == common.CREATED || to == unpublishedTaskStatus {
+		if to == common.CREATED {
 			return nil
 		}
 	}
@@ -403,27 +399,14 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	}
 	if existing != nil {
 		switch existing.Status {
-		case unpublishedTaskStatus:
-			deleted, deleteErr := s.ingestionTaskDAO.DeleteIfStatus(ctx, dao.DB, existing.ID, unpublishedTaskStatus)
-			if deleteErr != nil {
-				return nil, deleteErr
-			}
-			if deleted {
-				existing = nil
-				break
-			}
-			// A consumer won the race and changed the reservation while it
-			// was being inspected. Treat the now-visible task as active.
-			existing, err = s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
-			if err != nil {
+		case common.CREATED:
+			if err = s.enqueueTask(existing.ID); err != nil {
 				return nil, err
 			}
-			if existing != nil {
-				return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
-			}
+			return s.markScheduledAfterPublish(ctx, existing.ID)
 		case common.FAILED, common.STOPPED:
 			originalStatus := existing.Status
-			existing, err = s.transition(ctx, existing.ID, unpublishedTaskStatus)
+			existing, err = s.transition(ctx, existing.ID, common.CREATED)
 			if err != nil {
 				return nil, err
 			}
@@ -438,12 +421,12 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 				}
 				return nil, err
 			}
-			return s.markCreatedAfterPublish(ctx, existing.ID)
+			return s.markScheduledAfterPublish(ctx, existing.ID)
 		default:
 			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
 		}
 	}
-	task.Status = unpublishedTaskStatus
+	task.Status = common.CREATED
 	created, err := s.ingestionTaskDAO.Create(ctx, dao.DB, task)
 	if err != nil {
 		return nil, err
@@ -454,16 +437,16 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 		}
 		return nil, err
 	}
-	return s.markCreatedAfterPublish(ctx, created.ID)
+	return s.markScheduledAfterPublish(ctx, created.ID)
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, unpublishedTaskStatus, status)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, status)
 	if err != nil {
 		return err
 	}
 	if !updated {
-		return s.newTaskStatusConflictError(ctx, taskID, unpublishedTaskStatus, status)
+		return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
 	}
 	return nil
 }
@@ -473,12 +456,11 @@ func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID s
 	return err
 }
 
-// markCreatedAfterPublish records that the task's message was accepted by
-// NATS. A worker can win the race and move the task directly from the
-// unpublished state to RUNNING, in which case the later CREATED write is no
-// longer needed and is treated as successful.
-func (s *IngestionTaskService) markCreatedAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, unpublishedTaskStatus, common.CREATED)
+// markScheduledAfterPublish records a successful NATS publish. A worker can
+// claim the CREATED task before this write and move it to RUNNING, which is
+// also a successful outcome.
+func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, common.SCHEDULED)
 	if err != nil {
 		return nil, err
 	}
@@ -491,11 +473,31 @@ func (s *IngestionTaskService) markCreatedAfterPublish(ctx context.Context, task
 		return nil, err
 	}
 	switch task.Status {
-	case common.RUNNING, common.STOPPING, common.COMPLETED, common.FAILED, common.STOPPED:
+	case common.SCHEDULED, common.RUNNING, common.STOPPING, common.COMPLETED, common.FAILED, common.STOPPED:
 		return task, nil
 	default:
-		return nil, s.newTaskStatusConflictError(ctx, taskID, unpublishedTaskStatus, common.CREATED)
+		return nil, s.newTaskStatusConflictError(ctx, taskID, common.CREATED, common.SCHEDULED)
 	}
+}
+
+// ScheduleCreatedTasks publishes the tasks that were persisted before a
+// process stopped but were not confirmed as scheduled. It is intended for the
+// single startup recovery pass; a publish error leaves the task CREATED for a
+// future startup or explicit parse request to retry.
+func (s *IngestionTaskService) ScheduleCreatedTasks(ctx context.Context) error {
+	tasks, err := s.ingestionTaskDAO.ListByStatus(ctx, dao.DB, common.CREATED)
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		if err := s.enqueueTask(task.ID); err != nil {
+			return fmt.Errorf("schedule created task %s: %w", task.ID, err)
+		}
+		if _, err := s.markScheduledAfterPublish(ctx, task.ID); err != nil {
+			return fmt.Errorf("mark task %s scheduled: %w", task.ID, err)
+		}
+	}
+	return nil
 }
 
 // clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that

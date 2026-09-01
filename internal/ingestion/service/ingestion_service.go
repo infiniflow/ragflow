@@ -185,6 +185,11 @@ func (e *Ingestor) start() error {
 	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
 		return err
 	}
+	if dao.DB != nil {
+		if err := e.ingestionTaskSvc.ScheduleCreatedTasks(e.ctx); err != nil {
+			common.Warn(fmt.Sprintf("schedule CREATED ingestion tasks at startup: %v", err))
+		}
+	}
 
 	// Start the task worker pool and the dataset-level compile consumer as
 	// owned goroutines joined by Stop via workerWg/compileWg. Start follows
