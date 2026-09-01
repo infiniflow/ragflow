@@ -63,6 +63,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "sharepoint", NewSharePointConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
+	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {

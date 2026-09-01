@@ -64,6 +64,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -75,6 +76,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
@@ -742,49 +744,30 @@ func mustJSON(v any) string {
 	return buf.String()
 }
 
+const (
+	webhookTraceTTL        = 10 * time.Minute
+	webhookTraceMaxRetries = 100
+)
+
 // appendWebhookTrace appends a single RunEvent to the per-canvas trace
-// key in Redis.
-// The trace key is `webhook-trace-<agent_id>-logs` with a 600 s TTL.
-// Each event is recorded as {"ts": <float>, "event": <type>, ...}.
+// key in Redis. Each event is recorded as {"ts": <float>, "event": <type>, ...}.
 func appendWebhookTrace(ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent) {
 	rdb := rediscli.Get()
-	if rdb == nil {
+	if rdb == nil || rdb.GetClient() == nil {
 		return
 	}
-	appendWebhookTraceWithWriter(ctx, rdb, agentID, startTs, ev)
+	if err := appendWebhookTraceWithClient(ctx, rdb.GetClient(), agentID, startTs, ev); err != nil {
+		common.Warn("webhook trace append failed", zap.String("agent_id", agentID), zap.Error(err))
+	}
 }
 
-type webhookTraceWriter interface {
-	Get(context.Context, string) (string, error)
-	SetObj(context.Context, string, any, time.Duration) bool
-}
-
-func appendWebhookTraceWithWriter(
-	ctx context.Context, writer webhookTraceWriter, agentID string, startTs time.Time, ev canvas.RunEvent,
-) {
-	key := fmt.Sprintf("webhook-trace-%s-logs", agentID)
-	raw, _ := writer.Get(ctx, key)
-	obj := map[string]any{}
-	if raw != "" {
-		_ = json.Unmarshal([]byte(raw), &obj)
-	}
-	whs, _ := obj["webhooks"].(map[string]any)
-	if whs == nil {
-		whs = map[string]any{}
-		obj["webhooks"] = whs
-	}
-	entryKey := strconv.FormatFloat(float64(startTs.UnixNano())/1e9, 'f', -1, 64)
-	entry, _ := whs[entryKey].(map[string]any)
-	if entry == nil {
-		entry = map[string]any{
-			"start_ts": float64(startTs.UnixNano()) / 1e9,
-			"events":   []any{},
-		}
-		whs[entryKey] = entry
-	}
-	events, _ := entry["events"].([]any)
+func appendWebhookTraceWithClient(
+	ctx context.Context, client *goredis.Client, agentID string, startTs time.Time, ev canvas.RunEvent,
+) error {
+	key := "webhook-trace-" + agentID + "-logs"
+	startSeconds := float64(startTs.UnixNano()) / 1e9
+	entryKey := strconv.FormatFloat(startSeconds, 'f', -1, 64)
 	eventRecord := map[string]any{
-		"ts":    float64(time.Now().UnixNano()) / 1e9,
 		"event": ev.Type,
 	}
 	if ev.Data != "" {
@@ -797,7 +780,59 @@ func appendWebhookTraceWithWriter(
 		eventRecord["task_id"] = ev.SessionID
 		eventRecord["session_id"] = ev.SessionID
 	}
-	entry["events"] = append(events, eventRecord)
 
-	writer.SetObj(ctx, key, obj, 600*time.Second)
+	for range webhookTraceMaxRetries {
+		err := client.Watch(ctx, func(tx *goredis.Tx) error {
+			store := webhookTraceStore{Webhooks: make(map[string]webhookTraceRun)}
+			raw, getErr := tx.Get(ctx, key).Bytes()
+			switch {
+			case getErr == nil:
+				if err := json.Unmarshal(raw, &store); err != nil {
+					return fmt.Errorf("decode webhook trace: %w", err)
+				}
+				if store.Webhooks == nil {
+					store.Webhooks = make(map[string]webhookTraceRun)
+				}
+			case errors.Is(getErr, goredis.Nil):
+			default:
+				return fmt.Errorf("read webhook trace: %w", getErr)
+			}
+
+			run, ok := store.Webhooks[entryKey]
+			if !ok {
+				run = webhookTraceRun{StartTS: startSeconds}
+			}
+			eventTimestamp := float64(time.Now().UnixNano()) / 1e9
+			latestTimestamp := float64(0)
+			for _, existingEvent := range run.Events {
+				latestTimestamp = max(latestTimestamp, webhookTraceEventTimestamp(existingEvent))
+			}
+			if eventTimestamp <= latestTimestamp {
+				eventTimestamp = math.Nextafter(latestTimestamp, math.Inf(1))
+			}
+			eventRecord["ts"] = eventTimestamp
+			run.Events = append(run.Events, eventRecord)
+			store.Webhooks[entryKey] = run
+
+			payload, err := json.Marshal(store)
+			if err != nil {
+				return fmt.Errorf("encode webhook trace: %w", err)
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
+				pipe.Set(ctx, key, payload, webhookTraceTTL)
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("write webhook trace: %w", err)
+			}
+			return nil
+		}, key)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, goredis.TxFailedErr) {
+			return err
+		}
+	}
+	return fmt.Errorf("update webhook trace: transaction failed after %d retries", webhookTraceMaxRetries)
 }

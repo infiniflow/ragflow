@@ -11,7 +11,7 @@
   "models": [
     {
       "name": "Baichuan4",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -22,7 +22,7 @@
     },
     {
       "name": "Baichuan4-Air",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -33,7 +33,7 @@
     },
     {
       "name": "Baichuan4-Turbo",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -44,7 +44,7 @@
     },
     {
       "name": "Baichuan-M3",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -55,7 +55,7 @@
     },
     {
       "name": "Baichuan-M3-plus",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -66,7 +66,7 @@
     },
     {
       "name": "Baichuan-M2-plus",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -77,7 +77,7 @@
     },
     {
       "name": "Baichuan-M2",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -88,7 +88,7 @@
     },
     {
       "name": "Baichuan3-Turbo",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -99,7 +99,7 @@
     },
     {
       "name": "Baichuan3-Turbo-128k",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -110,7 +110,7 @@
     },
     {
       "name": "Baichuan2-Turbo",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
