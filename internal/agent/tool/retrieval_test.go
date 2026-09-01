@@ -317,6 +317,63 @@ func TestRetrieval_RoutesMemoryRequests(t *testing.T) {
 	}
 }
 
+func TestRetrieval_ParsesUserIDNodeParam(t *testing.T) {
+	t.Parallel()
+
+	// A memory-mode Retrieval node declared as an Agent tool carries user_id
+	// in its node-level params; building the tool must accept it.
+	built, err := BuildByName("retrieval", map[string]any{
+		"retrieval_from": "memory",
+		"memory_ids":     []any{"memory-1"},
+		"user_id":        "sys.user_id",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(retrieval) with user_id: %v", err)
+	}
+	rt, ok := built.(*RetrievalTool)
+	if !ok {
+		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
+	}
+	if rt.defaults.UserID != "sys.user_id" {
+		t.Fatalf("UserID = %q, want sys.user_id", rt.defaults.UserID)
+	}
+}
+
+func TestRetrieval_RoutesMemoryRequestsWithUserFilter(t *testing.T) {
+	previous := GetMemoryRetrievalService()
+	memoryService := &capturingRetrievalService{}
+	SetMemoryRetrievalService(memoryService)
+	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
+
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "user-42"
+	ctx := runtime.WithState(t.Context(), state)
+
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{
+		MemoryIDs: []string{"memory-1"},
+		UserID:    "{sys.user_id}",
+	})
+	if _, err := rt.InvokableRun(ctx, `{"query":"remember this"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if memoryService.req.UserID != "user-42" {
+		t.Fatalf("UserID = %q, want user-42 resolved from {sys.user_id}", memoryService.req.UserID)
+	}
+
+	// The bare `sys.user_id` form (no braces) resolves against the canvas
+	// state as well.
+	bare := NewRetrievalToolWithDefaults(retrievalArgs{
+		MemoryIDs: []string{"memory-1"},
+		UserID:    "sys.user_id",
+	})
+	if _, err := bare.InvokableRun(ctx, `{"query":"remember this"}`); err != nil {
+		t.Fatalf("InvokableRun(bare ref): %v", err)
+	}
+	if memoryService.req.UserID != "user-42" {
+		t.Fatalf("UserID = %q, want user-42 resolved from bare sys.user_id", memoryService.req.UserID)
+	}
+}
+
 func TestRetrieval_ResolvesCanvasVariables(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.SetVar("source", "ids", []any{"kb-1", "kb-2"})

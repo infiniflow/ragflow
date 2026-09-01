@@ -60,6 +60,7 @@ type retrievalArgs struct {
 	DatasetIDs               []string       `json:"dataset_ids,omitempty"`
 	KBIDs                    []string       `json:"kb_ids,omitempty"`
 	MemoryIDs                []string       `json:"memory_ids,omitempty"`
+	UserID                   string         `json:"user_id,omitempty"`
 	TopN                     int            `json:"top_n,omitempty"`
 	RerankCandidatesCount    int            `json:"rerank_candidates_count,omitempty"`
 	TopK                     int            `json:"top_k,omitempty"`
@@ -151,6 +152,11 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		return "", err
 	}
 	args.Query = resolvedQuery
+	resolvedUserID, err := resolveRetrievalUserID(ctx, args.UserID)
+	if err != nil {
+		return "", err
+	}
+	args.UserID = resolvedUserID
 	common.Debug("agent retrieval tool: parsed arguments",
 		zap.String("query", args.Query),
 		zap.Strings("dataset_ids", args.DatasetIDs),
@@ -211,6 +217,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		TOCEnhance:               args.TOCEnhance,
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
+		UserID:                   args.UserID,
 		TenantID:                 retrievalTenantID(ctx),
 	}
 
@@ -291,6 +298,9 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.EmptyResponse == "" {
 		args.EmptyResponse = r.defaults.EmptyResponse
 	}
+	if args.UserID == "" {
+		args.UserID = r.defaults.UserID
+	}
 	if args.RerankID == "" {
 		args.RerankID = r.defaults.RerankID
 	}
@@ -335,6 +345,35 @@ func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
 		return "", fmt.Errorf("retrieval: resolve query variables: %w", err)
 	}
 	return resolved, nil
+}
+
+// resolveRetrievalUserID resolves the memory user_id filter. Mirrors Python's
+// Retrieval._retrieve_memory: a variable reference — `{sys.user_id}` template
+// or bare `sys.*` / `env.*` / `component@param` form — is looked up in the
+// canvas state; anything else is a literal user id and passes through.
+func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) {
+	trimmed := strings.TrimSpace(userID)
+	if trimmed == "" {
+		return "", nil
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return trimmed, nil
+	}
+	if strings.ContainsAny(trimmed, "{}") {
+		resolved, err := runtime.ResolveTemplateAuto(trimmed, state)
+		if err != nil {
+			return "", fmt.Errorf("retrieval: resolve user_id variable: %w", err)
+		}
+		return strings.TrimSpace(resolved), nil
+	}
+	if value, getErr := state.GetVar(trimmed); getErr == nil && value != nil {
+		if text, ok := value.(string); ok {
+			return text, nil
+		}
+		return fmt.Sprintf("%v", value), nil
+	}
+	return trimmed, nil
 }
 
 func resolveRetrievalDatasetIDs(ctx context.Context, datasetIDs []string) ([]string, error) {
