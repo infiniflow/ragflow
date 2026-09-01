@@ -568,8 +568,21 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 			resumeID = localInterruptID
 		}
 		if resumeID != "" {
-			runCtx = compose.ResumeWithData(runCtx, resumeID, nil)
-			invokeInput = nil // resume restores the graph input from checkpoint
+			// Only null out the input when the checkpoint this resume would
+			// rely on actually exists. eino silently starts a FRESH run from
+			// the entry node when the checkpoint is missing (load failure is
+			// not an error), so nil input would re-execute the source node
+			// (File) without doc_id / file[0].name and fail with "inputs
+			// missing". This can happen when a cancel raced the checkpoint
+			// save/delete, leaving the interrupt id behind but the payload
+			// gone. Fall back to a plain run with the full original input.
+			if _, ok, _ := store.Get(ctx, cpID); ok {
+				runCtx = compose.ResumeWithData(runCtx, resumeID, nil)
+				invokeInput = nil // resume restores the graph input from checkpoint
+			} else {
+				resumeID = ""
+				invokeInput = current
+			}
 		}
 
 		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
@@ -588,9 +601,16 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 
 		// Cancellation (plan §4.3.b): wipe the checkpoint and mark cancelled.
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			p.cleanupCheckpoint(ctx, store, tracker, cpID)
+			// The run ctx is already cancelled, so the Redis writes below
+			// would fail immediately if we used it. Detach cancellation so
+			// the cleanup + MarkCancelled actually land; otherwise a
+			// cancelled run leaks its checkpoint and interrupt id, and the
+			// next attempt misreads "interrupt pending + checkpoint missing"
+			// as a fresh run with nil input.
+			cleanupCtx := context.WithoutCancel(ctx)
+			p.cleanupCheckpoint(cleanupCtx, store, tracker, cpID)
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(cleanupCtx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
