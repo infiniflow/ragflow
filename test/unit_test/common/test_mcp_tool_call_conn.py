@@ -3,6 +3,7 @@ import threading
 import time
 from concurrent.futures import CancelledError as FuturesCancelledError
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -312,13 +313,21 @@ def test_close_sync_propagates_transport_cleanup_error(monkeypatch):
     server = SimpleNamespace(id="server-1", url="http://mcp.test", headers={}, server_type=MCPServerType.SSE)
     session = MCPToolCallSession(server)
 
-    assert initialized.wait(timeout=1)
-    with pytest.raises(RuntimeError, match="transport cleanup failed"):
-        session.close_sync(timeout=1)
+    try:
+        assert initialized.wait(timeout=1)
+        with pytest.raises(RuntimeError, match="transport cleanup failed"):
+            session.close_sync(timeout=1)
 
-    assert not session._thread.is_alive()
-    assert session._event_loop.is_closed()
-    assert session not in MCPToolCallSession._ALL_INSTANCES
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        if session._thread.is_alive():
+            try:
+                session.close_sync(timeout=1)
+            except RuntimeError as error:
+                if str(error) != "transport cleanup failed":
+                    raise
 
 
 def test_close_sync_cancels_in_flight_call_and_wakes_caller(monkeypatch):
@@ -552,17 +561,15 @@ def test_close_timeout_keeps_shared_shutdown_running(monkeypatch):
     server_started = threading.Event()
     finalizer_started = threading.Event()
     finalizer_finished = threading.Event()
-    release_holder = {}
+    release_finalizer = asyncio.Event()
 
     async def fake_server_loop(self):
         server_started.set()
         try:
             await asyncio.Future()
         finally:
-            release = asyncio.Event()
-            release_holder["release"] = release
             finalizer_started.set()
-            await release.wait()
+            await release_finalizer.wait()
             finalizer_finished.set()
 
     monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
@@ -579,18 +586,214 @@ def test_close_timeout_keeps_shared_shutdown_running(monkeypatch):
         assert session in MCPToolCallSession._ALL_INSTANCES
 
         shutdown_future = session._shutdown_future
-        session._event_loop.call_soon_threadsafe(release_holder["release"].set)
+        session._event_loop.call_soon_threadsafe(release_finalizer.set)
         assert session._shutdown_complete.wait(timeout=1)
-        session.close_sync(timeout=1)
+        session._thread.join(timeout=1)
 
         assert session._shutdown_future is shutdown_future
         assert finalizer_finished.is_set()
+        assert not session._thread.is_alive()
         assert session._event_loop.is_closed()
         assert session not in MCPToolCallSession._ALL_INSTANCES
     finally:
-        release = release_holder.get("release")
-        if release and not session._event_loop.is_closed():
-            session._event_loop.call_soon_threadsafe(release.set)
+        if not session._event_loop.is_closed():
+            session._event_loop.call_soon_threadsafe(release_finalizer.set)
+        session.close_sync(timeout=1)
+
+
+@pytest.mark.parametrize("owner_loop", [False, True], ids=["external-loop", "owner-loop"])
+def test_async_close_timeout_keeps_shared_shutdown_running(monkeypatch, owner_loop):
+    server_started = threading.Event()
+    finalizer_started = threading.Event()
+    finalizer_finished = threading.Event()
+    release_finalizer = asyncio.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            finalizer_started.set()
+            await release_finalizer.wait()
+            finalizer_finished.set()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+
+    try:
+        assert server_started.wait(timeout=1)
+        if owner_loop:
+            close_future = asyncio.run_coroutine_threadsafe(session.close(timeout=0.01), session._event_loop)
+            close_future.result(timeout=1)
+        else:
+            asyncio.run(asyncio.wait_for(session.close(timeout=0.01), timeout=1))
+
+        assert finalizer_started.wait(timeout=1)
+        shutdown_future = session._shutdown_future
+        assert shutdown_future is not None
+        assert not shutdown_future.done()
+        assert not shutdown_future.cancelled()
+        assert session._owner_close_waiters == 0
+        assert session._thread.is_alive()
+        assert session in MCPToolCallSession._ALL_INSTANCES
+
+        session._event_loop.call_soon_threadsafe(release_finalizer.set)
+        assert session._shutdown_complete.wait(timeout=1)
+        session._thread.join(timeout=1)
+
+        assert session._shutdown_future is shutdown_future
+        assert finalizer_finished.is_set()
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        if not session._event_loop.is_closed():
+            session._event_loop.call_soon_threadsafe(release_finalizer.set)
+        session.close_sync(timeout=1)
+
+
+def test_async_close_timeout_bounds_thread_join(monkeypatch):
+    server_started = threading.Event()
+    stop_scheduled = threading.Event()
+    release_stop_scheduler = threading.Event()
+    join_attempted = threading.Event()
+    join_timeouts = []
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    original_schedule_stop = MCPToolCallSession._schedule_event_loop_stop
+
+    def blocking_schedule_stop(self):
+        stop_scheduled.set()
+        release_stop_scheduler.wait(timeout=5)
+        original_schedule_stop(self)
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+    monkeypatch.setattr(MCPToolCallSession, "_schedule_event_loop_stop", blocking_schedule_stop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    real_join = session._thread.join
+
+    def observed_join(timeout=None):
+        join_timeouts.append(timeout)
+        join_attempted.set()
+        real_join(timeout)
+
+    monkeypatch.setattr(session._thread, "join", observed_join)
+
+    try:
+        assert server_started.wait(timeout=1)
+        shutdown_future = session._begin_shutdown()
+        shutdown_future.result(timeout=1)
+        assert stop_scheduled.wait(timeout=1)
+
+        asyncio.run(asyncio.wait_for(session.close(timeout=0.5), timeout=1))
+
+        assert join_attempted.is_set()
+        assert 0 < join_timeouts[0] <= 0.5
+        assert session._shutdown_future is shutdown_future
+        assert session._thread.is_alive()
+
+        release_stop_scheduler.set()
+        assert session._shutdown_complete.wait(timeout=1)
+        real_join(timeout=1)
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        monkeypatch.setattr(session._thread, "join", real_join)
+        release_stop_scheduler.set()
+        session.close_sync(timeout=1)
+
+
+def test_async_close_propagates_transport_cleanup_error(monkeypatch, caplog):
+    server_started = threading.Event()
+    release_stop_scheduler = threading.Event()
+    join_attempted = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            raise RuntimeError("transport cleanup failed")
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    real_join = session._thread.join
+
+    def blocking_schedule_stop():
+        release_stop_scheduler.wait(timeout=5)
+        session._event_loop.stop()
+
+    def failing_join(timeout=None):
+        join_attempted.set()
+        raise ValueError("join failed")
+
+    monkeypatch.setattr(session, "_schedule_event_loop_stop", blocking_schedule_stop)
+    monkeypatch.setattr(session._thread, "join", failing_join)
+
+    try:
+        assert server_started.wait(timeout=1)
+        with caplog.at_level("ERROR"), pytest.raises(RuntimeError, match="transport cleanup failed"):
+            asyncio.run(asyncio.wait_for(session.close(timeout=1), timeout=2))
+
+        assert join_attempted.is_set()
+        assert "Exception while joining MCP session thread for server server-1" in caplog.messages
+
+        monkeypatch.setattr(session._thread, "join", real_join)
+        release_stop_scheduler.set()
+        assert session._shutdown_complete.wait(timeout=1)
+        real_join(timeout=1)
+
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        monkeypatch.setattr(session._thread, "join", real_join)
+        release_stop_scheduler.set()
+        if session._thread.is_alive():
+            try:
+                session.close_sync(timeout=1)
+            except RuntimeError as error:
+                if str(error) != "transport cleanup failed":
+                    raise
+
+
+def test_async_close_propagates_thread_join_error(monkeypatch):
+    server_started = threading.Event()
+    release_stop_scheduler = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    real_join = session._thread.join
+
+    def blocking_schedule_stop():
+        release_stop_scheduler.wait(timeout=5)
+        session._event_loop.stop()
+
+    def failing_join(timeout=None):
+        raise ValueError("join failed")
+
+    monkeypatch.setattr(session, "_schedule_event_loop_stop", blocking_schedule_stop)
+    monkeypatch.setattr(session._thread, "join", failing_join)
+
+    try:
+        assert server_started.wait(timeout=1)
+        with pytest.raises(ValueError, match="join failed"):
+            asyncio.run(asyncio.wait_for(session.close(timeout=1), timeout=2))
+    finally:
+        monkeypatch.setattr(session._thread, "join", real_join)
+        release_stop_scheduler.set()
         session.close_sync(timeout=1)
 
 
@@ -743,6 +946,205 @@ def test_close_multiple_rejects_session_event_loop_thread(monkeypatch):
         assert not session._close
     finally:
         session.close_sync(timeout=1)
+
+
+def test_constructor_preserves_error_when_thread_start_fails_after_start(monkeypatch):
+    class StartupInterrupted(BaseException):
+        pass
+
+    interruption = StartupInterrupted("startup interrupted")
+    loop_started = threading.Event()
+    loop_holder = {}
+    thread_holder = {}
+    session_holder = {}
+    instances_before = set(MCPToolCallSession._active_instances())
+    real_new_event_loop = asyncio.new_event_loop
+    real_thread_start = threading.Thread.start
+
+    def observed_new_event_loop():
+        event_loop = real_new_event_loop()
+        loop_holder["event_loop"] = event_loop
+        return event_loop
+
+    def start_then_fail(thread):
+        thread_holder["thread"] = thread
+        session_holder["session"] = thread._target.__self__
+        real_thread_start(thread)
+        loop_holder["event_loop"].call_soon_threadsafe(loop_started.set)
+        assert loop_started.wait(timeout=1)
+        raise interruption
+
+    monkeypatch.setattr(mcp_tool_call_conn.asyncio, "new_event_loop", observed_new_event_loop)
+    monkeypatch.setattr(threading.Thread, "start", start_then_fail)
+
+    with pytest.raises(StartupInterrupted) as raised:
+        MCPToolCallSession(SimpleNamespace(id="startup-failure"))
+
+    session = session_holder["session"]
+    assert raised.value is interruption
+    assert not thread_holder["thread"].is_alive()
+    assert loop_holder["event_loop"].is_closed()
+    assert session._shutdown_complete.is_set()
+    assert session not in MCPToolCallSession._ALL_INSTANCES
+    assert set(MCPToolCallSession._active_instances()) == instances_before
+
+
+def test_constructor_shutdowns_default_executor_when_registration_fails(monkeypatch):
+    class StartupInterrupted(BaseException):
+        pass
+
+    interruption = StartupInterrupted("startup interrupted")
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    worker_finished = threading.Event()
+    session_holder = {}
+    worker_holder = {}
+    instances_before = set(MCPToolCallSession._active_instances())
+    real_registry_add = MCPToolCallSession._ALL_INSTANCES.add
+
+    def blocking_worker():
+        worker_holder["thread"] = threading.current_thread()
+        worker_started.set()
+        release_worker.wait(timeout=5)
+        worker_finished.set()
+
+    async def fake_server_loop(self):
+        session_holder["session"] = self
+        await asyncio.get_running_loop().run_in_executor(None, blocking_worker)
+        await asyncio.Future()
+
+    def fail_registration(session):
+        assert worker_started.wait(timeout=1)
+        raise interruption
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+    monkeypatch.setattr(MCPToolCallSession._ALL_INSTANCES, "add", fail_registration)
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    constructor = pool.submit(MCPToolCallSession, SimpleNamespace(id="startup-failure"))
+
+    try:
+        assert worker_started.wait(timeout=1)
+        with pytest.raises(FuturesTimeoutError):
+            constructor.result(timeout=0.05)
+
+        release_worker.set()
+        with pytest.raises(StartupInterrupted) as raised:
+            constructor.result(timeout=2)
+
+        session = session_holder["session"]
+        assert raised.value is interruption
+        assert worker_finished.is_set()
+        assert not worker_holder["thread"].is_alive()
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session._shutdown_complete.is_set()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+        assert set(MCPToolCallSession._active_instances()) == instances_before
+    finally:
+        release_worker.set()
+        try:
+            constructor.result(timeout=2)
+        except StartupInterrupted:
+            pass
+        finally:
+            pool.shutdown(wait=True)
+            monkeypatch.setattr(MCPToolCallSession._ALL_INSTANCES, "add", real_registry_add)
+
+
+def test_shutdown_all_waits_for_session_registration(monkeypatch):
+    server_started = threading.Event()
+    submission_started = threading.Event()
+    release_submission = threading.Event()
+    shutdown_started = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    real_run_coroutine_threadsafe = asyncio.run_coroutine_threadsafe
+
+    def blocking_submission(coroutine, event_loop):
+        future = real_run_coroutine_threadsafe(coroutine, event_loop)
+        submission_started.set()
+        release_submission.wait(timeout=5)
+        return future
+
+    real_begin_global_shutdown = MCPToolCallSession._begin_global_shutdown.__func__
+
+    def observed_begin_global_shutdown(cls):
+        shutdown_started.set()
+        return real_begin_global_shutdown(cls)
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+    monkeypatch.setattr(mcp_tool_call_conn.asyncio, "run_coroutine_threadsafe", blocking_submission)
+    monkeypatch.setattr(MCPToolCallSession, "_begin_global_shutdown", classmethod(observed_begin_global_shutdown))
+
+    pool = ThreadPoolExecutor(max_workers=2)
+    constructor = pool.submit(MCPToolCallSession, SimpleNamespace(id="server-1"))
+    shutdown = None
+    session = None
+
+    try:
+        assert submission_started.wait(timeout=1)
+        shutdown = pool.submit(mcp_tool_call_conn.shutdown_all_mcp_sessions)
+        assert shutdown_started.wait(timeout=1)
+        with pytest.raises(FuturesTimeoutError):
+            shutdown.result(timeout=0.05)
+
+        release_submission.set()
+        session = constructor.result(timeout=2)
+        shutdown.result(timeout=2)
+
+        assert server_started.is_set()
+        assert session._shutdown_complete.is_set()
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+        assert MCPToolCallSession._GLOBAL_SHUTDOWN_COUNT == 0
+    finally:
+        release_submission.set()
+        try:
+            if session is None:
+                session = constructor.result(timeout=2)
+            if shutdown is not None:
+                shutdown.result(timeout=2)
+        finally:
+            try:
+                if session is not None and session._thread.is_alive():
+                    session.close_sync(timeout=1)
+            finally:
+                pool.shutdown(wait=True)
+
+
+def test_session_creation_is_rejected_during_global_shutdown(monkeypatch):
+    shutdown_started = threading.Event()
+    release_shutdown = threading.Event()
+    active_instances = iter([[SimpleNamespace()], []])
+
+    def blocking_close_multiple(sessions):
+        shutdown_started.set()
+        assert release_shutdown.wait(timeout=5)
+        return 0
+
+    monkeypatch.setattr(MCPToolCallSession, "_active_instances", classmethod(lambda cls: next(active_instances)))
+    monkeypatch.setattr(mcp_tool_call_conn, "close_multiple_mcp_toolcall_sessions", blocking_close_multiple)
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    shutdown = pool.submit(mcp_tool_call_conn.shutdown_all_mcp_sessions)
+
+    try:
+        assert shutdown_started.wait(timeout=1)
+        with pytest.raises(RuntimeError, match="Cannot create MCP session during global shutdown"):
+            MCPToolCallSession(SimpleNamespace(id="rejected-server"))
+    finally:
+        release_shutdown.set()
+        try:
+            shutdown.result(timeout=2)
+        finally:
+            pool.shutdown(wait=True)
+
+    assert MCPToolCallSession._GLOBAL_SHUTDOWN_COUNT == 0
 
 
 def test_shutdown_all_reports_sessions_still_shutting_down(monkeypatch, caplog):

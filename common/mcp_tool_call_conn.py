@@ -53,6 +53,7 @@ class MCPToolBinding:
 class MCPToolCallSession(ToolCallSession):
     _ALL_INSTANCES: weakref.WeakSet["MCPToolCallSession"] = weakref.WeakSet()
     _INSTANCES_LOCK = threading.Lock()
+    _GLOBAL_SHUTDOWN_COUNT = 0
 
     def __init__(self, mcp_server: Any, server_variables: dict[str, Any] | None = None, custom_header=None) -> None:
         self._custom_header = custom_header
@@ -71,23 +72,69 @@ class MCPToolCallSession(ToolCallSession):
 
         self._event_loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_event_loop, name=f"mcp-session-{mcp_server.id}", daemon=True)
-        self._thread.start()
-
         coroutine = self._run_mcp_server_loop()
+        thread_started = False
+        coroutine_submitted = False
         try:
-            self._server_future = asyncio.run_coroutine_threadsafe(coroutine, self._event_loop)
-        except Exception:
-            coroutine.close()
-            self._event_loop.call_soon_threadsafe(self._event_loop.stop)
-            self._thread.join()
-            raise
-        with self.__class__._INSTANCES_LOCK:
-            self.__class__._ALL_INSTANCES.add(self)
+            with self.__class__._INSTANCES_LOCK:
+                if self.__class__._GLOBAL_SHUTDOWN_COUNT:
+                    raise RuntimeError("Cannot create MCP session during global shutdown")
+                self._thread.start()
+                thread_started = True
+                self._server_future = asyncio.run_coroutine_threadsafe(coroutine, self._event_loop)
+                coroutine_submitted = True
+                self.__class__._ALL_INSTANCES.add(self)
+        except BaseException as startup_error:  # noqa: BLE001
+            startup_traceback = startup_error.__traceback__
+            was_started = thread_started or self._thread.ident is not None
+            if was_started:
+                try:
+                    if not self._event_loop.is_closed():
+                        self._event_loop.call_soon_threadsafe(self._event_loop.stop)
+                except BaseException:
+                    logger.exception("Failed to stop MCP session event loop during startup rollback")
+                try:
+                    self._thread.join()
+                except BaseException:
+                    logger.exception("Failed to join MCP session thread during startup rollback")
+            else:
+                try:
+                    self._event_loop.close()
+                except BaseException:
+                    logger.exception("Failed to close MCP session event loop during startup rollback")
+                finally:
+                    self._shutdown_complete.set()
+            try:
+                if not coroutine_submitted and coroutine.cr_frame is not None:
+                    coroutine.close()
+            except BaseException:
+                logger.exception("Failed to close MCP server coroutine during startup rollback")
+            try:
+                with self.__class__._INSTANCES_LOCK:
+                    self.__class__._ALL_INSTANCES.discard(self)
+            except BaseException:
+                logger.exception("Failed to unregister MCP session during startup rollback")
+            raise startup_error.with_traceback(startup_traceback)
 
     @classmethod
     def _active_instances(cls) -> list["MCPToolCallSession"]:
         with cls._INSTANCES_LOCK:
             return list(cls._ALL_INSTANCES)
+
+    @classmethod
+    def _begin_global_shutdown(cls) -> list["MCPToolCallSession"]:
+        with cls._INSTANCES_LOCK:
+            cls._GLOBAL_SHUTDOWN_COUNT += 1
+        try:
+            return cls._active_instances()
+        except BaseException:
+            cls._end_global_shutdown()
+            raise
+
+    @classmethod
+    def _end_global_shutdown(cls) -> None:
+        with cls._INSTANCES_LOCK:
+            cls._GLOBAL_SHUTDOWN_COUNT -= 1
 
     def _run_event_loop(self) -> None:
         asyncio.set_event_loop(self._event_loop)
@@ -107,6 +154,10 @@ class MCPToolCallSession(ToolCallSession):
                     self._drain_pending_tasks()
                 except Exception:
                     logger.exception("Failed to drain late tasks for MCP server %s", self._mcp_server.id)
+                try:
+                    self._event_loop.run_until_complete(self._event_loop.shutdown_default_executor())
+                except Exception:
+                    logger.exception("Failed to shut down default executor for MCP server %s", self._mcp_server.id)
             finally:
                 try:
                     self._event_loop.close()
@@ -379,7 +430,11 @@ class MCPToolCallSession(ToolCallSession):
         if self._stop_handle is None or self._stop_handle.cancelled():
             self._stop_handle = self._event_loop.call_later(0, self._event_loop.stop)
 
-    async def close(self) -> None:
+    async def close(self, timeout: float = 5) -> None:  # noqa: ASYNC109
+        deadline = time.monotonic() + timeout
+        shutdown_finished = False
+        shutdown_error = None
+        shutdown_traceback = None
         owner_loop = asyncio.get_running_loop() is self._event_loop
         if owner_loop:
             self._owner_close_waiters += 1
@@ -389,14 +444,50 @@ class MCPToolCallSession(ToolCallSession):
 
         try:
             future = self._begin_shutdown()
-            await asyncio.shield(asyncio.wrap_future(future))
+            wrapped_future = asyncio.wrap_future(future)
+            wrapped_future.add_done_callback(lambda completed: None if completed.cancelled() else completed.exception())
+            done, _ = await asyncio.wait({wrapped_future}, timeout=max(0, deadline - time.monotonic()))
+            if not done:
+                logger.error("Timeout while closing session for server %s (timeout=%s)", self._mcp_server.id, timeout)
+            else:
+                shutdown_finished = True
+                await wrapped_future
+        except BaseException as error:  # noqa: BLE001
+            shutdown_error = error
+            shutdown_traceback = error.__traceback__
         finally:
             if owner_loop:
                 self._owner_close_waiters -= 1
                 if self._owner_close_waiters == 0 and self._shutdown_future is not None and self._shutdown_future.done():
                     self._schedule_event_loop_stop()
-            else:
-                await asyncio.to_thread(self._thread.join)
+
+        join_error = None
+        join_traceback = None
+        if not owner_loop:
+            remaining = max(0, deadline - time.monotonic())
+            if self._thread.is_alive() and remaining:
+                join_task = asyncio.create_task(asyncio.to_thread(self._thread.join, remaining))
+                join_task.add_done_callback(lambda completed: None if completed.cancelled() else completed.exception())
+                try:
+                    done, _ = await asyncio.wait({join_task}, timeout=remaining)
+                    if done:
+                        await join_task
+                except BaseException as error:  # noqa: BLE001
+                    join_error = error
+                    join_traceback = error.__traceback__
+            if self._thread.is_alive() and shutdown_finished and join_error is None:
+                logger.error("Timeout while joining MCP session thread for server %s (timeout=%s)", self._mcp_server.id, timeout)
+
+        if shutdown_error is not None:
+            if join_error is not None:
+                logger.error(
+                    "Exception while joining MCP session thread for server %s",
+                    self._mcp_server.id,
+                    exc_info=(type(join_error), join_error, join_traceback),
+                )
+            raise shutdown_error.with_traceback(shutdown_traceback)
+        if join_error is not None:
+            raise join_error.with_traceback(join_traceback)
 
     def close_sync(self, timeout: float | int = 5) -> None:
         try:
@@ -454,20 +545,23 @@ def close_multiple_mcp_toolcall_sessions(sessions: list[MCPToolCallSession]) -> 
 
 def shutdown_all_mcp_sessions():
     """Gracefully shutdown all active MCPToolCallSession instances."""
-    sessions = MCPToolCallSession._active_instances()
-    if not sessions:
-        logging.info("No MCPToolCallSession instances to close.")
-        return
+    sessions = MCPToolCallSession._begin_global_shutdown()
+    try:
+        if not sessions:
+            logging.info("No MCPToolCallSession instances to close.")
+            return
 
-    logging.info(f"Shutting down {len(sessions)} MCPToolCallSession instances...")
-    cleanup_errors = close_multiple_mcp_toolcall_sessions(sessions)
-    active_sessions = MCPToolCallSession._active_instances()
-    if active_sessions:
-        logger.warning("%s MCPToolCallSession instances are still shutting down.", len(active_sessions))
-    elif cleanup_errors:
-        logger.warning("All MCPToolCallSession event loops stopped; transport cleanup failure count: %s.", cleanup_errors)
-    else:
-        logger.info("All MCPToolCallSession instances have been closed.")
+        logging.info(f"Shutting down {len(sessions)} MCPToolCallSession instances...")
+        cleanup_errors = close_multiple_mcp_toolcall_sessions(sessions)
+        active_sessions = MCPToolCallSession._active_instances()
+        if active_sessions:
+            logger.warning("%s MCPToolCallSession instances are still shutting down.", len(active_sessions))
+        elif cleanup_errors:
+            logger.warning("All MCPToolCallSession event loops stopped; transport cleanup failure count: %s.", cleanup_errors)
+        else:
+            logger.info("All MCPToolCallSession instances have been closed.")
+    finally:
+        MCPToolCallSession._end_global_shutdown()
 
 
 def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict, function_name: str | None = None) -> dict[str, Any]:

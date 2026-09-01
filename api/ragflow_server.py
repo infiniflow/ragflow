@@ -49,6 +49,7 @@ from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
 chat_channel_thread = None
+shutdown_requested = False
 
 RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get("RAGFLOW_DEBUGPY_LISTEN", "0"))
 
@@ -81,9 +82,10 @@ def stop_background_services():
 
 
 def signal_handler(sig, frame):
-    logging.info("Received interrupt signal, shutting down...")
-    shutdown_all_mcp_sessions()
-    stop_background_services()
+    global shutdown_requested
+    if shutdown_requested:
+        return
+    shutdown_requested = True
     sys.exit(0)
 
 
@@ -136,9 +138,6 @@ if __name__ == "__main__":
 
     GlobalPluginManager.load_plugins()
 
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
     def delayed_start_update_progress():
         logging.info("Starting update_progress thread (delayed)")
         t = threading.Thread(target=update_progress, daemon=True)
@@ -170,6 +169,8 @@ if __name__ == "__main__":
 
     # start http server
     try:
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
         logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
         app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=False)
     except Exception as e:
@@ -177,4 +178,9 @@ if __name__ == "__main__":
         stop_background_services()
         os.kill(os.getpid(), signal.SIGKILL)
     finally:
-        stop_background_services()
+        if shutdown_requested:
+            logging.info("Received interrupt signal, shutting down...")
+        try:
+            shutdown_all_mcp_sessions()
+        finally:
+            stop_background_services()
