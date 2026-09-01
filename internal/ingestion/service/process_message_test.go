@@ -69,6 +69,119 @@ func TestProcessMessage_MemoryTaskDispatches(t *testing.T) {
 	}
 }
 
+// TestProcessMessage_MemoryTaskRedeliveryAcksSkip verifies the claim guard on
+// the memory dispatch path: when a memory task is redelivered by the broker
+// (NATS AckWait/BackOff while a slow LLM-extraction worker is still running),
+// the duplicate copy must be Acked and skipped instead of being enqueued and
+// executed again. Before the fix, memory tasks had no claim guard (unlike the
+// ingestion path), so every redelivery re-ran the LLM extraction — the same
+// slow task was executed 5+ times, monopolizing the shared worker pool and
+// starving document parses.
+func TestProcessMessage_MemoryTaskRedeliveryAcksSkip(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+
+	payload, err := json.Marshal(map[string]any{
+		"id":        "mem-redeliver-1",
+		"task_type": "memory",
+		"memory_id": "mem-1",
+		"source_id": 42,
+		"message_dict": map[string]any{
+			"user_id":        "u1",
+			"agent_id":       "a1",
+			"session_id":     "s1",
+			"user_input":     "hi",
+			"agent_response": "hello",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	// First delivery: claim succeeds, task is enqueued, message unsettled.
+	first := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-redeliver-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+	ingestor.processMessage(first)
+	if first.acks.Load() != 0 || first.nacks.Load() != 0 {
+		t.Fatalf("first delivery: expected 0 Ack/0 Nack (settled by worker), got acks=%d nacks=%d", first.acks.Load(), first.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("first delivery: expected 1 memory task enqueued, got %d", len(ingestor.taskChan))
+	}
+
+	// Redelivery while the first copy is still queued/in-flight: claim fails,
+	// the duplicate must be Acked and NOT enqueued.
+	dup := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-redeliver-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+	ingestor.processMessage(dup)
+	if dup.acks.Load() != 1 || dup.nacks.Load() != 0 {
+		t.Fatalf("redelivered copy: expected 1 Ack/0 Nack (ack skip), got acks=%d nacks=%d", dup.acks.Load(), dup.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("redelivered copy must not be enqueued, got %d tasks in channel", len(ingestor.taskChan))
+	}
+
+	// A different memory task must still be accepted (claim is per-task-id).
+	otherPayload, err := json.Marshal(map[string]any{
+		"id":        "mem-redeliver-2",
+		"task_type": "memory",
+		"memory_id": "mem-2",
+		"source_id": 43,
+		"message_dict": map[string]any{
+			"user_id":        "u1",
+			"agent_id":       "a1",
+			"session_id":     "s1",
+			"user_input":     "hi",
+			"agent_response": "hello",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal other payload: %v", err)
+	}
+	other := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-redeliver-2", TaskType: common.TaskTypeMemory, Payload: otherPayload}}
+	ingestor.processMessage(other)
+	if len(ingestor.taskChan) != 2 {
+		t.Fatalf("different memory task should be enqueued, got %d tasks in channel", len(ingestor.taskChan))
+	}
+}
+
+// TestExecuteMemoryTask_ReleasesClaim verifies that executeMemoryTask releases
+// the claim taken by processMessage once the worker finishes, so a later
+// redelivery (e.g. after restart) can re-claim and re-run the task instead of
+// being permanently ack-skipped.
+func TestExecuteMemoryTask_ReleasesClaim(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+	// Stub the runner so no DB / LLM is touched.
+	ingestor.runMemoryTask = func(_ context.Context, _ map[string]any) error {
+		return nil
+	}
+
+	if !ingestor.claimTask("mem-release-1") {
+		t.Fatal("expected claim to succeed")
+	}
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-release-1", TaskType: common.TaskTypeMemory}}
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
+		"id": "mem-release-1", "task_type": "memory", "memory_id": "mem-r", "source_id": 1,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	}, handle)
+
+	ingestor.executeMemoryTask(context.Background(), taskCtx)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack on success, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if _, stillClaimed := ingestor.currentTasks["mem-release-1"]; stillClaimed {
+		t.Fatal("expected claim released after executeMemoryTask finished")
+	}
+	if !ingestor.claimTask("mem-release-1") {
+		t.Fatal("expected re-claim to succeed after release (future redelivery can re-run)")
+	}
+}
+
 // TestProcessMessage_MemoryTaskDisabledAcks verifies that when the memory
 // extractor is not installed (nil), a memory task is acked and skipped so it
 // does not loop forever on the worker pool.
