@@ -377,12 +377,28 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			return
 		}
 		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
+		// Claim the task before enqueueing so a redelivered copy of the same
+		// memory task (NATS AckWait/BackOff redelivery, or a restart replay) is
+		// Ack-skipped instead of executed again. Memory tasks have no
+		// ingestion_task row / status CAS to dedupe against, so this in-process
+		// claim is the only guard against double execution of a slow
+		// LLM-extraction task (the ingestion path relies on the same
+		// claimTask/currentTasks guard). The claim is released by
+		// executeMemoryTask when the worker finishes.
+		if !e.claimTask(taskMessage.TaskID) {
+			common.Warn(fmt.Sprintf("memory task %s redelivered while worker still processing, ack skip", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack redelivered memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
 		select {
 		case e.taskChan <- taskCtx:
 			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
 		case <-e.ctx.Done():
-			// Shutdown won the race: return without settling so the broker
-			// redelivers the memory task after restart.
+			// Shutdown won the race: release the claim and return without
+			// settling so the broker redelivers the memory task after restart.
+			e.releaseTask(taskMessage.TaskID)
 			common.Info(fmt.Sprintf("Ingestor shutting down; memory task %s not enqueued", taskMessage.TaskID))
 			return
 		}
@@ -549,6 +565,11 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 	if taskID == "" {
 		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
 	}
+
+	// Release the claim taken by processMessage when the worker finishes, so a
+	// future redelivery (after restart) can re-claim the task. Mirrors
+	// executeTask's defer e.releaseTask(task.ID).
+	defer e.releaseTask(taskID)
 
 	// Recover a panic so a single poison memory task never crashes the worker
 	// (and, at max_concurrent_workers=1, the whole ingestor's only slot).
