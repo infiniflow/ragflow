@@ -729,6 +729,7 @@ class Docx(DocxParser):
                     else:
                         current_image = self.get_picture(self.doc, p)
                         if current_image is not None:
+                            flush_last_image()
                             last_image = current_image
 
                 for run in p.runs:

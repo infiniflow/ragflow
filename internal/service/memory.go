@@ -1129,7 +1129,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 			Method: "weighted_sum",
 			TopN:   topN,
 			FusionParams: map[string]interface{}{
-				"weights": fmt.Sprintf("%g,%g", 1-keywordsSimilarityWeight, keywordsSimilarityWeight),
+				"weights": memoryFusionWeights(keywordsSimilarityWeight),
 			},
 		}
 		matchExprs = append(matchExprs, matchText, matchDense, fusionExpr)
@@ -1363,6 +1363,21 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 	matchText.Fields = []string{"content"}
 	matchText.TopN = 100
 	return matchText
+}
+
+// memoryFusionWeights formats FusionExpr weights, whose slot order is [text, vector]:
+// the Elasticsearch, OceanBase and SereneDB adapters all read slot 1 as the vector
+// weight, and Elasticsearch then boosts the text query by 1 - that value. The keyword
+// weight is the text weight, so it belongs in slot 0. Sending it to slot 1 gave every
+// memory search the inverse of the requested hybrid balance.
+//
+// Six significant digits rather than %g for the same reason serenedb's formatWeight
+// rounds: 1 - 0.7 would otherwise render as 0.30000000000000004, which is also what the
+// Python side deliberately formats away.
+func memoryFusionWeights(keywordsSimilarityWeight float64) string {
+	textWeight := keywordsSimilarityWeight
+	vectorWeight := 1 - keywordsSimilarityWeight
+	return fmt.Sprintf("%.6g,%.6g", textWeight, vectorWeight)
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {

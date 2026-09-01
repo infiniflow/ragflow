@@ -489,21 +489,26 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
         # touch ``kbinfos``. All mutation happens in the main coroutine below,
         # so concurrent fan-out searches cannot race on the shared list.
         # Channel A: exact-surface collector.
+        #
+        # Feed the BM25 candidate pool the CONCISE entity terms, not just the full
+        # sentence: a long question buries the discriminating entities (e.g.
+        # "Culdect Saga") under stopwords, so generic docs outrank the specific
+        # one and the proper-noun chunk never even enters the pool. Passing the
+        # keyed terms as ``keywords`` makes bm25_search build
+        # ``effective_query = "sentence + entity terms"`` so the discriminating
+        # noun gets its own score mass.
+        terms = _query_to_terms(fq)
+        keyed = [t for t in terms if len(t) >= 3 and t.lower() not in _FANOUT_STOPWORDS and not t.isdigit() or (len(t) >= 4 and t.isdigit())]
         try:
-            res = await bm25_search(tools, fq, kb_ids=kb_ids, top_n=60)
+            res = await bm25_search(tools, fq, kb_ids=kb_ids, top_n=60, keywords=" ".join(keyed or terms))
             candidates = res.get("chunks", []) or []
         except Exception:
             _LOG.warning("[rag_agent] BM25 search failed for %r", fq, exc_info=True)
             candidates = []
 
         kept_a: list = []
-        terms = _query_to_terms(fq)
         if candidates:
             try:
-                # Feed the matcher CONCISE entity terms instead of the full sentence:
-                # a long question buries the discriminating entities under stopwords,
-                # so generic docs outrank the specific one. Numbers are kept.
-                keyed = [t for t in terms if len(t) >= 3 and t.lower() not in _FANOUT_STOPWORDS and not t.isdigit() or (len(t) >= 4 and t.isdigit())]
                 narrowed = narrow_by_terms(
                     candidates,
                     keyed or terms,
@@ -672,8 +677,33 @@ async def _compose_answer_from_evidence(state: AgenticState, tools, token_queue:
     system = FINAL_ANSWER_SYSTEM.format(cite_rules=rules)
     # Honor the dialog-level system prompt (UI-configured) the same way the
     # reasoning-disabled path does — merge from upstream/main.
+    #
+    # The configured prompt is appended AFTER the agentic contract so that
+    # presentational instructions actually take effect: FINAL_ANSWER_SYSTEM ends
+    # with a "# Language" rule ("answer in the same language as the question"),
+    # and when the configured prompt was prepended instead, that rule won on
+    # later-write-priority and silently overrode "answer in English", "be
+    # concise" and similar settings. Behaviour then differed from the
+    # reasoning-disabled path, where the same prompt is the only system prompt.
+    #
+    # Appending alone would let a configured prompt break the contract, so the
+    # closing clause re-states precedence. Note the split: LANGUAGE IS DELIBERATELY
+    # LEFT OVERRIDABLE — "answer in the same language as the question" is exactly
+    # the rule a user setting "answer in English" means to replace, so it must not
+    # be listed as protected. What stays protected is the evidence contract:
+    # citing sources, answering the exact attribute asked for, and never
+    # substituting prior knowledge for missing evidence.
     if getattr(tools, "system_prompt", "").strip():
-        system = f"{tools.system_prompt.strip()}\n\n{system}"
+        system = (
+            f"{system}\n\n"
+            "# Assistant configuration (set by the user)\n"
+            f"{tools.system_prompt.strip()}\n\n"
+            "Follow the configuration above for language, tone, style, format and "
+            "any other presentational instruction, including where it overrides "
+            "the language rule above. Where it conflicts with the citation rules, "
+            "attribute fidelity, or the requirement to answer only from the "
+            "provided evidence, those three take precedence."
+        )
 
     parts.append(f"Evidence:\n{evidence}")
     user_content = "\n".join(parts)
@@ -1080,8 +1110,13 @@ def build_agentic_graph(
     g.add_node("query_rewrite", query_rewrite)
     g.add_node("formalize_answer", formalize_answer)
 
-    # Slot mode owns its first-hop queries (slot-table first_queries) — the
-    # planning prefetch would duplicate them at full BM25+hybrid cost for ~20s
+    # Prefetch is DISABLED. In slot mode the planner emits a slot table whose
+    # first-hop queries are already retrieved by rag_agent's action_session, so a
+    # programmatic prefetch would duplicate that retrieval at full BM25+hybrid
+    # cost (~20s). Worse, the prefetch previously FILLED the snippet pool with
+    # broad-fanout chunks first, so the model-driven drill had nothing left to
+    # admit (observed "Drill admitted 0 for entire runs"). rag_agent retrieves on
+    # its own, so the pool fills naturally from targeted per-slot searches.
     use_prefetch = use_fanout
 
     g.add_edge(START, "formalize_question")

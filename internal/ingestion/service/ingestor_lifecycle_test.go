@@ -18,6 +18,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +29,15 @@ import (
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
 )
+
+type startupTaskPublisher struct {
+	messages []common.TaskMessage
+}
+
+func (p *startupTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.messages = append(p.messages, msg)
+	return nil
+}
 
 // TestStartWorkerPool_StartOnceIdempotent verifies that calling startWorkerPool
 // twice only starts maxConcurrency workers (sync.Once gate). It observes the
@@ -202,6 +213,61 @@ func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
 	close(released) // cleanup
 }
 
+// TestStartNilEngine verifies that Start returns an error instead of panicking
+// when the message queue engine has not been initialized.
+func TestStartNilEngine(t *testing.T) {
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(nil)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
+	ingestor := newUnitIngestor("test-nil-engine", 1, []string{"pdf"})
+	defer ingestor.Stop(context.Background())
+
+	err := ingestor.Start()
+	if err == nil || !strings.Contains(err.Error(), "not initialized") {
+		t.Fatalf("Start() with nil engine: err = %v, want 'not initialized'", err)
+	}
+	if got := ingestor.activeWorkers.Load(); got != 0 {
+		t.Fatalf("activeWorkers after failed Start = %d, want 0", got)
+	}
+}
+
+// TestExecuteTask_MarkFailedAfterCtxCancelAcks verifies that a generic task
+// failure is persisted and acknowledged even after the task context is
+// cancelled by the pipeline.
+func TestExecuteTask_MarkFailedAfterCtxCancelAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	handle := &fakeTaskHandle{}
+	taskCtx := taskpkg.NewTaskContextForScheduling(parentCtx, &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	})
+	taskCtx.Handle = handle
+	ingestor.runDocumentTask = func(_ context.Context, _ *entity.IngestionTask) error {
+		parentCancel()
+		return errors.New("boom")
+	}
+
+	ingestor.executeTask(context.Background(), taskCtx)
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.FAILED)
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
 // TestStart_FullPathReturnsAndStartsWorkers is a regression test for the
 // sync.Once re-entrancy deadlock. Before the fix, Start() wrapped the whole
 // startup (start()) in e.startOnce.Do, but start() also called startWorkerPool()
@@ -245,5 +311,44 @@ func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
 	}
 	if got := ing.activeWorkers.Load(); got <= 0 {
 		t.Fatalf("expected activeWorkers > 0 after Start(), got %d", got)
+	}
+}
+
+func TestStartSchedulesCreatedTasks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("set task CREATED: %v", err)
+	}
+
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(testutil.SetupNatsEngine(t))
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
+	ingestor := newUnitIngestor("test-schedule-created", 1, nil)
+	publisher := &startupTaskPublisher{}
+	ingestor.ingestionTaskSvc.SetTaskPublisher(publisher)
+	t.Cleanup(func() { ingestor.Stop(context.Background()) })
+
+	if err := ingestor.Start(); err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("published messages = %d, want 1", len(publisher.messages))
+	}
+	if publisher.messages[0].TaskID != taskID {
+		t.Fatalf("published task ID = %q, want %q", publisher.messages[0].TaskID, taskID)
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("load scheduled task: %v", err)
+	}
+	if task.Status != common.SCHEDULED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.SCHEDULED)
 	}
 }

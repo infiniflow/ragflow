@@ -79,6 +79,7 @@ func (n *NatsEngine) Init() error {
 		Subjects:  []string{"tasks.>"},
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
+		Discard:   jetstream.DiscardNew,
 		MaxMsgs:   1024 * 128,
 		MaxBytes:  1024 * 1024 * 64,
 		// Server-side dedup window. Inert for task publishes: PublishTask
@@ -111,14 +112,14 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 	defer cancel()
 
 	// Deliberately NO MsgID/dedup here. Ingestion tasks reuse the same
-	// task_id across publish attempts (the FAILED/STOPPED→CREATED retry
+	// task_id across publish attempts (the FAILED/STOPPED→CREATED→SCHEDULED retry
 	// path), and the server's Duplicates window suppresses a republished
 	// MsgID for its whole lifetime regardless of whether the original
 	// message was already consumed and acked. A deduped retry publish
-	// strands the task in CREATED with no message behind it — unreachable
-	// by any consumer and un-reparsable ("already exists, status: CREATED").
+	// strands the task in SCHEDULED with no message behind it — unreachable
+	// by any consumer and un-reparsable ("already exists, status: SCHEDULED").
 	// Duplicate delivery is instead made safe at the consumer level:
-	// StartRunning's CREATED→RUNNING CAS plus the in-process claim guard
+	// StartRunning's CREATED/SCHEDULED→RUNNING CAS plus the in-process claim guard
 	// ack-skip any second copy (see Ingestor.processMessage).
 	ack, err := n.jetStream.Publish(ctx, subject, payload)
 	if err != nil {
