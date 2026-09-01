@@ -677,8 +677,33 @@ async def _compose_answer_from_evidence(state: AgenticState, tools, token_queue:
     system = FINAL_ANSWER_SYSTEM.format(cite_rules=rules)
     # Honor the dialog-level system prompt (UI-configured) the same way the
     # reasoning-disabled path does — merge from upstream/main.
+    #
+    # The configured prompt is appended AFTER the agentic contract so that
+    # presentational instructions actually take effect: FINAL_ANSWER_SYSTEM ends
+    # with a "# Language" rule ("answer in the same language as the question"),
+    # and when the configured prompt was prepended instead, that rule won on
+    # later-write-priority and silently overrode "answer in English", "be
+    # concise" and similar settings. Behaviour then differed from the
+    # reasoning-disabled path, where the same prompt is the only system prompt.
+    #
+    # Appending alone would let a configured prompt break the contract, so the
+    # closing clause re-states precedence. Note the split: LANGUAGE IS DELIBERATELY
+    # LEFT OVERRIDABLE — "answer in the same language as the question" is exactly
+    # the rule a user setting "answer in English" means to replace, so it must not
+    # be listed as protected. What stays protected is the evidence contract:
+    # citing sources, answering the exact attribute asked for, and never
+    # substituting prior knowledge for missing evidence.
     if getattr(tools, "system_prompt", "").strip():
-        system = f"{tools.system_prompt.strip()}\n\n{system}"
+        system = (
+            f"{system}\n\n"
+            "# Assistant configuration (set by the user)\n"
+            f"{tools.system_prompt.strip()}\n\n"
+            "Follow the configuration above for language, tone, style, format and "
+            "any other presentational instruction, including where it overrides "
+            "the language rule above. Where it conflicts with the citation rules, "
+            "attribute fidelity, or the requirement to answer only from the "
+            "provided evidence, those three take precedence."
+        )
 
     parts.append(f"Evidence:\n{evidence}")
     user_content = "\n".join(parts)

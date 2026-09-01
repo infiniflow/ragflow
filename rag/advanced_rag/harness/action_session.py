@@ -487,7 +487,7 @@ def _disable_tool(tools, name: str) -> None:
                 return
         disabled.add(name)
     except Exception:
-        _LOG.warning("[action_session] could not mark tool %r disabled", name, exc_info=True)
+        _LOG.warning("[Action Session] could not mark tool %r disabled", name, exc_info=True)
 
 
 def _reason_status(reason: str) -> str:
@@ -689,7 +689,7 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
             res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
             cands = res.get("chunks", []) or []
         except Exception:
-            _LOG.warning("[action_session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
+            _LOG.warning("[Action Session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
             continue
         for c in cands[:_SNIPPETS_PER_QUERY]:
             if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen):
@@ -765,7 +765,7 @@ async def _exec_web_search(tools, queries: list) -> ToolOutcome:
         # would just retry and burn turns). Return an explicit, actionable note
         # so the model moves on to the corpus tools — a web failure must never
         # block the Q&A.
-        _LOG.warning("[action_session] web_search unavailable (no provider configured)")
+        _LOG.warning("[Action Session] web_search unavailable (no provider configured)")
         return ToolOutcome(
             payload=[
                 {"kind": "web_search", "note": "Web search is NOT configured for this session. Do not use this tool again; use the corpus tools (retrieve / search_chunks / navigate_*) instead."}
@@ -784,7 +784,7 @@ async def _exec_web_search(tools, queries: list) -> ToolOutcome:
             if asyncio.iscoroutine(web_res) or hasattr(web_res, "__await__"):
                 web_res = await web_res
         except Exception:
-            _LOG.warning("[action_session] web_search failed for %r", q, exc_info=True)
+            _LOG.warning("[Action Session] web_search failed for %r", q, exc_info=True)
             continue
         for c in ((web_res or {}).get("chunks") or [])[:8]:
             cid = _chunk_id(c)
@@ -807,7 +807,7 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
     try:
         res = await list_chunks(tools, doc_id)
     except Exception:
-        _LOG.warning("[action_session] list_chunks failed doc=%r", doc_id, exc_info=True)
+        _LOG.warning("[Action Session] list_chunks failed doc=%r", doc_id, exc_info=True)
         return ToolOutcome(payload=[], status=ERROR, reason="infra")
     out, ids, new_ev = [], [], 0
     kbinfos = _seed_evidence(tools)
@@ -844,7 +844,7 @@ def _inject_nav_tools_ref(tools) -> None:
 
         _nav._tools_ref["tools"] = tools
     except Exception:
-        _LOG.warning("[action_session] could not inject navigation tools ref", exc_info=True)
+        _LOG.warning("[Action Session] could not inject navigation tools ref", exc_info=True)
 
 
 async def _exec_navigate_tree(tools, args: dict) -> ToolOutcome:
@@ -938,7 +938,7 @@ async def _exec_calculate(tools, args: dict) -> ToolOutcome:
     try:
         res = await compute_from_facts(mdl, question, facts)
     except Exception:
-        _LOG.warning("[action_session] calculate failed", exc_info=True)
+        _LOG.warning("[Action Session] calculate failed", exc_info=True)
         res = None
     if not res:
         # nothing derivable -> tell the model so it doesn't loop on it
@@ -967,7 +967,7 @@ async def _exec_graph_explore(tools, args: dict) -> ToolOutcome:
     try:
         res = await graph_explore(tools, query, doc_scope=doc_scope or None)
     except Exception:
-        _LOG.warning("[action_session] graph_explore failed", exc_info=True)
+        _LOG.warning("[Action Session] graph_explore failed", exc_info=True)
         res = {}
     answer = str(res.get("answer") or "").strip()
     chunks = res.get("chunks") or []
@@ -1000,7 +1000,7 @@ async def execute_tool(tools, name: str, args: dict) -> ToolOutcome:
     # structure of its kind). We still return a note, not an error, so the model
     # learns to switch to the corpus tools rather than loop.
     if name in (_TOOL_MAP and (getattr(tools, "_disabled_tools", None) or set())):
-        _LOG.info("[action_session] tool %r disabled (no compiled structure); returning note", name)
+        _LOG.info("[Action Session] tool %r disabled (no compiled structure); returning note", name)
         return ToolOutcome(
             payload=[{"kind": name, "note": f"{name} is unavailable in this dataset (no compiled structure of its kind). Use search_chunks / retrieve / list_chunks instead."}],
             status=EMPTY,
@@ -1026,7 +1026,7 @@ async def execute_tool(tools, name: str, args: dict) -> ToolOutcome:
         return await _exec_graph_explore(tools, args)
     if name == "web_search":
         return await _exec_web_search(tools, _arg_query_list(args, 2))
-    _LOG.warning("[action_session] unknown tool %r; ignored.", name)
+    _LOG.warning("[Action Session] unknown tool %r; ignored.", name)
     return ToolOutcome(payload=[], status=ERROR, reason="bad_args")
 
 
@@ -1111,7 +1111,7 @@ def _parse_tool_calls(msg) -> list:
             #
             # Models most often emit the XML protocol tags (state / answer) as
             # tool names; the hint below steers them back to plain-text output.
-            _LOG.warning("[action_session] tool_call to unknown tool %r; replying with a hint", name)
+            _LOG.warning("[Action Session] tool_call to unknown tool %r; replying with a hint", name)
             calls.append({"id": tc.id or f"call_{i}", "name": name, "args": args, "unknown": True})
             continue
         calls.append({"id": tc.id or f"call_{i}", "name": name, "args": args})
@@ -1192,10 +1192,10 @@ async def _run_action_node(state: _SessionState) -> dict:
         async with asyncio.timeout(wall):
             resp = await _llm_once_with_tools(state["tools"], mdl, state["messages"])
     except TimeoutError:
-        _LOG.warning("[action_session] turn timed out after %.0fs", wall)
+        _LOG.warning("[Action Session] turn timed out after %.0fs", wall)
         return {"_done": True, "new_states": [], "found_answer": None, "attempts": attempts}
     except Exception as e:  # noqa: BLE001 - 422 content-moderation / conn errors
-        _LOG.warning("[action_session] LLM call failed (%s); converging session empty", type(e).__name__)
+        _LOG.warning("[Action Session] LLM call failed (%s); converging session empty", type(e).__name__)
         return {"_done": True, "new_states": [], "found_answer": None, "attempts": attempts}
     msg = resp.choices[0].message
     content = msg.content or ""
@@ -1287,7 +1287,7 @@ async def _tool_node(state: _SessionState) -> dict:
         q = str((c.get("args") or {}).get("query") or "").strip()
         if c["name"] in _RETRIEVAL_TOOLS and q and _is_near_dup(q, seen_queries):
             skipped += 1
-            _LOG.info("[action_session] skipping near-duplicate retrieval %r (already searched)", q[:80])
+            _LOG.info("[Action Session] skipping near-duplicate retrieval %r (already searched)", q[:80])
             tool_msgs.append(
                 {
                     "role": "tool",
@@ -1347,7 +1347,7 @@ async def _tool_node(state: _SessionState) -> dict:
             strikes[c["name"]] = n
             if n >= _EMPTY_STRIKES:
                 _disable_tool(tools, c["name"])
-                _LOG.info("[action_session] %s disabled after %d dataset-level empty results", c["name"], n)
+                _LOG.info("[Action Session] %s disabled after %d dataset-level empty results", c["name"], n)
         elif oc.status == REDUNDANT:
             # Ran fine, but every hit was already in the shared evidence pool.
             # Say so explicitly — otherwise the model sees a normal passage list
@@ -1414,7 +1414,7 @@ async def _tool_node(state: _SessionState) -> dict:
                     tool_msgs.extend(ladder_msgs)
                     if status != OK:
                         _LOG.info(
-                            "[action_session] ladder %r -> %r (reason=%s)",
+                            "[Action Session] ladder %r -> %r (reason=%s)",
                             rule.id,
                             nxt,
                             reason,
@@ -1464,11 +1464,11 @@ async def _finalize_node(state: _SessionState) -> dict:
         fcontent = fresp.choices[0].message.content or ""
         new_states, found_answer = _parse_terminal(fcontent, parent)
         if found_answer:
-            _LOG.info("[action_session] answer salvaged from exhausted session")
+            _LOG.info("[Action Session] answer salvaged from exhausted session")
         elif new_states:
-            _LOG.info("[action_session] %d branch(es) salvaged from exhausted session", len(new_states))
+            _LOG.info("[Action Session] %d branch(es) salvaged from exhausted session", len(new_states))
     except Exception:
-        _LOG.exception("[action_session] salvage call failed")
+        _LOG.exception("[Action Session] salvage call failed")
 
     # Loose-clue harvest (deterministic, zero-LLM): even when every JSON
     # protocol attempt failed, the last narration often carries facts worth
@@ -1491,7 +1491,7 @@ async def _finalize_node(state: _SessionState) -> dict:
                 )
                 if patched is not None:
                     new_states = [patched]
-                    _LOG.warning("[action_session] loose-clue patch (narrative)")
+                    _LOG.warning("[Action Session] loose-clue patch (narrative)")
 
     return {"new_states": new_states, "found_answer": found_answer, "_done": True, "retrieved_evidence_ids": evidence_ids}
 
@@ -1542,7 +1542,7 @@ def _route(state: _SessionState) -> str:
     # evidence — converge to finalize instead of burning the remaining budget on
     # paraphrases (Q30/Q759 timeout root cause).
     if int(state.get("_skipped_dup", 0)) >= 2:
-        _LOG.info("[action_session] %d near-duplicate retrieval(s) skipped; converging session early", int(state.get("_skipped_dup", 0)))
+        _LOG.info("[Action Session] %d near-duplicate retrieval(s) skipped; converging session early", int(state.get("_skipped_dup", 0)))
         return "finalize"
     return "run_action"  # nudge retry
 
@@ -1659,7 +1659,7 @@ async def _run_drill_merge(tools, ctx: _NavContext, available: set, budget_s: fl
                 async with asyncio.timeout(max(5.0, budget_s or _NAV_PREFIX_CALL_TIMEOUT_S)):
                     s_oc = await execute_tool(tools, "navigate_structure", {"doc_id": doc_id, "query": ctx.direction, "kind": "catalog"})
             except Exception:
-                _LOG.warning("[action_session] drill structure load failed doc=%s", doc_id, exc_info=True)
+                _LOG.warning("[Action Session] drill structure load failed doc=%s", doc_id, exc_info=True)
                 continue
             for d in s_oc.evidence_ids:
                 if d not in seen_ids:
@@ -1760,7 +1760,7 @@ def _nav_tool_surface(tools) -> set:
     try:
         return {s["function"]["name"] for s in _active_tool_specs(tools)}
     except Exception:
-        _LOG.warning("[action_session] could not resolve the tool surface", exc_info=True)
+        _LOG.warning("[Action Session] could not resolve the tool surface", exc_info=True)
         return set()
 
 
@@ -1824,7 +1824,7 @@ async def _run_nav_chain(
             break
         remaining = budget_s - (time.monotonic() - started)
         if remaining <= 1.0:
-            _LOG.info("[action_session] nav chain out of budget before %r", rule_id)
+            _LOG.info("[Action Session] nav chain out of budget before %r", rule_id)
             break
         try:
             if rule.run is not None:
@@ -1835,7 +1835,7 @@ async def _run_nav_chain(
                 async with asyncio.timeout(min(_NAV_PREFIX_CALL_TIMEOUT_S, remaining)):
                     oc = await execute_tool(tools, rule.tool, rule.args(ctx))
         except Exception:
-            _LOG.warning("[action_session] nav chain step %r failed", rule_id, exc_info=True)
+            _LOG.warning("[Action Session] nav chain step %r failed", rule_id, exc_info=True)
             break
 
         outcomes.append({"name": rule.tool, "status": oc.status, "reason": oc.reason, "metrics": oc.metrics})
@@ -1907,7 +1907,7 @@ async def run_action_session(
 
     mdl = _base_chat_mdl(tools)
     if mdl is None:
-        _LOG.warning("[action_session] no usable model resolved for action session")
+        _LOG.warning("[Action Session] no usable model resolved for action session")
         return Result(messages=[], new_states=[])
 
     budget_left = deadline_left or _ACTION_TIMEOUT_S
@@ -1927,10 +1927,10 @@ async def run_action_session(
         try:
             prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = await run_nav_prefix(tools, direction, budget_left, ctx=nav_ctx)
         except Exception:
-            _LOG.warning("[action_session] navigation prefix failed; continuing with the plain loop", exc_info=True)
+            _LOG.warning("[Action Session] navigation prefix failed; continuing with the plain loop", exc_info=True)
     if prefix_msgs:
         _LOG.info(
-            "[action_session] nav prefix completed %d step(s), pending=%r, routed=%d doc(s)",
+            "[Action Session] nav prefix completed %d step(s), pending=%r, routed=%d doc(s)",
             len(prefix_outcomes),
             pending_rule,
             len(nav_ctx.known_docs),
@@ -1963,7 +1963,7 @@ async def run_action_session(
     try:
         final = await _SESSION_GRAPH.ainvoke(initial)
     except Exception:
-        _LOG.exception("[action_session] session failed")
+        _LOG.exception("[Action Session] session failed")
         return Result(messages=[], new_states=[])
     return Result(
         messages=final.get("messages", []),
