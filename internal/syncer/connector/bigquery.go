@@ -505,7 +505,33 @@ func (c *BigQueryConnector) buildBaseQuery() string {
 func (c *BigQueryConnector) usesTableMode() bool { return c.query == "" }
 
 func (c *BigQueryConnector) wrapQuery(base, selectClause string) string {
-	return fmt.Sprintf("SELECT %s FROM (%s) AS ragflow_src", selectClause, base)
+	return c.wrapFilteredQuery(base, selectClause, "")
+}
+
+func (c *BigQueryConnector) wrapFilteredQuery(base, selectClause, where string) string {
+	query := fmt.Sprintf("SELECT %s FROM (%s) AS ragflow_src", selectClause, base)
+	if where != "" {
+		query += " WHERE " + where
+	}
+	return query + c.stableOrderClause()
+}
+
+func (c *BigQueryConnector) stableOrderClause() string {
+	columns := make([]string, 0, 2)
+	if c.idColumn != "" {
+		columns = append(columns, c.idColumn)
+	}
+	if c.timestampColumn != "" && c.timestampColumn != c.idColumn {
+		columns = append(columns, c.timestampColumn)
+	}
+	if len(columns) == 0 {
+		return ""
+	}
+	order := make([]string, 0, len(columns))
+	for _, column := range columns {
+		order = append(order, fmt.Sprintf("ragflow_src.%s ASC", column))
+	}
+	return " ORDER BY " + strings.Join(order, ", ")
 }
 
 func (c *BigQueryConnector) validateSchema(schema []bigQueryField) error {
@@ -553,9 +579,8 @@ func (c *BigQueryConnector) validateSchema(schema []bigQueryField) error {
 // buildSyncQuery returns the wrapped query and cursor parameters.
 func (c *BigQueryConnector) buildSyncQuery(request SyncRequest) (string, []gcpbigquery.QueryParameter) {
 	base := c.buildBaseQuery()
-	query := c.wrapQuery(base, "*")
 	if c.timestampColumn == "" || request.FromBeginning {
-		return query, nil
+		return c.wrapQuery(base, "*"), nil
 	}
 	conditions := []string{}
 	parameters := []gcpbigquery.QueryParameter{}
@@ -568,9 +593,9 @@ func (c *BigQueryConnector) buildSyncQuery(request SyncRequest) (string, []gcpbi
 		parameters = append(parameters, gcpbigquery.QueryParameter{Name: "end_cursor", Value: request.WindowEnd.UTC()})
 	}
 	if len(conditions) == 0 {
-		return query, nil
+		return c.wrapQuery(base, "*"), nil
 	}
-	return query + " WHERE " + strings.Join(conditions, " AND "), parameters
+	return c.wrapFilteredQuery(base, "*", strings.Join(conditions, " AND ")), parameters
 }
 
 func (c *BigQueryConnector) buildSlimQuery(base string) string {
@@ -1023,6 +1048,9 @@ func (s *bigQuerySyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	if sourceID == "" {
 		return fmt.Errorf("bigquery sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	if s.connector.stableOrderClause() == "" {
+		return fmt.Errorf("bigquery sync resume requires a stable ordering: %w", ErrSyncResumeInvalid)
 	}
 	s.resume = &SyncCheckpoint{SourceID: sourceID}
 	return nil

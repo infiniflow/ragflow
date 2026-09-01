@@ -270,6 +270,9 @@ func TestBigQueryConnectorOpenSyncFull(t *testing.T) {
 	if fake.queries[0].readIterator.page != defaultBigQueryPageSize {
 		t.Fatalf("page size = %d, want %d", fake.queries[0].readIterator.page, defaultBigQueryPageSize)
 	}
+	if !strings.Contains(fake.queries[0].text, "ORDER BY ragflow_src.id ASC, ragflow_src.updated_at ASC") {
+		t.Fatalf("sync query = %q, want stable ordering", fake.queries[0].text)
+	}
 	if !doc.UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("updated at = %s", doc.UpdatedAt)
 	}
@@ -317,6 +320,9 @@ func TestBigQueryConnectorIncrementalParameters(t *testing.T) {
 	}
 	if len(query.parameters) != 2 || query.parameters[0].Name != "start_cursor" || query.parameters[1].Name != "end_cursor" {
 		t.Fatalf("parameters = %+v", query.parameters)
+	}
+	if !strings.Contains(query.text, "ORDER BY ragflow_src.updated_at ASC") {
+		t.Fatalf("incremental query = %q, want stable ordering", query.text)
 	}
 }
 
@@ -410,6 +416,35 @@ func TestBigQueryConnectorResumeCursorOnly(t *testing.T) {
 	}
 }
 
+func TestBigQueryConnectorResumeRequiresStableOrder(t *testing.T) {
+	fake := &fakeBigQueryClient{
+		schema: []bigQueryField{{Name: "name", Type: "STRING"}},
+		rows:   []map[string]any{{"name": "content"}},
+	}
+	connector := newFakeBigQueryConnector(t, map[string]any{
+		"project_id":      "my-proj",
+		"dataset_id":      "ds",
+		"table_id":        "tbl",
+		"content_columns": "name",
+		"credentials": map[string]any{
+			"service_account_json": `{"type":"service_account","project_id":"my-proj"}`,
+		},
+	}, fake)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{SourceID: "bigquery:my-proj:ds.tbl:anchor"},
+	})
+	if err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("OpenSync error = %v, want ErrSyncResumeInvalid", err)
+	}
+	if session != nil {
+		t.Fatal("OpenSync returned a session after resume validation failure")
+	}
+	if strings.Contains(fake.queries[0].text, "ORDER BY") {
+		t.Fatalf("query = %q, want no synthetic ordering without stable columns", fake.queries[0].text)
+	}
+}
+
 func TestBigQueryConnectorOpenPrune(t *testing.T) {
 	fake := &fakeBigQueryClient{
 		schema: []bigQueryField{{Name: "id", Type: "INT64"}},
@@ -438,6 +473,9 @@ func TestBigQueryConnectorOpenPrune(t *testing.T) {
 		batch.Documents[0].SourceID != "bigquery:my-proj:query:3" ||
 		batch.Documents[1].SourceID != "bigquery:my-proj:query:4" {
 		t.Fatalf("slim documents = %+v", batch.Documents)
+	}
+	if !strings.Contains(fake.queries[0].text, "ORDER BY ragflow_src.id ASC") {
+		t.Fatalf("prune query = %q, want stable ordering", fake.queries[0].text)
 	}
 }
 
